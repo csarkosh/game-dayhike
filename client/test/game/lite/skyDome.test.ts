@@ -87,7 +87,9 @@ describe("the sky's dome on Babylon Lite", () => {
   it("reads every uniform the game draws the dome with from its own, and rides with the eye", () => {
     const read = new Set([...SKY_DOME_WGSL.fragment.matchAll(/\bu\.(sky\w+)/g)].map((m) => m[1]));
     expect([...read].sort()).toEqual(Object.keys(emptySkyDomeUniforms()).sort());
-    expect(tight(SKY_DOME_WGSL.vertex)).toContain("out.position=shaderSystem.viewProjection*vec4<f32>(shaderSystem.cameraPosition+input.position,1.0);");
+    expect(tight(SKY_DOME_WGSL.vertex)).toContain("out.position=scene.viewProjection*vec4<f32>(scene.vEyePosition.xyz+input.position,1.0);");
+    // The view and the eye are the scene's own: no copy of them is the dome's.
+    expect(`${SKY_DOME_WGSL.vertex}${SKY_DOME_WGSL.fragment}`).not.toMatch(/shaderSystem/);
     expect(tight(SKY_DOME_WGSL.vertex)).toContain("out.dir=input.position;");
   });
 

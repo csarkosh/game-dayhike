@@ -86,7 +86,7 @@ struct SkyOut{@builtin(position)position:vec4<f32>,@location(0)dir:vec3<f32>}
 @vertex fn mainVertex(input:VertexInput)->SkyOut{
   var out:SkyOut;
   out.dir=input.position;
-  out.position=shaderSystem.viewProjection*vec4<f32>(shaderSystem.cameraPosition+input.position,1.0);
+  out.position=scene.viewProjection*vec4<f32>(scene.vEyePosition.xyz+input.position,1.0);
   return out;
 }`;
 
@@ -158,8 +158,8 @@ export function createLiteSkyDome(engine: EngineContext, scene: SceneContext, fr
     vertexSource: VERTEX,
     fragmentSource: stageReads(FRAGMENT, SKY_FRAME_READS),
     attributes: ["position"],
+    // The view and the eye are the scene's own (`frameBlock.ts`): no system uniform.
     uniforms: [
-      "viewProjection", "cameraPosition",
       ...Object.entries(own).map(([name, value]) => ({ name, type: value.length === 1 ? ("f32" as const) : ("vec3<f32>" as const), defaultValue: value })),
     ],
     uniformBlocks: [frame],

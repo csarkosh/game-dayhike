@@ -28,7 +28,7 @@
  * None on a tier without a cover map to land them on.
  */
 import {
-  addToScene, createPlane, createShaderMaterial, disposeMeshGpu, enableShaderMaterialVisiblePacketUpdates, removeFromScene, setMeshVisible, setShaderTexture,
+  addToScene, createPlane, createShaderMaterial, disposeMeshGpu, removeFromScene, setMeshVisible, setShaderTexture,
   setThinInstanceDrawCount, setThinInstances,
   type EngineContext, type Mesh, type PluginUniformBlock, type SceneContext, type ShaderMaterial,
 } from "@babylonjs/lite";
@@ -100,8 +100,8 @@ fn splashHash(p:vec2<f32>)->vec2<f32>{
   out.splashPhase=sPhase;
   out.splashUv=input.position.xy+0.5;
   let worldPos=vec4<f32>(positionUpdated,1.0);
-  out.position=shaderSystem.viewProjection*worldPos;
-  out.fogDistance=(shaderSystem.view*worldPos).xyz;
+  out.position=scene.viewProjection*worldPos;
+  out.fogDistance=(scene.view*worldPos).xyz;
   return out;
 }`;
 
@@ -188,7 +188,8 @@ export function createLiteRainSplash(
     vertexSource: stageReads(VERTEX, SPLASH_FRAME_READS),
     fragmentSource: stageReads(FRAGMENT, SPLASH_FRAME_READS),
     attributes: ["position"],
-    uniforms: ["viewProjection", "view", ...shaderUniformDecls(own)],
+    // The view is the scene's own (`frameBlock.ts`): no system uniform, so nothing is written for a camera that moves.
+    uniforms: shaderUniformDecls(own),
     uniformBlocks: [frame],
     samplers: ["splashMap"],
     needAlphaBlending: true,
@@ -196,8 +197,6 @@ export function createLiteRainSplash(
     depthWrite: false,
     backFaceCulling: false,
   });
-  // Nothing of hidden splashes is written, the view's matrices included.
-  enableShaderMaterialVisiblePacketUpdates(material);
   setShaderTexture(material, "splashMap", cover.texture);
   const writeUniforms = shaderUniformWriter(material, own);
 

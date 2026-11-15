@@ -54,8 +54,8 @@ ${VARYINGS}
   var out:MistOut;
   let world=mat4x4<f32>(input.world0,input.world1,input.world2,vec4<f32>(input.world3.xyz,1.0));
   let worldPos=world*vec4<f32>(input.position,1.0);
-  out.position=shaderSystem.viewProjection*worldPos;
-  out.fogDistance=(shaderSystem.view*worldPos).xyz;
+  out.position=scene.viewProjection*worldPos;
+  out.fogDistance=(scene.view*worldPos).xyz;
   out.uv=input.uv;
   out.visibility=input.world3.w;
   return out;
@@ -139,7 +139,8 @@ export function createLiteMistMeshes(
     vertexSource: stageReads(VERTEX, MIST_FRAME_READS),
     fragmentSource: stageReads(FRAGMENT, MIST_FRAME_READS),
     attributes: ["position", "uv"],
-    uniforms: ["viewProjection", "view", ...shaderUniformDecls(own)],
+    // The view is the scene's own (`frameBlock.ts`): no system uniform, so nothing is written for a camera that moves.
+    uniforms: shaderUniformDecls(own),
     uniformBlocks: [frame],
     samplers: ["mistSprite"],
     needAlphaBlending: true,

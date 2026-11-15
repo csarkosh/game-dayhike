@@ -62,8 +62,8 @@ describe("the splashes' vertex stage on Babylon Lite", () => {
     expect(VERTEX).toContain("out.splashPhase=sPhase;");
     expect(VERTEX).toContain("out.splashUv=input.position.xy+0.5;");
     expect(inOrder(VERTEX, [
-      "letsplashSeed=input.world0;", "letworldPos=vec4<f32>(positionUpdated,1.0);", "out.position=shaderSystem.viewProjection*worldPos;",
-      "out.fogDistance=(shaderSystem.view*worldPos).xyz;",
+      "letsplashSeed=input.world0;", "letworldPos=vec4<f32>(positionUpdated,1.0);", "out.position=scene.viewProjection*worldPos;",
+      "out.fogDistance=(scene.view*worldPos).xyz;",
     ])).toBe(true);
   });
 

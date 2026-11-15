@@ -30,6 +30,7 @@ function sizeOf(type: string): { floats: number; align: number } {
   if (type === "vec2<f32>") return { floats: 2, align: 8 };
   if (type === "vec3<f32>") return { floats: 3, align: 16 };
   if (type === "vec4<f32>") return { floats: 4, align: 16 };
+  if (type === "mat4x4<f32>") return { floats: 16, align: 16 };
   throw new Error(`a field of type ${type}`);
 }
 
@@ -79,6 +80,7 @@ function frame(): FrameValues {
       stageClocks({ ...emptyRainUniforms(), rainFold: [7.75], rainDt: [1 / 40], rainDrift: [0.5, -0.25], rainCanopyWater: [0.6] }),
       stageClocks({ ...emptySplashUniforms(), splashTime: [9.5] }),
     ],
+    projection: Float32Array.from({ length: 16 }, (_, i) => 0.5 + i),
   };
 }
 
@@ -104,7 +106,9 @@ describe("the frame's uniform block on Babylon Lite", () => {
     expect(Object.keys(stages).filter(inFrameBlock).sort()).toEqual([...FRAME_CLOCK_NAMES].sort());
     // What stood in the block keeps its place: the new fields follow the wings' clock.
     const order = FRAME_FIELDS.map((field) => field.name);
-    expect(order.slice(order.indexOf("wingTime") + 1)).toEqual(["frameExposure", "frameContrast", ...FRAME_CLOCK_NAMES]);
+    expect(order.slice(order.indexOf("wingTime") + 1)).toEqual(["frameExposure", "frameContrast", ...FRAME_CLOCK_NAMES, "frameProjection"]);
+    // The projection alone of the camera's matrices: the view and the eye are the scene's own, which every stage reads.
+    expect(fields.get("frameProjection")).toBe("mat4x4<f32>");
   });
 
   it("packs a frame's values where the block lays its fields out, each as the plain module that owns it computes it", () => {
@@ -135,6 +139,12 @@ describe("the frame's uniform block on Babylon Lite", () => {
     expect([read("moteClock"), read("moteTravel"), read("rainFold"), read("rainDt"), read("rainDrift"), read("rainCanopyWater"), read("splashTime")]).toEqual(
       [[3.5], [1.25, -2.5], [7.75], f32([1 / 40]), [0.5, -0.25], f32([0.6]), [9.5]],
     );
+    expect(read("frameProjection")).toEqual(Array.from({ length: 16 }, (_, i) => 0.5 + i));
+    // A frame handed no projection leaves the block's as it stands.
+    writeFrameBlock(made.data, made.offsets, { ...values, projection: undefined, exposure: 0.25 });
+    expect(read("frameProjection")).toEqual(Array.from({ length: 16 }, (_, i) => 0.5 + i));
+    expect(read("frameExposure")).toEqual([0.25]);
+    writeFrameBlock(made.data, made.offsets, values);
     // Every float of every field was written but the players' fourth, which nothing reads.
     const unwritten = [...made.offsets].flatMap(([name, at]) => [...made.data.subarray(at / 4, at / 4 + floatsOf(name))].map((v, i) => (v === -99 ? `${name}[${i}]` : null))).filter((v) => v !== null);
     expect(unwritten).toEqual(Array.from({ length: FOLIAGE_PLAYERS }, (_, i) => `windPlayers[${i * 4 + 3}]`));

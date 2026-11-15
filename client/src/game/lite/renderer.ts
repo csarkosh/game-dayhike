@@ -122,7 +122,7 @@
  */
 import {
   NeutralToneMapping, addToScene, createBankedFreeCamera, createDirectionalLight, createEngine, createHemisphericLight, createPbrMaterial, createSpotLight,
-  createPluginUniformBlock, createSceneContext, disposeEngine, disposeScene, enableMaterialPlugins, enablePbrMaterialPluginVertexData,
+  createPluginUniformBlock, createSceneContext, disposeEngine, disposeScene, enableMaterialPlugins, enablePbrMaterialPluginVertexData, getProjectionMatrix,
   markLightDirty, markMaterialUboDirty, onEngineDeviceLost, onEngineGpuError, registerScene, renderFrame, resizeEngine, vec3,
   writePluginUniformBlock,
   type BankedFreeCamera, type DirectionalLight, type EngineContext, type HemisphericLight, type MaterialPlugin, type PbrMaterialProps,
@@ -863,6 +863,8 @@ export function createLiteRenderer(canvas: HTMLCanvasElement, level: Level, fore
     frameValues.rows = canvas.height;
     frameValues.wingTime = wingTime(clock());
     frameValues.exposure = light.exposure;
+    // The projection as Lite makes it for the hike's own pass, at the canvas's shape.
+    frameValues.projection = getProjectionMatrix(camera, canvas.height > 0 ? canvas.width / canvas.height : 1);
     writeFrameBlock(made.shared.data, made.shared.offsets, frameValues);
     writePluginUniformBlock(made.engine, made.shared);
     uploads.count("uniforms", made.shared.data.byteLength);

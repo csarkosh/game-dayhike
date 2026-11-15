@@ -135,8 +135,8 @@ describe("the rain's vertex stage on Babylon Lite", () => {
     expect(FOG_VERTEX).toContain("vFogDistance=(view*worldPos).xyz;");
     expect(inOrder(OPEN, [
       "letworldPos=vec4<f32>(positionUpdated,1.0);",
-      "out.position=select(shaderSystem.viewProjection*worldPos,vec4<f32>(2.0,2.0,2.0,1.0),drip&&input.world1.y>=u.rainDripShown);",
-      "out.fogDistance=(shaderSystem.view*worldPos).xyz;", "out.uv=input.uv;",
+      "out.position=select(scene.viewProjection*worldPos,vec4<f32>(2.0,2.0,2.0,1.0),drip&&input.world1.y>=u.rainDripShown);",
+      "out.fogDistance=(scene.view*worldPos).xyz;", "out.uv=input.uv;",
     ])).toBe(true);
   });
 

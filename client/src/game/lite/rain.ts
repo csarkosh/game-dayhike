@@ -41,7 +41,7 @@
  *   written to it**, last of the see-through draws (`SEE_THROUGH_ORDER`).
  */
 import {
-  addToScene, createPlane, createShaderMaterial, createTexture2DFromPixels, disposeMeshGpu, enableShaderMaterialVisiblePacketUpdates, removeFromScene,
+  addToScene, createPlane, createShaderMaterial, createTexture2DFromPixels, disposeMeshGpu, removeFromScene,
   setMeshVisible, setShaderTexture, setThinInstanceDrawCount, setThinInstances,
   type EngineContext, type Mesh, type PluginUniformBlock, type SceneContext, type ShaderMaterial, type Texture2D,
 } from "@babylonjs/lite";
@@ -125,8 +125,8 @@ ${VARYINGS}
   out.rainAlpha=min(rFade*rCover*(rSky*rClassAlpha+rLampT),1.0);
   out.rainLamp=min(rLampT,1.0);
   let worldPos=vec4<f32>(positionUpdated,1.0);
-  out.position=select(shaderSystem.viewProjection*worldPos,vec4<f32>(2.0,2.0,2.0,1.0),drip&&input.world1.y>=u.rainDripShown);
-  out.fogDistance=(shaderSystem.view*worldPos).xyz;
+  out.position=select(scene.viewProjection*worldPos,vec4<f32>(2.0,2.0,2.0,1.0),drip&&input.world1.y>=u.rainDripShown);
+  out.fogDistance=(scene.view*worldPos).xyz;
   out.uv=input.uv;
   return out;
 }`;
@@ -227,7 +227,8 @@ export function createLiteRain(
     vertexSource: stageReads(cover === null ? RAIN_WGSL.vertex : RAIN_WGSL.vertexCovered, RAIN_FRAME_READS),
     fragmentSource: stageReads(FRAGMENT, RAIN_FRAME_READS),
     attributes: ["position", "uv"],
-    uniforms: ["viewProjection", "view", ...shaderUniformDecls(own)],
+    // The view is the scene's own (`frameBlock.ts`): no system uniform, so nothing is written for a camera that moves.
+    uniforms: shaderUniformDecls(own),
     uniformBlocks: [frame],
     samplers: cover === null ? ["rainStreak"] : ["rainStreak", "rainMap"],
     needAlphaBlending: true,
@@ -235,8 +236,6 @@ export function createLiteRain(
     depthWrite: false,
     backFaceCulling: false,
   });
-  // Nothing of a hidden rain is written, the view's matrices included.
-  enableShaderMaterialVisiblePacketUpdates(material);
   // The streak as the game's shell makes it: its smaller levels filtered between, repeating.
   const sprite = createTexture2DFromPixels(engine, rainStreakMap(), RAIN_TEX_W, RAIN_TEX_H, {
     addressModeU: "repeat", addressModeV: "repeat", minFilter: "linear", magFilter: "linear", mipMaps: true,

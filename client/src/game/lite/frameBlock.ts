@@ -40,6 +40,15 @@
  * own buffer (`stageOwn`) is written when the hour or the weather moves it:
  * a frame with the camera still and the clocks running writes the block
  * and nothing of theirs.
+ *
+ * **The view is the scene's own.** Lite declares its scene uniforms ahead
+ * of every stage, a shader material's too: the view, the view's projection
+ * of the world and the eye, written once a pass. The hike's own stages read
+ * those (`scene.viewProjection`, `scene.view`, `scene.vEyePosition`) and
+ * declare none of Lite's system uniforms, which are a copy of the same
+ * matrices in a buffer a mesh, written again for each whenever the camera
+ * moves. The one matrix the scene's do not hold, the projection alone,
+ * which the motes lay their quads out by, rides in the block.
  */
 import { emptyAtmosphereUniforms, type AtmosphereUniforms } from "../atmosphereParams.js";
 import { emptyFadeUniforms } from "../distanceFade.js";
@@ -75,6 +84,9 @@ export const FRAME_CONTRAST_NAME = "frameContrast";
  */
 export const FRAME_CLOCK_NAMES = ["moteClock", "moteTravel", "rainDrift", "rainFold", "rainDt", "rainCanopyWater", "splashTime"] as const;
 
+/** The camera's projection, for a stage that lays a quad out in the view's space (the motes). */
+export const FRAME_PROJECTION_NAME = "frameProjection";
+
 /** A table of floats laid out as Lite lays a plugin's array out: vec4s of bits, which the shader casts back. */
 const bits = (name: string, vecs: number): UniformField => ({ name, type: `array<vec4<u32>,${vecs}>` });
 
@@ -100,6 +112,7 @@ export const FRAME_FIELDS: readonly UniformField[] = [
   { name: FRAME_EXPOSURE_NAME, type: "f32" },
   { name: FRAME_CONTRAST_NAME, type: "f32" },
   ...uniformFields({ ...emptyMoteUniforms(), ...emptyRainUniforms(), ...emptySplashUniforms() }).filter((field) => (FRAME_CLOCK_NAMES as readonly string[]).includes(field.name)),
+  { name: FRAME_PROJECTION_NAME, type: "mat4x4<f32>" },
 ];
 
 const FRAME_NAMES: ReadonlySet<string> = new Set(FRAME_FIELDS.map((field) => field.name));
@@ -185,6 +198,8 @@ export type FrameValues = {
   contrast: number;
   /** The clocks of the stages that stand (`stageClocks`), each as its stage's last update left it. */
   clocks: readonly Readonly<Record<string, readonly number[]>>[];
+  /** The camera's projection, sixteen floats as Lite hands a matrix; absent, the block's stands as it was. */
+  projection?: ArrayLike<number>;
 };
 
 /** The wind's values are the foliage's own, read through a look that adds nothing to them. */
@@ -232,4 +247,8 @@ export function writeFrameBlock(data: Float32Array, offsets: UniformOffsets, val
   data[offsetOf(offsets, FRAME_EXPOSURE_NAME)] = values.exposure;
   data[offsetOf(offsets, FRAME_CONTRAST_NAME)] = values.contrast;
   for (const clocks of values.clocks) writeUniforms(data, offsets, clocks);
+  if (values.projection !== undefined) {
+    const at = offsetOf(offsets, FRAME_PROJECTION_NAME);
+    for (let i = 0; i < 16; i++) data[at + i] = values.projection[i] as number;
+  }
 }

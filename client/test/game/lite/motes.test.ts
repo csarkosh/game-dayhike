@@ -37,8 +37,8 @@ describe("the motes' stages on Babylon Lite", () => {
     expect(PARTICLE_VERTEX).toContain("gl_Position=projection*vec4(viewPos,1.0);");
     // A unit plane's corner is Babylon's offset less a half; no pivot, no turn.
     expect(inOrder(VERTEX, [
-      "letcornerPos=input.position.xy*size;", "letviewPos=(shaderSystem.view*vec4<f32>(place,1.0)).xyz+vec3<f32>(cornerPos,0.0);",
-      "shaderSystem.projection*vec4<f32>(viewPos,1.0)",
+      "letcornerPos=input.position.xy*size;", "letviewPos=(scene.view*vec4<f32>(place,1.0)).xyz+vec3<f32>(cornerPos,0.0);",
+      `${FRAME_BLOCK}.frameProjection*vec4<f32>(viewPos,1.0)`,
     ])).toBe(true);
     expect(VERTEX).toContain("out.uv=input.uv;");
   });
@@ -75,7 +75,9 @@ describe("the motes' stages on Babylon Lite", () => {
     // A slot's number, its species and its rank, from its instance; the emitter's box round the camera the frame is drawn from.
     expect(VERTEX).toContain("letslot=u32(input.world0.x);");
     expect(VERTEX).toContain("letfrost=input.world0.y>0.5;");
-    expect(VERTEX).toContain("leteye=shaderSystem.cameraPosition;");
+    expect(VERTEX).toContain("leteye=scene.vEyePosition.xyz;");
+    // The view and the eye are the scene's own and the projection the frame's: no copy of them is the motes'.
+    expect(`${MOTES_WGSL.vertex}${MOTES_WGSL.fragment}`).not.toMatch(/shaderSystem/);
     // A slot not shown stands outside the view.
     expect(VERTEX).toContain("out.position=select(vec4<f32>(2.0,2.0,2.0,1.0),");
   });
