@@ -25,10 +25,13 @@
  *   place among the drips in the next two (`rainInstances`). The list goes
  *   up once, when the mesh is made; a frame changes only how many are
  *   drawn.
- * - **A frame writes the material's uniforms once**, where any has moved:
- *   every frame while a drop is shown (the folded time moves), and never
- *   while none is. The mesh is hidden then, so a dry frame draws nothing
- *   and writes nothing for the rain.
+ * - **What moves with the clock is the frame's block's** (`frameBlock.ts`):
+ *   the folded time, the smoothed frame, the wind's drift and the canopy's
+ *   water, with the eye, the scene's fog and the display curve. The
+ *   material's own uniforms are written once in a frame that moves one: the
+ *   boxes as the camera moves, the lamp, the counts and the colour; a frame
+ *   with the camera still writes none, and a dry frame draws nothing and
+ *   writes nothing for the rain, its mesh hidden.
  * - **Under the cover map** (`rainMap.ts`), on the tiers that have one, the
  *   vertex stage reads the map at the drop's place as the plugin does under
  *   `RAIN_OCCLUSION`: a streak under hard cover fades, a drip shows only
@@ -40,7 +43,7 @@
 import {
   addToScene, createPlane, createShaderMaterial, createTexture2DFromPixels, disposeMeshGpu, enableShaderMaterialVisiblePacketUpdates, removeFromScene,
   setMeshVisible, setShaderTexture, setThinInstanceDrawCount, setThinInstances,
-  type EngineContext, type Mesh, type SceneContext, type ShaderMaterial, type Texture2D,
+  type EngineContext, type Mesh, type PluginUniformBlock, type SceneContext, type ShaderMaterial, type Texture2D,
 } from "@babylonjs/lite";
 import type { AtmosphereRecord } from "../atmosphereParams.js";
 import type { QualityTier } from "../quality.js";
@@ -54,6 +57,7 @@ import type { WindRecord } from "../windParams.js";
 import { DISPLAY_CURVE_WGSL } from "./displayCurve.js";
 import { SEE_THROUGH_ORDER } from "./drawOrder.js";
 import { wgslFloat } from "./forestPlugins.js";
+import { FRAME_CONTRAST_NAME, FRAME_EXPOSURE_NAME, stageClocks, stageOwn, stageReads, type StageRecord } from "./frameBlock.js";
 import type { FrameUploads } from "./frameUploads.js";
 import { shaderUniformDecls, shaderUniformWriter } from "./shaderUniforms.js";
 
@@ -163,6 +167,12 @@ fn rainFogFactor(vFogDistance:vec3<f32>,fogDensity:f32)->f32{
 /** The stages' text, under a cover map and without one, for the tests that hold it to the game's. */
 export const RAIN_WGSL = { vertex: vertex(false), vertexCovered: vertex(true), fragment: FRAGMENT } as const;
 
+/** What the rain reads from the frame's block under another name: the eye, the scene's fog and the display curve. Its
+ * clocks (the folded time, the smoothed frame, the drift, the canopy's water) are the block's under their own. */
+export const RAIN_FRAME_READS = {
+  rainCam: "fadeEye", rainFogColour: "atmFarColour", rainFogDensity: "atmBaseDensity", rainExposure: FRAME_EXPOSURE_NAME, rainContrast: FRAME_CONTRAST_NAME,
+} as const;
+
 /** What a frame draws the rain with beside the weather and the wind: the camera, the frame's seconds, the headlamp, the
  * scene's fog and the display curve. */
 export type RainFrame = {
@@ -184,6 +194,8 @@ export type RainCover = { readonly texture: Texture2D; readonly centre: { readon
 export type LiteRain = {
   readonly mesh: Mesh;
   readonly material: ShaderMaterial;
+  /** The rain's clocks as the last update that drew a drop left them, for the frame's block (`stageClocks`). */
+  readonly clocks: StageRecord;
   /** Whether a frame under `w` draws a drop that reads the cover map: so the map is drawn for one, and not for a dry frame. */
   reads(w: WeatherParams): boolean;
   /** The rain under `w` in `wind`, as the game's shell is handed it. */
@@ -199,20 +211,24 @@ export type LiteRain = {
 };
 
 /**
- * The tier's rain in `scene`, hidden until a frame draws a drop. Given
- * `cover` its drops are under the map; on a tier that draws drips, none is
- * drawn without it.
+ * The tier's rain in `scene`, reading `frame`, the frame's block; hidden
+ * until a frame draws a drop. Given `cover` its drops are under the map; on
+ * a tier that draws drips, none is drawn without it.
  */
-export function createLiteRain(engine: EngineContext, scene: SceneContext, tier: QualityTier, cover: RainCover | null, uploads?: FrameUploads): LiteRain {
+export function createLiteRain(
+  engine: EngineContext, scene: SceneContext, tier: QualityTier, cover: RainCover | null, frame: PluginUniformBlock, uploads?: FrameUploads,
+): LiteRain {
   const field = createRainField(tier);
   const instances = rainInstances(tier);
   const values = emptyRainStageUniforms();
+  const own = stageOwn(values, RAIN_FRAME_READS);
   const material = createShaderMaterial({
     name: "rain",
-    vertexSource: cover === null ? RAIN_WGSL.vertex : RAIN_WGSL.vertexCovered,
-    fragmentSource: FRAGMENT,
+    vertexSource: stageReads(cover === null ? RAIN_WGSL.vertex : RAIN_WGSL.vertexCovered, RAIN_FRAME_READS),
+    fragmentSource: stageReads(FRAGMENT, RAIN_FRAME_READS),
     attributes: ["position", "uv"],
-    uniforms: ["viewProjection", "view", ...shaderUniformDecls(values)],
+    uniforms: ["viewProjection", "view", ...shaderUniformDecls(own)],
+    uniformBlocks: [frame],
     samplers: cover === null ? ["rainStreak"] : ["rainStreak", "rainMap"],
     needAlphaBlending: true,
     blendMode: "alpha",
@@ -227,7 +243,7 @@ export function createLiteRain(engine: EngineContext, scene: SceneContext, tier:
   });
   setShaderTexture(material, "rainStreak", sprite);
   if (cover !== null) setShaderTexture(material, "rainMap", cover.texture);
-  const writeUniforms = shaderUniformWriter(material, values);
+  const writeUniforms = shaderUniformWriter(material, own);
 
   const mesh = createPlane(engine, { size: 1 });
   mesh.material = material;
@@ -244,6 +260,7 @@ export function createLiteRain(engine: EngineContext, scene: SceneContext, tier:
   return {
     mesh,
     material,
+    clocks: stageClocks(values),
     reads: (w) => cover !== null && (rainCountUnder(w.rain, tier) > 0 || dripCountUnder(field.canopyWater, tier) > 0),
     get drawn() {
       return field.drawn;

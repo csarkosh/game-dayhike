@@ -8,10 +8,14 @@ import { FOLIAGE_PLAYERS, FOLIAGE_PROFILES, emptyFoliageUniforms, foliageLook, f
 import { atmospherePlugin } from "../../../src/game/lite/atmospherePlugin.js";
 import { FADE_FIELDS, FOLIAGE_FIELDS, surfaceWetPlugin, vegetationPlugin, type Vegetation } from "../../../src/game/lite/forestPlugins.js";
 import {
-  FRAME_BLOCK, FRAME_FIELDS, FRAME_WIND_NAMES, frameReads, inFrameBlock, ownFields, ownValues, writeFrameBlock, type FrameValues,
+  FRAME_BLOCK, FRAME_CLOCK_NAMES, FRAME_FIELDS, FRAME_WIND_NAMES, frameReads, inFrameBlock, ownFields, ownValues, stageClocks, stageOwn, stageReads,
+  writeFrameBlock, type FrameValues,
 } from "../../../src/game/lite/frameBlock.js";
 import { TERRAIN_FIELDS, emptyTerrainMaterialUniforms, terrainPlugin, terrainWetPlugin } from "../../../src/game/lite/terrainPlugins.js";
 import { WET_FIELDS } from "../../../src/game/lite/wetWgsl.js";
+import { emptyMoteUniforms } from "../../../src/game/moteField.js";
+import { emptyRainUniforms } from "../../../src/game/rainField.js";
+import { emptySplashUniforms } from "../../../src/game/splashField.js";
 import { emptyTerrainUniforms, terrainUniforms } from "../../../src/game/terrainUniforms.js";
 import { WET_SWASH_VECS, emptyWetUniforms, setWetWeather, wetUniforms } from "../../../src/game/wetSurface.js";
 import { windRecordUnder } from "../../../src/game/windParams.js";
@@ -68,6 +72,13 @@ function frame(): FrameValues {
     eye,
     rows: 956,
     wingTime: 123.5,
+    exposure: 0.85,
+    contrast: 1.1,
+    clocks: [
+      stageClocks({ ...emptyMoteUniforms(), moteClock: [3.5], moteTravel: [1.25, -2.5] }),
+      stageClocks({ ...emptyRainUniforms(), rainFold: [7.75], rainDt: [1 / 40], rainDrift: [0.5, -0.25], rainCanopyWater: [0.6] }),
+      stageClocks({ ...emptySplashUniforms(), splashTime: [9.5] }),
+    ],
   };
 }
 
@@ -85,6 +96,15 @@ describe("the frame's uniform block on Babylon Lite", () => {
     expect(FADE_FIELDS.map((field) => [field.name, fields.get(field.name)])).toEqual([["fadeEye", "vec3<f32>"], ["fadeWiden", undefined], ["fadeRows", "f32"]]);
     expect(inFrameBlock("windTime")).toBe(true);
     expect(inFrameBlock("foliageAmp")).toBe(false);
+    // The display curve, and the clocks of the hike's own stages under their records' names and sizes.
+    expect([fields.get("frameExposure"), fields.get("frameContrast")]).toEqual(["f32", "f32"]);
+    const stages: Record<string, number[]> = { ...emptyMoteUniforms(), ...emptyRainUniforms(), ...emptySplashUniforms() };
+    for (const name of FRAME_CLOCK_NAMES) expect(sizeOf(fields.get(name) as string).floats, name).toBe((stages[name] as number[]).length);
+    // Of those records nothing else is the frame's: a stage's settings are its own.
+    expect(Object.keys(stages).filter(inFrameBlock).sort()).toEqual([...FRAME_CLOCK_NAMES].sort());
+    // What stood in the block keeps its place: the new fields follow the wings' clock.
+    const order = FRAME_FIELDS.map((field) => field.name);
+    expect(order.slice(order.indexOf("wingTime") + 1)).toEqual(["frameExposure", "frameContrast", ...FRAME_CLOCK_NAMES]);
   });
 
   it("packs a frame's values where the block lays its fields out, each as the plain module that owns it computes it", () => {
@@ -110,6 +130,11 @@ describe("the frame's uniform block on Babylon Lite", () => {
     // The fade's eye as its module computes it, and the frame's rows.
     expect(read("fadeEye")).toEqual(f32(fadeUniforms(values.eye, { band: [0, 1], factor: 1 }, emptyFadeUniforms()).fadeEye));
     expect(read("fadeRows")).toEqual([956]);
+    // The display curve and the stages' clocks, as their records hold them.
+    expect([read("frameExposure"), read("frameContrast")]).toEqual([f32([0.85]), f32([1.1])]);
+    expect([read("moteClock"), read("moteTravel"), read("rainFold"), read("rainDt"), read("rainDrift"), read("rainCanopyWater"), read("splashTime")]).toEqual(
+      [[3.5], [1.25, -2.5], [7.75], f32([1 / 40]), [0.5, -0.25], f32([0.6]), [9.5]],
+    );
     // Every float of every field was written but the players' fourth, which nothing reads.
     const unwritten = [...made.offsets].flatMap(([name, at]) => [...made.data.subarray(at / 4, at / 4 + floatsOf(name))].map((v, i) => (v === -99 ? `${name}[${i}]` : null))).filter((v) => v !== null);
     expect(unwritten).toEqual(Array.from({ length: FOLIAGE_PLAYERS }, (_, i) => `windPlayers[${i * 4 + 3}]`));
@@ -124,6 +149,25 @@ describe("the frame's uniform block on Babylon Lite", () => {
     expect(frameReads("material.windTimeScale")).toBe("material.windTimeScale");
     expect(ownFields([{ name: "windTime", type: "f32" }, { name: "foliageAmp", type: "f32" }])).toEqual([{ name: "foliageAmp", type: "f32" }]);
     expect(ownValues({ windTime: [1], foliageAmp: [2], fadeWiden: [0, 1, 0] })).toEqual({ foliageAmp: [2], fadeWiden: [0, 1, 0] });
+  });
+
+  it("turns a stage's reads of what the block holds to the block, by the block's name for each, and leaves the stage's own", () => {
+    const as = { rainCam: "fadeEye", rainExposure: "frameExposure" };
+    expect(stageReads("let a=u.rainFold*u.rainSpeeds.x+length(u.rainCam-p)+u.rainExposure;let u=shaderUniforms;", as)).toBe(
+      `let a=${FRAME_BLOCK}.rainFold*u.rainSpeeds.x+length(${FRAME_BLOCK}.fadeEye-p)+${FRAME_BLOCK}.frameExposure;let u=shaderUniforms;`,
+    );
+    // A longer name that begins with one of the block's is not the block's, and nothing but a read of `u` is touched.
+    expect(stageReads("u.rainFoldScale+menu.rainFold+hikeFrame.rainFold")).toBe("u.rainFoldScale+menu.rainFold+hikeFrame.rainFold");
+    // A name the block is said to hold and does not is a mistake, said.
+    expect(() => stageReads("u.rainCam", { rainCam: "noSuchField" })).toThrow(/noSuchField/);
+    const record = { rainFold: [1], rainSpeeds: [1, 2, 3, 4], rainCam: [0, 0, 0], rainExposure: [1] };
+    const own = stageOwn(record, as);
+    expect(Object.keys(own)).toEqual(["rainSpeeds"]);
+    // The stage's own values are the record's arrays, so a record filled in place is what is written.
+    expect(own["rainSpeeds"]).toBe(record.rainSpeeds);
+    const clocks = stageClocks(record);
+    expect(Object.keys(clocks)).toEqual(["rainFold"]);
+    expect(clocks["rainFold"]).toBe(record.rainFold);
   });
 
   it("leaves a material given the block only what is its own, and no read of the frame's from its own buffer", () => {

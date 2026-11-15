@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { readFileSync } from "node:fs";
-import { SKY_DOME_WGSL, SKY_RADIANCE_WGSL, SKY_TABLE_BYTES } from "../../../src/game/lite/skyDome.js";
+import { FRAME_BLOCK, stageOwn, stageReads } from "../../../src/game/lite/frameBlock.js";
+import { SKY_DOME_WGSL, SKY_FRAME_READS, SKY_RADIANCE_WGSL, SKY_TABLE_BYTES } from "../../../src/game/lite/skyDome.js";
 import { emptySkyDomeUniforms } from "../../../src/game/skyDomeParams.js";
 import { SLICE_AZIMUTHS, SLICE_ELEVATIONS } from "../../../src/game/skyModel.js";
 
@@ -88,6 +89,15 @@ describe("the sky's dome on Babylon Lite", () => {
     expect([...read].sort()).toEqual(Object.keys(emptySkyDomeUniforms()).sort());
     expect(tight(SKY_DOME_WGSL.vertex)).toContain("out.position=shaderSystem.viewProjection*vec4<f32>(shaderSystem.cameraPosition+input.position,1.0);");
     expect(tight(SKY_DOME_WGSL.vertex)).toContain("out.dir=input.position;");
+  });
+
+  it("is made reading the display curve from the frame's block, the sky's own numbers its own", () => {
+    const made = tight(stageReads(SKY_DOME_WGSL.fragment, SKY_FRAME_READS));
+    const own = Object.keys(emptySkyDomeUniforms()).filter((name) => name !== "skyExposure" && name !== "skyContrast").sort();
+    expect([...new Set([...made.matchAll(/\bu\.(\w+)/g)].map((m) => m[1] as string))].sort()).toEqual(own);
+    expect(Object.keys(stageOwn(emptySkyDomeUniforms(), SKY_FRAME_READS)).sort()).toEqual(own);
+    expect(made).toContain(`vartoned=skyNeutral(sky*${FRAME_BLOCK}.frameExposure);`);
+    expect(made).toContain(`toned=skyContrastOf(toned,${FRAME_BLOCK}.frameContrast);`);
   });
 
   it("sends the table as four halves a texel", () => {

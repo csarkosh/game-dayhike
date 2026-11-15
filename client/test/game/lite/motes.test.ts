@@ -2,7 +2,8 @@ import { describe, expect, it } from "vitest";
 import { ShaderStore } from "@babylonjs/core/Engines/shaderStore.js";
 import "@babylonjs/core/Shaders/particles.fragment.js";
 import "@babylonjs/core/Shaders/particles.vertex.js";
-import { MOTES_WGSL } from "../../../src/game/lite/motes.js";
+import { FRAME_BLOCK, stageClocks, stageOwn, stageReads } from "../../../src/game/lite/frameBlock.js";
+import { MOTES_FRAME_READS, MOTES_WGSL } from "../../../src/game/lite/motes.js";
 import { MOTE_BOX, MOTE_SALT, emptyMoteUniforms } from "../../../src/game/moteField.js";
 import { inOrder, tight } from "./wgslText.js";
 
@@ -82,5 +83,16 @@ describe("the motes' stages on Babylon Lite", () => {
   it("reads every uniform the motes are drawn with, and no other", () => {
     const read = new Set([...`${MOTES_WGSL.vertex}${MOTES_WGSL.fragment}`.matchAll(/\bu\.(mote\w+)/g)].map((m) => m[1]));
     expect([...read].sort()).toEqual(Object.keys(emptyMoteUniforms()).sort());
+  });
+
+  it("is made reading its clock, the wind's carry and the display curve from the frame's block, its settings and colour its own", () => {
+    const made = tight(`${stageReads(MOTES_WGSL.vertex, MOTES_FRAME_READS)}${stageReads(MOTES_WGSL.fragment, MOTES_FRAME_READS)}`);
+    const own = ["moteColour", "moteFrostDrift", "moteFrostSpan", "motePollenDrift", "motePollenSpan"];
+    expect([...new Set([...made.matchAll(/\bu\.(\w+)/g)].map((m) => m[1]))].sort()).toEqual(own);
+    expect(Object.keys(stageOwn(emptyMoteUniforms(), MOTES_FRAME_READS)).sort()).toEqual(own);
+    expect(Object.keys(stageClocks(emptyMoteUniforms()))).toEqual(["moteClock", "moteTravel"]);
+    expect(made).toContain(`lett=${FRAME_BLOCK}.moteClock+moteRandom(slot,0u,${MOTE_SALT.phase}u)*life;`);
+    expect(made).toContain(`letcarried=vec3<f32>(${FRAME_BLOCK}.moteTravel.x,0.0,${FRAME_BLOCK}.moteTravel.y);`);
+    expect(made).toContain(`baseColor=vec4<f32>(displayColour(baseColor.rgb,${FRAME_BLOCK}.frameExposure,${FRAME_BLOCK}.frameContrast),baseColor.a);`);
   });
 });

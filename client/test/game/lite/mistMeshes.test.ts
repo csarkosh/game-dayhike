@@ -2,7 +2,8 @@ import { describe, expect, it } from "vitest";
 import { ShaderStore } from "@babylonjs/core/Engines/shaderStore.js";
 import "@babylonjs/core/Shaders/default.fragment.js";
 import "@babylonjs/core/Shaders/ShadersInclude/fogVertex.js";
-import { MIST_INSTANCE_BYTES, MIST_WGSL } from "../../../src/game/lite/mistMeshes.js";
+import { FRAME_BLOCK, stageOwn, stageReads } from "../../../src/game/lite/frameBlock.js";
+import { MIST_FRAME_READS, MIST_INSTANCE_BYTES, MIST_WGSL } from "../../../src/game/lite/mistMeshes.js";
 import { emptyMistUniforms } from "../../../src/game/mistBanks.js";
 import { inOrder, tight } from "./wgslText.js";
 
@@ -52,6 +53,16 @@ describe("the mist banks' stage on Babylon Lite", () => {
     const read = new Set([...MIST_WGSL.fragment.matchAll(/\bu\.(mist\w+)/g)].map((m) => m[1]));
     expect([...read].sort()).toEqual(Object.keys(emptyMistUniforms()).sort());
     expect(MIST_WGSL.vertex).not.toMatch(/shaderUniforms/);
+  });
+
+  it("is made reading the scene's fog and the display curve from the frame's block, the banks' colour alone its own", () => {
+    const made = tight(stageReads(MIST_WGSL.fragment, MIST_FRAME_READS));
+    expect([...made.matchAll(/\bu\.(\w+)/g)].map((m) => m[1])).toEqual(["mistEmissive"]);
+    expect(Object.keys(stageOwn(emptyMistUniforms(), MIST_FRAME_READS))).toEqual(["mistEmissive"]);
+    expect(made).toContain(`letfog=mistFogFactor(input.fogDistance,${FRAME_BLOCK}.atmBaseDensity);`);
+    expect(made).toContain(`color=vec4<f32>(mix(${FRAME_BLOCK}.atmFarColour,color.rgb,fog),color.a);`);
+    expect(made).toContain(`color=vec4<f32>(displayColour(color.rgb,${FRAME_BLOCK}.frameExposure,${FRAME_BLOCK}.frameContrast),color.a);`);
+    expect(stageReads(MIST_WGSL.vertex, MIST_FRAME_READS)).toBe(MIST_WGSL.vertex);
   });
 
   it("stands a corner through its instance's matrix, whose last float is the bank's visibility and not the matrix's", () => {

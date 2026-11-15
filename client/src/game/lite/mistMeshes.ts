@@ -17,8 +17,9 @@
  *   matrix** (`writeMistInstances`), so a frame that moves a bank, turns the
  *   camera or changes a fade writes one buffer, counted on the renderer's
  *   record of its uploads, and a frame that does none of them writes
- *   nothing; the uniforms are written only when the air's colours or the
- *   exposure move.
+ *   nothing. The scene's fog and the display curve are read from the
+ *   frame's block (`frameBlock.ts`), so the material's own uniform is the
+ *   banks' colour alone, written when the air's colours move.
  * - **Blended over what is behind them, tested against the depth and never
  *   written to it**, after every opaque draw and the sky, at the banks'
  *   place among the see-through draws (`SEE_THROUGH_ORDER`), farthest bank
@@ -27,7 +28,7 @@
 import {
   addToScene, createPlane, createShaderMaterial, createTexture2DFromPixels, disposeMeshGpu, flushThinInstances, removeFromScene, setMeshVisible,
   setShaderTexture, setThinInstanceCount, setThinInstances,
-  type EngineContext, type Mesh, type SceneContext, type ShaderMaterial,
+  type EngineContext, type Mesh, type PluginUniformBlock, type SceneContext, type ShaderMaterial,
 } from "@babylonjs/lite";
 import type { AtmosphereRecord } from "../atmosphereParams.js";
 import type { Rgb } from "../colour.js";
@@ -38,6 +39,7 @@ import type { WeatherParams } from "../weather.js";
 import type { WindRecord } from "../windParams.js";
 import { DISPLAY_CURVE_WGSL } from "./displayCurve.js";
 import { SEE_THROUGH_ORDER } from "./drawOrder.js";
+import { FRAME_CONTRAST_NAME, FRAME_EXPOSURE_NAME, stageOwn, stageReads } from "./frameBlock.js";
 import type { FrameUploads } from "./frameUploads.js";
 import { shaderUniformDecls, shaderUniformWriter } from "./shaderUniforms.js";
 
@@ -93,6 +95,11 @@ fn mistFogFactor(vFogDistance:vec3<f32>,fogDensity:f32)->f32{
 /** The stages' text, for the tests that hold it to the game's. */
 export const MIST_WGSL = { vertex: VERTEX, fragment: FRAGMENT } as const;
 
+/** What the banks read from the frame's block, by the block's names: the scene's fog and the display curve. */
+export const MIST_FRAME_READS = {
+  mistFogColour: "atmFarColour", mistFogDensity: "atmBaseDensity", mistExposure: FRAME_EXPOSURE_NAME, mistContrast: FRAME_CONTRAST_NAME,
+} as const;
+
 /** Bytes an instance hands to the GPU. */
 export const MIST_INSTANCE_BYTES = MIST_INSTANCE_FLOATS * 4;
 
@@ -119,17 +126,21 @@ export type LiteMistMeshes = {
   dispose(): void;
 };
 
-/** The banks of `seed`'s world in `scene`, none shown until a frame with mist. */
-export function createLiteMistMeshes(engine: EngineContext, scene: SceneContext, seed: number, tier: QualityTier, uploads?: FrameUploads): LiteMistMeshes {
+/** The banks of `seed`'s world in `scene`, reading `frame`, the frame's block; none shown until a frame with mist. */
+export function createLiteMistMeshes(
+  engine: EngineContext, scene: SceneContext, seed: number, tier: QualityTier, frame: PluginUniformBlock, uploads?: FrameUploads,
+): LiteMistMeshes {
   const banks = createMistBanks(seed, tier);
   const cap = banks.drawn.length;
   const values = emptyMistUniforms();
+  const own = stageOwn(values, MIST_FRAME_READS);
   const material = createShaderMaterial({
     name: "mistBanks",
-    vertexSource: VERTEX,
-    fragmentSource: FRAGMENT,
+    vertexSource: stageReads(VERTEX, MIST_FRAME_READS),
+    fragmentSource: stageReads(FRAGMENT, MIST_FRAME_READS),
     attributes: ["position", "uv"],
-    uniforms: ["viewProjection", "view", ...shaderUniformDecls(values)],
+    uniforms: ["viewProjection", "view", ...shaderUniformDecls(own)],
+    uniformBlocks: [frame],
     samplers: ["mistSprite"],
     needAlphaBlending: true,
     blendMode: "alpha",
@@ -142,7 +153,7 @@ export function createLiteMistMeshes(engine: EngineContext, scene: SceneContext,
     addressModeU: "repeat", addressModeV: "repeat", minFilter: "linear", magFilter: "linear", mipMaps: true,
   });
   setShaderTexture(material, "mistSprite", sprite);
-  const writeUniforms = shaderUniformWriter(material, values);
+  const writeUniforms = shaderUniformWriter(material, own);
 
   // What the mesh draws from, and what the next frame is composed into: the mesh's arrays are written only where the
   // two differ.

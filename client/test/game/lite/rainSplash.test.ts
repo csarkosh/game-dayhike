@@ -1,7 +1,8 @@
 import { describe, expect, it } from "vitest";
 import { ShaderStore } from "@babylonjs/core/Engines/shaderStore.js";
 import "@babylonjs/core/Shaders/default.fragment.js";
-import { SPLASH_WGSL } from "../../../src/game/lite/rainSplash.js";
+import { FRAME_BLOCK, stageClocks, stageOwn, stageReads } from "../../../src/game/lite/frameBlock.js";
+import { SPLASH_FRAME_READS, SPLASH_WGSL } from "../../../src/game/lite/rainSplash.js";
 import { SplashPlugin } from "../../../src/game/rainSplash.js";
 import { emptySplashStageUniforms, emptySplashUniforms } from "../../../src/game/splashField.js";
 import { inOrder, tight } from "./wgslText.js";
@@ -70,6 +71,19 @@ describe("the splashes' vertex stage on Babylon Lite", () => {
     const read = (wgsl: string): string[] => [...wgsl.matchAll(/\bu\.(\w+)/g)].map((m) => m[1] as string);
     expect([...new Set([...read(SPLASH_WGSL.vertex), ...read(SPLASH_WGSL.fragment)])].sort()).toEqual(Object.keys(emptySplashStageUniforms()).sort());
     expect([...new Set(read(SPLASH_WGSL.vertex))].sort()).toEqual([...UNIFORMS].sort());
+  });
+
+  it("is made reading its clock, the eye, the scene's fog and the display curve from the frame's block", () => {
+    const framed = ["splashCam", "splashContrast", "splashExposure", "splashFogColour", "splashFogDensity", "splashTime"];
+    const made = tight(`${stageReads(SPLASH_WGSL.vertex, SPLASH_FRAME_READS)}${stageReads(SPLASH_WGSL.fragment, SPLASH_FRAME_READS)}`);
+    const read = [...new Set([...made.matchAll(/\bu\.(\w+)/g)].map((m) => m[1] as string))].sort();
+    const own = Object.keys(stageOwn(emptySplashStageUniforms(), SPLASH_FRAME_READS)).sort();
+    expect(read).toEqual(own);
+    expect(Object.keys(emptySplashStageUniforms()).filter((name) => !own.includes(name)).sort()).toEqual(framed);
+    expect(Object.keys(stageClocks(emptySplashStageUniforms()))).toEqual(["splashTime"]);
+    expect(made).toContain(`letsXZ=${FRAME_BLOCK}.fadeEye.xz+vec2<f32>(cos(sA),sin(sA))*sR;`);
+    expect(made).toContain(`letsToCam=${FRAME_BLOCK}.fadeEye-sp;`);
+    expect(made).toContain(`color=vec4<f32>(displayColour(color.rgb,${FRAME_BLOCK}.frameExposure,${FRAME_BLOCK}.frameContrast),color.a);`);
   });
 });
 
