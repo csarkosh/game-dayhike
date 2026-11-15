@@ -24,6 +24,15 @@
  * that outgrows its arrays takes new ones. A bucket with no instance is
  * hidden: Lite draws every mesh it is not told to hide.
  *
+ * **A rebuild is a job** of the renderer's scheduler where the camera
+ * crosses a tree cell at a walk (`rebuildJobs.ts`), as the forest's is on
+ * Babylon.js: the bands collected, then each bucket's new list made in a
+ * slice of its own, in arrays no mesh holds, then every bucket handed its
+ * list in the last slice, so no frame draws one bucket moved on against
+ * another that has not. Between crossings the bands of the cell the camera
+ * reaches next are collected as idle work, and the rebuild for that cell
+ * takes them made.
+ *
  * **The materials**, as `forestMeshes.ts` dresses them on Babylon.js: a
  * crown is its file's alpha-tested cards with the foliage at the tree's
  * profile, the distance dither and the base conform; a bark is one of the
@@ -74,7 +83,8 @@ import { FOLIAGE_CARD_CONTRAST, coverAlbedoTint } from "../coverAlbedoParams.js"
 import { DEADWOOD_BARK, DEADWOOD_TONE } from "../deadwoodParams.js";
 import type { FadeBands } from "../distanceFade.js";
 import { FOLIAGE_PROFILES, foliageLook, type FoliageLook } from "../foliageUniforms.js";
-import { NEAR_RADIUS, bandsOrigin, createBandCollector } from "../forestField.js";
+import type { FirstBuilds } from "../firstBuilds.js";
+import { NEAR_RADIUS, bandsOrigin, createBandCollector, type ForestBands } from "../forestField.js";
 import {
   NURSE_BANDS, deadwoodMatrixBuffer, deadwoodMeasure, deadwoodRoleBuffer, fadeBandsBuffer, forestFadeBands, groundGradBuffer, impostorFadeBuffer,
   impostorMatrixSlices, impostorQuad, nurseBuffers, partitionImpostors, snagImpostorQuad, treeMatrixBuffer,
@@ -91,7 +101,7 @@ import type { Vec3 } from "../instancePose.js";
 import { MOSS_OUTPUT } from "../mossParams.js";
 import { seedlingGeometry } from "../nurseLog.js";
 import type { QualityTier } from "../quality.js";
-import { createCrossing, crossingAt, finish, type Slices } from "../syncJobs.js";
+import { finish, nextCrossing, type Slices, type SyncJobs } from "../syncJobs.js";
 import type { WetUniforms } from "../wetSurface.js";
 import { loadKtx2Map, loadModel, type LoadedModel, type ModelPart } from "./forestModels.js";
 import {
@@ -99,7 +109,9 @@ import {
   vegetationPlugin, writeVegetationInstances,
   type Vegetation, type VegetationInstanceLayout,
 } from "./forestPlugins.js";
+import { DRAW_ORDER, createDrawOrders } from "./drawOrder.js";
 import { createImpostorBaker, type BakeMesh } from "./impostorBake.js";
+import { createRebuilds } from "./rebuildJobs.js";
 
 /** The canopy giants' models by `TreeInstance.species`: the fir, then the pine. */
 const GIANT_MODELS = ["models/tree.giant_fir.glb", "models/tree.giant_pine.glb"];
@@ -119,12 +131,23 @@ const reflectanceOf = (ior: number): number => ((ior - 1) / (ior + 1)) ** 2;
 /** Instances a bucket's arrays hold before its first list: a bucket in view of no tree still stands, hidden. */
 const FIRST_CAPACITY = 16;
 
+/**
+ * What handing every bucket its new list is expected to take (ms), the one
+ * step of a rebuild that cannot be sliced: the game's own estimate for its
+ * forest on Babylon.js. The forest's job says so before its last slice
+ * (`syncJobs.ts`), so it starts where a frame's share has room for it.
+ */
+const FOREST_UPLOAD_MS = 2;
+
+/** The first of the billboards' places among the forest's draws (`drawOrder.ts`): past every near tree's material. */
+const CARD_FIRST_PLACE = 512;
+
 /** The anisotropy a billboard's two maps are sampled with: what Babylon.js gives a map filtered between its levels,
  * which the game's cards are. Without it the far crowns are drawn a level softer than the game draws them. */
 const CARD_ANISOTROPY = 4;
 
 export type ForestMeshes = {
-  /** Follows the camera: the lists are made again when it crosses a tree cell. Before the models have landed it only keeps where the camera is. */
+  /** Follows the camera: the lists are made again when it crosses a tree cell, at a walk over the frames after. Before the models have landed it only keeps where the camera is. */
   update(camX: number, camZ: number): void;
   /** Once a frame: every material's uniforms are written again, for the wind and the eye move. */
   frame(): void;
@@ -157,6 +180,10 @@ export type ForestMeshOptions = {
   wet: { leaf: WetUniforms; bark: WetUniforms; deadwood: WetUniforms };
   /** The air's plugin, one a material. */
   air: () => MaterialPlugin;
+  /** The renderer's scheduler: given it, a crossing at a walk is a job. */
+  jobs?: SyncJobs;
+  /** The loader of first builds, while the intro's film covers the hike (`firstBuilds.ts`). */
+  firstBuilds?: FirstBuilds;
 };
 
 /** One bucket: the meshes of a LOD (a tree's bark and crown are two), one instance list for all of them. */
@@ -265,7 +292,8 @@ export function createForestMeshes(engine: EngineContext, scene: SceneContext, s
   let waiting = GIANT_MODELS.length + SAPLING_MODELS.length + 2;
   let camX = Number.NaN;
   let camZ = Number.NaN;
-  const crossing = createCrossing();
+  /** Each material's place among the draws: the near trees' as they are adopted, then a billboard's card by its slot. */
+  const orders = createDrawOrders(DRAW_ORDER.forest);
 
   /** A map of the forest's, counted while it loads. */
   const maps = new Map<string, Promise<Texture2D>>();
@@ -302,6 +330,8 @@ export function createForestMeshes(engine: EngineContext, scene: SceneContext, s
     }
     made.plugins = [baseColourPlugin(), ...plugins, surfaceWetPlugin(wet), options.air()];
     materials.push(made);
+    // The near trees' materials are made as the models are adopted, in the game's order whichever landed first.
+    orders.take(made);
     return made;
   }
 
@@ -374,6 +404,7 @@ export function createForestMeshes(engine: EngineContext, scene: SceneContext, s
     // The geometry is copied: a second bucket set of one model draws its own.
     const mesh = createMeshFromData(engine, name, part.positions.slice(), part.normals.slice(), part.indices.slice(), uvs, undefined, tangents ?? undefined);
     mesh.material = made;
+    mesh.renderOrder = orders.of(made);
     return mesh;
   }
 
@@ -523,6 +554,7 @@ export function createForestMeshes(engine: EngineContext, scene: SceneContext, s
       options.wet.leaf,
     );
     const layout = vegetationInstanceLayout(still);
+    seedlingMesh.renderOrder = orders.of(seedlingMesh.material);
     nurse = { ferns: bucket(fernMeshes, fernMeshes.map(() => layout), NURSE_BANDS), seedlings: bucket([seedlingMesh], [layout], NURSE_BANDS) };
   }
 
@@ -580,7 +612,7 @@ export function createForestMeshes(engine: EngineContext, scene: SceneContext, s
         fail();
         return;
       }
-      dress(board, fields.albedo, fields.normal);
+      dress(board, slot, fields.albedo, fields.normal);
       board.bake.state = "ready";
       board.bake.ms = performance.now() - board.startedAt;
       // A rebuild may have split the far lists while the bake was drawn: the card takes its own now.
@@ -600,7 +632,7 @@ export function createForestMeshes(engine: EngineContext, scene: SceneContext, s
    * keeps it, with the field's signed distance as the alpha the card tests at the rim; the field's normals; lit once,
    * live, as a crown, matt, on both of its sides by the one normal; glazed by the weather as a leaf.
    */
-  function dress(board: Billboard, albedo: Uint8Array, normal: Uint8Array): void {
+  function dress(board: Billboard, slot: number, albedo: Uint8Array, normal: Uint8Array): void {
     const colour = createTexture2DFromPixels(engine, albedo, IMPOSTOR_BAKE_SIZE, IMPOSTOR_BAKE_SIZE, { mipMaps: true });
     const normals = createTexture2DFromPixels(engine, cardNormals(normal), IMPOSTOR_BAKE_SIZE, IMPOSTOR_BAKE_SIZE, { mipMaps: true });
     // Sampled as the game samples them: between levels, repeating, with the anisotropy Babylon.js gives such a map.
@@ -619,24 +651,39 @@ export function createForestMeshes(engine: EngineContext, scene: SceneContext, s
     );
     setPbrAlphaCutoff(made, IMPOSTOR_FIELD_CUT);
     setPbrGammaAlbedo(made);
+    // A card's place is its slot's, after every near tree's: the bakes land in whatever order they are drawn.
+    orders.put(made, CARD_FIRST_PLACE + slot);
     const card = cardGeometry(board.quad);
     const mesh = createMeshFromData(engine, board.bake.name, card.positions, card.normals, card.indices, card.uvs);
     mesh.material = made;
+    mesh.renderOrder = orders.of(made);
     // The bands are each instance's own (`fillBillboard`): the bucket's are the lattice's, for a list that carries none.
     board.bucket = bucket([mesh], [vegetationInstanceLayout(fade)], fades.impostorLattice);
   }
 
+  /** What the far lists' split of a rebuild holds: each list by the billboard that draws the tree, and where the camera stood. */
+  type FarLists = { lattice: TreeInstance[][]; fill: TreeInstance[][]; x: number; z: number };
+
   /**
-   * A billboard's two lists onto its one card, the lattice's first and then the fill's, as the last rebuild split
-   * them: each quad turned to where the camera then stood, its bands those of its list.
+   * A billboard's two lists for its one card, the lattice's first and then the fill's, as `lists` split them, in
+   * slices: each quad turned to where the camera then stood, its bands those of its list. Returns the step that hands
+   * them to the card, or null for a slot whose billboard is not drawn.
    */
-  function fillBillboard(slot: number): void {
+  function* billboardList(slot: number, lists: FarLists): Slices<(() => void) | null> {
     const board = billboards[slot];
-    if (board === null || board === undefined || board.bucket === null || far === null) return;
-    const lattice = far.lattice[slot] ?? [];
-    const fill = far.fill[slot] ?? [];
-    const matrices = finish(impostorMatrixSlices(lattice, fill, board.quad.centreY, far.x, far.z));
-    apply(board.bucket, matrices, { fadeBands: impostorFadeBuffer(lattice.length, fill.length, fades) });
+    if (board === null || board === undefined || board.bucket === null) return null;
+    const target = board.bucket;
+    const lattice = lists.lattice[slot] ?? [];
+    const fill = lists.fill[slot] ?? [];
+    const fadeBands = impostorFadeBuffer(lattice.length, fill.length, fades);
+    const matrices = yield* impostorMatrixSlices(lattice, fill, board.quad.centreY, lists.x, lists.z);
+    return () => apply(target, matrices, { fadeBands });
+  }
+
+  /** A billboard's card filled at once from the far lists the last rebuild showed: for a bake that lands between rebuilds. */
+  function fillBillboard(slot: number): void {
+    if (far === null) return;
+    finish(billboardList(slot, far))?.();
   }
 
   /** A bucket's new list: its matrices and what its materials read an instance (its own bands, where `from` carries them), written over the old. */
@@ -670,54 +717,120 @@ export function createForestMeshes(engine: EngineContext, scene: SceneContext, s
     });
   }
 
-  /** The lists for a camera at (x, z), as slices: the bands collected, then every bucket's list made and written. */
+  /** A bucket's list made now, in arrays of its own, and the step that hands it to the bucket when the rebuild is whole. */
+  function listOf(target: Bucket, matrices: Float32Array, from: { groundGrad?: Float32Array; deadwoodRole?: Float32Array }): () => void {
+    const fadeBands = fadeBandsBuffer(matrices.length / 16, target.fade);
+    return () => apply(target, matrices, { ...from, fadeBands });
+  }
+
+  /** Bands collected ahead, for the origin the camera is heading for. */
+  let prepared: { x: number; z: number; bands: ForestBands } | null = null;
+
+  /**
+   * The lists for a camera at (x, z), as slices: the bands collected (or taken as they were collected ahead for this
+   * origin), then each bucket's list made in a slice of its own, then every bucket handed its list in the last slice.
+   */
   function* rebuild(x: number, z: number): Slices {
-    const bands = yield* collector.collectSlices(x, z, nearRadius);
+    // The bands are a function of the snapped origin alone: ones collected ahead for it are the ones this collect would make.
+    const origin = bandsOrigin(x, z);
+    const early = prepared !== null && prepared.x === origin.x && prepared.z === origin.z ? prepared.bands : null;
+    prepared = null;
+    const bands = early ?? (yield* collector.collectSlices(x, z, nearRadius));
     yield;
-    if (deadwood !== null) {
-      const { bucket: target, measure } = deadwood;
-      const matrices = deadwoodMatrixBuffer(seed, bands.deadwood, measure.snagBaseOffset, measure.logMinX, measure.logMaxX, measure.logSeat);
-      apply(target, matrices, { deadwoodRole: deadwoodRoleBuffer(bands.deadwood) });
-      if (nurse !== null) {
-        // What grows on the logs, placed on each log's own matrix.
-        const plants = nurseBuffers(bands.deadwood, matrices, measure.logMinX, measure.logMaxX, measure.logTop, measure.logSeat.diameter);
-        apply(nurse.ferns, plants.ferns, {});
-        apply(nurse.seedlings, plants.seedlings, {});
-      }
-    }
-    const trees = (target: Bucket, list: readonly TreeInstance[]): void => apply(target, treeMatrixBuffer(list, false), { groundGrad: groundGradBuffer(list) });
-    for (const [s, lods] of giants.entries()) {
-      const set = GIANT_SETS[s] as (typeof GIANT_SETS)[number];
-      lods.forEach((target, lod) => trees(target, (bands.near[lod] as TreeInstance[]).filter((t) => inGiantSet(set, t.species, t.variant))));
-      yield;
-    }
-    for (const [s, lods] of saplings.entries()) {
-      if (lods === null) continue;
-      lods.forEach((target, lod) => trees(target, (bands.saplings[lod] as TreeInstance[]).filter((t) => t.species === s)));
-      yield;
-    }
     // The far trees: each list split in one pass by the billboard that draws the tree, a giant by its bucket set.
     const giantSlot = (t: TreeInstance): number => (giants.length === 0 ? -1 : GIANT_SETS.findIndex((set) => inGiantSet(set, t.species, t.variant)));
-    far = {
+    const lists: FarLists = {
       lattice: partitionImpostors(bands.impostors, giantSlot, giants.length, saplings.length),
       fill: partitionImpostors(bands.impostorsFill, giantSlot, giants.length, saplings.length),
       x, z,
     };
+    const shows: (() => void)[] = [];
+    /** The billboards whose lists this rebuild made. */
+    const filled = new Set<number>();
+    const card = function* (slot: number): Slices {
+      const show = yield* billboardList(slot, lists);
+      if (show === null) return;
+      shows.push(show);
+      filled.add(slot);
+    };
     yield;
-    for (let slot = 0; slot < billboards.length; slot++) {
-      fillBillboard(slot);
+    if (deadwood !== null) {
+      const { bucket: target, measure } = deadwood;
+      const matrices = deadwoodMatrixBuffer(seed, bands.deadwood, measure.snagBaseOffset, measure.logMinX, measure.logMaxX, measure.logSeat);
+      shows.push(listOf(target, matrices, { deadwoodRole: deadwoodRoleBuffer(bands.deadwood) }));
+      if (nurse !== null) {
+        // What grows on the logs, placed on each log's own matrix.
+        const plants = nurseBuffers(bands.deadwood, matrices, measure.logMinX, measure.logMaxX, measure.logTop, measure.logSeat.diameter);
+        shows.push(listOf(nurse.ferns, plants.ferns, {}), listOf(nurse.seedlings, plants.seedlings, {}));
+      }
+    }
+    yield;
+    const trees = (target: Bucket, list: readonly TreeInstance[]): void => {
+      shows.push(listOf(target, treeMatrixBuffer(list, false), { groundGrad: groundGradBuffer(list) }));
+    };
+    for (const [s, lods] of giants.entries()) {
+      const set = GIANT_SETS[s] as (typeof GIANT_SETS)[number];
+      for (const [lod, target] of lods.entries()) {
+        trees(target, (bands.near[lod] as TreeInstance[]).filter((t) => inGiantSet(set, t.species, t.variant)));
+        yield;
+      }
+      yield* card(s);
       yield;
     }
+    for (const [s, lods] of saplings.entries()) {
+      if (lods !== null) {
+        for (const [lod, target] of lods.entries()) {
+          trees(target, (bands.saplings[lod] as TreeInstance[]).filter((t) => t.species === s));
+          yield;
+        }
+      }
+      yield* card(giants.length + s);
+      yield;
+    }
+    // The snags' billboard, the one slot the split puts last.
+    yield* card(giants.length + saplings.length);
+    yield;
+
+    // The hand-over is one step: every bucket's new list at once.
+    yield FOREST_UPLOAD_MS;
+    if (disposed) return;
+    far = lists;
+    for (const show of shows) show();
+    // A billboard whose bake landed while the lists were made has none among them: it takes its own now.
+    for (let slot = 0; slot < billboards.length; slot++) if (!filled.has(slot)) fillBillboard(slot);
     // Plugin instance data goes up as its draw is recorded again.
     invalidateRenderBundles(engine);
   }
 
-  /** Rebuilds when the camera's origin on the tree cells' lattice has moved: the bands are a function of it alone. */
+  /** Idle work: the bands of the tree cell the camera reaches next. */
+  function* prepare(x: number, z: number, headingX: number, headingZ: number): Slices {
+    const ahead = new Float64Array(2);
+    if (!nextCrossing(x, z, headingX, headingZ, TREE_CELL, ahead)) return;
+    const origin = bandsOrigin(ahead[0] as number, ahead[1] as number);
+    if (prepared !== null && prepared.x === origin.x && prepared.z === origin.z) return;
+    const bands = yield* collector.collectSlices(origin.x, origin.z, nearRadius);
+    prepared = { x: origin.x, z: origin.z, bands };
+  }
+
+  // The bands are a function of the camera's origin on the tree cells' lattice alone.
+  const rebuilds = createRebuilds({
+    name: "forest",
+    cell: TREE_CELL,
+    origin(x, z, out) {
+      const origin = bandsOrigin(x, z);
+      out[0] = origin.x;
+      out[1] = origin.z;
+    },
+    rebuild,
+    ahead: prepare,
+    jobs: options.jobs,
+    firstBuilds: options.firstBuilds,
+  });
+
+  /** Rebuilds when the camera's origin on the tree cells' lattice has moved; the first build, when the models land, is at once. */
   function maybeBuild(): void {
     if (!adopted || disposed || Number.isNaN(camX)) return;
-    const origin = bandsOrigin(camX, camZ);
-    if (crossingAt(crossing, camX, camZ, origin.x, origin.z, TREE_CELL, false) === "none") return;
-    finish(rebuild(camX, camZ));
+    rebuilds.update(camX, camZ);
   }
 
   async function load(): Promise<void> {
@@ -817,6 +930,8 @@ export function createForestMeshes(engine: EngineContext, scene: SceneContext, s
     dispose() {
       if (disposed) return;
       disposed = true;
+      rebuilds.dispose();
+      prepared = null;
       loads.abort();
       // A bake in flight ends without its pictures, and one waiting on its fields is answered with none.
       baker.dispose();
