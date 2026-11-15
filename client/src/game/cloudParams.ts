@@ -67,6 +67,34 @@ export function cloudDensityUnder(night: number, haunt: number, chase: number): 
   return n * (base + (CLOUD_CHASE_DENSITY - base) * c);
 }
 
+/**
+ * The density knob a frame draws: the level it is held at (the console's
+ * `mist <density>`), else the night's under the haunt and the chase, by how
+ * far the mist has come in (0 to 1: the cloud rises by it, after the night).
+ */
+export function cloudDensityNow(hold: number | null, night: number, haunt: number, chase: number, mistIn: number): number {
+  return hold ?? cloudDensityUnder(night, haunt, chase) * mistIn;
+}
+
+/**
+ * The steps of the march on a tier: the high tier's where the post chain has
+ * its halation, the medium's where it runs without, and none where there is
+ * no chain (the low tier draws the closed-form fog alone).
+ */
+export function cloudStepsFor(features: { readonly pipeline: boolean; readonly halation: boolean }): number {
+  if (!features.pipeline) return 0;
+  return features.halation ? CLOUD_STEPS_HIGH : CLOUD_STEPS_MEDIUM;
+}
+
+/**
+ * Whether the ground's map is to be built again for an eye at (x, z): none
+ * is built yet (`at` null), or the eye is past CLOUD_GROUND_REBUILD_M from
+ * the centre of the one that is.
+ */
+export function cloudGroundDue(at: { readonly x: number; readonly z: number } | null, x: number, z: number): boolean {
+  return at === null || Math.hypot(x - at.x, z - at.z) > CLOUD_GROUND_REBUILD_M;
+}
+
 /** The cloud's height (metres to 1/e) for a haunt's level. */
 export function cloudHeightUnder(haunt: number): number {
   return CLOUD_HEIGHT_M + CLOUD_HAUNT_HEIGHT_M * clamp01(haunt);

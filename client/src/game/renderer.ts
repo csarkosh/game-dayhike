@@ -40,7 +40,7 @@ import { stageCar } from "./scene/sceneStage.js";
 import type { CarHandle, TrailheadCar } from "./trailheadMeshes.js";
 import { createShadeSilhouette } from "./shadeSilhouette.js";
 import { createShadeVeil } from "./shadeVeil.js";
-import { CLOUD_GROUND_REBUILD_M, CLOUD_STEPS_HIGH, CLOUD_STEPS_MEDIUM, cloudDensityUnder, cloudGroundMap } from "./cloudParams.js";
+import { cloudDensityNow, cloudGroundDue, cloudGroundMap, cloudStepsFor } from "./cloudParams.js";
 import { createDroppedCap, droppedCapAt } from "./droppedItem.js";
 import { CAP_SCENE_S, SHOTS, SUMMIT_SCENE_S, capPose, summitShot, type SceneBase, type SceneContext } from "./cutscene.js";
 import { forestDensity } from "../sim/vegetation.js";
@@ -3050,7 +3050,7 @@ function buildRenderer(
   // The ground cloud (cloudParams.ts): the night's mist as a volume the
   // atmosphere marches through, on the post tiers, resting on a height map
   // of the ground round the eye that is rebuilt as the eye moves.
-  const cloudSteps = forest !== null && postFeatures.pipeline ? (postFeatures.halation ? CLOUD_STEPS_HIGH : CLOUD_STEPS_MEDIUM) : 0;
+  const cloudSteps = forest !== null ? cloudStepsFor(postFeatures) : 0;
   // The missing hiker's cap, beside the trail (droppedItem.ts).
   const capGraph = forest !== null ? activeTerrainVariant().trailGraph?.(forest.seed) ?? null : null;
   const capAt = capGraph !== null && forest !== null ? droppedCapAt(capGraph, forest.seed) : null;
@@ -3377,12 +3377,12 @@ function buildRenderer(
         veil?.setShades(silhouette.texture, silhouette.any());
       }
       if (cloudSteps > 0 && forest !== null) {
-        if (cloudGroundAt === null || Math.hypot(camera.position.x - cloudGroundAt.x, camera.position.z - cloudGroundAt.z) > CLOUD_GROUND_REBUILD_M) {
+        if (cloudGroundDue(cloudGroundAt, camera.position.x, camera.position.z)) {
           cloudGroundAt = { x: camera.position.x, z: camera.position.z };
           const trailAt = activeTerrainVariant().trailDistance;
           atmosphere.setCloudGround(cloudGroundMap((x, z) => elevationAt(forest.seed, x, z), cloudGroundAt.x, cloudGroundAt.z, trailAt === undefined ? null : (x, z) => trailAt(forest.seed, x, z)));
         }
-        cloudDensity = cloudHold ?? cloudDensityUnder(lighting.sky?.night ?? 0, hauntLevel, chaseCast) * mistIn;
+        cloudDensity = cloudDensityNow(cloudHold, lighting.sky?.night ?? 0, hauntLevel, chaseCast, mistIn);
         atmosphere.setCloud(cloudDensity, cloudSteps, seconds, hauntLevel);
       }
 

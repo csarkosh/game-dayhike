@@ -5,7 +5,9 @@ import {
   CLOUD_GLOW, CLOUD_GLOW_POWER, CLOUD_MARCH_FLOOR, CLOUD_NEAR_M, CLOUD_NOISE_LARGE_M, CLOUD_NOISE_SMALL_M, CLOUD_RANGE, CLOUD_SEAT,
   CLOUD_SIGMA, CLOUD_TRAIL_SHARE, CLOUD_WIND_MPS,
   cloudFor, cloudMarchSteps, cloudOn, cloudUniforms, emptyCloudUniforms, noCloud, writeCloudGround,
+  CLOUD_GROUND_REBUILD_M, CLOUD_STEPS_HIGH, CLOUD_STEPS_MEDIUM, cloudDensityNow, cloudGroundDue, cloudStepsFor,
 } from "../../src/game/cloudParams.js";
+import { postFeaturesFor } from "../../src/game/postParams.js";
 
 describe("the ground cloud's density", () => {
   it("is the night's with no haunt on, lifted by the haunt, the chase's by its cast, and nothing by day", () => {
@@ -15,6 +17,33 @@ describe("the ground cloud's density", () => {
     expect(cloudDensityUnder(1, 1, 0)).toBeLessThan(CLOUD_CHASE_DENSITY);
     expect(cloudDensityUnder(1, 0, 1)).toBeCloseTo(CLOUD_CHASE_DENSITY, 9);
     expect(cloudDensityUnder(0.5, 0, 0)).toBeCloseTo(CLOUD_NIGHT_DENSITY * 0.5, 9);
+  });
+});
+
+describe("the cloud as a frame is handed it", () => {
+  it("draws the held level whatever the night, else the night's by how far the mist has come in", () => {
+    expect(cloudDensityNow(0.7, 0, 0, 0, 0)).toBe(0.7);
+    expect(cloudDensityNow(0, 1, 1, 1, 1)).toBe(0);
+    expect(cloudDensityNow(null, 1, 0.5, 0.25, 1)).toBe(cloudDensityUnder(1, 0.5, 0.25));
+    expect(cloudDensityNow(null, 1, 0.5, 0.25, 0.4)).toBe(cloudDensityUnder(1, 0.5, 0.25) * 0.4);
+    expect(cloudDensityNow(null, 1, 1, 1, 0)).toBe(0);
+  });
+
+  it("marches on the tiers with a post chain, in more steps where the chain has its halation", () => {
+    expect(cloudStepsFor(postFeaturesFor("low", true))).toBe(0);
+    expect(cloudStepsFor(postFeaturesFor("medium", true))).toBe(CLOUD_STEPS_MEDIUM);
+    expect(cloudStepsFor(postFeaturesFor("high", true))).toBe(CLOUD_STEPS_HIGH);
+    // No chain where the device cannot run it, on any tier.
+    expect(cloudStepsFor(postFeaturesFor("high", false))).toBe(0);
+  });
+
+  it("builds the ground's map at first, then once the eye is past the rebuild distance from its centre", () => {
+    expect(cloudGroundDue(null, 0, 0)).toBe(true);
+    const at = { x: 100, z: -40 };
+    expect(cloudGroundDue(at, 100, -40)).toBe(false);
+    expect(cloudGroundDue(at, 100 + CLOUD_GROUND_REBUILD_M, -40)).toBe(false);
+    expect(cloudGroundDue(at, 100 + CLOUD_GROUND_REBUILD_M + 0.01, -40)).toBe(true);
+    expect(cloudGroundDue(at, 100 + 12, -40 - 12)).toBe(true);
   });
 });
 
