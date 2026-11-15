@@ -92,7 +92,7 @@ export function createCliffMeshes(engine: EngineContext, scene: SceneContext, se
   /** A ring's material of a model: its maps and colour, the ground's tint, the far ring's dither, the wet look and the air. */
   function material(part: ModelPart, far: boolean, model: number): { made: PbrMaterialProps; vegetation: Vegetation } {
     const vegetation: Vegetation = {
-      eye: options.eye, frame: options.frame, shared: options.shared, foliage: null, match: false, light: false, fade: far, conform: false, moss: null, deadwood: null, sky: false,
+      eye: options.eye, frame: options.frame, shared: options.shared, foliage: null, match: false, light: false, fade: far, conform: false, moss: null, deadwood: null, sky: true,
       ground: CLIFF_GROUND_TINT,
     };
     const made = createPbrMaterial({

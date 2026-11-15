@@ -353,7 +353,7 @@ export function createForestMeshes(engine: EngineContext, scene: SceneContext, s
       look.specularWeight,
       vegetation === null
         ? []
-        : [vegetationPlugin({ eye: options.eye, frame: options.frame, shared: options.shared, match: false, light: false, fade: true, conform: true, moss: null, deadwood: null, sky: false, ...vegetation })],
+        : [vegetationPlugin({ eye: options.eye, frame: options.frame, shared: options.shared, match: false, light: false, fade: true, conform: true, moss: null, deadwood: null, sky: true, ...vegetation })],
       vegetation === null ? null : options.wet.leaf,
     );
     setPbrAlphaCutoff(made, part.facts.alphaCutoff);
@@ -375,7 +375,7 @@ export function createForestMeshes(engine: EngineContext, scene: SceneContext, s
         ...(part.facts.ior === null ? {} : { reflectance: reflectanceOf(part.facts.ior) }),
       },
       sky.specularWeight,
-      [...more, directOcclusionPlugin(), vegetationPlugin({ eye: options.eye, frame: options.frame, shared: options.shared, match: false, light: false, moss: mossMap, sky: false, ...vegetation })],
+      [...more, directOcclusionPlugin(), vegetationPlugin({ eye: options.eye, frame: options.frame, shared: options.shared, match: false, light: false, moss: mossMap, sky: true, ...vegetation })],
       wet,
     );
   }
@@ -540,7 +540,7 @@ export function createForestMeshes(engine: EngineContext, scene: SceneContext, s
       const made = material(
         { ...plain, doubleSided: part.facts.doubleSided, baseColorTexture: part.colour, baseColorFactor: [tint.r, tint.g, tint.b, 1] },
         0,
-        [...(part.facts.doubleSided ? [oneSidedLightPlugin()] : []), vegetationPlugin({ eye: options.eye, frame: options.frame, shared: options.shared, match: false, light: false, moss: null, sky: false, ...still, foliage: look })],
+        [...(part.facts.doubleSided ? [oneSidedLightPlugin()] : []), vegetationPlugin({ eye: options.eye, frame: options.frame, shared: options.shared, match: false, light: false, moss: null, sky: true, ...still, foliage: look })],
         options.wet.leaf,
       );
       if (part.facts.alphaMask) setPbrAlphaCutoff(made, part.facts.alphaCutoff);
@@ -557,7 +557,7 @@ export function createForestMeshes(engine: EngineContext, scene: SceneContext, s
     seedlingMesh.material = material(
       { ...plain, baseColorFactor: [1, 1, 1, 1] },
       0,
-      [oneSidedLightPlugin(), vegetationPlugin({ eye: options.eye, frame: options.frame, shared: options.shared, match: false, light: false, moss: null, sky: false, ...still })],
+      [oneSidedLightPlugin(), vegetationPlugin({ eye: options.eye, frame: options.frame, shared: options.shared, match: false, light: false, moss: null, sky: true, ...still })],
       options.wet.leaf,
     );
     const layout = vegetationInstanceLayout(still);
@@ -655,7 +655,7 @@ export function createForestMeshes(engine: EngineContext, scene: SceneContext, s
     const made = material(
       { baseColorTexture: colour, normalTexture: normals, metallicFactor: 0, roughnessFactor: 1, doubleSided: true, environmentIntensity: CROWN_SKY },
       TREE_SPECULAR_WEIGHT,
-      [oneSidedLightPlugin(), vegetationPlugin({ eye: options.eye, frame: options.frame, shared: options.shared, match: false, light: false, moss: null, sky: false, ...fade })],
+      [oneSidedLightPlugin(), vegetationPlugin({ eye: options.eye, frame: options.frame, shared: options.shared, match: false, light: false, moss: null, sky: true, ...fade })],
       options.wet.leaf,
     );
     setPbrAlphaCutoff(made, IMPOSTOR_FIELD_CUT);

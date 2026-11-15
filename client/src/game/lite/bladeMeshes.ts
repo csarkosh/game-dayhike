@@ -110,7 +110,7 @@ export function createBladeMeshes(engine: EngineContext, scene: SceneContext, se
     const look = foliageLook(`blade_clumps_t${tier}_mat`, FOLIAGE_PROFILES.BLADES, tallest, { sunShadowed: true });
     look.bladeEdges = bands[tier] as (typeof bands)[number];
     const vegetation: Vegetation = {
-      eye: options.eye, frame: options.frame, shared: options.shared, foliage: look, match: true, light: true, fade: false, conform: false, moss: null, deadwood: null, sky: false,
+      eye: options.eye, frame: options.frame, shared: options.shared, foliage: look, match: true, light: true, fade: false, conform: false, moss: null, deadwood: null, sky: true,
     };
     const material = createPbrMaterial({
       baseColorFactor: [BLADE_ALBEDO.r, BLADE_ALBEDO.g, BLADE_ALBEDO.b, 1], metallicFactor: 0, roughnessFactor: BLADE_ROUGHNESS,

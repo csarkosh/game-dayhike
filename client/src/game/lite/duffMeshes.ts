@@ -107,7 +107,7 @@ export function createDuffMeshes(engine: EngineContext, scene: SceneContext, see
     const look = foliageLook(`duff_clumps_t${tier}_mat`, FOLIAGE_PROFILES.DUFF, tallest, { sunShadowed: true });
     look.bladeEdges = bands[tier] as (typeof bands)[number];
     const vegetation: Vegetation = {
-      eye: options.eye, frame: options.frame, shared: options.shared, foliage: look, match: false, light: true, fade: false, conform: false, moss: null, deadwood: null, sky: false,
+      eye: options.eye, frame: options.frame, shared: options.shared, foliage: look, match: false, light: true, fade: false, conform: false, moss: null, deadwood: null, sky: true,
     };
     const material = createPbrMaterial({
       baseColorFactor: [DUFF_ALBEDO.r, DUFF_ALBEDO.g, DUFF_ALBEDO.b, 1], metallicFactor: 0, roughnessFactor: DUFF_ROUGHNESS,

@@ -197,7 +197,7 @@ export function createClutterMeshes(engine: EngineContext, scene: SceneContext, 
     return {
       eye: options.eye, frame: options.frame, shared: options.shared, foliage: look, match: matched, light: look !== null, fade: dithers,
       ...(widen === null ? {} : { widen }),
-      conform: false, moss: null, deadwood: null, sky: false,
+      conform: false, moss: null, deadwood: null, sky: true,
     };
   }
 
