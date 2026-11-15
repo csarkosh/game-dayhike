@@ -1,8 +1,8 @@
 /**
  * The hike's renderer on Babylon Lite: the terrain, the forest's trees, the
- * ground clutter, the blade grass and the duff under the atmosphere, lit by
- * the sun and the sky's fill for the hour and the weather, seen from the
- * player's eye or the free camera. It answers the whole of `Renderer`
+ * ground clutter, the blade grass, the duff and the cliffs under the
+ * atmosphere, lit by the sun and the sky's fill for the hour and the weather,
+ * seen from the player's eye or the free camera. It answers the whole of `Renderer`
  * (`renderer.ts`), and what it does not draw yet it answers as nothing
  * (`notDrawn.ts` has the list).
  *
@@ -11,10 +11,10 @@
  * clutter's and the grass's instance lists and their materials' uniforms,
  * the air's uniforms, the lights and the lens. This module is where those
  * meet Lite: an engine, a scene, a camera, two lights, the terrain's two
- * materials and their meshes, the forest's buckets (`forestMeshes.ts`) and
- * the clutter's (`clutterMeshes.ts`), which land as their models do, and the
- * grass's and the duff's (`bladeMeshes.ts`, `duffMeshes.ts`), on the tiers
- * that draw them.
+ * materials and their meshes, the forest's buckets (`forestMeshes.ts`), the
+ * clutter's (`clutterMeshes.ts`) and the cliffs' (`cliffMeshes.ts`), which
+ * land as their models do, and the grass's and the duff's
+ * (`bladeMeshes.ts`, `duffMeshes.ts`), on the tiers that draw them.
  *
  * **The engine is Lite's own, made from the canvas, and making it takes
  * time**: a device is asked for, the ground's images are decoded, the scene
@@ -71,6 +71,7 @@ import { windRecordUnder, type WindRecord } from "../windParams.js";
 import { atmospherePlugin } from "./atmospherePlugin.js";
 import { createBladeMeshes, type BladeMeshes } from "./bladeMeshes.js";
 import { cameraAxes, projectToCanvas, restAxes, type CameraPose } from "./cameraPose.js";
+import { createCliffMeshes, type CliffMeshes } from "./cliffMeshes.js";
 import { createClutterMeshes, type ClutterMeshes } from "./clutterMeshes.js";
 import { createDuffMeshes, type DuffMeshes } from "./duffMeshes.js";
 import { createForestMeshes, type ForestMeshes } from "./forestMeshes.js";
@@ -123,6 +124,7 @@ type Standing = {
   blades: BladeMeshes | null;
   clutter: ClutterMeshes | null;
   duff: DuffMeshes | null;
+  cliffs: CliffMeshes | null;
 };
 
 /**
@@ -226,6 +228,7 @@ export function createLiteRenderer(canvas: HTMLCanvasElement, level: Level, fore
 
   /** Lets go of what stands: the meshes, the scene, the engine and its device. */
   function release(made: Standing): void {
+    made.cliffs?.dispose();
     made.duff?.dispose();
     made.clutter?.dispose();
     made.blades?.dispose();
@@ -277,6 +280,7 @@ export function createLiteRenderer(canvas: HTMLCanvasElement, level: Level, fore
     let blades: BladeMeshes | null = null;
     let clutter: ClutterMeshes | null = null;
     let duff: DuffMeshes | null = null;
+    let cliffs: CliffMeshes | null = null;
     // The ground cloud's map, which every material's air reads.
     const cloudMap = forest === null ? null : cloudMapTexture(engine);
     if (forest !== null && cloudMap !== null) {
@@ -361,8 +365,13 @@ export function createLiteRenderer(canvas: HTMLCanvasElement, level: Level, fore
           quality: tier, eye: pose, frame: frameSize, wet: wetAt(WET_CAP.duff), air: () => atmospherePlugin(airValues, cloudMap),
         });
       }
+      // Rock-wall modules on the faces too steep to stand on, on every tier. At the shipped density the field
+      // lays none and no model is fetched.
+      cliffs = createCliffMeshes(engine, scene, forest.seed, {
+        quality: tier, eye: pose, frame: frameSize, wet: wetAt(WET_CAP.cliff), air: () => atmospherePlugin(airValues, cloudMap),
+      });
     }
-    const made: Standing = { engine, scene, camera, sun, fill, materials, terrain, road, forest: trees, blades, clutter, duff };
+    const made: Standing = { engine, scene, camera, sun, fill, materials, terrain, road, forest: trees, blades, clutter, duff, cliffs };
     if (disposed) {
       release(made);
       return;
@@ -487,14 +496,15 @@ export function createLiteRenderer(canvas: HTMLCanvasElement, level: Level, fore
     made.blades?.frame();
     made.clutter?.frame();
     made.duff?.frame();
+    made.cliffs?.frame();
   }
 
   let skyWait: Promise<void> | null = null;
 
   /** The forest's first lists drawn, once the renderer stands; at once where it cannot, or in a world with no forest. */
   const forestReady: Promise<void> = made.then(() => standing?.forest?.ready);
-  /** Everything that lands as its models do, drawn: the forest and the ground clutter. */
-  const sceneryReady: Promise<void> = made.then(() => Promise.all([standing?.forest?.ready, standing?.clutter?.ready])).then(() => undefined);
+  /** Everything that lands as its models do, drawn: the forest, the ground clutter and the cliffs. */
+  const sceneryReady: Promise<void> = made.then(() => Promise.all([standing?.forest?.ready, standing?.clutter?.ready, standing?.cliffs?.ready])).then(() => undefined);
 
   const renderer: Renderer = {
     ...absent,
@@ -519,7 +529,7 @@ export function createLiteRenderer(canvas: HTMLCanvasElement, level: Level, fore
       });
     },
     waitingItems() {
-      return loading + (standing?.forest?.waiting() ?? 0) + (standing?.clutter?.waiting() ?? 0);
+      return loading + (standing?.forest?.waiting() ?? 0) + (standing?.clutter?.waiting() ?? 0) + (standing?.cliffs?.waiting() ?? 0);
     },
     sync(state, localId, alpha, frame = { dt: 0, sprinting: false }) {
       if (disposed) return;
@@ -600,6 +610,7 @@ export function createLiteRenderer(canvas: HTMLCanvasElement, level: Level, fore
           standing.blades?.update(centre.x, centre.z);
           standing.clutter?.update(centre.x, centre.z);
           standing.duff?.update(centre.x, centre.z);
+          standing.cliffs?.update(centre.x, centre.z);
         }
         // The blades and the grass class's cards are cut to the view once the camera's pose for the frame is final.
         cullPose.x = pose.x;
