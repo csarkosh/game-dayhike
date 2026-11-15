@@ -2,11 +2,25 @@ import { mixRgb, type Rgb } from "./colour.js";
 import { dreadLensUnder, dreadWorldUnder, type WeatherParams } from "./weather.js";
 
 /**
+ * The headlamp's cone, a spot light's. Two levers, tuned by eye in the
+ * running game. Under PBR's physical falloff a spot is an inverse-square lobe
+ * that reaches 1% at its nominal edge, so LAMP_ANGLE (the full cone,
+ * radians) is roughly twice the cone a player sees: 1.5 rad reads as a ~40°
+ * pool on the bed 3–12 m ahead, and the plan's 0.70 was a 10° hotspot that
+ * landed past the range when looking level. LAMP_RANGE is metres.
+ * LAMP_EXPONENT only matters under the standard falloff, which no material
+ * here uses.
+ */
+export const LAMP_RANGE = 25;
+export const LAMP_ANGLE = 1.5;
+export const LAMP_EXPONENT = 8;
+
+/**
  * The tuned lamp, in Babylon's light units against a sun of ~4 at noon: 400
  * lifts the dusk bed from 28 to 110 (8-bit luminance) with the forest and
  * far trail untouched; 150 barely read and 1000 was a searchlight. Lives here
  * rather than in headlamp.ts so this module stays Babylon-free; headlamp.ts
- * re-exports both.
+ * re-exports them.
  */
 export const LAMP_INTENSITY = 400;
 export const LAMP_COLOUR: readonly [number, number, number] = [1.0, 0.92, 0.78];

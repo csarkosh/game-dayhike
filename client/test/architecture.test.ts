@@ -566,7 +566,7 @@ describe("layer boundaries", () => {
   it("what the terrain, the air and the light are drawn with, and the lens, is computed without loading Babylon, whatever it imports", () => {
     const ENGINE_FREE = [
       "terrainTables.ts", "terrainUniforms.ts", "groundLayers.ts", "wetSurface.ts", "terrainVertices.ts",
-      "atmosphereParams.ts", "cloudParams.ts", "skyState.ts", "skyDomeParams.ts", "skyProbeParams.ts", "weather.ts", "sceneLights.ts", "gameLens.ts",
+      "atmosphereParams.ts", "cloudParams.ts", "skyState.ts", "skyDomeParams.ts", "skyProbeParams.ts", "weather.ts", "sceneLights.ts", "lampParams.ts", "gameLens.ts",
     ];
     const loaded = (file: string): string[] =>
       [...readFileSync(file, "utf8").matchAll(/^\s*(?:import|export)\s+(?!type\s)(?:[^"'();]*?\s+from\s+)?["']([^"']+)["']/gm)].map((m) => m[1] as string);

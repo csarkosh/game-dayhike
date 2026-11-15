@@ -4,28 +4,18 @@ import { Color3 } from "@babylonjs/core/Maths/math.color.js";
 import type { Scene } from "@babylonjs/core/scene.js";
 import type { Material } from "@babylonjs/core/Materials/material.js";
 import { MAX_PLAYERS } from "../sim/constants.js";
-import { LAMP_COLOUR, LAMP_INTENSITY } from "./lampParams.js";
+import { LAMP_ANGLE, LAMP_COLOUR, LAMP_EXPONENT, LAMP_INTENSITY, LAMP_RANGE } from "./lampParams.js";
 
 /**
  * The headlamp's light: one SpotLight at the eye per player,
  * steered by the view. No shadow generator — a second cascaded set would
  * double the shadow cost for a cone that is mostly ground.
  *
- * Two levers, tuned by eye in the running game. Under PBR's physical falloff a spot is an
- * inverse-square lobe that reaches 1% at its nominal edge, so LAMP_ANGLE is
- * roughly twice the cone a player sees: 1.5 rad reads as a ~40° pool on the
- * bed 3–12 m ahead, and the plan's 0.70 was a 10° hotspot that landed past
- * the range when looking level. LAMP_INTENSITY is in Babylon's light units
- * against a sun of ~4 at noon (the number and its tuning notes are in
- * lampParams.ts). LAMP_EXPONENT only matters under the standard falloff,
- * which no material here uses.
+ * The cone, the intensity and the colour live in lampParams.ts (Babylon-free,
+ * so the dread arithmetic on them is testable under Node, and a renderer on
+ * another engine lights its lamp with the same) and are re-exported here.
  */
-export const LAMP_RANGE = 25;
-export const LAMP_ANGLE = 1.5;
-export const LAMP_EXPONENT = 8;
-// The intensity and colour live in lampParams.ts (Babylon-free, so the dread
-// arithmetic on them is testable under Node) and are re-exported here.
-export { LAMP_INTENSITY, LAMP_COLOUR } from "./lampParams.js";
+export { LAMP_ANGLE, LAMP_COLOUR, LAMP_EXPONENT, LAMP_INTENSITY, LAMP_RANGE } from "./lampParams.js";
 
 export function createHeadlamp(scene: Scene, name: string): SpotLight {
   const light = new SpotLight(name, Vector3.Zero(), new Vector3(0, 0, 1), LAMP_ANGLE, LAMP_EXPONENT, scene);
