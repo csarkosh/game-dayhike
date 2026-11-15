@@ -459,6 +459,7 @@ describe("layer boundaries", () => {
       join(SRC, "game", "windParams.ts"),
       join(SRC, "game", "motesParams.ts"),
       join(SRC, "game", "moteField.ts"),
+      join(SRC, "game", "rainField.ts"),
       join(SRC, "game", "lampParams.ts"),
       join(SRC, "game", "forestLookParams.ts"),
       join(SRC, "game", "barkParams.ts"),
@@ -570,6 +571,7 @@ describe("layer boundaries", () => {
       "terrainTables.ts", "terrainUniforms.ts", "groundLayers.ts", "wetSurface.ts", "terrainVertices.ts",
       "atmosphereParams.ts", "cloudParams.ts", "skyState.ts", "skyDomeParams.ts", "skyProbeParams.ts", "weather.ts", "sceneLights.ts", "lampParams.ts", "gameLens.ts",
       "mistField.ts", "mistBanks.ts", "motesParams.ts", "moteField.ts",
+      "rainParams.ts", "rainField.ts",
     ];
     const loaded = (file: string): string[] =>
       [...readFileSync(file, "utf8").matchAll(/^\s*(?:import|export)\s+(?!type\s)(?:[^"'();]*?\s+from\s+)?["']([^"']+)["']/gm)].map((m) => m[1] as string);
@@ -686,8 +688,8 @@ describe("layer boundaries", () => {
     // Lite itself is loaded only by the modules that draw: the plugins, the pose and the light name its types alone.
     expect(lite.sort()).toEqual([
       "game/lite/bladeMeshes.ts", "game/lite/cliffMeshes.ts", "game/lite/clutterMeshes.ts", "game/lite/duffMeshes.ts", "game/lite/forestMeshes.ts", "game/lite/forestModels.ts", "game/lite/groundTextures.ts", "game/lite/impostorBake.ts",
-      "game/lite/listMeshes.ts", "game/lite/mistMeshes.ts", "game/lite/motes.ts", "game/lite/propMeshes.ts", "game/lite/renderer.ts", "game/lite/shaderUniforms.ts", "game/lite/skyCapture.ts", "game/lite/skyDome.ts",
-      "game/lite/terrainMeshes.ts",
+      "game/lite/listMeshes.ts", "game/lite/mistMeshes.ts", "game/lite/motes.ts", "game/lite/propMeshes.ts", "game/lite/renderer.ts", "game/lite/shaderUniforms.ts",
+      "game/lite/skyCapture.ts", "game/lite/skyDome.ts", "game/lite/terrainMeshes.ts",
     ]);
     // And the hike is handed that renderer, which reaches the Babylon.js one's module for its types alone.
     const renderer = readFileSync(join(SRC, "game/renderer.ts"), "utf8");
