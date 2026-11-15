@@ -13,16 +13,13 @@ describe("what the renderer on Babylon Lite does not draw yet", () => {
 
   it("names every part of the world it leaves out", () => {
     const all = NOT_DRAWN.map((part) => part.what).join("; ");
-    for (const word of [ "sea", "lakes", "animals", "figure in the silhouette mask", "shadows", "rain on the lens", "post chain", "scenes", "endings", "posts", "body at the crest"]) {
+    for (const word of [ "sea", "lakes", "insects", "figure in the silhouette mask", "shadows", "rain on the lens", "post chain", "scenes", "endings", "posts", "body at the crest"]) {
       expect(all, word).toContain(word);
     }
   });
 
-  it("reads out nothing: no animal, no water to hear, no scene, no stare", () => {
+  it("reads out nothing: no water to hear, no scene, no stare", () => {
     const { members } = notDrawnMembers();
-    expect(members.hasWildlife).toBe(false);
-    expect(members.wildlifeEvents()).toEqual([]);
-    expect(members.wildlifeDirectorLog()).toEqual([]);
     expect(members.hasSea).toBe(false);
     expect(members.surfSound()).toBe(SILENT_SURF_SOUND);
     expect(members.hasWaterLife).toBe(false);
@@ -57,9 +54,11 @@ describe("what the renderer on Babylon Lite does not draw yet", () => {
     expect(NOT_DRAWN.map((part) => part.what).join("; ")).not.toMatch(/mist|motes|cloud/);
   });
 
-  it("leaves the hikers, the Hollows' eyes and the cap to the renderer", () => {
+  it("leaves the hikers, the Hollows' eyes, the cap and the animals to the renderer: the animals' read-outs are its own", () => {
+    const { members } = notDrawnMembers();
+    for (const name of ["hasWildlife", "wildlifeEvents", "wildlifeDirectorLog"]) expect(name in members, name).toBe(false);
     const all = NOT_DRAWN.map((part) => part.what).join("; ");
-    expect(all).not.toMatch(/bodies|lamps they wear|dropped cap/);
+    expect(all).not.toMatch(/animals|bodies|lamps they wear|dropped cap/);
     // What is left of the Hollow is its figure, which the post chain's mask draws, and the skin's shading with it.
     const hollow = NOT_DRAWN.filter((part) => /Hollow/.test(part.what));
     expect(hollow).toHaveLength(1);

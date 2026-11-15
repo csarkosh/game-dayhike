@@ -733,7 +733,7 @@ describe("layer boundaries", () => {
     expect(lite.sort()).toEqual([
       "game/lite/bladeMeshes.ts", "game/lite/capMesh.ts", "game/lite/cliffMeshes.ts", "game/lite/clutterMeshes.ts", "game/lite/duffMeshes.ts", "game/lite/entityMeshes.ts", "game/lite/forestMeshes.ts", "game/lite/forestModels.ts", "game/lite/groundTextures.ts", "game/lite/impostorBake.ts",
       "game/lite/listMeshes.ts", "game/lite/mistMeshes.ts", "game/lite/motes.ts", "game/lite/propMeshes.ts", "game/lite/rain.ts", "game/lite/rainMap.ts", "game/lite/rainSplash.ts", "game/lite/renderer.ts", "game/lite/shaderUniforms.ts",
-      "game/lite/skinnedModels.ts", "game/lite/skyCapture.ts", "game/lite/skyDome.ts", "game/lite/terrainMeshes.ts", "game/lite/wornLamps.ts",
+      "game/lite/skinnedModels.ts", "game/lite/skyCapture.ts", "game/lite/skyDome.ts", "game/lite/terrainMeshes.ts", "game/lite/wildlifeMeshes.ts", "game/lite/wornLamps.ts",
     ]);
     // And the hike is handed that renderer, which reaches the Babylon.js one's module for its types alone.
     const renderer = readFileSync(join(SRC, "game/renderer.ts"), "utf8");

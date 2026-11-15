@@ -25,7 +25,7 @@
  */
 
 /** Each shell's first place. A shell's own run on from it by less than one. */
-export const DRAW_ORDER = { rings: 80, patches: 90, forest: 100, clutter: 110, blades: 120, duff: 130, cliffs: 140, props: 150, bodies: 152, cap: 154, sky: 160 } as const;
+export const DRAW_ORDER = { rings: 80, patches: 90, forest: 100, clutter: 110, blades: 120, duff: 130, cliffs: 140, props: 150, bodies: 152, cap: 154, animals: 156, sky: 160 } as const;
 
 /**
  * The places of the see-through draws, which follow every opaque one and the

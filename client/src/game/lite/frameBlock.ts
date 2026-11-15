@@ -9,8 +9,9 @@
  * wet line and the weather's wetness (`wetSurface.ts`), the wind, its clock
  * and the players who bend the foliage (`foliageUniforms.ts`), the eye the
  * fades and the foliage measure from and the frame's height
- * (`distanceFade.ts`), and the terrain's whole record (`terrainUniforms.ts`,
- * which its two materials share). They are the same for every material and
+ * (`distanceFade.ts`), the clock the birds' wings beat on (`wingParams.ts`)
+ * and the terrain's whole record (`terrainUniforms.ts`, which its two
+ * materials share). They are the same for every material and
  * most of them move every frame, so with them in each material's buffer
  * every material was written every frame: sixty-odd buffer writes at a
  * forest view to say one thing.
@@ -45,6 +46,8 @@ export const WET_OWN_NAME = "wetCap";
 export const FADE_ROWS_NAME = "fadeRows";
 /** The terrain's albedo under the weather, beside its record. */
 export const TERRAIN_ALBEDO_NAME = "terrainAlbedo";
+/** The clock every wing beats on, seconds, wrapped (`wingParams.ts`). */
+export const WING_TIME_NAME = "wingTime";
 
 /** A table of floats laid out as Lite lays a plugin's array out: vec4s of bits, which the shader casts back. */
 const bits = (name: string, vecs: number): UniformField => ({ name, type: `array<vec4<u32>,${vecs}>` });
@@ -67,6 +70,7 @@ export const FRAME_FIELDS: readonly UniformField[] = [
   { name: FADE_ROWS_NAME, type: "f32" },
   ...uniformFields(emptyTerrainUniforms()),
   { name: TERRAIN_ALBEDO_NAME, type: "vec3<f32>" },
+  { name: WING_TIME_NAME, type: "f32" },
 ];
 
 const FRAME_NAMES: ReadonlySet<string> = new Set(FRAME_FIELDS.map((field) => field.name));
@@ -107,6 +111,8 @@ export type FrameValues = {
   eye: { readonly x: number; readonly y: number; readonly z: number };
   /** The frame's height, pixels. */
   rows: number;
+  /** The wings' clock, seconds, wrapped (`wingTime`). */
+  wingTime: number;
 };
 
 /** The wind's values are the foliage's own, read through a look that adds nothing to them. */
@@ -149,5 +155,6 @@ export function writeFrameBlock(data: Float32Array, offsets: UniformOffsets, val
   data[eye + 1] = values.eye.y;
   data[eye + 2] = values.eye.z;
   data[offsetOf(offsets, FADE_ROWS_NAME)] = values.rows;
+  data[offsetOf(offsets, WING_TIME_NAME)] = values.wingTime;
   writeUniforms(data, offsets, values.terrain);
 }

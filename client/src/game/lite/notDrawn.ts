@@ -33,7 +33,6 @@ export type NotDrawn = { readonly what: string; readonly members: readonly (keyo
 export const NOT_DRAWN: readonly NotDrawn[] = [
   { what: "the sea, the lakes, their plants and reflections, the surf and its spray", members: ["hasSea", "surfSound"] },
   { what: "the lakes' insects and frogs", members: ["hasWaterLife", "waterLifeSound"] },
-  { what: "the animals", members: ["hasWildlife", "wildlifeEvents", "wildlifeDirectorLog"] },
   { what: "the Hollow's figure in the silhouette mask (its eyes are drawn), and with it the skin's shading, which has no other surface to show on", members: ["setSkinShading"] },
   { what: "the sun's cast shadows", members: [] },
   { what: "the post chain: the grade and its palettes, the anti-aliasing, the far softening, the rain on the lens, the stare's shade, the chase's cast, depth of field", members: ["setPalette", "setChase", "setUnsettle", "setDepthOfField", "stare"] },
@@ -63,7 +62,6 @@ export type NotDrawnHeld = {
 export type NotDrawnMembers = Pick<
   Renderer,
   | "hasSea" | "surfSound" | "hasWaterLife" | "waterLifeSound"
-  | "hasWildlife" | "wildlifeEvents" | "wildlifeDirectorLog"
   | "setSkinShading"
   | "setPalette" | "setChase" | "setUnsettle" | "setDepthOfField" | "stare"
   | "setWeatherName" | "setEnding" | "endScene" | "setScene" | "clearEnding"
@@ -86,8 +84,6 @@ const NO_WATER_LIFE: WaterLifeSound = Object.freeze({
   }),
 });
 
-const NO_EVENTS: readonly never[] = Object.freeze([]);
-
 /**
  * The members answered as nothing, and what their setters hold. One of each
  * a renderer: `held` is that renderer's own.
@@ -102,9 +98,6 @@ export function notDrawnMembers(): { members: NotDrawnMembers; held: NotDrawnHel
     surfSound: () => SILENT_SURF_SOUND,
     hasWaterLife: false,
     waterLifeSound: () => NO_WATER_LIFE,
-    hasWildlife: false,
-    wildlifeEvents: () => NO_EVENTS,
-    wildlifeDirectorLog: () => NO_EVENTS,
     setSkinShading(on) {
       held.skinShading = on;
     },

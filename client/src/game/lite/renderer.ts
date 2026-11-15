@@ -140,6 +140,8 @@ import { createSyncJobs, finish, stepSlices, type SyncJobs } from "../syncJobs.j
 import { followRoadCentre, terrainTablesFor, type TerrainTables } from "../terrainTables.js";
 import { terrainCoverFor, terrainSurfaceUnder, terrainUniforms, type TerrainUniformInputs } from "../terrainUniforms.js";
 import { createViewBob } from "../viewBob.js";
+import { createWildlifeInputs } from "../wildlifeInputs.js";
+import { wingTime } from "../wingParams.js";
 import { WATER_ROWS, lakeWaterRow } from "../waterShading.js";
 import { WET_CAP, emptyWetUniforms, setWetWeather, wetLineFor, wetUniforms, type WetBody, type WetUniforms } from "../wetSurface.js";
 import { windRecordUnder, type WindRecord } from "../windParams.js";
@@ -166,6 +168,7 @@ import { createSkinClock, type SkinClock } from "./skinnedModels.js";
 import { SKY_CAPTURE_BYTES, createLiteSkyCapture, type LiteSkyCapture } from "./skyCapture.js";
 import { createLiteSkyDome, type LiteSkyDome } from "./skyDome.js";
 import { createTerrainMeshes, type TerrainMeshes } from "./terrainMeshes.js";
+import { createLiteWildlifeMeshes, type LiteWildlifeMeshes } from "./wildlifeMeshes.js";
 import { emptyTerrainMaterialUniforms, terrainPlugin, terrainSplitPlugin, terrainWetPlugin } from "./terrainPlugins.js";
 import { createWorldLight } from "./worldLight.js";
 import { createWornLamps, type WornLamps } from "./wornLamps.js";
@@ -241,6 +244,8 @@ type Standing = {
   wornLamps: WornLamps;
   /** The missing hiker's cap, beside the trail (`capMesh.ts`). */
   cap: CapMesh | null;
+  /** The animals (`wildlifeMeshes.ts`). */
+  wildlife: LiteWildlifeMeshes | null;
 };
 
 /**
@@ -310,7 +315,7 @@ export function createLiteRenderer(canvas: HTMLCanvasElement, level: Level, fore
   let mistIn = 0;
   let hauntLevel = 0;
   /** What the frame's block is written from: the records above, the eye and the frame's height. */
-  const frameValues: FrameValues = { air: airValues, wet: wetValues, terrain: terrainValues, eye: { x: 0, y: 0, z: 0 }, rows: canvas.height };
+  const frameValues: FrameValues = { air: airValues, wet: wetValues, terrain: terrainValues, eye: { x: 0, y: 0, z: 0 }, rows: canvas.height, wingTime: 0 };
   /** The ground's colour and roughness the terrain's materials were last written with. */
   const groundWritten = { r: Number.NaN, g: Number.NaN, b: Number.NaN, roughness: Number.NaN };
 
@@ -383,6 +388,9 @@ export function createLiteRenderer(canvas: HTMLCanvasElement, level: Level, fore
   let nearColour = { r: 0, g: 0, b: 0 };
   /** The view's six planes for the frame (`cameraPose.ts`): what lies in one place is drawn while they hold it. */
   const planes = restPlanes();
+  /** What the wildlife is handed each frame (`wildlifeInputs.ts`), and whether this world has any. */
+  const wildlifeInputs = createWildlifeInputs();
+  const hasWildlife = forest !== null && options.wildlife !== false;
   /** Where the hikers and the Hollows stand a frame, and how (`entityPoses.ts`). */
   const poses = createEntityPoses();
   /** The most hikers other than the local one the state has held at once: a lamp's light is made for each. */
@@ -402,6 +410,7 @@ export function createLiteRenderer(canvas: HTMLCanvasElement, level: Level, fore
 
   /** Lets go of what stands: the meshes, the scene, the engine and its device. */
   function release(made: Standing): void {
+    made.wildlife?.dispose();
     made.cap?.dispose();
     made.entities?.dispose();
     made.wornLamps.dispose();
@@ -623,9 +632,16 @@ export function createLiteRenderer(canvas: HTMLCanvasElement, level: Level, fore
       const at = graph === null ? null : droppedCapAt(graph, forest.seed);
       if (at !== null) cap = createCapMesh(engine, scene, at, elevationAt(forest.seed, at.x, at.z), () => atmospherePlugin(airValues, cloudMap, shared), uploads);
     }
+    // The animals, which land as their models do; low scales every species' disc to 60%, as the game does.
+    const wildlife = !hasWildlife || forest === null || cloudMap === null || disposed
+      ? null
+      : createLiteWildlifeMeshes(engine, scene, forest.seed, {
+        radiusScale: tier === "low" ? 0.6 : undefined, firstBuilds: options.firstBuilds, air: () => atmospherePlugin(airValues, cloudMap, shared), shared, clock: skinClock,
+        planes: () => planes, uploads,
+      });
     const made: Standing = {
       engine, scene, camera, sun, fill, lamp, dome, capture, shared, materials, terrain, road, cloudGround, forest: trees, blades, clutter, duff, cliffs, props, mist, motes,
-      rain, rainMap, splash, skinClock, entities, wornLamps, cap,
+      rain, rainMap, splash, skinClock, entities, wornLamps, cap, wildlife,
     };
     if (disposed) {
       release(made);
@@ -816,6 +832,7 @@ export function createLiteRenderer(canvas: HTMLCanvasElement, level: Level, fore
     frameSize.height = canvas.height;
     frameValues.eye = pose;
     frameValues.rows = canvas.height;
+    frameValues.wingTime = wingTime(clock());
     writeFrameBlock(made.shared.data, made.shared.offsets, frameValues);
     writePluginUniformBlock(made.engine, made.shared);
     uploads.count("uniforms", made.shared.data.byteLength);
@@ -840,6 +857,13 @@ export function createLiteRenderer(canvas: HTMLCanvasElement, level: Level, fore
         skyWait = null;
       });
       return skyWait;
+    },
+    hasWildlife,
+    wildlifeEvents() {
+      return wildlifeInputs.drain(standing?.wildlife?.events);
+    },
+    wildlifeDirectorLog() {
+      return standing?.wildlife?.directorLog() ?? [];
     },
     whenReady(maxMs) {
       return new Promise<void>((resolve) => {
@@ -1015,6 +1039,15 @@ export function createLiteRenderer(canvas: HTMLCanvasElement, level: Level, fore
         // The view's planes for the frame, and the cap while they hold it.
         viewPlanes(pose, axes, fov, canvas.height > 0 ? canvas.width / canvas.height : 1, lens.near, lens.far, planes);
         standing.cap?.seen(planes);
+        // The animals, round the camera in freecam and the player otherwise, judged by the view's planes: the
+        // director is handed the sim's place and aim, never the camera's own, which the walk's bob has moved.
+        if (standing.wildlife !== null && centre !== null) {
+          const aspect = canvas.height > 0 ? canvas.width / canvas.height : 1;
+          const local = freecam === null ? state.players.get(localId) : undefined;
+          if (local !== undefined) wildlifeInputs.look(state, local.pos.x, local.pos.y + PLAYER_EYE_OFFSET, local.pos.z, local.yaw, local.pitch, fov, aspect, light.hour, weather.mist);
+          else wildlifeInputs.look(state, pose.x, pose.y, pose.z, pose.yaw, pose.pitch, fov, aspect, light.hour, weather.mist);
+          standing.wildlife.update(centre.x, centre.z, state.tick, wildlifeInputs.players(state), weather, light.hour, wildlifeInputs.director, dt);
+        }
         // The ground cloud: the ground round the eye, built again at once as the eye leaves the last map's middle, as
         // the game builds it, and counted with what follows the camera; then its density for the frame, from the
         // night, the haunt and the chase's cast by how far the mist has come in, or the level it is held at.

@@ -41,6 +41,8 @@ export type ModelPart = {
   normal: Texture2D | undefined;
   /** The file's base colour factor, linear: white where it gives none. */
   factor: readonly [number, number, number];
+  /** The loader's own material of the primitive, for a mesh drawn with the file's material as it is. */
+  material: PbrMaterialProps;
 };
 
 /** A model's LODs by the name of their node. */
@@ -99,6 +101,7 @@ export async function loadModel(engine: EngineContext, url: string, lods: readon
           positions: baked.positions, normals: baked.normals, uvs: geometry.uvs ?? new Float32Array(fact.vertices * 2), tangents: baked.tangents,
           indices: baked.indices, colour: material.baseColorTexture, normal: material.normalTexture,
           factor: [material.baseColorFactor?.[0] ?? 1, material.baseColorFactor?.[1] ?? 1, material.baseColorFactor?.[2] ?? 1] as const,
+          material,
         };
       });
       model.set(lod, parts);

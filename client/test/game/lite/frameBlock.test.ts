@@ -67,6 +67,7 @@ function frame(): FrameValues {
     terrain,
     eye,
     rows: 956,
+    wingTime: 123.5,
   };
 }
 
