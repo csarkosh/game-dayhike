@@ -620,16 +620,16 @@ describe("layer boundaries", () => {
   });
 
   /**
-   * What the ground cover is drawn with is computed by modules that load no
-   * Babylon either: which model and LOD a clutter class draws, an instance's
+   * What the ground cover and the cliffs are drawn with is computed by
+   * modules that load no Babylon either: which model and LOD a clutter class draws, an instance's
    * matrix and ground tint, the lists a bucket is drawn from and their cut to
    * the view, the fields that place the cover and the geometry of the clumps
    * built in code. The shells that draw them on Babylon.js
    * take their values from these.
    */
-  it("what the ground cover is drawn with is computed without loading Babylon, whatever it imports", () => {
+  it("what the ground cover and the cliffs are drawn with is computed without loading Babylon, whatever it imports", () => {
     const ENGINE_FREE = [
-      "clutterInstances.ts", "clutterLists.ts", "instanceLists.ts", "bladeInstances.ts", "duffInstances.ts", "clutterField.ts", "bladeField.ts", "bladeClump.ts", "duffField.ts", "duffClump.ts", "cliffField.ts",
+      "clutterInstances.ts", "clutterLists.ts", "instanceLists.ts", "bladeInstances.ts", "duffInstances.ts", "cliffInstances.ts", "clutterField.ts", "bladeField.ts", "bladeClump.ts", "duffField.ts", "duffClump.ts", "cliffField.ts",
       "shrubClump.ts", "wetPlantClump.ts", "highPlantClump.ts", "rockRelief.ts", "grassCull.ts", "keptValues.ts",
     ];
     const loaded = (file: string): string[] =>

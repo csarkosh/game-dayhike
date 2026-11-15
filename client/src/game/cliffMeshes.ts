@@ -8,7 +8,8 @@
  * `CLIFF_FADE_BAND` metres, on a material of its own, because a wall
  * popping out of the skyline at the reach is visible and its fragments at
  * that range are few. Every instance carries the ground colour under it for
- * the tint plugin (`cliffTintPlugin.ts`). The near buckets cast shadows.
+ * the tint plugin (`cliffTintPlugin.ts`). The near buckets cast shadows. The
+ * lists the buckets draw are `cliffInstances.ts`'s, made with no engine.
  *
  * Where a module stands is the simulation's, and in the level id; this
  * shell only draws what the field placed. Nothing here may migrate into
@@ -24,26 +25,22 @@ import type { Material } from "@babylonjs/core/Materials/material.js";
 import type { Node } from "@babylonjs/core/node.js";
 import { registerBuiltInLoaders } from "@babylonjs/loaders/dynamic.js";
 
-import { Matrix, Quaternion, Vector3 } from "@babylonjs/core/Maths/math.vector.js";
-
 import { modelUrl } from "./assetUrls.js";
 import { loadContainer, loadUntilAborted } from "./modelLoad.js";
-import { CLIFF_FADE_BAND, CLIFF_RINGS, cliffBands, cliffOrigin, createCliffCollector } from "./cliffField.js";
-import { CLIFF_DENSITY, CLIFF_MODEL_HEIGHT, CLIFF_MODELS, CLIFF_SINK, CLIFF_TILT_MAX, cliffFacing } from "../sim/cliffField.js";
+import { cliffOrigin } from "./cliffField.js";
+import { CLIFF_DENSITY, CLIFF_MODELS } from "../sim/cliffField.js";
+import { CLIFF_FAR_LOD as FAR_LOD, CLIFF_LOD_NODES, createCliffLists } from "./cliffInstances.js";
 import { attachCliffTint } from "./cliffTintPlugin.js";
-import { trampleFrame, writeFoliage } from "./clutterInstances.js";
 import { prepBucketMesh } from "./clutterMeshes.js";
-import { attachDistanceFade, fadeBands, type FadeBands } from "./distanceFadePlugin.js";
+import { attachDistanceFade } from "./distanceFadePlugin.js";
+import type { InstanceList } from "./instanceLists.js";
 import { attachWet, WET_CAP } from "./wetPlugin.js";
-import { seatOnGroundCapped } from "./groundTilt.js";
 import type { QualityTier } from "./quality.js";
-import type { ClutterInstance } from "../sim/clutter.js";
 
-/** The LOD roots inside each GLB, by bucket. */
-export const CLIFF_LOD_NODES: readonly [string, string, string] = ["LOD0", "LOD1", "LOD2"];
-/** The bucket that dithers out at the reach, and the first bucket past the
- * ones that cast. */
-const FAR_LOD = 2;
+// The LOD roots, a module's seat and matrix, and the lists the buckets draw
+// are `cliffInstances.ts`'s, which loads no engine; named from here too.
+export { CLIFF_LOD_NODES, cliffInstanceMatrix, cliffSeat } from "./cliffInstances.js";
+
 export const CLIFF_MESH_PREFIX = "cliff";
 export function cliffMeshName(model: number, lod: number): string {
   return `${CLIFF_MESH_PREFIX}_m${model}_l${lod}`;
@@ -73,72 +70,8 @@ export type CliffMeshes = {
   dispose(): void;
 };
 
-type Bucket = {
-  mesh: Mesh;
-  /** Matrix data; capacity is `buf.length / 16`. */
-  buf: Float32Array;
-  /** The `foliage` attribute; capacity is `tint.length / 4`. */
-  tint: Float32Array;
-  /** The far bucket's `fadeBands`; empty on the near buckets. */
-  fade: Float32Array;
-  count: number;
-};
-
-const EMPTY_BUFFER = new Float32Array(0);
-const scratchMat = new Float32Array(16);
-const scratchQ = new Quaternion();
-const scratchScale = new Vector3();
-const scratchPos = new Vector3();
-const scratchWorld = new Matrix();
-
-/**
- * A module's rotation, written into `out`: its facing turned back into a yaw,
- * then the CAPPED lean.
- *
- * The field carries the facing as a unit vector pair drawn without trig
- * (`cliffFacing`, from the ground's gradient and the yaw jitter in `hash`),
- * because a placement must agree to the bit on every peer; Babylon wants an
- * angle, and the renderer may take one — forward is `(sin yaw, cos yaw)`, so
- * the yaw is `atan2(fx, fz)`. The lean is `seatOnGroundCapped`'s quaternion,
- * which is the rotation the field writes out as `leanPoint`; the two agree to
- * 1e-9 (`test/game/cliffField.test.ts`), so the solid the probes cleared is
- * the solid that is drawn.
- */
-export function cliffSeat(inst: ClutterInstance, out: Quaternion): void {
-  const f = cliffFacing(inst.groundDx, inst.groundDz, inst.hash);
-  seatOnGroundCapped(Math.atan2(f.fx, f.fz), inst.groundDx, inst.groundDz, CLIFF_TILT_MAX, out);
-}
-
-/**
- * A module's world matrix, written into `out` (16 floats): uniform scale, the
- * seat above (`cliffSeat`), and the origin the field chose.
- *
- * Not the clutter's `instanceMatrixFor`, which seats its tilted classes on the
- * full ground normal: a wall laid back with a 45° face throws its top metres
- * out over the ground at its foot, which is ground the field's probes have not
- * cleared (`sim/cliffField.ts`'s `CLIFF_TILT_MAX`). The sink is vertical and
- * already inside `groundH`, so there is no `CLUTTER_SINK` here either — that
- * two-centimetre nudge breaks coplanarity for cards lying on the surface, and
- * a module buried a third of its height needs no such help.
- */
-export function cliffInstanceMatrix(inst: ClutterInstance, out: Float32Array): void {
-  cliffSeat(inst, scratchQ);
-  scratchScale.copyFromFloats(inst.scale, inst.scale, inst.scale);
-  scratchPos.copyFromFloats(inst.x, inst.groundH, inst.z);
-  Matrix.ComposeToRef(scratchScale, scratchQ, scratchPos, scratchWorld);
-  scratchWorld.copyToArray(out);
-}
-
-/** A buffer big enough for `needed` floats, doubling from 64 instances' worth
- * so a bucket allocates a bounded number of times over a session and never
- * per rebuild. The old contents are dropped rather than copied: every live
- * entry is rewritten immediately afterwards. */
-function grow(buf: Float32Array, needed: number, stride: number): Float32Array {
-  if (buf.length >= needed) return buf;
-  let capacity = Math.max(buf.length, 64 * stride);
-  while (capacity < needed) capacity *= 2;
-  return new Float32Array(capacity);
-}
+/** A bucket: the mesh of one model's one LOD root, and the list it draws. */
+type Bucket = { mesh: Mesh; list: InstanceList };
 
 /**
  * The one geometry mesh under `name` in a loaded container, with its node
@@ -176,47 +109,14 @@ function lodMesh(container: AssetContainer, name: string): Mesh | null {
 }
 
 export function createCliffMeshes(scene: Scene, seed: number, options: CliffMeshesOptions): CliffMeshes {
-  const rings = CLIFF_RINGS[options.quality];
-  const reach = rings[2];
-  const farBands: FadeBands = fadeBands(null, [reach - CLIFF_FADE_BAND, reach]);
   const fetchModel = options.loader ?? ((output: string) => loadContainer(modelUrl(output), scene));
   // Aborted first thing in `dispose`: a load in flight then ends at once and
   // quietly, and none starts after it (`modelLoad.ts`).
   const loads = new AbortController();
   const load = (output: string): Promise<AssetContainer> => loadUntilAborted(() => fetchModel(output), loads.signal);
-  // Memoising, not the pure `collectCliffs`: a rebuild happens on every
-  // `CLIFF_CELL` crossing, and a qualifying cell costs dozens of terrain
-  // samples (its gate, four neighbours, and the probes of every module along
-  // its run).
-  const collector = createCliffCollector(seed, options.density);
-  /**
-   * The ground tint per instance, kept for as long as the collector keeps the
-   * instance. The tint costs a terrain sample, a surface classification and a
-   * canopy read, and the collector hands back the SAME instance object for
-   * every cell it still holds — so without this the whole field in reach was
-   * re-sampled on each 12 m crossing, on the same frame as the clutter's own
-   * rebuild. A `WeakMap` because the collector's eviction is the lifetime
-   * that matters: an instance it drops takes its tint with it.
-   */
-  const tints = new WeakMap<ClutterInstance, Float32Array>();
-  function tintFor(m: ClutterInstance): Float32Array {
-    let tint = tints.get(m);
-    if (tint === undefined) {
-      tint = new Float32Array(4);
-      // The ground's OWN height, not the sunk one `groundH` carries: the tint
-      // is the colour of the surface the module stands on, and read a third
-      // of a module's height lower a sea cliff would be tinted from a band it
-      // never touches. Rock is outside the trampled set, so the frame is the
-      // identity — asked for rather than assumed, as every other writer does.
-      const onGround: ClutterInstance = {
-        ...m,
-        groundH: m.groundH + CLIFF_SINK * m.scale * (CLIFF_MODEL_HEIGHT[m.variant] as number),
-      };
-      writeFoliage(seed, onGround, tint, 0, trampleFrame(seed, onGround));
-      tints.set(m, tint);
-    }
-    return tint;
-  }
+  // The lists (`cliffInstances.ts`): the modules collected, their matrices,
+  // their kept tints and the far ring's bands.
+  const lists = createCliffLists(seed, options.quality, options.density);
   const containers: AssetContainer[] = [];
   /** The far buckets' material clones — this shell's own, so nothing else
    * disposes them. */
@@ -230,46 +130,27 @@ export function createCliffMeshes(scene: Scene, seed: number, options: CliffMesh
   let pendingX = NaN;
   let pendingZ = NaN;
 
+  /** Whether a model's LOD root landed: the lists fill only the buckets that have a mesh. */
+  const held = (model: number, lod: number): boolean => (buckets[model]?.[lod] ?? null) !== null;
+
   function rebuild(x: number, z: number): void {
     if (meshes.length === 0) return;
-    const { x: ox, z: oz } = cliffOrigin(x, z);
-    const all = collector.collect(x, z, reach);
-    const bands = cliffBands(all, ox, oz, rings);
-    for (const [lod, band] of bands.entries()) {
-      // Two passes: every bucket knows its size before a matrix is written,
-      // so no buffer grows mid-fill.
-      for (const row of buckets) { const b = row[lod]; if (b) b.count = 0; }
-      for (const m of band) { const b = buckets[m.variant]?.[lod]; if (b) b.count++; }
+    lists.rebuild(x, z, held);
+    for (let lod = 0; lod < CLIFF_LOD_NODES.length; lod++) {
       for (const row of buckets) {
         const b = row[lod];
         if (!b) continue;
-        b.buf = grow(b.buf, b.count * 16, 16);
-        b.tint = grow(b.tint, b.count * 4, 4);
-        if (lod === FAR_LOD) b.fade = grow(b.fade, b.count * 4, 4);
-        b.count = 0;
-      }
-      for (const m of band) {
-        const b = buckets[m.variant]?.[lod];
-        if (!b) continue;
-        cliffInstanceMatrix(m, scratchMat);
-        b.buf.set(scratchMat, b.count * 16);
-        b.tint.set(tintFor(m), b.count * 4);
-        if (lod === FAR_LOD) b.fade.set(farBands, b.count * 4);
-        b.count++;
-      }
-      for (const row of buckets) {
-        const b = row[lod];
-        if (!b) continue;
+        const { mesh, list } = b;
         // Replaced wholesale on every rebuild (the tree shell's discipline);
         // "matrix" first, since it fixes the count the others are checked
         // against, and exact-length views so Babylon never reads past the
         // instances this rebuild wrote.
-        b.mesh.thinInstanceSetBuffer("matrix", b.buf.subarray(0, b.count * 16), 16, true);
-        b.mesh.thinInstanceSetBuffer("foliage", b.tint.subarray(0, b.count * 4), 4, true);
-        if (lod === FAR_LOD) b.mesh.thinInstanceSetBuffer("fadeBands", b.fade.subarray(0, b.count * 4), 4, true);
+        mesh.thinInstanceSetBuffer("matrix", list.buf.subarray(0, list.count * 16), 16, true);
+        mesh.thinInstanceSetBuffer("foliage", list.foliage.subarray(0, list.count * 4), 4, true);
+        if (lod === FAR_LOD) mesh.thinInstanceSetBuffer("fadeBands", list.bands.subarray(0, list.count * 4), 4, true);
         // With `instancesCount` 0 Babylon's `hasThinInstances` is false and
         // the bare model would be drawn once at the origin.
-        b.mesh.setEnabled(b.count > 0);
+        mesh.setEnabled(list.count > 0);
       }
     }
   }
@@ -335,7 +216,7 @@ export function createCliffMeshes(scene: Scene, seed: number, options: CliffMesh
           attachCliffTint(mesh.material);
           attachWet(mesh.material, WET_CAP.cliff);
         }
-        row.push({ mesh, buf: EMPTY_BUFFER, tint: EMPTY_BUFFER, fade: EMPTY_BUFFER, count: 0 });
+        row.push({ mesh, list: (lists.lists[model] as InstanceList[])[lod] as InstanceList });
         meshes.push(mesh);
         if (lod < FAR_LOD) casterMeshes.push(mesh);
       }

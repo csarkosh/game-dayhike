@@ -19,9 +19,9 @@ import vertexWorldPos from "./shaders/cliffTintWorldPos.vertex.fx?raw";
 import fragmentDefs from "./shaders/cliffTint.fragment.fx?raw";
 import fragmentLights from "./shaders/cliffTintLights.fragment.fx?raw";
 
-/** Share of the ground albedo in the module's colour. Mirrored in
- * shaders/cliffTint.fragment.fx; the lockstep test asserts it. */
-export const CLIFF_GROUND_TINT = 0.5;
+// The share of the ground's albedo in a module's colour is
+// `cliffInstances.ts`'s, which loads no engine; named from here too.
+export { CLIFF_GROUND_TINT } from "./cliffInstances.js";
 
 export class CliffTintPlugin extends MaterialPluginBase {
   constructor(material: Material) {
