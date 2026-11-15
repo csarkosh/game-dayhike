@@ -98,14 +98,20 @@ export function heightFogAmount(camY: number, rdY: number, t: number, a: number,
  * GRADIENT_BIAS); this list is for the mist banks' and motes' colours.
  */
 export function fogGradientUnder(w: WeatherParams, sky: SkyState): Rgb[] {
-  const far = { r: sky.mistAir.r, g: sky.mistAir.g, b: sky.mistAir.b };
-  const near = { r: far.r * GRADIENT_NEAR_DIM, g: far.g * GRADIENT_NEAR_DIM, b: far.b * GRADIENT_NEAR_DIM };
   const out: Rgb[] = [];
-  for (let i = 0; i < GRADIENT_STEPS; i++) {
-    const t = i / (GRADIENT_STEPS - 1);
-    out.push(i === GRADIENT_STEPS - 1 ? far : mixRgb(near, far, Math.pow(t, 1 / GRADIENT_BIAS)));
-  }
+  for (let i = 0; i < GRADIENT_STEPS; i++) out.push(fogGradientAt(sky, i));
   return out;
+}
+
+/** The gradient's middle step, the mist banks' colour; its near end, step 0, is the motes'. */
+export const GRADIENT_MID_STEP = GRADIENT_STEPS >> 1;
+
+/** One entry of `fogGradientUnder`'s list for `sky`: step 0 its near end, the last its far end. */
+export function fogGradientAt(sky: SkyState, step: number): Rgb {
+  const far = { r: sky.mistAir.r, g: sky.mistAir.g, b: sky.mistAir.b };
+  if (step === GRADIENT_STEPS - 1) return far;
+  const near = { r: far.r * GRADIENT_NEAR_DIM, g: far.g * GRADIENT_NEAR_DIM, b: far.b * GRADIENT_NEAR_DIM };
+  return mixRgb(near, far, Math.pow(step / (GRADIENT_STEPS - 1), 1 / GRADIENT_BIAS));
 }
 
 /**

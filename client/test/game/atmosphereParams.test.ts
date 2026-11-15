@@ -1,6 +1,6 @@
 import { describe, it, expect } from "vitest";
 import {
-  atmosphereUnder, atmosphereUniforms, emptyAtmosphereUniforms, fogGradientUnder, heightFogAmount, GRADIENT_STEPS,
+  atmosphereUnder, atmosphereUniforms, emptyAtmosphereUniforms, fogGradientAt, fogGradientUnder, heightFogAmount, GRADIENT_MID_STEP, GRADIENT_STEPS,
 } from "../../src/game/atmosphereParams.js";
 import { cloudFor, cloudUniforms, noCloud } from "../../src/game/cloudParams.js";
 import { WEATHER_PRESETS, airColourUnder, fogDensityUnder } from "../../src/game/weather.js";
@@ -23,6 +23,15 @@ describe("the fog gradient", () => {
     expect(g[0]!.r).toBeCloseTo(sky.mistAir.r * 0.85, 12);
     expect(g[0]!.g).toBeCloseTo(sky.mistAir.g * 0.85, 12);
     expect(g[0]!.b).toBeCloseTo(sky.mistAir.b * 0.85, 12);
+  });
+
+  it("reads one step as the list holds it: the middle the mist banks take, the near end the motes take", () => {
+    expect(GRADIENT_MID_STEP).toBe(128);
+    for (const [hour, weather] of [[12, MIST], [18.25, CLEAR], [22, EERIE]] as const) {
+      const sky = skyStateFor(table, hour, weather);
+      const g = fogGradientUnder(weather, sky);
+      for (const step of [0, 1, GRADIENT_MID_STEP, 254, 255]) expect(fogGradientAt(sky, step), `hour ${hour} step ${step}`).toEqual(g[step]);
+    }
   });
 
   it("at clear ends exactly on the dome's horizon away from the sun, at every hour the sky is read at", () => {

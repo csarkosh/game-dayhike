@@ -21,7 +21,7 @@ import { HOLLOW_MATERIAL } from "./hollowLook.js";
 import type { WeatherParams } from "./weather.js";
 import type { SkyState } from "./skyState.js";
 import {
-  atmosphereUnder, atmosphereUniforms, emptyAtmosphereUniforms, fogGradientUnder, GRADIENT_STEPS, type AtmosphereRecord,
+  atmosphereUnder, atmosphereUniforms, emptyAtmosphereUniforms, fogGradientUnder, GRADIENT_MID_STEP, GRADIENT_STEPS, type AtmosphereRecord,
 } from "./atmosphereParams.js";
 import {
   CLOUD_NOISE_SIZE, cloudFor, cloudMarchSteps, cloudNoiseMap, cloudOn, cloudUniforms, emptyCloudUniforms, noCloud, writeCloudGround,
@@ -305,7 +305,7 @@ export function createAtmosphere(scene: Scene, viewDistance: number): Atmosphere
       }
     },
     midColour() {
-      return gradient[GRADIENT_STEPS >> 1] ?? { r: 0, g: 0, b: 0 };
+      return gradient[GRADIENT_MID_STEP] ?? { r: 0, g: 0, b: 0 };
     },
     nearColour() {
       return gradient[0] ?? { r: 0, g: 0, b: 0 };
