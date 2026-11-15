@@ -12,14 +12,36 @@
  * vertex data. A patch is a mesh made when its cell enters the reach and
  * let go when it leaves or is wanted at another spacing or stitch.
  *
- * The rings move when the camera crosses a line of the finest ring's
- * lattice and the patches when it crosses a line of their cells, and each
- * crossing is worked whole in the call that finds it: every ring's samples
- * moved, then every ring whose inputs changed made again and written. A
- * ring re-emits when it moved, when the ring inside it or outside it moved
- * (its hole follows the finer ring and its border blends to the coarser
- * one), or when the ground the patches cover is measured from somewhere
- * else, the rule `createClipmap` in `renderer.ts` states in full.
+ * **The rings and the patches change as the game's do on Babylon.js**
+ * (`createClipmap` in `renderer.ts`, `facePatchMeshes.ts`), under the
+ * renderer's scheduler (`syncJobs.ts`). The rings move when the camera
+ * crosses a line of the finest ring's lattice: at a walk as a job, every
+ * ring's samples moved and each ring whose inputs changed made again in
+ * slices, into buffers no mesh holds, then all of them written in the
+ * job's last slice, together, so no frame draws one ring moved against a
+ * neighbour that has not. A ring re-emits when it moved, when the ring
+ * inside it or outside it moved (its hole follows the finer ring and its
+ * border blends to the coarser one), or when the ground the patches cover
+ * is measured from somewhere else, the rule `createClipmap` states in
+ * full. As idle work each ring's next move on the camera's heading is
+ * sampled ahead, and a rebuild that finds its move prepared commits it in
+ * one step.
+ *
+ * The patches change when the camera crosses a line of their cells: at a
+ * walk as one patient job, the cells to build made one a slice, nearest
+ * first, each into a mesh that is not in the scene yet, then in the last
+ * slice the new ones added and the ones they replace or that left let go,
+ * together. Until then the last set shown is drawn whole, and the rings
+ * leave out the ground that set covers. The first update draws the near
+ * band at once and leaves the rest to the job; with nothing pending, idle
+ * work builds ahead the cells the next crossing will want. The rings are
+ * drawn first and the patches after them, ahead of everything else
+ * (`drawOrder.ts`), whenever a set is shown.
+ *
+ * The first build, a jump of more than a cell and a view moving fast build
+ * at once (`crossingAt`), or are stepped by the loader of first builds
+ * while the intro's film covers the hike (`firstBuilds.ts`). Given no
+ * scheduler, every crossing is worked whole in the call that finds it.
  */
 import {
   addToScene, createMeshFromData, disposeMeshGpu, invalidateRenderBundles, removeFromScene, updateMeshGeometry,
@@ -27,27 +49,43 @@ import {
 } from "@babylonjs/lite";
 import type { TrailGraph } from "../../sim/trail.js";
 import {
-  BASE_SPACING_BY_TIER, RING_COUNT, coversRing, createRingSamples, holeCellsFor, ringGeometryBuffers, ringGeometrySlices, ringSampleSlices, snapOrigin,
-  type CoveredGround, type RingArrays, type RingGeometry, type RingSamples,
+  BASE_SPACING_BY_TIER, RING_COUNT, commitRingMove, coversRing, createRingSamples, holeCellsFor, prepareRingMove, ringGeometryBuffers, ringGeometrySlices,
+  ringSampleSlices, snapOrigin,
+  type CoveredGround, type RingArrays, type RingGeometry, type RingMove, type RingSamples,
 } from "../clipmap.js";
 import {
-  PATCH_CELL, PATCH_REACH, facePatchCells, facePatchCover, facePatchGeometry, facePatchStitch, patchKey, patchStitchBits,
-  type PatchStitch,
+  PATCH_CELL, PATCH_FAR_SPACING, PATCH_NEAR_SPACING, PATCH_REACH, facePatchCells, facePatchCover, facePatchGeometry, facePatchStitch, patchKey,
+  patchStitchBits,
+  type PatchCell, type PatchReach, type PatchStitch,
 } from "../facePatches.js";
+import { buildAtOnce, type FirstBuilds } from "../firstBuilds.js";
 import type { QualityTier } from "../quality.js";
-import { finish, type Slices } from "../syncJobs.js";
+import { createCrossing, crossingAt, finish, nextCrossing, type Slices, type SyncJobs } from "../syncJobs.js";
 import { facePatchVertices, ringVertices, type TerrainVertices } from "../terrainVertices.js";
+import { DRAW_ORDER } from "./drawOrder.js";
 import { terrainVertexData } from "./terrainPlugins.js";
+
+/** Ring 0's snap step (m), as `createClipmap` has it: every coarser ring moves only when ring 0 does. */
+const CLIPMAP_STEP = 2;
+
+/** What writing one ring's buffers is expected to take (ms): the game's own estimate for its rings on Babylon.js. The
+ * rings' job says so before its last slice (`syncJobs.ts`). */
+const CLIPMAP_UPLOAD_MS = 1;
+
+/** What a patched cell's slice is expected to take (ms) by its spacing, near and far, and a wide cell's: the game's
+ * own estimates (`facePatchMeshes.ts`). A near one is more than a frame's share and starts only as one begins. */
+const FACE_PATCH_SLICE_MS: Readonly<Record<number, number>> = { [PATCH_NEAR_SPACING]: 5, [PATCH_FAR_SPACING]: 2 };
+const WIDE_SLICE_MS = 0.5;
 
 export type TerrainMeshes = {
   /** The rings' first build, as slices: each ring sampled (one slice a ring,
    * its level told to `onRing`), then every ring made and written. Run once;
-   * before it, `update` does nothing. */
+   * before it, the rings follow no camera. */
   firstBuild(onRing?: (level: number) => void): Slices;
   /** Follows the camera: the patches first, then the rings, which leave out
    * the ground the patches now drawn cover. */
   update(camX: number, camZ: number): void;
-  /** Meshes drawn now: the rings built, and one a patched cell. */
+  /** Meshes drawn now: the rings built, and one a patched cell of the set last shown. */
   meshCount(): number;
   dispose(): void;
 };
@@ -60,13 +98,24 @@ export type TerrainMeshOptions = {
   rings?: RingSamples[] | null;
   /** The world's trail, which the walkable rock keeps off. */
   trail?: TrailGraph | null;
+  /** The renderer's scheduler: given it, a crossing at a walk is a job. */
+  jobs?: SyncJobs;
+  /** The loader of first builds, while the intro's film covers the hike (`firstBuilds.ts`). */
+  firstBuilds?: FirstBuilds;
 };
 
 /** The origins a ring's buffers were made from: its own, the finer ring's,
  * the coarser ring's, and where its covered ground is measured from. */
 type Drawn = { x: number; z: number; fx: number; fz: number; cx: number; cz: number; kx: number; kz: number; kr: number; kf: number };
 
+/** A ring's buffers as a rebuild makes them: its geometry and its plugin vertex data. */
+type RingBuffers = { geometry: RingGeometry; plugin: Float32Array | null };
+
 type PatchEntry = { spacing: number; stitch: number; mesh: Mesh | null };
+
+/** A set for a camera's cell: the cells walked from its centre, their stitches as numbers, and the indices of those
+ * the set drawn does not hold as they are wanted, nearest the centre first. */
+type Wanted = { ci: number; cj: number; cells: PatchCell[]; stitches: PatchStitch[]; bits: number[]; changed: number[] };
 
 export function createTerrainMeshes(
   engine: EngineContext,
@@ -76,43 +125,286 @@ export function createTerrainMeshes(
   tier: QualityTier,
   options: TerrainMeshOptions = {},
 ): TerrainMeshes {
+  const { jobs, firstBuilds } = options;
   const base = BASE_SPACING_BY_TIER[tier];
+  let disposed = false;
+
+  /** A terrain mesh of `vertices`, with its plugin vertex data, in `material`, drawn at `order` among the opaque meshes: not in the scene yet. */
+  function meshOf(name: string, material: Material, vertices: TerrainVertices, drawnIndices: Uint32Array, plugin: Float32Array, order: number): Mesh {
+    const made = createMeshFromData(engine, name, vertices.positions, vertices.normals, drawnIndices);
+    made.pluginVertexData = plugin;
+    made.material = material;
+    made.renderOrder = order;
+    return made;
+  }
+
+  // ---- The patches ---------------------------------------------------------------------------------------------
+
   const reach = PATCH_REACH[tier];
-  const rings: RingSamples[] = [];
-  const ringMeshes: (Mesh | null)[] = [];
-  const buffers: (RingGeometry | null)[] = [];
-  /** Each ring's index buffer at its full size, as the mesh holds it. */
-  const indices: (Uint32Array | null)[] = [];
-  const drawn: (Drawn | undefined)[] = [];
-  const spare: RingArrays[] = [];
-  /** The covered ground the rings were last made for. */
-  let covered: CoveredGround | null = null;
-  /** The ring 0 origin the rings were last built at. */
-  let builtX = Number.NaN;
-  let builtZ = Number.NaN;
-  let patches = new Map<number, PatchEntry>();
-  let patchCi = Number.NaN;
-  let patchCj = Number.NaN;
+  /** The near band alone, as a reach: what the first update draws at once. */
+  const nearReach: PatchReach = { near: reach.near, far: reach.near, wide: reach.near };
+  /** The cells drawn: the set last shown. */
+  let cells = new Map<number, PatchEntry>();
+  /** Cells built and not yet drawn, their meshes in no scene: a job's, or the idle work's ahead of a crossing, until a
+   * set is shown. One a cell, spacing and stitch (`readyKey`), so the sets of two headings keep their own builds. */
+  const ready = new Map<number, PatchEntry>();
   /** The ground the patches drawn cover; null before any set is. */
   let patchCover: CoveredGround | null = null;
   let live = 0;
-  let disposed = false;
+  const patchCrossing = createCrossing();
+  let patchHeadingX = 0;
+  let patchHeadingZ = 0;
+  /** The cell the idle work builds ahead for (NaN: none). */
+  let aheadCi = Number.NaN;
+  let aheadCj = Number.NaN;
+  const ahead = new Float64Array(2);
+  /** The patches' place in the scheduler's queue and the loader's. */
+  const patchOwner = {};
 
-  /** `vertices` drawn by `mesh`, written in place, or by a mesh made for
-   * them; `drawnIndices` are its triangles, as many as the mesh has held
-   * from the first. */
-  function write(mesh: Mesh | null, name: string, material: Material, vertices: TerrainVertices, drawnIndices: Uint32Array): Mesh {
-    if (mesh === null) {
-      const made = createMeshFromData(engine, name, vertices.positions, vertices.normals, drawnIndices);
-      made.pluginVertexData = terrainVertexData(vertices);
-      made.material = material;
-      addToScene(scene, made);
-      return made;
+  /** Whether `entry` is the cell as wanted at `spacing` with `bits`: an empty cell is empty whatever its stitch. */
+  const holds = (entry: PatchEntry | undefined, spacing: number, bits: number): entry is PatchEntry =>
+    entry !== undefined && entry.spacing === spacing && (entry.stitch === bits || entry.mesh === null);
+
+  /** A drawn cell's mesh, taken out of the scene and let go. */
+  function dropPatch(entry: PatchEntry): void {
+    if (entry.mesh === null) return;
+    removeFromScene(scene, entry.mesh);
+    disposeMeshGpu(entry.mesh);
+    entry.mesh = null;
+    live--;
+  }
+
+  /** A built cell never drawn, let go. */
+  function discardPatch(entry: PatchEntry): void {
+    if (entry.mesh !== null) disposeMeshGpu(entry.mesh);
+    entry.mesh = null;
+  }
+
+  /** The set walked from cell (ci, cj)'s centre, and what of it to build. */
+  function want(ci: number, cj: number): Wanted {
+    const cx = (ci + 0.5) * PATCH_CELL;
+    const cz = (cj + 0.5) * PATCH_CELL;
+    const list = facePatchCells(cx, cz, reach);
+    const stitches = facePatchStitch(list);
+    const bits = stitches.map(patchStitchBits);
+    const changed: number[] = [];
+    const d2: number[] = [];
+    list.forEach((c, i) => {
+      const dx = (c.ci + 0.5) * PATCH_CELL - cx;
+      const dz = (c.cj + 0.5) * PATCH_CELL - cz;
+      d2.push(dx * dx + dz * dz);
+      if (!holds(cells.get(patchKey(c.ci, c.cj)), c.spacing, bits[i] as number)) changed.push(i);
+    });
+    // Stable: equal distances keep the walk's order.
+    changed.sort((a, b) => (d2[a] as number) - (d2[b] as number));
+    return { ci, cj, cells: list, stitches, bits, changed };
+  }
+
+  /** `ready`'s key for cell `i` of `w` built as wanted with a patch, or, with `empty`, built empty. */
+  function readyKey(w: Wanted, i: number, empty: boolean): number {
+    const c = w.cells[i] as PatchCell;
+    const band = c.spacing === PATCH_NEAR_SPACING ? 0 : c.spacing === PATCH_FAR_SPACING ? 1 : 2;
+    // The stitch's twelve bits, or a thirteenth for an empty cell.
+    return (patchKey(c.ci, c.cj) * 4 + band) * 8192 + (empty ? 4096 : (w.bits[i] as number));
+  }
+
+  /** `ready`'s key for cell `i` of `w` if it is built as wanted, else NaN. */
+  function readyAt(w: Wanted, i: number): number {
+    const full = readyKey(w, i, false);
+    if (ready.has(full)) return full;
+    const empty = readyKey(w, i, true);
+    return ready.has(empty) ? empty : Number.NaN;
+  }
+
+  const isReady = (w: Wanted, i: number): boolean => !Number.isNaN(readyAt(w, i));
+
+  /** Cell `i` of `w` built as wanted and not yet drawn, unless it is. */
+  function make(w: Wanted, i: number): void {
+    if (isReady(w, i)) return;
+    const c = w.cells[i] as PatchCell;
+    const patch = facePatchGeometry(seed, c.ci, c.cj, c.spacing, w.stitches[i] as PatchStitch, options.trail ?? null);
+    let mesh: Mesh | null = null;
+    if (patch !== null) {
+      const vertices = facePatchVertices(patch);
+      mesh = meshOf(`facePatch_${c.ci}_${c.cj}`, materials.patches, vertices, Uint32Array.from(vertices.indices), terrainVertexData(vertices), DRAW_ORDER.patches);
     }
-    updateMeshGeometry(engine, mesh, vertices.positions, vertices.normals, drawnIndices);
-    mesh.pluginVertexData = terrainVertexData(vertices, mesh.pluginVertexData);
-    mesh.pluginVertexVersion = (mesh.pluginVertexVersion ?? 0) + 1;
-    return mesh;
+    ready.set(readyKey(w, i, mesh === null), { spacing: c.spacing, stitch: w.bits[i] as number, mesh });
+  }
+
+  /** Cell `i` of `w`, built as wanted and taken out of `ready`, to be drawn: built now unless it is already. */
+  function take(w: Wanted, i: number): PatchEntry {
+    make(w, i);
+    const at = readyAt(w, i);
+    const entry = ready.get(at) as PatchEntry;
+    ready.delete(at);
+    entry.stitch = w.bits[i] as number;
+    return entry;
+  }
+
+  /** What cell `i` of `w`'s slice is expected to take (ms). */
+  const sliceMs = (w: Wanted, i: number): number => FACE_PATCH_SLICE_MS[(w.cells[i] as PatchCell).spacing] ?? WIDE_SLICE_MS;
+
+  /**
+   * The set `w` drawn: each cell built since added to the scene, and the patch it replaces dropped; then, unless
+   * `nearOnly`, every cell of the old set that left dropped and what was built and not wanted let go. With
+   * `nearOnly`, the near band alone, over a set with none drawn: the first update's.
+   */
+  function showPatches(w: Wanted, nearOnly: boolean): void {
+    const next = nearOnly ? cells : new Map<number, PatchEntry>();
+    w.cells.forEach((c, i) => {
+      if (nearOnly && c.spacing !== PATCH_NEAR_SPACING) return;
+      const key = patchKey(c.ci, c.cj);
+      const bits = w.bits[i] as number;
+      const had = cells.get(key);
+      if (holds(had, c.spacing, bits)) {
+        had.stitch = bits;
+        cells.delete(key);
+        next.set(key, had);
+        return;
+      }
+      // Built by now; one that is not (a set drawn at once) is built here.
+      const entry = take(w, i);
+      if (had !== undefined) {
+        dropPatch(had);
+        cells.delete(key);
+      }
+      if (entry.mesh !== null) {
+        addToScene(scene, entry.mesh);
+        live++;
+      }
+      next.set(key, entry);
+    });
+    if (!nearOnly) {
+      // What is left of the old set has left the reach.
+      for (const entry of cells.values()) dropPatch(entry);
+      for (const entry of ready.values()) discardPatch(entry);
+      ready.clear();
+      // The idle work built for this crossing: the next update aims it at the next.
+      stopAhead();
+    }
+    cells = next;
+    patchCover = facePatchCover((w.ci + 0.5) * PATCH_CELL, (w.cj + 0.5) * PATCH_CELL, nearOnly ? nearReach : reach);
+  }
+
+  /** The patches' rebuild for cell (ci, cj): the set worked out, each cell to build in a slice of its own, nearest
+   * first, then the set drawn in the last. */
+  function* rebuildPatches(ci: number, cj: number, nearOnly = false): Slices {
+    const w = want(ci, cj);
+    for (const i of w.changed) {
+      if ((nearOnly && (w.cells[i] as PatchCell).spacing !== PATCH_NEAR_SPACING) || isReady(w, i)) continue;
+      yield sliceMs(w, i);
+      if (disposed) return;
+      make(w, i);
+    }
+    yield;
+    if (disposed) return;
+    showPatches(w, nearOnly);
+  }
+
+  /** Idle work: the cells the set for cell (ci, cj) will want built, nearest first. What was built for another cell
+   * is kept, for a camera that turns back, until a set is shown. */
+  function* buildAhead(ci: number, cj: number): Slices {
+    const w = want(ci, cj);
+    for (const i of w.changed) {
+      if (isReady(w, i)) continue;
+      yield sliceMs(w, i);
+      if (disposed) return;
+      make(w, i);
+    }
+  }
+
+  /** The idle work stopped: the next `aimPatches` sets it again. */
+  function stopAhead(): void {
+    jobs?.idle(patchOwner, null);
+    aheadCi = Number.NaN;
+    aheadCj = Number.NaN;
+  }
+
+  /** Aims the idle work at the cell the camera at (camX, camZ) enters next on its heading, when that changed. */
+  function aimPatches(camX: number, camZ: number): void {
+    if (jobs === undefined || jobs.pending(patchOwner)) return;
+    let ci = Number.NaN;
+    let cj = Number.NaN;
+    if (nextCrossing(camX, camZ, patchHeadingX, patchHeadingZ, PATCH_CELL, ahead)) {
+      ci = Math.floor((ahead[0] as number) / PATCH_CELL);
+      cj = Math.floor((ahead[1] as number) / PATCH_CELL);
+    }
+    if (Object.is(ci, aheadCi) && Object.is(cj, aheadCj)) return;
+    aheadCi = ci;
+    aheadCj = cj;
+    jobs.idle(patchOwner, Number.isNaN(ci) ? null : buildAhead(ci, cj));
+  }
+
+  function updatePatches(camX: number, camZ: number): void {
+    const hx = camX - patchCrossing.lastX;
+    const hz = camZ - patchCrossing.lastZ;
+    if ((hx !== 0 || hz !== 0) && !Number.isNaN(hx) && !Number.isNaN(hz)) {
+      patchHeadingX = hx;
+      patchHeadingZ = hz;
+    }
+    const ci = Math.floor(camX / PATCH_CELL);
+    const cj = Math.floor(camZ / PATCH_CELL);
+    const first = Number.isNaN(patchCrossing.originX);
+    const kind = crossingAt(patchCrossing, camX, camZ, ci * PATCH_CELL, cj * PATCH_CELL, PATCH_CELL, jobs !== undefined, jobs?.started());
+    if (kind === "none") {
+      // While the loader steps the first set, nothing is built ahead of it.
+      if (firstBuilds?.queued(patchOwner) !== true) aimPatches(camX, camZ);
+      return;
+    }
+    // A new place: a set the loader still holds for the last one is dropped.
+    firstBuilds?.cancel(patchOwner);
+    // Idle work runs beside a patient job: the job builds what it needs, and the idle work starts again once it is drawn.
+    stopAhead();
+    if (kind === "later") {
+      (jobs as SyncJobs).begin(patchOwner, rebuildPatches(ci, cj), true, "facePatches");
+      return;
+    }
+    jobs?.cancel(patchOwner);
+    if (first && jobs !== undefined) {
+      if (firstBuilds?.open === true) {
+        // Under the film no frame shows the face in front of the camera: the whole set is the loader's.
+        firstBuilds.add(patchOwner, rebuildPatches(ci, cj), "facePatches");
+        return;
+      }
+      // The face in front of the camera on the first frame, the distance over the frames after it.
+      finish(rebuildPatches(ci, cj, true));
+      jobs.begin(patchOwner, rebuildPatches(ci, cj), true, "facePatches");
+      return;
+    }
+    finish(rebuildPatches(ci, cj));
+  }
+
+  // ---- The rings -----------------------------------------------------------------------------------------------
+
+  const rings: RingSamples[] = [];
+  const ringMeshes: (Mesh | null)[] = [];
+  /** The buffers each ring's mesh was last written from, and the ones its next re-emit makes, swapped as it is
+   * written: a job in progress never writes an array a mesh holds. */
+  const front: (RingBuffers | null)[] = [];
+  const back: (RingBuffers | null)[] = [];
+  /** Each ring's index buffer at its full size, as the mesh holds it. */
+  const indices: (Uint32Array | null)[] = [];
+  const drawn: (Drawn | undefined)[] = [];
+  /** The one spare set of sample arrays the rings' moves share (`ringSampleSlices`). */
+  const spare: RingArrays[] = [];
+  /** The covered ground of the rebuild in progress, or of the last. */
+  let covered: CoveredGround | null = null;
+  const ringCrossing = createCrossing();
+  const ringOwner = {};
+  /** Each ring's next move, prepared ahead, or null. */
+  const prepared: (RingMove | null)[] = [];
+  /** The origin each ring is expected to move to next (NaN: none), which `prepared` is worked out for. */
+  const expectX = new Float64Array(RING_COUNT).fill(Number.NaN);
+  const expectZ = new Float64Array(RING_COUNT).fill(Number.NaN);
+  /** The camera's last move between two frames: its heading. */
+  let headingX = 0;
+  let headingZ = 0;
+  for (let level = 0; level < RING_COUNT; level++) {
+    ringMeshes.push(null);
+    front.push(null);
+    back.push(null);
+    indices.push(null);
+    prepared.push(null);
   }
 
   const coverOf = (level: number): CoveredGround | null => (coversRing(covered, (rings[level] as RingSamples).spacing) ? covered : null);
@@ -130,22 +422,43 @@ export function createTerrainMeshes(
       !Object.is(d.kr, k?.reach ?? Number.NaN) || !Object.is(d.kf, k?.fine ?? Number.NaN);
   }
 
-  /** Ring `level` made again from its samples and written to its mesh. */
+  /** Ring `level` made again from its samples, in slices, into the buffers no mesh holds. */
   function* emit(level: number): Slices {
     const ring = rings[level] as RingSamples;
     const finer = level > 0 ? (rings[level - 1] as RingSamples) : null;
+    // The border blends to the coarser ring's samples, so every ring has moved before any ring emits.
     const coarser = level < RING_COUNT - 1 ? (rings[level + 1] as RingSamples) : null;
-    const out = buffers[level] ?? ringGeometryBuffers(level > 0);
-    buffers[level] = out;
-    const k = coverOf(level);
-    yield* ringGeometrySlices(ring, finer === null ? null : holeCellsFor(ring, finer), coarser, out, k);
-    const vertices = ringVertices(out);
-    const whole = indices[level] ?? new Uint32Array(out.indices.length);
+    const out = back[level] ?? { geometry: ringGeometryBuffers(level > 0), plugin: null };
+    back[level] = out;
+    yield* ringGeometrySlices(ring, finer === null ? null : holeCellsFor(ring, finer), coarser, out.geometry, coverOf(level));
+    out.plugin = terrainVertexData(ringVertices(out.geometry), out.plugin);
+  }
+
+  /** Ring `level`'s buffers as `emit` made them, written to its mesh, or to a mesh made for them. */
+  function write(level: number): void {
+    const ring = rings[level] as RingSamples;
+    const finer = level > 0 ? (rings[level - 1] as RingSamples) : null;
+    const coarser = level < RING_COUNT - 1 ? (rings[level + 1] as RingSamples) : null;
+    const made = back[level] as RingBuffers;
+    const vertices = ringVertices(made.geometry);
+    const whole = indices[level] ?? new Uint32Array(made.geometry.indices.length);
     indices[level] = whole;
     whole.set(vertices.indices);
     // The triangles left out: three times the first vertex, which draws nothing.
     whole.fill(0, vertices.indices.length);
-    ringMeshes[level] = write(ringMeshes[level] ?? null, `clipmap_${level}`, materials.ground, vertices, whole);
+    const mesh = ringMeshes[level] ?? null;
+    if (mesh === null) {
+      const first = meshOf(`clipmap_${level}`, materials.ground, vertices, whole, made.plugin as Float32Array, DRAW_ORDER.rings);
+      addToScene(scene, first);
+      ringMeshes[level] = first;
+    } else {
+      updateMeshGeometry(engine, mesh, vertices.positions, vertices.normals, whole);
+      mesh.pluginVertexData = made.plugin;
+      mesh.pluginVertexVersion = (mesh.pluginVertexVersion ?? 0) + 1;
+    }
+    back[level] = front[level] ?? null;
+    front[level] = made;
+    const k = coverOf(level);
     drawn[level] = {
       x: ring.originX, z: ring.originZ,
       fx: finer?.originX ?? Number.NaN, fz: finer?.originZ ?? Number.NaN,
@@ -154,22 +467,101 @@ export function createTerrainMeshes(
     };
   }
 
-  /** The rings for a camera at (camX, camZ): every ring's samples moved,
-   * then each ring whose inputs changed made again, leaving out the ground
-   * `cover` names. */
-  function* build(camX: number, camZ: number, cover: CoveredGround | null): Slices {
-    covered = cover;
-    for (let level = 0; level < RING_COUNT; level++) yield* ringSampleSlices(rings[level] as RingSamples, seed, camX, camZ, spare);
-    let written = false;
+  /** Hands back a prepared move that is not for ring `level` as it stands, going to (ox, oz), or, with `onTheWay`,
+   * going part of the way there: along one axis of a step that also goes along the other. */
+  function dropPrepared(level: number, ox: number, oz: number, onTheWay = false): void {
+    const p = prepared[level];
+    if (p === null || p === undefined) return;
+    const ring = rings[level] as RingSamples;
+    if (p.moves === ring.moves) {
+      if (p.originX === ox && p.originZ === oz) return;
+      if (onTheWay && (p.originX === ox || p.originX === ring.originX) && (p.originZ === oz || p.originZ === ring.originZ)) return;
+    }
+    spare.push(p.arrays);
+    prepared[level] = null;
+  }
+
+  /** Where each ring moves next if the camera at (camX, camZ) keeps its heading: across whichever of its lattice's
+   * lines, x or z, the camera reaches first. Returns whether any ring's expectation changed. */
+  function expect(camX: number, camZ: number): boolean {
+    let changed = false;
+    for (let level = 0; level < RING_COUNT; level++) {
+      const ring = rings[level] as RingSamples;
+      const s = ring.spacing;
+      const tx = headingX > 0 ? (ring.originX + 66 * s - camX) / headingX
+        : headingX < 0 ? (camX - (ring.originX + 64 * s)) / -headingX : Infinity;
+      const tz = headingZ > 0 ? (ring.originZ + 66 * s - camZ) / headingZ
+        : headingZ < 0 ? (camZ - (ring.originZ + 64 * s)) / -headingZ : Infinity;
+      let ex = Number.NaN;
+      let ez = Number.NaN;
+      if (tx < Infinity || tz < Infinity) {
+        ex = tx <= tz ? ring.originX + Math.sign(headingX) * 2 * s : ring.originX;
+        ez = tx <= tz ? ring.originZ : ring.originZ + Math.sign(headingZ) * 2 * s;
+      }
+      if (!Object.is(ex, expectX[level]) || !Object.is(ez, expectZ[level])) changed = true;
+      expectX[level] = ex;
+      expectZ[level] = ez;
+    }
+    return changed;
+  }
+
+  /** Idle work: each ring's expected move prepared, finer rings first. */
+  function* prepare(): Slices {
+    for (let level = 0; level < RING_COUNT; level++) {
+      const ring = rings[level] as RingSamples;
+      const ex = expectX[level] as number;
+      const ez = expectZ[level] as number;
+      if (Number.isNaN(ex) || (ex === ring.originX && ez === ring.originZ)) continue;
+      dropPrepared(level, ex, ez);
+      if (prepared[level] !== null) continue;
+      prepared[level] = yield* prepareRingMove(ring, seed, ex, ez, spare);
+    }
+  }
+
+  /** Re-aims the idle work at the camera's next moves, when they changed. */
+  function aimRings(camX: number, camZ: number, force: boolean): void {
+    if (jobs === undefined || jobs.pending(ringOwner)) return;
+    if (expect(camX, camZ) || force) jobs.idle(ringOwner, prepare());
+  }
+
+  /** The rings for a camera at (camX, camZ): every ring's samples moved, then each stale ring's buffers made, each in
+   * slices of its own, then all of them written in the last slice. Without `uncovered` the rings leave out the ground
+   * the patches now drawn cover. */
+  function* build(camX: number, camZ: number, uncovered = false): Slices {
+    covered = uncovered ? null : patchCover;
+    for (let level = 0; level < RING_COUNT; level++) {
+      const ring = rings[level] as RingSamples;
+      const ox = snapOrigin(camX, ring.spacing);
+      const oz = snapOrigin(camZ, ring.spacing);
+      // A ring that stays keeps its prepared move for when it does go.
+      if (ox === ring.originX && oz === ring.originZ) continue;
+      // A move prepared along one axis of a step along both is committed, and the move samples only the rest of the way.
+      dropPrepared(level, ox, oz, true);
+      const p = prepared[level];
+      if (p !== null && p !== undefined) {
+        commitRingMove(ring, p, spare);
+        prepared[level] = null;
+      }
+      yield* ringSampleSlices(ring, seed, camX, camZ, spare);
+    }
+    const made: number[] = [];
     for (let level = 0; level < RING_COUNT; level++) {
       if (!stale(level)) continue;
-      written = written || ringMeshes[level] !== null && ringMeshes[level] !== undefined;
       yield* emit(level);
+      made.push(level);
+    }
+    // The writes are one step, and the only long one.
+    if (made.length > 0) yield CLIPMAP_UPLOAD_MS * made.length;
+    if (disposed) return;
+    let rewritten = false;
+    for (const level of made) {
+      rewritten = rewritten || (ringMeshes[level] ?? null) !== null;
+      write(level);
     }
     // A mesh's plugin vertex data goes up as its draw is recorded again.
-    if (written) invalidateRenderBundles(engine);
-    builtX = snapOrigin(camX, base);
-    builtZ = snapOrigin(camZ, base);
+    if (rewritten) invalidateRenderBundles(engine);
+    // The rings stand somewhere new: aim the idle work at their next moves.
+    if (!Number.isNaN(ringCrossing.lastX)) aimRings(ringCrossing.lastX, ringCrossing.lastZ, true);
   }
 
   function* firstBuild(onRing?: (level: number) => void): Slices {
@@ -179,77 +571,81 @@ export function createTerrainMeshes(
     for (let level = 0; level < RING_COUNT; level++) {
       rings.push(sampled?.[level] ?? createRingSamples(seed, level, at.x, at.z, base));
       onRing?.(level);
+      // A ring taken made costs nothing: the seven are one slice.
       if (sampled === null) yield;
     }
     if (sampled !== null) yield;
     // No patch stands yet: the first update measures the covered ground from the camera.
-    yield* build(at.x, at.z, null);
+    yield* build(at.x, at.z, true);
   }
 
-  function dropPatch(entry: PatchEntry): void {
-    if (entry.mesh === null) return;
-    removeFromScene(scene, entry.mesh);
-    disposeMeshGpu(entry.mesh);
-    entry.mesh = null;
-    live--;
-  }
-
-  /** The patches for the camera's cell (ci, cj): the cells that entered, or
-   * whose spacing or stitch changed, built; the ones that left let go. */
-  function patch(ci: number, cj: number): void {
-    const cx = (ci + 0.5) * PATCH_CELL;
-    const cz = (cj + 0.5) * PATCH_CELL;
-    const cells = facePatchCells(cx, cz, reach);
-    const stitches = facePatchStitch(cells);
-    const next = new Map<number, PatchEntry>();
-    cells.forEach((cell, i) => {
-      const key = patchKey(cell.ci, cell.cj);
-      const bits = patchStitchBits(stitches[i] as PatchStitch);
-      const had = patches.get(key);
-      // An empty cell is empty whatever its stitch: only its grid decides.
-      if (had !== undefined && had.spacing === cell.spacing && (had.stitch === bits || had.mesh === null)) {
-        had.stitch = bits;
-        patches.delete(key);
-        next.set(key, had);
+  function updateRings(camX: number, camZ: number): void {
+    if (rings.length < RING_COUNT) return;
+    const hx = camX - ringCrossing.lastX;
+    const hz = camZ - ringCrossing.lastZ;
+    if ((hx !== 0 || hz !== 0) && !Number.isNaN(hx) && !Number.isNaN(hz)) {
+      headingX = hx;
+      headingZ = hz;
+    }
+    const kind = crossingAt(ringCrossing, camX, camZ, snapOrigin(camX, base), snapOrigin(camZ, base), CLIPMAP_STEP, jobs !== undefined, jobs?.started());
+    if (kind === "none") {
+      // While the loader steps the rings' build, nothing else is begun and nothing prepared ahead of it.
+      if (firstBuilds?.queued(ringOwner) === true) return;
+      // The patches drew a new set since the rings last asked: the rings that leave ground out are drawn again for
+      // it, though the camera has not moved, so none waits on a further crossing to stop leaving out ground the new
+      // set no longer covers.
+      if (!(jobs?.pending(ringOwner) ?? false) && patchCover !== covered) {
+        // The first cover the rings are built for cannot wait; one that changes after that is the scheduler's.
+        if (jobs !== undefined && covered !== null) {
+          jobs.begin(ringOwner, build(camX, camZ), false, "clipmap");
+        } else {
+          // Nothing is prepared ahead beside a build the loader steps: the build aims it again as it ends.
+          jobs?.idle(ringOwner, null);
+          buildAtOnce(firstBuilds, ringOwner, build(camX, camZ), "clipmap");
+        }
         return;
       }
-      const made = facePatchGeometry(seed, cell.ci, cell.cj, cell.spacing, stitches[i] as PatchStitch, options.trail ?? null);
-      let mesh: Mesh | null = null;
-      if (made !== null) {
-        const vertices = facePatchVertices(made);
-        mesh = write(null, `facePatch_${cell.ci}_${cell.cj}`, materials.patches, vertices, Uint32Array.from(vertices.indices));
-        live++;
-      }
-      next.set(key, { spacing: cell.spacing, stitch: bits, mesh });
-    });
-    // What is left of the old set changed or left the reach.
-    for (const entry of patches.values()) dropPatch(entry);
-    patches = next;
-    patchCi = ci;
-    patchCj = cj;
-    patchCover = facePatchCover(cx, cz, reach);
+      aimRings(camX, camZ, false);
+      return;
+    }
+    // A new place: a build the loader still holds for the last one is dropped.
+    firstBuilds?.cancel(ringOwner);
+    if (kind === "later") {
+      (jobs as SyncJobs).begin(ringOwner, build(camX, camZ), false, "clipmap");
+      return;
+    }
+    jobs?.cancel(ringOwner);
+    // At once, or stepped by the loader while the film covers the hike.
+    buildAtOnce(firstBuilds, ringOwner, build(camX, camZ), "clipmap");
   }
 
   return {
     firstBuild,
     update(camX, camZ) {
-      if (disposed || rings.length < RING_COUNT) return;
-      const ci = Math.floor(camX / PATCH_CELL);
-      const cj = Math.floor(camZ / PATCH_CELL);
-      if (ci !== patchCi || cj !== patchCj) patch(ci, cj);
-      if (snapOrigin(camX, base) !== builtX || snapOrigin(camZ, base) !== builtZ || patchCover !== covered) {
-        finish(build(camX, camZ, patchCover));
-      }
+      if (disposed) return;
+      // The patches go first: the rings leave out the ground they draw over now.
+      updatePatches(camX, camZ);
+      updateRings(camX, camZ);
     },
     meshCount() {
-      return live + ringMeshes.filter((mesh) => mesh !== null && mesh !== undefined).length;
+      return live + ringMeshes.filter((mesh) => mesh !== null).length;
     },
     dispose() {
+      if (disposed) return;
       disposed = true;
-      for (const entry of patches.values()) dropPatch(entry);
-      patches.clear();
+      firstBuilds?.cancel(patchOwner);
+      firstBuilds?.cancel(ringOwner);
+      jobs?.cancel(patchOwner);
+      jobs?.cancel(ringOwner);
+      jobs?.idle(patchOwner, null);
+      jobs?.idle(ringOwner, null);
+      for (const entry of cells.values()) dropPatch(entry);
+      for (const entry of ready.values()) discardPatch(entry);
+      cells.clear();
+      ready.clear();
+      patchCover = null;
       for (const mesh of ringMeshes) {
-        if (mesh === null || mesh === undefined) continue;
+        if (mesh === null) continue;
         removeFromScene(scene, mesh);
         disposeMeshGpu(mesh);
       }
