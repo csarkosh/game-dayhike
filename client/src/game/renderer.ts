@@ -43,7 +43,6 @@ import { createShadeVeil } from "./shadeVeil.js";
 import { cloudDensityNow, cloudGroundDue, cloudGroundMap, cloudStepsFor } from "./cloudParams.js";
 import { createDroppedCap, droppedCapAt } from "./droppedItem.js";
 import { CAP_SCENE_S, SHOTS, SUMMIT_SCENE_S, capPose, summitShot, type SceneBase, type SceneContext } from "./cutscene.js";
-import { forestDensity } from "../sim/vegetation.js";
 import { MAX_PLAYERS, PLAYER_EYE_OFFSET, PLAYER_HALF } from "../sim/constants.js";
 import { blendedEye, type EyePose } from "./eyeBlend.js";
 import { createViewBob } from "./viewBob.js";
@@ -51,6 +50,7 @@ import { FOG_DISTANCE } from "../sim/forestConstants.js";
 import { CHARACTER_IDS, EntityViews } from "./entityViews.js";
 import { LAMP_ANGLE, LAMP_COLOUR, LAMP_RANGE, budgetLights, budgetMaterial, createHeadlamp, setLamp } from "./headlamp.js";
 import { lampUnder, type LampState } from "./lampParams.js";
+import { createLensCanopy } from "./lensCanopy.js";
 import { windRecordUnder, type WindRecord } from "./windParams.js";
 import { sharedSeconds } from "./oceanWindSea.js";
 import { setFoliageWind, FOLIAGE_PLAYERS, FOLIAGE_PLAYER_PARKED } from "./foliagePlugin.js";
@@ -2516,10 +2516,9 @@ function buildRenderer(
   }
 
   const stareAt = new Vector3();
-  // The forest's density over the camera, a full terrain sample: taken
-  // again only once the camera has moved a metre from where it was taken.
-  let lensCanopyX = Number.NaN;
-  let lensCanopyZ = Number.NaN;
+  // The forest's density over the camera, taken again only once the camera
+  // has moved a metre from where it was taken (`lensCanopy.ts`).
+  const canopyRead = forest !== null ? createLensCanopy(forest.seed) : null;
   let lensCanopy = 0;
 
   // A forest draws terrain instead of brushes. Guarded here rather than relying on
@@ -3481,11 +3480,7 @@ function buildRenderer(
       // canopy over the camera (still read for the drips' sound) no longer
       // clears it. The camera's pose is last frame's (it is set below), one
       // frame behind, which the smoothing hides.
-      if (forest !== null && !(Math.hypot(camera.position.x - lensCanopyX, camera.position.z - lensCanopyZ) <= 1)) {
-        lensCanopyX = camera.position.x;
-        lensCanopyZ = camera.position.z;
-        lensCanopy = forestDensity(forest.seed, lensCanopyX, lensCanopyZ);
-      }
+      if (canopyRead !== null) lensCanopy = canopyRead.over(camera.position.x, camera.position.z);
       lensStrength = lensSmooth(lensStrength, lensStrengthUnder(weather.rain, camera.rotation.x), engine.getDeltaTime() / 1000);
       // The stare dims the frame's exposure: the lighting's on the material
       // path, so a weather fade's applies keep it; the grade's on the post path.

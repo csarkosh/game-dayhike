@@ -462,6 +462,7 @@ describe("layer boundaries", () => {
       join(SRC, "game", "rainField.ts"),
       join(SRC, "game", "splashField.ts"),
       join(SRC, "game", "rainCover.ts"),
+      join(SRC, "game", "lensCanopy.ts"),
       join(SRC, "game", "lampParams.ts"),
       join(SRC, "game", "forestLookParams.ts"),
       join(SRC, "game", "barkParams.ts"),
@@ -573,7 +574,7 @@ describe("layer boundaries", () => {
       "terrainTables.ts", "terrainUniforms.ts", "groundLayers.ts", "wetSurface.ts", "terrainVertices.ts",
       "atmosphereParams.ts", "cloudParams.ts", "skyState.ts", "skyDomeParams.ts", "skyProbeParams.ts", "weather.ts", "sceneLights.ts", "lampParams.ts", "gameLens.ts",
       "mistField.ts", "mistBanks.ts", "motesParams.ts", "moteField.ts",
-      "rainParams.ts", "rainField.ts", "splashField.ts", "rainCover.ts",
+      "rainParams.ts", "rainField.ts", "splashField.ts", "rainCover.ts", "lensCanopy.ts",
     ];
     const loaded = (file: string): string[] =>
       [...readFileSync(file, "utf8").matchAll(/^\s*(?:import|export)\s+(?!type\s)(?:[^"'();]*?\s+from\s+)?["']([^"']+)["']/gm)].map((m) => m[1] as string);
