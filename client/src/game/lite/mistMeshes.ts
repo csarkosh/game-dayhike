@@ -26,12 +26,12 @@
  */
 import {
   addToScene, createPlane, createShaderMaterial, createTexture2DFromPixels, disposeMeshGpu, flushThinInstances, removeFromScene, setMeshVisible,
-  setShaderTexture, setShaderUniform, setThinInstanceCount, setThinInstances,
+  setShaderTexture, setThinInstanceCount, setThinInstances,
   type EngineContext, type Mesh, type SceneContext, type ShaderMaterial,
 } from "@babylonjs/lite";
 import type { AtmosphereRecord } from "../atmosphereParams.js";
 import type { Rgb } from "../colour.js";
-import { MIST_INSTANCE_FLOATS, createMistBanks, emptyMistUniforms, mistUniforms, writeMistInstances, type MistUniforms } from "../mistBanks.js";
+import { MIST_INSTANCE_FLOATS, createMistBanks, emptyMistUniforms, mistUniforms, writeMistInstances, type MistOrder } from "../mistBanks.js";
 import { MIST_TEX_SIZE, mistAlphaMap } from "../mistField.js";
 import type { QualityTier } from "../quality.js";
 import type { WeatherParams } from "../weather.js";
@@ -39,6 +39,7 @@ import type { WindRecord } from "../windParams.js";
 import { DISPLAY_CURVE_WGSL } from "./displayCurve.js";
 import { SEE_THROUGH_ORDER } from "./drawOrder.js";
 import type { FrameUploads } from "./frameUploads.js";
+import { shaderUniformDecls, shaderUniformWriter } from "./shaderUniforms.js";
 
 /** What the two stages hand each other. */
 const VARYINGS = "struct MistOut{@builtin(position)position:vec4<f32>,@location(0)uv:vec2<f32>,@location(1)fogDistance:vec3<f32>,@location(2)visibility:f32}";
@@ -123,16 +124,12 @@ export function createLiteMistMeshes(engine: EngineContext, scene: SceneContext,
   const banks = createMistBanks(seed, tier);
   const cap = banks.drawn.length;
   const values = emptyMistUniforms();
-  const written = emptyMistUniforms();
   const material = createShaderMaterial({
     name: "mistBanks",
     vertexSource: VERTEX,
     fragmentSource: FRAGMENT,
     attributes: ["position", "uv"],
-    uniforms: [
-      "viewProjection", "view",
-      ...Object.entries(values).map(([name, value]) => ({ name, type: value.length === 1 ? ("f32" as const) : ("vec3<f32>" as const), defaultValue: value })),
-    ],
+    uniforms: ["viewProjection", "view", ...shaderUniformDecls(values)],
     samplers: ["mistSprite"],
     needAlphaBlending: true,
     blendMode: "alpha",
@@ -145,12 +142,13 @@ export function createLiteMistMeshes(engine: EngineContext, scene: SceneContext,
     addressModeU: "repeat", addressModeV: "repeat", minFilter: "linear", magFilter: "linear", mipMaps: true,
   });
   setShaderTexture(material, "mistSprite", sprite);
+  const writeUniforms = shaderUniformWriter(material, values);
 
   // What the mesh draws from, and what the next frame is composed into: the mesh's arrays are written only where the
   // two differ.
   const matrices = new Float32Array(cap * MIST_INSTANCE_FLOATS);
   const next = new Float32Array(cap * MIST_INSTANCE_FLOATS);
-  const order: { index: number; distance: number }[] = [];
+  const order: MistOrder = [];
   let shown = 0;
 
   const mesh = createPlane(engine, { size: 1 });
@@ -199,15 +197,7 @@ export function createLiteMistMeshes(engine: EngineContext, scene: SceneContext,
       }
       if (count === 0) return;
       mistUniforms(frame.colour, frame.air, frame.exposure, frame.contrast, values);
-      let changed = false;
-      for (const [name, value] of Object.entries(values) as [keyof MistUniforms, number[]][]) {
-        const last = written[name] as number[];
-        if (value.every((v, i) => Math.fround(v) === last[i])) continue;
-        for (let i = 0; i < value.length; i++) last[i] = Math.fround(value[i] as number);
-        setShaderUniform(material, name, value.length === 1 ? (value[0] as number) : value);
-        changed = true;
-      }
-      if (changed) uploads?.marked();
+      if (writeUniforms()) uploads?.marked();
     },
     dispose() {
       removeFromScene(scene, mesh);

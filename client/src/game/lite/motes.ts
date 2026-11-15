@@ -29,13 +29,11 @@
  */
 import {
   addToScene, createPlane, createShaderMaterial, createTexture2DFromPixels, disposeMeshGpu, removeFromScene, setMeshVisible, setShaderTexture,
-  setShaderUniform, setThinInstances,
+  setThinInstances,
   type EngineContext, type Mesh, type SceneContext, type ShaderMaterial,
 } from "@babylonjs/lite";
 import type { Rgb } from "../colour.js";
-import {
-  MOTE_BOX, MOTE_SALT, emptyMoteUniforms, moteSlots, moteUniforms, motesShown, stepMoteTravel, type MoteUniforms,
-} from "../moteField.js";
+import { MOTE_BOX, MOTE_SALT, emptyMoteUniforms, moteSlots, moteUniforms, motesShown, stepMoteTravel } from "../moteField.js";
 import { MOTE_TEX_SIZE, moteDiscMap, motesUnder } from "../motesParams.js";
 import type { QualityTier } from "../quality.js";
 import type { WeatherParams } from "../weather.js";
@@ -44,6 +42,7 @@ import { DISPLAY_CURVE_WGSL } from "./displayCurve.js";
 import { SEE_THROUGH_ORDER } from "./drawOrder.js";
 import { wgslFloat } from "./forestPlugins.js";
 import type { FrameUploads } from "./frameUploads.js";
+import { shaderUniformDecls, shaderUniformWriter } from "./shaderUniforms.js";
 
 const f = wgslFloat;
 
@@ -130,17 +129,12 @@ export function createLiteMotes(engine: EngineContext, scene: SceneContext, tier
   const slots = moteSlots(tier);
   if (slots === null) return null;
   const values = emptyMoteUniforms();
-  const written = emptyMoteUniforms();
-  const types = { 1: "f32", 2: "vec2<f32>", 4: "vec4<f32>" } as const;
   const material = createShaderMaterial({
     name: "motes",
     vertexSource: VERTEX,
     fragmentSource: FRAGMENT,
     attributes: ["position", "uv"],
-    uniforms: [
-      "view", "projection", "cameraPosition",
-      ...Object.entries(values).map(([name, value]) => ({ name, type: types[value.length as 1 | 2 | 4], defaultValue: value })),
-    ],
+    uniforms: ["view", "projection", "cameraPosition", ...shaderUniformDecls(values)],
     samplers: ["moteSprite"],
     needAlphaBlending: true,
     // Faint alone, bright where many overlap in lit air.
@@ -153,6 +147,7 @@ export function createLiteMotes(engine: EngineContext, scene: SceneContext, tier
     addressModeU: "repeat", addressModeV: "repeat", minFilter: "linear", magFilter: "linear", mipMaps: true,
   });
   setShaderTexture(material, "moteSprite", sprite);
+  const writeUniforms = shaderUniformWriter(material, values);
 
   const mesh = createPlane(engine, { size: 1 });
   mesh.material = material;
@@ -187,15 +182,7 @@ export function createLiteMotes(engine: EngineContext, scene: SceneContext, tier
         setMeshVisible(mesh, any);
       }
       if (!any) return;
-      let changed = false;
-      for (const [name, value] of Object.entries(values) as [keyof MoteUniforms, number[]][]) {
-        const last = written[name] as number[];
-        if (value.every((v, i) => Math.fround(v) === last[i])) continue;
-        for (let i = 0; i < value.length; i++) last[i] = Math.fround(value[i] as number);
-        setShaderUniform(material, name, value.length === 1 ? (value[0] as number) : value);
-        changed = true;
-      }
-      if (changed) uploads?.marked();
+      if (writeUniforms()) uploads?.marked();
     },
     dispose() {
       removeFromScene(scene, mesh);

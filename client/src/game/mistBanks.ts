@@ -163,6 +163,9 @@ export function createMistBanks(seed: number, tier: QualityTier): MistBanks {
   };
 }
 
+/** The scratch `writeMistInstances` orders the shown quads in: kept by its caller, so a frame makes none. */
+export type MistOrder = { index: number; distance: number }[];
+
 /** Floats an instance is: a quad's world matrix, its visibility in the last. */
 export const MIST_INSTANCE_FLOATS = 16;
 
@@ -183,18 +186,29 @@ export const MIST_INSTANCE_FLOATS = 16;
  */
 export function writeMistInstances(
   drawn: readonly DrawnMistBank[], eye: { readonly x: number; readonly y: number; readonly z: number }, yaw: number,
-  matrices: Float32Array, order: { index: number; distance: number }[] = [],
+  matrices: Float32Array, order: MistOrder = [],
 ): number {
-  order.length = 0;
+  // The shown quads into `order`'s first places, each put where it belongs as it comes: a dozen at most, and no
+  // list or record is made a frame once `order` has held as many.
+  let count = 0;
   for (let i = 0; i < drawn.length; i++) {
     const bank = drawn[i] as DrawnMistBank;
     if (!mistBankShown(bank)) continue;
-    order.push({ index: i, distance: Math.sqrt((bank.x - eye.x) ** 2 + (bank.y - eye.y) ** 2 + (bank.z - eye.z) ** 2) });
+    const distance = Math.sqrt((bank.x - eye.x) ** 2 + (bank.y - eye.y) ** 2 + (bank.z - eye.z) ** 2);
+    const spare = order[count] ?? { index: 0, distance: 0 };
+    let at = count;
+    while (at > 0 && (order[at - 1] as { distance: number }).distance < distance) {
+      order[at] = order[at - 1] as { index: number; distance: number };
+      at--;
+    }
+    spare.index = i;
+    spare.distance = distance;
+    order[at] = spare;
+    count++;
   }
-  order.sort((a, b) => b.distance - a.distance || a.index - b.index);
   const cos = Math.cos(yaw);
   const sin = Math.sin(yaw);
-  for (let n = 0; n < order.length; n++) {
+  for (let n = 0; n < count; n++) {
     const bank = drawn[(order[n] as { index: number }).index] as DrawnMistBank;
     const m = n * MIST_INSTANCE_FLOATS;
     matrices[m] = bank.width * cos;
@@ -214,7 +228,7 @@ export function writeMistInstances(
     matrices[m + 14] = bank.z;
     matrices[m + 15] = bank.visibility;
   }
-  return order.length;
+  return count;
 }
 
 /**

@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import { GRADIENT_MID_STEP, atmosphereUnder, fogGradientAt } from "../../src/game/atmosphereParams.js";
 import {
   MIST_CAP_BY_TIER, MIST_DRIFT, MIST_EDGE_FADE_SPAN, MIST_INSTANCE_FLOATS, MIST_NEAR_FADE_SPAN, MIST_NEAR_FADE_START, MIST_SHOWN_FLOOR, MIST_WRAP_FADE,
-  createMistBanks, emptyMistUniforms, mistBankShown, mistUniforms, writeMistInstances, type DrawnMistBank,
+  createMistBanks, emptyMistUniforms, mistBankShown, mistUniforms, writeMistInstances, type DrawnMistBank, type MistOrder,
 } from "../../src/game/mistBanks.js";
 import { skyStateFor } from "../../src/game/skyState.js";
 import { skyFixture } from "./helpers/skyFixture.js";
@@ -161,6 +161,25 @@ describe("the mist banks as instances of one quad", () => {
     expect([0, 1, 2].map((n) => +(matrices[n * MIST_INSTANCE_FLOATS + 15] as number).toFixed(2))).toEqual([0.11, 0.22, 0.33]);
     expect([...matrices.subarray(3 * MIST_INSTANCE_FLOATS)]).toEqual(new Array(MIST_INSTANCE_FLOATS).fill(7));
     expect(writeMistInstances([], { x: 0, y: 0, z: 0 }, 0, matrices)).toBe(0);
+  });
+});
+
+describe("the scratch the banks are ordered in", () => {
+  it("is the caller's to keep: a frame orders in it and makes no record once it has held as many", () => {
+    const drawn = [quad(0, 0, 100, 0.3), quad(0, 0, 300, 0.2), quad(0, 0, 200, 0.4)];
+    const matrices = new Float32Array(drawn.length * MIST_INSTANCE_FLOATS);
+    const order: MistOrder = [];
+    expect(writeMistInstances(drawn, { x: 0, y: 0, z: 0 }, 0, matrices, order)).toBe(3);
+    expect(order.map((o) => o.index)).toEqual([1, 2, 0]);
+    const records = new Set(order);
+    expect(writeMistInstances(drawn, { x: 0, y: 0, z: 400 }, 0, matrices, order)).toBe(3);
+    expect(order.map((o) => o.index)).toEqual([0, 2, 1]);
+    expect(new Set(order).size).toBe(3);
+    expect(order.every((o) => records.has(o))).toBe(true);
+    // Fewer shown: the first places are the shown ones, and the rest are kept for a later frame.
+    expect(writeMistInstances([drawn[0] as DrawnMistBank, quad(0, 0, 300, 0), drawn[2] as DrawnMistBank], { x: 0, y: 0, z: 0 }, 0, matrices, order)).toBe(2);
+    expect(order.slice(0, 2).map((o) => o.index)).toEqual([2, 0]);
+    expect(new Set(order).size).toBe(3);
   });
 });
 
