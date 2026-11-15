@@ -19,7 +19,7 @@
  * no bucket is made, and the faces are the terrain's own.
  */
 import {
-  createMeshFromData, createPbrMaterial, disposeMeshGpu, invalidateRenderBundles, removeFromScene, setPbrMetallicReflectance,
+  createMeshFromData, createPbrMaterial, disposeMeshGpu, removeFromScene, setPbrMetallicReflectance,
   type EngineContext, type MaterialPlugin, type PluginUniformBlock, type PbrMaterialProps, type SceneContext,
 } from "@babylonjs/lite";
 import { CLIFF_DENSITY, CLIFF_MODELS } from "../../sim/cliffField.js";
@@ -120,14 +120,8 @@ export function createCliffMeshes(engine: EngineContext, scene: SceneContext, se
     const origin = cliffOrigin(camX, camZ);
     if (origin.x === builtX && origin.z === builtZ) return;
     lists.rebuild(camX, camZ, held);
-    let resent = false;
     for (const row of buckets) {
-      for (const bucket of row) if (bucket !== null) resent = showList(bucket.target, bucket.list, bucket.list.count, options.uploads) || resent;
-    }
-    // Plugin instance data goes up as its draw is recorded again.
-    if (resent) {
-      invalidateRenderBundles(engine);
-      options.uploads?.recorded();
+      for (const bucket of row) if (bucket !== null) showList(bucket.target, bucket.list, bucket.list.count, options.uploads);
     }
     builtX = origin.x;
     builtZ = origin.z;

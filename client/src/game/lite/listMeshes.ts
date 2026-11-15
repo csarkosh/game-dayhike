@@ -10,20 +10,18 @@
  *
  * **The streams are interleaved** into one array an instance, as Lite's
  * plugin instance data is laid out (`vegetationInstanceLayout`), at each
- * showing. Lite sends the whole of the array it is handed, so it is handed
- * a view of the instances shown, rounded up to a power of two: what is sent
- * is at most twice what is drawn, and the buffer on the GPU is made again
- * only when a list first reaches a size, not at every list.
- *
- * Plugin instance data goes up when its draw is recorded, so whoever shows
- * a list records the draws again once it has shown all it will
- * (`invalidateRenderBundles`).
+ * showing, at the matrices' capacity. The mesh holds the whole array, so
+ * the buffer on the GPU is made again only when a list outgrows it, and a
+ * showing names the floats of the instances shown
+ * (`markThinInstancePluginData`): Lite sends those at the next frame, the
+ * mesh shown or hidden, and records no draw again for them. An array that
+ * has outgrown the buffer is sent whole, into a buffer made for it.
  *
  * A showing is counted on the renderer's record of its uploads
  * (`frameUploads.ts`), as streamed: the matrices of the instances shown and
- * the view of the plugin data Lite will send.
+ * the plugin data Lite will send for them.
  */
-import { addToScene, setMeshVisible, setThinInstanceCount, setThinInstances, type Mesh, type SceneContext } from "@babylonjs/lite";
+import { addToScene, markThinInstancePluginData, setMeshVisible, setThinInstanceCount, setThinInstances, type Mesh, type SceneContext } from "@babylonjs/lite";
 import type { ListBuffers } from "../instanceLists.js";
 import { writeVegetationInstances, type VegetationInstanceLayout } from "./forestPlugins.js";
 import type { FrameUploads } from "./frameUploads.js";
@@ -31,9 +29,9 @@ import type { FrameUploads } from "./frameUploads.js";
 /** Bytes an instance's matrix is on the GPU. */
 export const MATRIX_BYTES = 64;
 
-/** The bytes showing `count` instances hands over on a mesh whose plugin data is `floats` an instance, at `capacity`. */
-export function listBytes(count: number, capacity: number, floats: number): number {
-  return count * MATRIX_BYTES + (floats > 0 ? sentInstances(count, capacity) * floats * 4 : 0);
+/** The bytes showing `count` instances hands over on a mesh whose plugin data is `floats` an instance. */
+export function listBytes(count: number, floats: number): number {
+  return count * (MATRIX_BYTES + floats * 4);
 }
 
 /** Instances a mesh's arrays hold before its first list: a bucket in view of nothing still stands, hidden. */
@@ -48,16 +46,11 @@ export type ListMesh = {
   matrices: Float32Array;
   /** The interleaved streams, at the matrices' capacity; null for a material that reads none. */
   data: Float32Array | null;
+  /** Floats of the streams the mesh's buffer on the GPU has room for: an array longer than it is sent whole. */
+  room: number;
   /** Instances shown. */
   count: number;
 };
-
-/** The instances a view of the plugin data covers for `count` shown: the next power of two, within `capacity`. */
-export function sentInstances(count: number, capacity: number): number {
-  let sent = FIRST_CAPACITY;
-  while (sent < count) sent *= 2;
-  return Math.min(sent, capacity);
-}
 
 /** `mesh` as a bucket of `scene`, hidden and holding no instance until its first list. Its material is already assigned. */
 export function listMesh(scene: SceneContext, mesh: Mesh, layout: VegetationInstanceLayout): ListMesh {
@@ -68,18 +61,17 @@ export function listMesh(scene: SceneContext, mesh: Mesh, layout: VegetationInst
   setThinInstanceCount(mesh, 0);
   setMeshVisible(mesh, false);
   addToScene(scene, mesh);
-  return { mesh, layout, matrices, data, count: 0 };
+  return { mesh, layout, matrices, data, room: data?.length ?? 0, count: 0 };
 }
 
 /**
  * Draws the first `count` instances of `from` (a list's collected buffers,
  * or a culled list's drawn ones): the mesh takes the matrices' array where
  * it is not the one it holds, the streams are interleaved for the instances
- * shown, and a bucket shown nothing is hidden. True where the mesh's plugin
- * data changed: the draws want recording again. What it hands over is
+ * shown, and a bucket shown nothing is hidden. What it hands over is
  * counted on `uploads`, as streamed.
  */
-export function showList(target: ListMesh, from: ListBuffers, count: number, uploads?: FrameUploads): boolean {
+export function showList(target: ListMesh, from: ListBuffers, count: number, uploads?: FrameUploads): void {
   const { mesh, layout } = target;
   const capacity = from.buf.length / 16;
   if (from.buf !== target.matrices && capacity > 0) {
@@ -91,14 +83,16 @@ export function showList(target: ListMesh, from: ListBuffers, count: number, upl
   const data = target.data;
   if (data !== null && instances !== undefined && instances !== null) {
     if (count > 0) writeVegetationInstances(layout, count, { fadeBands: from.bands, foliage: from.foliage, bladeStrength: from.strength }, data);
-    instances.pluginData = data.subarray(0, sentInstances(count, data.length / layout.floats) * layout.floats);
-    instances.pluginVersion = (instances.pluginVersion ?? 0) + 1;
-    uploads?.stream("pluginInstances", instances.pluginData.byteLength);
+    if (instances.pluginData !== data) instances.pluginData = data;
+    markThinInstancePluginData(mesh, 0, count * layout.floats);
+    if (data.length > target.room) {
+      target.room = data.length;
+      uploads?.stream("pluginInstances", data.byteLength);
+    } else if (count > 0) uploads?.stream("pluginInstances", count * layout.floats * 4);
   }
   if (count > 0) uploads?.stream("instances", count * MATRIX_BYTES);
   uploads?.composed(count);
   target.count = count;
   setThinInstanceCount(mesh, count);
   setMeshVisible(mesh, count > 0);
-  return data !== null;
 }
