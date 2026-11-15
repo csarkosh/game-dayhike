@@ -45,7 +45,7 @@ import { Matrix, Vector3 } from "@babylonjs/core/Maths/math.vector.js";
 import { Viewport } from "@babylonjs/core/Maths/math.viewport.js";
 import { Color4 } from "@babylonjs/core/Maths/math.color.js";
 import type { LakeSource } from "../sim/terrain.js";
-import { SKYLINE_EYE_UP, SKYLINE_TEXELS } from "./lakeSkyline.js";
+import { SKYLINE_EYE_UP, SKYLINE_TEXELS, skylineTexels } from "./lakeSkyline.js";
 
 export const PANORAMA_WIDTH = 1024, PANORAMA_HEIGHT = 128, PANORAMA_SECTORS = 16;
 /** The capture's eye over the level (m): the skyline's own, so the panorama
@@ -234,9 +234,7 @@ export function createLakePanorama(scene: Scene, lake: LakeSource): LakePanorama
   };
 }
 
-/** The highest skyline elevation the water reads (rad), just short of a
- * right angle: the read takes its tangent, which stays finite (48.1) here. */
-export const SKYLINE_READ_MAX = 1.55;
+export { SKYLINE_READ_MAX } from "./lakeSkyline.js";
 
 /**
  * The skyline as the water reads it (`waterSkyline`, on medium and low):
@@ -247,10 +245,7 @@ export const SKYLINE_READ_MAX = 1.55;
  * texel.
  */
 export function createSkylineTexture(scene: Scene, elevations: Float32Array): RawTexture {
-  if (elevations.length !== SKYLINE_TEXELS) {
-    throw new Error(`a skyline is ${SKYLINE_TEXELS} elevations, not ${elevations.length}`);
-  }
-  const capped = Float32Array.from(elevations, (e) => Math.min(e, SKYLINE_READ_MAX));
+  const capped = skylineTexels(elevations);
   const texture = RawTexture.CreateRTexture(
     capped, SKYLINE_TEXELS, 1, scene, false, false, Texture.NEAREST_SAMPLINGMODE, Constants.TEXTURETYPE_FLOAT,
   );
