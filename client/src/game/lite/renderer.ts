@@ -124,6 +124,7 @@ import { nearRadiusFor } from "../forestField.js";
 import { GAME_FOV, lensProjection } from "../gameLens.js";
 import { LAMP_ANGLE, LAMP_COLOUR, LAMP_EXPONENT, LAMP_RANGE, lampUnder, type LampState } from "../lampParams.js";
 import { createLensCanopy } from "../lensCanopy.js";
+import { droppedCapAt } from "../droppedCap.js";
 import type { CullPose } from "../grassCull.js";
 import { writeListenerPose } from "../listenerPose.js";
 import { sharedSeconds } from "../oceanWindSea.js";
@@ -144,7 +145,8 @@ import { WET_CAP, emptyWetUniforms, setWetWeather, wetLineFor, wetUniforms, type
 import { windRecordUnder, type WindRecord } from "../windParams.js";
 import { atmospherePlugin } from "./atmospherePlugin.js";
 import { createBladeMeshes, type BladeMeshes } from "./bladeMeshes.js";
-import { cameraAxes, projectToCanvas, restAxes, type CameraPose } from "./cameraPose.js";
+import { cameraAxes, projectToCanvas, restAxes, restPlanes, viewPlanes, type CameraPose } from "./cameraPose.js";
+import { createCapMesh, type CapMesh } from "./capMesh.js";
 import { createCliffMeshes, type CliffMeshes } from "./cliffMeshes.js";
 import { createClutterMeshes, type ClutterMeshes } from "./clutterMeshes.js";
 import { createDuffMeshes, type DuffMeshes } from "./duffMeshes.js";
@@ -237,6 +239,8 @@ type Standing = {
   /** The hikers' bodies and the Hollows' eyes (`entityMeshes.ts`), and the lamps the other hikers wear (`wornLamps.ts`). */
   entities: EntityMeshes | null;
   wornLamps: WornLamps;
+  /** The missing hiker's cap, beside the trail (`capMesh.ts`). */
+  cap: CapMesh | null;
 };
 
 /**
@@ -377,6 +381,8 @@ export function createLiteRenderer(canvas: HTMLCanvasElement, level: Level, fore
   const canopyRead = forest === null ? null : createLensCanopy(forest.seed);
   /** The fog gradient's near end, the motes' colour and the one the cloud's is made from: black until the sky's first slices. */
   let nearColour = { r: 0, g: 0, b: 0 };
+  /** The view's six planes for the frame (`cameraPose.ts`): what lies in one place is drawn while they hold it. */
+  const planes = restPlanes();
   /** Where the hikers and the Hollows stand a frame, and how (`entityPoses.ts`). */
   const poses = createEntityPoses();
   /** The most hikers other than the local one the state has held at once: a lamp's light is made for each. */
@@ -396,6 +402,7 @@ export function createLiteRenderer(canvas: HTMLCanvasElement, level: Level, fore
 
   /** Lets go of what stands: the meshes, the scene, the engine and its device. */
   function release(made: Standing): void {
+    made.cap?.dispose();
     made.entities?.dispose();
     made.wornLamps.dispose();
     made.skinClock.dispose();
@@ -609,9 +616,16 @@ export function createLiteRenderer(canvas: HTMLCanvasElement, level: Level, fore
     const entities = forest === null || cloudMap === null || disposed
       ? null
       : createEntityMeshes(engine, scene, { wet: wetAt(0), air: () => atmospherePlugin(airValues, cloudMap, shared), shared, clock: skinClock, hollows: true, uploads });
+    // The missing hiker's cap, where the world's trail has a stem to lie beside.
+    let cap: CapMesh | null = null;
+    if (forest !== null && cloudMap !== null && !disposed) {
+      const graph = activeTerrainVariant().trailGraph?.(forest.seed) ?? null;
+      const at = graph === null ? null : droppedCapAt(graph, forest.seed);
+      if (at !== null) cap = createCapMesh(engine, scene, at, elevationAt(forest.seed, at.x, at.z), () => atmospherePlugin(airValues, cloudMap, shared), uploads);
+    }
     const made: Standing = {
       engine, scene, camera, sun, fill, lamp, dome, capture, shared, materials, terrain, road, cloudGround, forest: trees, blades, clutter, duff, cliffs, props, mist, motes,
-      rain, rainMap, splash, skinClock, entities, wornLamps,
+      rain, rainMap, splash, skinClock, entities, wornLamps, cap,
     };
     if (disposed) {
       release(made);
@@ -998,6 +1012,9 @@ export function createLiteRenderer(canvas: HTMLCanvasElement, level: Level, fore
           standing.entities.update(poses.step(state, localId, alpha, frame.dt, standing.entities.models), dt);
           standing.wornLamps.update(standing.entities.lamps(), lensLamp.state);
         }
+        // The view's planes for the frame, and the cap while they hold it.
+        viewPlanes(pose, axes, fov, canvas.height > 0 ? canvas.width / canvas.height : 1, lens.near, lens.far, planes);
+        standing.cap?.seen(planes);
         // The ground cloud: the ground round the eye, built again at once as the eye leaves the last map's middle, as
         // the game builds it, and counted with what follows the camera; then its density for the frame, from the
         // night, the haunt and the chase's cast by how far the mist has come in, or the level it is held at.

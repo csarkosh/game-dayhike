@@ -75,3 +75,41 @@ export function projectToCanvas(
     depth: Math.hypot(dx, dy, dz),
   };
 }
+
+/** A plane of a view: its inward unit normal and its distance, a point p inside where n·p + d ≥ 0. */
+export type ViewFrustumPlane = { normal: { x: number; y: number; z: number }; d: number };
+
+/** Six planes for `viewPlanes` to fill: near, far, left, right, top, bottom. */
+export function restPlanes(): ViewFrustumPlane[] {
+  return Array.from({ length: 6 }, () => ({ normal: { x: 0, y: 0, z: 1 }, d: 0 }));
+}
+
+/**
+ * The six planes of the view from `pose` along `axes` through a lens of
+ * vertical field of view `fov` (radians) and `aspect` (width over height),
+ * between `near` and `far`: near, far, left, right, top, bottom, each
+ * facing inward. Fills and returns `out`.
+ */
+export function viewPlanes(pose: CameraPose, axes: CameraAxes, fov: number, aspect: number, near: number, far: number, out: ViewFrustumPlane[]): ViewFrustumPlane[] {
+  const tanV = Math.tan(fov / 2);
+  const tanH = tanV * aspect;
+  const cosV = 1 / Math.sqrt(1 + tanV * tanV);
+  const sinV = tanV * cosV;
+  const cosH = 1 / Math.sqrt(1 + tanH * tanH);
+  const sinH = tanH * cosH;
+  const set = (plane: ViewFrustumPlane, nx: number, ny: number, nz: number, px: number, py: number, pz: number): void => {
+    plane.normal.x = nx;
+    plane.normal.y = ny;
+    plane.normal.z = nz;
+    plane.d = -(nx * px + ny * py + nz * pz);
+  };
+  const { fx, fy, fz, ux, uy, uz, rx, ry, rz } = axes;
+  set(out[0] as ViewFrustumPlane, fx, fy, fz, pose.x + fx * near, pose.y + fy * near, pose.z + fz * near);
+  set(out[1] as ViewFrustumPlane, -fx, -fy, -fz, pose.x + fx * far, pose.y + fy * far, pose.z + fz * far);
+  // A side plane holds the eye and leans in from its side by the half angle.
+  set(out[2] as ViewFrustumPlane, rx * cosH + fx * sinH, ry * cosH + fy * sinH, rz * cosH + fz * sinH, pose.x, pose.y, pose.z);
+  set(out[3] as ViewFrustumPlane, -rx * cosH + fx * sinH, -ry * cosH + fy * sinH, -rz * cosH + fz * sinH, pose.x, pose.y, pose.z);
+  set(out[4] as ViewFrustumPlane, -ux * cosV + fx * sinV, -uy * cosV + fy * sinV, -uz * cosV + fz * sinV, pose.x, pose.y, pose.z);
+  set(out[5] as ViewFrustumPlane, ux * cosV + fx * sinV, uy * cosV + fy * sinV, uz * cosV + fz * sinV, pose.x, pose.y, pose.z);
+  return out;
+}

@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { Matrix, Vector3 } from "@babylonjs/core/Maths/math.vector.js";
-import { cameraAxes, projectToCanvas, restAxes, type CameraPose } from "../../../src/game/lite/cameraPose.js";
+import { Frustum } from "@babylonjs/core/Maths/math.frustum.js";
+import { cameraAxes, projectToCanvas, restAxes, restPlanes, viewPlanes, type CameraPose } from "../../../src/game/lite/cameraPose.js";
 
 const POSES: [number, number, number][] = [
   [0, 0, 0], [0.7, 0, 0], [0, 0.4, 0], [0, 0, 0.3], [1.09, -0.35, 0.0105], [-2.4, 1.1, -0.6], [3.14, 0.2, 0.5],
@@ -68,5 +69,52 @@ describe("a world point on the canvas", () => {
     expect(at?.x).toBeCloseTo(400, 6);
     expect(at?.y).toBeCloseTo(300, 6);
     expect(at?.depth).toBeCloseTo(20, 9);
+  });
+});
+
+describe("the view's six planes", () => {
+  it("are the ones Babylon.js cuts its view by: the same points inside, the same outside", () => {
+    const fov = 0.9;
+    const aspect = 1470 / 956;
+    const near = 0.1;
+    const far = 600;
+    for (const [yaw, pitch, roll] of POSES) {
+      const eye: CameraPose = { x: 12, y: 30, z: -7, yaw, pitch, roll };
+      const axes = cameraAxes(yaw, pitch, roll, restAxes());
+      const ours = viewPlanes(eye, axes, fov, aspect, near, far, restPlanes());
+      const view = Matrix.LookAtLH(
+        new Vector3(eye.x, eye.y, eye.z), new Vector3(eye.x + axes.fx, eye.y + axes.fy, eye.z + axes.fz), new Vector3(axes.ux, axes.uy, axes.uz),
+      );
+      const theirs = Frustum.GetPlanes(view.multiply(Matrix.PerspectiveFovLH(fov, aspect, near, far)));
+      for (const plane of ours) expect(Math.hypot(plane.normal.x, plane.normal.y, plane.normal.z)).toBeCloseTo(1, 9);
+      // Points all round the eye, near and far: each is inside both sets of planes or outside both.
+      for (let i = 0; i < 400; i++) {
+        // From behind the eye to past the far plane, never a whole step onto either.
+        const along = ((i * 37) % 23) * 31.3 - 60.7;
+        const p = { x: eye.x + axes.fx * along + axes.rx * (((i * 13) % 17) - 8) * 20 + axes.ux * (((i * 7) % 11) - 5) * 20,
+          y: eye.y + axes.fy * along + axes.ry * (((i * 13) % 17) - 8) * 20 + axes.uy * (((i * 7) % 11) - 5) * 20,
+          z: eye.z + axes.fz * along + axes.rz * (((i * 13) % 17) - 8) * 20 + axes.uz * (((i * 7) % 11) - 5) * 20 };
+        const inside = (planes: readonly { normal: { x: number; y: number; z: number }; d: number }[], margin: number): boolean =>
+          planes.every((plane) => plane.normal.x * p.x + plane.normal.y * p.y + plane.normal.z * p.z + plane.d > margin);
+        // A point within a hair of a plane may fall either side by rounding: only the clear ones are compared.
+        if (inside(theirs, 0.05) !== inside(theirs, -0.05)) continue;
+        expect(inside(ours, 0), `${yaw} ${pitch} ${roll} ${i}`).toBe(inside(theirs, 0));
+      }
+    }
+  });
+
+  it("fills the planes it is handed: near, far, left, right, top, bottom, each facing in", () => {
+    const planes = restPlanes();
+    const eye: CameraPose = { x: 0, y: 0, z: 0, yaw: 0, pitch: 0, roll: 0 };
+    expect(viewPlanes(eye, restAxes(), Math.PI / 2, 1, 1, 100, planes)).toBe(planes);
+    expect(planes[0]).toEqual({ normal: { x: 0, y: 0, z: 1 }, d: -1 });
+    expect(planes[1]?.normal.z).toBe(-1);
+    expect(planes[1]?.d).toBe(100);
+    // A right angle of view: each side plane leans in by 45 degrees.
+    expect(planes[2]?.normal.x).toBeCloseTo(Math.SQRT1_2, 9);
+    expect(planes[3]?.normal.x).toBeCloseTo(-Math.SQRT1_2, 9);
+    expect(planes[4]?.normal.y).toBeCloseTo(-Math.SQRT1_2, 9);
+    expect(planes[5]?.normal.y).toBeCloseTo(Math.SQRT1_2, 9);
+    for (const plane of planes.slice(2)) expect(plane.d).toBeCloseTo(0, 12);
   });
 });
