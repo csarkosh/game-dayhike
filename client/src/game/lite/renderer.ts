@@ -115,6 +115,7 @@ import { BASE_SPACING_BY_TIER } from "../clipmap.js";
 import { clutterReachFor } from "../clutterField.js";
 import { cloudDensityNow, cloudFor, cloudGroundDue, cloudGroundMap, cloudMarchSteps, cloudOn, cloudStepsFor, noCloud } from "../cloudParams.js";
 import type { EngineHandle } from "../engineHandle.js";
+import { createEntityPoses } from "../entityPoses.js";
 import { blendedEye, type EyePose } from "../eyeBlend.js";
 import { FACE_PATCH_Z_UNITS } from "../facePatches.js";
 import { featureTableFor } from "../featureTable.js";
@@ -147,6 +148,7 @@ import { cameraAxes, projectToCanvas, restAxes, type CameraPose } from "./camera
 import { createCliffMeshes, type CliffMeshes } from "./cliffMeshes.js";
 import { createClutterMeshes, type ClutterMeshes } from "./clutterMeshes.js";
 import { createDuffMeshes, type DuffMeshes } from "./duffMeshes.js";
+import { createEntityMeshes, type EntityMeshes } from "./entityMeshes.js";
 import { createForestMeshes, type ForestMeshes } from "./forestMeshes.js";
 import { FRAME_BLOCK, FRAME_FIELDS, writeFrameBlock, type FrameValues } from "./frameBlock.js";
 import { createFrameUploads, uploadCountsCopy, type FrameUploadCounts } from "./frameUploads.js";
@@ -158,11 +160,13 @@ import { createPropMeshes, type PropMeshes } from "./propMeshes.js";
 import { createLiteRain, type LiteRain, type RainFrame } from "./rain.js";
 import { createLiteRainMap, type CoverRegistry, type LiteRainMap } from "./rainMap.js";
 import { createLiteRainSplash, type LiteRainSplash, type SplashFrame } from "./rainSplash.js";
+import { createSkinClock, type SkinClock } from "./skinnedModels.js";
 import { SKY_CAPTURE_BYTES, createLiteSkyCapture, type LiteSkyCapture } from "./skyCapture.js";
 import { createLiteSkyDome, type LiteSkyDome } from "./skyDome.js";
 import { createTerrainMeshes, type TerrainMeshes } from "./terrainMeshes.js";
 import { emptyTerrainMaterialUniforms, terrainPlugin, terrainSplitPlugin, terrainWetPlugin } from "./terrainPlugins.js";
 import { createWorldLight } from "./worldLight.js";
+import { createWornLamps, type WornLamps } from "./wornLamps.js";
 
 /** The display curve's contrast on the material colour path, as the lighting sets Babylon's. */
 const DISPLAY_CONTRAST = 1.1;
@@ -228,6 +232,11 @@ type Standing = {
   /** The rain's cover map and the splashes that land on it, on the tiers that draw them (`rainMap.ts`, `rainSplash.ts`). */
   rainMap: LiteRainMap | null;
   splash: LiteRainSplash | null;
+  /** The clock every skinned model's clips are read by (`skinnedModels.ts`). */
+  skinClock: SkinClock;
+  /** The hikers' bodies and the Hollows' eyes (`entityMeshes.ts`), and the lamps the other hikers wear (`wornLamps.ts`). */
+  entities: EntityMeshes | null;
+  wornLamps: WornLamps;
 };
 
 /**
@@ -368,6 +377,10 @@ export function createLiteRenderer(canvas: HTMLCanvasElement, level: Level, fore
   const canopyRead = forest === null ? null : createLensCanopy(forest.seed);
   /** The fog gradient's near end, the motes' colour and the one the cloud's is made from: black until the sky's first slices. */
   let nearColour = { r: 0, g: 0, b: 0 };
+  /** Where the hikers and the Hollows stand a frame, and how (`entityPoses.ts`). */
+  const poses = createEntityPoses();
+  /** The most hikers other than the local one the state has held at once: a lamp's light is made for each. */
+  let othersSeen = 0;
   /** The canvas's size the engine was last fitted to, CSS pixels. */
   let fittedWidth = -1;
   let fittedHeight = -1;
@@ -383,6 +396,9 @@ export function createLiteRenderer(canvas: HTMLCanvasElement, level: Level, fore
 
   /** Lets go of what stands: the meshes, the scene, the engine and its device. */
   function release(made: Standing): void {
+    made.entities?.dispose();
+    made.wornLamps.dispose();
+    made.skinClock.dispose();
     made.splash?.dispose();
     made.rain.dispose();
     made.rainMap?.dispose();
@@ -441,6 +457,8 @@ export function createLiteRenderer(canvas: HTMLCanvasElement, level: Level, fore
     const fill = createHemisphericLight([0, 1, 0], 1);
     addToScene(scene, sun);
     addToScene(scene, fill);
+    // The lamps the other hikers wear: a light for each one there already is, before any mesh is built.
+    const wornLamps = createWornLamps(scene, othersSeen);
     // The sky's dome, the night sky alone until the first frame's light, and its capture as the scene's
     // environment, made before the scene is registered.
     const dome = createLiteSkyDome(engine, scene);
@@ -585,7 +603,16 @@ export function createLiteRenderer(canvas: HTMLCanvasElement, level: Level, fore
         cover: coverAs("hard"),
       });
     }
-    const made: Standing = { engine, scene, camera, sun, fill, lamp, dome, capture, shared, materials, terrain, road, cloudGround, forest: trees, blades, clutter, duff, cliffs, props, mist, motes, rain, rainMap, splash };
+    // The hikers' bodies and the Hollows' eyes, which land as their models do, under the air as the rest of the
+    // world is. A body takes the water's line and not the rain: its porosity is none.
+    const skinClock = createSkinClock(engine);
+    const entities = forest === null || cloudMap === null || disposed
+      ? null
+      : createEntityMeshes(engine, scene, { wet: wetAt(0), air: () => atmospherePlugin(airValues, cloudMap, shared), shared, clock: skinClock, hollows: true, uploads });
+    const made: Standing = {
+      engine, scene, camera, sun, fill, lamp, dome, capture, shared, materials, terrain, road, cloudGround, forest: trees, blades, clutter, duff, cliffs, props, mist, motes,
+      rain, rainMap, splash, skinClock, entities, wornLamps,
+    };
     if (disposed) {
       release(made);
       return;
@@ -785,7 +812,7 @@ export function createLiteRenderer(canvas: HTMLCanvasElement, level: Level, fore
   /** The forest's first lists drawn, once the renderer stands; at once where it cannot, or in a world with no forest. */
   const forestReady: Promise<void> = made.then(() => standing?.forest?.ready);
   /** Everything that lands as its models do, drawn: the forest, the ground clutter and the cliffs. */
-  const sceneryReady: Promise<void> = made.then(() => Promise.all([standing?.forest?.ready, standing?.clutter?.ready, standing?.cliffs?.ready])).then(() => undefined);
+  const sceneryReady: Promise<void> = made.then(() => Promise.all([standing?.forest?.ready, standing?.clutter?.ready, standing?.cliffs?.ready, standing?.entities?.ready])).then(() => undefined);
 
   const renderer: Renderer = {
     ...absent,
@@ -810,7 +837,7 @@ export function createLiteRenderer(canvas: HTMLCanvasElement, level: Level, fore
       });
     },
     waitingItems() {
-      return loading + (standing?.forest?.waiting() ?? 0) + (standing?.clutter?.waiting() ?? 0) + (standing?.cliffs?.waiting() ?? 0);
+      return loading + (standing?.forest?.waiting() ?? 0) + (standing?.clutter?.waiting() ?? 0) + (standing?.cliffs?.waiting() ?? 0) + (standing?.entities?.waiting() ?? 0);
     },
     sync(state, localId, alpha, frame = { dt: 0, sprinting: false }) {
       if (disposed) return;
@@ -840,6 +867,7 @@ export function createLiteRenderer(canvas: HTMLCanvasElement, level: Level, fore
       }
       setFoliageWind(wind, windPlayers);
 
+      othersSeen = Math.max(othersSeen, state.players.size - (state.players.has(localId) ? 1 : 0));
       // The headlamp's state under the weather; lit below while the local player's is and the camera is the eye.
       lensLamp.state = lampUnder(weather, seconds);
       lensLamp.on = false;
@@ -963,6 +991,13 @@ export function createLiteRenderer(canvas: HTMLCanvasElement, level: Level, fore
           splashFrame.exposure = light.exposure;
           standing.splash?.update(weather, splashFrame);
         }
+        // The hikers' bodies, the Hollows' eyes and the lamps the other hikers wear, from the frame's poses: the
+        // fades and the paces step by the page's frame, the clips by the renderer's clock.
+        standing.skinClock.step(dt);
+        if (standing.entities !== null) {
+          standing.entities.update(poses.step(state, localId, alpha, frame.dt, standing.entities.models), dt);
+          standing.wornLamps.update(standing.entities.lamps(), lensLamp.state);
+        }
         // The ground cloud: the ground round the eye, built again at once as the eye leaves the last map's middle, as
         // the game builds it, and counted with what follows the camera; then its density for the frame, from the
         // night, the haunt and the chase's cast by how far the mist has come in, or the level it is held at.
@@ -1005,6 +1040,8 @@ export function createLiteRenderer(canvas: HTMLCanvasElement, level: Level, fore
     },
     drawFrame() {
       if (standing === null) return;
+      // While the scene is built again for a new hiker's lamp, nothing of it is drawn (`wornLamps.ts`).
+      if (standing.wornLamps.rebuilding) return;
       fit(standing);
       // The hike's own surface alone: a billboard's bake has another, drawn when the bake is (`impostorBake.ts`).
       renderFrame(standing.engine, 1000 / 60, [standing.engine]);

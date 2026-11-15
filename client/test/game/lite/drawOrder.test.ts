@@ -58,6 +58,11 @@ describe("the places of the hike's see-through draws on Babylon Lite", () => {
     expect(Math.max(...Object.values(SEE_THROUGH_ORDER))).toBe(SEE_THROUGH_ORDER.rain);
   });
 
+  it("draws the bodies after the world they stand in and before the sky", () => {
+    expect(DRAW_ORDER.props).toBeLessThan(DRAW_ORDER.bodies);
+    expect(DRAW_ORDER.bodies).toBeLessThan(DRAW_ORDER.sky);
+  });
+
   it("names places of their own, apart from the opaque ones", () => {
     // Lite draws its blended meshes after every opaque one whatever their places; the names stay apart all the same.
     expect(Math.min(...Object.values(SEE_THROUGH_ORDER))).toBeGreaterThan(Math.max(...Object.values(DRAW_ORDER)));

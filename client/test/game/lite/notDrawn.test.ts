@@ -13,7 +13,7 @@ describe("what the renderer on Babylon Lite does not draw yet", () => {
 
   it("names every part of the world it leaves out", () => {
     const all = NOT_DRAWN.map((part) => part.what).join("; ");
-    for (const word of [ "sea", "lakes", "animals", "bodies", "shadows", "rain on the lens", "post chain", "scenes", "endings", "posts", "body at the crest"]) {
+    for (const word of [ "sea", "lakes", "animals", "figure in the silhouette mask", "shadows", "rain on the lens", "post chain", "scenes", "endings", "posts", "body at the crest"]) {
       expect(all, word).toContain(word);
     }
   });
@@ -55,6 +55,15 @@ describe("what the renderer on Babylon Lite does not draw yet", () => {
     const { members } = notDrawnMembers();
     for (const name of ["setHaunt", "setMist", "setMistIn"]) expect(name in members, name).toBe(false);
     expect(NOT_DRAWN.map((part) => part.what).join("; ")).not.toMatch(/mist|motes|cloud/);
+  });
+
+  it("leaves the hikers, the Hollows' eyes and the cap to the renderer", () => {
+    const all = NOT_DRAWN.map((part) => part.what).join("; ");
+    expect(all).not.toMatch(/bodies|lamps they wear|dropped cap/);
+    // What is left of the Hollow is its figure, which the post chain's mask draws, and the skin's shading with it.
+    const hollow = NOT_DRAWN.filter((part) => /Hollow/.test(part.what));
+    expect(hollow).toHaveLength(1);
+    expect(hollow[0]?.members).toEqual(["setSkinShading"]);
   });
 
   it("leaves the rain to the renderer: its streaks, drips, splashes and cover are drawn, and the canopy's read-outs are its own", () => {
