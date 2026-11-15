@@ -52,27 +52,18 @@ import type { SubMesh } from "@babylonjs/core/Meshes/subMesh.js";
 import type { BaseTexture } from "@babylonjs/core/Materials/Textures/baseTexture.js";
 import "@babylonjs/core/Meshes/thinInstanceMesh.js";
 
-import { clamp01 } from "./colour.js";
 import type { WeatherParams } from "./weather.js";
 import type { QualityTier } from "./quality.js";
-import type { RainLamp } from "./rain.js";
+import { rainMilk, type RainLamp } from "./rainField.js";
 import type { RainMap } from "./rainMap.js";
-import {
-  RAIN_LAMP_GAIN, RAIN_MAP, RAIN_MILK, SPLASH, SPLASH_CYCLES, SPLASH_TIERS, rainSeeds, splashCountUnder, splashFold,
-} from "./rainParams.js";
+import { RAIN_MAP, SPLASH, SPLASH_CYCLES, SPLASH_TIERS, rainSeeds } from "./rainParams.js";
+import { SPLASH_SEED, emptySplashUniforms, splashUniforms, splashesDrawn } from "./splashField.js";
 
 /** A GLSL float literal: always with a decimal point, so `10` is `10.0`. */
 function lit(v: number): string {
   const s = String(v);
   return s.includes(".") || s.includes("e") ? s : `${s}.0`;
 }
-
-/** The seed buffer's hash seed: the splashes' layout is the same on every load. */
-const SPLASH_SEED = 0x53706c73;
-
-/** The sun's backlight fades in over this much of the sun's height (the
- * sine of its elevation): none once it is down. */
-const SUN_UP = 0.1;
 
 const SPLASH_VERTEX_DEFS = `
 #ifdef SPLASH
@@ -326,6 +317,8 @@ export function createRainSplash(scene: Scene, tier: QualityTier): RainSplash | 
   mesh.setEnabled(false);
 
   let map: RainMap | null = null;
+  const values = emptySplashUniforms();
+  const milk: [number, number, number] = [1, 1, 1];
 
   return {
     mesh,
@@ -335,7 +328,7 @@ export function createRainSplash(scene: Scene, tier: QualityTier): RainSplash | 
       plugin.map = next === null ? null : next.texture;
     },
     update(camPos, w, lamp, sunDir, seconds) {
-      const drawn = map === null ? 0 : splashCountUnder(w.rain, tier);
+      const drawn = splashesDrawn(w, tier, map !== null);
       if (drawn === 0) {
         mesh.setEnabled(false);
         return;
@@ -343,35 +336,29 @@ export function createRainSplash(scene: Scene, tier: QualityTier): RainSplash | 
       mesh.thinInstanceCount = drawn;
       mesh.setEnabled(true);
 
-      plugin.time = splashFold(seconds);
-      plugin.camX = camPos.x;
-      plugin.camY = camPos.y;
-      plugin.camZ = camPos.z;
-      plugin.rain = clamp01(w.rain);
-      // The light travels down while the sun is up: its height is -y.
-      const up = clamp01(-sunDir.y / SUN_UP);
-      plugin.sunX = sunDir.x * up;
-      plugin.sunY = sunDir.y * up;
-      plugin.sunZ = sunDir.z * up;
-      plugin.lampX = lamp.x;
-      plugin.lampY = lamp.y;
-      plugin.lampZ = lamp.z;
-      plugin.lampDirX = lamp.dx;
-      plugin.lampDirY = lamp.dy;
-      plugin.lampDirZ = lamp.dz;
-      plugin.lampIntensity = lamp.intensity * RAIN_LAMP_GAIN;
-      plugin.lampCosHalf = Math.cos(lamp.angle / 2);
-      if (map !== null) {
-        plugin.mapCentreX = map.centre.x;
-        plugin.mapCentreZ = map.centre.z;
-      }
+      // The rings' uniforms for the frame (`splashField.ts`) into the plugin's fields, which it binds from.
+      const u = splashUniforms(camPos, w, lamp, sunDir, seconds, map === null ? null : map.centre, values);
+      plugin.time = u.splashTime[0];
+      plugin.camX = u.splashCam[0];
+      plugin.camY = u.splashCam[1];
+      plugin.camZ = u.splashCam[2];
+      plugin.rain = u.splashRain[0];
+      plugin.sunX = u.splashSun[0];
+      plugin.sunY = u.splashSun[1];
+      plugin.sunZ = u.splashSun[2];
+      plugin.lampX = u.splashLampPos[0];
+      plugin.lampY = u.splashLampPos[1];
+      plugin.lampZ = u.splashLampPos[2];
+      plugin.lampDirX = u.splashLampDir[0];
+      plugin.lampDirY = u.splashLampDir[1];
+      plugin.lampDirZ = u.splashLampDir[2];
+      plugin.lampIntensity = u.splashLamp[0];
+      plugin.lampCosHalf = u.splashLamp[1];
+      plugin.mapCentreX = u.splashMapCentre[0];
+      plugin.mapCentreZ = u.splashMapCentre[1];
 
-      const fog = scene.fogColor;
-      mat.emissiveColor.set(
-        clamp01(fog.r * RAIN_MILK.gain + RAIN_MILK.lift),
-        clamp01(fog.g * RAIN_MILK.gain + RAIN_MILK.lift),
-        clamp01(fog.b * RAIN_MILK.gain + RAIN_MILK.lift),
-      );
+      rainMilk(scene.fogColor, milk);
+      mat.emissiveColor.set(milk[0], milk[1], milk[2]);
     },
     dispose() {
       mesh.dispose();
