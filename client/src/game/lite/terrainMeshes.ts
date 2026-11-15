@@ -74,6 +74,7 @@ import { createCrossing, crossingAt, finish, nextCrossing, type Slices, type Syn
 import { facePatchVertices, ringVertices, type TerrainVertices } from "../terrainVertices.js";
 import { DRAW_ORDER, DRAW_PLACES } from "./drawOrder.js";
 import type { FrameUploads } from "./frameUploads.js";
+import { RAIN_MAP_RINGS, type CoverRegistry } from "./rainMap.js";
 import { terrainVertexData } from "./terrainPlugins.js";
 
 /** What writing one ring's buffers is expected to take (ms): the game's own estimate for its rings on Babylon.js. The
@@ -112,6 +113,9 @@ export type TerrainMeshOptions = {
   firstBuilds?: FirstBuilds;
   /** The renderer's record of its uploads, and its budget for the streamed ones (`frameUploads.ts`). */
   uploads?: FrameUploads;
+  /** The rain's cover map, as terrain: the rings that cover its square and every patch drawn, each from the frame it
+   * joins the scene until it is let go (`rainMap.ts`). */
+  cover?: CoverRegistry;
 };
 
 /** Cells a side of the square the patches' places among the draws repeat over. */
@@ -155,7 +159,7 @@ export function createTerrainMeshes(
   tier: QualityTier,
   options: TerrainMeshOptions = {},
 ): TerrainMeshes {
-  const { jobs, firstBuilds, uploads } = options;
+  const { jobs, firstBuilds, uploads, cover } = options;
   const base = BASE_SPACING_BY_TIER[tier];
   /**
    * Ring 0's snap step (m): `snapOrigin` puts it on a lattice of twice its spacing, and every coarser ring moves only
@@ -207,6 +211,7 @@ export function createTerrainMeshes(
   /** A drawn cell's mesh, taken out of the scene and let go. */
   function dropPatch(entry: PatchEntry): void {
     if (entry.mesh === null) return;
+    cover?.remove(entry.mesh);
     removeFromScene(scene, entry.mesh);
     disposeMeshGpu(entry.mesh);
     uploads?.dropped();
@@ -348,6 +353,7 @@ export function createTerrainMeshes(
       }
       if (entry.mesh !== null) {
         addToScene(scene, entry.mesh);
+        cover?.add(entry.mesh);
         // Its plugin vertex data goes up as its draw is first recorded.
         uploads?.stream("pluginVertices", entry.mesh.pluginVertexData?.byteLength ?? 0);
         live++;
@@ -555,6 +561,8 @@ export function createTerrainMeshes(
     else {
       addToScene(scene, mesh);
       to.inScene = true;
+      // Both of a ring's meshes stand in the map; it draws the one shown.
+      if (level < RAIN_MAP_RINGS) cover?.add(mesh);
     }
     uploads?.stream("pluginVertices", to.plugin?.byteLength ?? 0);
     const was = shown[level] as number;
@@ -756,6 +764,7 @@ export function createTerrainMeshes(
       for (const pair of twins) {
         for (const one of pair) {
           if (one.mesh === null) continue;
+          cover?.remove(one.mesh);
           if (one.inScene) removeFromScene(scene, one.mesh);
           disposeMeshGpu(one.mesh);
           one.mesh = null;

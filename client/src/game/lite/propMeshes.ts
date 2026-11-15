@@ -25,6 +25,7 @@ import type { WetUniforms } from "../wetSurface.js";
 import { DRAW_ORDER } from "./drawOrder.js";
 import { baseColourPlugin, surfaceWetPlugin } from "./forestPlugins.js";
 import type { FrameUploads } from "./frameUploads.js";
+import type { CoverRegistry } from "./rainMap.js";
 
 export type PropMeshes = {
   /** Follows the camera: the chunks round it are made, and the ones left behind go, when it crosses into another chunk. */
@@ -45,6 +46,8 @@ export type PropMeshOptions = {
   firstBuilds?: FirstBuilds;
   /** The renderer's record of its uploads, and its budget for the streamed ones (`frameUploads.ts`). */
   uploads?: FrameUploads;
+  /** The rain's cover map: every box drawn is hard cover, from when it is built until it is let go (`rainMap.ts`). */
+  cover?: CoverRegistry;
 };
 
 export function createPropMeshes(engine: EngineContext, scene: SceneContext, grid: ChunkGrid, options: PropMeshOptions): PropMeshes {
@@ -90,12 +93,14 @@ export function createPropMeshes(engine: EngineContext, scene: SceneContext, gri
       // The boxes' materials are one stack, drawn by one pipeline: they share a place.
       mesh.renderOrder = DRAW_ORDER.props;
       addToScene(scene, mesh);
+      options.cover?.add(mesh);
       return mesh;
     });
   }
 
   function drop(meshes: readonly Mesh[]): void {
     for (const mesh of meshes) {
+      options.cover?.remove(mesh);
       removeFromScene(scene, mesh);
       disposeMeshGpu(mesh);
       options.uploads?.dropped();

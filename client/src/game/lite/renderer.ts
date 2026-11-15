@@ -139,6 +139,7 @@ import { createLiteMotes, type LiteMotes, type MotesFrame } from "./motes.js";
 import { notDrawnMembers } from "./notDrawn.js";
 import { createPropMeshes, type PropMeshes } from "./propMeshes.js";
 import { createLiteRain, type LiteRain, type RainFrame } from "./rain.js";
+import { createLiteRainMap, type CoverRegistry, type LiteRainMap } from "./rainMap.js";
 import { SKY_CAPTURE_BYTES, createLiteSkyCapture, type LiteSkyCapture } from "./skyCapture.js";
 import { createLiteSkyDome, type LiteSkyDome } from "./skyDome.js";
 import { createTerrainMeshes, type TerrainMeshes } from "./terrainMeshes.js";
@@ -206,6 +207,8 @@ type Standing = {
   motes: LiteMotes | null;
   /** The rain's streaks and drips (`rain.ts`). */
   rain: LiteRain;
+  /** The rain's cover map, on the tiers that draw one (`rainMap.ts`). */
+  rainMap: LiteRainMap | null;
 };
 
 /**
@@ -360,6 +363,7 @@ export function createLiteRenderer(canvas: HTMLCanvasElement, level: Level, fore
   /** Lets go of what stands: the meshes, the scene, the engine and its device. */
   function release(made: Standing): void {
     made.rain.dispose();
+    made.rainMap?.dispose();
     made.motes?.dispose();
     made.mist?.dispose();
     made.props?.dispose();
@@ -438,9 +442,13 @@ export function createLiteRenderer(canvas: HTMLCanvasElement, level: Level, fore
     const mist = forest === null ? null : createLiteMistMeshes(engine, scene, forest.seed, tier, uploads);
     // The motes are the air's everywhere, on the tiers with the capacity for them.
     const motes = createLiteMotes(engine, scene, tier, uploads);
-    // The rain is the weather's everywhere. With no cover map to fall under, its streaks fall through everything and
-    // no drip is drawn.
-    const rain = createLiteRain(engine, scene, tier, null, uploads);
+    // The rain's cover map, on the tiers that draw one, over the terrain the rings draw: the rings, the patches, the
+    // props and the cliffs' near buckets stand in it as they are made. Then the rain, which is the weather's
+    // everywhere.
+    const rainMap = forest === null ? null : createLiteRainMap(engine, scene, tier);
+    const rain = createLiteRain(engine, scene, tier, rainMap, uploads);
+    const coverAs = (kind: "terrain" | "hard"): CoverRegistry | undefined =>
+      rainMap === null ? undefined : { add: (mesh) => rainMap.register(mesh, kind), remove: (mesh) => rainMap.unregister(mesh) };
     // The ground cloud's map, which every material's air reads.
     const cloudGround = forest === null ? null : cloudMapTexture(engine);
     const cloudMap = cloudGround?.texture ?? null;
@@ -491,6 +499,7 @@ export function createLiteRenderer(canvas: HTMLCanvasElement, level: Level, fore
           jobs,
           firstBuilds: options.firstBuilds,
           uploads,
+          cover: coverAs("terrain"),
         },
       );
       if (options.deferClipmap !== true) finish(terrain.firstBuild());
@@ -544,14 +553,16 @@ export function createLiteRenderer(canvas: HTMLCanvasElement, level: Level, fore
       // lays none and no model is fetched.
       cliffs = createCliffMeshes(engine, scene, forest.seed, {
         quality: tier, eye: pose, frame: frameSize, wet: wetAt(WET_CAP.cliff), air: () => atmospherePlugin(airValues, cloudMap, shared), shared, uploads,
+        cover: coverAs("hard"),
       });
       // Every chunk prop the simulation collides with that no other mesh draws, as its box. A world as the game makes
       // it today has none, and none is made.
       props = createPropMeshes(engine, scene, forest.grid, {
         wet: wetAt(WET_CAP.prop), air: () => atmospherePlugin(airValues, cloudMap, shared), shared, firstBuilds: options.firstBuilds, uploads,
+        cover: coverAs("hard"),
       });
     }
-    const made: Standing = { engine, scene, camera, sun, fill, lamp, dome, capture, shared, materials, terrain, road, cloudGround, forest: trees, blades, clutter, duff, cliffs, props, mist, motes, rain };
+    const made: Standing = { engine, scene, camera, sun, fill, lamp, dome, capture, shared, materials, terrain, road, cloudGround, forest: trees, blades, clutter, duff, cliffs, props, mist, motes, rain, rainMap };
     if (disposed) {
       release(made);
       return;
@@ -811,8 +822,11 @@ export function createLiteRenderer(canvas: HTMLCanvasElement, level: Level, fore
       lensLamp.on = false;
       // The world follows the camera in freecam, the player otherwise.
       let centre: { x: number; z: number } | null = null;
+      /** Where the rain's cover map follows: the camera in freecam, as the rings do, and the player otherwise. */
+      let coverAt: { x: number; y: number; z: number } | null = null;
       if (freecam !== null) {
         centre = freecam;
+        coverAt = pose;
         pose.x = freecam.x;
         pose.y = freecam.y;
         pose.z = freecam.z;
@@ -826,6 +840,7 @@ export function createLiteRenderer(canvas: HTMLCanvasElement, level: Level, fore
         const local = state.players.get(localId);
         if (local !== undefined) {
           centre = local.pos;
+          coverAt = local.pos;
           lensLamp.on = local.lamp.on;
           const offset = bob.update(
             {
@@ -898,7 +913,7 @@ export function createLiteRenderer(canvas: HTMLCanvasElement, level: Level, fore
           motesFrame.exposure = light.exposure;
           standing.motes?.update(weather, light.hour, nearColour, wind, motesFrame);
         }
-        if (centre !== null && rainFrame !== null) {
+        if (coverAt !== null && rainFrame !== null) {
           // The headlamp as the rain reads it: the frame's, at the eye and along the view.
           rainLamp.x = pose.x;
           rainLamp.y = pose.y;
@@ -910,6 +925,8 @@ export function createLiteRenderer(canvas: HTMLCanvasElement, level: Level, fore
           rainLamp.r = lensLamp.state.colour.r;
           rainLamp.g = lensLamp.state.colour.g;
           rainLamp.b = lensLamp.state.colour.b;
+          // The cover map is drawn with this frame only if a drop reads it; then the rain.
+          standing.rainMap?.update(coverAt, standing.rain.reads(weather));
           rainFrame.yaw = pose.yaw;
           rainFrame.dt = dt;
           rainFrame.exposure = light.exposure;
@@ -961,6 +978,8 @@ export function createLiteRenderer(canvas: HTMLCanvasElement, level: Level, fore
       fit(standing);
       // The hike's own surface alone: a billboard's bake has another, drawn when the bake is (`impostorBake.ts`).
       renderFrame(standing.engine, 1000 / 60, [standing.engine]);
+      // The cover map is drawn with the frame that asked for it, and no other.
+      standing.rainMap?.frameDrawn();
     },
     runLoop(frame) {
       if (disposed) return;
