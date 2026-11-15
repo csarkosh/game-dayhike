@@ -52,6 +52,11 @@ describe("the places of the hike's see-through draws on Babylon Lite", () => {
     expect(SEE_THROUGH_ORDER.motes).toBeLessThan(SEE_THROUGH_ORDER.mist);
   });
 
+  it("draws the rain last of them, as the game's alpha indices put it", () => {
+    expect(SEE_THROUGH_ORDER.mist).toBeLessThan(SEE_THROUGH_ORDER.rain);
+    expect(Math.max(...Object.values(SEE_THROUGH_ORDER))).toBe(SEE_THROUGH_ORDER.rain);
+  });
+
   it("names places of their own, apart from the opaque ones", () => {
     // Lite draws its blended meshes after every opaque one whatever their places; the names stay apart all the same.
     expect(Math.min(...Object.values(SEE_THROUGH_ORDER))).toBeGreaterThan(Math.max(...Object.values(DRAW_ORDER)));

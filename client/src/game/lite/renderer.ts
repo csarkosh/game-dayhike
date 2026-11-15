@@ -112,6 +112,7 @@ import { sharedSeconds } from "../oceanWindSea.js";
 import { postFeaturesFor } from "../postParams.js";
 import { fittingFeatureTable, fittingRings } from "../preparedScene.js";
 import { QUALITY, detectTier } from "../quality.js";
+import type { RainLamp } from "../rainField.js";
 import type { FreecamView, Renderer, RendererOptions } from "../renderer.js";
 import { startSkySource, type SkySource } from "../skyWorker.js";
 import type { SkyState } from "../skyState.js";
@@ -137,6 +138,7 @@ import { createLiteMistMeshes, type LiteMistMeshes, type MistFrame } from "./mis
 import { createLiteMotes, type LiteMotes, type MotesFrame } from "./motes.js";
 import { notDrawnMembers } from "./notDrawn.js";
 import { createPropMeshes, type PropMeshes } from "./propMeshes.js";
+import { createLiteRain, type LiteRain, type RainFrame } from "./rain.js";
 import { SKY_CAPTURE_BYTES, createLiteSkyCapture, type LiteSkyCapture } from "./skyCapture.js";
 import { createLiteSkyDome, type LiteSkyDome } from "./skyDome.js";
 import { createTerrainMeshes, type TerrainMeshes } from "./terrainMeshes.js";
@@ -202,6 +204,8 @@ type Standing = {
   mist: LiteMistMeshes | null;
   /** The motes, on the tiers that draw them (`motes.ts`). */
   motes: LiteMotes | null;
+  /** The rain's streaks and drips (`rain.ts`). */
+  rain: LiteRain;
 };
 
 /**
@@ -332,6 +336,12 @@ export function createLiteRenderer(canvas: HTMLCanvasElement, level: Level, fore
   let airSky: SkyState | null = null;
   /** What a frame draws the motes with beside the game's own arguments. */
   const motesFrame: MotesFrame = { seconds: 0, exposure: 0, contrast: DISPLAY_CONTRAST };
+  /** The headlamp as the rain reads it: at the eye, along the view, at the frame's state, its intensity 0 while it is off. */
+  const rainLamp: RainLamp = { x: 0, y: 0, z: 0, dx: 0, dy: 0, dz: 1, intensity: 0, angle: LAMP_ANGLE, r: 1, g: 1, b: 1 };
+  /** What a frame draws the rain with; none before the sky's first slices, as the mist banks'. */
+  let rainFrame: RainFrame | null = null;
+  /** The canopy's water as the rain last stepped it. */
+  let canopyWater = 0;
   /** The fog gradient's near end, the motes' colour and the one the cloud's is made from: black until the sky's first slices. */
   let nearColour = { r: 0, g: 0, b: 0 };
   /** The canvas's size the engine was last fitted to, CSS pixels. */
@@ -349,6 +359,7 @@ export function createLiteRenderer(canvas: HTMLCanvasElement, level: Level, fore
 
   /** Lets go of what stands: the meshes, the scene, the engine and its device. */
   function release(made: Standing): void {
+    made.rain.dispose();
     made.motes?.dispose();
     made.mist?.dispose();
     made.props?.dispose();
@@ -427,6 +438,9 @@ export function createLiteRenderer(canvas: HTMLCanvasElement, level: Level, fore
     const mist = forest === null ? null : createLiteMistMeshes(engine, scene, forest.seed, tier, uploads);
     // The motes are the air's everywhere, on the tiers with the capacity for them.
     const motes = createLiteMotes(engine, scene, tier, uploads);
+    // The rain is the weather's everywhere. With no cover map to fall under, its streaks fall through everything and
+    // no drip is drawn.
+    const rain = createLiteRain(engine, scene, tier, null, uploads);
     // The ground cloud's map, which every material's air reads.
     const cloudGround = forest === null ? null : cloudMapTexture(engine);
     const cloudMap = cloudGround?.texture ?? null;
@@ -537,7 +551,7 @@ export function createLiteRenderer(canvas: HTMLCanvasElement, level: Level, fore
         wet: wetAt(WET_CAP.prop), air: () => atmospherePlugin(airValues, cloudMap, shared), shared, firstBuilds: options.firstBuilds, uploads,
       });
     }
-    const made: Standing = { engine, scene, camera, sun, fill, lamp, dome, capture, shared, materials, terrain, road, cloudGround, forest: trees, blades, clutter, duff, cliffs, props, mist, motes };
+    const made: Standing = { engine, scene, camera, sun, fill, lamp, dome, capture, shared, materials, terrain, road, cloudGround, forest: trees, blades, clutter, duff, cliffs, props, mist, motes, rain };
     if (disposed) {
       release(made);
       return;
@@ -768,8 +782,10 @@ export function createLiteRenderer(canvas: HTMLCanvasElement, level: Level, fore
       if (disposed) return;
       const now = clock();
       const seconds = now / 1000;
+      /** The frame's duration on the renderer's clock, seconds. */
+      const dt = steppedAt === null ? 0 : Math.max(0, (now - steppedAt) / 1000);
       // The weather's fade, a frame of the renderer's clock at a time.
-      light.step(steppedAt === null ? 0 : Math.max(0, (now - steppedAt) / 1000));
+      light.step(dt);
       steppedAt = now;
       const weather = light.weather;
       // The wind's time is the simulation's, so every peer's blows the same way; a clock handed in is kept.
@@ -870,6 +886,7 @@ export function createLiteRenderer(canvas: HTMLCanvasElement, level: Level, fore
           airSky = sky;
           mistFrame = { eye: pose, yaw: 0, colour: fogGradientAt(sky, GRADIENT_MID_STEP), air, exposure: 0, contrast: DISPLAY_CONTRAST };
           nearColour = fogGradientAt(sky, 0);
+          rainFrame = { eye: pose, yaw: 0, dt: 0, lamp: rainLamp, air, exposure: 0, contrast: DISPLAY_CONTRAST };
         }
         if (centre !== null && mistFrame !== null) {
           // The mist banks, round the camera's place and turned to its yaw.
@@ -880,6 +897,24 @@ export function createLiteRenderer(canvas: HTMLCanvasElement, level: Level, fore
           motesFrame.seconds = seconds;
           motesFrame.exposure = light.exposure;
           standing.motes?.update(weather, light.hour, nearColour, wind, motesFrame);
+        }
+        if (centre !== null && rainFrame !== null) {
+          // The headlamp as the rain reads it: the frame's, at the eye and along the view.
+          rainLamp.x = pose.x;
+          rainLamp.y = pose.y;
+          rainLamp.z = pose.z;
+          rainLamp.dx = axes.fx;
+          rainLamp.dy = axes.fy;
+          rainLamp.dz = axes.fz;
+          rainLamp.intensity = lensLamp.on ? lensLamp.state.intensity : 0;
+          rainLamp.r = lensLamp.state.colour.r;
+          rainLamp.g = lensLamp.state.colour.g;
+          rainLamp.b = lensLamp.state.colour.b;
+          rainFrame.yaw = pose.yaw;
+          rainFrame.dt = dt;
+          rainFrame.exposure = light.exposure;
+          standing.rain.update(weather, wind, rainFrame);
+          canopyWater = standing.rain.canopyWater;
         }
         // The ground cloud: the ground round the eye, built again at once as the eye leaves the last map's middle, as
         // the game builds it, and counted with what follows the camera; then its density for the frame, from the
@@ -982,6 +1017,9 @@ export function createLiteRenderer(canvas: HTMLCanvasElement, level: Level, fore
     },
     wind() {
       return wind;
+    },
+    canopyWater() {
+      return canopyWater;
     },
     setWindOverride(next) {
       windOverride = next === null ? null : Math.min(1, Math.max(0, next));
