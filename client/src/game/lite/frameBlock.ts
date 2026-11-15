@@ -9,7 +9,9 @@
  * wet line and the weather's wetness (`wetSurface.ts`), the wind, its clock
  * and the players who bend the foliage (`foliageUniforms.ts`), the eye the
  * fades and the foliage measure from and the frame's height
- * (`distanceFade.ts`), the clock the birds' wings beat on (`wingParams.ts`)
+ * (`distanceFade.ts`), the clock the birds' wings beat on (`wingParams.ts`),
+ * what every lake's water reads alike (`waterSurface.ts`: the lakes' time,
+ * the wind and its integral, the rain, the sun's share, the bump's drift)
  * and the terrain's whole record (`terrainUniforms.ts`, which its two
  * materials share). They are the same for every material and
  * most of them move every frame, so with them in each material's buffer
@@ -32,6 +34,7 @@ import { emptyAtmosphereUniforms, type AtmosphereUniforms } from "../atmosphereP
 import { emptyFadeUniforms } from "../distanceFade.js";
 import { FOLIAGE_PLAYERS, FOLIAGE_PROFILES, emptyFoliageUniforms, foliageLook, foliageUniforms } from "../foliageUniforms.js";
 import { emptyTerrainUniforms, type TerrainUniforms } from "../terrainUniforms.js";
+import { emptyWaterFrameUniforms, type WaterFrameUniforms } from "../waterSurface.js";
 import { WET_SWASH_VECS, emptyWetUniforms, type WetUniforms } from "../wetSurface.js";
 import { uniformFields, writeUniforms, type UniformField, type UniformOffsets, type UniformRecord } from "./pluginUniforms.js";
 
@@ -59,7 +62,7 @@ function scalarFields(record: object, arrays: readonly string[]): UniformField[]
   return uniformFields(scalars);
 }
 
-/** The block's fields, part by part: the air's, the wet look's, the wind's, the fade's, the terrain's. */
+/** The block's fields, part by part: the air's, the wet look's, the wind's, the fade's, the terrain's, the wings' clock, the lakes'. */
 export const FRAME_FIELDS: readonly UniformField[] = [
   ...uniformFields(emptyAtmosphereUniforms()),
   ...scalarFields(emptyWetUniforms(), ["wetSwash"]).filter((field) => field.name !== WET_OWN_NAME),
@@ -71,6 +74,7 @@ export const FRAME_FIELDS: readonly UniformField[] = [
   ...uniformFields(emptyTerrainUniforms()),
   { name: TERRAIN_ALBEDO_NAME, type: "vec3<f32>" },
   { name: WING_TIME_NAME, type: "f32" },
+  ...uniformFields(emptyWaterFrameUniforms()),
 ];
 
 const FRAME_NAMES: ReadonlySet<string> = new Set(FRAME_FIELDS.map((field) => field.name));
@@ -113,6 +117,8 @@ export type FrameValues = {
   rows: number;
   /** The wings' clock, seconds, wrapped (`wingTime`). */
   wingTime: number;
+  /** What every lake reads alike (`waterFrameUniforms`): zeros in a world with no lake. */
+  water: WaterFrameUniforms;
 };
 
 /** The wind's values are the foliage's own, read through a look that adds nothing to them. */
@@ -129,7 +135,8 @@ function offsetOf(offsets: UniformOffsets, name: string): number {
  * Writes a frame's values into `data`, the block's floats, at `offsets`:
  * the air, the wet look but its cap (the swash's table float for float),
  * the page's wind with the eye and the players (xyz each, a vec4 a player),
- * the fade's eye and rows, and the terrain's record.
+ * the fade's eye and rows, the wings' clock, the lakes' record and the
+ * terrain's.
  */
 export function writeFrameBlock(data: Float32Array, offsets: UniformOffsets, values: FrameValues): void {
   writeUniforms(data, offsets, values.air);
@@ -156,5 +163,6 @@ export function writeFrameBlock(data: Float32Array, offsets: UniformOffsets, val
   data[eye + 2] = values.eye.z;
   data[offsetOf(offsets, FADE_ROWS_NAME)] = values.rows;
   data[offsetOf(offsets, WING_TIME_NAME)] = values.wingTime;
+  writeUniforms(data, offsets, values.water);
   writeUniforms(data, offsets, values.terrain);
 }

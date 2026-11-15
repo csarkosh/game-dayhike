@@ -22,8 +22,11 @@
  *   transmission and its ceiling's lift, written in place of the lit colour
  *   by a plugin on a plain material, last in its fragment. The terrain's
  *   reads the canopy's density from the terrain's own vertex data
- *   (`TERRAIN_VERTEX_LAYOUT`); anything else is hard cover. Water, which is
- *   not drawn here, is in no map.
+ *   (`TERRAIN_VERTEX_LAYOUT`); water is open, the rain landing on its
+ *   surface; anything else is hard cover. A mesh that is hidden is in no
+ *   pass of Lite's, this one among them: a surface of water hidden because
+ *   the view does not hold it is shown for the frame that draws the map
+ *   (`lakeMeshes.ts`).
  * - **The picture is laid as the game's**: its columns along the world's x
  *   and its rows along z from the low side, so a reader finds a place's
  *   texel as the game's shaders do. The camera looks straight down with z
@@ -52,13 +55,17 @@ const CANOPY = TERRAIN_VERTEX_LAYOUT.find((part) => part.varying === "vTerrainW2
 export const RAIN_MAP_WGSL = {
   terrain: `{let vHeight=input.worldPos.y;let vCanopy=input.vRainCanopy;let transmission=1.0-${f(RAIN_MAP.canopyBlock)}*vCanopy;let lift=${f(RAIN_MAP.canopyLift)}*step(0.01,vCanopy);color=vec3<f32>(vHeight,transmission,lift);alpha=1.0;}`,
   hard: `{let vHeight=input.worldPos.y;let transmission=0.0;let lift=0.0;color=vec3<f32>(vHeight,transmission,lift);alpha=1.0;}`,
+  water: `{let vHeight=input.worldPos.y;let transmission=1.0;let lift=0.0;color=vec3<f32>(vHeight,transmission,lift);alpha=1.0;}`,
 } as const;
 
 /** The plugin that writes a kind's texel, last in the fragment. The terrain's declares the terrain's vertex data whole, as
  * the terrain's own plugin does, and hands the canopy's density on. */
-export function rainMapPlugin(kind: "terrain" | "hard"): MaterialPlugin {
-  if (kind === "hard") {
-    return { name: "RainMapHard", priority: 990, getCustomCode: (stage) => (stage === "fragment" ? { CUSTOM_FRAGMENT_BEFORE_FRAGCOLOR: RAIN_MAP_WGSL.hard } : null) };
+export function rainMapPlugin(kind: RainMapKind): MaterialPlugin {
+  if (kind !== "terrain") {
+    return {
+      name: kind === "hard" ? "RainMapHard" : "RainMapWater", priority: 990,
+      getCustomCode: (stage) => (stage === "fragment" ? { CUSTOM_FRAGMENT_BEFORE_FRAGCOLOR: RAIN_MAP_WGSL[kind] } : null),
+    };
   }
   return {
     name: "RainMapTerrain",
@@ -118,13 +125,13 @@ export function createLiteRainMap(engine: EngineContext, scene: SceneContext, ti
   // The pass's own, never the scene's: it is in no scene, and the pass names it.
   enableOrthographicCamera(camera, { halfHeight: half, left: -half, right: half, bottom: half, top: -half });
 
-  const material = (kind: "terrain" | "hard"): PbrMaterialProps => {
+  const material = (kind: RainMapKind): PbrMaterialProps => {
     const made = createPbrMaterial({ baseColorFactor: [1, 1, 1, 1], metallicFactor: 0, roughnessFactor: 1 });
     made.doubleSided = true;
     made.plugins = [rainMapPlugin(kind)];
     return made;
   };
-  const materials = { terrain: material("terrain"), hard: material("hard") };
+  const materials = { terrain: material("terrain"), hard: material("hard"), water: material("water") };
   // Lite builds a mesh drawn with another material by the scene's own build of that material's kind, made when the
   // scene is registered, and that build draws instance lists only if a mesh of the scene had one then. The cliffs'
   // buckets, which have, land long after. So one mesh that is never shown stands in the scene from the start with an
@@ -162,8 +169,8 @@ export function createLiteRainMap(engine: EngineContext, scene: SceneContext, ti
       return draws;
     },
     register(mesh, kind) {
-      // Water is not drawn, and a mesh is in the list once.
-      if (disposed || kind === "water" || registered.has(mesh)) return;
+      // A mesh is in the list once.
+      if (disposed || registered.has(mesh)) return;
       registered.add(mesh);
       addMeshToTask(task, mesh, { material: materials[kind] });
     },

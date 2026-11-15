@@ -39,12 +39,11 @@ describe("what the renderer on Babylon Lite does not draw yet", () => {
     members.setChase(2);
     members.setUnsettle(0.5);
     members.setPalette("dusk" as never);
-    members.setWeatherName("rain");
     members.setWireframe(true);
     members.setSkinShading(false);
     members.setDepthOfField(true);
     expect(held).toMatchObject({
-      chase: 1, unsettle: 0.5, palette: "dusk", weatherName: "rain", wireframe: true, skinShading: false, depthOfField: true,
+      chase: 1, unsettle: 0.5, palette: "dusk", wireframe: true, skinShading: false, depthOfField: true,
     });
   });
 
@@ -72,6 +71,19 @@ describe("what the renderer on Babylon Lite does not draw yet", () => {
     const rain = NOT_DRAWN.filter((part) => /rain|splash|drip|canopy/.test(part.what));
     expect(rain).toHaveLength(1);
     expect(rain[0]?.what).toContain("the post chain");
+  });
+
+  it("leaves the lakes' water and its calm to the renderer: what is left of a lake is its plants, its reflections and the tier that reads through it", () => {
+    const { members } = notDrawnMembers();
+    expect("setWeatherName" in members).toBe(false);
+    const lakes = NOT_DRAWN.filter((part) => /lake/.test(part.what));
+    expect(lakes.map((part) => part.members)).toEqual([[], ["hasWaterLife", "waterLifeSound"]]);
+    expect(lakes[0]?.what).toMatch(/plants/);
+    expect(lakes[0]?.what).toMatch(/panorama/);
+    expect(lakes[0]?.what).toMatch(/mirror/);
+    expect(lakes[0]?.what).not.toMatch(/calm/);
+    // The sea is all absent still.
+    expect(NOT_DRAWN.find((part) => /\bsea\b/.test(part.what))?.members).toEqual(["hasSea", "surfSound"]);
   });
 
   it("keeps the first ending it is told and lets a death be undone, and keeps the last scene", () => {

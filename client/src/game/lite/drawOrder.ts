@@ -44,8 +44,16 @@ export const DRAW_ORDER = { rings: 80, patches: 90, forest: 100, clutter: 110, b
  * game puts last of its group as the nearest blended volume (`rain.ts`):
  * the splashes, then the drips and the streaks, one draw whose instances
  * are in that order (`rainField.ts`).
+ *
+ * Then the water the tiers blend over what lies under it. The game leaves
+ * a lake's surface at Babylon.js's default place among the blended meshes,
+ * which is past the rain's, so the rain is blended first and the water
+ * over it: a streak falling in front of deep water is covered by it. The
+ * surface's vertices are laid in the world's own coordinates so that it
+ * stands at the origin with the rest, and its place says the same from
+ * every view.
  */
-export const SEE_THROUGH_ORDER = { motes: 200, mist: 210, splashes: 220, rain: 230 } as const;
+export const SEE_THROUGH_ORDER = { motes: 200, mist: 210, splashes: 220, rain: 230, water: 240 } as const;
 
 /** The places a shell has past its first. */
 export const DRAW_PLACES = 1024;

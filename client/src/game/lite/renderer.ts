@@ -4,7 +4,8 @@
  * atmosphere and the sky's dome, the valley mist banks and the motes in the air
  * and the ground cloud marched through it, the rain with its drips, its
  * splashes and the cover it falls under, and in that world the other
- * hikers' bodies, the Hollows' eyes, the dropped cap and the animals, lit by
+ * hikers' bodies, the Hollows' eyes, the dropped cap, the animals and the
+ * lakes' water, lit by
  * the sun, the sky's fill and the sky's capture as the image-based light for
  * the hour and the weather, by the local player's headlamp and by the lamps
  * the other hikers wear, seen from the player's eye or the free camera. It
@@ -26,7 +27,8 @@
  * motes (`motes.ts`) and the rain (`rain.ts`, `rainSplash.ts`, under the
  * cover map of `rainMap.ts`), the hikers' bodies and the Hollows' eyes
  * (`entityMeshes.ts`), the lamps the other hikers wear (`wornLamps.ts`), the
- * dropped cap (`capMesh.ts`) and the animals (`wildlifeMeshes.ts`).
+ * dropped cap (`capMesh.ts`), the animals (`wildlifeMeshes.ts`), the
+ * lakes' water (`lakeMeshes.ts`).
  *
  * **The engine is Lite's own, made from the canvas, and making it takes
  * time**: a device is asked for, the ground's images are decoded, the scene
@@ -114,6 +116,22 @@
  * each other hiker there has been at once, made before the scene is
  * registered for those already there, so a hike alone lights with three.
  *
+ * **A lake's water is one blended draw, last of the see-through ones**, and
+ * none while no view holds its lake (`lakeMeshes.ts`). It is the game's
+ * blended water (`lakePlugin.ts`, `waterWgsl.ts`): the depth of the bed
+ * under each pixel from a square of heights that follows the world's
+ * centre, the ripples and the rain's rings on its normal, the skin on a
+ * murky lake, and where it is glass the forest's shade under the lake's
+ * skyline in place of the sky's reflection, by the lake's calm at the hour
+ * and under the weather's name (`setWeatherName`, through its fade). What
+ * every lake reads alike rides in the frame's block; a lake's own buffer is
+ * written when its calm, its shade or the bed's square moves. On the tiers
+ * with a cover map the surface stands in it as open water, shown for the
+ * frame that draws the map where the view does not hold it. The shore a
+ * lake reflects beyond that shade (the panorama, the mirror), its plants,
+ * its insects and the tier that reads through the surface are not drawn
+ * yet.
+ *
  * **Colour** is the low tier's material path: Lite's display curve as
  * Babylon's image processing has it there (Khronos PBR Neutral, contrast
  * 1.1), under the weather's and the hour's exposure, and the dome's, the
@@ -147,15 +165,17 @@ import { FOLIAGE_PLAYERS, FOLIAGE_PLAYER_PARKED, setFoliageWind } from "../folia
 import { nearRadiusFor } from "../forestField.js";
 import { GAME_FOV, lensProjection } from "../gameLens.js";
 import { LAMP_ANGLE, LAMP_COLOUR, LAMP_EXPONENT, LAMP_RANGE, lampUnder, type LampState } from "../lampParams.js";
+import { createCalmFade } from "../lakeCalmFrame.js";
 import { createLensCanopy } from "../lensCanopy.js";
 import { droppedCapAt } from "../droppedCap.js";
 import type { CullPose } from "../grassCull.js";
 import { writeListenerPose } from "../listenerPose.js";
 import { sharedSeconds } from "../oceanWindSea.js";
 import { postFeaturesFor } from "../postParams.js";
-import { fittingFeatureTable, fittingRings } from "../preparedScene.js";
+import { fittingBed, fittingFeatureTable, fittingLake, fittingRings, fittingWaterBump } from "../preparedScene.js";
 import { QUALITY, detectTier } from "../quality.js";
 import type { RainLamp } from "../rainField.js";
+import { RAIN_MAP } from "../rainParams.js";
 import type { FreecamView, Renderer, RendererOptions } from "../renderer.js";
 import { startSkySource, type SkySource } from "../skyWorker.js";
 import type { SkyState } from "../skyState.js";
@@ -167,6 +187,7 @@ import { createViewBob } from "../viewBob.js";
 import { createWildlifeInputs } from "../wildlifeInputs.js";
 import { wingTime } from "../wingParams.js";
 import { WATER_ROWS, lakeWaterRow } from "../waterShading.js";
+import { emptyWaterFrameUniforms } from "../waterSurface.js";
 import { WET_CAP, emptyWetUniforms, setWetWeather, wetLineFor, wetUniforms, type WetBody, type WetUniforms } from "../wetSurface.js";
 import { windRecordUnder, type WindRecord } from "../windParams.js";
 import { atmospherePlugin } from "./atmospherePlugin.js";
@@ -181,6 +202,7 @@ import { createForestMeshes, type ForestMeshes } from "./forestMeshes.js";
 import { FRAME_BLOCK, FRAME_FIELDS, writeFrameBlock, type FrameValues } from "./frameBlock.js";
 import { createFrameUploads, uploadCountsCopy, type FrameUploadCounts } from "./frameUploads.js";
 import { GROUND_IMAGES, cloudMapTexture, loadGroundArrays, tableTexture, type CloudMapTexture, type TableTexture } from "./groundTextures.js";
+import { createLiteLakes, type LakeFrame, type LiteLakes } from "./lakeMeshes.js";
 import { createLiteMistMeshes, type LiteMistMeshes, type MistFrame } from "./mistMeshes.js";
 import { createLiteMotes, type LiteMotes, type MotesFrame } from "./motes.js";
 import { notDrawnMembers } from "./notDrawn.js";
@@ -270,6 +292,8 @@ type Standing = {
   cap: CapMesh | null;
   /** The animals (`wildlifeMeshes.ts`). */
   wildlife: LiteWildlifeMeshes | null;
+  /** The lakes' water (`lakeMeshes.ts`); null in a world with no lake. */
+  lakes: LiteLakes | null;
 };
 
 /**
@@ -339,22 +363,37 @@ export function createLiteRenderer(canvas: HTMLCanvasElement, level: Level, fore
   let mistIn = 0;
   let hauntLevel = 0;
   /** What the frame's block is written from: the records above, the eye and the frame's height. */
-  const frameValues: FrameValues = { air: airValues, wet: wetValues, terrain: terrainValues, eye: { x: 0, y: 0, z: 0 }, rows: canvas.height, wingTime: 0 };
+  const frameValues: FrameValues = {
+    air: airValues, wet: wetValues, terrain: terrainValues, eye: { x: 0, y: 0, z: 0 }, rows: canvas.height, wingTime: 0, water: emptyWaterFrameUniforms(),
+  };
   /** The ground's colour and roughness the terrain's materials were last written with. */
   const groundWritten = { r: Number.NaN, g: Number.NaN, b: Number.NaN, roughness: Number.NaN };
 
-  // The wet line follows the nearest body, sea or lake, though no water is drawn.
+  // A forest world has water exactly when its variant declares a sea level: the sea, and the lakes the variant lists.
+  const waterLevel = forest === null ? undefined : activeTerrainVariant().waterLevel;
+  const lakes: readonly LakeSource[] =
+    forest !== null && waterLevel !== undefined
+      ? (activeTerrainVariant().waterBodies?.(forest.seed).filter((body): body is LakeSource => body.kind === "lake") ?? [])
+      : [];
+  // The wet line follows the nearest body, sea or lake, whichever is drawn.
   const wetBodies: WetBody[] = [];
-  if (forest !== null) {
-    const variant = activeTerrainVariant();
-    if (variant.waterLevel !== undefined) {
-      wetBodies.push({ ...WATER_ROWS.sea, level: variant.waterLevel, x: 0, z: 0, radius: Number.POSITIVE_INFINITY, bound: Number.POSITIVE_INFINITY });
-    }
-    const lakes = variant.waterBodies?.(forest.seed).filter((body): body is LakeSource => body.kind === "lake") ?? [];
-    for (const lake of lakes) {
-      wetBodies.push({ ...lakeWaterRow(lake.murk), level: lake.level, x: lake.x, z: lake.z, radius: lake.shape.shoreMax, bound: lake.bound });
-    }
+  if (waterLevel !== undefined) {
+    wetBodies.push({ ...WATER_ROWS.sea, level: waterLevel, x: 0, z: 0, radius: Number.POSITIVE_INFINITY, bound: Number.POSITIVE_INFINITY });
   }
+  for (const lake of lakes) {
+    wetBodies.push({ ...lakeWaterRow(lake.murk), level: lake.level, x: lake.x, z: lake.z, radius: lake.shape.shoreMax, bound: lake.bound });
+  }
+  /** The weather's preset as the lakes' calm follows it (`lakeCalmFrame.ts`): `setWeatherName`. */
+  const calmFade = createCalmFade();
+  /** What a frame hands the lakes (`LakeFrame`), filled in place. */
+  const lakeFrame: LakeFrame = {
+    centreX: 0, centreZ: 0, eye: { x: 0, y: 0, z: 0 }, forward: { fx: 0, fy: 0, fz: 1 }, planes: [], seconds: 0, dt: 0, weather: light.weather,
+    wind: windRecordUnder(light.weather, 0), hour: light.hour, sky: null, environmentIntensity: 0, frameHeight: canvas.height, fov: lens.fov, cover: null,
+  };
+  /** The square the cover map is drawn over, where a frame draws it. */
+  const coverSquare = { x: 0, z: 0, half: RAIN_MAP.extent / 2 };
+  /** Whether this frame draws the rain's cover map. */
+  let coverDrawn = false;
 
   // The view: where the camera stands and how it is turned, as `sync` last left it.
   const pose: CameraPose = { x: 0, y: 2, z: 0, yaw: 0, pitch: 0, roll: 0 };
@@ -434,6 +473,7 @@ export function createLiteRenderer(canvas: HTMLCanvasElement, level: Level, fore
 
   /** Lets go of what stands: the meshes, the scene, the engine and its device. */
   function release(made: Standing): void {
+    made.lakes?.dispose();
     made.wildlife?.dispose();
     made.cap?.dispose();
     made.entities?.dispose();
@@ -528,7 +568,7 @@ export function createLiteRenderer(canvas: HTMLCanvasElement, level: Level, fore
     const rainMap = forest === null ? null : createLiteRainMap(engine, scene, tier);
     const rain = createLiteRain(engine, scene, tier, rainMap, uploads);
     const splash = rainMap === null ? null : createLiteRainSplash(engine, scene, tier, rainMap, uploads);
-    const coverAs = (kind: "terrain" | "hard"): CoverRegistry | undefined =>
+    const coverAs = (kind: "terrain" | "hard" | "water"): CoverRegistry | undefined =>
       rainMap === null ? undefined : { add: (mesh) => rainMap.register(mesh, kind), remove: (mesh) => rainMap.unregister(mesh) };
     // The ground cloud's map, which every material's air reads.
     const cloudGround = forest === null ? null : cloudMapTexture(engine);
@@ -663,9 +703,22 @@ export function createLiteRenderer(canvas: HTMLCanvasElement, level: Level, fore
         radiusScale: tier === "low" ? 0.6 : undefined, firstBuilds: options.firstBuilds, air: () => atmospherePlugin(airValues, cloudMap, shared), shared, clock: skinClock,
         planes: () => planes, uploads,
       });
+    // The lakes' water, each lake one surface, where the world has any.
+    let lakeMeshes: LiteLakes | null = null;
+    if (forest !== null && cloudMap !== null && waterLevel !== undefined && lakes.length > 0 && !disposed) {
+      const start = { x: options.start?.x ?? level.playerSpawns[0]?.x ?? 0, z: options.start?.z ?? level.playerSpawns[0]?.z ?? 0 };
+      /** What the world's worker sampled for each lake, where it is that lake's. */
+      const pieces = lakes.map((lake, i) => fittingLake(prepared, forest.seed, lake, i));
+      lakeMeshes = createLiteLakes(engine, scene, forest.seed, lakes, tier, {
+        start, waterLevel, calm: calmFade, air: () => atmospherePlugin(airValues, cloudMap, shared), shared,
+        made: pieces,
+        bump: fittingWaterBump(prepared, forest.seed), bed: fittingBed(prepared, forest.seed, tier, start.x, start.z),
+        uploads, cover: coverAs("water"),
+      });
+    }
     const made: Standing = {
       engine, scene, camera, sun, fill, lamp, dome, capture, shared, materials, terrain, road, cloudGround, forest: trees, blades, clutter, duff, cliffs, props, mist, motes,
-      rain, rainMap, splash, skinClock, entities, wornLamps, cap, wildlife,
+      rain, rainMap, splash, skinClock, entities, wornLamps, cap, wildlife, lakes: lakeMeshes,
     };
     if (disposed) {
       release(made);
@@ -911,8 +964,9 @@ export function createLiteRenderer(canvas: HTMLCanvasElement, level: Level, fore
       light.step(dt);
       steppedAt = now;
       const weather = light.weather;
-      // The wind's time is the simulation's, so every peer's blows the same way; a clock handed in is kept.
-      wind = windRecordUnder(weather, options.clock !== undefined ? seconds : sharedSeconds(state.tick, alpha), windOverride ?? undefined);
+      /** The seconds the wind and the water move on: the simulation's, so every peer's move alike; a clock handed in is kept. */
+      const sharedNow = options.clock !== undefined ? seconds : sharedSeconds(state.tick, alpha);
+      wind = windRecordUnder(weather, sharedNow, windOverride ?? undefined);
       // The players bend the foliage they stand in: up to five, the rest of the slots parked far off in XZ.
       windPlayers.fill(0);
       for (let i = 0; i < FOLIAGE_PLAYERS; i++) {
@@ -1029,6 +1083,7 @@ export function createLiteRenderer(canvas: HTMLCanvasElement, level: Level, fore
           motesFrame.exposure = light.exposure;
           standing.motes?.update(weather, light.hour, nearColour, wind, motesFrame);
         }
+        coverDrawn = false;
         if (coverAt !== null && rainFrame !== null && splashFrame !== null) {
           // The headlamp as the rain reads it: the frame's, at the eye and along the view.
           rainLamp.x = pose.x;
@@ -1043,7 +1098,7 @@ export function createLiteRenderer(canvas: HTMLCanvasElement, level: Level, fore
           rainLamp.b = lensLamp.state.colour.b;
           // The cover map is drawn with this frame only if a drop or a ring reads it; then the rain, and the
           // splashes on the map.
-          standing.rainMap?.update(coverAt, standing.rain.reads(weather));
+          coverDrawn = standing.rainMap?.update(coverAt, standing.rain.reads(weather)) ?? false;
           rainFrame.yaw = pose.yaw;
           rainFrame.dt = dt;
           rainFrame.exposure = light.exposure;
@@ -1063,6 +1118,33 @@ export function createLiteRenderer(canvas: HTMLCanvasElement, level: Level, fore
         // The view's planes for the frame, and the cap while they hold it.
         viewPlanes(pose, axes, fov, canvas.height > 0 ? canvas.width / canvas.height : 1, lens.near, lens.far, planes);
         standing.cap?.seen(planes);
+        // The lakes' water: the bed's square round the world's centre, each lake's calm and numbers, and each shown
+        // while the view holds it. What every lake reads alike goes to the frame's block below.
+        if (standing.lakes !== null && centre !== null) {
+          const f = lakeFrame;
+          f.centreX = centre.x;
+          f.centreZ = centre.z;
+          f.eye = pose;
+          f.forward = axes;
+          f.planes = planes;
+          f.seconds = sharedNow;
+          f.dt = dt;
+          f.weather = weather;
+          f.wind = wind;
+          f.hour = light.hour;
+          f.sky = sky;
+          f.environmentIntensity = light.lights?.environmentIntensity ?? 0;
+          f.frameHeight = canvas.height;
+          f.fov = fov;
+          f.cover = null;
+          if (coverDrawn && standing.rainMap !== null) {
+            coverSquare.x = standing.rainMap.centre.x;
+            coverSquare.z = standing.rainMap.centre.z;
+            f.cover = coverSquare;
+          }
+          standing.lakes.update(f);
+          frameValues.water = standing.lakes.frame;
+        }
         // The animals, round the camera in freecam and the player otherwise, judged by the view's planes: the
         // director is handed the sim's place and aim, never the camera's own, which the walk's bob has moved.
         if (standing.wildlife !== null && centre !== null) {
@@ -1155,6 +1237,9 @@ export function createLiteRenderer(canvas: HTMLCanvasElement, level: Level, fore
     },
     setWeather(next, fadeSeconds) {
       light.setWeather(next, fadeSeconds);
+    },
+    setWeatherName(name, fadeSeconds = 3) {
+      calmFade.name(name, fadeSeconds, light.hour);
     },
     setView(hour, weather) {
       light.setView(hour, weather);

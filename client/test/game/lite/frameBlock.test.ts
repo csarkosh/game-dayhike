@@ -13,6 +13,7 @@ import {
 import { TERRAIN_FIELDS, emptyTerrainMaterialUniforms, terrainPlugin, terrainWetPlugin } from "../../../src/game/lite/terrainPlugins.js";
 import { WET_FIELDS } from "../../../src/game/lite/wetWgsl.js";
 import { emptyTerrainUniforms, terrainUniforms } from "../../../src/game/terrainUniforms.js";
+import { emptyWaterFrameUniforms } from "../../../src/game/waterSurface.js";
 import { WET_SWASH_VECS, emptyWetUniforms, setWetWeather, wetUniforms } from "../../../src/game/wetSurface.js";
 import { windRecordUnder } from "../../../src/game/windParams.js";
 import { WEATHER_PRESETS } from "../../../src/game/weather.js";
@@ -68,6 +69,10 @@ function frame(): FrameValues {
     eye,
     rows: 956,
     wingTime: 123.5,
+    water: {
+      waterLakeTime: Float32Array.of(41.5), waterWind: Float32Array.of(0.6, 0.8), waterWindTime: Float32Array.of(3, 4), waterRain: Float32Array.of(0.8),
+      waterSun: Float32Array.of(0.25), waterBumpOffset: Float32Array.of(-0.5, 0.75),
+    },
   };
 }
 
@@ -110,6 +115,9 @@ describe("the frame's uniform block on Babylon Lite", () => {
     // The fade's eye as its module computes it, and the frame's rows.
     expect(read("fadeEye")).toEqual(f32(fadeUniforms(values.eye, { band: [0, 1], factor: 1 }, emptyFadeUniforms()).fadeEye));
     expect(read("fadeRows")).toEqual([956]);
+    // What every lake reads alike, as the water's own module names it.
+    expect(Object.keys(values.water)).toEqual(Object.keys(emptyWaterFrameUniforms()));
+    for (const [name, value] of Object.entries(values.water)) expect(read(name)).toEqual(f32(value));
     // Every float of every field was written but the players' fourth, which nothing reads.
     const unwritten = [...made.offsets].flatMap(([name, at]) => [...made.data.subarray(at / 4, at / 4 + floatsOf(name))].map((v, i) => (v === -99 ? `${name}[${i}]` : null))).filter((v) => v !== null);
     expect(unwritten).toEqual(Array.from({ length: FOLIAGE_PLAYERS }, (_, i) => `windPlayers[${i * 4 + 3}]`));
