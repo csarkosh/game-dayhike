@@ -1,7 +1,8 @@
 /**
  * The hike's renderer on Babylon Lite: the terrain, the forest's trees near
  * and far, the ground clutter, the blade grass, the duff and the cliffs under the
- * atmosphere and the sky's dome, the valley mist banks and the motes in the air, lit by the sun, the sky's fill and the sky's
+ * atmosphere and the sky's dome, the valley mist banks and the motes in the air
+ * and the ground cloud marched through it, lit by the sun, the sky's fill and the sky's
  * capture as the image-based light for the hour and the weather and by the
  * local player's headlamp, seen from the player's eye or the free camera. It
  * answers the whole of `Renderer` (`renderer.ts`), and what it does not draw
@@ -65,6 +66,15 @@
  * to decide (`mistMeshes.ts`: nothing where no bank has moved; `motes.ts`:
  * the clock while a mote is shown).
  *
+ * **The ground cloud is marched by the materials** on the tiers the game
+ * marches it on (none on low), in the air's plugin, since there is no post
+ * chain to march it once a pixel as the game's does. Its density is the
+ * game's: the night's under the haunt and the chase's cast by how far the
+ * mist has come in, or the level the console holds it at (`setMist`, which
+ * says what is drawn). The ground it rests on is a map round the eye, built
+ * again at once when the eye has left the last one's middle, as the game
+ * builds it, and counted with the streamed world.
+ *
  * **Colour** is the low tier's material path: Lite's display curve as
  * Babylon's image processing has it there (Khronos PBR Neutral, contrast
  * 1.1), under the weather's and the hour's exposure, and the dome's, the
@@ -82,12 +92,12 @@ import { PLAYER_EYE_OFFSET } from "../../sim/constants.js";
 import type { Forest } from "../../sim/forest.js";
 import { FOG_DISTANCE } from "../../sim/forestConstants.js";
 import type { Level } from "../../sim/level.js";
-import { activeTerrainVariant, type LakeSource } from "../../sim/terrain.js";
+import { activeTerrainVariant, elevationAt, type LakeSource } from "../../sim/terrain.js";
 import type { ListenerPose } from "../ambientAudio.js";
 import { GRADIENT_MID_STEP, atmosphereUniforms, emptyAtmosphereUniforms, fogGradientAt } from "../atmosphereParams.js";
 import { BASE_SPACING_BY_TIER } from "../clipmap.js";
 import { clutterReachFor } from "../clutterField.js";
-import { noCloud } from "../cloudParams.js";
+import { cloudDensityNow, cloudFor, cloudGroundDue, cloudGroundMap, cloudMarchSteps, cloudOn, cloudStepsFor, noCloud } from "../cloudParams.js";
 import type { EngineHandle } from "../engineHandle.js";
 import { blendedEye, type EyePose } from "../eyeBlend.js";
 import { FACE_PATCH_Z_UNITS } from "../facePatches.js";
@@ -99,6 +109,7 @@ import { LAMP_ANGLE, LAMP_COLOUR, LAMP_EXPONENT, LAMP_RANGE, lampUnder, type Lam
 import type { CullPose } from "../grassCull.js";
 import { writeListenerPose } from "../listenerPose.js";
 import { sharedSeconds } from "../oceanWindSea.js";
+import { postFeaturesFor } from "../postParams.js";
 import { fittingFeatureTable, fittingRings } from "../preparedScene.js";
 import { QUALITY, detectTier } from "../quality.js";
 import type { FreecamView, Renderer, RendererOptions } from "../renderer.js";
@@ -121,7 +132,7 @@ import { createDuffMeshes, type DuffMeshes } from "./duffMeshes.js";
 import { createForestMeshes, type ForestMeshes } from "./forestMeshes.js";
 import { FRAME_BLOCK, FRAME_FIELDS, writeFrameBlock, type FrameValues } from "./frameBlock.js";
 import { createFrameUploads, uploadCountsCopy, type FrameUploadCounts } from "./frameUploads.js";
-import { GROUND_IMAGES, cloudMapTexture, loadGroundArrays, tableTexture, type TableTexture } from "./groundTextures.js";
+import { GROUND_IMAGES, cloudMapTexture, loadGroundArrays, tableTexture, type CloudMapTexture, type TableTexture } from "./groundTextures.js";
 import { createLiteMistMeshes, type LiteMistMeshes, type MistFrame } from "./mistMeshes.js";
 import { createLiteMotes, type LiteMotes, type MotesFrame } from "./motes.js";
 import { notDrawnMembers } from "./notDrawn.js";
@@ -179,6 +190,8 @@ type Standing = {
   materials: PbrMaterialProps[];
   terrain: TerrainMeshes | null;
   road: TableTexture | null;
+  /** The ground cloud's map, which the ground round the eye is laid into (`groundTextures.ts`). */
+  cloudGround: CloudMapTexture | null;
   forest: ForestMeshes | null;
   blades: BladeMeshes | null;
   clutter: ClutterMeshes | null;
@@ -206,7 +219,7 @@ export function createLiteRenderer(canvas: HTMLCanvasElement, level: Level, fore
   const tier = options.tier ?? detectTier(globalThis.navigator);
   const clock = options.clock ?? (() => performance.now());
   const lens = lensProjection();
-  const { members: absent } = notDrawnMembers();
+  const { members: absent, held } = notDrawnMembers();
 
   // The sky's slices: the page's table or, given none, a source of this renderer's own.
   let ownSky: SkySource | null = null;
@@ -246,7 +259,17 @@ export function createLiteRenderer(canvas: HTMLCanvasElement, level: Level, fore
   /** The players that bend the foliage, xyz each: a slot with no player is parked far off. */
   const windPlayers = new Float32Array(FOLIAGE_PLAYERS * 3);
   const airValues = emptyAtmosphereUniforms();
-  const cloud = noCloud();
+  // The ground cloud (`cloudParams.ts`): the night's mist as a volume the air's plugin marches through in each
+  // material, on the tiers the game marches it on, resting on a map of the ground round the eye.
+  let cloud = noCloud();
+  const cloudSteps = forest !== null ? cloudStepsFor(postFeaturesFor(tier, true)) : 0;
+  /** Where the ground's map is centred; none before its first build. */
+  let cloudGroundAt: { x: number; z: number } | null = null;
+  /** The density the console holds the cloud at, the density last drawn, how far the mist has come in and the haunt's level. */
+  let cloudHold: number | null = null;
+  let cloudDensity = 0;
+  let mistIn = 0;
+  let hauntLevel = 0;
   /** What the frame's block is written from: the records above, the eye and the frame's height. */
   const frameValues: FrameValues = { air: airValues, wet: wetValues, terrain: terrainValues, eye: { x: 0, y: 0, z: 0 }, rows: canvas.height };
   /** The ground's colour and roughness the terrain's materials were last written with. */
@@ -304,12 +327,13 @@ export function createLiteRenderer(canvas: HTMLCanvasElement, level: Level, fore
   const lampWritten = { intensity: Number.NaN, r: 0, g: 0, b: 0, x: 0, y: 0, z: 0, dx: 0, dy: 0, dz: 0 };
   /** The sky's state the dome was last drawn for: the light makes a new one at each apply. */
   let domeSky: SkyState | null = null;
-  /** What a frame draws the mist banks with (`MistFrame`), and the sky's state their colour was last read for. */
+  /** What a frame draws the mist banks with (`MistFrame`), and the sky's state the haze's colours were last read for. */
   let mistFrame: MistFrame | null = null;
-  let mistSky: SkyState | null = null;
-  /** What a frame draws the motes with beside the game's own arguments, and their colour, the gradient's near end. */
+  let airSky: SkyState | null = null;
+  /** What a frame draws the motes with beside the game's own arguments. */
   const motesFrame: MotesFrame = { seconds: 0, exposure: 0, contrast: DISPLAY_CONTRAST };
-  let motesColour = { r: 0, g: 0, b: 0 };
+  /** The fog gradient's near end, the motes' colour and the one the cloud's is made from: black until the sky's first slices. */
+  let nearColour = { r: 0, g: 0, b: 0 };
   /** The canvas's size the engine was last fitted to, CSS pixels. */
   let fittedWidth = -1;
   let fittedHeight = -1;
@@ -404,7 +428,8 @@ export function createLiteRenderer(canvas: HTMLCanvasElement, level: Level, fore
     // The motes are the air's everywhere, on the tiers with the capacity for them.
     const motes = createLiteMotes(engine, scene, tier, uploads);
     // The ground cloud's map, which every material's air reads.
-    const cloudMap = forest === null ? null : cloudMapTexture(engine);
+    const cloudGround = forest === null ? null : cloudMapTexture(engine);
+    const cloudMap = cloudGround?.texture ?? null;
     if (forest !== null && cloudMap !== null) {
       const arrays = await loadGroundArrays(engine, disposal.signal, () => {
         loading--;
@@ -512,7 +537,7 @@ export function createLiteRenderer(canvas: HTMLCanvasElement, level: Level, fore
         wet: wetAt(WET_CAP.prop), air: () => atmospherePlugin(airValues, cloudMap, shared), shared, firstBuilds: options.firstBuilds, uploads,
       });
     }
-    const made: Standing = { engine, scene, camera, sun, fill, lamp, dome, capture, shared, materials, terrain, road, forest: trees, blades, clutter, duff, cliffs, props, mist, motes };
+    const made: Standing = { engine, scene, camera, sun, fill, lamp, dome, capture, shared, materials, terrain, road, cloudGround, forest: trees, blades, clutter, duff, cliffs, props, mist, motes };
     if (disposed) {
       release(made);
       return;
@@ -677,8 +702,8 @@ export function createLiteRenderer(canvas: HTMLCanvasElement, level: Level, fore
     // terrain's cap is none; every other material's is its own, and the rest of the look is this record's.
     const wetLine = wetLineFor(wetBodies, pose.x, pose.z);
     wetUniforms({ ...wetLine, attenuate: true, cap: 0 }, wetValues);
-    // The ground cloud is not marched: no steps.
-    atmosphereUniforms(light.air, cloud, 0, airValues);
+    // The ground cloud is marched in the tier's steps while it has density.
+    atmosphereUniforms(light.air, cloud, cloudMarchSteps(cloud), airValues);
     // The terrain's two materials carry the ground's colour and roughness under the weather: written again when it moves.
     if (surface.albedo[0] !== groundWritten.r || surface.albedo[1] !== groundWritten.g || surface.albedo[2] !== groundWritten.b || surface.roughness !== groundWritten.roughness) {
       groundWritten.r = surface.albedo[0];
@@ -837,23 +862,41 @@ export function createLiteRenderer(canvas: HTMLCanvasElement, level: Level, fore
         cullPose.aspect = canvas.height > 0 ? canvas.width / canvas.height : 1;
         standing.blades?.cull(cullPose);
         standing.clutter?.cull(cullPose);
-        // The mist banks, round the camera's place and turned to its yaw. Their colour is the haze's gradient's, which
-        // there is none of until the sky's first slices are in.
+        // The haze's colours, read again for each new sky state. There are none until the sky's first slices are in,
+        // and no mist bank or mote is drawn before.
         const sky = light.sky;
         const air = light.air;
-        if (centre !== null && sky !== null && air !== null) {
-          if (mistFrame === null || sky !== mistSky) {
-            mistSky = sky;
-            mistFrame = { eye: pose, yaw: 0, colour: fogGradientAt(sky, GRADIENT_MID_STEP), air, exposure: 0, contrast: DISPLAY_CONTRAST };
-            motesColour = fogGradientAt(sky, 0);
-          }
+        if (sky !== null && air !== null && sky !== airSky) {
+          airSky = sky;
+          mistFrame = { eye: pose, yaw: 0, colour: fogGradientAt(sky, GRADIENT_MID_STEP), air, exposure: 0, contrast: DISPLAY_CONTRAST };
+          nearColour = fogGradientAt(sky, 0);
+        }
+        if (centre !== null && mistFrame !== null) {
+          // The mist banks, round the camera's place and turned to its yaw.
           mistFrame.yaw = pose.yaw;
           mistFrame.exposure = light.exposure;
           standing.mist?.update(centre.x, centre.z, weather, wind, seconds, mistFrame);
           // The motes, round the camera the frame is drawn from, in the gradient's near colour.
           motesFrame.seconds = seconds;
           motesFrame.exposure = light.exposure;
-          standing.motes?.update(weather, light.hour, motesColour, wind, motesFrame);
+          standing.motes?.update(weather, light.hour, nearColour, wind, motesFrame);
+        }
+        // The ground cloud: the ground round the eye, built again at once as the eye leaves the last map's middle, as
+        // the game builds it, and counted with what follows the camera; then its density for the frame, from the
+        // night, the haunt and the chase's cast by how far the mist has come in, or the level it is held at.
+        if (cloudSteps > 0 && forest !== null && standing.cloudGround !== null) {
+          if (cloudGroundDue(cloudGroundAt, pose.x, pose.z)) {
+            cloudGroundAt = { x: pose.x, z: pose.z };
+            const trailAt = activeTerrainVariant().trailDistance;
+            const ground = cloudGroundMap(
+              (x, z) => elevationAt(forest.seed, x, z), cloudGroundAt.x, cloudGroundAt.z, trailAt === undefined ? null : (x, z) => trailAt(forest.seed, x, z),
+            );
+            standing.cloudGround.lay(ground);
+            uploads.stream("textures", standing.cloudGround.bytes);
+            cloud = cloudOn(cloud, ground);
+          }
+          cloudDensity = cloudDensityNow(cloudHold, sky?.night ?? 0, hauntLevel, held.chase, mistIn);
+          cloud = cloudFor(cloud, cloudDensity, cloudSteps, seconds, hauntLevel, nearColour);
         }
         draw(standing, weather.wetness);
       }
@@ -926,6 +969,16 @@ export function createLiteRenderer(canvas: HTMLCanvasElement, level: Level, fore
     },
     setBobScale(scale) {
       bob.setScale(scale);
+    },
+    setHaunt(level) {
+      hauntLevel = Math.max(0, Math.min(1, level));
+    },
+    setMist(density) {
+      cloudHold = density === null ? null : Math.max(0, Math.min(1, density));
+      return cloudHold ?? cloudDensity;
+    },
+    setMistIn(level) {
+      mistIn = Math.max(0, Math.min(1, level));
     },
     wind() {
       return wind;

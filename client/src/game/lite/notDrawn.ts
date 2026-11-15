@@ -7,7 +7,8 @@
  * with their bakes), the ground clutter (the cards, the plants and the
  * stones), the blade grass, the duff, the cliffs' rock walls where the
  * field lays any and the chunk props' boxes, under the atmosphere and the
- * sky's dome, with the valley mist banks and the motes in the air, lit by the sun, the sky's fill and the sky's capture as the
+ * sky's dome, with the valley mist banks and the motes in the air and the
+ * ground cloud marched through it on the tiers that march it, lit by the sun, the sky's fill and the sky's capture as the
  * image-based light for the hour and the weather and by the local player's
  * headlamp, from the player's eye or the free camera. Every other part of the world is absent, and the
  * members of `Renderer` that belong to an absent part are answered here as
@@ -32,7 +33,6 @@ export const NOT_DRAWN: readonly NotDrawn[] = [
   { what: "the animals", members: ["hasWildlife", "wildlifeEvents", "wildlifeDirectorLog"] },
   { what: "the players' bodies and the lamps they wear (the local player's lamp on the lens is lit), the Hollow and the dropped cap", members: ["setSkinShading"] },
   { what: "the sun's cast shadows", members: [] },
-  { what: "the ground cloud that is the night's mist", members: ["setHaunt", "setMist", "setMistIn"] },
   { what: "the rain, its splashes and its cover, and the lens's read of the canopy over it that keeps the rain off it", members: ["canopyWater", "canopyOver"] },
   { what: "the post chain: the grade and its palettes, the anti-aliasing, the far softening, the rain on the lens, the stare's shade, the chase's cast, depth of field", members: ["setPalette", "setChase", "setUnsettle", "setDepthOfField", "stare"] },
   { what: "the lakes' calm by the weather's name", members: ["setWeatherName"] },
@@ -44,10 +44,8 @@ export const NOT_DRAWN: readonly NotDrawn[] = [
 
 /** What the setters of the absent parts were last told. */
 export type NotDrawnHeld = {
+  /** The chase's cast. The post chain's to grade by; the ground cloud, which is drawn, reads its density from it. */
   chase: number;
-  haunt: number;
-  mist: number | null;
-  mistIn: number;
   unsettle: number;
   palette: PaintPaletteName | null;
   weatherName: WeatherPresetName | null;
@@ -65,7 +63,7 @@ export type NotDrawnMembers = Pick<
   | "canopyOver"
   | "hasSea" | "surfSound" | "hasWaterLife" | "waterLifeSound"
   | "hasWildlife" | "wildlifeEvents" | "wildlifeDirectorLog"
-  | "setSkinShading" | "setHaunt" | "setMist" | "setMistIn" | "canopyWater"
+  | "setSkinShading" | "canopyWater"
   | "setPalette" | "setChase" | "setUnsettle" | "setDepthOfField" | "stare"
   | "setWeatherName" | "setEnding" | "endScene" | "setScene" | "clearEnding"
   | "setWireframe" | "onShaderCompiled" | "keepShaders" | "gpuTime"
@@ -95,7 +93,7 @@ const NO_EVENTS: readonly never[] = Object.freeze([]);
  */
 export function notDrawnMembers(): { members: NotDrawnMembers; held: NotDrawnHeld } {
   const held: NotDrawnHeld = {
-    chase: 0, haunt: 0, mist: null, mistIn: 1, unsettle: 1, palette: null, weatherName: null,
+    chase: 0, unsettle: 1, palette: null, weatherName: null,
     wireframe: false, skinShading: true, depthOfField: false, ending: null, endScene: null, scene: null,
   };
   const members: NotDrawnMembers = {
@@ -109,17 +107,6 @@ export function notDrawnMembers(): { members: NotDrawnMembers; held: NotDrawnHel
     wildlifeDirectorLog: () => NO_EVENTS,
     setSkinShading(on) {
       held.skinShading = on;
-    },
-    setHaunt(level) {
-      held.haunt = clamp01(level);
-    },
-    setMist(density) {
-      held.mist = density === null ? null : clamp01(density);
-      // The density now drawn: no cloud is.
-      return 0;
-    },
-    setMistIn(level) {
-      held.mistIn = clamp01(level);
     },
     canopyWater: () => 0,
     setPalette(name) {

@@ -2,7 +2,8 @@
  * The terrain material's textures on Babylon Lite: the ground layers'
  * images decoded into layer arrays (`groundLayers.ts` says what each image
  * is and how it is read), a world's float tables as float textures
- * (`terrainTables.ts`), and the ground cloud's map (`cloudParams.ts`).
+ * (`terrainTables.ts`), and the ground cloud's map (`cloudParams.ts`), which
+ * is written again as the eye moves.
  *
  * A layer's albedo is an array of one layer, since the terrain's plugin
  * reads every image through one sampler. Every image is decoded as data,
@@ -12,10 +13,10 @@
  * take no anisotropy.
  */
 import {
-  createRenderTexture2D, createTexture2DArrayFromPixels, createTexture2DFromPixels, updateTextureRegion,
+  createRenderTexture2D, createTexture2DArrayFromPixels, createTexture2DFromPixels, updateTexture2DFromPixels, updateTextureRegion,
   type EngineContext, type Texture2D, type Texture2DArray,
 } from "@babylonjs/lite";
-import { CLOUD_NOISE_SIZE, cloudNoiseMap } from "../cloudParams.js";
+import { CLOUD_NOISE_SIZE, cloudNoiseMap, writeCloudGround, type CloudGround } from "../cloudParams.js";
 import { GROUND_ALBEDOS, GROUND_LAYER_URLS, GROUND_MAP_SIZE, decodeGroundLayer, interleaveLayers } from "../groundLayers.js";
 import type { FloatTable } from "../terrainTables.js";
 import type { TerrainTextures } from "./terrainPlugins.js";
@@ -86,9 +87,32 @@ export function tableTexture(engine: EngineContext, table: FloatTable | null): T
   return { texture, write, bytes: width * height * 16 };
 }
 
-/** The ground cloud's map: its noise, repeating both ways, read bilinearly. */
-export function cloudMapTexture(engine: EngineContext): Texture2D {
-  return createTexture2DFromPixels(engine, cloudNoiseMap(), CLOUD_NOISE_SIZE, CLOUD_NOISE_SIZE, {
+/** The ground cloud's map, and the ground laid into it again. */
+export type CloudMapTexture = {
+  readonly texture: Texture2D;
+  /** Lays `ground` into the map beside the noise (`writeCloudGround`) and sends the map whole. */
+  lay(ground: CloudGround): void;
+  /** The bytes a lay sends. */
+  readonly bytes: number;
+};
+
+/**
+ * The ground cloud's map: its noise, repeating both ways, read bilinearly,
+ * one level. The ground's two channels are flat until the first lay: the
+ * air's plugin binds the map from the start and reads the ground only while
+ * the cloud is marched.
+ */
+export function cloudMapTexture(engine: EngineContext): CloudMapTexture {
+  const map = cloudNoiseMap();
+  const texture = createTexture2DFromPixels(engine, map, CLOUD_NOISE_SIZE, CLOUD_NOISE_SIZE, {
     addressModeU: "repeat", addressModeV: "repeat", minFilter: "linear", magFilter: "linear",
   });
+  return {
+    texture,
+    bytes: map.byteLength,
+    lay(ground) {
+      writeCloudGround(map, ground);
+      updateTexture2DFromPixels(engine, texture, map);
+    },
+  };
 }

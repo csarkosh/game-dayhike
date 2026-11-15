@@ -146,6 +146,21 @@ describe("the hike's renderer on Babylon Lite, before its engine stands", () => 
     expect(r.wind()).toEqual(windRecordUnder(WEATHER_PRESETS.rain, 9));
   });
 
+  it("holds the ground cloud at the level the console gives it and says what is drawn, which is none where none is marched", () => {
+    const r = make();
+    // No forest and the low tier: no cloud is marched, and the night's density is never worked.
+    expect(r.setMist(null)).toBe(0);
+    expect(r.setMist(0.7)).toBe(0.7);
+    expect(r.setMist(3)).toBe(1);
+    expect(r.setMist(-1)).toBe(0);
+    r.setHaunt(1);
+    r.setMistIn(1);
+    r.setChase(1);
+    r.setFreecam({ x: 0, y: 10, z: 0, yaw: 0, pitch: 0 });
+    r.sync(windTestState(), -1, 0);
+    expect(r.setMist(null)).toBe(0);
+  });
+
   it("has no bake to tell of, and ends none, while no forest stands", () => {
     const r = make();
     expect(r.impostorBakes()).toEqual([]);

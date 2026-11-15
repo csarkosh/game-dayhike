@@ -13,7 +13,7 @@ describe("what the renderer on Babylon Lite does not draw yet", () => {
 
   it("names every part of the world it leaves out", () => {
     const all = NOT_DRAWN.map((part) => part.what).join("; ");
-    for (const word of [ "sea", "lakes", "animals", "bodies", "shadows", "mist", "rain", "post chain", "scenes", "endings", "posts", "body at the crest"]) {
+    for (const word of [ "sea", "lakes", "animals", "bodies", "shadows", "rain", "post chain", "scenes", "endings", "posts", "body at the crest"]) {
       expect(all, word).toContain(word);
     }
   });
@@ -42,8 +42,6 @@ describe("what the renderer on Babylon Lite does not draw yet", () => {
   it("keeps what its setters are told, held to the range each takes", () => {
     const { members, held } = notDrawnMembers();
     members.setChase(2);
-    members.setHaunt(-1);
-    members.setMistIn(0.25);
     members.setUnsettle(0.5);
     members.setPalette("dusk" as never);
     members.setWeatherName("rain");
@@ -51,13 +49,14 @@ describe("what the renderer on Babylon Lite does not draw yet", () => {
     members.setSkinShading(false);
     members.setDepthOfField(true);
     expect(held).toMatchObject({
-      chase: 1, haunt: 0, mistIn: 0.25, unsettle: 0.5, palette: "dusk", weatherName: "rain", wireframe: true, skinShading: false, depthOfField: true,
+      chase: 1, unsettle: 0.5, palette: "dusk", weatherName: "rain", wireframe: true, skinShading: false, depthOfField: true,
     });
-    // The ground cloud's density is held and none is drawn.
-    expect(members.setMist(0.7)).toBe(0);
-    expect(held.mist).toBe(0.7);
-    expect(members.setMist(null)).toBe(0);
-    expect(held.mist).toBeNull();
+  });
+
+  it("leaves the air's weather to the renderer: the mist banks, the motes and the ground cloud are drawn", () => {
+    const { members } = notDrawnMembers();
+    for (const name of ["setHaunt", "setMist", "setMistIn"]) expect(name in members, name).toBe(false);
+    expect(NOT_DRAWN.map((part) => part.what).join("; ")).not.toMatch(/mist|motes|cloud/);
   });
 
   it("keeps the first ending it is told and lets a death be undone, and keeps the last scene", () => {
