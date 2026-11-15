@@ -2,8 +2,9 @@
  * The forest's trees on Babylon Lite: the near rings of full geometry, the
  * canopy giants and the saplings at three LODs each, the dead trees, a
  * standing snag and a fallen log in one bucket, and past the near radius a
- * billboard a tree. Every bucket is a mesh a primitive (a tree's bark and
- * its crown are two) drawn as thin instances.
+ * billboard a tree, and on the nurse logs their ferns and seedlings. Every
+ * bucket is a mesh a primitive (a tree's bark and its crown are two) drawn
+ * as thin instances.
  *
  * What each bucket is drawn with is the game's own, made with no engine:
  * the bands `forestField.ts` collects round the camera, the matrices and the
@@ -50,7 +51,13 @@
  * Nothing bakes again while the forest stands: the pictures are unlit, so
  * neither the hour nor the weather is in them.
  *
- * **Not drawn here:** what grows on the nurse logs.
+ * **What grows on a nurse log** (`nurseLog.ts`): the understory's fern and
+ * a seedling built in code, each a bucket, placed along each log's top line
+ * by the log's own matrix and stood plumb (`nurseBuffers`), dithering out
+ * with distance. The fern wears its file's cards in the cover's green under
+ * the cards' contrast, with no map of normals, no sway and no ground tint:
+ * it stands a metre off the ground. The seedling is white under its own
+ * vertex colours. Both are matt, drawn on both sides and lit on one.
  */
 import {
   acquireTexture, addToScene, createMeshFromData, createPbrMaterial, createTexture2DFromPixels, disposeMeshGpu, getOrCreateSampler, invalidateRenderBundles,
@@ -63,13 +70,14 @@ import { modelUrl, textureUrl } from "../assetUrls.js";
 import {
   GIANT_SETS, SAPLING_BARKS, barkLook, barkSize, barkUv, inGiantSet, type BarkDressing, type BarkLook,
 } from "../barkParams.js";
+import { FOLIAGE_CARD_CONTRAST, coverAlbedoTint } from "../coverAlbedoParams.js";
 import { DEADWOOD_BARK, DEADWOOD_TONE } from "../deadwoodParams.js";
 import type { FadeBands } from "../distanceFade.js";
 import { FOLIAGE_PROFILES, foliageLook, type FoliageLook } from "../foliageUniforms.js";
 import { NEAR_RADIUS, bandsOrigin, createBandCollector } from "../forestField.js";
 import {
-  deadwoodMatrixBuffer, deadwoodMeasure, deadwoodRoleBuffer, fadeBandsBuffer, forestFadeBands, groundGradBuffer, impostorFadeBuffer,
-  impostorMatrixSlices, impostorQuad, partitionImpostors, snagImpostorQuad, treeMatrixBuffer,
+  NURSE_BANDS, deadwoodMatrixBuffer, deadwoodMeasure, deadwoodRoleBuffer, fadeBandsBuffer, forestFadeBands, groundGradBuffer, impostorFadeBuffer,
+  impostorMatrixSlices, impostorQuad, nurseBuffers, partitionImpostors, snagImpostorQuad, treeMatrixBuffer,
   type DeadwoodMeasure, type ImpostorQuad,
 } from "../forestInstances.js";
 import { CROWN_SKY, TREE_SPECULAR_WEIGHT, treeSkyLook } from "../forestLookParams.js";
@@ -81,6 +89,7 @@ import { IMPOSTOR_FIELD_CUT } from "../impostorField.js";
 import { createFieldMaker } from "../impostorFieldWorker.js";
 import type { Vec3 } from "../instancePose.js";
 import { MOSS_OUTPUT } from "../mossParams.js";
+import { seedlingGeometry } from "../nurseLog.js";
 import type { QualityTier } from "../quality.js";
 import { createCrossing, crossingAt, finish, type Slices } from "../syncJobs.js";
 import type { WetUniforms } from "../wetSurface.js";
@@ -98,6 +107,10 @@ const GIANT_MODELS = ["models/tree.giant_fir.glb", "models/tree.giant_pine.glb"]
 const SAPLING_MODELS = ["models/tree.conifer_a.glb", "models/tree.conifer_b.glb", "models/tree.alder.glb"];
 /** The dead trees' one model, both roles. */
 const DEADWOOD_MODEL = "models/deadwood.snag.glb";
+/** The fern on the nurse logs, by catalog id: the understory's fern, in the cover's green as the floor's own are. */
+const NURSE_FERN_ID = "understory.fern";
+const NURSE_FERN_MODEL = `models/${NURSE_FERN_ID}.glb`;
+const NURSE_FERN_LOD = "LOD0";
 const TREE_LODS = ["LOD0", "LOD1", "LOD2"] as const;
 
 /** A dielectric's reflectance at normal incidence from its index of refraction. */
@@ -232,6 +245,8 @@ export function createForestMeshes(engine: EngineContext, scene: SceneContext, s
   const giants: [Bucket, Bucket, Bucket][] = [];
   const saplings: ([Bucket, Bucket, Bucket] | null)[] = [];
   let deadwood: { bucket: Bucket; measure: DeadwoodMeasure } | null = null;
+  /** The ferns and the seedlings on the nurse logs; the ferns' bucket has no mesh where the model has no part. */
+  let nurse: { ferns: Bucket; seedlings: Bucket } | null = null;
   /** The billboards by the slot the far lists are split into (`partitionImpostors`): the giants' sets, the saplings'
    * species, the snag. A slot with no billboard draws none of its trees. */
   const billboards: (Billboard | null)[] = [];
@@ -247,7 +262,7 @@ export function createForestMeshes(engine: EngineContext, scene: SceneContext, s
   let abandoned = false;
   let disposed = false;
   let adopted = false;
-  let waiting = GIANT_MODELS.length + SAPLING_MODELS.length + 1;
+  let waiting = GIANT_MODELS.length + SAPLING_MODELS.length + 2;
   let camX = Number.NaN;
   let camZ = Number.NaN;
   const crossing = createCrossing();
@@ -471,6 +486,47 @@ export function createForestMeshes(engine: EngineContext, scene: SceneContext, s
   }
 
   /**
+   * What grows on the nurse logs, a bucket each. A plant on a log is too small to need the wind and stands off the
+   * ground, so neither sways, conforms nor takes the ground's tint: both dither out by their distance, are matt, and
+   * are drawn on both sides and lit on one.
+   */
+  function adoptNurse(ferns: readonly ModelPart[]): void {
+    const still = { foliage: null, fade: true, conform: false, deadwood: null };
+    const plain = { metallicFactor: 0, roughnessFactor: 1, doubleSided: true };
+    const tint = coverAlbedoTint(NURSE_FERN_ID);
+    const fernMeshes = ferns.map((part, p) => {
+      // The file's cards in the cover's green, under the cards' contrast, which lifts the shade the texture bakes into
+      // its dark texels: the foliage's colour block alone, at a profile that moves and tints nothing. The card's
+      // normals are its mesh's: the file's map of them is not worn.
+      const look = foliageLook(`${part.facts.material ?? NURSE_FERN_ID}_nurse`, FOLIAGE_PROFILES.NURSE, part.max.y, { contrast: FOLIAGE_CARD_CONTRAST });
+      const made = material(
+        { ...plain, doubleSided: part.facts.doubleSided, baseColorTexture: part.colour, baseColorFactor: [tint.r, tint.g, tint.b, 1] },
+        0,
+        [...(part.facts.doubleSided ? [oneSidedLightPlugin()] : []), vegetationPlugin({ eye: options.eye, frame: options.frame, match: false, light: false, moss: null, sky: false, ...still, foliage: look })],
+        options.wet.leaf,
+      );
+      if (part.facts.alphaMask) setPbrAlphaCutoff(made, part.facts.alphaCutoff);
+      // Nothing reads the file's map of normals: it goes.
+      if (part.normal !== undefined && !released.has(part.normal)) {
+        released.add(part.normal);
+        releaseTexture(part.normal);
+      }
+      return bucketMesh(`nurse_fern_${p}`, part, part.uvs.slice(), null, made);
+    });
+    // The seedling is built in code (`seedlingGeometry`): white under its own vertex colours.
+    const seedling = seedlingGeometry();
+    const seedlingMesh = createMeshFromData(engine, "nurse_seedling", seedling.positions, seedling.normals, Uint32Array.from(seedling.indices), undefined, undefined, undefined, seedling.colors);
+    seedlingMesh.material = material(
+      { ...plain, baseColorFactor: [1, 1, 1, 1] },
+      0,
+      [oneSidedLightPlugin(), vegetationPlugin({ eye: options.eye, frame: options.frame, match: false, light: false, moss: null, sky: false, ...still })],
+      options.wet.leaf,
+    );
+    const layout = vegetationInstanceLayout(still);
+    nurse = { ferns: bucket(fernMeshes, fernMeshes.map(() => layout), NURSE_BANDS), seedlings: bucket([seedlingMesh], [layout], NURSE_BANDS) };
+  }
+
+  /**
    * One billboard, its bake asked for: `of` is its cohort and slot, `box` the box of what is baked as it is posed by
    * `pose`, and `meshes` makes the bake's own meshes, in its own materials, when its turn comes.
    */
@@ -622,6 +678,12 @@ export function createForestMeshes(engine: EngineContext, scene: SceneContext, s
       const { bucket: target, measure } = deadwood;
       const matrices = deadwoodMatrixBuffer(seed, bands.deadwood, measure.snagBaseOffset, measure.logMinX, measure.logMaxX, measure.logSeat);
       apply(target, matrices, { deadwoodRole: deadwoodRoleBuffer(bands.deadwood) });
+      if (nurse !== null) {
+        // What grows on the logs, placed on each log's own matrix.
+        const plants = nurseBuffers(bands.deadwood, matrices, measure.logMinX, measure.logMaxX, measure.logTop, measure.logSeat.diameter);
+        apply(nurse.ferns, plants.ferns, {});
+        apply(nurse.seedlings, plants.seedlings, {});
+      }
     }
     const trees = (target: Bucket, list: readonly TreeInstance[]): void => apply(target, treeMatrixBuffer(list, false), { groundGrad: groundGradBuffer(list) });
     for (const [s, lods] of giants.entries()) {
@@ -670,16 +732,18 @@ export function createForestMeshes(engine: EngineContext, scene: SceneContext, s
       const look = barkLook(bark, barkSize(options.tier, bark), tone);
       return { look, maps: await barkMaps(look) };
     };
-    // Everything is asked for at once and adopted in the game's order: the giants, the saplings, the dead trees.
+    // Everything is asked for at once and adopted in the game's order: the giants, the saplings, the dead trees and
+    // what grows on them.
     const giantModels = GIANT_MODELS.map((output) => one(output, TREE_LODS));
     const saplingModels = SAPLING_MODELS.map((output) => one(output, TREE_LODS));
     const deadwoodLod = options.tier === "high" ? "LOD0" : "LOD1";
     const deadwoodModel = one(DEADWOOD_MODEL, [deadwoodLod]);
+    const fernModel = one(NURSE_FERN_MODEL, [NURSE_FERN_LOD]);
     const giantBarks = GIANT_SETS.map((set) => dress(set.bark));
     const saplingBarks = SAPLING_BARKS.map((bark) => dress(bark));
     const deadwoodBark = dress(DEADWOOD_BARK, DEADWOOD_TONE);
     // A model or a map that fails is waited out, so no load is left running against a forest that gave up.
-    const settled = await Promise.allSettled([moss, ...giantModels, ...saplingModels, deadwoodModel, ...giantBarks, ...saplingBarks, deadwoodBark]);
+    const settled = await Promise.allSettled([moss, ...giantModels, ...saplingModels, deadwoodModel, fernModel, ...giantBarks, ...saplingBarks, deadwoodBark]);
     if (disposed) return;
     const failed = settled.find((result) => result.status === "rejected");
     if (failed !== undefined) throw (failed as PromiseRejectedResult).reason;
@@ -700,6 +764,7 @@ export function createForestMeshes(engine: EngineContext, scene: SceneContext, s
     }
     const dead = await deadwoodBark;
     adoptDeadwood((await deadwoodModel).get(deadwoodLod) ?? [], dead.look, dead.maps, mossMap);
+    adoptNurse((await fernModel).get(NURSE_FERN_LOD) ?? []);
     adopted = true;
     // A camera that arrived while the models loaded is honoured now.
     maybeBuild();
@@ -761,6 +826,7 @@ export function createForestMeshes(engine: EngineContext, scene: SceneContext, s
       for (const texture of held) releaseTexture(texture);
       held.clear();
       far = null;
+      nurse = null;
       for (const made of buckets) {
         for (const mesh of made.meshes) {
           removeFromScene(scene, mesh);

@@ -3,7 +3,8 @@
  * and what it answers the hike for each of them meanwhile.
  *
  * It draws the terrain, the forest's trees (the near rings of full geometry,
- * the dead trees and the far billboards with their bakes), the ground clutter (the cards, the plants and the
+ * the dead trees with what grows on the fallen ones, and the far billboards
+ * with their bakes), the ground clutter (the cards, the plants and the
  * stones), the blade grass, the duff and the cliffs' rock walls where the
  * field lays any, under the atmosphere, lit by the sun and the sky's fill
  * for the hour and the weather, from the player's eye or the free camera. Every other part of the world is absent, and the members of
@@ -24,7 +25,6 @@ import type { WeatherPresetName } from "../weather.js";
 export type NotDrawn = { readonly what: string; readonly members: readonly (keyof Renderer)[] };
 
 export const NOT_DRAWN: readonly NotDrawn[] = [
-  { what: "what grows on the forest's nurse logs", members: [] },
   { what: "the chunk props the simulation collides with (`propMeshes.ts`)", members: ["canopyOver"] },
   { what: "the sea, the lakes, their plants and reflections, the surf and its spray", members: ["hasSea", "surfSound"] },
   { what: "the lakes' insects and frogs", members: ["hasWaterLife", "waterLifeSound"] },
