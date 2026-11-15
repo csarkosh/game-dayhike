@@ -590,15 +590,15 @@ describe("layer boundaries", () => {
    * Babylon either: each plugin's uniforms as a record by name, the instance
    * lists and their per-instance attributes as typed arrays, the fade bands,
    * the bark's dressing and the trees' share of the sky, the pose math the
-   * lists are composed with, and what is read of a model's file and baked
-   * into its vertices. The shell that draws them on Babylon.js
+   * lists are composed with, how a far tree's bake is posed and framed, and
+   * what is read of a model's file and baked into its vertices. The shell that draws them on Babylon.js
    * (`forestMeshes.ts`) and its plugins take their values from these.
    */
   it("what the forest is drawn with is computed without loading Babylon, whatever it imports", () => {
     const ENGINE_FREE = [
       "forestField.ts", "forestInstances.ts", "instancePose.ts", "groundTilt.ts", "logSeat.ts", "nurseLog.ts",
       "foliageUniforms.ts", "distanceFade.ts", "groundConform.ts", "deadwoodParams.ts", "mossParams.ts", "barkParams.ts",
-      "forestLookParams.ts", "coverAlbedoParams.ts", "windParams.ts", "impostorField.ts", "glbParts.ts", "modelBake.ts",
+      "forestLookParams.ts", "coverAlbedoParams.ts", "windParams.ts", "impostorField.ts", "impostorBake.ts", "glbParts.ts", "modelBake.ts",
     ];
     const loaded = (file: string): string[] =>
       [...readFileSync(file, "utf8").matchAll(/^\s*(?:import|export)\s+(?!type\s)(?:[^"'();]*?\s+from\s+)?["']([^"']+)["']/gm)].map((m) => m[1] as string);

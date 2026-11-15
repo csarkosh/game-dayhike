@@ -29,9 +29,11 @@ import type { UniformBuffer } from "@babylonjs/core/Materials/uniformBuffer.js";
 import type { AbstractMesh } from "@babylonjs/core/Meshes/abstractMesh.js";
 import type { SubMesh } from "@babylonjs/core/Meshes/subMesh.js";
 import type { Scene } from "@babylonjs/core/scene.js";
+import type { ImpostorBakeMode } from "./impostorBake.js";
 
-/** Which picture the bake writes: 0 Babylon's lit colour, 1 the albedo, 2 the normal. */
-export type ImpostorBakeMode = 0 | 1 | 2;
+// Which picture the bake writes (0 Babylon's lit colour, 1 the albedo, 2 the
+// normal) is `impostorBake.ts`'s, which loads no engine; named from here too.
+export type { ImpostorBakeMode } from "./impostorBake.js";
 
 /** The plugin's one uniform, on both uniform paths. */
 export const IMPOSTOR_BAKE_UNIFORM = "bakeMode";

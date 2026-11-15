@@ -96,6 +96,9 @@ import {
   impostorFadeBuffer, impostorMatrixSlices, impostorQuad, nurseBuffers, partitionImpostors, snagImpostorQuad, treeFoliageBuffer,
   treeMatrixBuffer, type DeadwoodMeasure,
 } from "./forestInstances.js";
+import {
+  IMPOSTOR_BAKE_FAIL_MS, IMPOSTOR_BAKE_SIZE, IMPOSTOR_BAKE_WARN_MS, SNAG_BAKE_ROLL, impostorBakeFrame, impostorName, type ImpostorBake,
+} from "./impostorBake.js";
 import { attachImpostorBake } from "./impostorBakePlugin.js";
 import { IMPOSTOR_FIELD_CUT, impostorFields } from "./impostorField.js";
 import { createFieldMaker, type FieldMaker } from "./impostorFieldWorker.js";
@@ -153,22 +156,10 @@ const DEADWOOD_URL = modelUrl("models/deadwood.snag.glb");
 const NURSE_FERN_ID = "understory.fern";
 const NURSE_FERN_URL = modelUrl(`models/${NURSE_FERN_ID}.glb`);
 
-/** Impostor bake resolution: 512 since 2026-10-15 (256 before), so a
- * giant's card at the near seam, 120 m off and some 400 px tall in a 1080p
- * window, is drawn from near its own texels and its branches survive the
- * field's spread. Seven bakes (three giant sets, three saplings, the snag),
- * two pictures each, a few megabytes. */
-const IMPOSTOR_BAKE_SIZE = 512;
-
-/** A bake still waiting on its shaders this long says so, once, as a warning,
- * and goes on waiting: late is better than never, but late must be visible. A
- * cold WebGPU start can take about this long and land, so it is not an error. */
-export const IMPOSTOR_BAKE_WARN_MS = 30_000;
-
-/** A bake still waiting this long gives up: about four times the slowest cold
- * WebGPU bake seen, so it ends a bake that will never be ready (a failure
- * nothing reported) rather than one that is merely slow, and says so. */
-export const IMPOSTOR_BAKE_FAIL_MS = 120_000;
+// How large a bake's pictures are, how long a bake may take, how it is posed
+// and framed, and what the forest keeps of each bake are `impostorBake.ts`'s,
+// which loads no engine; the bounds and the record are named from here too.
+export { IMPOSTOR_BAKE_FAIL_MS, IMPOSTOR_BAKE_WARN_MS, type ImpostorBake } from "./impostorBake.js";
 
 /** What a bake reads of the pipelines a WebGPU engine makes asynchronously
  * (`asyncPipelines.ts`): the draws its render left out, and the renderer's
@@ -229,12 +220,6 @@ export type BakeOptions = {
   fields?: FieldMaker["fields"];
 };
 
-/** One billboard's bake, as the forest last saw it: still baking, landed
- * (`ready`, its bucket drawing once filled), or `failed` (null, or rejected:
- * the bucket stays off, and the console has said so). `ms` is how long it
- * took to settle, null while baking. */
-export type ImpostorBake = { name: string; state: "baking" | "ready" | "failed"; ms: number | null };
-
 /** What a bake hands the billboard (2026-10-15): its colour, with the alpha
  * the card tests, and its normal map when the bake's pixels could be read
  * back, with `signed` saying the alpha is the distance field
@@ -242,14 +227,12 @@ export type ImpostorBake = { name: string; state: "baking" | "ready" | "failed";
  * species' own, unlit, on every path: the card lights it once, live. */
 export type BakedImpostor = { albedo: Texture; normal: Texture | null; signed: boolean };
 
-/** The snag billboard bakes from an UPRIGHT clone. `deadwood.snag` is
- * modelled lying down (long axis on local X — see `deadwoodMatrixBuffer`), so
- * an un-posed bake would billboard a felled trunk against standing ones; this
- * is the very +90° roll `deadwoodMatrixBuffer` applies to the snag role.
- * FROZEN because it is handed live to an injected `bakeImpostor`: Babylon's
- * math types are mutable, and a callee that scaled or normalized it in place
- * would silently re-pose every later bake. */
-const SNAG_POSE: Quaternion = Object.freeze(Quaternion.FromEulerAngles(0, 0, Math.PI / 2));
+/** The snag billboard bakes from an UPRIGHT clone: `deadwood.snag` is
+ * modelled lying down, so it is baked under the roll that stands a snag up
+ * (`SNAG_BAKE_ROLL`). FROZEN because it is handed live to an injected
+ * `bakeImpostor`: Babylon's math types are mutable, and a callee that scaled
+ * or normalized it in place would silently re-pose every later bake. */
+const SNAG_POSE: Quaternion = Object.freeze(Quaternion.FromEulerAngles(0, 0, SNAG_BAKE_ROLL));
 
 /** The snag's bake clone draws with the deadwood plugin, whose role is a
  * per-instance attribute (`deadwoodRole`, `deadwoodPlugin.ts`). The clone
@@ -796,10 +779,12 @@ export async function defaultBakeImpostor(
     // refreshes descendants itself, but the root's own is this call's job.
     clone.computeWorldMatrix(true);
     const bounds = clone.getHierarchyBoundingVectors(true);
-    const width = Math.max(bounds.max.x - bounds.min.x, bounds.max.z - bounds.min.z);
-    const height = bounds.max.y - bounds.min.y;
-    if (!(width > 0) || !(height > 0)) return null;
-    const centre = bounds.min.add(bounds.max).scale(0.5);
+    // Side-on and orthographic (`impostorBakeFrame`): the quad's UV square
+    // maps exactly to the tree's height by its widest horizontal extent.
+    const frame = impostorBakeFrame(bounds.min, bounds.max);
+    if (frame === null) return null;
+    const { width, height } = frame;
+    const centre = new Vector3(frame.centre.x, frame.centre.y, frame.centre.z);
 
     const rtt = new RenderTargetTexture(
       "forest_impostor_bake",
@@ -816,12 +801,9 @@ export async function defaultBakeImpostor(
     rtt.renderList = bakeMeshes;
     rtt.onClearObservable.add((engine) => engine.clear(new Color4(0, 0, 0, 0), true, true, true));
 
-    // Side-on orthographic framing: the quad's UV square maps exactly to the
-    // tree's height by its widest horizontal extent.
-    const depth = Math.max(width, 1);
     const camera = new TargetCamera(
       "forest_impostor_bake_cam",
-      new Vector3(centre.x, centre.y, centre.z - depth * 2),
+      new Vector3(frame.eye.x, frame.eye.y, frame.eye.z),
       scene,
     );
     camera.mode = Camera.ORTHOGRAPHIC_CAMERA;
@@ -829,8 +811,8 @@ export async function defaultBakeImpostor(
     camera.orthoRight = width / 2;
     camera.orthoBottom = -height / 2;
     camera.orthoTop = height / 2;
-    camera.minZ = 0.01;
-    camera.maxZ = depth * 4;
+    camera.minZ = frame.near;
+    camera.maxZ = frame.far;
     camera.setTarget(centre);
     rtt.activeCamera = camera;
 
@@ -1188,7 +1170,7 @@ export function createForestMeshes(
     height: number,
     centreY: number,
   ): Impostor {
-    const plane = MeshBuilder.CreatePlane(`forest_impostor_${name}`, { width, height }, scene);
+    const plane = MeshBuilder.CreatePlane(impostorName(name), { width, height }, scene);
     prepBucketMesh(plane);
     impostorMeshes.push(plane);
 
