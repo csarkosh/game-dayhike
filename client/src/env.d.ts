@@ -18,6 +18,15 @@ declare module "virtual:dayhike-wgsl-map" {
   export default urls;
 }
 
+/** The table of the environment's reflectance Babylon.js's PBR reads, a
+ * PNG as a data URL taken from its installed package as the page is built
+ * (`tools/vite/environmentBrdf.mjs`): the renderer on Babylon Lite lights
+ * its materials' reflections with the same. */
+declare module "virtual:dayhike-environment-brdf" {
+  const url: string;
+  export default url;
+}
+
 /** lib-visits' client, when `index.html` loaded it: `page()` counts a route change as a view. */
 interface Window {
   visits?: { page?: () => void; send?: (name: string, data?: Record<string, string | number | boolean>) => void };

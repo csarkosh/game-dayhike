@@ -1,5 +1,7 @@
+import { createRequire } from "node:module";
 import { fileURLToPath } from "node:url";
 import { defineConfig } from "vitest/config";
+import { environmentBrdfPlugin } from "../tools/vite/environmentBrdf.mjs";
 import { wgslMapPlugin } from "../tools/wgsl/lib/mapPlugin.mjs";
 import { translatorDigests } from "../tools/wgsl/lib/translators.mjs";
 import { timeLimit } from "./test/helpers/timeLimit.js";
@@ -16,6 +18,10 @@ export default defineConfig({
       mapDir: fileURLToPath(new URL("shaders/map/", import.meta.url)),
       tool: fileURLToPath(new URL("../tools/wgsl/build-map.mjs", import.meta.url)),
     }),
+    // The table of the environment's reflectance Babylon.js's PBR reads,
+    // from its installed package, for the renderer on Babylon Lite to light
+    // its materials with the same (`tools/vite/environmentBrdf.mjs`).
+    environmentBrdfPlugin({ from: createRequire(import.meta.url).resolve("@babylonjs/core/Misc/brdfTextureTools.js") }),
     {
       // The admin host's token module (`src/admin/auth.ts` imports `/auth.js`)
       // is no file of this package: in the build it is external
