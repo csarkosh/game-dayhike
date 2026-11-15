@@ -27,6 +27,7 @@ import { sunPositionAt } from "./sky.js";
 import type { SkyTable } from "./skyTable.js";
 import { DEFAULT_HOUR, SKY_WAIT_WARN_MS, skyHeld, sunAltitudeDeg, whenSkyHeld } from "./skyWait.js";
 import { skyStateFor, type SkyState } from "./skyState.js";
+import { SKY_PROBE_SIZE } from "./skyProbeParams.js";
 import { SHADOW_FLOOR, sceneLightsUnder, sunShadowDarkness, sunTravel } from "./sceneLights.js";
 import { createSkyDome } from "./skyDome.js";
 import { sightUnder } from "./gradeParams.js";
@@ -46,9 +47,6 @@ export { SHADOW_FLOOR, sunShadowDarkness };
 // The hour a renderer starts at, and the wait for the sky's slices, are the
 // sky's own (`skyWait.ts`); named from here too.
 export { DEFAULT_HOUR, SKY_WAIT_WARN_MS, skyHeld, sunAltitudeDeg, whenSkyHeld };
-
-/** Cube face resolution for the environment probe. */
-const PROBE_SIZE = 128;
 
 /**
  * How far cascaded shadows reach, in metres. Deliberately NOT `viewDistance`.
@@ -573,7 +571,9 @@ export function createLighting(scene: Scene, options: LightingOptions): Lighting
   // every PBR material, so the dome's capture branch writes the gamma
   // encoding instead and every material decodes the dome's linear radiance.
   const halfFloatTargets = scene.getEngine().getCaps().textureHalfFloatRender;
-  const probe = new ReflectionProbe("environment", PROBE_SIZE, scene, true, halfFloatTargets, false);
+  // Its size, and when it is drawn again (below), are the probe's own
+  // (`skyProbeParams.ts`).
+  const probe = new ReflectionProbe("environment", SKY_PROBE_SIZE, scene, true, halfFloatTargets, false);
   // Assignment, not `renderList?.push(...)`: a null `renderList` means "render
   // the entire scene" in Babylon, so the optional chain would silently skip
   // rather than fail loudly if that default ever changed.
