@@ -4,20 +4,21 @@
  * (`facePatches.ts`), each drawn with the terrain's material from the
  * vertex data the two make (`terrainVertices.ts`).
  *
- * A ring is one mesh for its life. Its vertices are as many whatever it
- * draws, so a ring that moves is written again in place: the positions and
- * the normals into the mesh's own buffers, its triangles into an index
- * buffer of the ring's full size with the ones left out under a patch
- * drawn as nothing, and the weights, cover and colour into its plugin
- * vertex data. A patch is a mesh made when its cell enters the reach and
- * let go when it leaves or is wanted at another spacing or stitch.
+ * A ring is two meshes for its life, one drawn and one hidden. Its vertices
+ * are as many whatever it draws, so a ring that moves is written again in
+ * place, into the hidden one: the positions and the normals into the mesh's
+ * own buffers, its triangles into an index buffer of the ring's full size
+ * with the ones left out under a patch drawn as nothing, and the weights,
+ * cover and colour into its plugin vertex data; then the two change places.
+ * A patch is a mesh made when its cell enters the reach and let go when it
+ * leaves or is wanted at another spacing or stitch.
  *
  * **The rings and the patches change as the game's do on Babylon.js**
  * (`createClipmap` in `renderer.ts`, `facePatchMeshes.ts`), under the
  * renderer's scheduler (`syncJobs.ts`). The rings move when the camera
  * crosses a line of the finest ring's lattice: at a walk as a job, every
  * ring's samples moved and each ring whose inputs changed made again in
- * slices, into buffers no mesh holds, then all of them written in the
+ * slices and written to its hidden mesh, then all of them shown in the
  * job's last slice, together, so no frame draws one ring moved against a
  * neighbour that has not. A ring re-emits when it moved, when the ring
  * inside it or outside it moved (its hole follows the finer ring and its
@@ -35,16 +36,25 @@
  * leave out the ground that set covers. The first update draws the near
  * band at once and leaves the rest to the job; with nothing pending, idle
  * work builds ahead the cells the next crossing will want. The rings are
- * drawn first and the patches after them, ahead of everything else
- * (`drawOrder.ts`), whenever a set is shown.
+ * drawn first, the finest first, and the patches after them, each at its
+ * cell's place, ahead of everything else (`drawOrder.ts`): whenever a set
+ * is shown and whichever mesh was made last, two surfaces that share an
+ * edge are drawn in one order.
  *
  * The first build, a jump of more than a cell and a view moving fast build
  * at once (`crossingAt`), or are stepped by the loader of first builds
  * while the intro's film covers the hike (`firstBuilds.ts`). Given no
  * scheduler, every crossing is worked whole in the call that finds it.
+ *
+ * **What a frame sends is held to the renderer's budget**
+ * (`frameUploads.ts`). Lite sends a mesh's geometry as it is made or
+ * written, drawn or not, and its plugin vertex data when its draw is first
+ * recorded. So a job sends the geometry ahead, a ring's or a patch's at a
+ * time, each waiting for a frame with room, and what is left for the frame
+ * that shows the build is the plugin vertex data of what it shows.
  */
 import {
-  addToScene, createMeshFromData, disposeMeshGpu, invalidateRenderBundles, removeFromScene, updateMeshGeometry,
+  addToScene, createMeshFromData, disposeMeshGpu, removeFromScene, setMeshVisible, updateMeshGeometry,
   type EngineContext, type Material, type Mesh, type SceneContext,
 } from "@babylonjs/lite";
 import type { TrailGraph } from "../../sim/trail.js";
@@ -56,17 +66,15 @@ import {
 import {
   PATCH_CELL, PATCH_FAR_SPACING, PATCH_NEAR_SPACING, PATCH_REACH, facePatchCells, facePatchCover, facePatchGeometry, facePatchStitch, patchKey,
   patchStitchBits,
-  type PatchCell, type PatchReach, type PatchStitch,
+  type FacePatch, type PatchCell, type PatchReach, type PatchStitch,
 } from "../facePatches.js";
 import { buildAtOnce, type FirstBuilds } from "../firstBuilds.js";
 import type { QualityTier } from "../quality.js";
 import { createCrossing, crossingAt, finish, nextCrossing, type Slices, type SyncJobs } from "../syncJobs.js";
 import { facePatchVertices, ringVertices, type TerrainVertices } from "../terrainVertices.js";
-import { DRAW_ORDER } from "./drawOrder.js";
+import { DRAW_ORDER, DRAW_PLACES } from "./drawOrder.js";
+import type { FrameUploads } from "./frameUploads.js";
 import { terrainVertexData } from "./terrainPlugins.js";
-
-/** Ring 0's snap step (m), as `createClipmap` has it: every coarser ring moves only when ring 0 does. */
-const CLIPMAP_STEP = 2;
 
 /** What writing one ring's buffers is expected to take (ms): the game's own estimate for its rings on Babylon.js. The
  * rings' job says so before its last slice (`syncJobs.ts`). */
@@ -102,14 +110,36 @@ export type TerrainMeshOptions = {
   jobs?: SyncJobs;
   /** The loader of first builds, while the intro's film covers the hike (`firstBuilds.ts`). */
   firstBuilds?: FirstBuilds;
+  /** The renderer's record of its uploads, and its budget for the streamed ones (`frameUploads.ts`). */
+  uploads?: FrameUploads;
 };
+
+/** Cells a side of the square the patches' places among the draws repeat over. */
+const PATCH_PLACE_SIDE = 32;
+
+/**
+ * A patch's place among the draws (`drawOrder.ts`): its cell's, the same whenever its mesh was made, so two patches
+ * that share an edge are drawn in one order on every page. The places repeat every `PATCH_PLACE_SIDE` cells a way,
+ * further than two cells of one set share an edge.
+ */
+export function patchPlace(ci: number, cj: number): number {
+  const i = ((ci % PATCH_PLACE_SIDE) + PATCH_PLACE_SIDE) % PATCH_PLACE_SIDE;
+  const j = ((cj % PATCH_PLACE_SIDE) + PATCH_PLACE_SIDE) % PATCH_PLACE_SIDE;
+  return DRAW_ORDER.patches + (i * PATCH_PLACE_SIDE + j) / DRAW_PLACES;
+}
+
+/** The bytes a mesh's geometry is: its positions, its normals and its triangles. */
+function geometryBytes(vertices: TerrainVertices, indices: Uint32Array): number {
+  return vertices.positions.byteLength + vertices.normals.byteLength + indices.byteLength;
+}
 
 /** The origins a ring's buffers were made from: its own, the finer ring's,
  * the coarser ring's, and where its covered ground is measured from. */
 type Drawn = { x: number; z: number; fx: number; fz: number; cx: number; cz: number; kx: number; kz: number; kr: number; kf: number };
 
-/** A ring's buffers as a rebuild makes them: its geometry and its plugin vertex data. */
-type RingBuffers = { geometry: RingGeometry; plugin: Float32Array | null };
+/** One of a ring's two meshes, and what it is written from: the ring's geometry, its triangles at the index buffer's
+ * full size, and its plugin vertex data. Null until the ring is first made into it. */
+type RingTwin = { mesh: Mesh | null; geometry: RingGeometry | null; indices: Uint32Array | null; plugin: Float32Array | null; inScene: boolean };
 
 type PatchEntry = { spacing: number; stitch: number; mesh: Mesh | null };
 
@@ -125,8 +155,15 @@ export function createTerrainMeshes(
   tier: QualityTier,
   options: TerrainMeshOptions = {},
 ): TerrainMeshes {
-  const { jobs, firstBuilds } = options;
+  const { jobs, firstBuilds, uploads } = options;
   const base = BASE_SPACING_BY_TIER[tier];
+  /**
+   * Ring 0's snap step (m): `snapOrigin` puts it on a lattice of twice its spacing, and every coarser ring moves only
+   * when ring 0 does. It is the rings' cell for `crossingAt`. `createClipmap` names 2 m, the step at a spacing of
+   * 1 m; at the low tier's 2 m the lattice is 4 m, and with a cell of 2 a single step reads as a jump of more than
+   * a cell, so there every crossing would build at once.
+   */
+  const ringStep = 2 * base;
   let disposed = false;
 
   /** A terrain mesh of `vertices`, with its plugin vertex data, in `material`, drawn at `order` among the opaque meshes: not in the scene yet. */
@@ -135,6 +172,8 @@ export function createTerrainMeshes(
     made.pluginVertexData = plugin;
     made.material = material;
     made.renderOrder = order;
+    uploads?.stream("geometry", geometryBytes(vertices, drawnIndices), 3);
+    uploads?.made();
     return made;
   }
 
@@ -170,13 +209,16 @@ export function createTerrainMeshes(
     if (entry.mesh === null) return;
     removeFromScene(scene, entry.mesh);
     disposeMeshGpu(entry.mesh);
+    uploads?.dropped();
     entry.mesh = null;
     live--;
   }
 
   /** A built cell never drawn, let go. */
   function discardPatch(entry: PatchEntry): void {
-    if (entry.mesh !== null) disposeMeshGpu(entry.mesh);
+    if (entry.mesh === null) return;
+    disposeMeshGpu(entry.mesh);
+    uploads?.dropped();
     entry.mesh = null;
   }
 
@@ -218,17 +260,53 @@ export function createTerrainMeshes(
 
   const isReady = (w: Wanted, i: number): boolean => !Number.isNaN(readyAt(w, i));
 
-  /** Cell `i` of `w` built as wanted and not yet drawn, unless it is. */
-  function make(w: Wanted, i: number): void {
+  /** Cell `i` of `w`'s patch as wanted, computed: null for a cell with no steep ground. */
+  function shape(w: Wanted, i: number): FacePatch | null {
+    const c = w.cells[i] as PatchCell;
+    return facePatchGeometry(seed, c.ci, c.cj, c.spacing, w.stitches[i] as PatchStitch, options.trail ?? null);
+  }
+
+  /** The bytes making `patch` into a mesh sends: its geometry. */
+  function shapeBytes(patch: FacePatch | null): number {
+    return patch === null ? 0 : patch.positions.byteLength + patch.normals.byteLength + patch.indices.length * 4;
+  }
+
+  /** Cell `i` of `w` entered among the cells built and not yet drawn, `patch` made into a mesh outside the scene,
+   * unless the cell was built meanwhile. */
+  function enter(w: Wanted, i: number, patch: FacePatch | null): void {
     if (isReady(w, i)) return;
     const c = w.cells[i] as PatchCell;
-    const patch = facePatchGeometry(seed, c.ci, c.cj, c.spacing, w.stitches[i] as PatchStitch, options.trail ?? null);
     let mesh: Mesh | null = null;
     if (patch !== null) {
       const vertices = facePatchVertices(patch);
-      mesh = meshOf(`facePatch_${c.ci}_${c.cj}`, materials.patches, vertices, Uint32Array.from(vertices.indices), terrainVertexData(vertices), DRAW_ORDER.patches);
+      mesh = meshOf(`facePatch_${c.ci}_${c.cj}`, materials.patches, vertices, Uint32Array.from(vertices.indices), terrainVertexData(vertices), patchPlace(c.ci, c.cj));
     }
     ready.set(readyKey(w, i, mesh === null), { spacing: c.spacing, stitch: w.bits[i] as number, mesh });
+  }
+
+  /** Cell `i` of `w` built as wanted and not yet drawn, unless it is. */
+  function make(w: Wanted, i: number): void {
+    if (!isReady(w, i)) enter(w, i, shape(w, i));
+  }
+
+  /** Cell `i` of `w` built as a job builds it, in slices: computed, then made into a mesh once the frame's upload
+   * budget has room for its geometry. */
+  function* makeSlices(w: Wanted, i: number): Slices {
+    const patch = shape(w, i);
+    if (uploads !== undefined) yield* uploads.hold(shapeBytes(patch));
+    if (disposed) return;
+    enter(w, i, patch);
+  }
+
+  /** The bytes showing the set `w` sends: the plugin vertex data of the cells built and not yet drawn that it shows. */
+  function showBytes(w: Wanted, nearOnly: boolean): number {
+    let bytes = 0;
+    w.cells.forEach((c, i) => {
+      if (nearOnly && c.spacing !== PATCH_NEAR_SPACING) return;
+      if (holds(cells.get(patchKey(c.ci, c.cj)), c.spacing, w.bits[i] as number)) return;
+      bytes += ready.get(readyAt(w, i))?.mesh?.pluginVertexData?.byteLength ?? 0;
+    });
+    return bytes;
   }
 
   /** Cell `i` of `w`, built as wanted and taken out of `ready`, to be drawn: built now unless it is already. */
@@ -270,6 +348,8 @@ export function createTerrainMeshes(
       }
       if (entry.mesh !== null) {
         addToScene(scene, entry.mesh);
+        // Its plugin vertex data goes up as its draw is first recorded.
+        uploads?.stream("pluginVertices", entry.mesh.pluginVertexData?.byteLength ?? 0);
         live++;
       }
       next.set(key, entry);
@@ -294,9 +374,10 @@ export function createTerrainMeshes(
       if ((nearOnly && (w.cells[i] as PatchCell).spacing !== PATCH_NEAR_SPACING) || isReady(w, i)) continue;
       yield sliceMs(w, i);
       if (disposed) return;
-      make(w, i);
+      yield* makeSlices(w, i);
     }
     yield;
+    if (uploads !== undefined) yield* uploads.hold(showBytes(w, nearOnly));
     if (disposed) return;
     showPatches(w, nearOnly);
   }
@@ -309,7 +390,7 @@ export function createTerrainMeshes(
       if (isReady(w, i)) continue;
       yield sliceMs(w, i);
       if (disposed) return;
-      make(w, i);
+      yield* makeSlices(w, i);
     }
   }
 
@@ -377,13 +458,10 @@ export function createTerrainMeshes(
   // ---- The rings -----------------------------------------------------------------------------------------------
 
   const rings: RingSamples[] = [];
-  const ringMeshes: (Mesh | null)[] = [];
-  /** The buffers each ring's mesh was last written from, and the ones its next re-emit makes, swapped as it is
-   * written: a job in progress never writes an array a mesh holds. */
-  const front: (RingBuffers | null)[] = [];
-  const back: (RingBuffers | null)[] = [];
-  /** Each ring's index buffer at its full size, as the mesh holds it. */
-  const indices: (Uint32Array | null)[] = [];
+  /** Each ring's two meshes, and which of them is drawn (-1: neither yet). A rebuild writes the other, which no frame
+   * draws, and its last slice shows it in the drawn one's place. */
+  const twins: [RingTwin, RingTwin][] = [];
+  const shown: number[] = [];
   const drawn: (Drawn | undefined)[] = [];
   /** The one spare set of sample arrays the rings' moves share (`ringSampleSlices`). */
   const spare: RingArrays[] = [];
@@ -399,13 +477,14 @@ export function createTerrainMeshes(
   /** The camera's last move between two frames: its heading. */
   let headingX = 0;
   let headingZ = 0;
+  const twin = (): RingTwin => ({ mesh: null, geometry: null, indices: null, plugin: null, inScene: false });
   for (let level = 0; level < RING_COUNT; level++) {
-    ringMeshes.push(null);
-    front.push(null);
-    back.push(null);
-    indices.push(null);
+    twins.push([twin(), twin()]);
+    shown.push(-1);
     prepared.push(null);
   }
+  /** The mesh of ring `level` that is not drawn: the one a rebuild writes. */
+  const hidden = (level: number): RingTwin => (twins[level] as [RingTwin, RingTwin])[shown[level] === 0 ? 1 : 0];
 
   const coverOf = (level: number): CoveredGround | null => (coversRing(covered, (rings[level] as RingSamples).spacing) ? covered : null);
 
@@ -422,42 +501,68 @@ export function createTerrainMeshes(
       !Object.is(d.kr, k?.reach ?? Number.NaN) || !Object.is(d.kf, k?.fine ?? Number.NaN);
   }
 
-  /** Ring `level` made again from its samples, in slices, into the buffers no mesh holds. */
+  /** Ring `level` made again from its samples, in slices, into the arrays its hidden mesh is written from. */
   function* emit(level: number): Slices {
     const ring = rings[level] as RingSamples;
     const finer = level > 0 ? (rings[level - 1] as RingSamples) : null;
     // The border blends to the coarser ring's samples, so every ring has moved before any ring emits.
     const coarser = level < RING_COUNT - 1 ? (rings[level + 1] as RingSamples) : null;
-    const out = back[level] ?? { geometry: ringGeometryBuffers(level > 0), plugin: null };
-    back[level] = out;
-    yield* ringGeometrySlices(ring, finer === null ? null : holeCellsFor(ring, finer), coarser, out.geometry, coverOf(level));
-    out.plugin = terrainVertexData(ringVertices(out.geometry), out.plugin);
-  }
-
-  /** Ring `level`'s buffers as `emit` made them, written to its mesh, or to a mesh made for them. */
-  function write(level: number): void {
-    const ring = rings[level] as RingSamples;
-    const finer = level > 0 ? (rings[level - 1] as RingSamples) : null;
-    const coarser = level < RING_COUNT - 1 ? (rings[level + 1] as RingSamples) : null;
-    const made = back[level] as RingBuffers;
-    const vertices = ringVertices(made.geometry);
-    const whole = indices[level] ?? new Uint32Array(made.geometry.indices.length);
-    indices[level] = whole;
+    const to = hidden(level);
+    const geometry = to.geometry ?? ringGeometryBuffers(level > 0);
+    to.geometry = geometry;
+    yield* ringGeometrySlices(ring, finer === null ? null : holeCellsFor(ring, finer), coarser, geometry, coverOf(level));
+    const vertices = ringVertices(geometry);
+    to.plugin = terrainVertexData(vertices, to.plugin);
+    const whole = to.indices ?? new Uint32Array(geometry.indices.length);
+    to.indices = whole;
     whole.set(vertices.indices);
     // The triangles left out: three times the first vertex, which draws nothing.
     whole.fill(0, vertices.indices.length);
-    const mesh = ringMeshes[level] ?? null;
-    if (mesh === null) {
-      const first = meshOf(`clipmap_${level}`, materials.ground, vertices, whole, made.plugin as Float32Array, DRAW_ORDER.rings);
-      addToScene(scene, first);
-      ringMeshes[level] = first;
-    } else {
-      updateMeshGeometry(engine, mesh, vertices.positions, vertices.normals, whole);
-      mesh.pluginVertexData = made.plugin;
-      mesh.pluginVertexVersion = (mesh.pluginVertexVersion ?? 0) + 1;
+  }
+
+  /** The bytes writing ring `level`'s geometry to its hidden mesh sends. */
+  function stageBytes(level: number): number {
+    const to = hidden(level);
+    return geometryBytes(ringVertices(to.geometry as RingGeometry), to.indices as Uint32Array);
+  }
+
+  /** Ring `level` as `emit` made it, written to its hidden mesh, or to a mesh made for it: Lite sends the geometry
+   * now, and the plugin vertex data when the mesh is shown. */
+  function stage(level: number): void {
+    const to = hidden(level);
+    const vertices = ringVertices(to.geometry as RingGeometry);
+    const whole = to.indices as Uint32Array;
+    if (to.mesh === null) {
+      // A ring's place is its level's: the finest first, whichever of a ring's two meshes joined the scene last.
+      to.mesh = meshOf(`clipmap_${level}`, materials.ground, vertices, whole, to.plugin as Float32Array, DRAW_ORDER.rings + level / DRAW_PLACES);
+      return;
     }
-    back[level] = front[level] ?? null;
-    front[level] = made;
+    updateMeshGeometry(engine, to.mesh, vertices.positions, vertices.normals, whole);
+    to.mesh.pluginVertexData = to.plugin;
+    to.mesh.pluginVertexVersion = (to.mesh.pluginVertexVersion ?? 0) + 1;
+    uploads?.stream("geometry", geometryBytes(vertices, whole), 3);
+  }
+
+  /** Ring `level`'s hidden mesh shown in the drawn one's place: its draw is recorded again, which sends its plugin
+   * vertex data, and the other is hidden for the next rebuild to write. */
+  function show(level: number): void {
+    const ring = rings[level] as RingSamples;
+    const finer = level > 0 ? (rings[level - 1] as RingSamples) : null;
+    const coarser = level < RING_COUNT - 1 ? (rings[level + 1] as RingSamples) : null;
+    const to = hidden(level);
+    const mesh = to.mesh as Mesh;
+    if (to.inScene) setMeshVisible(mesh, true);
+    else {
+      addToScene(scene, mesh);
+      to.inScene = true;
+    }
+    uploads?.stream("pluginVertices", to.plugin?.byteLength ?? 0);
+    const was = shown[level] as number;
+    if (was >= 0) {
+      const old = (twins[level] as [RingTwin, RingTwin])[was] as RingTwin;
+      if (old.mesh !== null) setMeshVisible(old.mesh, false);
+    }
+    shown[level] = was === 0 ? 1 : 0;
     const k = coverOf(level);
     drawn[level] = {
       x: ring.originX, z: ring.originZ,
@@ -524,9 +629,9 @@ export function createTerrainMeshes(
     if (expect(camX, camZ) || force) jobs.idle(ringOwner, prepare());
   }
 
-  /** The rings for a camera at (camX, camZ): every ring's samples moved, then each stale ring's buffers made, each in
-   * slices of its own, then all of them written in the last slice. Without `uncovered` the rings leave out the ground
-   * the patches now drawn cover. */
+  /** The rings for a camera at (camX, camZ): every ring's samples moved, then each stale ring made again, in slices
+   * of its own, and written to its hidden mesh once the frame's upload budget has room for its geometry, then all of
+   * them shown in the last slice. Without `uncovered` the rings leave out the ground the patches now drawn cover. */
   function* build(camX: number, camZ: number, uncovered = false): Slices {
     covered = uncovered ? null : patchCover;
     for (let level = 0; level < RING_COUNT; level++) {
@@ -545,21 +650,25 @@ export function createTerrainMeshes(
       yield* ringSampleSlices(ring, seed, camX, camZ, spare);
     }
     const made: number[] = [];
+    let showing = 0;
     for (let level = 0; level < RING_COUNT; level++) {
       if (!stale(level)) continue;
       yield* emit(level);
+      // A ring's write is one step, and a long one.
+      yield CLIPMAP_UPLOAD_MS;
+      if (uploads !== undefined) yield* uploads.hold(stageBytes(level));
+      if (disposed) return;
+      stage(level);
       made.push(level);
+      showing += hidden(level).plugin?.byteLength ?? 0;
     }
-    // The writes are one step, and the only long one.
-    if (made.length > 0) yield CLIPMAP_UPLOAD_MS * made.length;
+    // The rings change places in one step: what it sends is their plugin vertex data, as the frame is drawn.
+    if (made.length > 0) {
+      yield;
+      if (uploads !== undefined) yield* uploads.hold(showing);
+    }
     if (disposed) return;
-    let rewritten = false;
-    for (const level of made) {
-      rewritten = rewritten || (ringMeshes[level] ?? null) !== null;
-      write(level);
-    }
-    // A mesh's plugin vertex data goes up as its draw is recorded again.
-    if (rewritten) invalidateRenderBundles(engine);
+    for (const level of made) show(level);
     // The rings stand somewhere new: aim the idle work at their next moves.
     if (!Number.isNaN(ringCrossing.lastX)) aimRings(ringCrossing.lastX, ringCrossing.lastZ, true);
   }
@@ -587,7 +696,7 @@ export function createTerrainMeshes(
       headingX = hx;
       headingZ = hz;
     }
-    const kind = crossingAt(ringCrossing, camX, camZ, snapOrigin(camX, base), snapOrigin(camZ, base), CLIPMAP_STEP, jobs !== undefined, jobs?.started());
+    const kind = crossingAt(ringCrossing, camX, camZ, snapOrigin(camX, base), snapOrigin(camZ, base), ringStep, jobs !== undefined, jobs?.started());
     if (kind === "none") {
       // While the loader steps the rings' build, nothing else is begun and nothing prepared ahead of it.
       if (firstBuilds?.queued(ringOwner) === true) return;
@@ -628,7 +737,7 @@ export function createTerrainMeshes(
       updateRings(camX, camZ);
     },
     meshCount() {
-      return live + ringMeshes.filter((mesh) => mesh !== null).length;
+      return live + shown.filter((at) => at >= 0).length;
     },
     dispose() {
       if (disposed) return;
@@ -644,12 +753,14 @@ export function createTerrainMeshes(
       cells.clear();
       ready.clear();
       patchCover = null;
-      for (const mesh of ringMeshes) {
-        if (mesh === null) continue;
-        removeFromScene(scene, mesh);
-        disposeMeshGpu(mesh);
+      for (const pair of twins) {
+        for (const one of pair) {
+          if (one.mesh === null) continue;
+          if (one.inScene) removeFromScene(scene, one.mesh);
+          disposeMeshGpu(one.mesh);
+          one.mesh = null;
+        }
       }
-      ringMeshes.length = 0;
     },
   };
 }
