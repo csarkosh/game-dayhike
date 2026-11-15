@@ -16,13 +16,15 @@
  * So every shell places its materials: the terrain first, as it always
  * stood, then each shell in the order below, and within a shell its
  * materials in the order its code makes them, which no load's timing
- * changes. A mesh takes its material's place.
+ * changes. A mesh takes its material's place. The sky's dome is drawn last
+ * of all: it lies behind everything, so where something nearer has drawn,
+ * the depth test passes its pixels over.
  *
  * Loads nothing.
  */
 
 /** Each shell's first place. A shell's own run on from it by less than one. */
-export const DRAW_ORDER = { rings: 80, patches: 90, forest: 100, clutter: 110, blades: 120, duff: 130, cliffs: 140, props: 150 } as const;
+export const DRAW_ORDER = { rings: 80, patches: 90, forest: 100, clutter: 110, blades: 120, duff: 130, cliffs: 140, props: 150, sky: 160 } as const;
 
 /** The places a shell has past its first. */
 export const DRAW_PLACES = 1024;

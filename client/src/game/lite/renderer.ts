@@ -1,17 +1,18 @@
 /**
  * The hike's renderer on Babylon Lite: the terrain, the forest's trees near
  * and far, the ground clutter, the blade grass, the duff and the cliffs under the
- * atmosphere, lit by the sun and the sky's fill for the hour and the weather,
- * seen from the player's eye or the free camera. It answers the whole of `Renderer`
- * (`renderer.ts`), and what it does not draw yet it answers as nothing
- * (`notDrawn.ts` has the list).
+ * atmosphere and the sky's dome, lit by the sun and the sky's fill for the
+ * hour and the weather, seen from the player's eye or the free camera. It
+ * answers the whole of `Renderer` (`renderer.ts`), and what it does not draw
+ * yet it answers as nothing (`notDrawn.ts` has the list).
  *
  * What it draws with is the game's own, computed with no engine: the
  * terrain's uniforms, tables, layers and vertex data, the forest's, the
  * clutter's and the grass's instance lists and their materials' uniforms,
- * the air's uniforms, the lights and the lens. This module is where those
- * meet Lite: an engine, a scene, a camera, two lights, the terrain's two
- * materials and their meshes, the forest's buckets (`forestMeshes.ts`), the
+ * the air's uniforms, the sky's, the lights and the lens. This module is
+ * where those meet Lite: an engine, a scene, a camera, two lights, the
+ * sky's dome (`skyDome.ts`), the terrain's two materials and their meshes,
+ * the forest's buckets (`forestMeshes.ts`), the
  * clutter's (`clutterMeshes.ts`) and the cliffs' (`cliffMeshes.ts`), which
  * land as their models do, the grass's and the duff's
  * (`bladeMeshes.ts`, `duffMeshes.ts`), on the tiers that draw them, and the
@@ -47,9 +48,15 @@
  * uniforms are written when it is made, and again only when its own values
  * change: the terrain's two when the weather moves the ground's colour.
  *
+ * **The sky is drawn again as the light moves**: the dome's uniforms, and its
+ * table where the sun's altitude has moved, are written for each new sky
+ * state the light makes (an hour or a weather set, each frame of a fade),
+ * and at no other frame.
+ *
  * **Colour** is the low tier's material path: Lite's display curve as
  * Babylon's image processing has it there (Khronos PBR Neutral, contrast
- * 1.1), under the weather's and the hour's exposure. There is no post chain.
+ * 1.1), under the weather's and the hour's exposure, and the dome's own
+ * stage the same. There is no post chain.
  */
 import {
   NeutralToneMapping, addToScene, createBankedFreeCamera, createDirectionalLight, createEngine, createHemisphericLight, createPbrMaterial,
@@ -83,6 +90,7 @@ import { fittingFeatureTable, fittingRings } from "../preparedScene.js";
 import { QUALITY, detectTier } from "../quality.js";
 import type { FreecamView, Renderer, RendererOptions } from "../renderer.js";
 import { startSkySource, type SkySource } from "../skyWorker.js";
+import type { SkyState } from "../skyState.js";
 import { DEFAULT_HOUR, sunAltitudeDeg, whenSkyHeld } from "../skyWait.js";
 import { createSyncJobs, finish, stepSlices, type SyncJobs } from "../syncJobs.js";
 import { followRoadCentre, terrainTablesFor, type TerrainTables } from "../terrainTables.js";
@@ -103,6 +111,7 @@ import { createFrameUploads, uploadCountsCopy, type FrameUploadCounts } from "./
 import { GROUND_IMAGES, cloudMapTexture, loadGroundArrays, tableTexture, type TableTexture } from "./groundTextures.js";
 import { notDrawnMembers } from "./notDrawn.js";
 import { createPropMeshes, type PropMeshes } from "./propMeshes.js";
+import { createLiteSkyDome, type LiteSkyDome } from "./skyDome.js";
 import { createTerrainMeshes, type TerrainMeshes } from "./terrainMeshes.js";
 import { emptyTerrainMaterialUniforms, terrainPlugin, terrainSplitPlugin, terrainWetPlugin } from "./terrainPlugins.js";
 import { createWorldLight } from "./worldLight.js";
@@ -143,6 +152,8 @@ type Standing = {
   camera: BankedFreeCamera;
   sun: DirectionalLight;
   fill: HemisphericLight;
+  /** The sky's dome, drawn behind everything (`skyDome.ts`). */
+  dome: LiteSkyDome;
   /** The frame's block: what every material reads alike, written once a frame (`frameBlock.ts`). */
   shared: PluginUniformBlock;
   materials: PbrMaterialProps[];
@@ -263,6 +274,8 @@ export function createLiteRenderer(canvas: HTMLCanvasElement, level: Level, fore
   let standing: Standing | null = null;
   /** The light's version the lights and the cleared frame were last written for. */
   let litVersion = -1;
+  /** The sky's state the dome was last drawn for: the light makes a new one at each apply. */
+  let domeSky: SkyState | null = null;
   /** The canvas's size the engine was last fitted to, CSS pixels. */
   let fittedWidth = -1;
   let fittedHeight = -1;
@@ -325,6 +338,8 @@ export function createLiteRenderer(canvas: HTMLCanvasElement, level: Level, fore
     const fill = createHemisphericLight([0, 1, 0], 1);
     addToScene(scene, sun);
     addToScene(scene, fill);
+    // The sky's dome, the night sky alone until the first frame's light.
+    const dome = createLiteSkyDome(engine, scene);
 
     const materials: PbrMaterialProps[] = [];
     let terrain: TerrainMeshes | null = null;
@@ -444,7 +459,7 @@ export function createLiteRenderer(canvas: HTMLCanvasElement, level: Level, fore
         wet: wetAt(WET_CAP.prop), air: () => atmospherePlugin(airValues, cloudMap, shared), shared, firstBuilds: options.firstBuilds, uploads,
       });
     }
-    const made: Standing = { engine, scene, camera, sun, fill, shared, materials, terrain, road, forest: trees, blades, clutter, duff, cliffs, props };
+    const made: Standing = { engine, scene, camera, sun, fill, dome, shared, materials, terrain, road, forest: trees, blades, clutter, duff, cliffs, props };
     if (disposed) {
       release(made);
       return;
@@ -523,8 +538,19 @@ export function createLiteRenderer(canvas: HTMLCanvasElement, level: Level, fore
     fill.specularColor = [lights.fill.colour.r, lights.fill.colour.g, lights.fill.colour.b];
     fill.groundColor = [lights.fill.groundColour.r, lights.fill.groundColour.g, lights.fill.groundColour.b];
     markLightDirty(fill);
-    // The cleared frame is the air over the horizon: with no dome drawn, it is the sky.
+    // The cleared frame is the air over the horizon, as the fog's far colour is: what shows on any pixel the dome
+    // has not drawn.
     scene.clearColor = { r: lights.air.r, g: lights.air.g, b: lights.air.b, a: 1 };
+  }
+
+  /** The dome, drawn again for the sky's state of each apply: its uniforms, and its table where the slice has moved. */
+  function redrawSky(made: Standing): void {
+    const sky = light.sky;
+    if (sky === null || sky === domeSky) return;
+    domeSky = sky;
+    const table = made.dome.update(sky, light.exposure, DISPLAY_CONTRAST);
+    if (table > 0) uploads.count("textures", table);
+    uploads.marked();
   }
 
   /** The frame's numbers into what stands: the camera, the lights, the exposure and the terrain's materials. */
@@ -541,6 +567,7 @@ export function createLiteRenderer(canvas: HTMLCanvasElement, level: Level, fore
     camera.upVector.z = axes.uz;
     camera.fov = fov;
     relight(made);
+    redrawSky(made);
     scene.imageProcessing.exposure = light.exposure;
     // The road's table follows the eye before the uniforms are made: they carry where it is centred.
     if (tables.road !== null && made.road !== null && followRoadCentre(tables.road, pose.z)) {

@@ -6,9 +6,9 @@
  * the dead trees with what grows on the fallen ones, and the far billboards
  * with their bakes), the ground clutter (the cards, the plants and the
  * stones), the blade grass, the duff, the cliffs' rock walls where the
- * field lays any and the chunk props' boxes, under the atmosphere, lit by
- * the sun and the sky's fill for the hour and the weather, from the player's
- * eye or the free camera. Every other part of the world is absent, and the
+ * field lays any and the chunk props' boxes, under the atmosphere and the
+ * sky's dome, lit by the sun and the sky's fill for the hour and the
+ * weather, from the player's eye or the free camera. Every other part of the world is absent, and the
  * members of `Renderer` that belong to an absent part are answered here as
  * nothing: a setter keeps what it was told (`held`), for the day its part is
  * drawn; a read-out returns nothing heard, nothing seen or nothing pending;
@@ -30,7 +30,7 @@ export const NOT_DRAWN: readonly NotDrawn[] = [
   { what: "the lakes' insects and frogs", members: ["hasWaterLife", "waterLifeSound"] },
   { what: "the animals", members: ["hasWildlife", "wildlifeEvents", "wildlifeDirectorLog"] },
   { what: "the players' bodies and lamps, the Hollow and the dropped cap", members: ["setSkinShading"] },
-  { what: "the sky's dome, its capture as the image-based light, and the cast shadows", members: [] },
+  { what: "the sky's capture as the image-based light, and the cast shadows", members: [] },
   { what: "the mist banks, the motes and the ground cloud", members: ["setHaunt", "setMist", "setMistIn"] },
   { what: "the rain, its splashes and its cover, and the lens's read of the canopy over it that keeps the rain off it", members: ["canopyWater", "canopyOver"] },
   { what: "the post chain: the grade and its palettes, the anti-aliasing, the far softening, the rain on the lens, the stare's shade, the chase's cast, depth of field", members: ["setPalette", "setChase", "setUnsettle", "setDepthOfField", "stare"] },

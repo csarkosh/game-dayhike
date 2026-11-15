@@ -9,6 +9,8 @@ describe("the places of the hike's meshes among the opaque draws on Babylon Lite
     expect(DRAW_ORDER.rings).toBeLessThan(DRAW_ORDER.patches);
     // Lite's own place for an opaque mesh is 100: nothing of the terrain's is drawn after an unplaced mesh.
     expect(DRAW_ORDER.patches).toBeLessThan(100);
+    // The sky's dome, behind everything, after everything.
+    expect(Math.max(...firsts)).toBe(DRAW_ORDER.sky);
   });
 
   it("gives a shell's materials the places after its first, in the order they are taken, each within the shell's own run", () => {

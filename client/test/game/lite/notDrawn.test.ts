@@ -13,7 +13,7 @@ describe("what the renderer on Babylon Lite does not draw yet", () => {
 
   it("names every part of the world it leaves out", () => {
     const all = NOT_DRAWN.map((part) => part.what).join("; ");
-    for (const word of [ "sea", "lakes", "animals", "bodies", "dome", "shadows", "mist", "rain", "post chain", "scenes", "endings", "posts", "body at the crest"]) {
+    for (const word of [ "sea", "lakes", "animals", "bodies", "image-based light", "shadows", "mist", "rain", "post chain", "scenes", "endings", "posts", "body at the crest"]) {
       expect(all, word).toContain(word);
     }
   });
