@@ -19,9 +19,13 @@
  * distance dither and no wet look: every hand-off is geometric.
  *
  * **The lists follow the eye and the view.** They are made again when the
- * eye crosses a metre, and cut again to the view after that and whenever it
+ * eye crosses a metre: at a walk as a job of the renderer's scheduler
+ * (`rebuildJobs.ts`), whose last slice hands the cut every tier's cells at
+ * once, and between crossings the cells the next one adds are looked up as
+ * idle work. They are cut again to the view after a rebuild and whenever it
  * has turned or moved past `grassCull.ts`'s thresholds; a cut sends only
- * the buckets whose kept cells changed.
+ * the buckets whose kept cells changed. Until a rebuild is whole the
+ * buckets draw the last cut of the last one.
  */
 import {
   createMeshFromData, createPbrMaterial, disposeMeshGpu, invalidateRenderBundles, markMaterialUboDirty, removeFromScene, setPbrMetallicReflectance,
@@ -32,19 +36,22 @@ import { BLADE_CHARACTER_COUNT, BLADE_REBUILD_CELL, BLADE_SIZE_COUNT, bladeTierB
 import { BLADE_ROUGHNESS, BLADE_TIER_COUNT, createBladeLists } from "../bladeInstances.js";
 import { FOLIAGE_PROFILES, foliageLook } from "../foliageUniforms.js";
 import type { CullPose } from "../grassCull.js";
+import type { FirstBuilds } from "../firstBuilds.js";
 import type { InstanceList } from "../instanceLists.js";
-import { createCrossing, crossingAt, finish } from "../syncJobs.js";
+import type { SyncJobs } from "../syncJobs.js";
 import {
   baseColourPlugin, oneSidedLightPlugin, surfaceSplitPlugin, vegetationInstanceLayout, vegetationPlugin, type Vegetation,
 } from "./forestPlugins.js";
+import { DRAW_ORDER, createDrawOrders } from "./drawOrder.js";
 import { listMesh, showList, type ListMesh } from "./listMeshes.js";
+import { cellOrigin, createRebuilds } from "./rebuildJobs.js";
 
 export function bladeMeshName(character: number, tier: number, size: number): string {
   return `blade_clumps_c${character}_t${tier}_s${size}`;
 }
 
 export type BladeMeshes = {
-  /** Follows the eye: the lists are made again when it crosses a metre. */
+  /** Follows the eye: the lists are made again when it crosses a metre, at a walk over the frames after. */
   update(camX: number, camZ: number): void;
   /** Draws the cells inside the view of `pose` (`null`: every cell), cutting again only after a rebuild or once the view has moved past the thresholds. */
   cull(pose: CullPose | null): void;
@@ -64,6 +71,10 @@ export type BladeMeshOptions = {
   frame: { readonly height: number };
   /** The air's plugin, one a material. */
   air: () => MaterialPlugin;
+  /** The renderer's scheduler: given it, a crossing at a walk is a job. */
+  jobs?: SyncJobs;
+  /** The loader of first builds, while the intro's film covers the hike (`firstBuilds.ts`). */
+  firstBuilds?: FirstBuilds;
 };
 
 /** The height of the tallest vertex of `positions` (xyz a vertex) over the clump's own ground. */
@@ -79,6 +90,8 @@ export function createBladeMeshes(engine: EngineContext, scene: SceneContext, se
   const materials: PbrMaterialProps[] = [];
   const buckets: ListMesh[] = [];
   const bands = bladeTierBands();
+  /** Each tier's material's place among the draws. */
+  const orders = createDrawOrders(DRAW_ORDER.blades);
   for (let tier = 0; tier < BLADE_TIER_COUNT; tier++) {
     const clumps = [];
     // The tier's tallest clump is the height its material's sway is weighed by: one material serves the tier.
@@ -104,17 +117,28 @@ export function createBladeMeshes(engine: EngineContext, scene: SceneContext, se
     setPbrMetallicReflectance(material, { color: [1, 1, 1], f0Factor: 0 });
     material.plugins = [baseColourPlugin(), oneSidedLightPlugin(), vegetationPlugin(vegetation), surfaceSplitPlugin(), options.air()];
     materials.push(material);
+    orders.take(material);
     const layout = vegetationInstanceLayout(vegetation);
     for (const { name, geometry } of clumps) {
       const mesh = createMeshFromData(engine, name, geometry.positions, geometry.normals, Uint32Array.from(geometry.indices), undefined, undefined, undefined, geometry.colors);
       mesh.material = material;
+      mesh.renderOrder = orders.of(material);
       // A blade's root and draw, a vertex: after the material, whose plugin declares it.
       mesh.pluginVertexData = geometry.blade;
       buckets.push(listMesh(scene, mesh, layout));
     }
   }
   let disposed = false;
-  const crossing = createCrossing();
+  // The lists' own rebuild: its last slice copies every tier into the buffers the cut reads, and the next cut shows them.
+  const rebuilds = createRebuilds({
+    name: "blades",
+    cell: BLADE_REBUILD_CELL,
+    origin: cellOrigin(BLADE_REBUILD_CELL),
+    rebuild: (x, z) => lists.rebuild(x, z),
+    ahead: (x, z, hx, hz) => lists.prefetch(x, z, hx, hz),
+    jobs: options.jobs,
+    firstBuilds: options.firstBuilds,
+  });
   /** Whether a cut changed what a bucket's material reads an instance: the draws are then recorded again. */
   let resent = false;
   const show = (list: InstanceList, index: number): void => {
@@ -124,11 +148,8 @@ export function createBladeMeshes(engine: EngineContext, scene: SceneContext, se
   return {
     update(x, z) {
       if (disposed) return;
-      const ox = Math.floor(x / BLADE_REBUILD_CELL) * BLADE_REBUILD_CELL;
-      const oz = Math.floor(z / BLADE_REBUILD_CELL) * BLADE_REBUILD_CELL;
-      if (crossingAt(crossing, x, z, ox, oz, BLADE_REBUILD_CELL, false) === "none") return;
-      // The buckets go on drawing the last cut until the next one, which the same frame makes.
-      finish(lists.rebuild(x, z));
+      // The buckets go on drawing the last cut until the cut after the rebuild.
+      rebuilds.update(x, z);
     },
     cull(pose) {
       if (disposed) return;
@@ -153,6 +174,7 @@ export function createBladeMeshes(engine: EngineContext, scene: SceneContext, se
     dispose() {
       if (disposed) return;
       disposed = true;
+      rebuilds.dispose();
       for (const bucket of buckets) {
         removeFromScene(scene, bucket.mesh);
         disposeMeshGpu(bucket.mesh);

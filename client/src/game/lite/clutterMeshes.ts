@@ -32,8 +32,12 @@
  * its LOD levels, a bucket a cut.
  *
  * **The lists follow the eye.** They are made again when the eye crosses a
- * grass cell (3 m), and the grass class's are cut to the view on the tiers
- * that ask for it.
+ * grass cell (3 m): at a walk as a job of the renderer's scheduler
+ * (`rebuildJobs.ts`), whose last slice fills every bucket's list and shows
+ * them together, so no frame draws one bucket moved on against another that
+ * has not; between crossings the cells the next one adds are looked up as
+ * idle work. The grass class's are cut to the view on the tiers that ask
+ * for it.
  */
 import {
   createMeshFromData, createPbrMaterial, disposeMeshGpu, invalidateRenderBundles, markMaterialUboDirty, removeFromScene, setPbrAlphaCutoff,
@@ -48,23 +52,26 @@ import {
   clutterNearLodName, cutModel, seatDriftLogs,
 } from "../clutterInstances.js";
 import { createClutterLists, type ClutterBucket, type ClutterLists } from "../clutterLists.js";
+import type { FirstBuilds } from "../firstBuilds.js";
 import { FOLIAGE_CARD_CONTRAST, coverAlbedoTint } from "../coverAlbedoParams.js";
 import { foliageLook, foliageMatched, type FoliageLook, type FoliageProfile } from "../foliageUniforms.js";
 import type { CullPose } from "../grassCull.js";
 import { HIGH_PLANT_COUNT, highPlantGeometry } from "../highPlantClump.js";
 import { ROCK_CUTS, rockPlanes, rockRelief } from "../rockRelief.js";
 import { SHRUB_CHARACTERS, shrubGeometry } from "../shrubClump.js";
-import { createCrossing, crossingAt, finish } from "../syncJobs.js";
+import type { Slices, SyncJobs } from "../syncJobs.js";
 import { WET_PLANT_COUNT, wetPlantGeometry } from "../wetPlantClump.js";
 import type { WetUniforms } from "../wetSurface.js";
 import { loadModel, type LoadedModel, type ModelPart } from "./forestModels.js";
 import {
   baseColourPlugin, oneSidedLightPlugin, surfaceWetPlugin, vegetationInstanceLayout, vegetationPlugin, type Vegetation,
 } from "./forestPlugins.js";
+import { DRAW_ORDER, createDrawOrders } from "./drawOrder.js";
 import { listMesh, showList, type ListMesh } from "./listMeshes.js";
+import { cellOrigin, createRebuilds } from "./rebuildJobs.js";
 
 export type ClutterMeshes = {
-  /** Follows the eye: the lists are made again when it crosses a grass cell. Before the models have landed it only keeps where the eye is. */
+  /** Follows the eye: the lists are made again when it crosses a grass cell, at a walk over the frames after. Before the models have landed it only keeps where the eye is. */
   update(camX: number, camZ: number): void;
   /** Draws the culled classes' instances inside the view of `pose` (`null`: every one), cutting again only after a rebuild or once the view has moved past the thresholds. */
   cull(pose: CullPose | null): void;
@@ -94,6 +101,10 @@ export type ClutterMeshOptions = {
   wet: (cap: number) => WetUniforms;
   /** The air's plugin, one a material. */
   air: () => MaterialPlugin;
+  /** The renderer's scheduler: given it, a crossing at a walk is a job. */
+  jobs?: SyncJobs;
+  /** The loader of first builds, while the intro's film covers the hike (`firstBuilds.ts`). */
+  firstBuilds?: FirstBuilds;
 };
 
 /** One mesh's worth of geometry: a model's primitive, a cut of one, or a plant built in code. */
@@ -134,11 +145,12 @@ export function createClutterMeshes(engine: EngineContext, scene: SceneContext, 
   /** The meshes that draw each bucket of the lists, once the models have landed. */
   const drawnBy = new Map<ClutterBucket, ListMesh[]>();
   let lists: ClutterLists | null = null;
+  /** Each material's place among the draws. */
+  const orders = createDrawOrders(DRAW_ORDER.clutter);
   let disposed = false;
   let waiting = 0;
   let camX = Number.NaN;
   let camZ = Number.NaN;
-  const crossing = createCrossing();
 
   /** A model's file, read once however many classes draw it at the same LODs: the litter draws the rocks' and the driftwood's. */
   const models = new Map<string, Promise<LoadedModel>>();
@@ -170,6 +182,8 @@ export function createClutterMeshes(engine: EngineContext, scene: SceneContext, 
       options.air(),
     ];
     materials.push(made);
+    // A class's materials are made in the game's order of classes, whichever model landed first.
+    orders.take(made);
     return made;
   }
 
@@ -275,6 +289,7 @@ export function createClutterMeshes(engine: EngineContext, scene: SceneContext, 
           drawnBy.set(bucket, parts.map((g, p) => {
             const mesh = createMeshFromData(engine, `clutter_${cls}_${r}_lod${lod}_${p}`, g.positions.slice(), g.normals.slice(), g.indices.slice(), g.uvs?.slice(), undefined, g.tangents?.slice(), g.colors?.slice());
             mesh.material = row.material;
+            mesh.renderOrder = orders.of(row.material);
             meshes.push(mesh);
             return listMesh(scene, mesh, layout);
           }));
@@ -299,18 +314,33 @@ export function createClutterMeshes(engine: EngineContext, scene: SceneContext, 
     return resent;
   }
 
-  /** Rebuilds when the eye's origin on the grass cells' lattice has moved: one snap for every class, on the smallest cell. */
-  function maybeBuild(): void {
-    if (lists === null || disposed || Number.isNaN(camX)) return;
-    const originX = Math.floor(camX / CLUTTER_GRASS_CELL) * CLUTTER_GRASS_CELL;
-    const originZ = Math.floor(camZ / CLUTTER_GRASS_CELL) * CLUTTER_GRASS_CELL;
-    if (crossingAt(crossing, camX, camZ, originX, originZ, CLUTTER_GRASS_CELL, false) === "none") return;
-    finish(lists.rebuild(camX, camZ));
-    // A culled bucket goes on drawing its last cut until the next one, which the same frame makes.
+  /** The rebuild for an eye at (x, z): the lists' own, whose last slice fills every list, and in that same step each bucket shown. */
+  function* rebuild(x: number, z: number): Slices {
+    const made = lists;
+    if (made === null) return;
+    yield* made.rebuild(x, z);
+    if (disposed) return;
+    // A culled bucket goes on drawing its last cut until the next one.
     let resent = false;
-    for (const bucket of lists.all) if (!bucket.list.culled) resent = show(bucket) || resent;
+    for (const bucket of made.all) if (!bucket.list.culled) resent = show(bucket) || resent;
     // Plugin instance data goes up as its draw is recorded again.
     if (resent) invalidateRenderBundles(engine);
+  }
+  // One snap for every class, on the smallest cell.
+  const rebuilds = createRebuilds({
+    name: "clutter",
+    cell: CLUTTER_GRASS_CELL,
+    origin: cellOrigin(CLUTTER_GRASS_CELL),
+    rebuild,
+    ahead: (x, z, hx, hz) => lists?.prefetch(x, z, hx, hz) ?? null,
+    jobs: options.jobs,
+    firstBuilds: options.firstBuilds,
+  });
+
+  /** Rebuilds when the eye's origin on the grass cells' lattice has moved; the first build, when the models land, is at once. */
+  function maybeBuild(): void {
+    if (lists === null || disposed || Number.isNaN(camX)) return;
+    rebuilds.update(camX, camZ);
   }
 
   async function load(): Promise<void> {
@@ -386,6 +416,7 @@ export function createClutterMeshes(engine: EngineContext, scene: SceneContext, 
     dispose() {
       if (disposed) return;
       disposed = true;
+      rebuilds.dispose();
       loads.abort();
       for (const mesh of meshes) {
         removeFromScene(scene, mesh);

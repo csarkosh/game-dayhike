@@ -19,8 +19,11 @@
  * sun), the wet look at the duff's cap and the air. No distance dither:
  * every hand-off is geometric.
  *
- * **The lists follow the eye**: made again when it crosses a metre, each
- * bucket whole.
+ * **The lists follow the eye**: made again when it crosses a metre, at a
+ * walk as a job of the renderer's scheduler (`rebuildJobs.ts`) whose last
+ * slice fills every bucket's list and shows them together, so no frame
+ * draws one tier moved on against another that has not. Between crossings
+ * the cells the next one adds are looked up as idle work.
  */
 import {
   createMeshFromData, createPbrMaterial, disposeMeshGpu, invalidateRenderBundles, markMaterialUboDirty, removeFromScene, setPbrMetallicReflectance,
@@ -30,20 +33,23 @@ import { DUFF_ALBEDO, DUFF_CHARACTERS, DUFF_CHARACTER_COUNT, DUFF_TIER_COUNTS, d
 import { DUFF_REACH, DUFF_REBUILD_CELL, duffTierBands } from "../duffField.js";
 import { DUFF_ROUGHNESS, DUFF_TIER_COUNT, createDuffLists } from "../duffInstances.js";
 import { FOLIAGE_PROFILES, foliageLook } from "../foliageUniforms.js";
+import type { FirstBuilds } from "../firstBuilds.js";
 import type { InstanceList } from "../instanceLists.js";
-import { createCrossing, crossingAt, finish } from "../syncJobs.js";
+import type { Slices, SyncJobs } from "../syncJobs.js";
 import type { WetUniforms } from "../wetSurface.js";
 import {
   baseColourPlugin, oneSidedLightPlugin, surfaceWetPlugin, vegetationInstanceLayout, vegetationPlugin, type Vegetation,
 } from "./forestPlugins.js";
+import { DRAW_ORDER, createDrawOrders } from "./drawOrder.js";
 import { listMesh, showList, type ListMesh } from "./listMeshes.js";
+import { cellOrigin, createRebuilds } from "./rebuildJobs.js";
 
 export function duffMeshName(character: number, tier: number): string {
   return `duff_clumps_c${character}_t${tier}`;
 }
 
 export type DuffMeshes = {
-  /** Follows the eye: the lists are made again when it crosses a metre. */
+  /** Follows the eye: the lists are made again when it crosses a metre, at a walk over the frames after. */
   update(camX: number, camZ: number): void;
   /** Once a frame: every material's uniforms are written again, for the eye moves. */
   frame(): void;
@@ -63,6 +69,10 @@ export type DuffMeshOptions = {
   wet: WetUniforms;
   /** The air's plugin, one a material. */
   air: () => MaterialPlugin;
+  /** The renderer's scheduler: given it, a crossing at a walk is a job. */
+  jobs?: SyncJobs;
+  /** The loader of first builds, while the intro's film covers the hike (`firstBuilds.ts`). */
+  firstBuilds?: FirstBuilds;
 };
 
 /** The height of the tallest vertex of `positions` (xyz a vertex) over the clump's own ground. */
@@ -79,6 +89,8 @@ export function createDuffMeshes(engine: EngineContext, scene: SceneContext, see
   const materials: PbrMaterialProps[] = [];
   const buckets: ListMesh[] = [];
   const bands = duffTierBands(reach);
+  /** Each tier's material's place among the draws. */
+  const orders = createDrawOrders(DRAW_ORDER.duff);
   for (let tier = 0; tier < DUFF_TIER_COUNT; tier++) {
     const clumps = [];
     // The tier's tallest clump is the height its material's foliage is weighed by: one material serves the tier.
@@ -101,32 +113,45 @@ export function createDuffMeshes(engine: EngineContext, scene: SceneContext, see
     setPbrMetallicReflectance(material, { color: [1, 1, 1], f0Factor: 1 });
     material.plugins = [baseColourPlugin(), oneSidedLightPlugin(), vegetationPlugin(vegetation), surfaceWetPlugin(options.wet), options.air()];
     materials.push(material);
+    orders.take(material);
     const layout = vegetationInstanceLayout(vegetation);
     for (const { name, geometry } of clumps) {
       const mesh = createMeshFromData(engine, name, geometry.positions, geometry.normals, Uint32Array.from(geometry.indices), undefined, undefined, undefined, geometry.colors);
       mesh.material = material;
+      mesh.renderOrder = orders.of(material);
       // A piece's root and draw, a vertex: after the material, whose plugin declares it.
       mesh.pluginVertexData = geometry.blade;
       buckets.push(listMesh(scene, mesh, layout));
     }
   }
   let disposed = false;
-  const crossing = createCrossing();
+
+  /** The rebuild for an eye at (x, z): the lists' own, whose last slice fills every list, and in that same step each bucket shown. */
+  function* rebuild(x: number, z: number): Slices {
+    yield* lists.rebuild(x, z);
+    if (disposed) return;
+    let resent = false;
+    for (let i = 0; i < buckets.length; i++) {
+      const list = lists.all[i] as InstanceList;
+      resent = showList(buckets[i] as ListMesh, list, list.count) || resent;
+    }
+    // Plugin instance data goes up as its draw is recorded again.
+    if (resent) invalidateRenderBundles(engine);
+  }
+  const rebuilds = createRebuilds({
+    name: "duff",
+    cell: DUFF_REBUILD_CELL,
+    origin: cellOrigin(DUFF_REBUILD_CELL),
+    rebuild,
+    ahead: (x, z, hx, hz) => lists.prefetch(x, z, hx, hz),
+    jobs: options.jobs,
+    firstBuilds: options.firstBuilds,
+  });
 
   return {
     update(x, z) {
       if (disposed) return;
-      const ox = Math.floor(x / DUFF_REBUILD_CELL) * DUFF_REBUILD_CELL;
-      const oz = Math.floor(z / DUFF_REBUILD_CELL) * DUFF_REBUILD_CELL;
-      if (crossingAt(crossing, x, z, ox, oz, DUFF_REBUILD_CELL, false) === "none") return;
-      finish(lists.rebuild(x, z));
-      let resent = false;
-      for (let i = 0; i < buckets.length; i++) {
-        const list = lists.all[i] as InstanceList;
-        resent = showList(buckets[i] as ListMesh, list, list.count) || resent;
-      }
-      // Plugin instance data goes up as its draw is recorded again.
-      if (resent) invalidateRenderBundles(engine);
+      rebuilds.update(x, z);
     },
     frame() {
       for (const material of materials) markMaterialUboDirty(material);
@@ -144,6 +169,7 @@ export function createDuffMeshes(engine: EngineContext, scene: SceneContext, see
     dispose() {
       if (disposed) return;
       disposed = true;
+      rebuilds.dispose();
       for (const bucket of buckets) {
         removeFromScene(scene, bucket.mesh);
         disposeMeshGpu(bucket.mesh);
