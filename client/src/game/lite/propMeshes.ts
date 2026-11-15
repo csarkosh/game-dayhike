@@ -7,17 +7,22 @@
  *
  * A box is a mesh of its own, standing where the prop stands, in a material
  * a prop material's name: Lite's PBR in the name's colour, matt, soaked by
- * the weather at a prop's cap and under the air. The chunks are made whole
- * when the camera crosses into another chunk, and a chunk that has left the
- * window goes with its meshes.
+ * the weather at a prop's cap and under the air. The chunks round a new
+ * place are made when the camera crosses into another chunk, in the call as
+ * the game makes them on Babylon.js, or a chunk a slice by the loader of
+ * first builds while the intro's film covers the hike (`firstBuilds.ts`);
+ * a chunk that has left the window goes with its meshes.
  */
 import {
   addToScene, createMeshFromData, createPbrMaterial, disposeMeshGpu, markMaterialUboDirty, removeFromScene,
   type EngineContext, type MaterialPlugin, type Mesh, type PbrMaterialProps, type SceneContext,
 } from "@babylonjs/lite";
 import type { ChunkGrid } from "../../sim/chunkGrid.js";
+import { buildAtOnce, type FirstBuilds } from "../firstBuilds.js";
 import { PROP_ROUGHNESS, chunkPropBoxes, propBoxGeometry, propChunk, propChunkKey, propColour, propWindow } from "../propBoxes.js";
+import type { Slices } from "../syncJobs.js";
 import type { WetUniforms } from "../wetSurface.js";
+import { DRAW_ORDER } from "./drawOrder.js";
 import { baseColourPlugin, surfaceWetPlugin } from "./forestPlugins.js";
 
 export type PropMeshes = {
@@ -35,6 +40,8 @@ export type PropMeshOptions = {
   wet: WetUniforms;
   /** The air's plugin, one a material. */
   air: () => MaterialPlugin;
+  /** The loader of first builds, while the intro's film covers the hike: the chunks round a new place are made a chunk a slice by it. */
+  firstBuilds?: FirstBuilds;
 };
 
 export function createPropMeshes(engine: EngineContext, scene: SceneContext, grid: ChunkGrid, options: PropMeshOptions): PropMeshes {
@@ -44,6 +51,19 @@ export function createPropMeshes(engine: EngineContext, scene: SceneContext, gri
   let lastCx = Number.NaN;
   let lastCz = Number.NaN;
   let disposed = false;
+  /** This shell, as the loader knows it. */
+  const owner = {};
+  /** The chunks the newest view wants, by key: a fill never makes one that is no longer wanted. */
+  let want = new Set<string>();
+
+  /** The chunks named, made one a slice: a chunk is the simulation's generation of it and its boxes. */
+  function* fill(missing: readonly (readonly [number, number])[]): Slices {
+    for (const [cx, cz] of missing) {
+      const key = propChunkKey(cx, cz);
+      if (!disposed && want.has(key) && !live.has(key)) live.set(key, build(cx, cz));
+      yield;
+    }
+  }
 
   /** The material of the prop material named `name`: one a name, made at its first box. */
   function materialFor(name: string): PbrMaterialProps {
@@ -62,6 +82,8 @@ export function createPropMeshes(engine: EngineContext, scene: SceneContext, gri
       const geometry = propBoxGeometry(box);
       const mesh = createMeshFromData(engine, box.name, geometry.positions, geometry.normals, geometry.indices);
       mesh.material = materialFor(box.material);
+      // The boxes' materials are one stack, drawn by one pipeline: they share a place.
+      mesh.renderOrder = DRAW_ORDER.props;
       addToScene(scene, mesh);
       return mesh;
     });
@@ -81,12 +103,16 @@ export function createPropMeshes(engine: EngineContext, scene: SceneContext, gri
       if (cx === lastCx && cz === lastCz) return;
       lastCx = cx;
       lastCz = cz;
-      const want = new Set<string>();
-      for (const [wx, wz] of propWindow(cx, cz)) {
-        const key = propChunkKey(wx, wz);
+      want = new Set<string>();
+      const missing: [number, number][] = [];
+      for (const chunk of propWindow(cx, cz)) {
+        const key = propChunkKey(chunk[0], chunk[1]);
         want.add(key);
-        if (!live.has(key)) live.set(key, build(wx, wz));
+        if (!live.has(key)) missing.push(chunk);
       }
+      // A fill still queued for the last place gives way to this one's.
+      options.firstBuilds?.cancel(owner);
+      if (missing.length > 0) buildAtOnce(options.firstBuilds, owner, fill(missing), "props");
       for (const [key, meshes] of live) {
         if (want.has(key)) continue;
         drop(meshes);
@@ -104,6 +130,7 @@ export function createPropMeshes(engine: EngineContext, scene: SceneContext, gri
     dispose() {
       if (disposed) return;
       disposed = true;
+      options.firstBuilds?.cancel(owner);
       for (const meshes of live.values()) drop(meshes);
       live.clear();
       materials.clear();
