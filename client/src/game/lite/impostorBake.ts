@@ -21,8 +21,11 @@
  * its pipelines, drawn at the first picture's mode and read, drawn again at
  * the second's and read, and let go with its meshes and its target.
  *
- * **The pixels are the target's own rows, the first the picture's top**:
- * four bytes a texel as the draw wrote them, the colour in gamma space.
+ * **The pixels are the picture's rows from its foot up**, four bytes a texel
+ * as the draw wrote them, the colour in gamma space: the order the game's
+ * own bake is read in on Babylon.js, which keeps a target's first row at
+ * the picture's foot. The distance field made of them breaks its ties by
+ * the order it walks the rows in, so a field made here is the game's.
  */
 import {
   addTask, addToScene, createFreeCamera, createRenderTargetTexture, createRenderTask, createSceneContext, createSurface, disposeMeshGpu,
@@ -35,7 +38,7 @@ import { IMPOSTOR_BAKE_SIZE, type ImpostorBakeFrame, type ImpostorBakeMode } fro
 /** One mesh of a bake: made for it alone, its material carrying the bake's plugin, and what its material reads an instance, if anything. */
 export type BakeMesh = { mesh: Mesh; instance: Float32Array | null };
 
-/** A bake's two pictures, `IMPOSTOR_BAKE_SIZE` a side, four bytes a texel, the first row the picture's top. */
+/** A bake's two pictures, `IMPOSTOR_BAKE_SIZE` a side, four bytes a texel, the first row the picture's foot. */
 export type BakedPictures = { albedo: Uint8Array; normal: Uint8Array };
 
 export type ImpostorBaker = {
@@ -105,7 +108,8 @@ export function createImpostorBaker(engine: EngineContext): ImpostorBaker {
         picture.mode = mode;
         for (const material of materials) markMaterialUboDirty(material);
         renderFrame(engine, 0, [drawn]);
-        const read = await readTexturePixelsRGBA8(engine, target.texture);
+        // The target's first row is the picture's top: read from the last.
+        const read = await readTexturePixelsRGBA8(engine, target.texture, { flipY: true });
         return disposed ? null : read.pixels;
       };
       const albedo = await draw(1);

@@ -204,14 +204,14 @@ function boxOf(parts: readonly ModelPart[]): { min: Vec3; max: Vec3 } {
  * map in the card's own frame, +x right and +y up (`impostorBakePlugin`).
  * Lite reads a map with no vertex tangents in a frame made of the
  * coordinates' derivatives, whose first axis runs against a card's u and
- * whose second with its v; the card's v runs down, with the bake's rows. So
- * both of the map's axes are turned over, and the z kept.
+ * whose second with its v, which runs up the card as the bake's rows do. So
+ * the map's x is turned over, and its y and z kept.
  */
 export function cardNormals(normal: Uint8Array): Uint8Array {
   const turned = new Uint8Array(normal.length);
   for (let i = 0; i + 3 < normal.length; i += 4) {
     turned[i] = 255 - (normal[i] as number);
-    turned[i + 1] = 255 - (normal[i + 1] as number);
+    turned[i + 1] = normal[i + 1] as number;
     turned[i + 2] = normal[i + 2] as number;
     turned[i + 3] = normal[i + 3] as number;
   }
@@ -221,7 +221,7 @@ export function cardNormals(normal: Uint8Array): Uint8Array {
 /**
  * A billboard's quad as a mesh's data: `quad.width` by `quad.height` about
  * its origin, facing -z, its coordinates laid as the bake's rows are, the
- * first at the top.
+ * first at the foot.
  */
 export function cardGeometry(quad: ImpostorQuad): { positions: Float32Array; normals: Float32Array; uvs: Float32Array; indices: Uint32Array } {
   const x = quad.width / 2;
@@ -229,7 +229,7 @@ export function cardGeometry(quad: ImpostorQuad): { positions: Float32Array; nor
   return {
     positions: new Float32Array([-x, -y, 0, x, -y, 0, x, y, 0, -x, y, 0]),
     normals: new Float32Array([0, 0, -1, 0, 0, -1, 0, 0, -1, 0, 0, -1]),
-    uvs: new Float32Array([0, 1, 1, 1, 1, 0, 0, 0]),
+    uvs: new Float32Array([0, 0, 1, 0, 1, 1, 0, 1]),
     indices: new Uint32Array([0, 1, 2, 0, 2, 3]),
   };
 }
