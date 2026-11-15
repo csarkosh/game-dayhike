@@ -54,6 +54,28 @@ describe("the hike's renderer on Babylon Lite, before its engine stands", () => 
     expect(() => r.buildClipmapNow()).not.toThrow();
   });
 
+  it("reads out the last frame's jobs and uploads in the measurement mode alone, and takes the read-outs with it", () => {
+    const page = globalThis as { __syncJobs?: () => { slices: number }; __frameUploads?: () => { bytes: number; streamed: number; byKind: Record<string, number> } };
+    make();
+    expect(page.__syncJobs).toBeUndefined();
+    expect(page.__frameUploads).toBeUndefined();
+    renderer?.dispose();
+    renderer = createHikeRenderer(canvas(), EMPTY_LEVEL, null, { tier: "low", skyTable: skyFixture(), clock: () => 0, gpuTime: true });
+    expect(page.__syncJobs?.().slices).toBe(0);
+    const first = page.__frameUploads?.();
+    expect(first?.bytes).toBe(0);
+    expect(first?.streamed).toBe(0);
+    expect(Object.keys(first?.byKind ?? {})).toEqual(["instances", "pluginInstances", "geometry", "pluginVertices", "textures", "uniforms"]);
+    // A frame with nothing standing hands nothing over; each reading is a copy of its own.
+    renderer.sync(windTestState(), 1, 1);
+    const second = page.__frameUploads?.();
+    expect(second).toEqual(first);
+    expect(second).not.toBe(first);
+    renderer.dispose();
+    expect(page.__syncJobs).toBeUndefined();
+    expect(page.__frameUploads).toBeUndefined();
+  });
+
   it("stands the camera where it was made until a frame places it, then where the free camera is", async () => {
     const r = make();
     expect(r.cameraPosition()).toEqual({ x: 0, y: 2, z: 0 });
