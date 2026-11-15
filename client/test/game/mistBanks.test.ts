@@ -1,8 +1,11 @@
 import { describe, expect, it } from "vitest";
+import { GRADIENT_MID_STEP, atmosphereUnder, fogGradientAt } from "../../src/game/atmosphereParams.js";
 import {
-  MIST_CAP_BY_TIER, MIST_DRIFT, MIST_EDGE_FADE_SPAN, MIST_NEAR_FADE_SPAN, MIST_NEAR_FADE_START, MIST_SHOWN_FLOOR, MIST_WRAP_FADE,
-  createMistBanks, mistBankShown,
+  MIST_CAP_BY_TIER, MIST_DRIFT, MIST_EDGE_FADE_SPAN, MIST_INSTANCE_FLOATS, MIST_NEAR_FADE_SPAN, MIST_NEAR_FADE_START, MIST_SHOWN_FLOOR, MIST_WRAP_FADE,
+  createMistBanks, emptyMistUniforms, mistBankShown, mistUniforms, writeMistInstances, type DrawnMistBank,
 } from "../../src/game/mistBanks.js";
+import { skyStateFor } from "../../src/game/skyState.js";
+import { skyFixture } from "./helpers/skyFixture.js";
 import { MIST_CELL, MIST_RADIUS, collectMistBanks } from "../../src/game/mistField.js";
 import { WEATHER_PRESETS, mistOpacityUnder } from "../../src/game/weather.js";
 import { windRecordUnder } from "../../src/game/windParams.js";
@@ -117,5 +120,63 @@ describe("the mist banks as a frame draws them", () => {
     banks.update(x + 3 * MIST_CELL, z, WEATHER_PRESETS.clear, STILL, 0);
     banks.update(x, z, WEATHER_PRESETS.mist, STILL, 0);
     expect(banks.drawn.filter((quad) => quad.placed).map((quad) => [quad.x, quad.z])).toEqual(here);
+  });
+});
+
+const quad = (x: number, y: number, z: number, visibility: number, placed = true): DrawnMistBank => ({ placed, x, y, z, width: 80, height: 20, visibility });
+
+describe("the mist banks as instances of one quad", () => {
+  it("writes a shown bank's matrix: scaled to the bank, turned about the vertical to the camera's yaw, its visibility in the last float", () => {
+    const yaw = 0.7;
+    const matrices = new Float32Array(MIST_INSTANCE_FLOATS);
+    expect(writeMistInstances([quad(10, 20, 30, 0.4)], { x: 0, y: 0, z: 0 }, yaw, matrices)).toBe(1);
+    const [c, s] = [Math.cos(yaw), Math.sin(yaw)];
+    const want = [80 * c, 0, -80 * s, 0, 0, 20, 0, 0, s, 0, c, 0, 10, 20, 30, 0.4];
+    want.forEach((v, i) => expect(matrices[i], `float ${i}`).toBeCloseTo(v, 5));
+    // The quad's width lies along the camera's right, (cos yaw, 0, -sin yaw), and its face along the view.
+    const right = [matrices[0] as number, matrices[1] as number, matrices[2] as number];
+    const forward = [Math.sin(yaw), 0, Math.cos(yaw)];
+    expect(right[0]! * forward[0]! + right[2]! * forward[2]!).toBeCloseTo(0, 5);
+    expect([matrices[8], matrices[9], matrices[10]].map((v) => +(v as number).toFixed(5))).toEqual(forward.map((v) => +v.toFixed(5)));
+  });
+
+  it("writes the farthest first from the eye, in all three axes, and leaves out a bank not placed or faded out", () => {
+    const drawn = [
+      quad(0, 0, 100, 0.3), quad(0, 0, 300, 0.2), quad(0, 0, 50, MIST_SHOWN_FLOOR), quad(0, 0, 200, 0.5, false), quad(0, 400, 0, 0.1), quad(0, 0, -150, 0.25),
+    ];
+    const matrices = new Float32Array(drawn.length * MIST_INSTANCE_FLOATS);
+    const count = writeMistInstances(drawn, { x: 0, y: 0, z: 0 }, 0, matrices);
+    expect(count).toBe(4);
+    const order = [0, 1, 2, 3].map((n) => +(matrices[n * MIST_INSTANCE_FLOATS + 15] as number).toFixed(2));
+    expect(order).toEqual([0.1, 0.2, 0.25, 0.3]);
+    // From an eye among them the order turns round.
+    writeMistInstances(drawn, { x: 0, y: 0, z: 280 }, 0, matrices);
+    expect([0, 1, 2, 3].map((n) => +(matrices[n * MIST_INSTANCE_FLOATS + 15] as number).toFixed(2))).toEqual([0.1, 0.25, 0.3, 0.2]);
+  });
+
+  it("keeps the list's order for two banks at one distance, and writes nothing past the shown ones", () => {
+    const drawn = [quad(100, 0, 0, 0.11), quad(-100, 0, 0, 0.22), quad(0, 0, 100, 0.33)];
+    const matrices = new Float32Array(4 * MIST_INSTANCE_FLOATS).fill(7);
+    expect(writeMistInstances(drawn, { x: 0, y: 0, z: 0 }, 0, matrices)).toBe(3);
+    expect([0, 1, 2].map((n) => +(matrices[n * MIST_INSTANCE_FLOATS + 15] as number).toFixed(2))).toEqual([0.11, 0.22, 0.33]);
+    expect([...matrices.subarray(3 * MIST_INSTANCE_FLOATS)]).toEqual(new Array(MIST_INSTANCE_FLOATS).fill(7));
+    expect(writeMistInstances([], { x: 0, y: 0, z: 0 }, 0, matrices)).toBe(0);
+  });
+});
+
+describe("the mist banks' uniforms", () => {
+  it("names the banks' colour, the scene's distance fog and the display curve", () => {
+    expect(Object.keys(emptyMistUniforms())).toEqual(["mistEmissive", "mistFogColour", "mistFogDensity", "mistExposure", "mistContrast"]);
+    const sky = skyStateFor(skyFixture(), 12, WEATHER_PRESETS.mist);
+    const air = atmosphereUnder(WEATHER_PRESETS.mist, sky, 900);
+    const colour = fogGradientAt(sky, GRADIENT_MID_STEP);
+    const out = emptyMistUniforms();
+    expect(mistUniforms(colour, air, 1.3, 1.1, out)).toBe(out);
+    expect(out.mistEmissive).toEqual([colour.r, colour.g, colour.b]);
+    // The fog the banks fade into is the scene's: toward the gradient's far end, at the air's density.
+    expect(out.mistFogColour).toEqual([sky.mistAir.r, sky.mistAir.g, sky.mistAir.b]);
+    expect(out.mistFogDensity).toEqual([air.baseDensity]);
+    expect(out.mistExposure).toEqual([1.3]);
+    expect(out.mistContrast).toEqual([1.1]);
   });
 });

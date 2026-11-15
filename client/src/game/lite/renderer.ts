@@ -1,7 +1,7 @@
 /**
  * The hike's renderer on Babylon Lite: the terrain, the forest's trees near
  * and far, the ground clutter, the blade grass, the duff and the cliffs under the
- * atmosphere and the sky's dome, lit by the sun, the sky's fill and the sky's
+ * atmosphere and the sky's dome, the valley mist banks standing in the air, lit by the sun, the sky's fill and the sky's
  * capture as the image-based light for the hour and the weather and by the
  * local player's headlamp, seen from the player's eye or the free camera. It
  * answers the whole of `Renderer` (`renderer.ts`), and what it does not draw
@@ -17,8 +17,8 @@
  * the forest's buckets (`forestMeshes.ts`), the
  * clutter's (`clutterMeshes.ts`) and the cliffs' (`cliffMeshes.ts`), which
  * land as their models do, the grass's and the duff's
- * (`bladeMeshes.ts`, `duffMeshes.ts`), on the tiers that draw them, and the
- * chunk props' boxes (`propMeshes.ts`).
+ * (`bladeMeshes.ts`, `duffMeshes.ts`), on the tiers that draw them, the
+ * chunk props' boxes (`propMeshes.ts`), and the mist banks (`mistMeshes.ts`).
  *
  * **The engine is Lite's own, made from the canvas, and making it takes
  * time**: a device is asked for, the ground's images are decoded, the scene
@@ -57,10 +57,16 @@
  * frame's own draws read them, as the game's probe is drawn again
  * (`skyProbeParams.ts`); at no other frame.
  *
+ * **The see-through draws follow the opaque ones and the sky**, in the
+ * places `drawOrder.ts` names for them. The mist banks are handed the
+ * camera's place, the weather, the wind and the clock as the game's are,
+ * once the sky has its first slices; what a frame writes for them is theirs
+ * to decide (`mistMeshes.ts`: nothing where no bank has moved).
+ *
  * **Colour** is the low tier's material path: Lite's display curve as
  * Babylon's image processing has it there (Khronos PBR Neutral, contrast
- * 1.1), under the weather's and the hour's exposure, and the dome's own
- * stage the same. There is no post chain.
+ * 1.1), under the weather's and the hour's exposure, and the dome's and the
+ * mist banks' own stages the same. There is no post chain.
  */
 import {
   NeutralToneMapping, addToScene, createBankedFreeCamera, createDirectionalLight, createEngine, createHemisphericLight, createPbrMaterial, createSpotLight,
@@ -76,7 +82,7 @@ import { FOG_DISTANCE } from "../../sim/forestConstants.js";
 import type { Level } from "../../sim/level.js";
 import { activeTerrainVariant, type LakeSource } from "../../sim/terrain.js";
 import type { ListenerPose } from "../ambientAudio.js";
-import { atmosphereUniforms, emptyAtmosphereUniforms } from "../atmosphereParams.js";
+import { GRADIENT_MID_STEP, atmosphereUniforms, emptyAtmosphereUniforms, fogGradientAt } from "../atmosphereParams.js";
 import { BASE_SPACING_BY_TIER } from "../clipmap.js";
 import { clutterReachFor } from "../clutterField.js";
 import { noCloud } from "../cloudParams.js";
@@ -114,6 +120,7 @@ import { createForestMeshes, type ForestMeshes } from "./forestMeshes.js";
 import { FRAME_BLOCK, FRAME_FIELDS, writeFrameBlock, type FrameValues } from "./frameBlock.js";
 import { createFrameUploads, uploadCountsCopy, type FrameUploadCounts } from "./frameUploads.js";
 import { GROUND_IMAGES, cloudMapTexture, loadGroundArrays, tableTexture, type TableTexture } from "./groundTextures.js";
+import { createLiteMistMeshes, type LiteMistMeshes, type MistFrame } from "./mistMeshes.js";
 import { notDrawnMembers } from "./notDrawn.js";
 import { createPropMeshes, type PropMeshes } from "./propMeshes.js";
 import { SKY_CAPTURE_BYTES, createLiteSkyCapture, type LiteSkyCapture } from "./skyCapture.js";
@@ -175,6 +182,8 @@ type Standing = {
   duff: DuffMeshes | null;
   cliffs: CliffMeshes | null;
   props: PropMeshes | null;
+  /** The valley mist banks (`mistMeshes.ts`). */
+  mist: LiteMistMeshes | null;
 };
 
 /**
@@ -290,6 +299,9 @@ export function createLiteRenderer(canvas: HTMLCanvasElement, level: Level, fore
   const lampWritten = { intensity: Number.NaN, r: 0, g: 0, b: 0, x: 0, y: 0, z: 0, dx: 0, dy: 0, dz: 0 };
   /** The sky's state the dome was last drawn for: the light makes a new one at each apply. */
   let domeSky: SkyState | null = null;
+  /** What a frame draws the mist banks with (`MistFrame`), and the sky's state their colour was last read for. */
+  let mistFrame: MistFrame | null = null;
+  let mistSky: SkyState | null = null;
   /** The canvas's size the engine was last fitted to, CSS pixels. */
   let fittedWidth = -1;
   let fittedHeight = -1;
@@ -305,6 +317,7 @@ export function createLiteRenderer(canvas: HTMLCanvasElement, level: Level, fore
 
   /** Lets go of what stands: the meshes, the scene, the engine and its device. */
   function release(made: Standing): void {
+    made.mist?.dispose();
     made.props?.dispose();
     made.cliffs?.dispose();
     made.duff?.dispose();
@@ -377,6 +390,8 @@ export function createLiteRenderer(canvas: HTMLCanvasElement, level: Level, fore
     let duff: DuffMeshes | null = null;
     let cliffs: CliffMeshes | null = null;
     let props: PropMeshes | null = null;
+    // The valley mist banks ride the same guard as the forest: a hand-authored level has no valley haze.
+    const mist = forest === null ? null : createLiteMistMeshes(engine, scene, forest.seed, tier, uploads);
     // The ground cloud's map, which every material's air reads.
     const cloudMap = forest === null ? null : cloudMapTexture(engine);
     if (forest !== null && cloudMap !== null) {
@@ -486,7 +501,7 @@ export function createLiteRenderer(canvas: HTMLCanvasElement, level: Level, fore
         wet: wetAt(WET_CAP.prop), air: () => atmospherePlugin(airValues, cloudMap, shared), shared, firstBuilds: options.firstBuilds, uploads,
       });
     }
-    const made: Standing = { engine, scene, camera, sun, fill, lamp, dome, capture, shared, materials, terrain, road, forest: trees, blades, clutter, duff, cliffs, props };
+    const made: Standing = { engine, scene, camera, sun, fill, lamp, dome, capture, shared, materials, terrain, road, forest: trees, blades, clutter, duff, cliffs, props, mist };
     if (disposed) {
       release(made);
       return;
@@ -811,6 +826,19 @@ export function createLiteRenderer(canvas: HTMLCanvasElement, level: Level, fore
         cullPose.aspect = canvas.height > 0 ? canvas.width / canvas.height : 1;
         standing.blades?.cull(cullPose);
         standing.clutter?.cull(cullPose);
+        // The mist banks, round the camera's place and turned to its yaw. Their colour is the haze's gradient's, which
+        // there is none of until the sky's first slices are in.
+        const sky = light.sky;
+        const air = light.air;
+        if (standing.mist !== null && centre !== null && sky !== null && air !== null) {
+          if (mistFrame === null || sky !== mistSky) {
+            mistSky = sky;
+            mistFrame = { eye: pose, yaw: 0, colour: fogGradientAt(sky, GRADIENT_MID_STEP), air, exposure: 0, contrast: DISPLAY_CONTRAST };
+          }
+          mistFrame.yaw = pose.yaw;
+          mistFrame.exposure = light.exposure;
+          standing.mist.update(centre.x, centre.z, weather, wind, seconds, mistFrame);
+        }
         draw(standing, weather.wetness);
       }
       // This frame's share of the rebuilds the updates above began, once every shell has seen the view.

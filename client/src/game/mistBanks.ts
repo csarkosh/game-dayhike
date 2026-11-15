@@ -10,7 +10,8 @@
  * through it, at the rim of the collection radius so the last bank never
  * pops, and at the edge of its own cell as the wind carries it there.
  */
-import { clamp01 } from "./colour.js";
+import type { AtmosphereRecord } from "./atmosphereParams.js";
+import { clamp01, type Rgb } from "./colour.js";
 import { MIST_CELL, MIST_RADIUS, collectMistBanks, type MistBank } from "./mistField.js";
 import type { QualityTier } from "./quality.js";
 import { mistOpacityUnder, type WeatherParams } from "./weather.js";
@@ -160,4 +161,96 @@ export function createMistBanks(seed: number, tier: QualityTier): MistBanks {
       return true;
     },
   };
+}
+
+/** Floats an instance is: a quad's world matrix, its visibility in the last. */
+export const MIST_INSTANCE_FLOATS = 16;
+
+/**
+ * The quads shown, as instances of one unit plane (in XY, facing -Z, as
+ * Babylon.js makes a plane): each one's world matrix into `matrices`, row
+ * by row with the translation last. A quad is scaled to its bank and turned
+ * about the vertical by the camera's `yaw`, so it lies across the view
+ * whatever the pitch, as Babylon.js turns a mesh in its `BILLBOARDMODE_Y`.
+ * The matrix's last float, which a world matrix leaves at 1, carries the
+ * quad's visibility: whoever draws from it reads the visibility there and
+ * takes the 1 as given.
+ *
+ * They are written farthest first, by the distance from `eye` to a quad's
+ * centre: the order a blend wants, and the order Babylon.js draws its
+ * see-through meshes in. Two at one distance keep the list's order. Returns
+ * how many were written.
+ */
+export function writeMistInstances(
+  drawn: readonly DrawnMistBank[], eye: { readonly x: number; readonly y: number; readonly z: number }, yaw: number,
+  matrices: Float32Array, order: { index: number; distance: number }[] = [],
+): number {
+  order.length = 0;
+  for (let i = 0; i < drawn.length; i++) {
+    const bank = drawn[i] as DrawnMistBank;
+    if (!mistBankShown(bank)) continue;
+    order.push({ index: i, distance: Math.sqrt((bank.x - eye.x) ** 2 + (bank.y - eye.y) ** 2 + (bank.z - eye.z) ** 2) });
+  }
+  order.sort((a, b) => b.distance - a.distance || a.index - b.index);
+  const cos = Math.cos(yaw);
+  const sin = Math.sin(yaw);
+  for (let n = 0; n < order.length; n++) {
+    const bank = drawn[(order[n] as { index: number }).index] as DrawnMistBank;
+    const m = n * MIST_INSTANCE_FLOATS;
+    matrices[m] = bank.width * cos;
+    matrices[m + 1] = 0;
+    matrices[m + 2] = -bank.width * sin;
+    matrices[m + 3] = 0;
+    matrices[m + 4] = 0;
+    matrices[m + 5] = bank.height;
+    matrices[m + 6] = 0;
+    matrices[m + 7] = 0;
+    matrices[m + 8] = sin;
+    matrices[m + 9] = 0;
+    matrices[m + 10] = cos;
+    matrices[m + 11] = 0;
+    matrices[m + 12] = bank.x;
+    matrices[m + 13] = bank.y;
+    matrices[m + 14] = bank.z;
+    matrices[m + 15] = bank.visibility;
+  }
+  return order.length;
+}
+
+/**
+ * What the banks' material is drawn with, by name: the banks' own colour
+ * (the fog gradient's middle, so they sit inside the fog rather than at its
+ * far end), the distance fog they fade into (its colour the gradient's far
+ * end, its density the air's, exponential squared), and the display curve's
+ * exposure and contrast on the material colour path.
+ */
+export type MistUniforms = {
+  mistEmissive: [number, number, number];
+  mistFogColour: [number, number, number];
+  mistFogDensity: [number];
+  mistExposure: [number];
+  mistContrast: [number];
+};
+
+/** A record of the right shape, every component zero, for `mistUniforms` to fill. */
+export function emptyMistUniforms(): MistUniforms {
+  return { mistEmissive: [0, 0, 0], mistFogColour: [0, 0, 0], mistFogDensity: [0], mistExposure: [0], mistContrast: [0] };
+}
+
+/**
+ * The banks' uniforms under `air` (`atmosphereUnder`), coloured `colour`
+ * (`fogGradientAt` at `GRADIENT_MID_STEP`). Fills and returns `out` (a
+ * record of its own when none is given).
+ */
+export function mistUniforms(colour: Rgb, air: AtmosphereRecord, exposure: number, contrast: number, out: MistUniforms = emptyMistUniforms()): MistUniforms {
+  out.mistEmissive[0] = colour.r;
+  out.mistEmissive[1] = colour.g;
+  out.mistEmissive[2] = colour.b;
+  out.mistFogColour[0] = air.farColour.r;
+  out.mistFogColour[1] = air.farColour.g;
+  out.mistFogColour[2] = air.farColour.b;
+  out.mistFogDensity[0] = air.baseDensity;
+  out.mistExposure[0] = exposure;
+  out.mistContrast[0] = contrast;
+  return out;
 }

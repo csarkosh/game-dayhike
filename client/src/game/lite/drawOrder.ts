@@ -1,7 +1,8 @@
 /**
- * Where each of the hike's meshes stands among the opaque draws on Babylon
- * Lite: a place a material, named, so the order of the draws is the same
- * however the meshes came to stand in the scene.
+ * Where each of the hike's meshes stands among the draws on Babylon Lite: a
+ * place a material, named, so the order of the draws is the same however
+ * the meshes came to stand in the scene. The opaque draws first
+ * (`DRAW_ORDER`), then the see-through ones (`SEE_THROUGH_ORDER`).
  *
  * Lite draws the opaque meshes of one place (`Mesh.renderOrder`; its own for
  * an opaque mesh is 100) grouped by pipeline, the pipelines in the order it
@@ -25,6 +26,22 @@
 
 /** Each shell's first place. A shell's own run on from it by less than one. */
 export const DRAW_ORDER = { rings: 80, patches: 90, forest: 100, clutter: 110, blades: 120, duff: 130, cliffs: 140, props: 150, sky: 160 } as const;
+
+/**
+ * The places of the see-through draws, which follow every opaque one and the
+ * sky: what is blended over the frame, tested against its depth and never
+ * written to it.
+ *
+ * Lite sorts its blended draws every frame, farthest first by the depth of
+ * each mesh's own origin in the view, and only two at the same depth by
+ * their places. A mesh of the hike's see-through effects is an instance list
+ * or a field round the eye, whose origin says nothing of where it is seen;
+ * so each stands at the world's origin, all at one depth, and their places
+ * alone order them, the same from every view. The order is the game's on
+ * Babylon.js. The mist banks order themselves farthest first within their
+ * one draw (`mistBanks.ts`).
+ */
+export const SEE_THROUGH_ORDER = { mist: 210 } as const;
 
 /** The places a shell has past its first. */
 export const DRAW_PLACES = 1024;

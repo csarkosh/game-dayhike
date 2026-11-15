@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { DRAW_ORDER, DRAW_PLACES, createDrawOrders } from "../../../src/game/lite/drawOrder.js";
+import { DRAW_ORDER, DRAW_PLACES, SEE_THROUGH_ORDER, createDrawOrders } from "../../../src/game/lite/drawOrder.js";
 
 describe("the places of the hike's meshes among the opaque draws on Babylon Lite", () => {
   it("draws the terrain first, the rings before the patches, then each shell in turn, ahead of nothing Lite places itself", () => {
@@ -42,5 +42,12 @@ describe("the places of the hike's meshes among the opaque draws on Babylon Lite
     first.put(card, DRAW_PLACES - 1);
     expect(first.of(card)).toBeLessThan(DRAW_ORDER.clutter);
     expect(() => first.put(card, DRAW_PLACES)).toThrow(/places among the draws/);
+  });
+});
+
+describe("the places of the hike's see-through draws on Babylon Lite", () => {
+  it("names places of their own, apart from the opaque ones", () => {
+    // Lite draws its blended meshes after every opaque one whatever their places; the names stay apart all the same.
+    expect(Math.min(...Object.values(SEE_THROUGH_ORDER))).toBeGreaterThan(Math.max(...Object.values(DRAW_ORDER)));
   });
 });
