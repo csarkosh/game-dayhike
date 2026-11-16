@@ -563,6 +563,10 @@ describe("layer boundaries", () => {
       join(SRC, "game", "dragonflyShapes.ts"),
       join(SRC, "game", "oceanFrame.ts"),
       join(SRC, "game", "seaEdge.ts"),
+      join(SRC, "game", "oceanFftPasses.ts"),
+      join(SRC, "game", "windSeaField.ts"),
+      join(SRC, "game", "lipStrip.ts"),
+      join(SRC, "game", "sprayField.ts"),
       join(SRC, "game", "seaLattice.ts"),
       join(SRC, "game", "seaUniforms.ts"),
       join(SRC, "game", "postFrame.ts"),
@@ -759,8 +763,9 @@ describe("layer boundaries", () => {
   /**
    * What the sea is drawn with, for a renderer that is not Babylon.js to
    * draw it by: the swell and the wind sea as numbers, the sea following its
-   * wind, the wind sea's loop asked of its worker, its edge on the cove with the swash's table and the breaker's
-   * tracker, the rings as one lattice, their samples and the box each has
+   * wind, the wind sea's loop asked of its worker, which field draws the wind sea and the passes of the one that
+   * is computed each frame, its edge on the cove with the swash's table and the breaker's
+   * tracker, the strips of the plunging lip's curl and the spray's bursts, the rings as one lattice, their samples and the box each has
    * water in, the sea's uniforms by name, and the surf as heard. The shell
    * that draws it on Babylon.js takes its values from these.
    */
@@ -768,6 +773,7 @@ describe("layer boundaries", () => {
     const ENGINE_FREE = [
       "oceanFrame.ts", "oceanWindSea.ts", "oceanLoopStart.ts", "oceanLoopBake.ts", "oceanWaves.ts", "oceanTables.ts", "oceanSwell.ts", "seaEdge.ts", "swashTable.ts",
       "oceanBreaker.ts", "seaLattice.ts", "seaUniforms.ts", "surfSound.ts", "water.ts", "waterSurface.ts",
+      "oceanFftPasses.ts", "windSeaField.ts", "lipStrip.ts", "sprayField.ts",
     ];
     const loaded = (file: string): string[] =>
       [...readFileSync(file, "utf8").matchAll(/^\s*(?:import|export)\s+(?!type\s)(?:[^"'();]*?\s+from\s+)?["']([^"']+)["']/gm)].map((m) => m[1] as string);
@@ -788,8 +794,14 @@ describe("layer boundaries", () => {
     expect(bad).toEqual([]);
     // And the shells on Babylon.js read them: the sea's numbers, its wind's lag and its edge are made in one place.
     expect(readFileSync(join(SRC, "game/oceanRender.ts"), "utf8")).toContain("createOceanFrame(seed, tier, made)");
-    expect(readFileSync(join(SRC, "game/oceanWindSource.ts"), "utf8")).toContain("createSeaWindLag()");
+    expect(readFileSync(join(SRC, "game/windSeaField.ts"), "utf8")).toContain("createSeaWindLag()");
+    expect(readFileSync(join(SRC, "game/oceanWindSource.ts"), "utf8")).toContain("createWindSeaField<BaseTexture>(seed, tier, {");
     expect(readFileSync(join(SRC, "game/renderer.ts"), "utf8")).toContain("createSeaEdgeStep(seed, ocean.field)");
+    // The FFT's passes, the curl's strips and the spray's bursts likewise.
+    expect(readFileSync(join(SRC, "game/oceanGpuFft.ts"), "utf8")).toContain('from "./oceanFftPasses.js";');
+    expect(readFileSync(join(SRC, "game/oceanLip.ts"), "utf8")).toContain("lipReach(cove, level)");
+    expect(readFileSync(join(SRC, "game/surfSpray.ts"), "utf8")).toContain("createSprayBursts(plugin.bursts)");
+    expect(readFileSync(join(SRC, "game/renderer.ts"), "utf8")).toContain("createSprayThrow(tracker, cove, waterLevel)");
   });
 
   /**

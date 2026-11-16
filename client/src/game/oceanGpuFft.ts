@@ -56,8 +56,14 @@ import { BaseTexture } from "@babylonjs/core/Materials/Textures/baseTexture.js";
 import evolveSource from "./shaders/oceanFftEvolve.compute.wgsl?raw";
 import passSource from "./shaders/oceanFftPass.compute.wgsl?raw";
 import resolveSource from "./shaders/oceanFftResolve.compute.wgsl?raw";
-import { WIND_SEA_CHOPPINESS } from "./oceanFft.js";
-import { FFT_CASCADES, FFT_N, WIND_SEA_REPEAT, cascadeBands, windSeaCascadeSeed, windSeaH0 } from "./oceanSpectrum.js";
+import {
+  OCEAN_FFT_DISPATCH, OCEAN_FFT_EVOLVE_BINDINGS, OCEAN_FFT_H0_BYTES, OCEAN_FFT_PASS_BINDINGS, OCEAN_FFT_RESOLVE_BINDINGS, OCEAN_FFT_SPECTRA_BYTES,
+  fftFlatField, fftParams, fftSeconds, gpuWindSeaH0,
+} from "./oceanFftPasses.js";
+import { FFT_CASCADES, FFT_N } from "./oceanSpectrum.js";
+
+// What the passes bind and run with is kept with no engine (`oceanFftPasses.ts`), and handed on under its names.
+export { OCEAN_FFT_DISPATCH, OCEAN_FFT_EVOLVE_BINDINGS, OCEAN_FFT_PASS_BINDINGS, OCEAN_FFT_RESOLVE_BINDINGS, gpuWindSeaH0 } from "./oceanFftPasses.js";
 
 export type GpuWindSea = {
   /** (height, dx, dz, Jacobian), a layer a cascade, FFT_N², rgba16float, bilinear, wrapping. */
@@ -77,59 +83,8 @@ export type GpuWindSea = {
   dispose(): void;
 };
 
-/** Where each shader's resources are bound, as its WGSL declares them. */
-export const OCEAN_FFT_EVOLVE_BINDINGS: ComputeBindingMapping = {
-  h0: { group: 0, binding: 0 },
-  spectra: { group: 0, binding: 1 },
-  params: { group: 0, binding: 2 },
-};
-export const OCEAN_FFT_PASS_BINDINGS: ComputeBindingMapping = {
-  spectra: { group: 0, binding: 0 },
-};
-export const OCEAN_FFT_RESOLVE_BINDINGS: ComputeBindingMapping = {
-  spectra: { group: 0, binding: 0 },
-  params: { group: 0, binding: 1 },
-  disp: { group: 0, binding: 2 },
-  slope: { group: 0, binding: 3 },
-};
-
-/** Each dispatch's workgroup counts: a 16 × 16 workgroup per tile of bins or
- * texels of each cascade for evolve and resolve, a workgroup per line of each
- * of the 2 × 3 layers for the passes. */
-export const OCEAN_FFT_DISPATCH = {
-  evolve: [FFT_N / 16, FFT_N / 16, FFT_CASCADES.length],
-  rows: [FFT_N, 2 * FFT_CASCADES.length, 1],
-  columns: [FFT_N, 2 * FFT_CASCADES.length, 1],
-  resolve: [FFT_N / 16, FFT_N / 16, FFT_CASCADES.length],
-} as const;
-
-/** A half float's 1.0: the Jacobian `disp` holds before the first frame, an unfolded sea. */
-const HALF_ONE = 0x3c00;
-
 /** The device's error scopes, the part of it the first frame's validation needs. */
 type ErrorScopes = Pick<GPUDevice, "pushErrorScope" | "popErrorScope">;
-
-/**
- * What `setSpectrum` uploads: h0 of each cascade for the wind sea's state
- * (`windSeaH0`, its seed `windSeaCascadeSeed(seed, c)`), as the evolve shader
- * reads it: a vec4 (re, im, ω, 0) a bin, cascade after cascade, each in FFT
- * order row by row.
- */
-export function gpuWindSeaH0(state: { u10: number; dir: [number, number] }, seed: number): Float32Array {
-  const n = FFT_N;
-  const bands = cascadeBands(FFT_CASCADES, n);
-  const data = new Float32Array(FFT_CASCADES.length * n * n * 4);
-  FFT_CASCADES.forEach((size, c) => {
-    const cascade = windSeaH0(n, size, state, bands[c]!, windSeaCascadeSeed(seed, c));
-    for (let i = 0; i < n * n; i++) {
-      const at = (c * n * n + i) * 4;
-      data[at] = cascade.re[i]!;
-      data[at + 1] = cascade.im[i]!;
-      data[at + 2] = cascade.omega[i]!;
-    }
-  });
-  return data;
-}
 
 /**
  * The wind sea on the GPU, or null where `engine` is not WebGPU or has no
@@ -142,17 +97,12 @@ export function createGpuWindSea(engine: AbstractEngine): GpuWindSea | null {
   const gpu = engine as WebGPUEngine;
   const device: ErrorScopes = gpu._device;
 
-  const h0 = new StorageBuffer(gpu, cascades * n * n * 16, Constants.BUFFER_CREATIONFLAG_WRITE, "oceanFftH0");
-  const spectra = new StorageBuffer(gpu, 2 * cascades * n * n * 16, Constants.BUFFER_CREATIONFLAG_READWRITE, "oceanFftSpectra");
-  const values = new Float32Array(8);
-  values[1] = WIND_SEA_CHOPPINESS;
-  FFT_CASCADES.forEach((size, c) => {
-    values[4 + c] = size;
-  });
+  const h0 = new StorageBuffer(gpu, OCEAN_FFT_H0_BYTES, Constants.BUFFER_CREATIONFLAG_WRITE, "oceanFftH0");
+  const spectra = new StorageBuffer(gpu, OCEAN_FFT_SPECTRA_BYTES, Constants.BUFFER_CREATIONFLAG_READWRITE, "oceanFftSpectra");
+  const values = fftParams();
   const params: DataBuffer = engine.createUniformBuffer(values, "oceanFftParams");
 
-  const flat = new Uint16Array(n * n * cascades * 4);
-  for (let i = 3; i < flat.length; i += 4) flat[i] = HALF_ONE;
+  const flat = fftFlatField();
   const target = (data: Uint16Array | null, name: string): BaseTexture => {
     const internal = engine.createRawTexture2DArray(
       data, n, n, cascades, Constants.TEXTUREFORMAT_RGBA, false, false, Constants.TEXTURE_BILINEAR_SAMPLINGMODE,
@@ -209,8 +159,7 @@ export function createGpuWindSea(engine: AbstractEngine): GpuWindSea | null {
       if (disposed || failed || validation === "awaited") return;
       // Every shader asked each frame, none skipped for another not ready yet.
       if (!all.map((s) => s.isReady()).every(Boolean)) return;
-      const folded = seconds - WIND_SEA_REPEAT * Math.floor(seconds / WIND_SEA_REPEAT);
-      values[0] = folded;
+      values[0] = fftSeconds(seconds);
       engine.updateUniformBuffer(params, values);
       const d = OCEAN_FFT_DISPATCH;
       const first = validation === "unasked";
