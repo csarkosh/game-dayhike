@@ -86,6 +86,29 @@ export function boxInPlanes(minX: number, minY: number, minZ: number, maxX: numb
   return true;
 }
 
+/**
+ * Whether the eight `corners` of a view (x, y, z each) all lie past one face
+ * of the box from (minX, minY, minZ) to (maxX, maxY, maxZ): the view is the
+ * hull of its corners, so it then holds none of the box. `boxInPlanes`
+ * alone keeps a box far larger than the view that lies wholly beside it:
+ * no one plane of the view has all of such a box outside it.
+ */
+export function cornersPastBox(minX: number, minY: number, minZ: number, maxX: number, maxY: number, maxZ: number, corners: ArrayLike<number>): boolean {
+  const low = [minX, minY, minZ];
+  const high = [maxX, maxY, maxZ];
+  for (let axis = 0; axis < 3; axis++) {
+    let below = true;
+    let above = true;
+    for (let c = axis; c < corners.length; c += 3) {
+      const v = corners[c] as number;
+      if (v >= (low[axis] as number)) below = false;
+      if (v <= (high[axis] as number)) above = false;
+    }
+    if (below || above) return true;
+  }
+  return false;
+}
+
 /** Whether the sphere of `radius` about (x, y, z) reaches inside every one of `planes`. */
 export function sphereInPlanes(x: number, y: number, z: number, radius: number, planes: readonly ViewPlane[]): boolean {
   for (let p = 0; p < planes.length; p++) {

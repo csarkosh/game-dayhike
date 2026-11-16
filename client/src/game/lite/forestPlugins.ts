@@ -64,8 +64,20 @@ import { FADE_ROWS_NAME, frameReads, ownFields, ownValues } from "./frameBlock.j
 import { uniformFields, writeUniforms, type UniformField, type UniformRecord } from "./pluginUniforms.js";
 import { WET_FIELDS, WET_LIGHTS, WET_WGSL, writeWetUniforms } from "./wetWgsl.js";
 
-/** `wgsl` as a plugin given the frame's block reads it (`frameBlock.ts`), or as it is. */
-const reads = (wgsl: string, shared: PluginUniformBlock | undefined): string => (shared === undefined ? wgsl : frameReads(wgsl));
+/**
+ * The eye the foliage and the fade measure from, as the scene's own uniforms hold it for the pass being drawn. On
+ * Babylon.js the two plugins bind the position of the camera the scene is then drawn through
+ * (`scene.activeCamera`), so a pass with a camera of its own (a lake's shore panorama, from the lake's centre)
+ * measures from that camera; the frame's block is written once a frame and holds the hike's own eye for every pass.
+ */
+export const PASS_EYE = "scene.vEyePosition";
+const PASS_EYE_READS = /\bmaterial\.(windEye|fadeEye)\b/g;
+
+/**
+ * `wgsl` as a plugin given the frame's block reads it (`frameBlock.ts`), or as it is: the frame's uniforms from the
+ * block, but the eye, which is the pass's (`PASS_EYE`).
+ */
+const reads = (wgsl: string, shared: PluginUniformBlock | undefined): string => (shared === undefined ? wgsl : frameReads(wgsl.replace(PASS_EYE_READS, PASS_EYE)));
 
 /** A number as a WGSL float literal: a whole number takes its point. */
 export function wgslFloat(n: number): string {

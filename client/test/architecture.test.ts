@@ -437,6 +437,8 @@ describe("layer boundaries", () => {
       join(SRC, "game", "engineChoice.ts"),
       join(SRC, "game", "terrainSurface.ts"),
       join(SRC, "game", "waterGround.ts"),
+      join(SRC, "game", "panoramaTurn.ts"),
+      join(SRC, "game", "mirrorGround.ts"),
       join(SRC, "game", "firstBuilds.ts"),
       join(SRC, "game", "filmHead.ts"),
       join(SRC, "game", "atmosphereParams.ts"),
@@ -820,7 +822,7 @@ describe("layer boundaries", () => {
     // Lite itself is loaded only by the modules that draw: the plugins, the pose and the light name its types alone.
     expect(lite.sort()).toEqual([
       "game/lite/bladeMeshes.ts", "game/lite/capMesh.ts", "game/lite/cliffMeshes.ts", "game/lite/clutterMeshes.ts", "game/lite/dragonflyMeshes.ts", "game/lite/duffMeshes.ts", "game/lite/entityMeshes.ts", "game/lite/forestMeshes.ts", "game/lite/forestModels.ts", "game/lite/groundTextures.ts", "game/lite/impostorBake.ts",
-      "game/lite/lakeMeshes.ts", "game/lite/listMeshes.ts", "game/lite/midgeMeshes.ts", "game/lite/mistMeshes.ts", "game/lite/motes.ts", "game/lite/postChain.ts", "game/lite/propMeshes.ts", "game/lite/rain.ts", "game/lite/rainMap.ts", "game/lite/rainSplash.ts", "game/lite/renderer.ts", "game/lite/seaMeshes.ts", "game/lite/shadeMask.ts", "game/lite/shadeVeil.ts", "game/lite/shaderUniforms.ts",
+      "game/lite/lakeMeshes.ts", "game/lite/lakePanorama.ts", "game/lite/listMeshes.ts", "game/lite/midgeMeshes.ts", "game/lite/mistMeshes.ts", "game/lite/motes.ts", "game/lite/postChain.ts", "game/lite/propMeshes.ts", "game/lite/rain.ts", "game/lite/rainMap.ts", "game/lite/rainSplash.ts", "game/lite/renderer.ts", "game/lite/seaMeshes.ts", "game/lite/shadeMask.ts", "game/lite/shadeVeil.ts", "game/lite/shaderUniforms.ts",
       "game/lite/skinnedModels.ts", "game/lite/skyCapture.ts", "game/lite/skyDome.ts", "game/lite/terrainMeshes.ts", "game/lite/waterBed.ts", "game/lite/waterPlantMeshes.ts", "game/lite/wildlifeMeshes.ts", "game/lite/wornLamps.ts",
     ]);
     // And the hike is handed that renderer, which reaches the Babylon.js one's module for its types alone.

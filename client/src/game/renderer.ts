@@ -94,7 +94,7 @@ import { attachTerrainTexture, enableRoadPaint, enableTrailPaint, enableFeatureP
 import { FACE_PATCH_MATERIAL, FACE_PATCH_Z_OFFSET, FACE_PATCH_Z_UNITS, createFacePatches } from "./facePatchMeshes.js";
 import type { WeatherParams, WeatherPresetName } from "./weather.js";
 import { PAINT_PALETTES, type PaintPaletteName } from "./gradeParams.js";
-import { ambientCollapseUnder, wetSurfaceUnder } from "./weather.js";
+import { wetSurfaceUnder } from "./weather.js";
 import { detectTier, QUALITY, type QualityTier } from "./quality.js";
 import { activeTerrainVariant, elevationAt, type LakeSource } from "../sim/terrain.js";
 import {
@@ -164,10 +164,11 @@ import { lakeSunShare } from "./lakeRipples.js";
 import { SUN_PEAK } from "./sky.js";
 import { createLakeMirror, createLakeMirrorTerrain, MIRROR_MOTION_SMEAR, mirrorMotion } from "./lakeMirror.js";
 import { createLakePanorama, createSkylineTexture } from "./lakePanorama.js";
+import { mirrorGroundColour } from "./mirrorGround.js";
+import { createPanoramaArming } from "./panoramaTurn.js";
 import { createLakeChoice } from "./lakeChoice.js";
 import { lakeInView, lakeViewPoints, newLakeViewPlanes } from "./lakeView.js";
 import { SKYLINE_SHADE, skylineElevations, skylineTrees } from "./lakeSkyline.js";
-import { NEEDLE_BED } from "./terrainSurface.js";
 
 /**
  * Roughness per material name. Ideally roughness would vary across a
@@ -913,12 +914,7 @@ export function setEffectsGroup(group: number, effects: SeeThroughEffects): void
  * does.
  */
 export function lakeMirrorColourOf(sky: SkyState, weather: WeatherParams, out: Color3): Color3 {
-  const sun = sky.sunIntensity * Math.max(0, sky.sunDir.y);
-  const fill = sky.fillIntensity * ambientCollapseUnder(weather);
-  out.r = NEEDLE_BED.r * (sky.sunColour.r * sun + sky.fillColour.r * fill);
-  out.g = NEEDLE_BED.g * (sky.sunColour.g * sun + sky.fillColour.g * fill);
-  out.b = NEEDLE_BED.b * (sky.sunColour.b * sun + sky.fillColour.b * fill);
-  return out;
+  return mirrorGroundColour(sky, weather, out);
 }
 
 /** The suffix of a cliff bucket's name at its coarsest LOD (`cliffMeshName`):
@@ -2878,21 +2874,17 @@ function buildRenderer(
   let mirrorMotionM = 0;
   /** The weather's preset as the calm follows it, through a fade (`lakeCalmFrame.ts`): `setWeatherName`. */
   const calmFade = createCalmFade();
-  /** The sky state the panorama was last armed under: the lighting makes a
-   * new one at each apply that re-arms the sky's probe (`Lighting.sky`). */
-  let panoramaSky: SkyState | null = null;
-  /** A capture asked for once the panorama's target is ready to render: at
-   * first, when every registered mesh can draw, and again whenever content
-   * lands late (the forest's first fill settling, a billboard or a cliff
-   * added to the panorama's list). The readiness walk runs only while one
-   * is pending. */
-  let panoramaPending = lakePanorama !== null;
+  /** When the panorama is taken again (`panoramaTurn.ts`): under each new sky
+   * state, which the lighting makes at each apply that re-arms the sky's probe
+   * (`Lighting.sky`), and once its target is ready to render after content
+   * landed: at first, when every registered mesh can draw, and again whenever
+   * content lands late (the forest's first fill settling, a billboard or a
+   * cliff added to the panorama's list). The readiness walk runs only while
+   * a capture is owed. */
+  const panoramaArming = createPanoramaArming<SkyState>();
   if (lakePanorama !== null) {
     // Settled either way: what landed is what the capture can draw.
-    const landed = (): void => {
-      panoramaPending = true;
-    };
-    void forestMeshes?.ready.then(landed, landed);
+    void forestMeshes?.ready.then(panoramaArming.landed, panoramaArming.landed);
   }
   /** The low tier's forest colour under the skyline, and the reflections' ground colour: reused. */
   const skylineShade: [number, number, number] = [0, 0, 0];
@@ -2982,12 +2974,8 @@ function buildRenderer(
     }
     let capturing = false;
     if (lakePanorama !== null) {
-      const skyMoved = sky !== null && sky !== panoramaSky;
-      if (skyMoved) panoramaSky = sky;
-      const nowReady = panoramaPending && lakePanorama.texture.isReadyForRendering();
-      if (nowReady) panoramaPending = false;
       // A rearm mid-capture continues the turn: once a frame at most.
-      if (skyMoved || nowReady) lakePanorama.rearm();
+      if (panoramaArming.step(sky, panoramaArming.pending && lakePanorama.texture.isReadyForRendering())) lakePanorama.rearm();
       capturing = lakePanorama.update();
     }
     if (sky === null) return;
@@ -3131,7 +3119,7 @@ function buildRenderer(
             lakeMirror?.register(plane, null);
             lakePanorama?.register(plane, null);
             // The far forest has landed: the panorama is taken again.
-            if (lakePanorama !== null) panoramaPending = true;
+            if (lakePanorama !== null) panoramaArming.landed();
           }
           for (; forestLod2Reflected < forestMeshes.lod2Meshes.length; forestLod2Reflected++) {
             lakeMirror?.register(forestMeshes.lod2Meshes[forestLod2Reflected] as Mesh, null);
@@ -3144,7 +3132,7 @@ function buildRenderer(
             if (!bucket.name.endsWith(CLIFF_FAR_SUFFIX)) continue;
             lakeMirror?.register(bucket, null);
             lakePanorama?.register(bucket, null);
-            if (lakePanorama !== null) panoramaPending = true;
+            if (lakePanorama !== null) panoramaArming.landed();
           }
         }
       }

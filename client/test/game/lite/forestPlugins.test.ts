@@ -1,5 +1,7 @@
+import { readFileSync } from "node:fs";
+import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
-import type { MaterialPlugin } from "@babylonjs/lite";
+import type { MaterialPlugin, PluginUniformBlock } from "@babylonjs/lite";
 import { BLADE_SOFT } from "../../../src/game/bladeClump.js";
 import { CLIFF_GROUND_TINT } from "../../../src/game/cliffInstances.js";
 import { bladeTierBands } from "../../../src/game/bladeField.js";
@@ -15,11 +17,12 @@ import { IMPOSTOR_BAKE_FRAGMENT, IMPOSTOR_BAKE_UNIFORM } from "../../../src/game
 import type { ImpostorBakeMode } from "../../../src/game/impostorBake.js";
 import { ATMOSPHERE_PRIORITY } from "../../../src/game/lite/atmospherePlugin.js";
 import {
-  BAKE_MODE_FIELD, CONFORM_FIELDS, DEADWOOD_FIELDS, FADE_FIELDS, FADE_ROWS_FIELD, FOLIAGE_FIELDS, PLAYERS_FIELD, baseColourPlugin,
+  BAKE_MODE_FIELD, CONFORM_FIELDS, DEADWOOD_FIELDS, FADE_FIELDS, FADE_ROWS_FIELD, FOLIAGE_FIELDS, PASS_EYE, PLAYERS_FIELD, baseColourPlugin,
   directOcclusionPlugin, impostorBakePlugin, oneSidedLightPlugin, surfaceSplitPlugin, surfaceWetPlugin, vegetationInstanceLayout, vegetationPlugin,
   wgslFloat, writeVegetationInstances,
   type Vegetation,
 } from "../../../src/game/lite/forestPlugins.js";
+import { FRAME_BLOCK } from "../../../src/game/lite/frameBlock.js";
 import { WET_FIELDS } from "../../../src/game/lite/wetWgsl.js";
 import { MOSS_ROUGHNESS, MOSS_TILE } from "../../../src/game/mossParams.js";
 import { WET_CAP, WET_SWASH_VECS, emptyWetUniforms, wetUniforms } from "../../../src/game/wetSurface.js";
@@ -171,6 +174,31 @@ describe("the forest's plugin on Babylon Lite: its uniforms", () => {
       const unread = declared.filter((name) => !read.includes(name));
       expect(unread.filter((name) => !/^(foliageCanopySun|foliageBladeEdges)$/.test(name)), what).toEqual([]);
     }
+  });
+});
+
+describe("the forest's plugin on Babylon Lite: the eye it measures from", () => {
+  it("is the pass's own where the frame's block is given: the scene's uniforms hold it for each pass, as Babylon.js binds the camera a pass is drawn through", () => {
+    const shared = { name: FRAME_BLOCK } as unknown as PluginUniformBlock;
+    const plugin = vegetationPlugin({ ...crownNear(), shared });
+    const vertex = code(plugin, "vertex");
+    expect(PASS_EYE).toBe("scene.vEyePosition");
+    // The foliage's distance and its lean away, and the fade's distance.
+    expect(vertex).toContain("let fDist=distance(o,scene.vEyePosition.xz);");
+    expect(vertex).toContain("let dfD=distance(o,scene.vEyePosition.xz);");
+    expect(vertex).not.toMatch(/\b(windEye|fadeEye)\b/);
+    // The rest of the wind is the frame's.
+    expect(vertex).toContain(`${FRAME_BLOCK}.windTime`);
+    // The shells on Babylon.js bind the position of the scene's active camera, which a render target makes its own.
+    const src = (name: string): string => readFileSync(fileURLToPath(new URL(`../../../src/game/${name}`, import.meta.url)), "utf8");
+    expect(src("distanceFadePlugin.ts")).toContain("fadeUniforms(scene.activeCamera?.globalPosition, this.widen, bound)");
+    expect(src("foliagePlugin.ts")).toContain("foliageUniforms(this.look, scene.activeCamera?.globalPosition, bound)");
+  });
+
+  it("is the material's own uniform where no block is given", () => {
+    const vertex = code(vegetationPlugin(crownNear()), "vertex");
+    expect(vertex).toContain("let fDist=distance(o,material.windEye.xz);");
+    expect(vertex).toContain("let dfD=distance(o,material.fadeEye.xz);");
   });
 });
 

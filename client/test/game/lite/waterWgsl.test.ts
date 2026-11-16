@@ -2,8 +2,10 @@ import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
 import { SKYLINE_TEXELS } from "../../../src/game/lakeSkyline.js";
+import { PANORAMA_EYE_UP, PANORAMA_HEIGHT_M } from "../../../src/game/panoramaTurn.js";
 import {
-  LAKE_COMPOSE_WGSL, LAKE_LIGHTS_WGSL, LAKE_RIPPLES_WGSL, LAKE_SHORE_WGSL, WATER_BUMP_WGSL, WATER_DEFS_WGSL, WATER_SPLIT_WGSL, WATER_VERTEX_WGSL,
+  LAKE_COMPOSE_WGSL, LAKE_LIGHTS_WGSL, LAKE_PANORAMA_WGSL, LAKE_RIPPLES_WGSL, LAKE_SHORE_WGSL, WATER_BUMP_WGSL, WATER_DEFS_WGSL, WATER_SPLIT_WGSL, WATER_VERTEX_WGSL,
+  lakeComposeWgsl,
 } from "../../../src/game/lite/waterWgsl.js";
 import { WATER_F0 } from "../../../src/game/waterShading.js";
 import { inOrder, tight } from "./wgslText.js";
@@ -206,6 +208,39 @@ describe("the lakes' water in WGSL, against the game's GLSL", () => {
       "letwSpecularScaled=finalSpecularScaled*(1.0-wSkin);",
       "color=finalIrradiance+wRadianceScaled+wSpecularScaled+directDiffuse+emissive;",
     ])).toBe(true);
+  });
+
+  it("reads the shore's panorama where the reflected ray meets the lake's cylinder under the skyline, by the GLSL's statements", () => {
+    const glsl = tight(shore);
+    const wgsl = tight(LAKE_PANORAMA_WGSL);
+    expect(glsl).toContain(`constfloatPANORAMA_HEIGHT_M=${PANORAMA_HEIGHT_M.toFixed(1)};constfloatPANORAMA_EYE_UP=${PANORAMA_EYE_UP.toFixed(1)};`);
+    expect(wgsl).toContain(`constPANORAMA_HEIGHT_M:f32=${PANORAMA_HEIGHT_M.toFixed(1)};constPANORAMA_EYE_UP:f32=${PANORAMA_EYE_UP.toFixed(1)};`);
+    // The cylinder's hit, statement for statement.
+    const returned = (statement: string): string => (statement.startsWith("return ") ? `return${asWgsl(statement.slice(7))}` : asWgsl(statement));
+    for (const statement of body(shore, "waterCylinderHit")) expect(wgsl, statement).toContain(returned(statement));
+    // The read: the GLSL's, but for the picture's rows, which a pass lays top first here, and the skyline's whole texel.
+    expect(glsl).toContain("vec4shore=texture2D(waterPanorama,vec2(hit.x,clamp(hit.y/PANORAMA_HEIGHT_M,0.0,1.0)));");
+    expect(wgsl).toContain("letshore=textureSampleLevel(waterPanorama,waterPanoramaSampler,vec2<f32>(hit.x,1.0-clamp(hit.y/PANORAMA_HEIGHT_M,0.0,1.0)),0.0);");
+    expect(glsl).toContain("floatskyline=texture2D(waterSkyline,vec2(hit.x,0.5)).r;");
+    expect(wgsl).toContain("letskyline=waterSkylineAt(hit.x);");
+    for (const statement of ["float below = step(hit.y - PANORAMA_EYE_UP, waterLakeRadius * tan(skyline));", "return mix(fallback, shore.rgb, hit.z * below * shore.a);"]) {
+      expect(glsl).toContain(tight(statement));
+      expect(wgsl).toContain(returned(statement));
+    }
+  });
+
+  it("takes the panorama's shore over the skyline's where the lake is the one it is of, and carries no read of it without one", () => {
+    expect(tight(compose)).toContain("wShore=mix(wShore,waterPanoramaRadiance(vPositionW,wShoreRay,wShore),step(0.5,waterPanoramaOn));");
+    const withOne = tight(lakeComposeWgsl(true));
+    expect(inOrder(withOne, [
+      "varwShore=mix(wProbeRadiance,waterSkylineRadiance(wShoreRay,wProbeRadiance),step(0.5,material.waterSkylineOn));",
+      "if(material.waterPanoramaOn>0.5){wShore=waterPanoramaRadiance(input.worldPos,wShoreRay,wShore);}",
+      "letwMirrorW=material.waterMirrorWeight*(1.0-wPaw)*material.waterCalmShare;",
+    ])).toBe(true);
+    // But for that read the two are one text.
+    expect(withOne.replace("varwShore=", "letwShore=").replace("if(material.waterPanoramaOn>0.5){wShore=waterPanoramaRadiance(input.worldPos,wShoreRay,wShore);}", "")).toBe(tight(LAKE_COMPOSE_WGSL));
+    expect(lakeComposeWgsl(false)).toBe(LAKE_COMPOSE_WGSL);
+    expect(LAKE_COMPOSE_WGSL).not.toContain("waterPanorama");
   });
 
   it("hands the fragment the bed's depth under the vertex and the vertex's view depth", () => {
