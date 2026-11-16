@@ -46,17 +46,20 @@ export const DRAW_ORDER = { rings: 80, patches: 90, forest: 100, clutter: 110, b
  * are in that order (`rainField.ts`).
  *
  * Then the water the tiers blend over what lies under it. The game leaves
- * a lake's surface at Babylon.js's default place among the blended meshes,
- * which is past the rain's, so the rain is blended first and the water
- * over it: a streak falling in front of deep water is covered by it. The
- * surface's vertices are laid in the world's own coordinates so that it
- * stands at the origin with the rest, and its place says the same from
- * every view.
+ * a lake's surface and the sea's rings at Babylon.js's default place among
+ * the blended meshes, which is past the rain's, so the rain is blended
+ * first and the water over it: a streak falling in front of deep water is
+ * covered by it. The sea first, its rings outermost first within its one
+ * draw, then the lakes, which stand over it: no ray meets both, so either
+ * order draws the same. Each surface's vertices are laid in the world's
+ * own coordinates, or placed there by its vertex stage, so that it stands
+ * at the origin with the rest, and its place says the same from every
+ * view.
  *
  * Last, a lake's insects, which the game gives the highest index of all:
  * the midges' one draw, then the dragonflies', a kind a draw.
  */
-export const SEE_THROUGH_ORDER = { eyes: 190, motes: 200, mist: 210, splashes: 220, rain: 230, water: 240, midges: 250, dragonflies: 252 } as const; // The Hollows' eyes first: the air's veils are laid over them (`entityMeshes.ts`).
+export const SEE_THROUGH_ORDER = { eyes: 190, motes: 200, mist: 210, splashes: 220, rain: 230, sea: 238, water: 240, midges: 250, dragonflies: 252 } as const; // The Hollows' eyes first: the air's veils are laid over them (`entityMeshes.ts`).
 
 /** The places a shell has past its first. */
 export const DRAW_PLACES = 1024;

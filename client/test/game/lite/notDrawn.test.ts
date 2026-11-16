@@ -1,7 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { NOT_DRAWN, notDrawnMembers } from "../../../src/game/lite/notDrawn.js";
 import { STARE_LENS_REST } from "../../../src/game/stareLens.js";
-import { SILENT_SURF_SOUND } from "../../../src/game/surfSound.js";
 
 describe("what the renderer on Babylon Lite does not draw yet", () => {
   it("answers as nothing exactly the members its list names, each named once", () => {
@@ -18,10 +17,8 @@ describe("what the renderer on Babylon Lite does not draw yet", () => {
     }
   });
 
-  it("reads out nothing: no sea to hear, no scene, no stare", () => {
+  it("reads out nothing: no scene, no stare", () => {
     const { members } = notDrawnMembers();
-    expect(members.hasSea).toBe(false);
-    expect(members.surfSound()).toBe(SILENT_SURF_SOUND);
     expect(members.endScene()).toBeNull();
     expect(members.stare()).toBe(STARE_LENS_REST);
     expect(members.gpuTime).toBeNull();
@@ -76,8 +73,20 @@ describe("what the renderer on Babylon Lite does not draw yet", () => {
     expect(lakes[0]?.what).toMatch(/panorama/);
     expect(lakes[0]?.what).toMatch(/mirror/);
     expect(lakes[0]?.what).not.toMatch(/calm/);
-    // The sea is all absent still.
-    expect(NOT_DRAWN.find((part) => /\bsea\b/.test(part.what))?.members).toEqual(["hasSea", "surfSound"]);
+  });
+
+  it("leaves the sea's swell, its white water, its swash and its surf to the renderer: what is left of the sea is its wind waves as a field, the curl and the spray", () => {
+    const { members } = notDrawnMembers();
+    for (const name of ["hasSea", "surfSound"]) expect(name in members, name).toBe(false);
+    const sea = NOT_DRAWN.filter((part) => /\bsea\b/.test(part.what));
+    expect(sea.map((part) => part.members)).toEqual([[], []]);
+    expect(sea[0]?.what).toMatch(/loop/);
+    expect(sea[0]?.what).toMatch(/FFT/);
+    expect(sea[0]?.what).toMatch(/curl/);
+    expect(sea[0]?.what).toMatch(/spray/);
+    expect(sea[0]?.what).not.toMatch(/swash|surf's sound|swell/);
+    // The tier that reads through the surface is the lakes' and the sea's alike.
+    expect(sea[1]?.what).toMatch(/through the surface/);
   });
 
   it("keeps the first ending it is told and lets a death be undone, and keeps the last scene", () => {

@@ -13,6 +13,7 @@ import {
 import { TERRAIN_FIELDS, emptyTerrainMaterialUniforms, terrainPlugin, terrainWetPlugin } from "../../../src/game/lite/terrainPlugins.js";
 import { WET_FIELDS } from "../../../src/game/lite/wetWgsl.js";
 import { emptyTerrainUniforms, terrainUniforms } from "../../../src/game/terrainUniforms.js";
+import { emptySeaFrameUniforms } from "../../../src/game/seaUniforms.js";
 import { emptyWaterFrameUniforms } from "../../../src/game/waterSurface.js";
 import { WET_SWASH_VECS, emptyWetUniforms, setWetWeather, wetUniforms } from "../../../src/game/wetSurface.js";
 import { windRecordUnder } from "../../../src/game/windParams.js";
@@ -73,6 +74,12 @@ function frame(): FrameValues {
       waterLakeTime: Float32Array.of(41.5), waterWind: Float32Array.of(0.6, 0.8), waterWindTime: Float32Array.of(3, 4), waterRain: Float32Array.of(0.8),
       waterSun: Float32Array.of(0.25), waterBumpOffset: Float32Array.of(-0.5, 0.75),
     },
+    sea: {
+      ...emptySeaFrameUniforms(),
+      oceanPhase0: Float32Array.of(0.1, 0.2, 0.3, 0.4), oceanCoast: Float32Array.of(-6240, 12, 8, 0), oceanWindDir: Float32Array.of(0.6, 0.8, 7.5, 0.25),
+      seaTime: Float32Array.of(123.25), seaWindTime: Float32Array.of(30, -40), seaBumpOffset: Float32Array.of(0.25, 0.5),
+      seaRings: Float32Array.from({ length: 28 }, (_, i) => 1000 + i * 0.5),
+    },
   };
 }
 
@@ -118,6 +125,9 @@ describe("the frame's uniform block on Babylon Lite", () => {
     // What every lake reads alike, as the water's own module names it.
     expect(Object.keys(values.water)).toEqual(Object.keys(emptyWaterFrameUniforms()));
     for (const [name, value] of Object.entries(values.water)) expect(read(name)).toEqual(f32(value));
+    // What moves the sea, as the sea's own module names it, its rings' records float for float.
+    expect(Object.keys(values.sea)).toEqual(Object.keys(emptySeaFrameUniforms()));
+    for (const [name, value] of Object.entries(values.sea)) expect(read(name)).toEqual(f32(value));
     // Every float of every field was written but the players' fourth, which nothing reads.
     const unwritten = [...made.offsets].flatMap(([name, at]) => [...made.data.subarray(at / 4, at / 4 + floatsOf(name))].map((v, i) => (v === -99 ? `${name}[${i}]` : null))).filter((v) => v !== null);
     expect(unwritten).toEqual(Array.from({ length: FOLIAGE_PLAYERS }, (_, i) => `windPlayers[${i * 4 + 3}]`));
