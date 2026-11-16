@@ -2,7 +2,8 @@ import { describe, expect, it } from "vitest";
 import type { Renderer } from "../../../src/game/renderer.js";
 import { cameraAxes, restAxes, restPlanes, viewPlanes, type CameraPose } from "../../../src/game/lite/cameraPose.js";
 import {
-  SCENERY_REACH_M, SIGN_REACH_M, boxInSight, deferredScenery, inSight, liteSceneryOf, sightBox, type LiteScenery, type LiteTrailhead, type SceneryView,
+  FILM_CAR_WARM_FRAMES, SCENERY_REACH_M, SIGN_REACH_M, boxInSight, deferredScenery, inSight, liteSceneryOf, sightBox, type LiteCar, type LiteScenery,
+  type LiteTrailhead, type SceneryView,
 } from "../../../src/game/lite/sceneryMeshes.js";
 import { factorByte, farthestFirst, listPanes, partsByMaterial, placeMatrix, placed, type SceneryPart } from "../../../src/game/lite/sceneryModels.js";
 import type { ModelPart } from "../../../src/game/lite/forestModels.js";
@@ -68,6 +69,9 @@ describe("what of the scenery a view holds", () => {
 
 describe("the scenery asked for before its renderer stands", () => {
   type Made = { kind: string; disposed: boolean; film: AbortSignal[] };
+  /** The car a trailhead of the fixture hands out once its film's car is asked for, and whether that car is in its first frames. */
+  const CAR: LiteCar = { stage: () => undefined, leave: () => undefined, tailLamps: () => undefined };
+  let warm = false;
   function fakeScenery(log: Made[]): LiteScenery {
     const piece = (kind: string): Made & { dispose(): void } => {
       const made = { kind, disposed: false, film: [] as AbortSignal[], dispose() { made.disposed = true; } };
@@ -79,7 +83,10 @@ describe("the scenery asked for before its renderer stands", () => {
       body: () => piece("body"),
       trailhead: () => {
         const made = piece("trailhead");
-        const trailhead: LiteTrailhead = { filmCar: (signal) => void made.film.push(signal), filmCarIn: () => made.film.length > 0, dispose: () => made.dispose() };
+        const trailhead: LiteTrailhead = {
+          filmCar: (signal) => void made.film.push(signal), filmCarIn: () => made.film.length > 0, car: () => (made.film.length > 0 ? CAR : null), warm: () => warm,
+          dispose: () => made.dispose(),
+        };
         return trailhead;
       },
       update: () => undefined,
@@ -101,12 +108,22 @@ describe("the scenery asked for before its renderer stands", () => {
     trailhead.filmCar(film.signal);
     expect(log).toEqual([]);
     expect(trailhead.filmCarIn()).toBe(false);
+    // No car to drive and no first frames before the trailhead stands.
+    expect(trailhead.car()).toBeNull();
+    expect(trailhead.warm()).toBe(false);
     stand();
     await ready;
     await Promise.resolve();
     expect(log.map((made) => made.kind)).toEqual(["signs", "trailhead"]);
     expect(log[1]?.film).toEqual([film.signal]);
     expect(trailhead.filmCarIn()).toBe(true);
+    // The car the end scene drives is the made trailhead's own, and its first frames are told as that trailhead tells them.
+    expect(trailhead.car()).toBe(CAR);
+    warm = true;
+    expect(trailhead.warm()).toBe(true);
+    warm = false;
+    // Lite makes a draw's pipeline in the frame that first draws it: a first frame to make them, a second drawn with them.
+    expect(FILM_CAR_WARM_FRAMES).toBe(2);
     trailhead.dispose();
     expect(log[1]?.disposed).toBe(true);
     expect(log[0]?.disposed).toBe(false);
@@ -147,7 +164,10 @@ describe("a model placed once on Babylon Lite", () => {
     positions: new Float32Array([at, 0, 0, at + 1, 0, 0, at, 1, 0]), normals: new Float32Array([0, 0, 1, 0, 0, 1, 0, 0, 1]), uvs: new Float32Array([0, 0, 1, 0, 0, 1]),
     tangents: tangents ? new Float32Array([1, 0, 0, 1, 1, 0, 0, 1, 1, 0, 0, 1]) : null, indices: new Uint32Array([0, 1, 2]),
     min: { x: at, y: 0, z: 0 }, max: { x: at + 1, y: 1, z: 0 }, colour: undefined, normal: undefined, factor: [1, 1, 1], material: worn,
+    nodes: ["model", "LOD0", `node${at}`], local: STOOD,
   });
+  /** The frame every primitive of the fixture was stood by. */
+  const STOOD = new Float32Array([1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1]);
 
   it("gathers a file's primitives a material, in the order the materials first come: one draw a material", () => {
     const glass = material("glass", true);
@@ -156,7 +176,11 @@ describe("a model placed once on Babylon Lite", () => {
     expect(parts.map((p) => [p.name, p.blended, p.positions.length / 3])).toEqual([["glass", true, 6], ["paint", false, 6]]);
     expect([...(parts[0] as SceneryPart).indices]).toEqual([0, 1, 2, 3, 4, 5]);
     // Each primitive is a pane of its part: its run of the triangles, and the middle of its box.
-    expect((parts[0] as SceneryPart).panes).toEqual([{ first: 0, count: 3, x: 0.5, y: 0.5, z: 0 }, { first: 3, count: 3, x: 20.5, y: 0.5, z: 0 }]);
+    // And its run of the vertices, the nodes it hangs under and its own frame, for a part that is turned in place.
+    expect((parts[0] as SceneryPart).panes).toEqual([
+      { first: 0, count: 3, x: 0.5, y: 0.5, z: 0, vertexFirst: 0, vertexCount: 3, nodes: ["model", "LOD0", "node0"], local: STOOD },
+      { first: 3, count: 3, x: 20.5, y: 0.5, z: 0, vertexFirst: 3, vertexCount: 3, nodes: ["model", "LOD0", "node20"], local: STOOD },
+    ]);
     expect((parts[0] as SceneryPart).positions[9]).toBe(20);
     // A material one of whose primitives has no tangents is drawn with none.
     expect((parts[1] as SceneryPart).tangents).toBeNull();

@@ -65,8 +65,13 @@ export type SceneryPart = {
   panes: Pane[];
 };
 
-/** One primitive of a part: where its triangles lie in the part's list, and the middle of its box. */
-export type Pane = { first: number; count: number; x: number; y: number; z: number };
+/**
+ * One primitive of a part: where its triangles lie in the part's list, and
+ * the middle of its box; where its vertices lie in the part's, the nodes it
+ * hangs under in the file (the model's root first) and its own frame in the
+ * model's, for a part of the model that is turned in place.
+ */
+export type Pane = { first: number; count: number; x: number; y: number; z: number; vertexFirst: number; vertexCount: number; nodes: readonly string[]; local: Float32Array };
 
 /** A model as it is placed: a part a material, in the file's order of materials. */
 export type SceneryModel = {
@@ -122,7 +127,10 @@ export function partsByMaterial(parts: readonly ModelPart[]): SceneryPart[] {
         for (let i = v * 4 + 3; i < (v + part.positions.length / 3) * 4; i += 4) merged.tangents[i] = -(merged.tangents[i] as number);
       }
       for (let i = 0; i < part.indices.length; i++) merged.indices[t + i] = (part.indices[i] as number) + v;
-      merged.panes.push({ first: t, count: part.indices.length, x: (part.min.x + part.max.x) / 2, y: (part.min.y + part.max.y) / 2, z: (part.min.z + part.max.z) / 2 });
+      merged.panes.push({
+        first: t, count: part.indices.length, x: (part.min.x + part.max.x) / 2, y: (part.min.y + part.max.y) / 2, z: (part.min.z + part.max.z) / 2,
+        vertexFirst: v, vertexCount: part.positions.length / 3, nodes: part.nodes, local: part.local,
+      });
       v += part.positions.length / 3;
       t += part.indices.length;
     }
@@ -276,10 +284,10 @@ export function farthestFirst(centres: ArrayLike<number>, eye: { x: number; y: n
 }
 
 /** A part's triangles listed pane by pane in `order`, from `indices` into `out`, which is as long. */
-export function listPanes(indices: Uint32Array, panes: readonly Pane[], order: readonly number[], out: Uint32Array): Uint32Array {
+export function listPanes(indices: Uint32Array, panes: readonly Pick<Pane, "first" | "count">[], order: readonly number[], out: Uint32Array): Uint32Array {
   let at = 0;
   for (const n of order) {
-    const pane = panes[n] as Pane;
+    const pane = panes[n] as Pick<Pane, "first" | "count">;
     out.set(indices.subarray(pane.first, pane.first + pane.count), at);
     at += pane.count;
   }

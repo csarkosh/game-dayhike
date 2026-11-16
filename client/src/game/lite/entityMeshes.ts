@@ -10,13 +10,22 @@
  * for each of the model's two primitives; one whose pace changes, eight
  * floats. A ranger is
  * fetched when a hiker who wears it is first to be drawn, so a hike alone
- * fetches none.
+ * fetches one: the local hiker's own.
  *
  * **A body is not drawn while its model is on the way.** The capsule is for
  * the model that never came: one draw for every such hiker, in the game's
  * blue. On Babylon.js a capsule also stands in while a model loads, which
  * there is the start of the hike; here it would be a blue shape for the
  * moment after each hiker joins.
+ *
+ * **The local hiker's own body is an instance like any other's**, of the
+ * ranger they wear, drawn only while a scene's camera stands elsewhere
+ * (`EntityPoses.showLocal`); it wears no lamp of its own, since the lens's
+ * is moved to its eyes. Its ranger is fetched with the hike and drawn for
+ * its first frames under the ground it stands on (`LOCAL_WARM_FRAMES`), so
+ * the pipelines its two draws need are made as the hike starts and not in
+ * the first frame of the summit's scene, where the game on Babylon.js draws
+ * it out of sight for the same reason.
  *
  * **Of a Hollow the frame shows its eyes, glowing at their level.** The
  * figure itself is a shadow in the silhouette mask, which the grade lays
@@ -89,6 +98,15 @@ import { loadSkinnedModel, type SkinClock, type SkinnedModel, type SkinnedPart }
 /** The bodies' places among the draws, from the shell's first: a ranger's primitives, a place each by their order in the model, then the capsule, then the Hollow's body, which the mask draws and the frame's own pass draws as nothing, then the Hollows' eyes. */
 export const BODY_PLACES = { rangers: 0, capsule: 4, figure: 5, eyes: 6 } as const;
 
+/**
+ * The local hiker's own body in its first frames: the metres under their
+ * feet it is drawn at, behind the ground (the game's `WARM_DEPTH_M`), and
+ * the frames it is drawn for once its ranger has landed. Lite makes a draw's
+ * pipeline in the frame that first draws it, so the first frame makes them.
+ */
+export const LOCAL_WARM_DEPTH_M = 40;
+export const LOCAL_WARM_FRAMES = 2;
+
 /** The most hikers of one ranger drawn at once: every player may wear the same one. */
 export const RANGER_CAPACITY = 8;
 /** The most Hollows and shades whose eyes are drawn at once. */
@@ -145,6 +163,8 @@ export type EntityMeshes = {
   waiting(): number;
   /** What is drawn now: the bodies as models and as capsules, the pairs of eyes, the Hollows' figures (in the mask, or standing for their eyes), and the draws they take in the frame's own pass. */
   drawn(): { bodies: number; capsules: number; eyes: number; figures: number; draws: number };
+  /** Whether the local hiker's own body is still in its first frames, drawn under the ground (`LOCAL_WARM_FRAMES`). */
+  warming(): boolean;
   /** Resolved once the Hollow's model has landed, or could not. */
   readonly ready: Promise<void>;
   dispose(): void;
@@ -204,6 +224,9 @@ export function createEntityMeshes(engine: EngineContext, scene: SceneContext, o
   const eyeLevels = new Float32Array(HOLLOW_CAPACITY);
   let eyesSent = 0;
   let relevelled = false;
+
+  /** The frames the local hiker's own body is still to be drawn under the ground, from its ranger's landing. */
+  let warmLeft = LOCAL_WARM_FRAMES;
 
   // The capsule, for a hiker whose ranger never came: made with its first.
   let capsule: { mesh: Mesh; matrices: Float32Array; count: number } | null = null;
@@ -394,17 +417,33 @@ export function createEntityMeshes(engine: EngineContext, scene: SceneContext, o
       counts.bodies = 0;
       counts.eyes = 0;
       for (const pose of frame.players) {
-        if (pose.local) continue;
-        // The lamp stands at the eyes, whichever body is drawn; a hiker in the car wears none lit.
-        const lamp = lampAt(lampCount++);
-        lamp.on = pose.hidden === null && pose.lampOn;
-        if (pose.hidden !== null) continue;
-        lamp.x = pose.eyeX;
-        lamp.y = pose.eyeY;
-        lamp.z = pose.eyeZ;
-        lamp.dx = pose.aimX;
-        lamp.dy = pose.aimY;
-        lamp.dz = pose.aimZ;
+        if (pose.local) {
+          if (pose.hidden === "lens") {
+            // Its first frames: its ranger fetched with the hike and drawn under the ground, so a scene's first shot asks for nothing.
+            if (warmLeft <= 0) continue;
+            const worn = ask(pose.model);
+            if (worn === null || worn.state === "failed") warmLeft = 0;
+            if (worn === null || worn.state !== "landed") continue;
+            const clock = clockOf(pose.id);
+            stepClip(clock, "idle", 1, dt);
+            if (place(worn, pose.x, pose.y - LOCAL_WARM_DEPTH_M, pose.z, pose.yaw, 1, clock, refold) >= 0) counts.bodies++;
+            warmLeft--;
+            continue;
+          }
+          // In a scene's shot the body stands as any other does; the lens's lamp is moved to its eyes by the renderer.
+          if (pose.hidden !== null) continue;
+        } else {
+          // The lamp stands at the eyes, whichever body is drawn; a hiker in the car wears none lit.
+          const lamp = lampAt(lampCount++);
+          lamp.on = pose.hidden === null && pose.lampOn;
+          if (pose.hidden !== null) continue;
+          lamp.x = pose.eyeX;
+          lamp.y = pose.eyeY;
+          lamp.z = pose.eyeZ;
+          lamp.dx = pose.aimX;
+          lamp.dy = pose.aimY;
+          lamp.dz = pose.aimZ;
+        }
         if (!pose.modelled) {
           if (capsuleCount < RANGER_CAPACITY) writeBodyMatrix(capsules, capsuleCount++, pose.x, pose.y, pose.z, pose.yaw, 1);
           continue;
@@ -480,6 +519,7 @@ export function createEntityMeshes(engine: EngineContext, scene: SceneContext, o
     },
     lamps: () => lamps,
     waiting: () => waiting,
+    warming: () => warmLeft > 0,
     drawn: () => ({ ...counts }),
     ready,
     dispose() {

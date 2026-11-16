@@ -6,8 +6,10 @@ import { ATMOSPHERE_PRIORITY } from "../../../src/game/lite/atmospherePlugin.js"
 import { stageOwn, stageReads } from "../../../src/game/lite/frameBlock.js";
 import { MIST_WGSL } from "../../../src/game/lite/mistMeshes.js";
 import {
-  ATLAS_ROWS, PATCH_FRAME_READS, PATCH_WGSL, faceGeometry, labelAtlas, labelGeometry, paintAlphaPlugin, patchGeometry,
+  ATLAS_ROWS, PATCH_FRAME_READS, PATCH_WGSL, TAIL_FRAME_READS, TAIL_LAMP_INDICES, TAIL_WGSL, faceGeometry, labelAtlas, labelGeometry, paintAlphaPlugin, patchGeometry,
+  tailLampCorners,
 } from "../../../src/game/lite/sceneryPaint.js";
+import { TAIL_LAMP_APART, TAIL_LAMP_BACK, TAIL_LAMP_H, TAIL_LAMP_UP, TAIL_LAMP_W } from "../../../src/game/endScene.js";
 import { LABEL_TEXTURE, signPlaces } from "../../../src/game/signParts.js";
 import { inOrder, tight } from "./wgslText.js";
 
@@ -131,5 +133,48 @@ describe("the patch under the car on Babylon Lite", () => {
       expect((turned.positions[i + 2] as number) - 20).toBeCloseTo(-((straight.positions[i] as number) - 10), 4);
       expect(turned.positions[i + 1]).toBeCloseTo(3 + CAR_SHADOW_LIFT, 5);
     }
+  });
+});
+
+describe("the film's car's tail lamps on Babylon Lite", () => {
+  it("are the patch's stage with the lamp's colour given off, no texture, no fog and nothing blended", () => {
+    // The game sets the Standard material the same way for both, but for the lamps' colour and their fog turned off.
+    const patch = PATCH_WGSL.fragment
+      .replace(",@location(0)uv:vec2<f32>,@location(1)fogDistance:vec3<f32>}", "}")
+      .replace(/const PATCH_E[^]*?\n}\n/, "")
+      .replace("var alpha=u.patchDark;", "let alpha=1.0;")
+      .replace("  let opacityMap=textureSample(patchMap,patchMapSampler,input.uv);\n  alpha*=opacityMap.a;\n", "")
+      .replace("let emissiveColor=vec3<f32>(0.0);", "let emissiveColor=u.tailColour;")
+      .replace("  let fog=patchFogFactor(input.fogDistance,u.patchFogDensity);\n  color=vec4<f32>(mix(u.patchFogColour,color.rgb,fog),color.a);\n", "")
+      .replace(/PatchOut/g, "TailOut").replace(/\bpatch(\w)/g, "tail$1");
+    expect(tight(TAIL_WGSL.fragment).replace(/\/\*\*?[^]*?\*\//g, "")).toBe(tight(patch).replace(/\/\*\*?[^]*?\*\//g, ""));
+    // Its corners are in the world's coordinates, and its colour is taken to linear and down the tier's colour path as the patch's is.
+    expect(tight(TAIL_WGSL.vertex)).toContain("out.position=scene.viewProjection*worldPos;");
+    expect(TAIL_WGSL.vertex).not.toMatch(/input\.world|shaderSystem|shaderUniforms/);
+    expect(inOrder(tight(TAIL_WGSL.fragment), ["letemissiveColor=u.tailColour;", "pow(color.rgb,vec3<f32>(2.2))", "displayColour(color.rgb,u.tailExposure,u.tailContrast)"])).toBe(true);
+    expect(TAIL_WGSL.fragment).not.toMatch(/fog/i);
+  });
+
+  it("read the display curve from the frame's block, their colour alone their own", () => {
+    const made = tight(stageReads(TAIL_WGSL.fragment, TAIL_FRAME_READS));
+    expect([...made.matchAll(/\bu\.(\w+)/g)].map((m) => m[1])).toEqual(["tailColour"]);
+    expect(Object.keys(stageOwn({ tailColour: [0, 0, 0], tailExposure: [1], tailContrast: [1] }, TAIL_FRAME_READS))).toEqual(["tailColour"]);
+  });
+
+  it("stand at the car's rear corners, turned with it, and in its middle through their first frames", () => {
+    const at = tailLampCorners(10, 3, 20, 0, new Float32Array(24));
+    // Nose to +z: the lamps are behind the middle, either side of it, a quad each.
+    const xs = [...at].filter((_, i) => i % 3 === 0), ys = [...at].filter((_, i) => i % 3 === 1), zs = [...at].filter((_, i) => i % 3 === 2);
+    for (const z of zs) expect(z).toBeCloseTo(20 - TAIL_LAMP_BACK, 5);
+    expect(Math.min(...xs)).toBeCloseTo(10 - TAIL_LAMP_APART / 2 - TAIL_LAMP_W / 2, 5);
+    expect(Math.max(...xs)).toBeCloseTo(10 + TAIL_LAMP_APART / 2 + TAIL_LAMP_W / 2, 5);
+    expect([Math.min(...ys), Math.max(...ys)]).toEqual([expect.closeTo(3 + TAIL_LAMP_UP - TAIL_LAMP_H / 2, 5), expect.closeTo(3 + TAIL_LAMP_UP + TAIL_LAMP_H / 2, 5)]);
+    // Turned a quarter (nose to +x), its rear is toward -x.
+    const turned = tailLampCorners(10, 3, 20, Math.PI / 2, new Float32Array(24));
+    for (let i = 0; i < 24; i += 3) expect(turned[i]).toBeCloseTo(10 - TAIL_LAMP_BACK, 5);
+    // Hidden in the car's middle until they are lit.
+    const inside = tailLampCorners(10, 3, 20, 0, new Float32Array(24), 0);
+    for (let i = 2; i < 24; i += 3) expect(inside[i]).toBeCloseTo(20, 5);
+    expect([...TAIL_LAMP_INDICES]).toEqual([0, 1, 2, 0, 2, 3, 4, 5, 6, 4, 6, 7]);
   });
 });

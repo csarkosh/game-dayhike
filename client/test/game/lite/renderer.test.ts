@@ -2,7 +2,10 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import "../../../src/sim/passes/index.js";
 import { PLAYER_EYE_OFFSET } from "../../../src/sim/constants.js";
 import { CAP_SCENE_S, LENS_24, LENS_32, SHOTS, SUMMIT_SCENE_S, capStand, summitShot } from "../../../src/game/cutscene.js";
+import { DIED_EYE_HEIGHT, DIED_FALL_S } from "../../../src/game/ending.js";
 import { GAME_FOV } from "../../../src/game/gameLens.js";
+import type { CarPose } from "../../../src/game/scene/timeline.js";
+import { PLAYER_HALF } from "../../../src/sim/constants.js";
 import { DEPTH_AHEAD_MAX_DEGREES, depthAheadPlugin } from "../../../src/game/lite/renderer.js";
 import { createHikeRenderer, sceneRendererOf, type Renderer } from "../../../src/game/renderer.js";
 import { WEATHER_PRESETS } from "../../../src/game/weather.js";
@@ -203,6 +206,74 @@ describe("the hike's renderer on Babylon Lite, before its engine stands", () => 
     now += 2000;
     r.sync(state, 3, 1);
     expect(r.cameraPosition()).toEqual({ x: 1, y: 2, z: 3 });
+  });
+
+  it("plays the death on its camera, down to the ground under the player, and gives the eye back when it is undone", () => {
+    let now = 0;
+    const r = make(() => now);
+    r.setBobScale(0);
+    const player = {
+      id: 3, pos: { x: 5, y: 40, z: 9 }, vel: { x: 0, y: 0, z: 0 }, yaw: 0.3, pitch: 0.1, grounded: true, lamp: { on: true, charge: 1 },
+    } as unknown as Parameters<typeof windTestState>[0];
+    const state = windTestState(player);
+    const eye = { x: 5, y: 40 + PLAYER_EYE_OFFSET, z: 9 };
+    expect(r.endScene()).toBeNull();
+    r.setEnding("died");
+    r.sync(state, 3, 1);
+    expect(r.cameraPosition()).toEqual(eye);
+    now = DIED_FALL_S * 1000;
+    r.sync(state, 3, 1);
+    const down = r.cameraPosition();
+    expect([down.x, down.z]).toEqual([5, 9]);
+    expect(down.y).toBeCloseTo(40 - PLAYER_HALF.y + DIED_EYE_HEIGHT, 9);
+    // Near straight up.
+    expect(r.listener().fy).toBeGreaterThan(0.95);
+    // A second word of it is nothing; undone, the eye is the player's again.
+    r.setEnding("died");
+    r.clearEnding();
+    now += 100;
+    r.sync(state, 3, 1);
+    expect(r.cameraPosition()).toEqual(eye);
+    expect(r.endScene()).toBeNull();
+  });
+
+  it("plays the end scene: the run's camera, the car the scenery hands it stood at its pose each frame, taken out of the rain's cover once and its lamps lit at the catch", () => {
+    let now = 5000;
+    const r = make(() => now);
+    r.setBobScale(0);
+    const at = (x: number, z: number): Parameters<typeof windTestState>[0] => ({
+      id: 3, pos: { x, y: 0.9, z }, vel: { x: 0, y: 0, z: 0 }, yaw: 0, pitch: 0, grounded: true, lamp: { on: true, charge: 1 },
+    }) as unknown as Parameters<typeof windTestState>[0];
+    const staged: CarPose[] = [];
+    let left = 0;
+    const lit: boolean[] = [];
+    const car = { stage: (pose: CarPose) => void staged.push({ ...pose }), leave: () => void (left += 1), tailLamps: (on: boolean) => void lit.push(on) };
+    // A straight road along z on flat ground; the car on its shoulder at the pad, its nose to +z.
+    r.setEnding("won", { site: { x: 6.9, z: 0 }, direction: 1, road: { centerX: () => 0, groundY: () => 0 }, door: { x: 8.4, z: 0.5 }, car: () => car });
+    expect(r.endScene()).toEqual({ t: 0, arrival: null, shot: 0, car: { x: 6.9, y: 0, z: 0, yaw: 0, speed: 0 } });
+    r.sync(windTestState(at(20, 10)), 3, 1);
+    // Shot 1: behind the runner and to their right, over their eye, on the 24 mm.
+    const run = r.cameraPosition();
+    expect(run.x).toBeCloseTo(21.321891583212775, 9);
+    expect(run.y).toBeCloseTo(0.9 + PLAYER_EYE_OFFSET + 0.5, 9);
+    expect(run.z).toBeCloseTo(11.858118037755196, 9);
+    expect(staged).toHaveLength(1);
+    // At the door a second later: the engine's shot from the far shoulder.
+    now = 6000;
+    r.sync(windTestState(at(8.4, 0.5)), 3, 1);
+    expect(r.endScene()).toMatchObject({ arrival: 1, shot: 2 });
+    expect(r.cameraPosition()).toEqual({ x: -6.9, y: 0.6, z: 7 });
+    expect([left, lit.length]).toEqual([0, 0]);
+    // 4.6 s after the arrival: 7 m down the road, out of the cover, the lamps lit; heard from the camera.
+    now = 10600;
+    r.sync(windTestState(at(8.4, 0.5)), 3, 1);
+    expect(r.endScene()!.car.z).toBeCloseTo(7, 9);
+    expect(staged[staged.length - 1]!.z).toBeCloseTo(7, 9);
+    expect(staged[staged.length - 1]!.wheelSpin).toBeGreaterThan(0);
+    expect([left, lit]).toEqual([1, [true]]);
+    r.sync(windTestState(at(8.4, 0.5)), 3, 1);
+    expect([left, lit]).toEqual([1, [true]]);
+    expect(r.listener().x).toBe(-6.9);
   });
 
   it("keeps the wind of its weather and its clock, or the override's", () => {

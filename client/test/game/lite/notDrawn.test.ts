@@ -12,14 +12,13 @@ describe("what the renderer on Babylon Lite does not draw yet", () => {
 
   it("names every part of the world it leaves out", () => {
     const all = NOT_DRAWN.map((part) => part.what).join("; ");
-    for (const word of [ "sea", "lake", "skin's shading", "shadows", "endings"]) {
+    for (const word of [ "sea", "lake", "skin's shading", "shadows", "brushes", "wireframe"]) {
       expect(all, word).toContain(word);
     }
   });
 
-  it("reads out nothing: no scene", () => {
+  it("reads out nothing: no GPU timing", () => {
     const { members } = notDrawnMembers();
-    expect(members.endScene()).toBeNull();
     expect(members.gpuTime).toBeNull();
   });
 
@@ -57,8 +56,8 @@ describe("what the renderer on Babylon Lite does not draw yet", () => {
   it("leaves the scenery a hike places once to the renderer: the posts, the trailhead's car and board and the body are drawn", () => {
     const all = NOT_DRAWN.map((part) => part.what).join("; ");
     expect(all).not.toMatch(/posts|board|body at the crest|trailhead/);
-    // The car the end scene drives is the endings' own.
-    expect(NOT_DRAWN.filter((part) => /\bcar\b/.test(part.what)).map((part) => part.members)).toEqual([["setEnding", "endScene", "clearEnding"]]);
+    // The car the end scene drives is drawn too: no part names a car.
+    expect(NOT_DRAWN.filter((part) => /\bcar\b/.test(part.what))).toEqual([]);
   });
 
   it("names the sun's cast shadows as what no tier draws: the game casts none either", () => {
@@ -103,22 +102,12 @@ describe("what the renderer on Babylon Lite does not draw yet", () => {
     expect(sea[1]?.what).toMatch(/through the surface/);
   });
 
-  it("keeps the first ending it is told and lets a death be undone", () => {
+  it("leaves the scenes and the endings to the renderer: their cameras, the local hiker's own body, the death's dark and the end scene's car are played", () => {
     const { members, held } = notDrawnMembers();
-    members.setEnding("died");
-    members.setEnding("died");
-    expect(held.ending).toBe("died");
-    members.clearEnding();
-    expect(held.ending).toBeNull();
-  });
-
-  it("leaves a scene's camera to the renderer: the summit's shots and the cap's turn are played, and what is left of a scene is the local hiker's own body in it", () => {
-    const { members, held } = notDrawnMembers();
-    expect("setScene" in members).toBe(false);
-    expect("scene" in held).toBe(false);
+    for (const name of ["setScene", "setEnding", "endScene", "clearEnding"]) expect(name in members, name).toBe(false);
+    for (const name of ["scene", "ending", "endScene"]) expect(name in held, name).toBe(false);
     const all = NOT_DRAWN.map((part) => part.what).join("; ");
-    expect(all).not.toMatch(/cameras|summit|\bcap\b/);
-    expect(NOT_DRAWN.filter((part) => /own body/.test(part.what)).map((part) => part.members)).toEqual([["setEnding", "endScene", "clearEnding"]]);
+    expect(all).not.toMatch(/cameras|summit|\bcap\b|endings?|own body|scenes?\b/);
   });
 
   it("tells no compile and keeps no shader: the stop it hands back does nothing", () => {

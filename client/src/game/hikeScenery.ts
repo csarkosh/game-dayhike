@@ -11,9 +11,9 @@
  * On Babylon.js it is built into the renderer's scene. The hike's own
  * renderer on Babylon Lite has no such scene (`sceneRendererOf` null): it is
  * asked for the same pieces at the same places (`liteSceneryOf`) and draws
- * them itself, the film's car in the parked car's place among them; the car
- * the end scene drives is not handed out there yet. A renderer that is
- * neither gets no signs, no film car and a body that is nothing.
+ * them itself, the film's car in the parked car's place among them, which
+ * it hands back for the end scene to drive. A renderer that is neither gets
+ * no signs, no film car and a body that is nothing.
  */
 import { activeTerrainVariant, elevationAt } from "../sim/terrain.js";
 import { signSites } from "../sim/placeNames.js";
@@ -83,15 +83,15 @@ export function createHikeSigns(renderer: Renderer, world: World, seed: number):
     urls: BOARD_IMAGE_URLS,
   });
   if (built === null) {
-    // The hike's own renderer on Babylon Lite draws the same scenery from the same places (`lite/sceneryMeshes.ts`).
-    // The car the end scene drives is not handed out yet: that renderer plays no scene.
+    // The hike's own renderer on Babylon Lite draws the same scenery from the same places (`lite/sceneryMeshes.ts`),
+    // and hands out the car as it stands there for the end scene to drive.
     const host = lite as NonNullable<typeof lite>;
     const litePosts = host.signs(signPosts(graph, sites), groundH);
     const liteTrailhead = host.trailhead(trailheadSites, groundH, board);
     const liteSigns: HikeSigns = {
-      car: () => null,
+      car: () => liteTrailhead.car(),
       filmCarIn: () => liteTrailhead.filmCarIn(),
-      warm: () => false,
+      warm: () => liteTrailhead.warm(),
       dispose() {
         litePosts.dispose();
         liteTrailhead.dispose();

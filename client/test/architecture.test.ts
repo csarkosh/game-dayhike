@@ -575,6 +575,7 @@ describe("layer boundaries", () => {
       join(SRC, "game", "cutscene.ts"),
       join(SRC, "game", "ending.ts"),
       join(SRC, "game", "endScene.ts"),
+      join(SRC, "game", "carParts.ts"),
     ];
 
     // Guards against the guard: a rename or deletion of one of these files
@@ -809,7 +810,7 @@ describe("layer boundaries", () => {
    * the same play.
    */
   it("what the scenes and the endings are played with is computed without loading Babylon, whatever it imports", () => {
-    const ENGINE_FREE = ["scenePlay.ts", "cutscene.ts", "ending.ts", "endScene.ts", "carAudio.ts", "scene/roadPath.ts", "scene/timeline.ts", "scene/shots.ts"];
+    const ENGINE_FREE = ["scenePlay.ts", "cutscene.ts", "ending.ts", "endScene.ts", "carAudio.ts", "carParts.ts", "scene/roadPath.ts", "scene/timeline.ts", "scene/shots.ts"];
     const loaded = (file: string): string[] =>
       [...readFileSync(file, "utf8").matchAll(/^\s*(?:import|export)\s+(?!type\s)(?:[^"'();]*?\s+from\s+)?["']([^"']+)["']/gm)].map((m) => m[1] as string);
     const seen = new Set<string>();
@@ -827,8 +828,9 @@ describe("layer boundaries", () => {
     }
     expect(seen.size).toBeGreaterThan(ENGINE_FREE.length);
     expect(bad).toEqual([]);
-    // And the shell on Babylon.js steps it: the scenes' state is kept in one place.
+    // And the shells on Babylon.js read them: the scenes' state is kept in one place, and the car's parts are turned by one rule.
     expect(readFileSync(join(SRC, "game/renderer.ts"), "utf8")).toContain("const play = createScenePlay({");
+    expect(readFileSync(join(SRC, "game/scene/sceneStage.ts"), "utf8")).toContain("wheel.node.rotation.z = wheelSpinTurn(pose);");
   });
 
   /**

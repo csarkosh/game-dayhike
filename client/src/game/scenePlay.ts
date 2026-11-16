@@ -123,6 +123,15 @@ export type ScenePlay = {
   step(seconds: number, camera: PlayCamera, local: PlayLocal, players: ReadonlyMap<number, { pos: Place; yaw: number }>, drawnAt: (id: number) => Place | null): PlayNow;
 };
 
+/**
+ * A stare's lens as a frame shows it under a death's dark closed by
+ * `close`, 0 to 1: the dark rides the stare's shade, driven to full, from
+ * the side the death closes from; the lens itself where none has closed.
+ */
+export function stareWithDark<T extends { level: number; phase: number }>(stare: T, close: number): T {
+  return close > 0 ? { ...stare, level: Math.max(stare.level, close), phase: 0.9 } : stare;
+}
+
 export function createScenePlay(deps: PlayDeps): ScenePlay {
   /** What the ending asks of the pass: the picture's softness and the dark's closing, 0 to 1, posed after the pass reads them, so a frame late. */
   let endBlur = 0;
@@ -229,7 +238,7 @@ export function createScenePlay(deps: PlayDeps): ScenePlay {
       return endBlur;
     },
     shown(stare) {
-      return endClose > 0 ? { ...stare, level: Math.max(stare.level, endClose), phase: 0.9 } : stare;
+      return stareWithDark(stare, endClose);
     },
     runnerId() {
       return endRun === null ? undefined : endRun.setup.runner;

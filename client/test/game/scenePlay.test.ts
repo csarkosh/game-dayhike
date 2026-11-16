@@ -4,7 +4,7 @@ import { CATCH_AT_S } from "../../src/game/carAudio.js";
 import { CAP_SCENE_S, LENS_24, LENS_32, SHOTS, SUMMIT_SCENE_S, THRESHOLD_AT_S, capPose, summitShot } from "../../src/game/cutscene.js";
 import { DIED_CLOSE_FROM_S, DIED_CLOSE_S, DIED_FALL_S, DIED_ROLL, endingPose } from "../../src/game/ending.js";
 import { DOOR_IN_M, END_ROAD_AT_S, HEADLAMP_UP, PULL_AWAY_AT_S, endCar } from "../../src/game/endScene.js";
-import { createScenePlay, type CarHandle, type PlayCamera, type PlayLocal, type ScenePlay } from "../../src/game/scenePlay.js";
+import { createScenePlay, stareWithDark, type CarHandle, type PlayCamera, type PlayLocal, type ScenePlay } from "../../src/game/scenePlay.js";
 import type { CarPose } from "../../src/game/scene/timeline.js";
 import { PLAYER_EYE_OFFSET, PLAYER_HALF } from "../../src/sim/constants.js";
 import { CAR_HALF } from "../../src/sim/trailhead.js";
@@ -142,6 +142,10 @@ describe("the death", () => {
     // The stare's shade carries the dark: driven to it, from the side the death closes from.
     expect(p.shown({ level: 0.02, phase: 0.4, sideX: 1, sideY: 0 })).toEqual({ level: p.close, phase: 0.9, sideX: 1, sideY: 0 });
     expect(p.shown({ level: 0.9, phase: 0.4, sideX: 1, sideY: 0 }).level).toBe(0.9);
+    // The same for a renderer that kept the dark of the frame before by itself.
+    expect(stareWithDark({ level: 0.02, phase: 0.4, sideX: 1, sideY: 0 }, 0.5)).toEqual({ level: 0.5, phase: 0.9, sideX: 1, sideY: 0 });
+    const rest = { level: 0.02, phase: 0.4, sideX: 1, sideY: 0 };
+    expect(stareWithDark(rest, 0)).toBe(rest);
     p.step(30 + DIED_CLOSE_FROM_S + DIED_CLOSE_S, eye(), local(), nobody, undrawn);
     expect(p.close).toBe(1);
     // A second word of it changes nothing.
