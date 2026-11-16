@@ -30,7 +30,9 @@
  * the near.
  *
  * `seaWetBounds` is `wetBounds` of a ring's geometry, read from the ring's
- * samples without making the geometry.
+ * samples without making the geometry. `seaWetRun` is the run of the
+ * lattice's triangles a draw is held to so that no ring past the wet ones
+ * is drawn: on Babylon.js a ring with no water is a mesh that is not drawn.
  */
 import { HOLE_CELLS, blendWeight } from "./clipmap.js";
 import { OCEAN_BOUND, WATER_RING_CELLS, WATER_RING_COUNT, WATER_UV_SCALE, waterHoleCellsFor, waterRingSpacing, type WaterRingSamples } from "./water.js";
@@ -123,6 +125,27 @@ export function seaLattice(): SeaLattice {
     rings.push({ level, firstVertex, vertexCount: v - firstVertex, firstIndex, indexCount: k - firstIndex });
   }
   return { positions, normals, uvs, indices, rings };
+}
+
+/**
+ * The run of the lattice's triangles that holds every ring `wet` says has
+ * water, into `out`: the first index and the one past the last, from the
+ * first such ring laid to the last, the rings between them with it. The
+ * rings are laid outermost first, so far from the coast the run is the
+ * coarse rings alone, and at the cove's head the fine ones. With no wet
+ * ring `end` is 0 and the run is empty.
+ */
+export function seaWetRun(rings: readonly SeaRingRange[], wet: (level: number) => boolean, out: { first: number; end: number }): { first: number; end: number } {
+  let first = Infinity;
+  let end = 0;
+  for (const ring of rings) {
+    if (!wet(ring.level)) continue;
+    first = Math.min(first, ring.firstIndex);
+    end = Math.max(end, ring.firstIndex + ring.indexCount);
+  }
+  out.first = end > 0 ? first : 0;
+  out.end = end;
+  return out;
 }
 
 /**

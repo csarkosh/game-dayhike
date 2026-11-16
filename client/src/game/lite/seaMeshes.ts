@@ -11,7 +11,8 @@
  * - **The sea is one blended draw, and none out of view.** The seven rings
  *   are one mesh made once, a vertex its place in its ring's lattice, placed
  *   by the vertex stage; on Babylon.js they are seven meshes, each made
- *   again as it moves. A ring has water where the ground under one of its
+ *   again as it moves. The draw is held to the run of rings that hold
+ *   water, so a dry ring's vertices are not placed at all. A ring has water where the ground under one of its
  *   cells is below the level (or, along the cove, within the swash's climb
  *   of it), and the box of those cells is what a view is tested against, as
  *   the game culls a ring by it: the mesh is shown while the view holds one
@@ -42,7 +43,7 @@
  */
 import {
   addToScene, createMeshFromData, createPbrMaterial, createRenderTexture2D, createTexture2DArray, createTexture2DFromPixels, disposeMeshGpu,
-  markMaterialUboDirty, removeFromScene, setMeshVisible, updateTextureRegion,
+  markMaterialUboDirty, removeFromScene, setMeshDrawRange, setMeshVisible, updateTextureRegion,
   type EngineContext, type MaterialPlugin, type Mesh, type PluginUniformBlock, type SceneContext, type Texture2D, type Texture2DArray,
 } from "@babylonjs/lite";
 import { boxInPlanes, cornersPastBox, type ViewPlane } from "../lakeSeen.js";
@@ -54,7 +55,7 @@ import { LOOP_FRAMES, LOOP_N } from "../oceanSpectrum.js";
 import { createSeaWindLag, loopTimeAfter } from "../oceanWindSea.js";
 import type { QualityTier } from "../quality.js";
 import { createSeaEdgeStep, type SeaEdgeStep } from "../seaEdge.js";
-import { SEA_SIDE, seaBedDepths, seaLattice, seaRingRecords, seaWetBounds } from "../seaLattice.js";
+import { SEA_SIDE, seaBedDepths, seaLattice, seaRingRecords, seaWetBounds, seaWetRun } from "../seaLattice.js";
 import { emptySeaFrameUniforms, emptySeaUniforms, seaFrameUniforms, seaUniforms, type SeaFrameUniforms } from "../seaUniforms.js";
 import { SWASH_FACE_LIFT_M } from "../swashRunUp.js";
 import { SWASH_COLUMNS } from "../swashTable.js";
@@ -258,7 +259,14 @@ export function createLiteSea(engine: EngineContext, scene: SceneContext, seed: 
   let bedSeen = -1;
   let disposed = false;
 
-  /** The rings that moved, and those round a ring that moved: their depths sent, their boxes found again, the records written. */
+  /** The run of the lattice's triangles the mesh draws (`seaWetRun`), and the run its wet rings now ask for. */
+  const drawn = { first: 0, end: lattice.indices.length };
+  const run = { first: 0, end: 0 };
+
+  /**
+   * The rings that moved, and those round a ring that moved: their depths sent, their boxes found again, the records
+   * written, and the mesh's draw held to the rings that hold water.
+   */
   function placeRings(): void {
     let any = false;
     for (let level = 0; level < WATER_RING_COUNT; level++) {
@@ -280,6 +288,14 @@ export function createLiteSea(engine: EngineContext, scene: SceneContext, seed: 
     seaRingRecords(rings, frameValues.seaRings);
     wetRings = 0;
     for (const box of boxes) if (box !== null) wetRings++;
+    // Only the rings that hold water are drawn: no vertex of a dry ring past them is placed. The mesh's own recorded
+    // draw alone is told of the run. With no wet ring the mesh is hidden, and the run stands as it was.
+    seaWetRun(lattice.rings, (level) => boxes[level] !== null, run);
+    if (run.end > run.first && (run.first !== drawn.first || run.end !== drawn.end)) {
+      drawn.first = run.first;
+      drawn.end = run.end;
+      setMeshDrawRange(engine, mesh, { vertices: { offset: 0, count: lattice.positions.length / 3 }, indices: { offset: run.first, count: run.end - run.first } }, true);
+    }
   }
   placeRings();
 
