@@ -15,7 +15,10 @@
  * the weather, by the local player's headlamp and by the lamps the other
  * hikers wear, from the player's eye or the free camera; and in it the other
  * hikers' bodies, the Hollows' eyes, the dropped cap and the animals, on the
- * ground and in the air. Every other part of the world is absent, and the
+ * ground and in the air; and the lakes' water where a tier blends it over
+ * what lies under it, calm by the hour and the weather's name, with the
+ * skyline's shade for its shore, the reeds and the lilies that grow in it,
+ * and its midges and dragonflies, with its frogs to hear. Every other part of the world is absent, and the
  * members of `Renderer` that belong to an absent part are answered here as
  * nothing: a setter keeps what it was told (`held`), for the day its part is
  * drawn; a read-out returns nothing heard, nothing seen or nothing pending;
@@ -26,19 +29,16 @@ import type { PaintPaletteName } from "../gradeParams.js";
 import type { EndSceneSetup, Renderer } from "../renderer.js";
 import { STARE_LENS_REST } from "../stareLens.js";
 import { SILENT_SURF_SOUND } from "../surfSound.js";
-import type { WaterLifeSound } from "../waterLifeAudio.js";
-import type { WeatherPresetName } from "../weather.js";
 
 /** A part of the world not drawn yet, and the members of `Renderer` answered as nothing for it. */
 export type NotDrawn = { readonly what: string; readonly members: readonly (keyof Renderer)[] };
 
 export const NOT_DRAWN: readonly NotDrawn[] = [
-  { what: "the sea, the lakes, their plants and reflections, the surf and its spray", members: ["hasSea", "surfSound"] },
-  { what: "the lakes' insects and frogs", members: ["hasWaterLife", "waterLifeSound"] },
+  { what: "the sea, the surf and its spray", members: ["hasSea", "surfSound"] },
+  { what: "the shore a lake reflects beyond its skyline's shade (the panorama, the mirror), and a lake's water on the tier that reads what lies under it through the surface", members: [] },
   { what: "the Hollow's figure in the silhouette mask (its eyes are drawn), and with it the skin's shading, which has no other surface to show on", members: ["setSkinShading"] },
   { what: "the sun's cast shadows", members: [] },
   { what: "the post chain: the grade and its palettes, the anti-aliasing, the far softening, the rain on the lens, the stare's shade, the chase's cast, depth of field", members: ["setPalette", "setChase", "setUnsettle", "setDepthOfField", "stare"] },
-  { what: "the lakes' calm by the weather's name", members: ["setWeatherName"] },
   { what: "the scenes and the endings: their cameras, their stage, the local hiker's own body in them and the end scene's car", members: ["setEnding", "endScene", "setScene", "clearEnding"] },
   { what: "the hand-authored levels' brushes, and the wireframe view", members: ["setWireframe"] },
   { what: "the shaders' compiles told as they happen, kept shaders, and the GPU's timings", members: ["onShaderCompiled", "keepShaders", "gpuTime"] },
@@ -51,7 +51,6 @@ export type NotDrawnHeld = {
   chase: number;
   unsettle: number;
   palette: PaintPaletteName | null;
-  weatherName: WeatherPresetName | null;
   wireframe: boolean;
   skinShading: boolean;
   depthOfField: boolean;
@@ -63,28 +62,14 @@ export type NotDrawnHeld = {
 /** The members answered as nothing: every member `NOT_DRAWN` names. */
 export type NotDrawnMembers = Pick<
   Renderer,
-  | "hasSea" | "surfSound" | "hasWaterLife" | "waterLifeSound"
+  | "hasSea" | "surfSound"
   | "setSkinShading"
   | "setPalette" | "setChase" | "setUnsettle" | "setDepthOfField" | "stare"
-  | "setWeatherName" | "setEnding" | "endScene" | "setScene" | "clearEnding"
+  | "setEnding" | "endScene" | "setScene" | "clearEnding"
   | "setWireframe" | "onShaderCompiled" | "keepShaders" | "gpuTime"
 >;
 
 const clamp01 = (x: number): number => Math.max(0, Math.min(1, x));
-
-/** No insect, no frog: the lake's life as heard where there is none. */
-const NO_WATER_LIFE: WaterLifeSound = Object.freeze({
-  hums: [],
-  hums_n: 0,
-  pitch: 0,
-  rustles: Object.freeze([]),
-  frogCalls: Object.freeze([]),
-  bed: Object.freeze({
-    level: 0,
-    duck: [1, 1] as [number, number],
-    points: [Object.freeze({ x: 0, y: 0, z: 0 }), Object.freeze({ x: 0, y: 0, z: 0 })] as const,
-  }),
-});
 
 /**
  * The members answered as nothing, and what their setters hold. One of each
@@ -92,14 +77,12 @@ const NO_WATER_LIFE: WaterLifeSound = Object.freeze({
  */
 export function notDrawnMembers(): { members: NotDrawnMembers; held: NotDrawnHeld } {
   const held: NotDrawnHeld = {
-    chase: 0, unsettle: 1, palette: null, weatherName: null,
+    chase: 0, unsettle: 1, palette: null,
     wireframe: false, skinShading: true, depthOfField: false, ending: null, endScene: null, scene: null,
   };
   const members: NotDrawnMembers = {
     hasSea: false,
     surfSound: () => SILENT_SURF_SOUND,
-    hasWaterLife: false,
-    waterLifeSound: () => NO_WATER_LIFE,
     setSkinShading(on) {
       held.skinShading = on;
     },
@@ -116,9 +99,6 @@ export function notDrawnMembers(): { members: NotDrawnMembers; held: NotDrawnHel
       held.depthOfField = on;
     },
     stare: () => STARE_LENS_REST,
-    setWeatherName(name) {
-      held.weatherName = name;
-    },
     setEnding(kind: "died" | "won", scene?: EndSceneSetup) {
       if (held.ending !== null) return;
       held.ending = kind;

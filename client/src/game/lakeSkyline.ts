@@ -208,3 +208,19 @@ export function cylinderHit(
   if (u >= 1) u -= 1;
   return { u, height: origin[1] + dir[1] * t - level };
 }
+
+/** The highest skyline elevation the water reads (rad), just short of a
+ * right angle: the read takes its tangent, which stays finite (48.1) here. */
+export const SKYLINE_READ_MAX = 1.55;
+
+/**
+ * The skyline as the water reads it: SKYLINE_TEXELS elevations, one a
+ * texel, each of `elevations` (`skylineElevations`) capped at
+ * SKYLINE_READ_MAX. A new array: the caller's is left as it was.
+ */
+export function skylineTexels(elevations: Float32Array): Float32Array {
+  if (elevations.length !== SKYLINE_TEXELS) {
+    throw new Error(`a skyline is ${SKYLINE_TEXELS} elevations, not ${elevations.length}`);
+  }
+  return Float32Array.from(elevations, (e) => Math.min(e, SKYLINE_READ_MAX));
+}

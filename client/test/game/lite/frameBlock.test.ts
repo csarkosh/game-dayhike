@@ -17,6 +17,7 @@ import { emptyMoteUniforms } from "../../../src/game/moteField.js";
 import { emptyRainUniforms } from "../../../src/game/rainField.js";
 import { emptySplashUniforms } from "../../../src/game/splashField.js";
 import { emptyTerrainUniforms, terrainUniforms } from "../../../src/game/terrainUniforms.js";
+import { emptyWaterFrameUniforms } from "../../../src/game/waterSurface.js";
 import { WET_SWASH_VECS, emptyWetUniforms, setWetWeather, wetUniforms } from "../../../src/game/wetSurface.js";
 import { windRecordUnder } from "../../../src/game/windParams.js";
 import { WEATHER_PRESETS } from "../../../src/game/weather.js";
@@ -73,6 +74,10 @@ function frame(): FrameValues {
     eye,
     rows: 956,
     wingTime: 123.5,
+    water: {
+      waterLakeTime: Float32Array.of(41.5), waterWind: Float32Array.of(0.6, 0.8), waterWindTime: Float32Array.of(3, 4), waterRain: Float32Array.of(0.8),
+      waterSun: Float32Array.of(0.25), waterBumpOffset: Float32Array.of(-0.5, 0.75),
+    },
     exposure: 0.85,
     contrast: 1.1,
     clocks: [
@@ -104,9 +109,9 @@ describe("the frame's uniform block on Babylon Lite", () => {
     for (const name of FRAME_CLOCK_NAMES) expect(sizeOf(fields.get(name) as string).floats, name).toBe((stages[name] as number[]).length);
     // Of those records nothing else is the frame's: a stage's settings are its own.
     expect(Object.keys(stages).filter(inFrameBlock).sort()).toEqual([...FRAME_CLOCK_NAMES].sort());
-    // What stood in the block keeps its place: the new fields follow the wings' clock.
+    // What stood in the block keeps its place: the new fields follow the wings' clock and the lakes' values.
     const order = FRAME_FIELDS.map((field) => field.name);
-    expect(order.slice(order.indexOf("wingTime") + 1)).toEqual(["frameExposure", "frameContrast", ...FRAME_CLOCK_NAMES, "frameProjection"]);
+    expect(order.slice(order.indexOf("wingTime") + 1)).toEqual([...Object.keys(emptyWaterFrameUniforms()), "frameExposure", "frameContrast", ...FRAME_CLOCK_NAMES, "frameProjection"]);
     // The projection alone of the camera's matrices: the view and the eye are the scene's own, which every stage reads.
     expect(fields.get("frameProjection")).toBe("mat4x4<f32>");
   });
@@ -134,6 +139,9 @@ describe("the frame's uniform block on Babylon Lite", () => {
     // The fade's eye as its module computes it, and the frame's rows.
     expect(read("fadeEye")).toEqual(f32(fadeUniforms(values.eye, { band: [0, 1], factor: 1 }, emptyFadeUniforms()).fadeEye));
     expect(read("fadeRows")).toEqual([956]);
+    // What every lake reads alike, as the water's own module names it.
+    expect(Object.keys(values.water)).toEqual(Object.keys(emptyWaterFrameUniforms()));
+    for (const [name, value] of Object.entries(values.water)) expect(read(name)).toEqual(f32(value));
     // The display curve and the stages' clocks, as their records hold them.
     expect([read("frameExposure"), read("frameContrast")]).toEqual([f32([0.85]), f32([1.1])]);
     expect([read("moteClock"), read("moteTravel"), read("rainFold"), read("rainDt"), read("rainDrift"), read("rainCanopyWater"), read("splashTime")]).toEqual(

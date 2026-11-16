@@ -25,6 +25,17 @@ describe("the cover map's texel on Babylon Lite", () => {
     expect(rainMapTexel("terrain", 0, 1)).toEqual({ height: 0, transmission: 1 - RAIN_MAP.canopyBlock, lift: RAIN_MAP.canopyLift });
   });
 
+  it("is the height shader's for water: open to the rain, which lands on its surface", () => {
+    expect(GLSL).toContain("#elifdefined(RAIN_HEIGHT_WATER)floattransmission=1.0;floatlift=0.0;");
+    expect(tight(RAIN_MAP_WGSL.water)).toBe("{letvHeight=input.worldPos.y;lettransmission=1.0;letlift=0.0;color=vec3<f32>(vHeight,transmission,lift);alpha=1.0;}");
+    expect(rainMapTexel("water", 81.6)).toEqual({ height: 81.6, transmission: 1, lift: 0 });
+    const water = rainMapPlugin("water");
+    expect(water.getCustomCode?.("fragment")).toEqual({ CUSTOM_FRAGMENT_BEFORE_FRAGCOLOR: RAIN_MAP_WGSL.water });
+    expect(water.getCustomCode?.("vertex")).toBeNull();
+    expect(water.getVertexAttributes).toBeUndefined();
+    expect(new Set([water.name, rainMapPlugin("hard").name, rainMapPlugin("terrain").name]).size).toBe(3);
+  });
+
   it("takes the height as the world's and the canopy from the terrain's own vertex data, where the height shader reads them", () => {
     expect(RAIN_HEIGHT_VERTEX).toContain("vHeight = worldPos.y;");
     expect(RAIN_HEIGHT_VERTEX).toContain("vCanopy = terrainWeights2.w;");

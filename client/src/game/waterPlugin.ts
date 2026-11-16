@@ -15,6 +15,10 @@
  * (`lakeMirror.fragment.fx`, `lakeMirror.ts`) and, on the tiers without
  * one, its shore panorama and skyline (`lakePanorama.ts`), so the sea's is
  * unchanged by that in turn.
+ *
+ * What a material is drawn with is kept and stepped with no engine
+ * (`waterSurface.ts`): the plugin holds one such record (`surface`), hands
+ * each setter's value to it and binds from it.
  */
 import { MaterialPluginBase } from "@babylonjs/core/Materials/materialPluginBase.js";
 import type { Material } from "@babylonjs/core/Materials/material.js";
@@ -48,7 +52,10 @@ import oceanSwash from "./shaders/oceanSwash.fx?raw";
 import oceanLipShape from "./shaders/oceanLipShape.vertex.fx?raw";
 import oceanLipPlace from "./shaders/oceanLip.vertex.fx?raw";
 import { WATER_F0, roughnessFor, type WaterRow } from "./waterShading.js";
-import { WIND_TIME_WRAP } from "./windParams.js";
+import {
+  advanceWater, createWaterSurface, setWaterCalm, setWaterCove, setWaterLakeBody, setWaterLakeTime, setWaterMirrorMotion, setWaterPawCover, setWaterShade,
+  setWaterWind, waterRoughnessDue, type WaterSurface,
+} from "./waterSurface.js";
 import { MIRROR_OFFSET_K } from "./mirrorView.js";
 
 /** Babylon's dielectric F0 at metallicF0Factor 1 is 0.04; water's 0.02 is half of it. */
@@ -227,57 +234,15 @@ export function waterMirrorPlaceholder(scene: Scene): BaseTexture {
 export type WaterPluginOptions = { lip?: boolean };
 
 export class WaterPlugin extends MaterialPluginBase {
-  readonly row: WaterRow;
+  /** The material's numbers, kept with no engine (`waterSurface.ts`): what every setter below writes and every bind reads. */
+  readonly surface: WaterSurface;
   /** Whether this is the plunging lip's material: set at construction, never changed. */
   readonly lip: boolean;
   /** The bed height square (the bed bake uploads it); null until the first bake. */
   bedTexture: BaseTexture | null = null;
-  bedOrigin: [number, number] = [0, 0];
-  bedTexels = 256;
-  bedSpacing = 1;
-  /** High tier only: the scene copy and depth read (`waterFrame.ts`), and the screen's 1/size. */
+  /** High tier only: the scene copy and depth read (`waterFrame.ts`). */
   sceneTexture: BaseTexture | null = null;
   depthTexture: BaseTexture | null = null;
-  screen: [number, number] = [1, 1];
-  /** The camera's near and far, per frame: the copy's device depth is linearised with them. */
-  nearFar: [number, number] = [0.05, 1000];
-  time = 0;
-  windDir: [number, number] = [1, 0];
-  /** The wind's 0..1 speed, as `setWind` last had it. */
-  windSpeed = 0;
-  /** On a lake, the wind's velocity (its direction times its 0..1 speed)
-   * integrated over the run, in seconds: what the skin and the second octave
-   * drift by, so the octave drifts at the wind's speed as well as along it.
-   * On the sea, its direction alone: the low tier's caps drift by it at
-   * their designed speed (`oceanShade.fragment.fx`'s OCEAN_CAP_DRIFT). */
-  windTime: [number, number] = [0, 0];
-  private _lastSeconds: number | null = null;
-  /** Ripple octaves the fragment blends: 2, or 1 on the low tier (spec §5.3). */
-  octaves = 2;
-  /** The duckweed and algae skin: x how much of the surface may carry it
-   * (`lakeSkin` of the lake's murk; 0 on the sea), y the seed's noise offset
-   * (`waterSkinOffset`). */
-  skin: [number, number] = [0, 0];
-  /** The weather's rain, 0 to 1, per frame: the drops' rings on the surface,
-   * the puddles' own on the sea (`waterRainSlope`), the lake's near the eye
-   * (`lakeRainSlope`). */
-  rain = 0;
-  /** The sun's share through the cloud and above the horizon, 0 to 1, per
-   * frame (`lakeSunShare`): what the caustics on a lake's shallow bed are
-   * scaled by, none under heavy cloud or after dark. */
-  sun = 0;
-  /** The lake's time: the shared seconds wrapped at WIND_TIME_WRAP, which the
-   * cat's-paws and the rain's rings read (`lakeRipples.fragment.fx`). */
-  lakeTime = 0;
-  /** How much of the lake the cat's-paws may cover, 0 to 1 (`lakePaw`): 1 on
-   * a lake rough all over, as it is until the renderer first sets it. */
-  pawCover = 1;
-  /** The lake's centre (x, level, z) and its radius: the cylinder the
-   * medium tier reads its panorama on (`setLakeBody`). Zeros until set. */
-  readonly lakeBody: [number, number, number, number] = [0, 0, 0, 0];
-  /** The forest's colour under the skyline on the low tier (`setSkyline`),
-   * raw: the shader scales it by the environment's intensity. */
-  readonly shadeColour: [number, number, number] = [0, 0, 0];
   /** The medium tier's shore panorama and the skyline (medium and low), on
    * the lake that has them; null elsewhere, where the probe shows. Bound to
    * the mirror's placeholder without them, and on the sea. */
@@ -291,28 +256,143 @@ export class WaterPlugin extends MaterialPluginBase {
   private readonly _arrayPlaceholder: BaseTexture;
   /** The lake's mirror (`setMirror`): its target, or null where none is read. */
   private _mirror: BaseTexture | null = null;
-  /** The mirrored camera's view-projection (Babylon layout), identity until set. */
-  private readonly _mirrorViewProjection = new Float32Array([1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1]);
   /** What the mirror's sampler is bound to without a mirror, and on the sea. */
   private readonly _mirrorPlaceholder: BaseTexture;
-  /** The calm (`setCalm`): the glass's share, the state's mirror weight, the smear in pixels. */
-  private _calmShare = 0;
-  private _mirrorWeight = 0;
-  private _mirrorSmearPx = 0;
-  /** The held frames' smear (`setMirrorMotion`): pixels of the frame's height times metres, divided by the water's distance in the shader. */
-  private _mirrorMotion = 0;
   /** The sea's swash table (`setSwash`), or null where none is read. */
   private _swash: BaseTexture | null = null;
   /** What the swash's sampler is bound to without a table, and on a lake. */
   private readonly _swashPlaceholder: BaseTexture;
+
+  get row(): WaterRow {
+    return this.surface.row;
+  }
+  /** The bed height square's low corner, its texels a side and their spacing. */
+  get bedOrigin(): [number, number] {
+    return this.surface.bedOrigin;
+  }
+  set bedOrigin(origin: [number, number]) {
+    this.surface.bedOrigin = origin;
+  }
+  get bedTexels(): number {
+    return this.surface.bedTexels;
+  }
+  set bedTexels(texels: number) {
+    this.surface.bedTexels = texels;
+  }
+  get bedSpacing(): number {
+    return this.surface.bedSpacing;
+  }
+  set bedSpacing(spacing: number) {
+    this.surface.bedSpacing = spacing;
+  }
+  /** High tier only: the screen's 1/size (the frame's own pair, kept, which it rewrites as its size moves). */
+  get screen(): [number, number] {
+    return this.surface.screen;
+  }
+  set screen(screen: [number, number]) {
+    this.surface.screen = screen;
+  }
+  /** The camera's near and far, per frame: the copy's device depth is linearised with them. */
+  get nearFar(): [number, number] {
+    return this.surface.nearFar;
+  }
+  set nearFar(nearFar: [number, number]) {
+    this.surface.nearFar = nearFar;
+  }
+  get time(): number {
+    return this.surface.time;
+  }
+  set time(time: number) {
+    this.surface.time = time;
+  }
+  get windDir(): [number, number] {
+    return this.surface.windDir;
+  }
+  set windDir(dir: [number, number]) {
+    this.surface.windDir = dir;
+  }
+  /** The wind's 0..1 speed, as `setWind` last had it. */
+  get windSpeed(): number {
+    return this.surface.windSpeed;
+  }
+  set windSpeed(speed: number) {
+    this.surface.windSpeed = speed;
+  }
+  /** On a lake, the wind's velocity (its direction times its 0..1 speed)
+   * integrated over the run, in seconds: what the skin and the second octave
+   * drift by, so the octave drifts at the wind's speed as well as along it.
+   * On the sea, its direction alone: the low tier's caps drift by it at
+   * their designed speed (`oceanShade.fragment.fx`'s OCEAN_CAP_DRIFT). */
+  get windTime(): [number, number] {
+    return this.surface.windTime;
+  }
+  set windTime(windTime: [number, number]) {
+    this.surface.windTime = windTime;
+  }
+  /** Ripple octaves the fragment blends: 2, or 1 on the low tier (spec §5.3). */
+  get octaves(): number {
+    return this.surface.octaves;
+  }
+  set octaves(octaves: number) {
+    this.surface.octaves = octaves;
+  }
+  /** The duckweed and algae skin: x how much of the surface may carry it
+   * (`lakeSkin` of the lake's murk; 0 on the sea), y the seed's noise offset
+   * (`waterSkinOffset`). */
+  get skin(): [number, number] {
+    return this.surface.skin;
+  }
+  set skin(skin: [number, number]) {
+    this.surface.skin = skin;
+  }
+  /** The weather's rain, 0 to 1, per frame: the drops' rings on the surface,
+   * the puddles' own on the sea (`waterRainSlope`), the lake's near the eye
+   * (`lakeRainSlope`). */
+  get rain(): number {
+    return this.surface.rain;
+  }
+  set rain(rain: number) {
+    this.surface.rain = rain;
+  }
+  /** The sun's share through the cloud and above the horizon, 0 to 1, per
+   * frame (`lakeSunShare`): what the caustics on a lake's shallow bed are
+   * scaled by, none under heavy cloud or after dark. */
+  get sun(): number {
+    return this.surface.sun;
+  }
+  set sun(sun: number) {
+    this.surface.sun = sun;
+  }
+  /** The lake's time: the shared seconds wrapped at WIND_TIME_WRAP, which the
+   * cat's-paws and the rain's rings read (`lakeRipples.fragment.fx`). */
+  get lakeTime(): number {
+    return this.surface.lakeTime;
+  }
+  /** How much of the lake the cat's-paws may cover, 0 to 1 (`lakePaw`): 1 on
+   * a lake rough all over, as it is until the renderer first sets it. */
+  get pawCover(): number {
+    return this.surface.pawCover;
+  }
+  /** The lake's centre (x, level, z) and its radius: the cylinder the
+   * medium tier reads its panorama on (`setLakeBody`). Zeros until set. */
+  get lakeBody(): [number, number, number, number] {
+    return this.surface.lakeBody;
+  }
+  /** The forest's colour under the skyline on the low tier (`setSkyline`),
+   * raw: the shader scales it by the environment's intensity. */
+  get shadeColour(): [number, number, number] {
+    return this.surface.shadeColour;
+  }
   /** The cove (`setCove`): z0, halfWidth, toeD, faceGrade; zeros until set. */
-  readonly cove: [number, number, number, number] = [0, 0, 0, 0];
+  get cove(): [number, number, number, number] {
+    return this.surface.cove;
+  }
 
   constructor(material: Material, row: WaterRow, options: WaterPluginOptions = {}) {
     // 230: after the atmosphere's 200 and every look plugin's 205 to 220; the
     // water carries only this and the atmosphere, so the order is fixed.
     super(material, "Water", 230, { WATER: false, OCEAN: false, OCEAN_LIP: false });
-    this.row = row;
+    this.surface = createWaterSurface(row);
     this.lip = options.lip === true;
     this._arrayPlaceholder = oceanArrayPlaceholder(material.getScene());
     this._mirrorPlaceholder = waterMirrorPlaceholder(material.getScene());
@@ -366,17 +446,12 @@ export class WaterPlugin extends MaterialPluginBase {
    * probe. */
   setSkyline(texture: BaseTexture | null, shadeColour: readonly [number, number, number]): void {
     this._skyline = texture;
-    this.shadeColour[0] = shadeColour[0];
-    this.shadeColour[1] = shadeColour[1];
-    this.shadeColour[2] = shadeColour[2];
+    setWaterShade(this.surface, shadeColour);
   }
 
   /** The lake's centre at its level, and its radius: the shore's cylinder. */
   setLakeBody(x: number, level: number, z: number, radius: number): void {
-    this.lakeBody[0] = x;
-    this.lakeBody[1] = level;
-    this.lakeBody[2] = z;
-    this.lakeBody[3] = radius;
+    setWaterLakeBody(this.surface, x, level, z, radius);
   }
 
   /** The plunging lip's crests (`LipTracker`'s state) and its baked profile, as textures; null for none, where
@@ -391,35 +466,29 @@ export class WaterPlugin extends MaterialPluginBase {
     const m = this._material;
     if (m instanceof PBRMaterial) {
       // The setter marks every submesh dirty, and this runs every frame.
-      const r = roughnessFor(wind01, this.row.shelter);
-      if (m.roughness === null || Math.abs(m.roughness - r) > 1e-3) m.roughness = r;
+      const r = waterRoughnessDue(this.surface, m.roughness, wind01);
+      if (r !== null) m.roughness = r;
     }
-    this.windDir = dir;
-    this.windSpeed = wind01;
+    setWaterWind(this.surface, wind01, dir);
   }
 
   /** Per frame, with the renderer's clock: sets the time and adds the step to
    * `windTime`, times the wind's velocity on a lake and its direction alone
    * on the sea. */
   advance(seconds: number): void {
-    const dt = this._lastSeconds === null ? 0 : Math.max(0, seconds - this._lastSeconds);
-    const speed = this._ocean === null ? this.windSpeed : 1;
-    this.windTime[0] += this.windDir[0] * speed * dt;
-    this.windTime[1] += this.windDir[1] * speed * dt;
-    this._lastSeconds = seconds;
-    this.time = seconds;
+    advanceWater(this.surface, seconds, this._ocean !== null);
   }
 
   /** Per frame, the shared seconds (wrapped or not): the lake's time, wrapped
    * at WIND_TIME_WRAP as the wind's is; 0 for a time that is not finite. */
   setLakeTime(seconds: number): void {
-    this.lakeTime = Number.isFinite(seconds) ? seconds - Math.floor(seconds / WIND_TIME_WRAP) * WIND_TIME_WRAP : 0;
+    setWaterLakeTime(this.surface, seconds);
   }
 
   /** Per frame, the share of the lake the cat's-paws may cover, clamped to
    * 0..1; 0 for a cover that is not finite. */
   setPawCover(cover: number): void {
-    this.pawCover = Number.isFinite(cover) ? Math.min(1, Math.max(0, cover)) : 0;
+    setWaterPawCover(this.surface, cover);
   }
 
   /**
@@ -430,7 +499,7 @@ export class WaterPlugin extends MaterialPluginBase {
    */
   setMirror(texture: BaseTexture | null, viewProjection: Float32Array): void {
     this._mirror = texture;
-    this._mirrorViewProjection.set(viewProjection);
+    this.surface.mirrorViewProjection.set(viewProjection);
   }
 
   /** Per frame on a lake: the glass's share of it (`calmShare`), the state's
@@ -439,9 +508,7 @@ export class WaterPlugin extends MaterialPluginBase {
    * share and the weight clamped to 0..1 and the smear to 0 and up; any of
    * them 0 when it is not finite. */
   setCalm(share: number, weight: number, smearPx: number): void {
-    this._calmShare = Number.isFinite(share) ? Math.min(1, Math.max(0, share)) : 0;
-    this._mirrorWeight = Number.isFinite(weight) ? Math.min(1, Math.max(0, weight)) : 0;
-    this._mirrorSmearPx = Number.isFinite(smearPx) ? Math.max(0, smearPx) : 0;
+    setWaterCalm(this.surface, share, weight, smearPx);
   }
 
   /**
@@ -451,7 +518,7 @@ export class WaterPlugin extends MaterialPluginBase {
    * every frame or there is none.
    */
   setMirrorMotion(pxMetres: number): void {
-    this._mirrorMotion = Number.isFinite(pxMetres) ? Math.max(0, pxMetres) : 0;
+    setWaterMirrorMotion(this.surface, pxMetres);
   }
 
   /** Per frame on the sea: the swash's table (`swashTexture.ts`), or null
@@ -464,11 +531,7 @@ export class WaterPlugin extends MaterialPluginBase {
    * the face's toe (signed coast distance, m) and the face's grade; all four
    * 0 when any is not finite. */
   setCove(z0: number, halfWidth: number, toeD: number, faceGrade: number): void {
-    const finite = Number.isFinite(z0) && Number.isFinite(halfWidth) && Number.isFinite(toeD) && Number.isFinite(faceGrade);
-    this.cove[0] = finite ? z0 : 0;
-    this.cove[1] = finite ? halfWidth : 0;
-    this.cove[2] = finite ? toeD : 0;
-    this.cove[3] = finite ? faceGrade : 0;
+    setWaterCove(this.surface, z0, halfWidth, toeD, faceGrade);
   }
 
   // eslint-disable-next-line @typescript-eslint/no-unused-vars
@@ -609,13 +672,13 @@ export class WaterPlugin extends MaterialPluginBase {
       uniformBuffer.updateFloat("waterPawCover", this.pawCover);
       uniformBuffer.updateFloat("waterSun", this.sun);
       // The lake's mirror: off, the identity and a calm of zero until set.
-      uniformBuffer.updateFloatArray(MIRROR_VP, this._mirrorViewProjection);
+      uniformBuffer.updateFloatArray(MIRROR_VP, this.surface.mirrorViewProjection);
       uniformBuffer.updateFloat("waterMirrorOn", this._mirror !== null ? 1 : 0);
       uniformBuffer.updateFloat("waterMirrorK", MIRROR_OFFSET_K);
-      uniformBuffer.updateFloat("waterMirrorWeight", this._mirrorWeight);
-      uniformBuffer.updateFloat("waterMirrorSmearPx", this._mirrorSmearPx);
-      uniformBuffer.updateFloat("waterMirrorMotion", this._mirrorMotion);
-      uniformBuffer.updateFloat("waterCalmShare", this._calmShare);
+      uniformBuffer.updateFloat("waterMirrorWeight", this.surface.mirrorWeight);
+      uniformBuffer.updateFloat("waterMirrorSmearPx", this.surface.mirrorSmearPx);
+      uniformBuffer.updateFloat("waterMirrorMotion", this.surface.mirrorMotion);
+      uniformBuffer.updateFloat("waterCalmShare", this.surface.calmShare);
       // The lake's shore on medium and low: zeros and the flags 0 until set.
       uniformBuffer.updateFloat3("waterLakeCentre", this.lakeBody[0], this.lakeBody[1], this.lakeBody[2]);
       uniformBuffer.updateFloat("waterLakeRadius", this.lakeBody[3]);

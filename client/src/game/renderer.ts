@@ -78,7 +78,6 @@ import { TERRAIN_SURFACE, terrainCoverFor } from "./terrainUniforms.js";
 import { createCrossing, createSyncJobs, crossingAt, finish, stepSlices, type Slices, type SyncJobs } from "./syncJobs.js";
 import { createLighting, DEFAULT_HOUR, sunAltitudeDeg, whenSkyHeld } from "./lighting.js";
 import type { SkyState } from "./skyState.js";
-import { luma } from "./colour.js";
 import type { SkyTable } from "./skyTable.js";
 import { startSkySource, type SkySource } from "./skyWorker.js";
 import { createAtmosphere, releaseAtmosphere } from "./atmosphere.js";
@@ -95,7 +94,7 @@ import { attachTerrainTexture, enableRoadPaint, enableTrailPaint, enableFeatureP
 import { FACE_PATCH_MATERIAL, FACE_PATCH_Z_OFFSET, FACE_PATCH_Z_UNITS, createFacePatches } from "./facePatchMeshes.js";
 import type { WeatherParams, WeatherPresetName } from "./weather.js";
 import { PAINT_PALETTES, type PaintPaletteName } from "./gradeParams.js";
-import { ambientCollapseUnder, DEFAULT_WEATHER, wetSurfaceUnder } from "./weather.js";
+import { ambientCollapseUnder, wetSurfaceUnder } from "./weather.js";
 import { detectTier, QUALITY, type QualityTier } from "./quality.js";
 import { activeTerrainVariant, elevationAt, type LakeSource } from "../sim/terrain.js";
 import {
@@ -112,6 +111,7 @@ import {
 import { SWASH_FACE_LIFT_M, SWASH_G } from "./swashRunUp.js";
 import { Constants } from "@babylonjs/core/Engines/constants.js";
 import { attachWater, type WaterPlugin } from "./waterPlugin.js";
+import { createBumpDrift } from "./waterSurface.js";
 import { createOcean } from "./oceanRender.js";
 import { createWaterPlants } from "./waterPlants.js";
 import { WATER_GROUP, createWaterFrame, waterFrameSupported } from "./waterFrame.js";
@@ -127,18 +127,8 @@ import { LIP_SPEED_MAX, LIP_SPEED_MIN, LipTracker, lipProfile } from "./oceanBre
 import { createOceanLip, type OceanLip } from "./oceanLip.js";
 import { SURF_SPRAY_BURSTS, SURF_SPRAY_RANGE_M, createSurfSpray, type SurfSpray } from "./surfSpray.js";
 import { SILENT_SURF_SOUND, createSurfSound, fillSurfSound, type SurfSound } from "./surfSound.js";
-import {
-  BED_GRID,
-  bakeBed,
-  bakeRows,
-  bedNeedsRebake,
-  bedOutsideSquare,
-  bedSquareHasWater,
-  beginBake,
-  createBedGrid,
-  type BedBake,
-  type BedGrid,
-} from "./bedHeight.js";
+import { createBedFollow } from "./bedFollow.js";
+import type { BedGrid } from "./bedHeight.js";
 import { LAKE_SURFACE_SPACING, lakeSurfaceDepths, lakeSurfaceGrid } from "./lakeSurfaceGrid.js";
 import { WATER_BUMP_SIZE, waterBumpData } from "./waterBump.js";
 import { featureTableFor } from "./featureTable.js";
@@ -166,11 +156,12 @@ import { createRainMap } from "./rainMap.js";
 import { createRainSplash, type RainSplash } from "./rainSplash.js";
 import { createMotes, type Motes } from "./motes.js";
 import { createWaterLife, type WaterLife, type WaterLifeFrame } from "./waterLife.js";
+import { SILENT_WATER_LIFE, createPlayerSlots, pixelAtOneMetre, skyLumaOf } from "./waterLifeInputs.js";
 import type { WaterLifeSound } from "./waterLifeAudio.js";
 import { PROP_ROUGHNESS, propColour } from "./propBoxes.js";
 import { createPropMeshes, type MeshRegistry, type PropShadows } from "./propMeshes.js";
 import { buildOrUndo, whenSceneReady } from "./rendererSwap.js";
-import { calmShare, isRough, roughShare, smearPx, SLOPE_PAW_DEG } from "./lakeCalm.js";
+import { createCalmFade, lakeCalmUnder, type LakeCalmFrame } from "./lakeCalmFrame.js";
 import { lakeSunShare } from "./lakeRipples.js";
 import { SUN_PEAK } from "./sky.js";
 import { createLakeMirror, createLakeMirrorTerrain, MIRROR_MOTION_SMEAR, mirrorMotion } from "./lakeMirror.js";
@@ -756,9 +747,7 @@ export function createClipmap(
   };
 }
 
-/** Bump-texture UV drift per second — u and v deliberately unequal so the
- * ripples drift diagonally instead of tracking an axis. */
-export const WATER_UV_SCROLL = [0.015, 0.011] as const;
+export { WATER_UV_SCROLL } from "./waterSurface.js";
 
 /**
  * The water's ripple normal map as a texture: `waterBumpData`'s picture, or
@@ -800,9 +789,6 @@ function applyWaterGeometry(mesh: Mesh, geometry: WaterGeometry): void {
   mesh.setVerticesData("oceanMorph", geometry.oceanMorph, true, 1);
   mesh.setVerticesData("oceanCoarse", geometry.oceanCoarse, true, 2);
 }
-
-/** Rows of the bed grid baked per frame: a whole 256² grid measured 260 to 295 ms. */
-const BED_ROWS_PER_FRAME = 1;
 
 export type Water = {
   /** One mesh per ring, coarsening outward — seven draw calls, capped by design.
@@ -922,92 +908,6 @@ export function setEffectsGroup(group: number, effects: SeeThroughEffects): void
 }
 
 /**
- * The sky behind a swarm seen level, 0 to 1, which the midges darken against
- * (`midgeSwarms.ts`): the luminance of the dome's horizon away from the sun
- * (`SkyState.horizonAway`), the side where a speck reads dark rather than
- * glinting. It is in the scene's adapted units with the cloud deck and the
- * night's floor already in it: 0.03 at night, 0.25 a quarter hour after
- * sunset, 0.53 at sunrise and sunset, 0.71 at clear noon, held at 1 in a clear
- * late afternoon (1.22 at 17:00). 0 before the sky's first slices.
- */
-export function skyLumaOf(sky: SkyState | null): number {
-  return sky === null ? 0 : Math.min(1, luma(sky.horizonAway));
-}
-
-/** The world size of one pixel a metre from the lens: the view's height at a
- * metre, `2·tan(fov / 2)`, over the render's height in pixels. */
-export function pixelAtOneMetre(fov: number, renderHeight: number): number {
-  return (2 * Math.tan(fov / 2)) / Math.max(1, renderHeight);
-}
-
-/** The lake's surface as its calm leaves it this frame (`lakeCalmUnder`). */
-export type LakeCalmFrame = {
-  /** The glass's share of the lake, 0 to 1: the calm share at the hour,
-   * faded from one preset's to the next's, times what the rough leaves. */
-  share: number;
-  /** Past the rough's steps (`isRough`): rain, or a strong wind on an exposed lake. */
-  rough: boolean;
-  /** How rough the whole surface is, 0 to 1 (`roughShare`): the steps eased into ramps. */
-  roughShare: number;
-  /** How much of the lake the cat's-paws cover, 0 to 1: eased to 1 as it turns rough. */
-  cover: number;
-  /** The vertical smear (px) of the shore's image inside a full paw, for the frame's height and lens: the shader scales it by the paw mask. */
-  smearPx: number;
-};
-
-/** The shelter at which the cat's-paws cover everything the glass leaves:
- * the clear high lake's (`lakeWaterRow` at murk 0). A sheltered lake's
- * cover is scaled down by its own shelter over this. */
-export const PAW_COVER_SHELTER = 0.3;
-
-/**
- * The glass's share at `hour` faded from `from` to the preset `to` by `t` (0
- * to 1, a weather fade's progress; exact at the ends, as `lerpWeather` is,
- * and a progress that is not a number is the start): `from` is a preset, or
- * the share a fade began at when it took over from another mid-way.
- */
-export function fadedCalmShare(hour: number, from: WeatherPresetName | number, to: WeatherPresetName, t: number): number {
-  const k = t > 0 ? Math.min(1, t) : 0;
-  const a = typeof from === "number" ? from : calmShare(hour, from);
-  const b = calmShare(hour, to);
-  return k === 1 ? b : a + (b - a) * k;
-}
-
-/**
- * The lake's calm this frame into `out` (one record, refilled): the calm
- * share at `hour` faded from `from` (a preset, or the share a fade began at)
- * to the preset `to` by `t` (`fadedCalmShare`), the surface rough under `weather` and
- * the wind's 0..1 speed on a lake of `shelter`, the paws' cover
- * `(1 − share) · shelter / PAW_COVER_SHELTER`, and the smear of a paw's
- * slope for a frame `frameHeightPx` tall seen through `fov` (vertical,
- * radians). As the surface turns rough (`roughShare`, r) the share is
- * scaled by 1 − r and the cover eased to 1 by r: rough all over, the share
- * is 0 and the paws cover the lake.
- */
-export function lakeCalmUnder(
-  hour: number,
-  from: WeatherPresetName | number,
-  to: WeatherPresetName,
-  t: number,
-  weather: WeatherParams,
-  wind01: number,
-  shelter: number,
-  frameHeightPx: number,
-  fov: number,
-  out: LakeCalmFrame,
-): LakeCalmFrame {
-  const share = fadedCalmShare(hour, from, to, t);
-  const r = roughShare(weather, wind01, shelter);
-  const cover = Math.min(1, Math.max(0, ((1 - share) * shelter) / PAW_COVER_SHELTER));
-  out.rough = isRough(weather, wind01, shelter);
-  out.roughShare = r;
-  out.share = share * (1 - r);
-  out.cover = cover + (1 - cover) * r;
-  out.smearPx = smearPx(SLOPE_PAW_DEG, frameHeightPx, fov);
-  return out;
-}
-
-/**
  * The colour the lake's reflections light their ground with (the terrain's
  * stand-in, `lakeMirrorColour`), into `out`: the forest floor's needle bed
  * under the sun on level ground and the fill, as `lighting.ts` sets them
@@ -1030,92 +930,12 @@ const CLIFF_FAR_SUFFIX = `_l${CLIFF_LOD_NODES.length - 1}`;
  * that holds a lake's shore stacks, which the high mirror draws as well. */
 const CLIFF_LOD1_SUFFIX = "_l1";
 
-/** `value` and every object it holds, frozen. */
-function frozenThrough<T extends object>(value: T): T {
-  for (const held of Object.values(value)) if (typeof held === "object" && held !== null) frozenThrough(held);
-  Object.freeze(value);
-  return value;
-}
-
-/** What a world without the lake's life sounds like, and a frame that did
- * not step it: nothing. Frozen through, as every caller is handed this one
- * object. */
-export const SILENT_WATER_LIFE: WaterLifeSound = frozenThrough({
-  hums: [], hums_n: 0, pitch: 0, rustles: [], frogCalls: [],
-  bed: { level: 0, duck: [1, 1], points: [{ x: 0, y: 0, z: 0 }, { x: 0, y: 0, z: 0 }] },
-});
-
 /** The mean of the lip's throw over the wave's speed (`LIP_SPEED_MIN`..`LIP_SPEED_MAX`): the spray's launch. */
 const SPRAY_THROW = (LIP_SPEED_MIN + LIP_SPEED_MAX) / 2;
 
-/** A player's position in their slot: the sim's own, y the body's centre. */
-export type SlotPoint = { x: number; y: number; z: number };
-
-export type PlayerSlots = {
-  /**
-   * Seats `players` and returns each slot's player's position, undefined for
-   * an empty slot: one array, refilled in place by every call.
-   */
-  fill(players: ReadonlyMap<number, { readonly id: number; readonly pos: Vec3 }>): readonly (SlotPoint | undefined)[];
-};
-
-/**
- * `count` slots the players keep for as long as they are in the world, for
- * the lake's life, which keeps a head swarm and a speed by index: a list
- * rebuilt in the Map's order would close up when a player leaves and hand
- * theirs to the next. A player who leaves frees their slot; one who joins
- * takes the lowest slot free before this call, never one it freed, so a slot
- * stands empty for a frame between two players. Players past the last slot go
- * without. Allocates nothing per call beyond the Map's iterator.
- */
-export function createPlayerSlots(count: number): PlayerSlots {
-  const ids: number[] = new Array<number>(count).fill(0);
-  const taken: boolean[] = new Array<boolean>(count).fill(false);
-  const freed: boolean[] = new Array<boolean>(count).fill(false);
-  const points: SlotPoint[] = [];
-  for (let s = 0; s < count; s++) points.push({ x: 0, y: 0, z: 0 });
-  const out: (SlotPoint | undefined)[] = new Array<SlotPoint | undefined>(count).fill(undefined);
-  return {
-    fill(players) {
-      for (let s = 0; s < count; s++) {
-        freed[s] = false;
-        if (taken[s] && !players.has(ids[s]!)) {
-          taken[s] = false;
-          freed[s] = true;
-          out[s] = undefined;
-        }
-      }
-      for (const p of players.values()) {
-        let at = -1;
-        for (let s = 0; s < count; s++) {
-          if (taken[s] && ids[s] === p.id) {
-            at = s;
-            break;
-          }
-        }
-        if (at < 0) {
-          for (let s = 0; s < count; s++) {
-            if (!taken[s] && !freed[s]) {
-              at = s;
-              break;
-            }
-          }
-          if (at < 0) continue;
-          taken[at] = true;
-          ids[at] = p.id;
-        }
-        const q = points[at]!;
-        q.x = p.pos.x;
-        q.y = p.pos.y;
-        q.z = p.pos.z;
-        out[at] = q;
-      }
-      return out;
-    },
-  };
-}
-
 export { LAKE_SURFACE_SPACING, lakeSurfaceGrid };
+export { SILENT_WATER_LIFE, createPlayerSlots, pixelAtOneMetre, skyLumaOf, type PlayerSlots, type SlotPoint } from "./waterLifeInputs.js";
+export { PAW_COVER_SHELTER, fadedCalmShare, lakeCalmUnder, type LakeCalmFrame } from "./lakeCalmFrame.js";
 
 /**
  * One lake's surface: a flat grid every `LAKE_SURFACE_SPACING` metres over
@@ -1283,8 +1103,8 @@ export function createWater(
   const lakeBump = tier === "low" && lakes.length > 0 ? createWaterBump(scene, bumpData) : bump;
   if (tier === "low") seaMat.bumpTexture = bump;
   for (const mat of lakeMats) mat.bumpTexture = lakeBump;
-  /** The scroll's speed, tiles a second: what a lake's ripple drifts at in a full wind. */
-  const lakeDrift = Math.hypot(WATER_UV_SCROLL[0], WATER_UV_SCROLL[1]);
+  /** How far each bump has slid, kept with no engine (`waterSurface.ts`). */
+  const drift = createBumpDrift();
 
   // Cosmetic drift: scroll the bump's UV offset each frame by the clock's
   // delta, not per-frame constants, so the ripple speed survives
@@ -1298,28 +1118,24 @@ export function createWater(
     const at = now();
     const dt = Math.max(0, at - last) / 1000;
     last = at;
+    drift.step(dt, seaWind, seaWindDir, tier === "low", lakes.length > 0);
     if (tier === "low") {
-      bump.uOffset += WATER_UV_SCROLL[0] * dt;
-      bump.vOffset += WATER_UV_SCROLL[1] * dt;
+      bump.uOffset = drift.sea[0];
+      bump.vOffset = drift.sea[1];
     }
     if (lakes.length > 0) {
-      lakeBump.uOffset -= seaWindDir[0] * seaWind * lakeDrift * dt;
-      lakeBump.vOffset -= seaWindDir[1] * seaWind * lakeDrift * dt;
+      lakeBump.uOffset = drift.lake[0];
+      lakeBump.vOffset = drift.lake[1];
     }
   });
 
-  const { texels, spacing } = BED_GRID[tier];
-  const bakedAhead = prepared?.bed ?? null;
-  let grid = bakedAhead ?? createBedGrid(texels, spacing);
-  let spare = createBedGrid(texels, spacing);
-  let bake: BedBake | null = null;
-  // The last square found out of every body's reach: not asked again until
-  // the camera's square changes.
-  let dryX = Number.NaN;
-  let dryZ = Number.NaN;
-  let firstUpdate = true;
+  // The bed's square follows the camera with no engine (`bedFollow.ts`): first
+  // filled at load, before any frame is shown, unless it came baked ahead.
+  const bed = createBedFollow(tier, seed, lakes, waterLevel, camX, camZ, prepared?.bed ?? null);
+  const { texels, spacing } = bed;
   let bedTexture: RawTexture | null = null;
   function uploadBed(): void {
+    const grid = bed.grid;
     if (bedTexture === null) {
       bedTexture = RawTexture.CreateRTexture(
         grid.heights,
@@ -1345,9 +1161,6 @@ export function createWater(
     }
   }
   for (const p of plugins) p.octaves = tier === "low" ? 1 : 2;
-  // The first fill is at load, before any frame is shown: the whole grid at
-  // once, unless it came baked ahead.
-  if (bakedAhead === null) bakeBed(grid, seed, camX, camZ);
   uploadBed();
 
   // The cove the sea's edge runs along (below), and the span of z its
@@ -1519,34 +1332,9 @@ export function createWater(
       for (let level = 0; level < WATER_RING_COUNT; level++) {
         if (moved[level] || (level > 0 && (moved[level - 1] as boolean))) emitRing(level);
       }
-      // The bed re-centres a row a frame into the spare grid (a whole 256²
-      // bake is 260 to 295 ms) and swaps in when complete.
-      if (firstUpdate) {
-        // The camera's real start is only known now: if it is outside the grid
-        // made at creation, fill the whole grid at once (at load, before the
-        // first frame is shown) rather than draw ~256 frames on the wrong bed.
-        firstUpdate = false;
-        if (bakeBed(grid, seed, camX, camZ)) uploadBed();
-      }
-      // A bake whose square the camera has already left (a teleport, a fast
-      // ride) would swap in a bed for somewhere else: start over. Only the
-      // whole square counts: leaving its inner half is what starts a bake, and
-      // dropping on that would never let steady motion finish one.
-      if (bake !== null && bedOutsideSquare(bake.originX, bake.originZ, texels, spacing, camX, camZ)) bake = null;
-      if (bake === null && bedNeedsRebake(grid, camX, camZ)) {
-        const next = beginBake(spare, camX, camZ);
-        // Where no body reaches the new square the current bed is kept: outside
-        // it the ring's per-vertex depth stands in, and there is no water there.
-        if (next.originX !== dryX || next.originZ !== dryZ) {
-          if (bedSquareHasWater(next, spare, lakes, waterLevel, seed)) bake = next;
-          else [dryX, dryZ] = [next.originX, next.originZ];
-        }
-      }
-      if (bake !== null && bakeRows(spare, seed, bake, BED_ROWS_PER_FRAME)) {
-        [grid, spare] = [spare, grid];
-        bake = null;
-        uploadBed();
-      }
+      // The bed re-centres a row a frame into its spare grid and swaps in when
+      // complete; a grid that has changed is uploaded with its origin.
+      if (bed.step(camX, camZ)) uploadBed();
       for (const p of plugins) p.advance(seconds);
       ocean.update(camX, camZ, seconds, seaWind, seaWindDir, hour, seaDrawn());
       // The sea's edge, on the same seconds and swell, under the onshore
@@ -3101,13 +2889,8 @@ function buildRenderer(
   const lastEye = new Vector3();
   let eyeSeen = false;
   let mirrorMotionM = 0;
-  /** What the calm fades from (a preset, or the share a fade took over at)
-   * and the preset it fades to, and the fade's length and progress (s):
-   * `setWeatherName`. */
-  let calmFrom: WeatherPresetName | number = DEFAULT_WEATHER;
-  let calmTo: WeatherPresetName = DEFAULT_WEATHER;
-  let calmFadeS = 0;
-  let calmElapsedS = 0;
+  /** The weather's preset as the calm follows it, through a fade (`lakeCalmFrame.ts`): `setWeatherName`. */
+  const calmFade = createCalmFade();
   /** The sky state the panorama was last armed under: the lighting makes a
    * new one at each apply that re-arms the sky's probe (`Lighting.sky`). */
   let panoramaSky: SkyState | null = null;
@@ -3151,14 +2934,7 @@ function buildRenderer(
    */
   function updateLake(weather: WeatherParams, sky: SkyState | null, eye: boolean): void {
     if (lakePlugins.length === 0) return;
-    if (calmFadeS > 0) {
-      calmElapsedS += engine.getDeltaTime() / 1000;
-      if (calmElapsedS >= calmFadeS) {
-        calmFrom = calmTo;
-        calmFadeS = 0;
-      }
-    }
-    const fade = calmFadeS > 0 ? calmElapsedS / calmFadeS : 1;
+    calmFade.step(engine.getDeltaTime() / 1000);
     // The lake the mirror and the panorama serve: the nearest past its bound,
     // held until another is 20 m nearer (`lakeChoice.ts`). On a move the old
     // lake's material lets go of both, and they follow to the new one.
@@ -3179,7 +2955,7 @@ function buildRenderer(
     for (let i = 0; i < lakePlugins.length; i++) {
       const plugin = lakePlugins[i] as WaterPlugin;
       const c = lakeCalmUnder(
-        lighting.hour, calmFrom, calmTo, fade, weather, wind.speed, lakeShelters[i] as number, engine.getRenderHeight(), camera.fov, lakeCalm,
+        lighting.hour, calmFade.from, calmFade.to, calmFade.progress, weather, wind.speed, lakeShelters[i] as number, engine.getRenderHeight(), camera.fov, lakeCalm,
       );
       // Without a mirror the weight is 1 until the surface is rough all over,
       // where the ramped share has already reached 0: no step in the image.
@@ -3829,18 +3605,7 @@ function buildRenderer(
       post.setPalette(PAINT_PALETTES[name], fadeSeconds);
     },
     setWeatherName(name, fadeSeconds = 3) {
-      if (fadeSeconds <= 0) {
-        calmFrom = name;
-        calmTo = name;
-        calmFadeS = 0;
-        calmElapsedS = 0;
-        return;
-      }
-      // A fade taken over mid-way starts from the share it had reached.
-      calmFrom = calmFadeS > 0 ? fadedCalmShare(lighting.hour, calmFrom, calmTo, calmElapsedS / calmFadeS) : calmTo;
-      calmTo = name;
-      calmFadeS = fadeSeconds;
-      calmElapsedS = 0;
+      calmFade.name(name, fadeSeconds, lighting.hour);
     },
     setBobScale(scale) {
       bob.setScale(scale);

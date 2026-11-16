@@ -52,10 +52,19 @@ describe("the places of the hike's see-through draws on Babylon Lite", () => {
     expect(SEE_THROUGH_ORDER.motes).toBeLessThan(SEE_THROUGH_ORDER.mist);
   });
 
-  it("draws the rain last of them, the splashes before the drips and streaks, as the game's alpha indices order its three meshes", () => {
+  it("draws the rain after the air's, the splashes before the drips and streaks, as the game's alpha indices order its three meshes", () => {
     expect(SEE_THROUGH_ORDER.mist).toBeLessThan(SEE_THROUGH_ORDER.splashes);
     expect(SEE_THROUGH_ORDER.splashes).toBeLessThan(SEE_THROUGH_ORDER.rain);
-    expect(Math.max(...Object.values(SEE_THROUGH_ORDER))).toBe(SEE_THROUGH_ORDER.rain);
+  });
+
+  it("blends the water over the rain: the game leaves its surface at the default place, past the rain's", () => {
+    expect(SEE_THROUGH_ORDER.rain).toBeLessThan(SEE_THROUGH_ORDER.water);
+  });
+
+  it("draws a lake's insects last of all, the midges before the dragonflies, as the game's highest index puts them", () => {
+    expect(SEE_THROUGH_ORDER.water).toBeLessThan(SEE_THROUGH_ORDER.midges);
+    expect(SEE_THROUGH_ORDER.midges).toBeLessThan(SEE_THROUGH_ORDER.dragonflies);
+    expect(Math.max(...Object.values(SEE_THROUGH_ORDER))).toBe(SEE_THROUGH_ORDER.dragonflies);
   });
 
   it("draws the bodies, the cap and the animals after the world they stand in and before the sky", () => {
@@ -63,6 +72,11 @@ describe("the places of the hike's see-through draws on Babylon Lite", () => {
     expect(DRAW_ORDER.bodies).toBeLessThan(DRAW_ORDER.cap);
     expect(DRAW_ORDER.cap).toBeLessThan(DRAW_ORDER.animals);
     expect(DRAW_ORDER.animals).toBeLessThan(DRAW_ORDER.sky);
+  });
+
+  it("draws a lake's reeds and lilies after the animals and before the sky", () => {
+    expect(DRAW_ORDER.animals).toBeLessThan(DRAW_ORDER.waterPlants);
+    expect(DRAW_ORDER.waterPlants).toBeLessThan(DRAW_ORDER.sky);
   });
 
   it("names places of their own, apart from the opaque ones", () => {

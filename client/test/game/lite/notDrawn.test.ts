@@ -13,22 +13,15 @@ describe("what the renderer on Babylon Lite does not draw yet", () => {
 
   it("names every part of the world it leaves out", () => {
     const all = NOT_DRAWN.map((part) => part.what).join("; ");
-    for (const word of [ "sea", "lakes", "insects", "figure in the silhouette mask", "shadows", "rain on the lens", "post chain", "scenes", "endings", "posts", "body at the crest"]) {
+    for (const word of [ "sea", "lake", "figure in the silhouette mask", "shadows", "rain on the lens", "post chain", "scenes", "endings", "posts", "body at the crest"]) {
       expect(all, word).toContain(word);
     }
   });
 
-  it("reads out nothing: no water to hear, no scene, no stare", () => {
+  it("reads out nothing: no sea to hear, no scene, no stare", () => {
     const { members } = notDrawnMembers();
     expect(members.hasSea).toBe(false);
     expect(members.surfSound()).toBe(SILENT_SURF_SOUND);
-    expect(members.hasWaterLife).toBe(false);
-    const life = members.waterLifeSound();
-    expect(life.hums_n).toBe(0);
-    expect(life.rustles).toEqual([]);
-    expect(life.frogCalls).toEqual([]);
-    expect(life.bed.level).toBe(0);
-    expect(members.waterLifeSound()).toBe(life);
     expect(members.endScene()).toBeNull();
     expect(members.stare()).toBe(STARE_LENS_REST);
     expect(members.gpuTime).toBeNull();
@@ -39,12 +32,11 @@ describe("what the renderer on Babylon Lite does not draw yet", () => {
     members.setChase(2);
     members.setUnsettle(0.5);
     members.setPalette("dusk" as never);
-    members.setWeatherName("rain");
     members.setWireframe(true);
     members.setSkinShading(false);
     members.setDepthOfField(true);
     expect(held).toMatchObject({
-      chase: 1, unsettle: 0.5, palette: "dusk", weatherName: "rain", wireframe: true, skinShading: false, depthOfField: true,
+      chase: 1, unsettle: 0.5, palette: "dusk", wireframe: true, skinShading: false, depthOfField: true,
     });
   });
 
@@ -72,6 +64,20 @@ describe("what the renderer on Babylon Lite does not draw yet", () => {
     const rain = NOT_DRAWN.filter((part) => /rain|splash|drip|canopy/.test(part.what));
     expect(rain).toHaveLength(1);
     expect(rain[0]?.what).toContain("the post chain");
+  });
+
+  it("leaves the lakes' water, its calm, its plants and its life to the renderer: what is left of a lake is its reflections and the tier that reads through it", () => {
+    const { members } = notDrawnMembers();
+    for (const name of ["setWeatherName", "hasWaterLife", "waterLifeSound"]) expect(name in members, name).toBe(false);
+    const lakes = NOT_DRAWN.filter((part) => /lake/.test(part.what));
+    expect(lakes.map((part) => part.members)).toEqual([[]]);
+    expect(NOT_DRAWN.map((part) => part.what).join("; ")).not.toMatch(/insects|frogs|midges|dragonfl/);
+    expect(lakes[0]?.what).not.toMatch(/plants|reeds|lil/);
+    expect(lakes[0]?.what).toMatch(/panorama/);
+    expect(lakes[0]?.what).toMatch(/mirror/);
+    expect(lakes[0]?.what).not.toMatch(/calm/);
+    // The sea is all absent still.
+    expect(NOT_DRAWN.find((part) => /\bsea\b/.test(part.what))?.members).toEqual(["hasSea", "surfSound"]);
   });
 
   it("keeps the first ending it is told and lets a death be undone, and keeps the last scene", () => {

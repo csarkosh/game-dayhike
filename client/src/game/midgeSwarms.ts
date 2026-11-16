@@ -4,9 +4,10 @@
  * from its swarm's row in a small uniform table and the shared clock, so
  * nothing but the table goes up each frame.
  *
- * The instances are laid out once, at creation: row r gets `blocks[r]`
- * instances, slots 0 to `blocks[r] - 1`, its per-instance `midge` attribute
- * (row, slot) written once. A slot at or above its row's count collapses in
+ * The instances are laid out once, at creation (`midgeSlots`, `midgeLook.ts`,
+ * which also holds the look's numbers and a frame's shape, with no engine):
+ * row r gets `blocks[r]` instances, slots 0 to `blocks[r] - 1`, its
+ * per-instance `midge` attribute (row, slot) written once. A slot at or above its row's count collapses in
  * the vertex stage, so the tier's cap and the distance's thinning
  * (`shareBudget`, `midgeMotion.ts`) change counts in the table, never the
  * buffers.
@@ -40,6 +41,7 @@ import { Vector3 } from "@babylonjs/core/Maths/math.vector.js";
 import "@babylonjs/core/Meshes/thinInstanceMesh.js";
 
 import { MIDGE_SWARMS_MAX, SWARM_ROW_FLOATS } from "./midgeMotion.js";
+import { midgeSlots, type MidgeFrame } from "./midgeLook.js";
 import midgeVertex from "./shaders/midge.vertex.fx?raw";
 import midgeFragment from "./shaders/midge.fragment.fx?raw";
 
@@ -54,54 +56,10 @@ export const MIDGE_UNIFORMS: readonly string[] = [
   "midgeExposure", "midgeToneMap", "midgeContrast",
 ];
 
-/** The forward scatter's lobe: the cosine between the view and the sun raised to this. */
-export const MIDGE_LOBE_POWER = 8;
-/** The wing's flash: the positive half of its sinusoid raised to this, a narrow pulse. */
-export const MIDGE_FLASH_POWER = 24;
-/** The flash's weight beside the lobe's. */
-export const MIDGE_FLASH_GAIN = 0.5;
-/** The sky's glint at its fullest, looking level toward the sun's azimuth:
- * its share of the horizon's colour toward the sun. */
-export const MIDGE_SKY_GLINT = 0.6;
-/** The sky glint's lobe: the cosine between the view and the sun's azimuth,
- * level, raised to this, a broad lobe as the glow along the horizon is. */
-export const MIDGE_SKY_LOBE_POWER = 2;
-/** The least coverage a midge enlarged to its fewest pixels keeps near the
- * eye, so a close swarm's midge reads as a dot, not a ghost. */
-export const MIDGE_ALPHA_FLOOR = 0.6;
-/** The floor holds whole to this many metres from the eye… */
-export const MIDGE_FLOOR_NEAR = 6;
-/** …and falls linearly to nothing here and beyond, so a far midge keeps only
- * its card's own coverage of its pixels (0.07 at 20 m with a pixel 1.1 mm
- * across at 1 m): a faint speck, and a swarm across the water no solid blob. */
-export const MIDGE_FLOOR_FAR = 15;
-/** How much of the background a speck hides against the brightest sky. */
-export const MIDGE_DARK = 0.9;
-/** Khronos PBR Neutral's published constants, as Babylon's image processing
- * and the sky dome's stage have them: where compression starts, and how far
- * a compressed colour desaturates. */
-export const MIDGE_NEUTRAL_START = 0.76;
-export const MIDGE_NEUTRAL_DESATURATION = 0.15;
-
-/** One frame of the midges: the eye, the shared clock, the sun, the sky and the table. */
-export type MidgeFrame = {
-  eyeX: number; eyeY: number; eyeZ: number;
-  /** Shared seconds. */
-  time: number;
-  /** A unit vector toward the sun. */
-  sunX: number; sunY: number; sunZ: number;
-  /** The sun's colour times its intensity. */
-  sunR: number; sunG: number; sunB: number;
-  /** The dome's horizon toward the sun as it draws it level, in the scene's
-   * units (`SkyState.horizonToward` blended toward `mistAir` by
-   * `mistWeight`): the light of the sky's glint. */
-  glowR: number; glowG: number; glowB: number;
-  night: number; skyLuma: number;
-  /** The world size of one pixel at 1 m from the eye. */
-  pixelAt1m: number;
-  /** SWARM_ROW_FLOATS · MIDGE_SWARMS_MAX, packed by `packSwarm`. */
-  table: Float32Array;
-};
+export {
+  MIDGE_ALPHA_FLOOR, MIDGE_DARK, MIDGE_FLASH_GAIN, MIDGE_FLASH_POWER, MIDGE_FLOOR_FAR, MIDGE_FLOOR_NEAR, MIDGE_LOBE_POWER, MIDGE_NEUTRAL_DESATURATION,
+  MIDGE_NEUTRAL_START, MIDGE_SKY_GLINT, MIDGE_SKY_LOBE_POWER, type MidgeFrame,
+} from "./midgeLook.js";
 
 export type MidgeSwarms = {
   readonly mesh: Mesh;
@@ -170,16 +128,7 @@ export function createMidgeSwarms(scene: Scene, blocks: readonly number[], colou
   mesh.alwaysSelectAsActiveMesh = true;
   mesh.doNotSyncBoundingInfo = true;
 
-  let total = 0;
-  for (const block of blocks) total += block;
-  const midges = new Float32Array(total * 2);
-  let at = 0;
-  blocks.forEach((block, row) => {
-    for (let slot = 0; slot < block; slot++) {
-      midges[at++] = row;
-      midges[at++] = slot;
-    }
-  });
+  const { slots: midges, total } = midgeSlots(blocks);
   if (total > 0) {
     // Babylon counts thin instances by their matrices: identities, never
     // read by the stages, which place each midge from the table.

@@ -2,8 +2,8 @@ import { describe, it, expect } from "vitest";
 import { lakeOf } from "../sim/helpers/lakes.js";
 import {
   SAPLING_MODEL_HEIGHT, SKYLINE_CROWN, SKYLINE_EYE_UP, SKYLINE_REACH, SKYLINE_RIM_DIRECTIONS, SKYLINE_RIM_MARGIN, SKYLINE_RIM_STEP,
-  SKYLINE_SHADE, SKYLINE_STEP, SKYLINE_TEXELS, SNAG_MODEL_HEIGHT,
-  cylinderHit, lakeRimRadii, rimAt, skylineElevations, skylineTrees,
+  SKYLINE_READ_MAX, SKYLINE_SHADE, SKYLINE_STEP, SKYLINE_TEXELS, SNAG_MODEL_HEIGHT,
+  cylinderHit, lakeRimRadii, rimAt, skylineElevations, skylineTexels, skylineTrees,
 } from "../../src/game/lakeSkyline.js";
 import { stadiumShape } from "../helpers/lakeShapes.js";
 import { timeLimit } from "../helpers/timeLimit.js";
@@ -177,5 +177,23 @@ describe("cylinderHit", () => {
     expect(cylinderHit([CX + R + 0.5, LEVEL, CZ], [Math.cos(0.3), Math.sin(0.3), 0], CX, CZ, R, LEVEL)).toBeNull();
     // From the margin past the rim, pointing along it and passing it by.
     expect(cylinderHit([CX + R + 0.5, LEVEL, CZ], [0, 0.6, 0.8], CX, CZ, R, LEVEL)).toBeNull();
+  });
+});
+
+describe("the skyline as the water reads it (skylineTexels)", () => {
+  it("caps each elevation just short of a right angle and leaves the caller's array as it was", () => {
+    const elevations = new Float32Array(SKYLINE_TEXELS).fill(0.3);
+    elevations[7] = 1.57;
+    const texels = skylineTexels(elevations);
+    expect(texels).not.toBe(elevations);
+    expect(texels.length).toBe(SKYLINE_TEXELS);
+    expect(texels[7]).toBe(Math.fround(SKYLINE_READ_MAX));
+    expect(texels[8]).toBe(Math.fround(0.3));
+    expect(elevations[7]).toBe(Math.fround(1.57));
+    expect(Math.tan(SKYLINE_READ_MAX)).toBeLessThan(49);
+  });
+
+  it("refuses a skyline of another length", () => {
+    expect(() => skylineTexels(new Float32Array(SKYLINE_TEXELS - 1))).toThrow(/512 elevations/);
   });
 });
