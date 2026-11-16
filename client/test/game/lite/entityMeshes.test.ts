@@ -23,8 +23,11 @@ describe("the hikers' bodies and the Hollows' eyes on Babylon Lite", () => {
 
   it("stands the rangers' primitives at the same places among the draws and the capsule after them, within the bodies' own run", () => {
     // A place a primitive by its order in the model, the same for every ranger: four at the most, then the capsule.
-    expect(BODY_PLACES).toEqual({ rangers: 0, capsule: 4 });
-    expect((BODY_PLACES.capsule + 1) / DRAW_PLACES).toBeLessThan(DRAW_ORDER.cap - DRAW_ORDER.bodies);
+    expect(BODY_PLACES).toEqual({ rangers: 0, capsule: 4, figure: 5 });
+    // The Hollow's figure is the mask's and never drawn here, yet its mesh stands in the scene: it has a place in
+    // the bodies' run, the last, and is not left at Lite's own among the forest's.
+    expect(Math.max(...Object.values(BODY_PLACES))).toBe(BODY_PLACES.figure);
+    expect((BODY_PLACES.figure + 1) / DRAW_PLACES).toBeLessThan(DRAW_ORDER.cap - DRAW_ORDER.bodies);
   });
 
   it("draws the capsule in the game's blue, matt", () => {
