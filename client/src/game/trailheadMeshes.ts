@@ -14,7 +14,7 @@ import type { TransformNode } from "@babylonjs/core/Meshes/transformNode.js";
 import type { Observer } from "@babylonjs/core/Misc/observable.js";
 import type { Scene } from "@babylonjs/core/scene.js";
 
-import { BOARD_BOX_HALF, CAR_HALF, CAR_MATERIAL, KIOSK_MATERIAL, boardBoxes, carDirection, type Board } from "../sim/trailhead.js";
+import { BOARD_BOX_HALF, CAR_HALF, CAR_MATERIAL, KIOSK_MATERIAL, boardBoxes } from "../sim/trailhead.js";
 import type { Vec3 } from "../sim/types.js";
 import { BOARD_FACE } from "./boardFace.js";
 import { paintedBoard, type BoardDrawing, type BoardPainter } from "./boardPaint.js";
@@ -22,38 +22,16 @@ import { CAR_SHADOW_BIAS, CAR_SHADOW_TEX, carShadowAlphaMap, carShadowGrid } fro
 import type { MeshRegistry, PropShadows } from "./propMeshes.js";
 import { carModelOf, dimCabParts, type CarModel } from "./scene/sceneStage.js";
 import { TAIL_LAMP_APART, TAIL_LAMP_BACK, TAIL_LAMP_COLOUR, TAIL_LAMP_H, TAIL_LAMP_UP, TAIL_LAMP_W } from "./endScene.js";
-import { armYaw } from "./signMeshes.js";
+import { BOARD_FACE_LIFT, TRAILHEAD_CAR_OUTPUT, TRAILHEAD_KIOSK_OUTPUT, boardYaw, carYaw, type TrailheadSites } from "./sceneryParts.js";
 import { defaultModelLoader, loaderUntilAborted, placeStaticModel, type ModelLoader, type PlacedModel } from "./staticModel.js";
 import { attachWet, WET_CAP } from "./wetPlugin.js";
 import { effectsWaitingOn } from "./effectTurns.js";
 
-export const TRAILHEAD_CAR_OUTPUT = "models/trailhead.car.glb";
-export const TRAILHEAD_KIOSK_OUTPUT = "models/trailhead.kiosk.glb";
-/** The film's car (the intro's, with wheels and a door), which the end scene swaps in for the parked one (`swapCar`). */
-export const FILM_CAR_NAME = "intro.car";
-export const FILM_CAR_OUTPUT = "models/intro.car.glb";
-/**
- * How far in front of the model's own face the painted plane stands. With
- * the view's near plane at 5 cm, a vertex lands in depth to within about
- * 0.7 mm for every metre between it and the eye, so a plane 1 mm in front
- * of another loses to it, in wedges across the face, from some places a
- * player stands. Measured from standpoints 1 to 18 m in front of the board:
- * at 1 mm and no bias the paint was lost from 16 of 75 under WebGPU and 1
- * of 78 under WebGL2; at 2 mm with the material's bias (`boardPaint.ts`),
- * from none under either. 2 mm holds the first metres and the bias the
- * rest.
- */
-export const BOARD_FACE_LIFT = 0.002;
+// The models' files, the face's lift and the car's yaw are the scenery's own (`sceneryParts.ts`); named from here too.
+export { BOARD_FACE_LIFT, FILM_CAR_NAME, FILM_CAR_OUTPUT, TRAILHEAD_CAR_OUTPUT, TRAILHEAD_KIOSK_OUTPUT, carYaw } from "./sceneryParts.js";
+export type { TrailheadSites } from "./sceneryParts.js";
 
 type Site = { x: number; z: number };
-
-export type TrailheadSites = {
-  /** The car's footprint centre, and the trailhead it is parked beside;
-   * absent, no car is placed: a staged scene brings its own and moves it. */
-  car?: { site: Site; trailhead: Site };
-  /** The board: its centre, the way its face looks, and its own line. */
-  board: Board;
-};
 
 export type TrailheadDeps = {
   /** The box material by prop name — `terrainMaterialFor`, as the prop boxes use. */
@@ -145,17 +123,6 @@ export type TrailheadMeshes = {
   swapCar(placed: PlacedModel): void;
   dispose(): void;
 };
-
-/**
- * The car's yaw: 0 or PI only, so the model stays square to the box the sim
- * collides with. It stands at the pad's own place along the road on most
- * worlds, and there its nose points toward +z (yaw 0); where it has slid
- * along the road to clear the trail, its nose points back toward the pad.
- * The rule is the sim's (`carDirection`), so the door spot agrees with it.
- */
-export function carYaw(site: Site, trailhead: Site): number {
-  return carDirection(site, trailhead) === 1 ? 0 : Math.PI;
-}
 
 /**
  * The trailhead's two models, placed once from the seed's places: the
@@ -409,7 +376,7 @@ export function createTrailheadMeshes(
     place(
       TRAILHEAD_KIOSK_OUTPUT, "trailhead_kiosk", sites.board,
       // The model's face looks toward +Z; turn +Z onto the board's facing.
-      armYaw({ dx: sites.board.fx, dz: sites.board.fz }), kioskBoxes, faceOn,
+      boardYaw(sites.board), kioskBoxes, faceOn,
     ),
   ]).then(() => undefined);
 

@@ -93,6 +93,19 @@ describe("the places of the hike's see-through draws on Babylon Lite", () => {
     expect(DRAW_ORDER.animals).toBeLessThan(DRAW_ORDER.sky);
   });
 
+  it("draws the scenery placed once with the props, before the bodies that stand by it", () => {
+    expect(DRAW_ORDER.props).toBeLessThan(DRAW_ORDER.scenery);
+    expect(DRAW_ORDER.scenery).toBeLessThan(DRAW_ORDER.bodies);
+  });
+
+  it("blends the scenery's see-through parts after the water beyond them: the patch on the ground, the paint, then the glass they are seen through", () => {
+    expect(SEE_THROUGH_ORDER.water).toBeLessThan(SEE_THROUGH_ORDER.carShadow);
+    expect(SEE_THROUGH_ORDER.carShadow).toBeLessThan(SEE_THROUGH_ORDER.lettering);
+    expect(SEE_THROUGH_ORDER.lettering).toBeLessThan(SEE_THROUGH_ORDER.boardFace);
+    expect(SEE_THROUGH_ORDER.boardFace).toBeLessThan(SEE_THROUGH_ORDER.glass);
+    expect(SEE_THROUGH_ORDER.glass).toBeLessThan(SEE_THROUGH_ORDER.midges);
+  });
+
   it("draws a lake's reeds and lilies after the animals and before the sky", () => {
     expect(DRAW_ORDER.animals).toBeLessThan(DRAW_ORDER.waterPlants);
     expect(DRAW_ORDER.waterPlants).toBeLessThan(DRAW_ORDER.sky);

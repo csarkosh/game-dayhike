@@ -8,9 +8,12 @@
  * what is built here by what it can ask of it and no more, and disposes it
  * while its scene lives (`SwapBindings.extras`).
  *
- * All of it is Babylon's, built into a Babylon scene: a renderer with none
- * (`sceneRendererOf` null, the hike's own on Babylon Lite) gets no signs, no
- * film car and a body that is nothing, until that renderer draws them.
+ * On Babylon.js it is built into the renderer's scene. The hike's own
+ * renderer on Babylon Lite has no such scene (`sceneRendererOf` null): it is
+ * asked for the same pieces at the same places (`liteSceneryOf`) and draws
+ * them itself, the film's car in the parked car's place among them; the car
+ * the end scene drives is not handed out there yet. A renderer that is
+ * neither gets no signs, no film car and a body that is nothing.
  */
 import { activeTerrainVariant, elevationAt } from "../sim/terrain.js";
 import { signSites } from "../sim/placeNames.js";
@@ -23,6 +26,7 @@ import { boardDrawingOf } from "./boardPaint.js";
 import { createBodyMesh } from "./bodyMesh.js";
 import { loadUntilAborted } from "./modelLoad.js";
 import { POSTER_LAST_SEEN } from "./posterPanel.js";
+import { liteSceneryOf, type LiteTrailhead } from "./lite/sceneryMeshes.js";
 import { sceneRendererOf, terrainMaterialFor, type Renderer } from "./renderer.js";
 import { createSignMeshes, type SignMeshes } from "./signMeshes.js";
 import { defaultModelLoader, placeStaticModel } from "./staticModel.js";
@@ -43,6 +47,8 @@ export type HikeSigns = {
 
 /** The trailhead each set of signs was built with, for the film's car to be placed in. */
 const trailheads = new WeakMap<HikeSigns, TrailheadMeshes>();
+/** The same on the hike's own renderer on Babylon Lite. */
+const liteTrailheads = new WeakMap<HikeSigns, LiteTrailhead>();
 
 /**
  * Junction posts, and the trailhead's car and board, from the same seed the
@@ -51,8 +57,8 @@ const trailheads = new WeakMap<HikeSigns, TrailheadMeshes>();
  */
 export function createHikeSigns(renderer: Renderer, world: World, seed: number): HikeSigns | null {
   const built = sceneRendererOf(renderer);
-  if (built === null) return null;
-  const { scene, shadows, cover } = built;
+  const lite = built === null ? liteSceneryOf(renderer) : null;
+  if (built === null && lite === null) return null;
   const search = world.search;
   const variant = activeTerrainVariant();
   const graph = variant.trailGraph?.(seed);
@@ -64,6 +70,37 @@ export function createHikeSigns(renderer: Renderer, world: World, seed: number):
   // pond and meadow, never under the missing hiker's own first name.
   const hikerFirst = search.hiker.name.split(" ")[0] as string;
   const sites = signSites(seed, graph.features, hikerFirst, search.body.pos);
+  const trailheadSites = { car: { site: places.car, trailhead: graph.trailhead }, board: places.board };
+  const board = boardDrawingOf({
+    seed,
+    trailName: TRAIL_NAME,
+    hikerName: search.hiker.name,
+    lastSeen: POSTER_LAST_SEEN,
+    graph,
+    places: sites,
+    summitName: SUMMIT_LABEL,
+    roadCenterX,
+    urls: BOARD_IMAGE_URLS,
+  });
+  if (built === null) {
+    // The hike's own renderer on Babylon Lite draws the same scenery from the same places (`lite/sceneryMeshes.ts`).
+    // The car the end scene drives is not handed out yet: that renderer plays no scene.
+    const host = lite as NonNullable<typeof lite>;
+    const litePosts = host.signs(signPosts(graph, sites), groundH);
+    const liteTrailhead = host.trailhead(trailheadSites, groundH, board);
+    const liteSigns: HikeSigns = {
+      car: () => null,
+      filmCarIn: () => liteTrailhead.filmCarIn(),
+      warm: () => false,
+      dispose() {
+        litePosts.dispose();
+        liteTrailhead.dispose();
+      },
+    };
+    liteTrailheads.set(liteSigns, liteTrailhead);
+    return liteSigns;
+  }
+  const { scene, shadows, cover } = built;
   const posts: SignMeshes = createSignMeshes(
     scene,
     signPosts(graph, sites),
@@ -72,21 +109,11 @@ export function createHikeSigns(renderer: Renderer, world: World, seed: number):
   );
   const trailhead = createTrailheadMeshes(
     scene,
-    { car: { site: places.car, trailhead: graph.trailhead }, board: places.board },
+    trailheadSites,
     groundH,
     {
       materialFor: (name) => terrainMaterialFor(scene, name),
-      board: boardDrawingOf({
-        seed,
-        trailName: TRAIL_NAME,
-        hikerName: search.hiker.name,
-        lastSeen: POSTER_LAST_SEEN,
-        graph,
-        places: sites,
-        summitName: SUMMIT_LABEL,
-        roadCenterX,
-        urls: BOARD_IMAGE_URLS,
-      }),
+      board,
       shadows,
       cover,
     },
@@ -112,6 +139,11 @@ export function createHikeSigns(renderer: Renderer, world: World, seed: number):
  * fails says so once and leaves the parked car.
  */
 export function loadFilmCar(renderer: Renderer, signs: HikeSigns, signal: AbortSignal): void {
+  const liteTrailhead = liteTrailheads.get(signs);
+  if (liteTrailhead !== undefined) {
+    liteTrailhead.filmCar(signal);
+    return;
+  }
   const trailhead = trailheads.get(signs);
   if (trailhead === undefined) return;
   const built = sceneRendererOf(renderer);
@@ -141,6 +173,6 @@ export function loadFilmCar(renderer: Renderer, signs: HikeSigns, signal: AbortS
  */
 export function createHikeBody(renderer: Renderer, body: { pos: Vec3; yaw: number }): { dispose(): void } {
   const built = sceneRendererOf(renderer);
-  if (built === null) return { dispose: () => undefined };
+  if (built === null) return liteSceneryOf(renderer)?.body(body) ?? { dispose: () => undefined };
   return createBodyMesh(built.scene, body, { shadows: built.shadows });
 }

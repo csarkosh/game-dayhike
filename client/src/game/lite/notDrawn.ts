@@ -30,7 +30,10 @@
  * the baked loop above it, and the cascades computed each frame on the tier
  * that computes them, with the swept curl of its plunging lip and the surf's
  * spray) and its white water, the swash up the cove's face, and its surf to
- * hear. Every other part of the world is absent, and the
+ * hear; and the scenery a hike places once: the fingerposts at the junctions
+ * with their lettering, the trailhead's car, the film's car in its place and
+ * the patch under it, the board with its painted face, and the body at the
+ * crest. Every other part of the world is absent, and the
  * members of `Renderer` that belong to an absent part are answered here as
  * nothing: a setter keeps what it was told (`held`), for the day its part is
  * drawn; a read-out returns nothing heard, nothing seen or nothing pending;
@@ -45,11 +48,10 @@ export type NotDrawn = { readonly what: string; readonly members: readonly (keyo
 export const NOT_DRAWN: readonly NotDrawn[] = [
   { what: "the mirror a lake reflects its shore in on the tier that draws one, and the water, a lake's and the sea's, on the tier that reads what lies under it through the surface", members: [] },
   { what: "the skin's shading (`skin.ts`): no model the game ships has a surface that shows it", members: ["setSkinShading"] },
-  { what: "the sun's cast shadows", members: [] },
+  { what: "the sun's cast shadows on a tier given a shadow map: no tier has one (`quality.ts`), so the game casts none either", members: [] },
   { what: "the scenes and the endings: their cameras, their stage, the local hiker's own body in them and the end scene's car", members: ["setEnding", "endScene", "setScene", "clearEnding"] },
   { what: "the hand-authored levels' brushes, and the wireframe view", members: ["setWireframe"] },
   { what: "the shaders' compiles told as they happen, kept shaders, and the GPU's timings", members: ["onShaderCompiled", "keepShaders", "gpuTime"] },
-  { what: "the junction posts, the trailhead's car and board, and the body at the crest (`hikeScenery.ts`)", members: [] },
 ];
 
 /** What the setters of the absent parts were last told. */

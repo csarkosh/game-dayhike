@@ -1,7 +1,7 @@
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
-import { glbEmissive, glbParts } from "../../src/game/glbParts.js";
+import { glbEmissive, glbOcclusion, glbParts } from "../../src/game/glbParts.js";
 
 const MODELS = join(import.meta.dirname, "../../assets/models");
 
@@ -116,5 +116,58 @@ describe("what a model's materials give off, read from its file", () => {
     expect(hollow.get("hollow.antlered.material0")).toEqual([0, 0, 0]);
     expect(hollow.get("hollow.antlered.material1")).toEqual([1, 0, 0]);
     for (const [, emissive] of glbEmissive(model("ranger.nathan.glb"))) expect(emissive).toEqual([0, 0, 0]);
+  });
+});
+
+describe("what a model's materials say of their occlusion maps, read from its file", () => {
+  it("finds the cars' paint with an occlusion map alone: its roughness and metalness are plain factors the map does not hold", () => {
+    for (const name of ["trailhead.car", "intro.car"]) {
+      const occlusion = glbOcclusion(model(`${name}.glb`));
+      // The paint, and the trim whose occlusion rides in its map of roughness and metalness.
+      expect([...occlusion.keys()].sort(), name).toEqual([`${name}.material1`, `${name}.material2`]);
+      const paint = occlusion.get(`${name}.material1`);
+      expect(paint?.strength).toBe(1);
+      expect(paint?.alone?.roughness).toBeCloseTo(0.1769, 4);
+      expect(paint?.alone?.metallic).toBe(0);
+      expect(paint?.alone?.mime).toBe("image/webp");
+      // The image's own bytes: a WebP file.
+      const bytes = paint?.alone?.bytes as Uint8Array;
+      expect(new TextDecoder().decode(bytes.subarray(0, 4))).toBe("RIFF");
+      expect(new TextDecoder().decode(bytes.subarray(8, 12))).toBe("WEBP");
+      expect(occlusion.get(`${name}.material2`)).toEqual({ strength: 1, alone: null });
+    }
+  });
+
+  it("reads the strength a file gives an occlusion map: half, on the body's cloth", () => {
+    const occlusion = glbOcclusion(model("summit.body.glb"));
+    expect([...occlusion]).toEqual([["summit.body.material0", { strength: 0.5, alone: null }]]);
+  });
+
+  it("names no material of a file with no occlusion map, and takes a map's strength as whole where the file gives none", () => {
+    expect(glbOcclusion(model("trailhead.kiosk.glb")).size).toBe(0);
+    expect(glbOcclusion(model("sign.post.glb")).get("sign.post.material0")).toEqual({ strength: 1, alone: null });
+  });
+
+  it("reads a lone occlusion map's image through its texture's own source, WebP or not, with the factors' defaults", () => {
+    const bin = new Uint8Array([1, 2, 3, 4, 5, 6, 7, 8]);
+    const file = glb({
+      materials: [
+        { name: "plain", occlusionTexture: { index: 0, strength: 0.25 } },
+        { name: "webp", pbrMetallicRoughness: { roughnessFactor: 0.3 }, occlusionTexture: { index: 1 } },
+        { name: "none" },
+      ],
+      textures: [{ source: 0 }, { source: 0, extensions: { EXT_texture_webp: { source: 1 } } }],
+      images: [{ bufferView: 0 }, { bufferView: 1, mimeType: "image/webp" }],
+      bufferViews: [{ buffer: 0, byteOffset: 0, byteLength: 3 }, { buffer: 0, byteOffset: 4, byteLength: 4 }],
+    }, bin);
+    const occlusion = glbOcclusion(file);
+    expect([...occlusion.keys()]).toEqual(["plain", "webp"]);
+    const plain = occlusion.get("plain");
+    expect(plain?.strength).toBe(0.25);
+    expect([...(plain?.alone?.bytes ?? [])]).toEqual([1, 2, 3]);
+    expect([plain?.alone?.mime, plain?.alone?.roughness, plain?.alone?.metallic]).toEqual(["image/png", 1, 1]);
+    const webp = occlusion.get("webp");
+    expect([...(webp?.alone?.bytes ?? [])]).toEqual([5, 6, 7, 8]);
+    expect([webp?.alone?.mime, webp?.alone?.roughness, webp?.alone?.metallic]).toEqual(["image/webp", 0.3, 1]);
   });
 });
