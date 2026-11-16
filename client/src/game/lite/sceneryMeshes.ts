@@ -14,12 +14,14 @@
  *   whatever the junctions.
  * - **A model placed once is a mesh a material** (`sceneryModels.ts`): the
  *   board two, the car seven with its glass, the body two.
- * - **What is out of sight is not drawn.** Each post, the car, the board
- *   and the body is a sphere tested against the view's planes and against
- *   a reach past which it is under a pixel of the frame (`SIGN_REACH_M`,
- *   `SCENERY_REACH_M`); the posts' two lists hold the posts in sight and are
- *   written again only when that set changes. A frame with nothing of the
- *   scenery in sight has no draw and no write for it.
+ * - **What is out of sight is not drawn.** Each post is a sphere and the
+ *   car, the board and the body each the box of its own geometry, tested
+ *   against the view's planes and against a reach past which it is under a
+ *   pixel or two of the frame (`SIGN_REACH_M`, `SCENERY_REACH_M`); the
+ *   posts' two lists hold the posts in sight and are written again only
+ *   when that set changes. A frame with nothing of the scenery in sight has
+ *   no draw and no write for it: the frame a player arrives in, the car
+ *   behind them, among them.
  * - **The posts, the car and the board are hard cover for the rain**
  *   (`rainMap.ts`). Lite leaves a hidden mesh out of every pass, so what
  *   stands in the map's square is shown for the frame that draws the map.
@@ -50,10 +52,10 @@ import {
 } from "@babylonjs/lite";
 import type { SignPost } from "../../sim/signs.js";
 import { SIGN_POST_HALF } from "../../sim/signs.js";
-import { BOARD_BOX_HALF, CAR_HALF, CAR_MATERIAL, KIOSK_MATERIAL, boardBoxes } from "../../sim/trailhead.js";
+import { BOARD_BOXES, BOARD_BOX_HALF, BOARD_BOX_STEP, CAR_HALF, CAR_MATERIAL, KIOSK_MATERIAL, boardBoxes } from "../../sim/trailhead.js";
 import { BOARD_TEXTURE } from "../boardFace.js";
 import { BOARD_FACE_BIAS, BOARD_FACE_ROUGHNESS, drawBoard, loadBoardImage, type BoardDrawing } from "../boardDraw.js";
-import { carShadowGrid } from "../carShadow.js";
+import { CAR_SHADOW_HALF, carShadowGrid } from "../carShadow.js";
 import { quatFromEuler } from "../instancePose.js";
 import { PROP_ROUGHNESS, propBoxGeometry, propColour, type PropBox } from "../propBoxes.js";
 import type { Renderer } from "../renderer.js";
@@ -87,11 +89,10 @@ export const SIGN_REACH_M = 600;
 /** How far (m) the car, the board and the body are drawn from: the car, the longest of them, is under two pixels of a frame 956 rows tall past it. */
 export const SCENERY_REACH_M = 1500;
 
-/** The spheres (m) the scenery is tested against the view by: a post with its planks about its middle, the car, the board and the body about theirs. */
+/** The sphere (m) a post with its planks is tested against the view by, about its middle. */
 const POST_SPHERE_M = 0.5 + ARM_LENGTH;
-const CAR_SPHERE_M = 3.4;
-const BOARD_SPHERE_M = 2.4;
-const BODY_SPHERE_M = 2.6;
+/** How far (m) the ground under the car may rise or fall across its patch: the patch's box is this tall either way. */
+const PATCH_RISE_M = 0.5;
 
 /** The scenery's places among the opaque draws, from `DRAW_ORDER.scenery`: a run a kind, a place a material in its file's order. */
 const PLACES = { boxes: 0, posts: 8, planks: 16, board: 24, parked: 32, film: 48, body: 64, standIn: 72 } as const;
@@ -212,6 +213,38 @@ export function inSight(view: SceneryView, x: number, y: number, z: number, radi
   return sphereInView(view.planes, x, y, z, radius);
 }
 
+/** A box as a view is tested against it: its middle in the world, its half sizes along its own axes, and the turn about the vertical that stands those axes in the world. */
+export type SightBox = { x: number; y: number; z: number; hx: number; hy: number; hz: number; cos: number; sin: number };
+
+/** The box from `min` to `max` in the frame of a thing standing at (x, y, z) turned by `yaw` (the sim's: 0 faces +z, a quarter turn +x). */
+export function sightBox(x: number, y: number, z: number, yaw: number, min: { x: number; y: number; z: number }, max: { x: number; y: number; z: number }): SightBox {
+  const cx = (min.x + max.x) / 2, cy = (min.y + max.y) / 2, cz = (min.z + max.z) / 2;
+  const cos = Math.cos(yaw), sin = Math.sin(yaw);
+  return { x: x + cx * cos + cz * sin, y: y + cy, z: z - cx * sin + cz * cos, hx: (max.x - min.x) / 2, hy: (max.y - min.y) / 2, hz: (max.z - min.z) / 2, cos, sin };
+}
+
+/**
+ * Whether a box is in sight of `view`: within `reach` of the eye and not
+ * wholly outside any of the view's planes; or, for cover, in the square the
+ * cover map is drawn over. A box and not a sphere, for what is long one way:
+ * the car a player arrives in front of stands behind them, a stride from the
+ * lens, and a sphere about it reaches into the view.
+ */
+export function boxInSight(view: SceneryView, box: SightBox, reach: number, cover: boolean): boolean {
+  const round = Math.hypot(box.hx, box.hz);
+  if (cover && view.cover !== null && Math.abs(box.x - view.cover.x) <= view.cover.half + round && Math.abs(box.z - view.cover.z) <= view.cover.half + round) return true;
+  const dx = box.x - view.eye.x, dy = box.y - view.eye.y, dz = box.z - view.eye.z;
+  const far = reach + Math.hypot(round, box.hy);
+  if (dx * dx + dy * dy + dz * dz > far * far) return false;
+  for (const plane of view.planes) {
+    const n = plane.normal;
+    // How far the box reaches along the plane's normal: each half size by how far its axis lies along it.
+    const r = Math.abs(n.x * box.cos - n.z * box.sin) * box.hx + Math.abs(n.y) * box.hy + Math.abs(n.x * box.sin + n.z * box.cos) * box.hz;
+    if (n.x * box.x + n.y * box.y + n.z * box.z + plane.d <= -r) return false;
+  }
+  return true;
+}
+
 /** Several geometries of positions, normals and triangles as one. */
 function merged(parts: readonly { positions: Float32Array; normals: Float32Array; indices: Uint32Array }[]): { positions: Float32Array; normals: Float32Array; indices: Uint32Array } {
   let vertices = 0;
@@ -248,8 +281,8 @@ type Glass = {
   order: number[];
 };
 
-/** A model as it stands: its meshes, and of them the glass whose panes are ordered by the eye. */
-type Stood = { model: SceneryModel; meshes: Mesh[]; glass: Glass[] };
+/** A model as it stands: its meshes, of them the glass whose panes are ordered by the eye, and the box of its geometry in the world. */
+type Stood = { model: SceneryModel; meshes: Mesh[]; glass: Glass[]; box: SightBox };
 
 /** A piece of the scenery as the frame's view is handed to it. */
 type Piece = { seen(view: SceneryView): number; dispose(): void };
@@ -349,7 +382,20 @@ export function createLiteScenery(engine: EngineContext, scene: SceneContext, op
       if (cover) options.cover?.add(mesh);
       return mesh;
     });
-    return { model, meshes, glass };
+    // The box of the model's own geometry, where it stands.
+    const min = { x: Infinity, y: Infinity, z: Infinity };
+    const max = { x: -Infinity, y: -Infinity, z: -Infinity };
+    for (const part of model.parts) {
+      for (let i = 0; i + 2 < part.positions.length; i += 3) {
+        min.x = Math.min(min.x, part.positions[i] as number);
+        min.y = Math.min(min.y, part.positions[i + 1] as number);
+        min.z = Math.min(min.z, part.positions[i + 2] as number);
+        max.x = Math.max(max.x, part.positions[i] as number);
+        max.y = Math.max(max.y, part.positions[i + 1] as number);
+        max.z = Math.max(max.z, part.positions[i + 2] as number);
+      }
+    }
+    return { model, meshes, glass, box: sightBox(x, y, z, yaw, min, max) };
   }
 
   /** Lists each glass's panes farthest first from `eye`, where that is not the order its mesh draws them in. */
@@ -577,6 +623,11 @@ export function createLiteScenery(engine: EngineContext, scene: SceneContext, op
       let parked: Stood | null = null;
       let film: Stood | null = null;
       let kiosk: Stood | null = null;
+      // What the view is tested against until a model lands: the boxes the sim collides with; and the patch's own.
+      const carBounds = carAt === null ? null : sightBox(carAt.x, carAt.y, carAt.z, carAt.yaw, { x: -CAR_HALF.x, y: 0, z: -CAR_HALF.z }, { x: CAR_HALF.x, y: 2 * CAR_HALF.y, z: CAR_HALF.z });
+      const patchBounds = carAt === null ? null : sightBox(carAt.x, carAt.y, carAt.z, carAt.yaw, { x: -CAR_SHADOW_HALF.x, y: -PATCH_RISE_M, z: -CAR_SHADOW_HALF.z }, { x: CAR_SHADOW_HALF.x, y: PATCH_RISE_M, z: CAR_SHADOW_HALF.z });
+      const boardSpan = ((BOARD_BOXES - 1) / 2) * BOARD_BOX_STEP + BOARD_BOX_HALF.x;
+      const boardBounds = sightBox(boardAt.x, boardAt.y, boardAt.z, boardAt.yaw, { x: -boardSpan, y: 0, z: -BOARD_BOX_HALF.z }, { x: boardSpan, y: 2 * BOARD_BOX_HALF.y, z: BOARD_BOX_HALF.z });
       let face: Mesh | null = null;
       let facePicture: Texture2D | null = null;
       let filmAsked = false;
@@ -590,24 +641,26 @@ export function createLiteScenery(engine: EngineContext, scene: SceneContext, op
       const piece = join<Piece>({
         seen(view) {
           let n = 0;
-          if (carAt !== null) {
-            const on = inSight(view, carAt.x, carAt.y + CAR_HALF.y, carAt.z, CAR_SPHERE_M, SCENERY_REACH_M, true);
-            // The patch is no cover: it is drawn only where the view itself holds the car.
-            const inView = on && inSight(view, carAt.x, carAt.y + CAR_HALF.y, carAt.z, CAR_SPHERE_M, SCENERY_REACH_M, false);
+          if (carBounds !== null && patchBounds !== null) {
+            const bounds = film?.box ?? parked?.box ?? carBounds;
+            const on = boxInSight(view, bounds, SCENERY_REACH_M, true);
             if (carBox !== null) n += show([carBox], on);
             if (parked !== null) n += show(parked.meshes, on);
             if (film !== null) n += show(film.meshes, on);
             // The glass's panes farthest first from this frame's eye, while the view itself holds the car.
-            if (inView) {
+            if (on && boxInSight(view, bounds, SCENERY_REACH_M, false)) {
               if (parked !== null) orderGlass(parked, view.eye);
               if (film !== null) orderGlass(film, view.eye);
             }
-            if (patch !== null) n += show([patch], inView);
+            // The patch is no cover: it is drawn only where the view itself holds it.
+            if (patch !== null) n += show([patch], boxInSight(view, patchBounds, SCENERY_REACH_M, false));
           }
-          const on = inSight(view, boardAt.x, boardAt.y + BOARD_BOX_HALF.y, boardAt.z, BOARD_SPHERE_M, SCENERY_REACH_M, true);
+          const bounds = kiosk?.box ?? boardBounds;
+          const on = boxInSight(view, bounds, SCENERY_REACH_M, true);
           if (kioskBoxes !== null) n += show([kioskBoxes], on);
           if (kiosk !== null) n += show(kiosk.meshes, on);
-          if (face !== null) n += show([face], on && inSight(view, boardAt.x, boardAt.y + BOARD_BOX_HALF.y, boardAt.z, BOARD_SPHERE_M, SCENERY_REACH_M, false));
+          // The face lies on the board: drawn only where the view itself holds the board.
+          if (face !== null) n += show([face], on && boxInSight(view, bounds, SCENERY_REACH_M, false));
           return n;
         },
         dispose() {
@@ -766,9 +819,15 @@ export function createLiteScenery(engine: EngineContext, scene: SceneContext, op
         ];
       }
       let stood: Stood | null = null;
+      // The stand-in's box: the cross's timbers and the figure hung in front of it.
+      const standInBounds = sightBox(
+        body.pos.x, body.pos.y, body.pos.z, body.yaw,
+        { x: -BODY_STAND_IN.crossbar.width / 2, y: 0, z: -BODY_STAND_IN.upright.depth / 2 },
+        { x: BODY_STAND_IN.crossbar.width / 2, y: BODY_STAND_IN.upright.height, z: BODY_STAND_IN.capsule.forward + BODY_STAND_IN.capsule.radius },
+      );
       const piece = join<Piece>({
         seen(view) {
-          const on = inSight(view, body.pos.x, body.pos.y + BODY_STAND_IN.upright.up, body.pos.z, BODY_SPHERE_M, SCENERY_REACH_M, false);
+          const on = boxInSight(view, stood?.box ?? standInBounds, SCENERY_REACH_M, false);
           return show(standIn, on) + (stood === null ? 0 : show(stood.meshes, on));
         },
         dispose() {

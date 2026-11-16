@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import type { Renderer } from "../../../src/game/renderer.js";
 import { cameraAxes, restAxes, restPlanes, viewPlanes, type CameraPose } from "../../../src/game/lite/cameraPose.js";
 import {
-  SCENERY_REACH_M, SIGN_REACH_M, deferredScenery, inSight, liteSceneryOf, type LiteScenery, type LiteTrailhead, type SceneryView,
+  SCENERY_REACH_M, SIGN_REACH_M, boxInSight, deferredScenery, inSight, liteSceneryOf, sightBox, type LiteScenery, type LiteTrailhead, type SceneryView,
 } from "../../../src/game/lite/sceneryMeshes.js";
 import { factorByte, farthestFirst, listPanes, partsByMaterial, placeMatrix, placed, type SceneryPart } from "../../../src/game/lite/sceneryModels.js";
 import type { ModelPart } from "../../../src/game/lite/forestModels.js";
@@ -31,6 +31,31 @@ describe("what of the scenery a view holds", () => {
     expect(inSight(view, 0, 1, -20, 2, SIGN_REACH_M, false)).toBe(false);
     expect(inSight(view, 0, 1, -40, 2, SIGN_REACH_M, true)).toBe(false);
     expect(inSight(viewFrom(eye), 0, 1, -20, 2, SIGN_REACH_M, true)).toBe(false);
+  });
+
+  it("leaves the car out of the frame a player arrives in: it stands behind them, and its own box does not reach into the view", () => {
+    // The atmo world's trailhead: the eye a stride in front of the car, looking up the trail, away from it.
+    const start: CameraPose = { x: -275, y: 5.9, z: -1, yaw: Math.PI / 2, pitch: 0, roll: 0 };
+    const car = sightBox(-278.2, 4.32, 0, 0, { x: -0.94, y: 0, z: -2.18 }, { x: 0.94, y: 1.7, z: 2.18 });
+    expect(boxInSight(viewFrom(start), car, SCENERY_REACH_M, false)).toBe(false);
+    // A sphere that holds the car and the patch under it reaches past the lens and would have it drawn.
+    expect(inSight(viewFrom(start), -278.2, 5.17, 0, 3.4, SCENERY_REACH_M, false)).toBe(true);
+    // Turned to face it, the player sees it; and it is cover wherever it stands in the cover map's square.
+    expect(boxInSight(viewFrom({ ...start, yaw: -1.3 }), car, SCENERY_REACH_M, false)).toBe(true);
+    expect(boxInSight(viewFrom(start, { x: -275, z: -1, half: 32 }), car, SCENERY_REACH_M, true)).toBe(true);
+    expect(boxInSight(viewFrom({ ...start, yaw: -1.3, x: -275 + SCENERY_REACH_M + 10 }), car, SCENERY_REACH_M, false)).toBe(false);
+  });
+
+  it("stands a box about the middle of its own geometry, turned with the thing it holds", () => {
+    // A thing whose geometry lies ahead of its own place: turned a quarter turn, ahead is +x.
+    const box = sightBox(10, 2, 20, Math.PI / 2, { x: -1, y: 0, z: 2 }, { x: 1, y: 4, z: 6 });
+    expect([box.x, box.y, box.z].map((v) => Math.round(v * 1e6) / 1e6)).toEqual([14, 4, 20]);
+    expect([box.hx, box.hy, box.hz]).toEqual([1, 2, 2]);
+    const eye: CameraPose = { x: 0, y: 4, z: 20, yaw: Math.PI / 2, pitch: 0, roll: 0 };
+    expect(boxInSight(viewFrom(eye), box, 100, false)).toBe(true);
+    expect(boxInSight(viewFrom({ ...eye, x: 17 }), box, 100, false)).toBe(false);
+    // Its far end still in the view while its middle is behind the lens.
+    expect(boxInSight(viewFrom({ ...eye, x: 15 }), box, 100, false)).toBe(true);
   });
 
   it("is under a pixel of the frame past its reach", () => {
