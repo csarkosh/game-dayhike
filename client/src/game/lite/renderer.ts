@@ -32,7 +32,8 @@
  * dropped cap (`capMesh.ts`), the animals (`wildlifeMeshes.ts`), the
  * lakes' water (`lakeMeshes.ts`), their plants (`waterPlantMeshes.ts`) and
  * their life (`waterLifeMeshes.ts`), and the sea (`seaMeshes.ts`), over the
- * bed's square the two waters share (`waterBed.ts`).
+ * bed's square the two waters share (`waterBed.ts`), and the scenery a hike
+ * places once (`sceneryMeshes.ts`).
  *
  * **The engine is Lite's own, made from the canvas, and making it takes
  * time**: a device is asked for, the ground's images are decoded, the scene
@@ -195,6 +196,15 @@
  * from the local player's own stare and the Hollow nearest their aim, for
  * the grade's shade and for whoever voices the heartbeat.
  *
+ * **The scenery a hike places once is the hike's to ask for**
+ * (`hikeScenery.ts`, through `scenery`): the fingerposts at the junctions,
+ * the trailhead's car and board and the body at the crest, each made when
+ * the renderer stands and its models land (`sceneryMeshes.ts`). Every post
+ * is an instance of one draw and every plank of another, their lettering
+ * one mesh under one picture; a placed model is a mesh a material. Each is
+ * drawn while the view holds it within its reach, and shown for the frame
+ * that draws the rain's cover map where it stands in the map's square.
+ *
  * **A Hollow's figure is a shadow from a mask** (`shadeMask.ts`): its body
  * drawn through its smoke into a target of its own, on the frames with a
  * figure in it, from the bodies its eyes are drawn from. With a chain the
@@ -290,6 +300,7 @@ import { createPropMeshes, type PropMeshes } from "./propMeshes.js";
 import { createLiteRain, type LiteRain, type RainFrame } from "./rain.js";
 import { createLiteRainMap, type CoverRegistry, type LiteRainMap } from "./rainMap.js";
 import { createLiteRainSplash, type LiteRainSplash, type SplashFrame } from "./rainSplash.js";
+import { createLiteScenery, deferredScenery, type LiteScenery, type SceneryHost, type SceneryView } from "./sceneryMeshes.js";
 import { createLiteSea, type LiteSea, type SeaFrame } from "./seaMeshes.js";
 import { createSkinClock, type SkinClock } from "./skinnedModels.js";
 import { SKY_CAPTURE_BYTES, createLiteSkyCapture, type LiteSkyCapture } from "./skyCapture.js";
@@ -412,6 +423,8 @@ type Standing = {
   cap: CapMesh | null;
   /** The animals (`wildlifeMeshes.ts`). */
   wildlife: LiteWildlifeMeshes | null;
+  /** The scenery a hike places once: the fingerposts, the trailhead's car and board, the body at the crest (`sceneryMeshes.ts`). */
+  scenery: LiteScenery | null;
   /** The bed's square every body of water reads its depth from (`waterBed.ts`), and the sea (`seaMeshes.ts`); null in a world with no sea level. */
   bed: LiteWaterBed | null;
   sea: LiteSea | null;
@@ -650,6 +663,7 @@ export function createLiteRenderer(canvas: HTMLCanvasElement, level: Level, fore
     made.lakes?.dispose();
     made.sea?.dispose();
     made.wildlife?.dispose();
+    made.scenery?.dispose();
     made.cap?.dispose();
     made.entities?.dispose();
     made.veil?.dispose();
@@ -890,6 +904,10 @@ export function createLiteRenderer(canvas: HTMLCanvasElement, level: Level, fore
       const at = graph === null ? null : droppedCapAt(graph, forest.seed);
       if (at !== null) cap = createCapMesh(engine, scene, at, elevationAt(forest.seed, at.x, at.z), air, uploads);
     }
+    // The scenery a hike places once, which the hike asks for when its world is in (`hikeScenery.ts`): nothing until then.
+    const scenery = forest === null || cloudMap === null || disposed
+      ? null
+      : createLiteScenery(engine, scene, { wet: wetAt(WET_CAP.prop), air, ahead: depthAheadPlugin, shared, linear: chained, uploads, cover: coverAs("hard") });
     // The animals, which land as their models do; low scales every species' disc to 60%, as the game does.
     const wildlife = !hasWildlife || forest === null || cloudMap === null || disposed
       ? null
@@ -940,7 +958,7 @@ export function createLiteRenderer(canvas: HTMLCanvasElement, level: Level, fore
     }
     const made: Standing = {
       engine, scene, camera, sun, fill, lamp, dome, capture, shared, chain, materials, terrain, road, cloudGround, forest: trees, blades, clutter, duff, cliffs, props, mist, motes,
-      rain, rainMap, splash, skinClock, entities, mask, veil, wornLamps, cap, wildlife, bed, sea, lakes: lakeMeshes, waterPlants, waterLives,
+      rain, rainMap, splash, skinClock, entities, mask, veil, wornLamps, cap, wildlife, scenery, bed, sea, lakes: lakeMeshes, waterPlants, waterLives,
     };
     if (disposed) {
       release(made);
@@ -956,6 +974,12 @@ export function createLiteRenderer(canvas: HTMLCanvasElement, level: Level, fore
     loading = 0;
     if (!disposed) console.error("the hike's renderer could not be made; nothing of the world is drawn", error);
   });
+
+  /** The scenery as the hike asks for it (`hikeScenery.ts`): an ask made before the renderer stands is answered when it does. */
+  const sceneryHost: SceneryHost = deferredScenery(made, () => (disposed ? null : (standing?.scenery ?? null)));
+  /** The view the scenery is judged by, filled in place a frame. */
+  const sceneryView: SceneryView = { planes, eye: pose, cover: null };
+  const sceneryCover = { x: 0, z: 0, half: RAIN_MAP.extent / 2 };
 
   const handle = {
     isDisposed: false,
@@ -1166,8 +1190,9 @@ export function createLiteRenderer(canvas: HTMLCanvasElement, level: Level, fore
   /** Everything that lands as its models do, drawn: the forest, the ground clutter and the cliffs. */
   const sceneryReady: Promise<void> = made.then(() => Promise.all([standing?.forest?.ready, standing?.clutter?.ready, standing?.cliffs?.ready, standing?.entities?.ready])).then(() => undefined);
 
-  const renderer: Renderer = {
+  const renderer: Renderer & { scenery: SceneryHost } = {
     ...absent,
+    scenery: sceneryHost,
     engine: handle as EngineHandle,
     engineName: "webgpu",
     forestReady,
@@ -1379,6 +1404,16 @@ export function createLiteRenderer(canvas: HTMLCanvasElement, level: Level, fore
         // The view's planes for the frame, and the cap while they hold it.
         viewPlanes(pose, axes, fov, canvas.height > 0 ? canvas.width / canvas.height : 1, lens.near, lens.far, planes);
         standing.cap?.seen(planes);
+        // The scenery placed once, while the view holds it; what of it is cover, too, on a frame that draws the cover map.
+        if (standing.scenery !== null) {
+          sceneryView.cover = null;
+          if (coverDrawn && standing.rainMap !== null) {
+            sceneryCover.x = standing.rainMap.centre.x;
+            sceneryCover.z = standing.rainMap.centre.z;
+            sceneryView.cover = sceneryCover;
+          }
+          standing.scenery.update(sceneryView);
+        }
         standing.waterPlants?.seen(planes);
         // The bed's square round the world's centre, for the sea and the lakes alike.
         if (centre !== null) standing.bed?.step(centre.x, centre.z);
