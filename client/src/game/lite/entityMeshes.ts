@@ -83,8 +83,8 @@ import { MATRIX_BYTES } from "./listMeshes.js";
 import { unseenPlugin, writeShadeLook, type LiteShadeMask } from "./shadeMask.js";
 import { loadSkinnedModel, type SkinClock, type SkinnedModel, type SkinnedPart } from "./skinnedModels.js";
 
-/** The bodies' places among the draws, from the shell's first: a ranger's primitives, a place each by their order in the model, then the capsule, then the primitives of the Hollow's body, which the frame's pass draws as nothing. */
-export const BODY_PLACES = { rangers: 0, capsule: 4, figures: 5 } as const;
+/** The bodies' places among the draws, from the shell's first: a ranger's primitives, a place each by their order in the model, then the capsule, then the Hollow's body, which the mask draws and the frame's own pass draws as nothing. */
+export const BODY_PLACES = { rangers: 0, capsule: 4, figure: 5 } as const;
 
 /** The most hikers of one ranger drawn at once: every player may wear the same one. */
 export const RANGER_CAPACITY = 8;
@@ -226,12 +226,13 @@ export function createEntityMeshes(engine: EngineContext, scene: SceneContext, o
     material.usePhysicalLightFalloff = true;
     if (id === HOLLOW_MODEL) {
       // The eyes are the material that glows in the file; the rest of the figure is the mask's: drawn there with the
-      // mask's own material, and in the frame's pass as nothing.
+      // mask's own material, and in the frame's pass as nothing. It stands in the scene either way, so it is placed
+      // after the bodies, where Lite's own place for a mesh left unplaced is among the forest's.
       if (!part.emissive.some((channel) => channel > 0)) {
+        orders.put(material, BODY_PLACES.figure);
+        part.mesh.renderOrder = orders.of(material);
         if (mask === null) return false;
         material.plugins = [unseenPlugin()];
-        orders.put(material, BODY_PLACES.figures + index);
-        part.mesh.renderOrder = orders.of(material);
         bodyMeshes.push(part.mesh);
         return true;
       }

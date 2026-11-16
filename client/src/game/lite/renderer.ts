@@ -209,7 +209,7 @@ import { cloudDensityNow, cloudFor, cloudGroundDue, cloudGroundMap, cloudMarchSt
 import type { EngineHandle } from "../engineHandle.js";
 import { createEntityPoses } from "../entityPoses.js";
 import { blendedEye, type EyePose } from "../eyeBlend.js";
-import { FACE_PATCH_Z_UNITS } from "../facePatches.js";
+import { FACE_PATCH_Z_OFFSET, FACE_PATCH_Z_UNITS } from "../facePatches.js";
 import { featureTableFor } from "../featureTable.js";
 import { FOLIAGE_PLAYERS, FOLIAGE_PLAYER_PARKED, setFoliageWind } from "../foliageUniforms.js";
 import { nearRadiusFor } from "../forestField.js";
@@ -260,7 +260,7 @@ import { createClutterMeshes, type ClutterMeshes } from "./clutterMeshes.js";
 import { createDuffMeshes, type DuffMeshes } from "./duffMeshes.js";
 import { createEntityMeshes, type EntityMeshes } from "./entityMeshes.js";
 import { createForestMeshes, type ForestMeshes } from "./forestMeshes.js";
-import { FRAME_BLOCK, FRAME_FIELDS, writeFrameBlock, type FrameValues, type StageRecord } from "./frameBlock.js";
+import { FADE_ROWS_NAME, FRAME_BLOCK, FRAME_FIELDS, FRAME_PROJECTION_NAME, writeFrameBlock, type FrameValues, type StageRecord } from "./frameBlock.js";
 import { createFrameUploads, uploadCountsCopy, type FrameUploadCounts } from "./frameUploads.js";
 import { GROUND_IMAGES, cloudMapTexture, loadGroundArrays, tableTexture, type CloudMapTexture, type TableTexture } from "./groundTextures.js";
 import { createLiteLakes, type LakeFrame, type LiteLakes } from "./lakeMeshes.js";
@@ -297,21 +297,43 @@ const LOOK_AHEAD = 10;
 const GPU_ERRORS_SAID = 8;
 
 /**
+ * The steepest angle from facing the eye the slope-scaled depth offset is worked out at. Past it the vertex normal
+ * overstates the slope of the polygons that are drawn, and a patch came ahead of ground the game on Babylon.js draws
+ * over it: at 82 degrees Lite stood nearest that renderer across a lake's bank, the trailhead and the forest (89 and 75
+ * were tried).
+ */
+export const DEPTH_AHEAD_MAX_DEGREES = 82;
+const DEPTH_AHEAD_MIN_COS = Math.cos((DEPTH_AHEAD_MAX_DEGREES * Math.PI) / 180);
+
+/**
  * A depth offset toward the eye, for a surface drawn over another it lies
  * on: the steep ground's patches over the rings. Lite's PBR material has no
- * depth bias, so the vertex stage moves the clip-space depth itself, by
- * `units` of a 24-bit depth buffer's steps as Babylon's `zOffsetUnits`
- * counts them. Lite's depth runs from 1 at the near plane to 0 far away, so
- * toward the eye is up. The slope-scaled half of Babylon's offset
- * (`zOffset`) has no like in a vertex stage and is left out.
+ * depth bias, so the vertex stage moves the clip-space depth itself, as
+ * Babylon's two halves do. The constant half is `units` of a 24-bit depth
+ * buffer's steps (`zOffsetUnits`). The slope-scaled half (`zOffset`) is
+ * `slope` times the depth a pixel's step crosses on the surface, which the
+ * rasteriser takes from each polygon and a vertex stage has to work out:
+ * on a surface turned from the eye by an angle the view's depth changes by
+ * its tangent times the depth times a pixel's angle, and the depth buffer's
+ * value by that over the depth squared times the projection's constant
+ * term. The angle is the vertex normal's, so it is a smooth surface's
+ * slope and not each polygon's own, and it is held under
+ * `DEPTH_AHEAD_MAX_DEGREES`. Without the slope's half a patch seen at a low
+ * angle from near by stands only millimetres ahead of the ground under it,
+ * whose coarser triangles show through in whole polygons. Lite's depth
+ * runs from 1 at the near plane to 0 far away, so toward the eye is up.
  */
-export function depthAheadPlugin(units: number): MaterialPlugin {
+export function depthAheadPlugin(units: number, slope = 0): MaterialPlugin {
   const ahead = units / 2 ** 24;
+  const constant = `out.clipPos.z+=${ahead.toExponential(6)}*out.clipPos.w;`;
+  const sloped = `{let daC=clamp(abs(dot(normalize(out.worldNormal),normalize(scene.vEyePosition.xyz-out.worldPos))),${DEPTH_AHEAD_MIN_COS.toExponential(6)},1.0);`
+    + `let daP=${FRAME_BLOCK}.${FRAME_PROJECTION_NAME};`
+    + `out.clipPos.z+=${slope.toExponential(6)}*abs(daP[3].z)*sqrt(1.0-daC*daC)/daC*2.0/(abs(daP[1].y)*${FRAME_BLOCK}.${FADE_ROWS_NAME});}`;
   return {
     name: "DepthAhead",
     priority: 950,
-    defines: { units },
-    getCustomCode: (stage) => (stage === "vertex" ? { CUSTOM_VERTEX_MAIN_END: `out.clipPos.z+=${ahead.toExponential(6)}*out.clipPos.w;` } : null),
+    defines: slope === 0 ? { units } : { units, slope },
+    getCustomCode: (stage) => (stage === "vertex" ? { CUSTOM_VERTEX_MAIN_END: slope === 0 ? constant : constant + sloped } : null),
   };
 }
 
@@ -746,7 +768,7 @@ export function createLiteRenderer(canvas: HTMLCanvasElement, level: Level, fore
       terrain = createTerrainMeshes(
         engine, scene,
         // The patches: the ground's material again, a depth offset ahead of the ground they lie on.
-        { ground: material([]), patches: material([depthAheadPlugin(-FACE_PATCH_Z_UNITS)]) },
+        { ground: material([]), patches: material([depthAheadPlugin(-FACE_PATCH_Z_UNITS, -FACE_PATCH_Z_OFFSET)]) },
         forest.seed, tier,
         {
           start: options.start,
