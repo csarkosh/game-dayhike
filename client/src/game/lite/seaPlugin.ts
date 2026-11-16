@@ -24,6 +24,12 @@
  *   displacement's place where those cannot be had. What `textures` holds
  *   is read whenever the material's bindings are made.
  * - **Its vertex data is none**: a vertex is its place in the lattice.
+ * - **The plunging lip's strip wears the same plugin with another vertex
+ *   stage** (`lip`; `waterPlugin.ts` made with `lip` on Babylon.js): its
+ *   vertices are placed from the crests the breaker's tracker found and the
+ *   baked cross-section, two more tables its vertex stage reads at a whole
+ *   texel, in place of the rings' depths, which it has none of. Everything
+ *   else, the sea's numbers, its pictures and its shading, is the sea's.
  */
 import type { MaterialPlugin, PluginUniformBlock, Texture2D, Texture2DArray } from "@babylonjs/lite";
 import { SEA_COMPONENT_VECS, type SeaUniforms } from "../seaUniforms.js";
@@ -31,7 +37,8 @@ import { frameReads } from "./frameBlock.js";
 import { WATER_PRIORITY } from "./lakePlugin.js";
 import { uniformFields, writeUniforms, type UniformField } from "./pluginUniforms.js";
 import {
-  SEA_ALBEDO_WGSL, SEA_BUMP_WGSL, SEA_COMPOSE_WGSL, SEA_RAIN_WGSL, SEA_VERTEX_WGSL, seaLightsWgsl, seaRestVertexWgsl, seaShadeWgsl, seaSurfaceWgsl,
+  SEA_ALBEDO_WGSL, SEA_BUMP_WGSL, SEA_COMPOSE_WGSL, SEA_LIP_SHAPE_WGSL, SEA_LIP_VERTEX_WGSL, SEA_RAIN_WGSL, SEA_VERTEX_WGSL, seaLightsWgsl, seaRestVertexWgsl,
+  seaShadeWgsl, seaSurfaceWgsl,
   type SeaLook,
 } from "./seaWgsl.js";
 import { WATER_DEFS_WGSL, WATER_SPLIT_WGSL } from "./waterWgsl.js";
@@ -54,6 +61,14 @@ export type SeaTextures = {
   windSlope: Texture2DArray | null;
 };
 
+/** The tables the plunging lip's strip is placed from, four 32-bit floats a texel each. */
+export type LipTables = {
+  /** The crests (`LipTracker`'s state as the strip reads it, `closeFreeSlots`): a row a slot, a texel a column. */
+  state: Texture2D;
+  /** The baked cross-section (`lipProfile`): a row a keyframe, a texel a vertex. */
+  profile: Texture2D;
+};
+
 const BOTH = "vertex-fragment" as const;
 
 /** The sea's own uniforms as fields: every one read by both stages, the swell's components as bits. */
@@ -66,9 +81,11 @@ export function seaFields(uniforms: SeaUniforms): UniformField[] {
 /**
  * The plugin, drawing the sea by `uniforms` (`seaUniforms`: one record,
  * filled in place and read whenever the material's uniforms are written)
- * and by the frame's block `shared`, from `textures`, with `look`.
+ * and by the frame's block `shared`, from `textures`, with `look`. With
+ * `lip` it is the plunging lip's strip's: the same sea, its vertices placed
+ * from the strip's two tables.
  */
-export function seaPlugin(uniforms: SeaUniforms, textures: SeaTextures, shared: PluginUniformBlock, look: SeaLook): MaterialPlugin {
+export function seaPlugin(uniforms: SeaUniforms, textures: SeaTextures, shared: PluginUniformBlock, look: SeaLook, lip: LipTables | null = null): MaterialPlugin {
   const fft = look.fft === true;
   if (look.bump !== (textures.bump !== null) || look.loop !== (textures.windDisp !== null) || fft !== (textures.windSlope !== null) || (fft && !look.loop)) {
     throw new Error("the sea's look and its pictures disagree");
@@ -76,10 +93,10 @@ export function seaPlugin(uniforms: SeaUniforms, textures: SeaTextures, shared: 
   const surface = frameReads(seaSurfaceWgsl(look));
   const fields = seaFields(uniforms);
   return {
-    name: "SeaWater",
+    name: lip === null ? "SeaWater" : "SeaLip",
     priority: WATER_PRIORITY,
     // A tier below the cascades' keeps the two it had.
-    defines: { loop: look.loop, bump: look.bump, ...(fft ? { fft } : {}) },
+    defines: { loop: look.loop, bump: look.bump, ...(fft ? { fft } : {}), ...(lip !== null ? { lip: true } : {}) },
     getFragmentDirectives: () => "diagnostic(off,derivative_uniformity);",
     getCustomCode: (stage) =>
       stage === "fragment"
@@ -88,7 +105,9 @@ export function seaPlugin(uniforms: SeaUniforms, textures: SeaTextures, shared: 
           CUSTOM_FRAGMENT_BEFORE_LIGHTS: frameReads((look.bump ? SEA_BUMP_WGSL : SEA_ALBEDO_WGSL) + seaLightsWgsl(look) + WATER_SPLIT_WGSL),
           CUSTOM_FRAGMENT_BEFORE_FINALCOLORCOMPOSITION: SEA_COMPOSE_WGSL,
         }
-        : { CUSTOM_VERTEX_DEFINITIONS: surface, CUSTOM_VERTEX_MAIN_END: frameReads(SEA_VERTEX_WGSL) },
+        : lip === null
+          ? { CUSTOM_VERTEX_DEFINITIONS: surface, CUSTOM_VERTEX_MAIN_END: frameReads(SEA_VERTEX_WGSL) }
+          : { CUSTOM_VERTEX_DEFINITIONS: surface + frameReads(SEA_LIP_SHAPE_WGSL), CUSTOM_VERTEX_MAIN_END: frameReads(SEA_LIP_VERTEX_WGSL) },
     getVaryings: () => [
       { name: "vBedDepth", type: "f32" }, { name: "vWaterViewDepth", type: "f32" }, { name: "vOceanXZ", type: "vec2<f32>" },
       { name: "vOceanSwellA", type: "vec4<f32>" }, { name: "vOceanSwellB", type: "vec4<f32>" },
@@ -98,7 +117,12 @@ export function seaPlugin(uniforms: SeaUniforms, textures: SeaTextures, shared: 
     getSamplers: () => [
       { texture: "oceanAtlas", sampleType: "unfilterable-float" as const, visibility: BOTH },
       { texture: "oceanSwash", sampleType: "unfilterable-float" as const, visibility: BOTH },
-      { texture: "seaBed", textureType: "texture_2d_array<f32>" as const, sampleType: "unfilterable-float" as const, visibility: "vertex" as const },
+      ...(lip === null
+        ? [{ texture: "seaBed", textureType: "texture_2d_array<f32>" as const, sampleType: "unfilterable-float" as const, visibility: "vertex" as const }]
+        : [
+          { texture: "oceanLipState", sampleType: "unfilterable-float" as const, visibility: "vertex" as const },
+          { texture: "oceanLipProfile", sampleType: "unfilterable-float" as const, visibility: "vertex" as const },
+        ]),
       { texture: "waterBedHeight", sampleType: "unfilterable-float" as const },
       ...(look.bump ? [{ texture: "waterBump", sampler: "waterBumpSampler" }] : []),
       ...(look.loop ? [{ texture: "oceanWindDisp", sampler: "oceanWindDispSampler", textureType: "texture_2d_array<f32>" as const, visibility: BOTH }] : []),
@@ -112,13 +136,19 @@ export function seaPlugin(uniforms: SeaUniforms, textures: SeaTextures, shared: 
       data.set(oceanK, at / 4);
     },
     bindTextures(out) {
-      out.push({ texture: textures.atlas, sampler: false }, { texture: textures.swash, sampler: false }, { texture: textures.ringBeds, sampler: false }, { texture: textures.bed, sampler: false });
+      out.push({ texture: textures.atlas, sampler: false }, { texture: textures.swash, sampler: false });
+      if (lip === null) out.push({ texture: textures.ringBeds, sampler: false });
+      else out.push({ texture: lip.state, sampler: false }, { texture: lip.profile, sampler: false });
+      out.push({ texture: textures.bed, sampler: false });
       if (textures.bump !== null) out.push({ texture: textures.bump });
       if (textures.windDisp !== null) out.push({ texture: textures.windDisp });
       if (textures.windSlope !== null) out.push({ texture: textures.windSlope, sampler: false });
     },
     getActiveTextures(out) {
-      out.push(textures.atlas, textures.swash, textures.ringBeds, textures.bed);
+      out.push(textures.atlas, textures.swash);
+      if (lip === null) out.push(textures.ringBeds);
+      else out.push(lip.state, lip.profile);
+      out.push(textures.bed);
       if (textures.bump !== null) out.push(textures.bump);
       if (textures.windDisp !== null) out.push(textures.windDisp);
       if (textures.windSlope !== null) out.push(textures.windSlope);

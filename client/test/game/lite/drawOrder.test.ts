@@ -66,6 +66,11 @@ describe("the places of the hike's see-through draws on Babylon Lite", () => {
     expect(SEE_THROUGH_ORDER.sea).toBeLessThan(SEE_THROUGH_ORDER.water);
   });
 
+  it("draws the plunging lip's curl over the sea its feet lie on, before the lakes", () => {
+    expect(SEE_THROUGH_ORDER.sea).toBeLessThan(SEE_THROUGH_ORDER.lip);
+    expect(SEE_THROUGH_ORDER.lip).toBeLessThan(SEE_THROUGH_ORDER.water);
+  });
+
   it("lays the shade veil over the finished frame: after every other see-through draw", () => {
     expect(Math.max(...Object.values(SEE_THROUGH_ORDER))).toBe(SEE_THROUGH_ORDER.veil);
     expect(SEE_THROUGH_ORDER.dragonflies).toBeLessThan(SEE_THROUGH_ORDER.veil);

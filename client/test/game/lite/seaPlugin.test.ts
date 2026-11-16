@@ -129,6 +129,39 @@ describe("the sea's water as a plugin on Babylon Lite", () => {
     expect(() => seaPlugin(emptySeaUniforms(), LOOP, SHARED, { bump: false, loop: true, fft: true })).toThrow(/disagree/);
   });
 
+  it("is the plunging lip's strip's with the strip's two tables: another vertex stage, the crests and the cross-section in the rings' depths' place, the same shading", () => {
+    const tables = { state: standInTexture("lipState"), profile: standInTexture("lipProfile") };
+    const sea = seaPlugin(emptySeaUniforms(), FFT, SHARED, seaLookFor("high"));
+    const lip = seaPlugin(emptySeaUniforms(), FFT, SHARED, seaLookFor("high"), tables);
+    expect([sea.name, lip.name]).toEqual(["SeaWater", "SeaLip"]);
+    expect(lip.defines).toEqual({ loop: true, bump: false, fft: true, lip: true });
+    expect((lip.getSamplers?.() ?? []).map((d) => d.texture)).toEqual(["oceanAtlas", "oceanSwash", "oceanLipState", "oceanLipProfile", "waterBedHeight", "oceanWindDisp", "oceanWindSlope"]);
+    expect((lip.getSamplers?.() ?? []).slice(2, 4)).toEqual([
+      { texture: "oceanLipState", sampleType: "unfilterable-float", visibility: "vertex" }, { texture: "oceanLipProfile", sampleType: "unfilterable-float", visibility: "vertex" },
+    ]);
+    const bound: PluginTextureBinding[] = [];
+    lip.bindTextures?.(bound);
+    expect(bound).toEqual([
+      { texture: FFT.atlas, sampler: false }, { texture: FFT.swash, sampler: false }, { texture: tables.state, sampler: false }, { texture: tables.profile, sampler: false },
+      { texture: FFT.bed, sampler: false }, { texture: FFT.windDisp }, { texture: FFT.windSlope, sampler: false },
+    ]);
+    const active: Texture2D[] = [];
+    lip.getActiveTextures?.(active);
+    expect(active).toEqual([FFT.atlas, FFT.swash, tables.state, tables.profile, FFT.bed, FFT.windDisp, FFT.windSlope]);
+    // The fragment stage is the sea's own, text for text; the vertex stage places the strip and reads no ring.
+    expect(lip.getCustomCode?.("fragment")).toEqual(sea.getCustomCode?.("fragment"));
+    const vertex = lip.getCustomCode?.("vertex") ?? {};
+    expect(vertex.CUSTOM_VERTEX_DEFINITIONS).toContain(sea.getCustomCode?.("vertex")?.CUSTOM_VERTEX_DEFINITIONS as string);
+    expect(vertex.CUSTOM_VERTEX_DEFINITIONS).toContain("fn oceanLipPlace(");
+    expect(vertex.CUSTOM_VERTEX_MAIN_END).toContain("oceanLipPlace(position)");
+    expect(Object.values(vertex).join("\n")).not.toMatch(/seaRings|seaBed/);
+    // The cove is the sea's own uniform; the level and the swell's travel are read from where the sea reads them.
+    expect(vertex.CUSTOM_VERTEX_DEFINITIONS).toContain("material.oceanCove.x+LIP_HALF");
+    expect(lip.getUniforms?.()).toEqual(sea.getUniforms?.());
+    // The sea itself is as it was without the strip's tables.
+    expect((sea.getSamplers?.() ?? []).map((d) => d.texture)).not.toContain("oceanLipState");
+  });
+
   it("carries no vertex data: a vertex is its place in the lattice, and the stage hands on the swell it sums", () => {
     const plugin = seaPlugin(emptySeaUniforms(), LOW, SHARED, seaLookFor("low"));
     expect(plugin.getVertexAttributes).toBeUndefined();

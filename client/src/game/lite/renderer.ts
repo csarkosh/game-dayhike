@@ -7,7 +7,7 @@
  * hikers' bodies, the Hollows' eyes and their figures' shadows, the dropped cap, the animals, the
  * lakes' water with the reeds and the lilies that grow in it and the
  * insects over it, and the sea with its swell, its wind waves, its white
- * water and its swash, lit by
+ * water, its swash and its lip's curl, lit by
  * the sun, the sky's fill and the sky's capture as the image-based light for
  * the hour and the weather, by the local player's headlamp and by the lamps
  * the other hikers wear, seen from the player's eye or the free camera. It
@@ -32,8 +32,8 @@
  * dropped cap (`capMesh.ts`), the animals (`wildlifeMeshes.ts`), the
  * lakes' water (`lakeMeshes.ts`), their plants (`waterPlantMeshes.ts`) and
  * their life (`waterLifeMeshes.ts`), and the sea (`seaMeshes.ts`, with the
- * wind sea's cascades of `seaFft.ts`), over the bed's square the two waters
- * share (`waterBed.ts`).
+ * wind sea's cascades of `seaFft.ts` and the lip's curl of `lipMeshes.ts`),
+ * over the bed's square the two waters share (`waterBed.ts`).
  *
  * **The engine is Lite's own, made from the canvas, and making it takes
  * time**: a device is asked for, the ground's images are decoded, the scene
@@ -185,10 +185,13 @@
  * whose view holds the sea and on no other; the spectrum's amplitudes go
  * up when the sea's wind has moved by a step. Which field is drawn is the
  * game's rule (`windSeaField.ts`): the cascades once they run, the baked
- * loop where they fail or are still compiling past their deadline. The
- * swept curl of the plunging lip and the surf's spray are not drawn yet.
- * The water's surface on that tier is blended, as on the tier below: the
- * read of what lies under it through the surface is not drawn yet.
+ * loop where they fail or are still compiling past their deadline. With
+ * the cascades the plunging lip is the swept curl (`lipMeshes.ts`): a strip
+ * over the cove's face, after the sea among the see-through draws, drawn
+ * and sent its crests only while a crest is in mid-plunge and the view
+ * holds the face. The surf's spray is not drawn yet. The water's surface
+ * on that tier is blended, as on the tier below: the read of what lies
+ * under it through the surface is not drawn yet.
  *
  * **Colour is the tier's own path** (`postFeaturesFor`). With no post chain
  * it is the material path: Lite's display curve as Babylon's image

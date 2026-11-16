@@ -36,6 +36,10 @@
  *   `seaFft.ts`, stepped only on a frame whose view holds the sea, their
  *   spectrum sent again when the sea's wind has moved by a step; and where
  *   that field fails, the loop, baked then and bound in the cascades' place.
+ * - **The plunging lip's swept curl is drawn with the cascades**
+ *   (`lipMeshes.ts`), made where they are: while they are the field drawn,
+ *   a crest is in mid-plunge and the view holds the cove's face. In every
+ *   other mode the sea's fragment lip draws, and the two never together.
  * - **In the rain's cover map it is open water, at rest**: the same mesh
  *   through the map's material and a plugin that places the lattice at the
  *   level, shown for the frame that draws the map where the view does not
@@ -68,6 +72,7 @@ import type { WindRecord } from "../windParams.js";
 import { createWindSeaField, type WindSeaMode } from "../windSeaField.js";
 import { SEE_THROUGH_ORDER } from "./drawOrder.js";
 import type { FrameUploads } from "./frameUploads.js";
+import { createLiteLip, type LiteLip } from "./lipMeshes.js";
 import type { LiteSeaFft } from "./seaFft.js";
 import { seaPlugin, seaRestPlugin, type SeaTextures } from "./seaPlugin.js";
 import type { SeaLook } from "./seaWgsl.js";
@@ -150,6 +155,12 @@ export type LiteSea = {
   readonly windMode: WindSeaMode;
   /** Whether the last `update` asked for a frame of the wind sea's cascades: only where the view holds the sea. */
   readonly fftStepped: boolean;
+  /** The plunging lip's swept curl, on the tier that draws one; null elsewhere. */
+  readonly lip: LiteLip | null;
+  /** Whether the curl is the lip drawn: it is made, and the cascades are the field drawn. */
+  readonly curl: boolean;
+  /** The way the swell travels (x, z), a unit vector. */
+  readonly travel: readonly [number, number];
   /** The frame the last `update` was for has been drawn. */
   frameDrawn(): void;
   dispose(): void;
@@ -247,6 +258,10 @@ export function createLiteSea(engine: EngineContext, scene: SceneContext, seed: 
     dropLoop: () => undefined,
   });
   material.plugins = [seaPlugin(own, textures, options.shared, look), options.air()];
+  // The swept curl of the plunging lip, where the cascades are: it draws only while they do.
+  const lip = fft === null ? null : createLiteLip(engine, scene, {
+    cove: edge.cove, waterLevel, tracker: edge.tracker, uniforms: own, textures, look, shared: options.shared, air: options.air, uploads,
+  });
 
   // The lattice, made once: the rings outermost first.
   const lattice = seaLattice();
@@ -333,6 +348,13 @@ export function createLiteSea(engine: EngineContext, scene: SceneContext, seed: 
     get windMode() {
       return ocean.numbers.coast[3] as WindSeaMode;
     },
+    lip,
+    get curl() {
+      return lip !== null && ocean.numbers.coast[3] === 2;
+    },
+    get travel() {
+      return ocean.field.travel;
+    },
     get fftStepped() {
       return fftStepped;
     },
@@ -385,7 +407,12 @@ export function createLiteSea(engine: EngineContext, scene: SceneContext, seed: 
       // The low tier's bump slides at a fixed rate.
       drift.step(f.dt, f.wind.speed, windDir, look.bump, false);
       seaFrameUniforms(ocean.numbers, surface, drift, frameValues);
-      if (seaUniforms(surface, waterLevel, ocean.numbers, own)) stale = true;
+      if (seaUniforms(surface, waterLevel, ocean.numbers, own)) {
+        stale = true;
+        lip?.moved();
+      }
+      // The curl, after the tracker's step: only with the cascades, a crest in mid-plunge and the face in view.
+      lip?.update(ocean.numbers.coast[3] === 2, f.centreX, f.centreZ, f.planes, f.corners);
       if (seen !== shown) {
         shown = seen;
         setMeshVisible(mesh, shown);
@@ -406,6 +433,7 @@ export function createLiteSea(engine: EngineContext, scene: SceneContext, seed: 
       if (disposed) return;
       disposed = true;
       field.dispose();
+      lip?.dispose();
       options.cover?.remove(mesh);
       removeFromScene(scene, mesh);
       disposeMeshGpu(mesh);

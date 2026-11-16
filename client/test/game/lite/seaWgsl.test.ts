@@ -3,7 +3,8 @@ import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
 import { HOLE_CELLS } from "../../../src/game/clipmap.js";
 import {
-  SEA_ALBEDO_WGSL, SEA_BUMP_WGSL, SEA_COMPOSE_WGSL, SEA_RAIN_WGSL, SEA_VERTEX_WGSL, seaLightsWgsl, seaRestVertexWgsl, seaShadeWgsl, seaSurfaceWgsl,
+  SEA_ALBEDO_WGSL, SEA_BUMP_WGSL, SEA_COMPOSE_WGSL, SEA_LIP_SHAPE_WGSL, SEA_LIP_VERTEX_WGSL, SEA_RAIN_WGSL, SEA_VERTEX_WGSL, seaLightsWgsl, seaRestVertexWgsl,
+  seaShadeWgsl, seaSurfaceWgsl,
 } from "../../../src/game/lite/seaWgsl.js";
 import { WATER_RING_CELLS, WATER_RING_COUNT, WATER_UV_SCALE } from "../../../src/game/water.js";
 import { inOrder, tight } from "./wgslText.js";
@@ -184,6 +185,48 @@ describe("the sea's waves and shading in WGSL, against the game's GLSL", () => {
     expect(high).toContain("fnoceanCrestKeep(pixel:f32)->f32{if(material.oceanCoast.w>1.5){returnoceanWindPixelKeep(FFT_CASCADE_1,FFT_N,pixel);}returnoceanWindPixelKeep(oceanLoopSize(),LOOP_N,pixel);}");
     // The fragment lip stands down while the cascades are drawn: the strip draws the curl then.
     expect(high).toContain("step(material.oceanCoast.w,1.5)");
+  });
+
+  it("places the plunging lip's strip as oceanLipShape.vertex.fx does: the crest's slot, the cross-section between two keyframes, the swell's sum at its foot", () => {
+    const lipShape = code("oceanLipShape.vertex.fx");
+    const wgsl = tight(SEA_LIP_SHAPE_WGSL);
+    const constants = [...lipShape.matchAll(/const float ([A-Z0-9_]+) = ([-0-9.e]+);/g)];
+    expect(constants.length).toBe(10);
+    for (const [, name, value] of constants) expect(wgsl, name).toContain(`const${name}:f32=${value};`);
+    // The plain statements of the three functions, as the sea's own are held.
+    let pinned = 0;
+    const missing: string[] = [];
+    for (const name of ["oceanLipKey", "oceanLipShape", "oceanLipPlace"]) {
+      for (const line of body(lipShape, name)) {
+        if (BY_HAND.test(line) || /oceanCoastAt|oceanDisplace|^vec2 travel|^float u = |^vec4 sum;|^vec2 sumEnv;|^float phaseDz;|^xz = |^swell = |^env = /.test(line)) continue;
+        if (!wgsl.includes(asWgsl(line))) missing.push(`${name}: ${line}`);
+        pinned++;
+      }
+    }
+    expect(missing).toEqual([]);
+    expect(pinned).toBeGreaterThanOrEqual(12);
+    // By hand: the tables at the texel the GLSL's nearest read lands on, and what the GLSL hands back through its out parameters.
+    const glsl = tight(lipShape);
+    expect(glsl).toContain("vec4slot=textureLod(oceanLipState,vec2((column+0.5)/LIP_COLUMNS,(strip.y+0.5)/LIP_SLOTS),0.0);");
+    expect(wgsl).toContain("letslot=textureLoad(oceanLipState,vec2<i32>(i32(floor(column+0.5)),i32(floor(strip.y+0.5))),0);");
+    expect(glsl).toContain("floatu=(v+0.5)/LIP_PROFILE_VERTS;vec4a=textureLod(oceanLipProfile,vec2(u,(k0+0.5)/LIP_KEYFRAMES),0.0);vec4b=textureLod(oceanLipProfile,vec2(u,(k0+1.5)/LIP_KEYFRAMES),0.0);");
+    expect(wgsl).toContain("leta=textureLoad(oceanLipProfile,vec2<i32>(i32(floor(v+0.5)),i32(k0)),0);letb=textureLoad(oceanLipProfile,vec2<i32>(i32(floor(v+0.5)),i32(k0)+1),0);");
+    expect(glsl).toContain("xz=vec2(oceanCoastAt(strip.x,phaseDz).x+slot.x,strip.x)+travel*(shape.x*size);");
+    expect(wgsl).toContain("o.xz=vec2<f32>(oceanCoastAt(strip.x).coast.x+slot.x,strip.x)+travel*(shape.x*size);");
+    expect(glsl).toContain("swell=vec4(normal.x,normal.z,sum.z+lift,sum.w);");
+    expect(wgsl).toContain("o.swell=vec4<f32>(normal.x,normal.z,sum.z+lift,sum.w);");
+    expect(glsl).toContain("env=mix(vec4(sumEnv,length(sumEnv),0.0),vec4(LIP_FOAM_ENVELOPE,0.0,LIP_FOAM_ENVELOPE,0.0),edge);");
+    expect(wgsl).toContain("o.env=mix(vec4<f32>(sumEnv,length(sumEnv),0.0),vec4<f32>(LIP_FOAM_ENVELOPE,0.0,LIP_FOAM_ENVELOPE,0.0),edge);");
+    expect(glsl).toContain("returnvec3(xz.x,waterLevel,xz.y)+disp+vec3(0.0,lift,0.0);");
+    expect(wgsl).toContain("o.place=vec3<f32>(o.xz.x,material.waterLevel,o.xz.y)+disp+vec3<f32>(0.0,lift,0.0);");
+    // The strip's vertex hands the fragment stage what the lattice's does, and no depth of its own.
+    const vertex = tight(SEA_LIP_VERTEX_WGSL);
+    expect(tight(code("oceanLip.vertex.fx"))).toContain("positionUpdated=oceanLipPlace(positionUpdated,oceanLipXZ,oceanLipSwell,oceanLipEnv);vOceanXZ=oceanLipXZ;vOceanSwellA=oceanLipSwell;vOceanSwellB=oceanLipEnv;");
+    expect(inOrder(vertex, [
+      "letoceanLip=oceanLipPlace(position);", "out.vOceanXZ=oceanLip.xz;", "out.vOceanSwellA=oceanLip.swell;", "out.vOceanSwellB=oceanLip.env;", "out.worldPos=oceanLip.place;",
+      "out.clipPos=scene.viewProjection*vec4<f32>(oceanLip.place,1.0);", "out.vBedDepth=0.0;", "out.vWaterViewDepth=out.clipPos.w;",
+    ])).toBe(true);
+    expect(vertex).not.toMatch(/swashLift|seaRing|seaBed/);
   });
 
   it("reads the wind sea's field only where the look bakes one, and the bump only where it draws the wind sea", () => {

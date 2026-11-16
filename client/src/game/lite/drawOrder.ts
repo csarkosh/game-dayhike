@@ -54,14 +54,16 @@ export const DRAW_ORDER = { rings: 80, patches: 90, forest: 100, clutter: 110, b
  * order draws the same. Each surface's vertices are laid in the world's
  * own coordinates, or placed there by its vertex stage, so that it stands
  * at the origin with the rest, and its place says the same from every
- * view.
+ * view. The plunging lip's swept curl follows the sea, over the surface its
+ * feet lie on; the game draws both without blending on the tier that has
+ * the curl, each tested against the other's depth.
  *
  * Then a lake's insects, which the game gives the highest index of all:
  * the midges' one draw, then the dragonflies', a kind a draw. And last, on
  * the tiers with no post chain, the shade veil, which the game draws over
  * the finished frame (`shadeVeil.ts`).
  */
-export const SEE_THROUGH_ORDER = { eyes: 190, motes: 200, mist: 210, splashes: 220, rain: 230, sea: 238, water: 240, midges: 250, dragonflies: 252, veil: 260 } as const; // The Hollows' eyes first: the air's veils are laid over them (`entityMeshes.ts`).
+export const SEE_THROUGH_ORDER = { eyes: 190, motes: 200, mist: 210, splashes: 220, rain: 230, sea: 238, lip: 239, water: 240, midges: 250, dragonflies: 252, veil: 260 } as const; // The Hollows' eyes first: the air's veils are laid over them (`entityMeshes.ts`).
 
 /** The places a shell has past its first. */
 export const DRAW_PLACES = 1024;
