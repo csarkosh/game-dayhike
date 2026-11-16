@@ -1,13 +1,17 @@
 import { readFileSync } from "node:fs";
+import { acquireTexture, releaseTexture } from "@babylonjs/lite";
 import { describe, expect, it } from "vitest";
 import { HOLLOW_FIGURE_M } from "../../../src/game/hollowLook.js";
 import { SHADE_SMOKE_FEET, SHADE_SMOKE_FRAY, SHADE_SMOKE_RISE, SHADE_SMOKE_SCALE, SHADE_SMOKE_SOFT, SHADE_SMOKE_SWELL_M } from "../../../src/game/shadeMaskParams.js";
 import { FRAME_BLOCK, SHADE_SMOKE_TIME_NAME, inFrameBlock } from "../../../src/game/lite/frameBlock.js";
 import {
-  SHADE_LOOK_FLOATS, SHADE_SMOKE_NOISE_WGSL, SHADE_SMOKE_VERTEX_WGSL, shadeMaskFragmentWgsl, shadeMaskPlugin, unseenPlugin, writeShadeLook,
+  SHADE_LOOK_FLOATS, SHADE_SMOKE_NOISE_WGSL, SHADE_SMOKE_VERTEX_WGSL, createMaskTargets, shadeMaskFragmentWgsl, shadeMaskPlugin, unseenPlugin, writeShadeLook,
+  type MaskTargets,
 } from "../../../src/game/lite/shadeMask.js";
+import { binder, picture, type FakePicture } from "./textureClaims.js";
 import { tight } from "./wgslText.js";
 
+const src = readFileSync(new URL("../../../src/game/lite/shadeMask.ts", import.meta.url), "utf8");
 const fx = (name: string): string => tight(readFileSync(new URL(`../../../src/game/shaders/${name}`, import.meta.url), "utf8"));
 const SHARED = { name: FRAME_BLOCK } as never;
 
@@ -91,5 +95,123 @@ describe("the haunt's figures in their mask on Babylon Lite", () => {
     expect(plugin.getCustomCode?.("vertex")).toEqual({ CUSTOM_VERTEX_MAIN_END: "out.clipPos=vec4<f32>(2.0,2.0,2.0,1.0);" });
     expect(plugin.getCustomCode?.("fragment")).toBeNull();
     expect(plugin.priority).toBeGreaterThan(900);
+  });
+});
+
+describe("the mask's targets on Babylon Lite", () => {
+  /** Targets as Lite's with a picture are: Lite claims a target's texture when it makes it, and lets that claim go when the target is disposed. */
+  const lites = (): { targets: MaskTargets<FakePicture>; made: FakePicture[] } => {
+    const made: FakePicture[] = [];
+    const targets = createMaskTargets<FakePicture>(
+      512, 256,
+      () => {
+        const target = picture();
+        acquireTexture(target);
+        made.push(target);
+        return target;
+      },
+      (target) => void releaseTexture(target),
+    );
+    return { targets, made };
+  };
+
+  it("keeps its target when the frame's passes are recorded again at the same size: a hiker's lamp joining makes no texture", () => {
+    const { targets, made } = lites();
+    const first = targets.current;
+    for (let recording = 0; recording < 10; recording++) {
+      expect(targets.fit(512, 256)).toBe(false);
+      targets.settle();
+    }
+    expect(targets.current).toBe(first);
+    expect(made).toEqual([first]);
+    expect(first.texture.destroyed).toBe(false);
+  });
+
+  it("makes another target only when the mask's size moves, and lets the one it replaced go the frame after, not before", () => {
+    const { targets, made } = lites();
+    const first = targets.current;
+    expect(targets.fit(512, 512)).toBe(true);
+    const second = targets.current;
+    expect(second).not.toBe(first);
+    expect(made).toEqual([first, second]);
+    // The frame that fitted the window is drawn with whatever was handed the first picture: it stands.
+    expect(first.texture.destroyed).toBe(false);
+    targets.settle();
+    expect(first.texture.destroyed).toBe(true);
+    expect(second.texture.destroyed).toBe(false);
+    // Fitted twice before a frame: both replaced targets go with that frame, and the last stands.
+    expect(targets.fit(256, 256)).toBe(true);
+    expect(targets.fit(512, 256)).toBe(true);
+    expect(made).toHaveLength(4);
+    expect(made.map((target) => target.texture.destroyed)).toEqual([true, false, false, false]);
+    targets.settle();
+    expect(made.map((target) => target.texture.destroyed)).toEqual([true, true, true, false]);
+    expect(targets.current).toBe(made[3]);
+  });
+
+  it("never leaves the veil with a destroyed texture: when a light joins, on the frame the window is fitted, and after it", () => {
+    const { targets } = lites();
+    // The veil's material, bound each frame to the picture the mask hands out: Lite claims what it binds.
+    const bind = binder();
+    const frame = (): FakePicture => {
+      targets.settle();
+      bind(targets.current);
+      return targets.current;
+    };
+    const first = frame();
+    // A light joins: the passes are recorded again, and the frames after read the same texture, alive.
+    expect(targets.fit(512, 256)).toBe(false);
+    expect(frame()).toBe(first);
+    expect(first.texture.destroyed).toBe(false);
+    // The window is fitted after the veil was bound for the frame: that frame reads the first picture, which stands.
+    expect(targets.fit(512, 512)).toBe(true);
+    expect(first.texture.destroyed).toBe(false);
+    // The frame after reads the second, and the first goes only now that nothing holds it.
+    const second = frame();
+    expect(second).not.toBe(first);
+    expect(first.texture.destroyed).toBe(true);
+    expect(second.texture.destroyed).toBe(false);
+    // And so on through joins and fittings: what is read is alive.
+    for (const [width, height] of [[512, 512], [256, 256], [256, 256], [512, 256]] as const) {
+      const before = targets.current;
+      targets.fit(width, height);
+      expect(before.texture.destroyed).toBe(false);
+      expect(frame().texture.destroyed).toBe(false);
+    }
+  });
+
+  it("never leaves the grade, which claims nothing, with a destroyed texture either", () => {
+    const { targets } = lites();
+    let read = targets.current;
+    expect(targets.fit(512, 512)).toBe(true);
+    // The frame that fitted the window: the grade's pass reads what it was handed before.
+    expect(read.texture.destroyed).toBe(false);
+    targets.settle();
+    read = targets.current;
+    expect(read.texture.destroyed).toBe(false);
+  });
+
+  it("hands out a picture that names one texture: Lite lets a claim go on whatever texture a picture names at that moment", () => {
+    // What went wrong with a picture that named whatever the target held: bound, it claimed the first texture; the
+    // target was made again; unbound, the claim let go was the second texture's, which nobody had claimed, and Lite
+    // destroys a texture at its last release.
+    const first = picture().texture;
+    const second = picture().texture;
+    let held = first;
+    const whatever = { get texture() { return held; }, view: {} } as unknown as FakePicture;
+    acquireTexture(whatever);
+    held = second;
+    releaseTexture(whatever);
+    expect(second.destroyed).toBe(true);
+    // The targets' own: a picture is one object for one texture, and another target's is another object.
+    const { targets } = lites();
+    const one = targets.current;
+    const texture = one.texture;
+    targets.fit(512, 512);
+    expect(one.texture).toBe(texture);
+    expect(targets.current).not.toBe(one);
+    expect(targets.current.texture).not.toBe(texture);
+    expect(src).toContain("createRenderTargetTexture(engine, { lbl: \"shade_mask\"");
+    expect(src).not.toContain("_colorTexture");
   });
 });

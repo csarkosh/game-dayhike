@@ -39,13 +39,14 @@
  * pair's level is above nothing.
  * A pair's level (`eyeLevelOf`: the real one's glow dulled, a shade's near
  * nothing, both rising with the figure as it comes in and going first as
- * it goes) multiplies the light the eye gives off, in linear light, before
- * what the eye reflects is added to it and before the air, the display
+ * it goes) multiplies the eye's whole lit colour, what it gives off and
+ * what it reflects together, in linear light, before the air, the display
  * curve and the grade (`eyeLevelPlugin`): at a level of 0.1375 the real
  * one's eye gives off 0.55 of the eye's colour, where the whole eye gives
- * off 4 of it. What the eye's surface reflects is not scaled: it is lit as
- * any surface of its colour and roughness is, by the day and by a lamp
- * held on it. The level rides the pair's instance, a float of the
+ * off 4 of it. What the eye's surface reflects is scaled with it, because
+ * the model's eye is a red surface lit by the day and by a lamp like any
+ * other: left whole, a shade's eyes would stay red discs with next to no
+ * glow in them. The level rides the pair's instance, a float of the
  * plugin's own: four bytes a pair are written on a frame in which a level
  * has changed or a pair has joined, and while no level is above nothing
  * there is no draw and no write. A pair at no level among pairs that glow
@@ -118,24 +119,24 @@ export const CAPSULE_ROUGHNESS = 0.85;
 export const EYE_LEVEL_BYTES = 4;
 
 /**
- * The eyes' glow at their level. Lite's fragment keeps the light a surface
- * gives off apart from the light it reflects until it sums the two, so the
- * level multiplies that term alone, at the point after the material's own
- * emissive is read and before the lights: the sum, the air laid over it and
- * the tier's curve or grade all follow, and the fragment's alpha is left
- * as the material has it. The level is the plugin's own float in a pair's
- * instance, handed on to the fragment; a pair whose level is nothing is
- * put outside the view, so that it is no dark disc among pairs that glow.
- * Last of the material's plugins: nothing after it moves such a pair back.
+ * The eyes at their level. The level multiplies the eye's whole lit colour,
+ * the light it gives off and the light it reflects, once Lite's fragment
+ * has summed the two and before the air is laid over the sum: the air and
+ * the tier's curve or grade follow, so a faint eye is veiled by the air as
+ * a dark surface is, and the fragment's alpha is left as the material has
+ * it. The level is the plugin's own float in a pair's instance, handed on
+ * to the fragment; a pair whose level is nothing is put outside the view,
+ * so that it is no dark disc among pairs that glow. Just before the air's
+ * plugin, which shares the fragment's point and moves no vertex.
  */
 export function eyeLevelPlugin(): MaterialPlugin {
   return {
     name: "EyeLevel",
-    priority: 995,
+    priority: 890,
     getCustomCode: (stage) =>
       stage === "vertex"
         ? { CUSTOM_VERTEX_MAIN_END: "out.vEyeLevel=eyeLevel;if(eyeLevel<=0.0){out.clipPos=vec4<f32>(2.0,2.0,2.0,1.0);}" }
-        : { CUSTOM_FRAGMENT_UPDATE_DIFFUSE: "emissive*=input.vEyeLevel;" },
+        : { CUSTOM_FRAGMENT_BEFORE_FINALCOLORCOMPOSITION: "color*=input.vEyeLevel;" },
     getInstanceAttributes: () => [{ name: "eyeLevel", type: "f32", format: "float32" as const, stride: EYE_LEVEL_BYTES, offset: 0 }],
     getVaryings: () => [{ name: "vEyeLevel", type: "f32" }],
   };

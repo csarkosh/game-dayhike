@@ -2,7 +2,8 @@ import { describe, expect, it } from "vitest";
 import { MAX_PLAYERS } from "../../../src/sim/constants.js";
 import { SHADE_EYES_DULL, SHADE_EYES_SHADE, eyeLevelOf } from "../../../src/game/entityPoses.js";
 import { HOLLOW_EYE_INTENSITY } from "../../../src/game/hollowLook.js";
-import { ATMOSPHERE_PRIORITY } from "../../../src/game/lite/atmospherePlugin.js";
+import { emptyAtmosphereUniforms } from "../../../src/game/atmosphereParams.js";
+import { ATMOSPHERE_PRIORITY, atmospherePlugin } from "../../../src/game/lite/atmospherePlugin.js";
 import { DRAW_ORDER, DRAW_PLACES, SEE_THROUGH_ORDER } from "../../../src/game/lite/drawOrder.js";
 import {
   BODY_PLACES, CAPSULE_COLOUR, CAPSULE_ROUGHNESS, EYE_LEVEL_BYTES, HOLLOW_CAPACITY, RANGER_CAPACITY, eyeLevelPlugin, setEyeLevel,
@@ -33,15 +34,17 @@ describe("the hikers' bodies and the Hollows' eyes on Babylon Lite", () => {
 });
 
 describe("the Hollows' eyes at their level on Babylon Lite", () => {
-  it("scales the light a pair gives off by its level, before the lights, and nothing else of the fragment", () => {
+  it("scales a pair's whole lit colour by its level, before the air, and nothing else of the fragment", () => {
     const plugin = eyeLevelPlugin();
     const fragment = plugin.getCustomCode?.("fragment") as Record<string, string>;
-    // The point after the material's own emissive is read and before the lights are summed with it.
-    expect(Object.keys(fragment)).toEqual(["CUSTOM_FRAGMENT_UPDATE_DIFFUSE"]);
-    expect(tight(fragment.CUSTOM_FRAGMENT_UPDATE_DIFFUSE as string)).toBe("emissive*=input.vEyeLevel;");
-    // What the eye reflects, the lit colour and the alpha are left alone, and the fragment runs on to the air and the
-    // tier's curve: it is not handed back here.
-    for (const left of ["color", "alpha", "baseColor", "surfaceAlbedo", "return"]) expect(fragment.CUSTOM_FRAGMENT_UPDATE_DIFFUSE).not.toContain(left);
+    // The point where what the eye gives off and what it reflects have been summed, which the air's plugin shares.
+    expect(Object.keys(fragment)).toEqual(["CUSTOM_FRAGMENT_BEFORE_FINALCOLORCOMPOSITION"]);
+    expect(tight(fragment.CUSTOM_FRAGMENT_BEFORE_FINALCOLORCOMPOSITION as string)).toBe("color*=input.vEyeLevel;");
+    // Before the air's plugin at that point: the air is laid over the scaled eye, not scaled with it.
+    expect(plugin.priority).toBeLessThan(ATMOSPHERE_PRIORITY);
+    // The alpha and the surface are left alone, and the fragment runs on to the air and the tier's curve: it is not
+    // handed back here.
+    for (const left of ["alpha", "emissive", "baseColor", "surfaceAlbedo", "return"]) expect(fragment.CUSTOM_FRAGMENT_BEFORE_FINALCOLORCOMPOSITION).not.toContain(left);
     expect(plugin.getUniforms).toBeUndefined();
     expect(plugin.getSamplers).toBeUndefined();
     // The real one's eyes, resolved, give off the dulled glow and a shade's next to nothing: the level times the eye's whole light.
@@ -57,8 +60,8 @@ describe("the Hollows' eyes at their level on Babylon Lite", () => {
     const vertex = plugin.getCustomCode?.("vertex") as Record<string, string>;
     expect(Object.keys(vertex)).toEqual(["CUSTOM_VERTEX_MAIN_END"]);
     expect(inOrder(tight(vertex.CUSTOM_VERTEX_MAIN_END as string), ["out.vEyeLevel=eyeLevel;", "if(eyeLevel<=0.0){out.clipPos=vec4<f32>(2.0,2.0,2.0,1.0);}"])).toBe(true);
-    // Last of the material's plugins, past the air: nothing after it moves a pair at no level back into the view.
-    expect(plugin.priority).toBeGreaterThan(ATMOSPHERE_PRIORITY);
+    // The air's plugin, which follows it, moves no vertex: nothing after it brings a pair at no level back into the view.
+    expect(atmospherePlugin(emptyAtmosphereUniforms(), {} as Parameters<typeof atmospherePlugin>[1]).getCustomCode?.("vertex") ?? null).toBeNull();
   });
 
   it("keeps a pair's level as the float it is sent as, and says whether the level changed", () => {

@@ -100,7 +100,7 @@ import {
   type WaterGeometry,
   type WaterRingSamples,
 } from "./water.js";
-import { SWASH_FACE_LIFT_M, SWASH_G } from "./swashRunUp.js";
+import { SWASH_FACE_LIFT_M } from "./swashRunUp.js";
 import { Constants } from "@babylonjs/core/Engines/constants.js";
 import { attachWater, type WaterPlugin } from "./waterPlugin.js";
 import { createBumpDrift } from "./waterSurface.js";
@@ -113,9 +113,10 @@ import type { OceanField } from "./oceanWaves.js";
 import { createSeaEdgeStep } from "./seaEdge.js";
 import type { SwashTable, SwashCove } from "./swashTable.js";
 import { createSwashTexture } from "./swashTexture.js";
-import { LIP_SPEED_MAX, LIP_SPEED_MIN, lipProfile, type LipTracker } from "./oceanBreaker.js";
+import { lipProfile, type LipTracker } from "./oceanBreaker.js";
 import { createOceanLip, type OceanLip } from "./oceanLip.js";
-import { SURF_SPRAY_BURSTS, SURF_SPRAY_RANGE_M, createSurfSpray, type SurfSpray } from "./surfSpray.js";
+import { createSprayThrow } from "./sprayField.js";
+import { createSurfSpray, type SurfSpray } from "./surfSpray.js";
 import { SILENT_SURF_SOUND, createSurfSound, fillSurfSound, type SurfSound } from "./surfSound.js";
 import { createBedFollow } from "./bedFollow.js";
 import type { BedGrid } from "./bedHeight.js";
@@ -916,9 +917,6 @@ const CLIFF_FAR_SUFFIX = `_l${CLIFF_LOD_NODES.length - 1}`;
  * that holds a lake's shore stacks, which the high mirror draws as well. */
 const CLIFF_LOD1_SUFFIX = "_l1";
 
-/** The mean of the lip's throw over the wave's speed (`LIP_SPEED_MIN`..`LIP_SPEED_MAX`): the spray's launch. */
-const SPRAY_THROW = (LIP_SPEED_MIN + LIP_SPEED_MAX) / 2;
-
 export { LAKE_SURFACE_SPACING, lakeSurfaceGrid };
 export { SILENT_WATER_LIFE, createPlayerSlots, pixelAtOneMetre, skyLumaOf, type PlayerSlots, type SlotPoint } from "./waterLifeInputs.js";
 export { PAW_COVER_SHELTER, fadedCalmShare, lakeCalmUnder, type LakeCalmFrame } from "./lakeCalmFrame.js";
@@ -1220,51 +1218,12 @@ export function createWater(
     waterMeshes.push(lip.fine, lip.coarse);
   }
   const spray = tier === "high" ? createSurfSpray(scene, group) : null;
-  // The wind as the spray reads it, and the plunges a frame has thrown spray
-  // for: made once, refilled.
+  // The wind as the spray reads it: made once, refilled.
   const sprayWind: WindRecord = { dirX: 1, dirZ: 0, speed: 0, lean: 0, gustAmp: 0, flutterAmp: 0, time: 0 };
-  const thrown = new Uint8Array(tracker.plunges.d.length);
+  // Which of a frame's plunges throw spray, and how, is kept with no engine (`sprayField.ts`): along the swell's
+  // travel while the curl is shown (made, and the FFT drawing the wind sea), else along the face's normal.
+  const throwSpray = createSprayThrow(tracker, cove, waterLevel);
   let filled = false;
-
-  /**
-   * Spray for this frame's plunges within SURF_SPRAY_RANGE_M of the camera,
-   * nearest first, SURF_SPRAY_BURSTS at most: each thrown landward from the
-   * crest's top at the lip's throw, the mean of 1.3 to 1.5 times the
-   * shallow-water speed of a wave of the plunge's height. While the curl is
-   * shown (made, and the FFT drawing the wind sea) it is thrown along the
-   * swell's travel, as the curl throws its lip; otherwise along the face's
-   * normal, as the sea's fragment lip, which draws then, tilts.
-   */
-  function throwSpray(sprayOf: SurfSpray, camX: number, camZ: number, seconds: number): void {
-    const plunges = tracker.plunges;
-    const curl = lip !== null && ocean.windMode === 2;
-    const count = Math.min(plunges.count, thrown.length);
-    thrown.fill(0, 0, count);
-    for (let k = 0; k < SURF_SPRAY_BURSTS; k++) {
-      let best = -1;
-      let bestDist = SURF_SPRAY_RANGE_M;
-      for (let i = 0; i < count; i++) {
-        if (thrown[i] === 1) continue;
-        const z = plunges.z[i] as number;
-        const dist = Math.hypot(cove.coastX(z) + (plunges.d[i] as number) - camX, z - camZ);
-        if (dist <= bestDist) {
-          best = i;
-          bestDist = dist;
-        }
-      }
-      if (best < 0) return;
-      thrown[best] = 1;
-      const z = plunges.z[best] as number;
-      const height = Math.max(0, plunges.height[best] as number);
-      // The coast runs along z with the land toward +x: its landward normal.
-      const slope = (cove.coastX(z + 1) - cove.coastX(z - 1)) / 2;
-      sprayOf.burst(
-        cove.coastX(z) + (plunges.d[best] as number), waterLevel + height, z,
-        curl ? ocean.field.travel[0] : 1, curl ? ocean.field.travel[1] : -slope,
-        SPRAY_THROW * Math.sqrt(SWASH_G * height), seconds,
-      );
-    }
-  }
 
   const edge: SeaEdge = {
     cove,
@@ -1332,7 +1291,7 @@ export function createWater(
         }
       }
       if (spray !== null) {
-        throwSpray(spray, camX, camZ, seconds);
+        throwSpray(lip !== null && ocean.windMode === 2, ocean.field.travel, camX, camZ, seconds, spray.burst);
         spray.update(seconds, sprayWind);
       }
       // The copy's depth is linearised with the camera's planes, read each

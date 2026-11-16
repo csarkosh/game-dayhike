@@ -54,7 +54,10 @@ export const DRAW_ORDER = { rings: 80, patches: 90, forest: 100, clutter: 110, b
  * order draws the same. Each surface's vertices are laid in the world's
  * own coordinates, or placed there by its vertex stage, so that it stands
  * at the origin with the rest, and its place says the same from every
- * view.
+ * view. The plunging lip's swept curl follows the sea, over the surface its
+ * feet lie on; the game draws both without blending on the tier that has
+ * the curl, each tested against the other's depth. Then the surf's spray,
+ * which the game puts after the sea and every other blended mesh.
  *
  * Then the see-through parts of the scenery a hike places once
  * (`sceneryMeshes.ts`), which the game leaves at Babylon.js's default place
@@ -69,7 +72,7 @@ export const DRAW_ORDER = { rings: 80, patches: 90, forest: 100, clutter: 110, b
  * the tiers with no post chain, the shade veil, which the game draws over
  * the finished frame (`shadeVeil.ts`).
  */
-export const SEE_THROUGH_ORDER = { motes: 200, mist: 210, splashes: 220, rain: 230, sea: 238, water: 240, carShadow: 242, lettering: 244, boardFace: 245, glass: 246, midges: 250, dragonflies: 252, veil: 260 } as const;
+export const SEE_THROUGH_ORDER = { motes: 200, mist: 210, splashes: 220, rain: 230, sea: 238, lip: 239, water: 240, carShadow: 242, lettering: 244, boardFace: 245, glass: 246, spray: 248, midges: 250, dragonflies: 252, veil: 260 } as const;
 
 /** The places a shell has past its first. */
 export const DRAW_PLACES = 1024;
