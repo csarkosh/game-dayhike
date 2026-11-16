@@ -15,12 +15,18 @@ import { Constants } from "@babylonjs/core/Engines/constants.js";
 import { ColorCurves } from "@babylonjs/core/Materials/colorCurves.js";
 
 import type { WeatherParams } from "./weather.js";
-import { gradeUnder, saturationUnder, WEATHER_PRESETS } from "./weather.js";
-import { mixPalette, PAINT_FADE_SECONDS, PAINT_OILS, type PaintPalette } from "./gradeParams.js";
-import { CHASE_LIFT, CHASE_SHADOW_DENSITY, CHASE_SHADOW_HUE, CHASE_TINT, gradeRecordUnder, type GradeRecord } from "./gradeParams.js";
+import { WEATHER_PRESETS } from "./weather.js";
+import { type PaintPalette } from "./gradeParams.js";
+import { gradeRecordUnder, type GradeRecord } from "./gradeParams.js";
+import { curveSettingsUnder } from "./materialGrade.js";
 import type { StareLens } from "./stareLens.js";
-import { MSAA_SAMPLES, PAINT_SCALE, PAINT_STRENGTH, paintTargetSize, paintTexelRadius, TAA_BLEND, TAA_CLIP, TAA_SHARPEN, taaBlendFor, taaCameraPixels, taaJitter, type PostFeatures } from "./postParams.js";
+import { MSAA_SAMPLES, PAINT_SCALE, type PostFeatures } from "./postParams.js";
 import { LENS, lensDropletMap } from "./lensParams.js";
+import {
+  FAR_CLOUD_UNIFORMS, HALATION_KERNEL, HALATION_RATIO, composeUniforms, createLensGate, createPaletteFade, createTaaFrame, emptyFarSoftUniforms,
+  emptyGradeUniforms, emptyTaaUniforms, endBlurKernel, extractUniforms, farSoftUniforms, gradeUniforms, lensUniforms, paintUniforms, sharpenUniforms,
+  type PostView,
+} from "./postFrame.js";
 import halationExtractFragment from "./shaders/halationExtract.fragment.fx?raw";
 import gradeFragment from "./shaders/grade.fragment.fx?raw";
 import lensFragment from "./shaders/lens.fragment.fx?raw";
@@ -58,48 +64,16 @@ export type Post = {
   dispose(): void;
 };
 
-/** How long the lens's strength sits under its floor before the pass is detached. */
-const LENS_IDLE_S = 1;
-/** The shades' blur radius as a share of the frame's width, and how dark the mask makes the frame at full. */
-export const SHADE_BLUR = 0.015;
-/** How much darker a shade is than what stands behind it, the mist: a little, not black; and the real one, black, nearer to whole. */
-export const SHADE_DARK = 0.3;
-export const SHADE_MONSTER_DARK = 1;
-/** The end's blur at its fullest, in texels: soft, not a wash. */
-export const END_BLUR_KERNEL = 28;
-/** The kernels the end's blur steps through: a blur pass compiles afresh for each kernel it is given, so a smooth ramp would compile every frame; three steps compile three times. */
-export const END_BLUR_STEPS = 3;
-
-/** The kernel for a blur of 0 to 1: none below the first step, then END_BLUR_STEPS even steps up to END_BLUR_KERNEL. */
-export function endBlurKernel(blur: number): number {
-  const step = Math.min(END_BLUR_STEPS, Math.ceil(Math.max(0, Math.min(1, blur)) * END_BLUR_STEPS));
-  return (END_BLUR_KERNEL / END_BLUR_STEPS) * step;
-}
-
-/** The far softening's band of camera depth (m) and its radius at the band's end, in texels. */
-export const FAR_SOFT_BAND: readonly [number, number] = [80, 450];
-export const FAR_SOFT_RADIUS = 5;
+// The chain's numbers and each pass's uniforms are made with no engine (`postFrame.ts`).
+export {
+  END_BLUR_KERNEL, END_BLUR_STEPS, FAR_CLOUD_UNIFORMS, FAR_SOFT_BAND, FAR_SOFT_RADIUS, SHADE_BLUR, SHADE_DARK, SHADE_MONSTER_DARK, endBlurKernel,
+} from "./postFrame.js";
 
 /** The capability every HDR pass needs: float or half-float render targets. */
 export function fxSupportedBy(engine: AbstractEngine): boolean {
   const caps = engine.getCaps();
   return Boolean(caps.textureHalfFloatRender || caps.textureFloatRender);
 }
-
-/** The far softening's uniforms for the ground cloud it marches (farSoft.fragment.fx). */
-export const FAR_CLOUD_UNIFORMS = [
-  "farEye", "farForward", "farRight", "farUp", "atmSunDir", "atmSunColour",
-  "atmCloudDensity", "atmCloudSteps", "atmCloudRange", "atmCloudFalloff", "atmCloudSeat", "atmCloudGroundRange",
-  "atmCloudNear", "atmCloudTrail", "atmCloudNoiseScale", "atmCloudWind", "atmCloudGlow", "atmCloudColour", "atmCloudGroundRect",
-] as const;
-
-// The ratio shared by every pass in the halation sub-chain — extract, blur X,
-// blur Y, and (on high) grade — so a pass's own ratio and the previous
-// pass's ratio agree and the whole sub-chain reads and writes quarter size
-// throughout, blur Y's write target included (see grade's ratio below).
-const HALATION_RATIO = 0.25;
-
-const HALATION_KERNEL = 32;
 
 /**
  * The post chain: the far softening first (where the engine draws to several
@@ -211,7 +185,18 @@ export function createPost(scene: Scene, camera: Camera, features: PostFeatures,
   let farSoft: PostProcess | null = null;
   /** What binds the ground cloud to the far softening's pass (`setCloud`), and a scratch axis. */
   let cloudBinder: ((effect: Effect) => void) | null = null;
-  const farAxis = new Vector3();
+  /** The camera as the passes rebuild a pixel's ray from it (`PostView`), read as a pass applies. */
+  const axes = { eye: new Vector3(), forward: new Vector3(), right: new Vector3(), up: new Vector3() };
+  const viewNow = (): PostView => {
+    camera.getDirectionToRef(Vector3.Forward(), axes.forward);
+    camera.getDirectionToRef(Vector3.Right(), axes.right);
+    camera.getDirectionToRef(Vector3.Up(), axes.up);
+    // After the directions: reading them computes the world matrix the global position is of.
+    axes.eye.copyFrom(camera.globalPosition);
+    return { ...axes, fov: camera.fov, aspect: engine.getAspectRatio(camera) };
+  };
+  const farValues = emptyFarSoftUniforms();
+  const gradeValues = emptyGradeUniforms();
   let prePass: PrePassRenderer | null = null;
   /** The paint pass (2026-10-17): the frame smeared into strokes, after the far softening and before the grade. */
   let paint: PostProcess | null = null;
@@ -224,7 +209,7 @@ export function createPost(scene: Scene, camera: Camera, features: PostFeatures,
   let lensStrength = 0;
   let lensSlot = -1;
   let lensAttached = false;
-  let lensIdleSince: number | null = null;
+  const lensGate = createLensGate();
   /** The end's softening (ending.ts): two blur passes after the chain, attached while there is any, their kernel by it. */
   let endBlurX: BlurPostProcess | null = null;
   let endBlurY: BlurPostProcess | null = null;
@@ -255,14 +240,7 @@ export function createPost(scene: Scene, camera: Camera, features: PostFeatures,
   let record: GradeRecord = gradeRecordUnder(WEATHER_PRESETS.clear, 12, 0, 1);
   // The painted palette: the one the frames fade from, the one they fade
   // to, when the fade began (ms of `now`) and how long it takes.
-  let paletteFrom: PaintPalette = PAINT_OILS;
-  let paletteTo: PaintPalette = PAINT_OILS;
-  let paletteFadeStart = 0;
-  let paletteFadeMs = 0;
-  const paletteNow = (): PaintPalette => {
-    if (paletteFadeMs <= 0) return paletteTo;
-    return mixPalette(paletteFrom, paletteTo, (now() - paletteFadeStart) / paletteFadeMs);
-  };
+  const paletteFade = createPaletteFade(now);
   /** The haunt's mask (shadeSilhouette.ts), once handed in, and whether any shade is in it this frame. */
   let shadeMask: BaseTexture | null = null;
   let shadeAny = false;
@@ -330,22 +308,17 @@ export function createPost(scene: Scene, camera: Camera, features: PostFeatures,
       farSoft.onApply = (effect) => {
         const target = bound.getRenderTarget();
         effect.setTexture("depthSampler", target.textures[bound.getIndex(Constants.PREPASS_DEPTH_TEXTURE_TYPE)] ?? null);
-        effect.setFloat2("texel", 1 / engine.getRenderWidth(), 1 / engine.getRenderHeight());
-        effect.setFloat3("soft", FAR_SOFT_BAND[0], FAR_SOFT_BAND[1], FAR_SOFT_RADIUS);
         // The ground cloud's march (farSoft.fragment.fx): the ray through each
         // pixel is the camera's forward plus the pixel's place across the
         // view, the right and up axes each at the half view's tangent. With
         // nothing bound it marches no steps.
-        const tanY = Math.tan(camera.fov / 2);
-        const tanX = tanY * engine.getAspectRatio(camera);
-        camera.getDirectionToRef(Vector3.Forward(), farAxis);
-        effect.setFloat3("farForward", farAxis.x, farAxis.y, farAxis.z);
-        camera.getDirectionToRef(Vector3.Right(), farAxis);
-        effect.setFloat3("farRight", farAxis.x * tanX, farAxis.y * tanX, farAxis.z * tanX);
-        camera.getDirectionToRef(Vector3.Up(), farAxis);
-        effect.setFloat3("farUp", farAxis.x * tanY, farAxis.y * tanY, farAxis.z * tanY);
-        const eye = camera.globalPosition;
-        effect.setFloat3("farEye", eye.x, eye.y, eye.z);
+        const u = farSoftUniforms(viewNow(), engine.getRenderWidth(), engine.getRenderHeight(), farValues);
+        effect.setFloat2("texel", u.texel[0], u.texel[1]);
+        effect.setFloat3("soft", u.soft[0], u.soft[1], u.soft[2]);
+        effect.setFloat3("farForward", u.farForward[0], u.farForward[1], u.farForward[2]);
+        effect.setFloat3("farRight", u.farRight[0], u.farRight[1], u.farRight[2]);
+        effect.setFloat3("farUp", u.farUp[0], u.farUp[1], u.farUp[2]);
+        effect.setFloat3("farEye", u.farEye[0], u.farEye[1], u.farEye[2]);
         if (cloudBinder !== null) cloudBinder(effect);
         else {
           effect.setFloat("atmCloudSteps", 0);
@@ -369,11 +342,16 @@ export function createPost(scene: Scene, camera: Camera, features: PostFeatures,
       // cleared: the clear would be of the history itself.
       sharpen.autoClear = false;
       sharpen.onApply = (effect) => {
-        effect.setFloat2("texel", 1 / engine.getRenderWidth(), 1 / engine.getRenderHeight());
-        effect.setFloat("sharpen", TAA_SHARPEN);
+        const u = sharpenUniforms(engine.getRenderWidth(), engine.getRenderHeight());
+        effect.setFloat2("texel", u.texel[0], u.texel[1]);
+        effect.setFloat("sharpen", u.sharpen[0]);
       };
       let flip = 0;
-      let valid = false;
+      // The jitter's walk and the camera the last frame was seen through (`postFrame.ts`).
+      const taaFrame = createTaaFrame();
+      const taaValues = emptyTaaUniforms();
+      const TAA_VECTORS = ["taaEye", "taaForward", "taaRight", "taaUp", "taaPrevEye", "taaPrevForward", "taaPrevRight", "taaPrevUp"] as const;
+      const taaVectors = TAA_VECTORS.map(() => new Vector3());
       const makeTargets = (): void => {
         taaPing?.dispose();
         taaPong?.dispose();
@@ -381,22 +359,16 @@ export function createPost(scene: Scene, camera: Camera, features: PostFeatures,
         const opts = { generateMipMaps: false, generateDepthBuffer: false, type: textureType, samplingMode: Texture.BILINEAR_SAMPLINGMODE };
         taaPing = engine.createRenderTargetTexture(size, opts);
         taaPong = engine.createRenderTargetTexture(size, opts);
-        valid = false;
+        taaFrame.reset();
       };
       makeTargets();
-      // The camera's basis this frame and last: its eye, its forward axis,
-      // and its right and up axes each at the half view's tangent.
-      const cur = { eye: new Vector3(), f: new Vector3(), r: new Vector3(), u: new Vector3() };
-      const prev = { eye: new Vector3(), f: new Vector3(), r: new Vector3(), u: new Vector3() };
-      let frame = 0;
-      const axis = new Vector3();
       // The jitter: the projection's third row carries the clip-space offset
       // (it multiplies by the depth, so the offset is the same at every
       // depth), set on the matrix Babylon has just computed, and the matrix
       // computed afresh after the render so nothing else sees the offset.
       const jitter = scene.onBeforeRenderObservable.add(() => {
         const proj = camera.getProjectionMatrix(true);
-        const { x, y } = taaJitter(frame++, engine.getRenderWidth(), engine.getRenderHeight());
+        const { x, y } = taaFrame.jitter(engine.getRenderWidth(), engine.getRenderHeight());
         proj.setRowFromFloats(2, x, y, proj.m[10] ?? 1, proj.m[11] ?? 1);
       });
       const unjitter = scene.onAfterRenderObservable.add(() => {
@@ -416,39 +388,16 @@ export function createPost(scene: Scene, camera: Camera, features: PostFeatures,
         effect.setTexture("depthSampler", target.textures[bound.getIndex(Constants.PREPASS_DEPTH_TEXTURE_TYPE)] ?? null);
         const history = (flip ? taaPing : taaPong)!;
         effect._bindTexture("historySampler", history.texture);
-        effect.setFloat2("texel", 1 / engine.getRenderWidth(), 1 / engine.getRenderHeight());
-        const tanY = Math.tan(camera.fov / 2);
-        const tanX = tanY * engine.getAspectRatio(camera);
-        camera.getDirectionToRef(Vector3.Forward(), cur.f);
-        camera.getDirectionToRef(Vector3.Right(), cur.r);
-        cur.r.scaleInPlace(tanX);
-        camera.getDirectionToRef(Vector3.Up(), cur.u);
-        cur.u.scaleInPlace(tanY);
-        // After the directions: reading them computes the world matrix the global position is of.
-        cur.eye.copyFrom(camera.globalPosition);
-        // The first frame, and the first after the targets are remade, has no
-        // history: last frame's basis is this frame's, and the blend is held off.
-        if (!valid) {
-          prev.eye.copyFrom(cur.eye); prev.f.copyFrom(cur.f); prev.r.copyFrom(cur.r); prev.u.copyFrom(cur.u);
-        }
-        effect.setVector3("taaEye", cur.eye);
-        effect.setVector3("taaForward", cur.f);
-        effect.setVector3("taaRight", cur.r);
-        effect.setVector3("taaUp", cur.u);
-        effect.setVector3("taaPrevEye", prev.eye);
-        effect.setVector3("taaPrevForward", prev.f);
-        effect.setVector3("taaPrevRight", prev.r);
-        effect.setVector3("taaPrevUp", prev.u);
-        // The blend by how far the camera moved since the last frame: its
-        // turn, the angle between the two forward axes, and its step. A still
-        // camera blends gently, so the jitter's swing on a trunk thinner than
-        // a pixel does not come through (TAA_BLEND_STILL).
-        const turn = Math.atan2(Vector3.CrossToRef(prev.f, cur.f, axis).length(), Vector3.Dot(prev.f, cur.f));
-        const move = Vector3.Distance(prev.eye, cur.eye);
-        const blend = valid ? taaBlendFor(taaCameraPixels(turn, move, camera.fov, engine.getRenderHeight())) : TAA_BLEND;
-        effect.setFloat3("taaParams", blend, TAA_CLIP, valid ? 1 : 0);
-        prev.eye.copyFrom(cur.eye); prev.f.copyFrom(cur.f); prev.r.copyFrom(cur.r); prev.u.copyFrom(cur.u);
-        valid = true;
+        // The camera's basis this frame and last: its eye, its forward axis, and its right and up axes each at the
+        // half view's tangent; and the blend by how far the camera moved since the last frame. The first frame, and
+        // the first after the targets are remade, has no history: last frame's basis is this frame's, and the blend
+        // is held off.
+        const u = taaFrame.step(viewNow(), engine.getRenderWidth(), engine.getRenderHeight(), taaValues);
+        effect.setFloat2("texel", u.texel[0], u.texel[1]);
+        TAA_VECTORS.forEach((name, i) => {
+          effect.setVector3(name, (taaVectors[i] as Vector3).set(u[name][0], u[name][1], u[name][2]));
+        });
+        effect.setFloat3("taaParams", u.taaParams[0], u.taaParams[1], u.taaParams[2]);
       };
     }
 
@@ -466,9 +415,9 @@ export function createPost(scene: Scene, camera: Camera, features: PostFeatures,
       paint = new PostProcess("paint", "paint", ["texel", "radius"], [], 1.0, camera,
         Texture.BILINEAR_SAMPLINGMODE, engine, false, null, textureType);
       paint.onApply = (effect) => {
-        const target = paintTargetSize(engine.getRenderWidth(), engine.getRenderHeight());
-        effect.setFloat2("texel", 1 / target.width, 1 / target.height);
-        effect.setFloat("radius", paintTexelRadius(strokes, engine.getRenderHeight()));
+        const u = paintUniforms(strokes, engine.getRenderWidth(), engine.getRenderHeight());
+        effect.setFloat2("texel", u.texel[0], u.texel[1]);
+        effect.setFloat("radius", u.radius[0]);
       };
       paintCompose = new PostProcess("paintCompose", "paintCompose", ["halfTexel", "strength"], ["sceneSampler"], PAINT_SCALE, camera,
         Texture.BILINEAR_SAMPLINGMODE, engine, false, null, textureType);
@@ -476,9 +425,9 @@ export function createPost(scene: Scene, camera: Camera, features: PostFeatures,
       paintCompose.onApply = (effect) => {
         // The paint's own input: the frame as it came to the paint, full size.
         effect.setTextureFromPostProcess("sceneSampler", boundPaint);
-        const target = paintTargetSize(engine.getRenderWidth(), engine.getRenderHeight());
-        effect.setFloat2("halfTexel", 1 / target.width, 1 / target.height);
-        effect.setFloat("strength", PAINT_STRENGTH);
+        const u = composeUniforms(engine.getRenderWidth(), engine.getRenderHeight());
+        effect.setFloat2("halfTexel", u.halfTexel[0], u.halfTexel[1]);
+        effect.setFloat("strength", u.strength[0]);
       };
     }
 
@@ -489,7 +438,7 @@ export function createPost(scene: Scene, camera: Camera, features: PostFeatures,
       extract = new PostProcess("halationExtract", "halationExtract", ["exposure"], [], HALATION_RATIO, camera,
         Texture.BILINEAR_SAMPLINGMODE, engine, false, null, textureType);
       extract.onApply = (effect) => {
-        effect.setFloat("exposure", record.exposure);
+        effect.setFloat("exposure", extractUniforms(record).exposure[0]);
       };
       blurX = new BlurPostProcess("halationBlurX", new Vector2(1, 0), HALATION_KERNEL, HALATION_RATIO, camera,
         Texture.BILINEAR_SAMPLINGMODE, engine, false, textureType);
@@ -519,10 +468,11 @@ export function createPost(scene: Scene, camera: Camera, features: PostFeatures,
     const boundBlurY = blurY;
     const boundBlack = black;
     grade.onApply = (effect) => {
-      const r = record;
-      // The dither (2026-10-18, the finish pass's before, which the grade's end now draws).
-      effect.setFloat2("texelSize", 1 / engine.getRenderWidth(), 1 / engine.getRenderHeight());
-      effect.setFloat("time", ditherSeconds);
+      // The record's values under the shader's names, the dither's clock (2026-10-18, the finish pass's before, which
+      // the grade's end now draws) and the shades' shape (`gradeUniforms`).
+      const u = gradeUniforms(record, engine.getRenderWidth(), engine.getRenderHeight(), ditherSeconds, shadeMask !== null && shadeAny, gradeValues);
+      effect.setFloat2("texelSize", u.texelSize[0], u.texelSize[1]);
+      effect.setFloat("time", u.time[0]);
       // With halation the scene is the scene pass's INPUT (setTextureFromPostProcess
       // binds a pass's input texture, and the scene pass's own input is the
       // camera's actual render since it is first in the chain); without
@@ -531,39 +481,38 @@ export function createPost(scene: Scene, camera: Camera, features: PostFeatures,
       if (boundScenePass !== null) effect.setTextureFromPostProcess("textureSampler", boundScenePass);
       if (boundBlurY !== null) effect.setTextureFromPostProcessOutput("halationSampler", boundBlurY);
       else if (boundBlack !== null) effect.setTexture("halationSampler", boundBlack);
-      effect.setFloat("exposure", r.exposure);
-      effect.setMatrix3x3("whitePoint", Float32Array.from(r.whitePoint));
-      effect.setMatrix3x3("purkinje", Float32Array.from(r.purkinje));
-      effect.setFloat("purkinjeThreshold", r.purkinjeThreshold);
-      effect.setFloat("purkinjeStrength", r.purkinjeStrength);
-      effect.setFloat3("shadowTint", r.shadows.r, r.shadows.g, r.shadows.b);
-      effect.setFloat2("shadowAmount", r.shadows.density, r.shadows.saturation);
-      effect.setFloat3("midtoneTint", r.midtones.r, r.midtones.g, r.midtones.b);
-      effect.setFloat2("midtoneAmount", r.midtones.density, r.midtones.saturation);
-      effect.setFloat3("highlightTint", r.highlights.r, r.highlights.g, r.highlights.b);
-      effect.setFloat2("highlightAmount", r.highlights.density, r.highlights.saturation);
-      effect.setFloat("saturation", r.saturation);
-      effect.setFloat3("lift", r.lift.r, r.lift.g, r.lift.b);
-      effect.setFloat("vignetteWeight", r.vignetteWeight);
-      effect.setFloat3("vignetteColour", r.vignetteColour.r, r.vignetteColour.g, r.vignetteColour.b);
-      const p = r.paint;
-      effect.setFloat3("paintShadowTint", p.shadows.r, p.shadows.g, p.shadows.b);
-      effect.setFloat2("paintShadowAmount", p.shadows.density, p.shadows.saturation);
-      effect.setFloat3("paintMidtoneTint", p.midtones.r, p.midtones.g, p.midtones.b);
-      effect.setFloat2("paintMidtoneAmount", p.midtones.density, p.midtones.saturation);
-      effect.setFloat3("paintHighlightTint", p.highlights.r, p.highlights.g, p.highlights.b);
-      effect.setFloat2("paintHighlightAmount", p.highlights.density, p.highlights.saturation);
-      effect.setFloat("paintSaturation", p.saturation);
-      effect.setFloat2("paintCurve", p.contrast, p.pivot);
-      effect.setFloat3("paintLift", p.lift.r, p.lift.g, p.lift.b);
-      effect.setFloat("halationStrength", r.halationStrength);
-      effect.setFloat4("stareShade", r.stare.x, r.stare.y, r.stare.reach, r.stare.time);
-      effect.setFloat4("chaseTint", CHASE_TINT.r, CHASE_TINT.g, CHASE_TINT.b, r.chase);
-      effect.setFloat3("chaseLift", CHASE_LIFT.r, CHASE_LIFT.g, CHASE_LIFT.b);
+      effect.setFloat("exposure", u.exposure[0]);
+      effect.setMatrix3x3("whitePoint", Float32Array.from(u.whitePoint));
+      effect.setMatrix3x3("purkinje", Float32Array.from(u.purkinje));
+      effect.setFloat("purkinjeThreshold", u.purkinjeThreshold[0]);
+      effect.setFloat("purkinjeStrength", u.purkinjeStrength[0]);
+      effect.setFloat3("shadowTint", u.shadowTint[0], u.shadowTint[1], u.shadowTint[2]);
+      effect.setFloat2("shadowAmount", u.shadowAmount[0], u.shadowAmount[1]);
+      effect.setFloat3("midtoneTint", u.midtoneTint[0], u.midtoneTint[1], u.midtoneTint[2]);
+      effect.setFloat2("midtoneAmount", u.midtoneAmount[0], u.midtoneAmount[1]);
+      effect.setFloat3("highlightTint", u.highlightTint[0], u.highlightTint[1], u.highlightTint[2]);
+      effect.setFloat2("highlightAmount", u.highlightAmount[0], u.highlightAmount[1]);
+      effect.setFloat("saturation", u.saturation[0]);
+      effect.setFloat3("lift", u.lift[0], u.lift[1], u.lift[2]);
+      effect.setFloat("vignetteWeight", u.vignetteWeight[0]);
+      effect.setFloat3("vignetteColour", u.vignetteColour[0], u.vignetteColour[1], u.vignetteColour[2]);
+      effect.setFloat3("paintShadowTint", u.paintShadowTint[0], u.paintShadowTint[1], u.paintShadowTint[2]);
+      effect.setFloat2("paintShadowAmount", u.paintShadowAmount[0], u.paintShadowAmount[1]);
+      effect.setFloat3("paintMidtoneTint", u.paintMidtoneTint[0], u.paintMidtoneTint[1], u.paintMidtoneTint[2]);
+      effect.setFloat2("paintMidtoneAmount", u.paintMidtoneAmount[0], u.paintMidtoneAmount[1]);
+      effect.setFloat3("paintHighlightTint", u.paintHighlightTint[0], u.paintHighlightTint[1], u.paintHighlightTint[2]);
+      effect.setFloat2("paintHighlightAmount", u.paintHighlightAmount[0], u.paintHighlightAmount[1]);
+      effect.setFloat("paintSaturation", u.paintSaturation[0]);
+      effect.setFloat2("paintCurve", u.paintCurve[0], u.paintCurve[1]);
+      effect.setFloat3("paintLift", u.paintLift[0], u.paintLift[1], u.paintLift[2]);
+      effect.setFloat("halationStrength", u.halationStrength[0]);
+      effect.setFloat4("stareShade", u.stareShade[0], u.stareShade[1], u.stareShade[2], u.stareShade[3]);
+      effect.setFloat4("chaseTint", u.chaseTint[0], u.chaseTint[1], u.chaseTint[2], u.chaseTint[3]);
+      effect.setFloat3("chaseLift", u.chaseLift[0], u.chaseLift[1], u.chaseLift[2]);
       if (shadeMask !== null) effect.setTexture("shadeSampler", shadeMask);
       else if (boundBlack !== null) effect.setTexture("shadeSampler", boundBlack);
-      effect.setFloat4("shadeShape", SHADE_BLUR, SHADE_DARK, engine.getRenderWidth() / engine.getRenderHeight(), shadeMask !== null && shadeAny ? 1 : 0);
-      effect.setFloat("shadeMonster", SHADE_MONSTER_DARK);
+      effect.setFloat4("shadeShape", u.shadeShape[0], u.shadeShape[1], u.shadeShape[2], u.shadeShape[3]);
+      effect.setFloat("shadeMonster", u.shadeMonster[0]);
     };
 
     // FXAA only where the temporal anti-aliasing could not be built: it does
@@ -608,11 +557,12 @@ export function createPost(scene: Scene, camera: Camera, features: PostFeatures,
       const boundDroplets = droplets;
       lens.onApply = (effect) => {
         effect.setTexture("lensSampler", boundDroplets);
-        effect.setFloat2("texelSize", 1 / engine.getRenderWidth(), 1 / engine.getRenderHeight());
-        effect.setFloat("lensStrength", lensStrength);
-        // Folded so the sliding drops' saw-tooth keeps its precision on a long hike.
-        effect.setFloat("time", ((now() - start) / 1000) % 3600);
-        effect.setFloat("aspect", engine.getRenderWidth() / engine.getRenderHeight());
+        // Its clock folded so the sliding drops' saw-tooth keeps its precision on a long hike (`lensUniforms`).
+        const u = lensUniforms(lensStrength, (now() - start) / 1000, engine.getRenderWidth(), engine.getRenderHeight());
+        effect.setFloat2("texelSize", u.texelSize[0], u.texelSize[1]);
+        effect.setFloat("lensStrength", u.lensStrength[0]);
+        effect.setFloat("time", u.time[0]);
+        effect.setFloat("aspect", u.aspect[0]);
       };
     }
 
@@ -647,34 +597,27 @@ export function createPost(scene: Scene, camera: Camera, features: PostFeatures,
       shadeMask = mask;
       shadeAny = any;
     },
-    setPalette(palette, fadeSeconds = PAINT_FADE_SECONDS) {
-      paletteFrom = paletteNow();
-      paletteTo = palette;
-      paletteFadeMs = Math.max(0, fadeSeconds) * 1000;
-      paletteFadeStart = now();
+    setPalette(palette, fadeSeconds) {
+      paletteFade.set(palette, fadeSeconds);
     },
     palette() {
-      return paletteNow();
+      return paletteFade.now();
     },
     update(weather, hour, night, unsettle, stare, lensTarget = 0, chase = 0, blur = 0) {
       setEndBlur(blur);
       const seconds = (now() - start) / 1000;
-      record = gradeRecordUnder(weather, hour, night, unsettle, seconds, stare, chase, paletteNow());
+      record = gradeRecordUnder(weather, hour, night, unsettle, seconds, stare, chase, paletteFade.now());
       ditherSeconds = seconds;
       lensStrength = lensTarget;
       if (lens !== null) {
-        if (lensTarget >= LENS.floor) {
-          lensIdleSince = null;
-          if (!lensAttached) {
-            camera.attachPostProcess(lens, lensSlot);
-            lensAttached = true;
-          }
-        } else {
-          lensIdleSince ??= seconds;
-          if (lensAttached && seconds - lensIdleSince >= LENS_IDLE_S) {
-            camera.detachPostProcess(lens);
-            lensAttached = false;
-          }
+        // In at the floor, out once the strength has sat under it for a second (`createLensGate`).
+        const on = lensGate.step(lensTarget, seconds);
+        if (on && !lensAttached) {
+          camera.attachPostProcess(lens, lensSlot);
+          lensAttached = true;
+        } else if (!on && lensAttached) {
+          camera.detachPostProcess(lens);
+          lensAttached = false;
         }
       }
       // The post path: the grade's own uniforms are read as it applies.
@@ -687,18 +630,18 @@ export function createPost(scene: Scene, camera: Camera, features: PostFeatures,
       image.vignetteWeight = record.vignetteWeight;
       if (image.colorCurves) {
         const curves = image.colorCurves;
-        const g = gradeUnder(weather);
-        curves.globalSaturation = saturationUnder(weather);
-        // The chase on this path: the shadows turned toward burgundy and deepened.
-        curves.shadowsHue = g.shadowsHue + (CHASE_SHADOW_HUE - g.shadowsHue) * record.chase;
-        curves.shadowsDensity = g.shadowsDensity + CHASE_SHADOW_DENSITY * record.chase;
-        curves.shadowsSaturation = g.shadowsSaturation;
-        curves.midtonesHue = g.midtonesHue;
-        curves.midtonesDensity = g.midtonesDensity;
-        curves.midtonesSaturation = g.midtonesSaturation;
-        curves.highlightsHue = g.highlightsHue;
-        curves.highlightsDensity = g.highlightsDensity;
-        curves.highlightsSaturation = g.highlightsSaturation;
+        // The weather's split-tone and, under the chase, the shadows turned toward burgundy and deepened (`materialGrade.ts`).
+        const set = curveSettingsUnder(weather, record.chase);
+        curves.globalSaturation = set.globalSaturation;
+        curves.shadowsHue = set.shadows.hue;
+        curves.shadowsDensity = set.shadows.density;
+        curves.shadowsSaturation = set.shadows.saturation;
+        curves.midtonesHue = set.midtones.hue;
+        curves.midtonesDensity = set.midtones.density;
+        curves.midtonesSaturation = set.midtones.saturation;
+        curves.highlightsHue = set.highlights.hue;
+        curves.highlightsDensity = set.highlights.density;
+        curves.highlightsSaturation = set.highlights.saturation;
       }
     },
     dispose() {
