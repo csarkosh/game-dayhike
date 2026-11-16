@@ -18,37 +18,40 @@
  * there is the start of the hike; here it would be a blue shape for the
  * moment after each hiker joins.
  *
- * **Of a Hollow the frame shows its eyes, at their level.** The figure
- * itself is a shadow in the silhouette mask, which the grade lays over the
- * frame: the model's other primitives are drawn there, by the mask
+ * **Of a Hollow the frame shows its eyes, glowing at their level.** The
+ * figure itself is a shadow in the silhouette mask, which the grade lays
+ * over the frame: the model's other primitives are drawn there, by the mask
  * (`shadeMask.ts`), from the same bodies, and in the frame's own pass as
  * nothing; this file stands the bodies and hands the mask each figure's
  * values (`ShadeLook`: how far in it is, how soft, how near). A body stands
  * from when its figure is in the mask at all or its eyes' level is above
  * nothing. What is drawn on the frame is the model's glowing primitive
- * alone, one draw for every Hollow and shade, blended over the frame, and
- * none while no pair's level is above nothing.
+ * alone, one opaque draw for every Hollow and shade, and none while no
+ * pair's level is above nothing.
  * A pair's level (`eyeLevelOf`: the real one's glow dulled, a shade's near
  * nothing, both rising with the figure as it comes in and going first as
- * it goes) is the alpha of its instance's colour, and the blend goes by
- * that alpha alone (`eyeLevelPlugin`): at a level of 0.1375 a pixel is
- * that share of the glowing surface over the rest of what stands behind
- * it. Sixteen bytes a pair are written on a frame in which a level has
- * changed or a pair has joined, and while no level is above nothing there
- * is no draw and no write. The game sets the same level on Babylon.js, as
+ * it goes) multiplies the light the eye gives off, in linear light, before
+ * what the eye reflects is added to it and before the air, the display
+ * curve and the grade (`eyeLevelPlugin`): at a level of 0.1375 the real
+ * one's eye gives off 0.55 of the eye's colour, where the whole eye gives
+ * off 4 of it. What the eye's surface reflects is not scaled: it is lit as
+ * any surface of its colour and roughness is, by the day and by a lamp
+ * held on it. The level rides the pair's instance, a float of the
+ * plugin's own: four bytes a pair are written on a frame in which a level
+ * has changed or a pair has joined, and while no level is above nothing
+ * there is no draw and no write. A pair at no level among pairs that glow
+ * is put outside the view. The game sets the same level on Babylon.js, as
  * the eye meshes' visibility, and there it does not show: Babylon.js
  * blends a mesh by its visibility only under a material with no
  * transparency mode of its own, which a loaded model's material has, so
  * that renderer draws the eyes whole.
  *
- * A blended draw is tested against the frame's depth and writes none: a
- * trunk in front of the eyes hides them. Lite orders its blended draws by
- * how far each mesh's origin is and only then by their places, so the eyes'
- * mesh is stood at the world's origin, where every see-through mesh stands
- * (`standAtOrigin`), and takes the first place among them
- * (`SEE_THROUGH_ORDER.eyes`): the motes, the mist banks and the rain are
- * laid over the eyes, from every view. The model is fetched with the hike,
- * since a Hollow steps out of the mist without warning.
+ * The eyes are drawn with the bodies, at the last of their places
+ * (`BODY_PLACES.eyes`), and write the frame's depth as every opaque draw
+ * does: a trunk in front of them hides them, and the motes, the mist banks
+ * and the rain, which follow every opaque draw, are laid over them. The
+ * model is fetched with the hike, since a Hollow steps out of the mist
+ * without warning.
  *
  * The materials are the files' own under the game's stack: the base
  * colour's block, the wet look at no porosity (a body takes the water's
@@ -65,9 +68,9 @@
  * depth, so the order among them decides none.
  */
 import {
-  addToScene, createCapsule, createPbrMaterial, disposeMeshGpu, removeFromScene, setMeshVisible, setPbrEmissive, setThinInstanceColors, setThinInstanceCount,
-  setThinInstances,
-  type EngineContext, type MaterialPlugin, type Mesh, type PbrMaterialProps, type PluginUniformBlock, type SceneContext, type SceneNode,
+  addToScene, createCapsule, createPbrMaterial, disposeMeshGpu, markThinInstancePluginData, removeFromScene, setMeshVisible, setPbrEmissive,
+  setThinInstanceCount, setThinInstances,
+  type EngineContext, type MaterialPlugin, type Mesh, type PbrMaterialProps, type PluginUniformBlock, type SceneContext,
 } from "@babylonjs/lite";
 import catalog from "../../../assets/catalog.json" with { type: "json" };
 import { PLAYER_HALF } from "../../sim/constants.js";
@@ -76,15 +79,15 @@ import { HOLLOW_MODEL, stepClip, type ClipClock, type EntityFrame, type EntityMo
 import { HOLLOW_EYE_COLOR, HOLLOW_EYE_INTENSITY, HOLLOW_SCALE } from "../hollowLook.js";
 import { writeBodyMatrix, writeClipParams, type BakedClip } from "../skinInstances.js";
 import type { WetUniforms } from "../wetSurface.js";
-import { DRAW_ORDER, SEE_THROUGH_ORDER, createDrawOrders } from "./drawOrder.js";
+import { DRAW_ORDER, createDrawOrders } from "./drawOrder.js";
 import { baseColourPlugin, surfaceWetPlugin } from "./forestPlugins.js";
 import type { FrameUploads } from "./frameUploads.js";
 import { MATRIX_BYTES } from "./listMeshes.js";
 import { unseenPlugin, writeShadeLook, type LiteShadeMask } from "./shadeMask.js";
 import { loadSkinnedModel, type SkinClock, type SkinnedModel, type SkinnedPart } from "./skinnedModels.js";
 
-/** The bodies' places among the draws, from the shell's first: a ranger's primitives, a place each by their order in the model, then the capsule, then the Hollow's body, which the mask draws and the frame's own pass draws as nothing. */
-export const BODY_PLACES = { rangers: 0, capsule: 4, figure: 5 } as const;
+/** The bodies' places among the draws, from the shell's first: a ranger's primitives, a place each by their order in the model, then the capsule, then the Hollow's body, which the mask draws and the frame's own pass draws as nothing, then the Hollows' eyes. */
+export const BODY_PLACES = { rangers: 0, capsule: 4, figure: 5, eyes: 6 } as const;
 
 /** The most hikers of one ranger drawn at once: every player may wear the same one. */
 export const RANGER_CAPACITY = 8;
@@ -93,52 +96,38 @@ export const HOLLOW_CAPACITY = 16;
 /** The capsule's colour and roughness: the game's `mat_player`. */
 export const CAPSULE_COLOUR: readonly [number, number, number] = [0.3, 0.7, 0.95];
 export const CAPSULE_ROUGHNESS = 0.85;
-/** Bytes of an instance's colour, four floats: a pair of eyes' level is the last. */
-export const EYE_LEVEL_BYTES = 16;
+/** Bytes of a pair of eyes' level: one float, the eyes' plugin's own in the pair's instance. */
+export const EYE_LEVEL_BYTES = 4;
 
 /**
- * The eyes' alpha is their level and nothing more. To a blended surface's
- * alpha Lite adds the square of what the surface reflects, so that a glint
- * is not seen through; on eyes at a level of a tenth, a lamp held on them
- * would show its glint as a point of nearly their whole glow. Babylon.js
- * multiplies a mesh's visibility in after that sum, so there the level is
- * the alpha. The fragment is returned here, at the last point before Lite's
- * sum, with the alpha as the instance's colour left it.
+ * The eyes' glow at their level. Lite's fragment keeps the light a surface
+ * gives off apart from the light it reflects until it sums the two, so the
+ * level multiplies that term alone, at the point after the material's own
+ * emissive is read and before the lights: the sum, the air laid over it and
+ * the tier's curve or grade all follow, and the fragment's alpha is left
+ * as the material has it. The level is the plugin's own float in a pair's
+ * instance, handed on to the fragment; a pair whose level is nothing is
+ * put outside the view, so that it is no dark disc among pairs that glow.
+ * Last of the material's plugins: nothing after it moves such a pair back.
  */
 export function eyeLevelPlugin(): MaterialPlugin {
   return {
     name: "EyeLevel",
     priority: 995,
-    getCustomCode: (stage) => (stage === "fragment" ? { CUSTOM_FRAGMENT_BEFORE_FRAGCOLOR: "return vec4<f32>(color,alpha*material.materialAlpha);" } : null),
+    getCustomCode: (stage) =>
+      stage === "vertex"
+        ? { CUSTOM_VERTEX_MAIN_END: "out.vEyeLevel=eyeLevel;if(eyeLevel<=0.0){out.clipPos=vec4<f32>(2.0,2.0,2.0,1.0);}" }
+        : { CUSTOM_FRAGMENT_UPDATE_DIFFUSE: "emissive*=input.vEyeLevel;" },
+    getInstanceAttributes: () => [{ name: "eyeLevel", type: "f32", format: "float32" as const, stride: EYE_LEVEL_BYTES, offset: 0 }],
+    getVaryings: () => [{ name: "vEyeLevel", type: "f32" }],
   };
 }
 
-/**
- * Stands `mesh` at the world's origin and hands back where it stood. A
- * model's root lifts its mesh; Lite draws a body as its instance's matrix
- * times the mesh's, so the lift is the same picture carried by each
- * instance (`liftBody`), and a blended mesh at the origin is ordered among
- * the see-through draws by its place alone (`drawOrder.ts`).
- */
-function standAtOrigin(mesh: Mesh): [number, number, number] {
-  const world = mesh.worldMatrix;
-  const stood: [number, number, number] = [world[12] as number, world[13] as number, world[14] as number];
-  for (let node: Partial<SceneNode> | null = mesh; node !== null && node !== undefined; node = node.parent as Partial<SceneNode> | null) node.position?.set(0, 0, 0);
-  return stood;
-}
-
-/** Moves the body whose matrix is `matrix` by `lift` in its own frame: the matrix times a move by `lift`. */
-export function liftBody(matrix: Float32Array, lift: readonly [number, number, number]): void {
-  for (let row = 0; row < 3; row++) {
-    matrix[12 + row] = (matrix[12 + row] as number) + (matrix[row] as number) * lift[0] + (matrix[4 + row] as number) * lift[1] + (matrix[8 + row] as number) * lift[2];
-  }
-}
-
-/** Sets pair `index`'s level in `colours`, four floats a pair of which the level is the last; true where it changed. */
-export function setEyeLevel(colours: Float32Array, index: number, level: number): boolean {
+/** Sets pair `index`'s level in `levels`, a float a pair; true where it changed. */
+export function setEyeLevel(levels: Float32Array, index: number, level: number): boolean {
   const sent = Math.fround(level);
-  if (colours[index * 4 + 3] === sent) return false;
-  colours[index * 4 + 3] = sent;
+  if (levels[index] === sent) return false;
+  levels[index] = sent;
   return true;
 }
 
@@ -184,8 +173,6 @@ type Loaded = {
   model: SkinnedModel | null;
   asset: CharacterAsset;
   clips: Map<string, BakedClip | null>;
-  /** Where the model's meshes stood before they were stood at the world's origin, which each body's matrix carries; null for a model left where its file has it. */
-  lift: [number, number, number] | null;
   /** Resolved once the model has landed, or could not. */
   settled: Promise<void>;
 };
@@ -212,9 +199,9 @@ export function createEntityMeshes(engine: EngineContext, scene: SceneContext, o
   /** Whether the eyes' meshes are shown: only while a pair's level is above nothing. */
   let eyesShown = false;
 
-  // The eyes: the meshes that draw them, each pair's colour (white, its alpha the pair's level), and the pairs whose colours the GPU holds.
+  // The eyes: the meshes that draw them, each pair's level, and the pairs whose levels the GPU holds.
   const eyeMeshes: Mesh[] = [];
-  const eyeColours = new Float32Array(HOLLOW_CAPACITY * 4).fill(1);
+  const eyeLevels = new Float32Array(HOLLOW_CAPACITY);
   let eyesSent = 0;
   let relevelled = false;
 
@@ -238,12 +225,12 @@ export function createEntityMeshes(engine: EngineContext, scene: SceneContext, o
       }
       setPbrEmissive(material, [HOLLOW_EYE_COLOR.r * HOLLOW_EYE_INTENSITY, HOLLOW_EYE_COLOR.g * HOLLOW_EYE_INTENSITY, HOLLOW_EYE_COLOR.b * HOLLOW_EYE_INTENSITY]);
       material.plugins = [baseColourPlugin(), surfaceWetPlugin(options.wet, options.shared), options.air(), eyeLevelPlugin()];
-      // Blended over the frame, each pair by the alpha of its instance's colour. The colours are given before the
-      // mesh joins the scene, where Lite reads whether it has any; the instances the model then gives it keep them.
-      material.alphaBlend = true;
+      // Each pair's level rides its instance. The levels are given before the mesh joins the scene; the instances
+      // the model then gives it keep them.
       setThinInstances(part.mesh, new Float32Array(0), 0);
-      setThinInstanceColors(part.mesh, eyeColours);
-      part.mesh.renderOrder = SEE_THROUGH_ORDER.eyes;
+      if (part.mesh.thinInstances !== undefined && part.mesh.thinInstances !== null) part.mesh.thinInstances.pluginData = eyeLevels;
+      orders.put(material, BODY_PLACES.eyes);
+      part.mesh.renderOrder = orders.of(material);
       eyeMeshes.push(part.mesh);
       return true;
     }
@@ -258,7 +245,7 @@ export function createEntityMeshes(engine: EngineContext, scene: SceneContext, o
     if (entry !== undefined) return entry;
     const asset = assets.get(id);
     if (asset === undefined) return null;
-    const mine: Loaded = { state: "loading", model: null, asset, clips: new Map(), lift: null, settled: Promise.resolve() };
+    const mine: Loaded = { state: "loading", model: null, asset, clips: new Map(), settled: Promise.resolve() };
     loaded.set(id, mine);
     waiting++;
     mine.settled = loadSkinnedModel(engine, scene, asset.url, {
@@ -276,15 +263,8 @@ export function createEntityMeshes(engine: EngineContext, scene: SceneContext, o
         }
         mine.model = model;
         mine.state = "landed";
-        // The model's primitives hang from one root: where the first stood is where each did. The body's, which the
-        // mask draws from the same bodies, are stood at the origin with the eyes' and join the mask.
-        if (id === HOLLOW_MODEL) {
-          for (const mesh of [...eyeMeshes, ...bodyMeshes]) {
-            const stood = standAtOrigin(mesh);
-            mine.lift ??= stood;
-          }
-          if (mask !== null) for (const mesh of bodyMeshes) bodyLooks.push(mask.add(mesh, HOLLOW_CAPACITY));
-        }
+        // The body's primitives join the mask, which draws them from the same bodies.
+        if (id === HOLLOW_MODEL && mask !== null) for (const mesh of bodyMeshes) bodyLooks.push(mask.add(mesh, HOLLOW_CAPACITY));
       },
       (error: unknown) => {
         waiting--;
@@ -375,7 +355,6 @@ export function createEntityMeshes(engine: EngineContext, scene: SceneContext, o
     if (fill.count >= model.capacity) return -1;
     const index = fill.count++;
     writeBodyMatrix(scratch, 0, x, y, z, yaw, scale);
-    if (entry.lift !== null) liftBody(scratch, entry.lift);
     const at = index * 16;
     for (let i = 0; i < 16; i++) {
       if (model.matrices[at + i] !== scratch[i]) {
@@ -450,7 +429,7 @@ export function createEntityMeshes(engine: EngineContext, scene: SceneContext, o
         if (index < 0) return;
         counts.figures++;
         if (look.eyeLevel > 0) counts.eyes++;
-        if (setEyeLevel(eyeColours, index, Math.max(0, look.eyeLevel))) relevelled = true;
+        if (setEyeLevel(eyeLevels, index, Math.max(0, look.eyeLevel))) relevelled = true;
         if (inMask) masked = true;
         // The figure stands on its feet, which is where its pose is.
         for (const values of bodyLooks) if (writeShadeLook(values, index, { fade: inMask ? look.fade : 0, presence: look.presence, soft: look.soft, near: look.near, feetY: y })) relooked = true;
@@ -478,10 +457,10 @@ export function createEntityMeshes(engine: EngineContext, scene: SceneContext, o
         }
         if (fill.count > 0) counts.draws += model.parts.filter((part) => part.drawn).length;
       }
-      // The eyes' levels, sent when one of the pairs drawn has changed or a body has joined them: sixteen bytes a body.
+      // The eyes' levels, sent when one of the pairs drawn has changed or a body has joined them: four bytes a body.
       if (counts.eyes > 0 && (relevelled || counts.figures > eyesSent)) {
         for (const mesh of eyeMeshes) {
-          setThinInstanceColors(mesh, eyeColours);
+          markThinInstancePluginData(mesh, 0, counts.figures);
           options.uploads?.count("instances", counts.figures * EYE_LEVEL_BYTES);
         }
         eyesSent = counts.figures;
