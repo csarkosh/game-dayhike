@@ -56,7 +56,7 @@ export const DRAW_ORDER = { rings: 80, patches: 90, forest: 100, clutter: 110, b
  * Last, a lake's insects, which the game gives the highest index of all:
  * the midges' one draw, then the dragonflies', a kind a draw.
  */
-export const SEE_THROUGH_ORDER = { motes: 200, mist: 210, splashes: 220, rain: 230, water: 240, midges: 250, dragonflies: 252 } as const;
+export const SEE_THROUGH_ORDER = { eyes: 190, motes: 200, mist: 210, splashes: 220, rain: 230, water: 240, midges: 250, dragonflies: 252 } as const; // The Hollows' eyes first: the air's veils are laid over them (`entityMeshes.ts`).
 
 /** The places a shell has past its first. */
 export const DRAW_PLACES = 1024;
