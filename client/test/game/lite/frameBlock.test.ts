@@ -93,6 +93,7 @@ function frame(): FrameValues {
       seaTime: Float32Array.of(123.25), seaWindTime: Float32Array.of(30, -40), seaBumpOffset: Float32Array.of(0.25, 0.5),
       seaRings: Float32Array.from({ length: 28 }, (_, i) => 1000 + i * 0.5),
     },
+    smokeTime: 12.5,
   };
 }
 
@@ -120,7 +121,10 @@ describe("the frame's uniform block on Babylon Lite", () => {
     const order = FRAME_FIELDS.map((field) => field.name);
     expect(order.slice(order.indexOf("wingTime") + 1)).toEqual([
       ...Object.keys(emptyWaterFrameUniforms()), "frameExposure", "frameContrast", ...FRAME_CLOCK_NAMES, "frameProjection", ...Object.keys(emptySeaFrameUniforms()),
+      "shadeSmokeTime",
     ]);
+    // The clock the shades' smoke rises on, which the mask's material reads.
+    expect(fields.get("shadeSmokeTime")).toBe("f32");
     // The projection alone of the camera's matrices: the view and the eye are the scene's own, which every stage reads.
     expect(fields.get("frameProjection")).toBe("mat4x4<f32>");
   });
@@ -165,6 +169,11 @@ describe("the frame's uniform block on Babylon Lite", () => {
     // What moves the sea, as the sea's own module names it, its rings' records float for float.
     expect(Object.keys(values.sea)).toEqual(Object.keys(emptySeaFrameUniforms()));
     for (const [name, value] of Object.entries(values.sea)) expect(read(name)).toEqual(f32(value));
+    // The smoke's clock, and nothing where a frame hands none.
+    expect(read("shadeSmokeTime")).toEqual([12.5]);
+    writeFrameBlock(made.data, made.offsets, { ...values, smokeTime: undefined });
+    expect(read("shadeSmokeTime")).toEqual([0]);
+    writeFrameBlock(made.data, made.offsets, values);
     // Every float of every field was written but the players' fourth, which nothing reads.
     const unwritten = [...made.offsets].flatMap(([name, at]) => [...made.data.subarray(at / 4, at / 4 + floatsOf(name))].map((v, i) => (v === -99 ? `${name}[${i}]` : null))).filter((v) => v !== null);
     expect(unwritten).toEqual(Array.from({ length: FOLIAGE_PLAYERS }, (_, i) => `windPlayers[${i * 4 + 3}]`));

@@ -19,10 +19,15 @@
  * moment after each hiker joins.
  *
  * **Of a Hollow the frame shows its eyes, at their level.** The figure
- * itself is a shadow in the silhouette mask, which the grade or the veil
- * lays over the frame (`shadeSilhouette.ts`), and no part of this file:
- * what is drawn here is the model's glowing primitive alone, one draw for
- * every Hollow and shade whose eyes have come, blended over the frame.
+ * itself is a shadow in the silhouette mask, which the grade lays over the
+ * frame: the model's other primitives are drawn there, by the mask
+ * (`shadeMask.ts`), from the same bodies, and in the frame's own pass as
+ * nothing; this file stands the bodies and hands the mask each figure's
+ * values (`ShadeLook`: how far in it is, how soft, how near). A body stands
+ * from when its figure is in the mask at all or its eyes' level is above
+ * nothing. What is drawn on the frame is the model's glowing primitive
+ * alone, one draw for every Hollow and shade, blended over the frame, and
+ * none while no pair's level is above nothing.
  * A pair's level (`eyeLevelOf`: the real one's glow dulled, a shade's near
  * nothing, both rising with the figure as it comes in and going first as
  * it goes) is the alpha of its instance's colour, and the blend goes by
@@ -67,7 +72,7 @@ import {
 import catalog from "../../../assets/catalog.json" with { type: "json" };
 import { PLAYER_HALF } from "../../sim/constants.js";
 import { clipNameFor, resolveCharacterAssets, type CharacterAsset, type ClipKind } from "../characterAssets.js";
-import { HOLLOW_MODEL, stepClip, type ClipClock, type EntityFrame, type EntityModels } from "../entityPoses.js";
+import { HOLLOW_MODEL, stepClip, type ClipClock, type EntityFrame, type EntityModels, type ShadeLook } from "../entityPoses.js";
 import { HOLLOW_EYE_COLOR, HOLLOW_EYE_INTENSITY, HOLLOW_SCALE } from "../hollowLook.js";
 import { writeBodyMatrix, writeClipParams, type BakedClip } from "../skinInstances.js";
 import type { WetUniforms } from "../wetSurface.js";
@@ -75,10 +80,11 @@ import { DRAW_ORDER, SEE_THROUGH_ORDER, createDrawOrders } from "./drawOrder.js"
 import { baseColourPlugin, surfaceWetPlugin } from "./forestPlugins.js";
 import type { FrameUploads } from "./frameUploads.js";
 import { MATRIX_BYTES } from "./listMeshes.js";
+import { unseenPlugin, writeShadeLook, type LiteShadeMask } from "./shadeMask.js";
 import { loadSkinnedModel, type SkinClock, type SkinnedModel, type SkinnedPart } from "./skinnedModels.js";
 
-/** The bodies' places among the draws, from the shell's first: a ranger's primitives, a place each by their order in the model, then the capsule. */
-export const BODY_PLACES = { rangers: 0, capsule: 4 } as const;
+/** The bodies' places among the draws, from the shell's first: a ranger's primitives, a place each by their order in the model, then the capsule, then the primitives of the Hollow's body, which the frame's pass draws as nothing. */
+export const BODY_PLACES = { rangers: 0, capsule: 4, figures: 5 } as const;
 
 /** The most hikers of one ranger drawn at once: every player may wear the same one. */
 export const RANGER_CAPACITY = 8;
@@ -148,8 +154,8 @@ export type EntityMeshes = {
   lamps(): readonly WornLamp[];
   /** Models still on the way. */
   waiting(): number;
-  /** What is drawn now: the bodies as models and as capsules, the pairs of eyes, and the draws they take. */
-  drawn(): { bodies: number; capsules: number; eyes: number; draws: number };
+  /** What is drawn now: the bodies as models and as capsules, the pairs of eyes, the Hollows' figures (in the mask, or standing for their eyes), and the draws they take in the frame's own pass. */
+  drawn(): { bodies: number; capsules: number; eyes: number; figures: number; draws: number };
   /** Resolved once the Hollow's model has landed, or could not. */
   readonly ready: Promise<void>;
   dispose(): void;
@@ -166,6 +172,8 @@ export type EntityMeshOptions = {
   clock: SkinClock;
   /** Whether the Hollow's model is fetched at once: a world a Hollow hunts in. */
   hollows: boolean;
+  /** The mask the Hollows' figures are drawn into (`shadeMask.ts`); without one a Hollow is its eyes alone. */
+  mask?: LiteShadeMask | null;
   uploads?: FrameUploads;
 };
 
@@ -195,7 +203,14 @@ export function createEntityMeshes(engine: EngineContext, scene: SceneContext, o
   let disposed = false;
   let waiting = 0;
   let clockFolds = options.clock.folds;
-  const counts = { bodies: 0, capsules: 0, eyes: 0, draws: 0 };
+  const counts = { bodies: 0, capsules: 0, eyes: 0, figures: 0, draws: 0 };
+  const mask = options.mask ?? null;
+  /** Each primitive of the Hollow's body in the mask, with its figures' values there. */
+  const bodyLooks: Float32Array[] = [];
+  const bodyMeshes: Mesh[] = [];
+  let relooked = false;
+  /** Whether the eyes' meshes are shown: only while a pair's level is above nothing. */
+  let eyesShown = false;
 
   // The eyes: the meshes that draw them, each pair's colour (white, its alpha the pair's level), and the pairs whose colours the GPU holds.
   const eyeMeshes: Mesh[] = [];
@@ -210,8 +225,16 @@ export function createEntityMeshes(engine: EngineContext, scene: SceneContext, o
     const material = part.material;
     material.usePhysicalLightFalloff = true;
     if (id === HOLLOW_MODEL) {
-      // The eyes are the material that glows in the file; the rest of the figure is the mask's.
-      if (!part.emissive.some((channel) => channel > 0)) return false;
+      // The eyes are the material that glows in the file; the rest of the figure is the mask's: drawn there with the
+      // mask's own material, and in the frame's pass as nothing.
+      if (!part.emissive.some((channel) => channel > 0)) {
+        if (mask === null) return false;
+        material.plugins = [unseenPlugin()];
+        orders.put(material, BODY_PLACES.figures + index);
+        part.mesh.renderOrder = orders.of(material);
+        bodyMeshes.push(part.mesh);
+        return true;
+      }
       setPbrEmissive(material, [HOLLOW_EYE_COLOR.r * HOLLOW_EYE_INTENSITY, HOLLOW_EYE_COLOR.g * HOLLOW_EYE_INTENSITY, HOLLOW_EYE_COLOR.b * HOLLOW_EYE_INTENSITY]);
       material.plugins = [baseColourPlugin(), surfaceWetPlugin(options.wet, options.shared), options.air(), eyeLevelPlugin()];
       // Blended over the frame, each pair by the alpha of its instance's colour. The colours are given before the
@@ -252,12 +275,14 @@ export function createEntityMeshes(engine: EngineContext, scene: SceneContext, o
         }
         mine.model = model;
         mine.state = "landed";
-        // The model's glowing primitives hang from one root: where the first stood is where each did.
+        // The model's primitives hang from one root: where the first stood is where each did. The body's, which the
+        // mask draws from the same bodies, are stood at the origin with the eyes' and join the mask.
         if (id === HOLLOW_MODEL) {
-          for (const mesh of eyeMeshes) {
+          for (const mesh of [...eyeMeshes, ...bodyMeshes]) {
             const stood = standAtOrigin(mesh);
             mine.lift ??= stood;
           }
+          if (mask !== null) for (const mesh of bodyMeshes) bodyLooks.push(mask.add(mesh, HOLLOW_CAPACITY));
         }
       },
       (error: unknown) => {
@@ -411,40 +436,67 @@ export function createEntityMeshes(engine: EngineContext, scene: SceneContext, o
         if (place(entry, pose.x, pose.y, pose.z, pose.yaw, 1, clock, refold) >= 0) counts.bodies++;
       }
       lamps.length = lampCount;
-      // The Hollows and the shades going out: their eyes, each pair from when its level is above nothing.
-      const eyes = (id: number, x: number, y: number, z: number, yaw: number, clip: string | null, rate: number | null, level: number): void => {
+      // The Hollows and the shades going out: a body for each whose figure is in the mask at all or whose eyes'
+      // level is above nothing, its eyes at their level and its figure's values for the mask.
+      counts.figures = 0;
+      let masked = false;
+      const figure = (id: number, x: number, y: number, z: number, yaw: number, clip: string | null, rate: number | null, look: ShadeLook): void => {
         const clock = clockOf(id);
         stepClip(clock, clip ?? (clock.clip === "" ? "idle" : clock.clip), rate, dt);
-        if (hollow === null || hollow.state !== "landed" || level <= 0) return;
+        const inMask = mask !== null && look.fade > 0;
+        if (hollow === null || hollow.state !== "landed" || (look.eyeLevel <= 0 && !inMask)) return;
         const index = place(hollow, x, y, z, yaw, HOLLOW_SCALE, clock, refold);
         if (index < 0) return;
-        counts.eyes++;
-        if (setEyeLevel(eyeColours, index, level)) relevelled = true;
+        counts.figures++;
+        if (look.eyeLevel > 0) counts.eyes++;
+        if (setEyeLevel(eyeColours, index, Math.max(0, look.eyeLevel))) relevelled = true;
+        if (inMask) masked = true;
+        // The figure stands on its feet, which is where its pose is.
+        for (const values of bodyLooks) if (writeShadeLook(values, index, { fade: inMask ? look.fade : 0, presence: look.presence, soft: look.soft, near: look.near, feetY: y })) relooked = true;
       };
-      for (const pose of frame.hollows) if (pose.modelled) eyes(pose.id, pose.x, pose.y, pose.z, pose.yaw, pose.clip, pose.rate, pose.shade.eyeLevel);
-      for (const pose of frame.fading) eyes(pose.id, pose.x, pose.y, pose.z, pose.yaw, null, null, pose.shade.eyeLevel);
+      for (const pose of frame.hollows) if (pose.modelled) figure(pose.id, pose.x, pose.y, pose.z, pose.yaw, pose.clip, pose.rate, pose.shade);
+      for (const pose of frame.fading) figure(pose.id, pose.x, pose.y, pose.z, pose.yaw, null, null, pose.shade);
       for (const id of clocks.keys()) if (!seen.has(id)) clocks.delete(id);
 
       counts.draws = 0;
       for (const [entry, fill] of filled) {
         const model = entry.model as SkinnedModel;
+        const stood = model.count > 0;
         model.show(fill.count, fill.moved, fill.reclipped);
+        if (entry === hollow) {
+          // Showing its first body shows every primitive of the model, and its last hides them: the eyes are then
+          // shown only while a pair's level is above nothing, so a figure in the mask alone costs no draw of them.
+          if (stood !== fill.count > 0) eyesShown = fill.count > 0;
+          const wanted = fill.count > 0 && counts.eyes > 0;
+          if (wanted !== eyesShown) {
+            eyesShown = wanted;
+            for (const mesh of eyeMeshes) setMeshVisible(mesh, wanted);
+          }
+          if (fill.count > 0) counts.draws += (wanted ? eyeMeshes.length : 0) + bodyMeshes.length;
+          continue;
+        }
         if (fill.count > 0) counts.draws += model.parts.filter((part) => part.drawn).length;
       }
-      // The eyes' levels, sent when one of the pairs drawn has changed or a pair has joined them: sixteen bytes a pair.
-      if (counts.eyes > 0 && (relevelled || counts.eyes > eyesSent)) {
+      // The eyes' levels, sent when one of the pairs drawn has changed or a body has joined them: sixteen bytes a body.
+      if (counts.eyes > 0 && (relevelled || counts.figures > eyesSent)) {
         for (const mesh of eyeMeshes) {
           setThinInstanceColors(mesh, eyeColours);
-          options.uploads?.count("instances", counts.eyes * EYE_LEVEL_BYTES);
+          options.uploads?.count("instances", counts.figures * EYE_LEVEL_BYTES);
         }
+        eyesSent = counts.figures;
+        relevelled = false;
+      } else if (counts.figures === 0) eyesSent = 0;
+      // The figures' values for the mask, sent where one changed, and the mask drawn with the frame while one is in.
+      if (mask !== null) {
+        if (relooked && counts.figures > 0) options.uploads?.count("instances", bodyLooks.length * counts.figures * 32);
+        mask.show(counts.figures, relooked, masked);
+        relooked = false;
       }
-      eyesSent = counts.eyes;
-      relevelled = false;
       showCapsules(capsules, capsuleCount);
       counts.capsules = capsuleCount;
       if (capsuleCount > 0) counts.draws++;
       // The shared clock is sent on a frame that shows a skinned body, and on no other.
-      if (counts.bodies + counts.eyes > 0) options.clock.send(options.uploads);
+      if (counts.bodies + counts.figures > 0) options.clock.send(options.uploads);
     },
     lamps: () => lamps,
     waiting: () => waiting,
