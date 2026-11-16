@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import "../../../src/sim/passes/index.js";
 import { PLAYER_EYE_OFFSET } from "../../../src/sim/constants.js";
+import { CAP_SCENE_S, LENS_24, LENS_32, SHOTS, SUMMIT_SCENE_S, capStand, summitShot } from "../../../src/game/cutscene.js";
 import { GAME_FOV } from "../../../src/game/gameLens.js";
 import { DEPTH_AHEAD_MAX_DEGREES, depthAheadPlugin } from "../../../src/game/lite/renderer.js";
 import { createHikeRenderer, sceneRendererOf, type Renderer } from "../../../src/game/renderer.js";
@@ -129,6 +130,79 @@ describe("the hike's renderer on Babylon Lite, before its engine stands", () => 
     const heard = r.listener();
     expect(heard.fx).toBeCloseTo(Math.sin(0.3) * Math.cos(0.1), 9);
     expect(heard.fy).toBeCloseTo(-Math.sin(0.1), 9);
+  });
+
+  it("plays a scene on its camera: the cap's turn from the player's eye and back to it, the summit's shots through their own lenses", () => {
+    let now = 0;
+    const r = make(() => now);
+    r.setBobScale(0);
+    const player = {
+      id: 3, pos: { x: 5, y: 40, z: 9 }, vel: { x: 0, y: 0, z: 0 }, yaw: 0.3, pitch: 0.1, grounded: true, lamp: { on: true, charge: 1 },
+    } as unknown as Parameters<typeof windTestState>[0];
+    const state = windTestState(player);
+    const eye = { x: 5, y: 40 + PLAYER_EYE_OFFSET, z: 9 };
+    /** The canvas row of a point 20 m along the camera's look and half a view of `fov` above it: the frame's top row under that lens. */
+    const topRow = (fov: number): number => {
+      const heard = r.listener();
+      const at = r.cameraPosition();
+      // The camera's own up, with no roll: its look turned a quarter up.
+      const pitch = -Math.asin(heard.fy);
+      const yaw = Math.atan2(heard.fx, heard.fz);
+      const up = { x: Math.sin(yaw) * Math.sin(pitch), y: Math.cos(pitch), z: Math.cos(yaw) * Math.sin(pitch) };
+      const d = 20;
+      const lift = d * Math.tan(fov / 2);
+      return r.project({ x: at.x + heard.fx * d + up.x * lift, y: at.y + heard.fy * d + up.y * lift, z: at.z + heard.fz * d + up.z * lift })?.y ?? NaN;
+    };
+    // The cap's scene: held on its stand, turned to the cap, at the game's lens; then the eye again.
+    const cap = { x: 9, y: 39.4, z: 12 };
+    r.setScene("cap", cap);
+    r.sync(state, 3, 1);
+    expect(r.cameraPosition()).toEqual(eye);
+    now = 2000;
+    r.sync(state, 3, 1);
+    const stand = capStand({ ...eye, yaw: 0.3, pitch: 0.1 }, cap);
+    expect(r.cameraPosition()).toEqual({ x: stand.x, y: stand.y, z: stand.z });
+    expect(r.listener().fx).toBeCloseTo(Math.sin(stand.yaw) * Math.cos(stand.pitch), 9);
+    expect(r.listener().fy).toBeCloseTo(-Math.sin(stand.pitch), 9);
+    expect(topRow(GAME_FOV)).toBeCloseTo(0, 6);
+    now = CAP_SCENE_S * 1000;
+    r.sync(state, 3, 1);
+    expect(r.cameraPosition()).toEqual(eye);
+    // The summit's scene: each shot's own camera from its first frame, through its own lens.
+    const body = { x: 30, y: 41, z: 20 };
+    const more = { hollow: { x: 33, y: 41, z: 24 }, party: eye };
+    // On a whole second, so each cut falls on its frame.
+    now = 8000;
+    r.setScene("summit", body, more);
+    const ctx = { base: { ...eye, yaw: 0.3, pitch: 0.1 }, body, hollow: more.hollow, party: more.party };
+    const since = now;
+    let at = 0;
+    for (const [shot, lens] of [LENS_24, LENS_32, LENS_24, LENS_32].entries()) {
+      now = since + at * 1000;
+      r.sync(state, 3, 1);
+      const want = summitShot(at, ctx);
+      expect(want.shot).toBe(shot);
+      const stood = r.cameraPosition();
+      expect(stood.x).toBeCloseTo(want.x, 9);
+      expect(stood.y).toBeCloseTo(want.y, 9);
+      expect(stood.z).toBeCloseTo(want.z, 9);
+      expect(topRow(lens)).toBeCloseTo(0, 6);
+      at += SHOTS[shot] as number;
+    }
+    // The threshold is the player's own eye at the game's lens, and the hike's after it.
+    now = since + at * 1000;
+    r.sync(state, 3, 1);
+    expect(r.cameraPosition()).toEqual(eye);
+    expect(topRow(GAME_FOV)).toBeCloseTo(0, 6);
+    now = since + SUMMIT_SCENE_S * 1000;
+    r.sync(state, 3, 1);
+    expect(r.cameraPosition()).toEqual(eye);
+    // The free camera is no scene's: it flies where it is put while one plays.
+    r.setScene("cap", cap);
+    r.setFreecam({ x: 1, y: 2, z: 3, yaw: 0, pitch: 0 });
+    now += 2000;
+    r.sync(state, 3, 1);
+    expect(r.cameraPosition()).toEqual({ x: 1, y: 2, z: 3 });
   });
 
   it("keeps the wind of its weather and its clock, or the override's", () => {

@@ -31,7 +31,8 @@
  * face, and its surf to hear; and the scenery a hike places once: the
  * fingerposts at the junctions with their lettering, the trailhead's car,
  * the film's car in its place and the patch under it, the board with its
- * painted face, and the body at the crest. Every other part of the world is absent, and the
+ * painted face, and the body at the crest; and a scene's camera (the
+ * summit's five shots, the cap's turn) through its own lens. Every other part of the world is absent, and the
  * members of `Renderer` that belong to an absent part are answered here as
  * nothing: a setter keeps what it was told (`held`), for the day its part is
  * drawn; a read-out returns nothing heard, nothing seen or nothing pending;
@@ -48,7 +49,7 @@ export const NOT_DRAWN: readonly NotDrawn[] = [
   { what: "the mirror a lake reflects its shore in on the tier that draws one, and the water, a lake's and the sea's, on the tier that reads what lies under it through the surface", members: [] },
   { what: "the skin's shading (`skin.ts`): no model the game ships has a surface that shows it", members: ["setSkinShading"] },
   { what: "the sun's cast shadows on a tier given a shadow map: no tier has one (`quality.ts`), so the game casts none either", members: [] },
-  { what: "the scenes and the endings: their cameras, their stage, the local hiker's own body in them and the end scene's car", members: ["setEnding", "endScene", "setScene", "clearEnding"] },
+  { what: "the endings (a death's camera and its closing dark, the end scene with its car), and the local hiker's own body with the lamp it wears in a scene's shots", members: ["setEnding", "endScene", "clearEnding"] },
   { what: "the hand-authored levels' brushes, and the wireframe view", members: ["setWireframe"] },
   { what: "the shaders' compiles told as they happen, kept shaders, and the GPU's timings", members: ["onShaderCompiled", "keepShaders", "gpuTime"] },
 ];
@@ -59,14 +60,13 @@ export type NotDrawnHeld = {
   skinShading: boolean;
   ending: "died" | "won" | null;
   endScene: EndSceneSetup | null;
-  scene: { kind: "summit" | "cap"; at: { x: number; y: number; z: number } } | null;
 };
 
 /** The members answered as nothing: every member `NOT_DRAWN` names. */
 export type NotDrawnMembers = Pick<
   Renderer,
   | "setSkinShading"
-  | "setEnding" | "endScene" | "setScene" | "clearEnding"
+  | "setEnding" | "endScene" | "clearEnding"
   | "setWireframe" | "onShaderCompiled" | "keepShaders" | "gpuTime"
 >;
 
@@ -76,7 +76,7 @@ export type NotDrawnMembers = Pick<
  */
 export function notDrawnMembers(): { members: NotDrawnMembers; held: NotDrawnHeld } {
   const held: NotDrawnHeld = {
-    wireframe: false, skinShading: true, ending: null, endScene: null, scene: null,
+    wireframe: false, skinShading: true, ending: null, endScene: null,
   };
   const members: NotDrawnMembers = {
     setSkinShading(on) {
@@ -88,9 +88,6 @@ export function notDrawnMembers(): { members: NotDrawnMembers; held: NotDrawnHel
       held.endScene = scene ?? null;
     },
     endScene: () => null,
-    setScene(kind, at) {
-      held.scene = { kind, at: { x: at.x, y: at.y, z: at.z } };
-    },
     clearEnding() {
       if (held.ending === "died") held.ending = null;
     },

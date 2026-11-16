@@ -215,6 +215,19 @@
  * drawn while the view holds it within its reach, and shown for the frame
  * that draws the rain's cover map where it stands in the map's square.
  *
+ * **A scene plays on the hike's one camera** (`scenePlay.ts`): the summit's
+ * five shots and the cap's turn are stepped once a frame on the player's
+ * eye, after it is placed, and what comes back is the frame's camera and
+ * its lens, as on Babylon.js, whose renderer steps the same play. Nothing
+ * is made, built again or recorded again for a scene. The chain's passes
+ * rebuild a pixel's ray from the pose the frame is drawn with, and its
+ * anti-aliasing weighs its history by how far that pose has moved since
+ * the last frame and clips it to the new frame's neighbourhood, so a cut is
+ * a large move like any other, as it is in the game's own chain; the mask,
+ * the rain and every part's test against the view read the same pose. The
+ * rain's cover map and a lake's panorama have cameras of their own, which
+ * no scene moves.
+ *
  * **The sun casts no shadow**: no tier of the game has a shadow map
  * (`quality.ts`), so there is no pass for one and no material reads one.
  * The dark under the parked car is a patch of the scenery's own
@@ -274,6 +287,7 @@ import { QUALITY, detectTier } from "../quality.js";
 import type { RainLamp } from "../rainField.js";
 import { RAIN_MAP } from "../rainParams.js";
 import type { FreecamView, Renderer, RendererOptions } from "../renderer.js";
+import { createScenePlay } from "../scenePlay.js";
 import { emptySeaFrameUniforms } from "../seaUniforms.js";
 import { startSkySource, type SkySource } from "../skyWorker.js";
 import { SILENT_SURF_SOUND, createSurfSound, fillSurfSound, type SurfSound } from "../surfSound.js";
@@ -660,6 +674,12 @@ export function createLiteRenderer(canvas: HTMLCanvasElement, level: Level, fore
   let heardLife: LiteWaterLife | null = null;
   /** Where the hikers and the Hollows stand a frame, and how (`entityPoses.ts`). */
   const poses = createEntityPoses();
+  /**
+   * The scenes as the frames play them (`scenePlay.ts`): stepped once a frame on the player's eye, which it hands
+   * back as the frame's camera with the shot's lens. Everything that reads the view reads it after: the chain's
+   * passes and their last camera, the mask, the rain, every part's test against the view's planes.
+   */
+  const play = createScenePlay({ stage: () => undefined, coverLeft: () => undefined });
   /** The most hikers other than the local one the state has held at once: a lamp's light is made for each. */
   let othersSeen = 0;
   /** The canvas's size the engine was last fitted to, CSS pixels. */
@@ -1353,7 +1373,8 @@ export function createLiteRenderer(canvas: HTMLCanvasElement, level: Level, fore
           pose.yaw = eye.yaw;
           pose.pitch = eye.pitch;
           pose.roll = offset.roll;
-          fov = GAME_FOV;
+          // A scene, from the eye just placed: its shot's camera and lens, or the eye again and the game's own.
+          fov = play.step(seconds, pose, local, state.players, (id) => poses.drawnAt(id)).fov ?? GAME_FOV;
         }
       }
       cameraAxes(pose.yaw, pose.pitch, pose.roll, axes);
@@ -1663,6 +1684,9 @@ export function createLiteRenderer(canvas: HTMLCanvasElement, level: Level, fore
     },
     setFreecam(view) {
       freecam = view;
+    },
+    setScene(kind, at, more, fromS = 0) {
+      play.setScene(kind, at, more, fromS, clock() / 1000);
     },
     setHour(hour) {
       light.setHour(hour);

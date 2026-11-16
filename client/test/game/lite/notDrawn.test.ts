@@ -12,7 +12,7 @@ describe("what the renderer on Babylon Lite does not draw yet", () => {
 
   it("names every part of the world it leaves out", () => {
     const all = NOT_DRAWN.map((part) => part.what).join("; ");
-    for (const word of [ "sea", "lake", "skin's shading", "shadows", "scenes", "endings"]) {
+    for (const word of [ "sea", "lake", "skin's shading", "shadows", "endings"]) {
       expect(all, word).toContain(word);
     }
   });
@@ -57,8 +57,8 @@ describe("what the renderer on Babylon Lite does not draw yet", () => {
   it("leaves the scenery a hike places once to the renderer: the posts, the trailhead's car and board and the body are drawn", () => {
     const all = NOT_DRAWN.map((part) => part.what).join("; ");
     expect(all).not.toMatch(/posts|board|body at the crest|trailhead/);
-    // The car the end scene drives is the scenes' own, with their cameras and their stage.
-    expect(NOT_DRAWN.filter((part) => /\bcar\b/.test(part.what)).map((part) => part.members)).toEqual([["setEnding", "endScene", "setScene", "clearEnding"]]);
+    // The car the end scene drives is the endings' own.
+    expect(NOT_DRAWN.filter((part) => /\bcar\b/.test(part.what)).map((part) => part.members)).toEqual([["setEnding", "endScene", "clearEnding"]]);
   });
 
   it("names the sun's cast shadows as what no tier draws: the game casts none either", () => {
@@ -103,15 +103,22 @@ describe("what the renderer on Babylon Lite does not draw yet", () => {
     expect(sea[1]?.what).toMatch(/through the surface/);
   });
 
-  it("keeps the first ending it is told and lets a death be undone, and keeps the last scene", () => {
+  it("keeps the first ending it is told and lets a death be undone", () => {
     const { members, held } = notDrawnMembers();
     members.setEnding("died");
     members.setEnding("died");
     expect(held.ending).toBe("died");
     members.clearEnding();
     expect(held.ending).toBeNull();
-    members.setScene("cap", { x: 1, y: 2, z: 3 });
-    expect(held.scene).toEqual({ kind: "cap", at: { x: 1, y: 2, z: 3 } });
+  });
+
+  it("leaves a scene's camera to the renderer: the summit's shots and the cap's turn are played, and what is left of a scene is the local hiker's own body in it", () => {
+    const { members, held } = notDrawnMembers();
+    expect("setScene" in members).toBe(false);
+    expect("scene" in held).toBe(false);
+    const all = NOT_DRAWN.map((part) => part.what).join("; ");
+    expect(all).not.toMatch(/cameras|summit|\bcap\b/);
+    expect(NOT_DRAWN.filter((part) => /own body/.test(part.what)).map((part) => part.members)).toEqual([["setEnding", "endScene", "clearEnding"]]);
   });
 
   it("tells no compile and keeps no shader: the stop it hands back does nothing", () => {
