@@ -6,8 +6,14 @@ import {
 } from "../../../src/game/postFrame.js";
 import { DITHER_LSB, HALATION_CAP, HALATION_THRESHOLD, PAINT_JOINT_SHARPNESS, PAINT_REACH } from "../../../src/game/postParams.js";
 import {
-  FAR_SOFT_WGSL, HALATION_EXTRACT_WGSL, LENS_WGSL, PAINT_WGSL, POST_VERTEX_WGSL, TAA_SHARPEN_WGSL, TAA_WGSL, depthResolveWgsl, gradeWgsl, passLayout, writePass,
+  FAR_SOFT_WGSL, HALATION_EXTRACT_WGSL, LENS_WGSL, PAINT_WGSL, POST_VERTEX_WGSL, TAA_SHARPEN_WGSL, TAA_WGSL, blurKernel, blurTaps, blurWgsl, depthResolveWgsl, gradeWgsl, passLayout, writePass,
 } from "../../../src/game/lite/postWgsl.js";
+import { NullEngine } from "@babylonjs/core/Engines/nullEngine.js";
+import { UniversalCamera } from "@babylonjs/core/Cameras/universalCamera.js";
+import { Vector2, Vector3 } from "@babylonjs/core/Maths/math.vector.js";
+import { BlurPostProcess } from "@babylonjs/core/PostProcesses/blurPostProcess.js";
+import { Scene } from "@babylonjs/core/scene.js";
+import { HALATION_KERNEL, HALATION_RATIO } from "../../../src/game/postFrame.js";
 import { inOrder, tight } from "./wgslText.js";
 
 const glsl = (name: string): string => readFileSync(new URL(`../../../src/game/shaders/${name}.fragment.fx`, import.meta.url), "utf8");
@@ -221,6 +227,30 @@ describe("the post chain's passes in WGSL", () => {
     expect(g).toContain("floatover=clamp(l-HALATION_THRESHOLD,0.0,HALATION_CAP)/HALATION_CAP;gl_FragColor=vec4(exposed/max(l,1.0e-4)*HALATION_TINT*over,1.0);");
     expect(w).toContain("letover=clamp(l-HALATION_THRESHOLD,0.0,HALATION_CAP)/HALATION_CAP;returnvec4<f32>(exposed/max(l,1.0e-4)*HALATION_TINT*over,1.0);");
     expect(w).toContain("letframe=0.25*(composed(vUV+vec2<f32>(-h.x,-h.y))+composed(vUV+vec2<f32>(h.x,-h.y))+composed(vUV+vec2<f32>(-h.x,h.y))+composed(vUV+vec2<f32>(h.x,h.y)));");
+  });
+
+  it("blurs the halation with the kernel and the reads Babylon.js's blur pass makes for the game's", () => {
+    // Babylon.js's own pass, made as the game makes the halation's, says its reads in its shader's defines.
+    const engine = new NullEngine();
+    const scene = new Scene(engine);
+    const camera = new UniversalCamera("cam", new Vector3(0, 0, 0), scene);
+    const blur = new BlurPostProcess("halationBlurX", new Vector2(1, 0), HALATION_KERNEL, HALATION_RATIO, camera);
+    expect(blur.kernel).toBe(HALATION_KERNEL);
+    const defines = (blur as unknown as { _effectWrapper: { options: { defines: string } } })._effectWrapper.options.defines;
+    const number = (name: string): number[] => [...defines.matchAll(new RegExp(`#define ${name}(\\d+) ([-0-9.]+)`, "g"))].map((m) => Number(m[2]));
+    const offsets = [...number("KERNEL_OFFSET"), ...number("KERNEL_DEP_OFFSET")];
+    const weights = [...number("KERNEL_WEIGHT"), ...number("KERNEL_DEP_WEIGHT")];
+    expect(offsets.length).toBeGreaterThan(8);
+    const ours = blurTaps(HALATION_KERNEL);
+    expect(blurKernel(HALATION_KERNEL)).toBe(33);
+    expect(ours.offsets.map((v) => Number(v.toFixed(8)))).toEqual(offsets);
+    expect(ours.weights.map((v) => Number(v.toFixed(8)))).toEqual(weights);
+    // Each read is in the pass, at its offset along the axis and with its weight, to the eight decimals Babylon.js writes.
+    const wgsl = blurWgsl(HALATION_KERNEL);
+    expect(wgsl.match(/blend\+=textureSampleLevel\(textureSampler,postSampler,tx\(vUV\+u\.delta\*/g)).toHaveLength(offsets.length);
+    expect(wgsl).toContain(`tx(vUV+u.delta*${(ours.offsets[0] as number).toFixed(8)}),0.0)*${(ours.weights[0] as number).toFixed(8)};`);
+    scene.dispose();
+    engine.dispose();
   });
 
   it("resolves the depth as the mean of a pixel's samples, each its distance along the view and nothing where nothing was drawn", () => {
