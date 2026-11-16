@@ -67,4 +67,23 @@ describe("the atmosphere's plugin on Babylon Lite", () => {
     plugin.getActiveTextures?.(active as never);
     expect(active).toEqual([MAP]);
   });
+
+  it("leaves the ground cloud to a post chain where it is told to: no march, no map, and another program", () => {
+    const marching = atmospherePlugin(emptyAtmosphereUniforms(), MAP);
+    const plain = atmospherePlugin(emptyAtmosphereUniforms(), MAP, undefined, false);
+    const code = (plugin: typeof plain): string => plugin.getCustomCode?.("fragment")?.CUSTOM_FRAGMENT_DEFINITIONS ?? "";
+    expect(code(marching)).toMatch(/fn atmCloudDepth\(/);
+    expect(code(marching)).toContain("if(material.atmCloudSteps<0.5){return fogged;}");
+    expect(code(plain)).not.toMatch(/atmCloudDepth|atmCloudAt|atmCloudGround|atmCloudMap|atmCloudSteps/);
+    // The fog itself is the same text either way, to the haze's last statement.
+    const fog = (text: string): string => text.slice(text.indexOf("fn atmosphereFog("), text.indexOf("fogged=mix(mix(air,material.atmSunColour"));
+    expect(fog(code(plain))).toBe(fog(code(marching)));
+    expect(fog(code(plain)).length).toBeGreaterThan(400);
+    expect(code(plain).trimEnd().endsWith("return fogged;\n}")).toBe(true);
+    expect(plain.getSamplers).toBeUndefined();
+    expect(plain.bindTextures).toBeUndefined();
+    expect(plain.getActiveTextures).toBeUndefined();
+    expect(plain.defines).toEqual({ cloud: false });
+    expect(marching.defines).toEqual({ cloud: true });
+  });
 });

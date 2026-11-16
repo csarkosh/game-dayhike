@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { ShaderStore } from "@babylonjs/core/Engines/shaderStore.js";
 import "@babylonjs/core/Shaders/ShadersInclude/imageProcessingFunctions.js";
-import { DISPLAY_CURVE_WGSL } from "../../../src/game/lite/displayCurve.js";
+import { DISPLAY_CURVE_WGSL, LINEAR_COLOUR_WGSL, onColourPath } from "../../../src/game/lite/displayCurve.js";
 import { inOrder, tight } from "./wgslText.js";
 
 const BABYLON = tight(ShaderStore.IncludesShadersStore["imageProcessingFunctions"] as string);
@@ -46,5 +46,17 @@ describe("the material colour path in WGSL", () => {
 
   it("draws no vignette, no colour curve and no dither: no material on Lite does", () => {
     expect(DISPLAY_CURVE_WGSL).not.toMatch(/vignette|curve|dither|rand/i);
+  });
+
+  it("hands a stage's linear colour on where a post chain grades the frame, and leaves the stage as it is where none does", () => {
+    const stage = `struct U{a:f32}\n${DISPLAY_CURVE_WGSL}\n@fragment fn f()->@location(0)vec4<f32>{return vec4<f32>(displayColour(c,e,k),1.0);}`;
+    expect(onColourPath(stage, false)).toBe(stage);
+    const linear = onColourPath(stage, true);
+    expect(linear).not.toContain("displayNeutral");
+    expect(tight(linear)).toContain("fndisplayColour(linear:vec3<f32>,exposure:f32,contrast:f32)->vec3<f32>{returnlinear;}");
+    expect(linear).toContain("return vec4<f32>(displayColour(c,e,k),1.0);");
+    expect(tight(LINEAR_COLOUR_WGSL)).toBe("fndisplayColour(linear:vec3<f32>,exposure:f32,contrast:f32)->vec3<f32>{returnlinear;}");
+    // A stage that does not end with the curve has no colour path to choose.
+    expect(() => onColourPath("fn f(){}", true)).toThrow(/display curve/);
   });
 });

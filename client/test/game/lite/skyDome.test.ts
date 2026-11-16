@@ -84,6 +84,16 @@ describe("the sky's dome on Babylon Lite", () => {
     ])).toBe(true);
   });
 
+  it("hands the radiance on as it is where a post chain grades the frame, as the game's stage does with its tone map off", () => {
+    expect(tight(GLSL)).toContain("vec3viewed=mix(sky,toned,step(0.5,skyToneMap));");
+    const linear = tight(SKY_DOME_WGSL.fragmentLinear);
+    // The same stage to the radiance, then the radiance itself: nothing of the display curve is reached.
+    const radiance = "letsky=skyRadiance(normalize(input.dir),u.skySunDir,u.skyScale,u.skyCloud,u.skyDeckZenith,u.skyNight,u.skyDisc,u.skyMistAir,u.skyMistWeight,0.0);";
+    expect(linear).toContain(`${radiance}returnvec4<f32>(sky,1.0);`);
+    expect(tight(SKY_DOME_WGSL.fragment)).toContain(`${radiance}vartoned=skyNeutral(sky*u.skyExposure);`);
+    expect(SKY_DOME_WGSL.fragmentLinear.replace("return vec4<f32>(sky,1.0);", "")).toBe(SKY_DOME_WGSL.fragment);
+  });
+
   it("reads every uniform the game draws the dome with from its own, and rides with the eye", () => {
     const read = new Set([...SKY_DOME_WGSL.fragment.matchAll(/\bu\.(sky\w+)/g)].map((m) => m[1]));
     expect([...read].sort()).toEqual(Object.keys(emptySkyDomeUniforms()).sort());

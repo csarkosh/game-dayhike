@@ -39,7 +39,7 @@ import { MOTE_TEX_SIZE, moteDiscMap, motesUnder } from "../motesParams.js";
 import type { QualityTier } from "../quality.js";
 import type { WeatherParams } from "../weather.js";
 import type { WindRecord } from "../windParams.js";
-import { DISPLAY_CURVE_WGSL } from "./displayCurve.js";
+import { DISPLAY_CURVE_WGSL, onColourPath } from "./displayCurve.js";
 import { SEE_THROUGH_ORDER } from "./drawOrder.js";
 import { wgslFloat } from "./forestPlugins.js";
 import {
@@ -136,7 +136,7 @@ export type LiteMotes = {
 
 /** The tier's motes in `scene`, reading `frame`, the frame's block; none shown until a frame has some; null on a tier
  * that draws none. */
-export function createLiteMotes(engine: EngineContext, scene: SceneContext, tier: QualityTier, frame: PluginUniformBlock, uploads?: FrameUploads): LiteMotes | null {
+export function createLiteMotes(engine: EngineContext, scene: SceneContext, tier: QualityTier, frame: PluginUniformBlock, uploads?: FrameUploads, linear = false): LiteMotes | null {
   const slots = moteSlots(tier);
   if (slots === null) return null;
   const values = emptyMoteUniforms();
@@ -144,7 +144,7 @@ export function createLiteMotes(engine: EngineContext, scene: SceneContext, tier
   const material = createShaderMaterial({
     name: "motes",
     vertexSource: stageReads(VERTEX, MOTES_FRAME_READS),
-    fragmentSource: stageReads(FRAGMENT, MOTES_FRAME_READS),
+    fragmentSource: stageReads(onColourPath(FRAGMENT, linear), MOTES_FRAME_READS),
     attributes: ["position", "uv"],
     // The view and the eye are the scene's own and the projection the frame's block's (`frameBlock.ts`): no system
     // uniform, so nothing is written for a camera that moves.

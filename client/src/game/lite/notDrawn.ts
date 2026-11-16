@@ -8,7 +8,11 @@
  * stones), the blade grass, the duff, the cliffs' rock walls where the
  * field lays any and the chunk props' boxes, under the atmosphere and the
  * sky's dome, with the valley mist banks and the motes in the air and the
- * ground cloud marched through it on the tiers that march it, and the rain
+ * ground cloud marched through it on the tiers that march it, the post
+ * chain on the tiers that have one (the far softening, the anti-aliasing,
+ * the paint, the grade with its palettes, the chase's cast and the stare's
+ * shade, the rain on the lens), the Hollows' figures in their mask where the
+ * chain's grade reads it, and the rain
  * (its streaks, and on the tiers that draw them the drips under the canopy,
  * the splashes and the cover map they are drawn under), lit by the sun, the
  * sky's fill and the sky's capture as the image-based light for the hour and
@@ -28,9 +32,7 @@
  * a promise is already resolved. `NOT_DRAWN` names each part with the members that
  * stand in for it, and the two are held to each other by the tests.
  */
-import type { PaintPaletteName } from "../gradeParams.js";
 import type { EndSceneSetup, Renderer } from "../renderer.js";
-import { STARE_LENS_REST } from "../stareLens.js";
 
 /** A part of the world not drawn yet, and the members of `Renderer` answered as nothing for it. */
 export type NotDrawn = { readonly what: string; readonly members: readonly (keyof Renderer)[] };
@@ -38,9 +40,9 @@ export type NotDrawn = { readonly what: string; readonly members: readonly (keyo
 export const NOT_DRAWN: readonly NotDrawn[] = [
   { what: "the sea's wind waves by the FFT on the tier that runs one (the baked loop is drawn there meanwhile), the swept curl of its plunging lip and the surf's spray", members: [] },
   { what: "the shore a lake reflects beyond its skyline's shade (the panorama, the mirror), and the water, a lake's and the sea's, on the tier that reads what lies under it through the surface", members: [] },
-  { what: "the Hollow's figure in the silhouette mask (its eyes are drawn), and with it the skin's shading, which has no other surface to show on", members: ["setSkinShading"] },
+  { what: "the Hollow's figure on the tiers with no post chain, where a veil lays its mask over the frame (with a chain the grade reads the mask, and its eyes are drawn on every tier), and the stare's shade there", members: [] },
+  { what: "the skin's shading (`skin.ts`): no model the game ships has a surface that shows it", members: ["setSkinShading"] },
   { what: "the sun's cast shadows", members: [] },
-  { what: "the post chain: the grade and its palettes, the anti-aliasing, the far softening, the rain on the lens, the stare's shade, the chase's cast, depth of field", members: ["setPalette", "setChase", "setUnsettle", "setDepthOfField", "stare"] },
   { what: "the scenes and the endings: their cameras, their stage, the local hiker's own body in them and the end scene's car", members: ["setEnding", "endScene", "setScene", "clearEnding"] },
   { what: "the hand-authored levels' brushes, and the wireframe view", members: ["setWireframe"] },
   { what: "the shaders' compiles told as they happen, kept shaders, and the GPU's timings", members: ["onShaderCompiled", "keepShaders", "gpuTime"] },
@@ -49,13 +51,8 @@ export const NOT_DRAWN: readonly NotDrawn[] = [
 
 /** What the setters of the absent parts were last told. */
 export type NotDrawnHeld = {
-  /** The chase's cast. The post chain's to grade by; the ground cloud, which is drawn, reads its density from it. */
-  chase: number;
-  unsettle: number;
-  palette: PaintPaletteName | null;
   wireframe: boolean;
   skinShading: boolean;
-  depthOfField: boolean;
   ending: "died" | "won" | null;
   endScene: EndSceneSetup | null;
   scene: { kind: "summit" | "cap"; at: { x: number; y: number; z: number } } | null;
@@ -65,12 +62,9 @@ export type NotDrawnHeld = {
 export type NotDrawnMembers = Pick<
   Renderer,
   | "setSkinShading"
-  | "setPalette" | "setChase" | "setUnsettle" | "setDepthOfField" | "stare"
   | "setEnding" | "endScene" | "setScene" | "clearEnding"
   | "setWireframe" | "onShaderCompiled" | "keepShaders" | "gpuTime"
 >;
-
-const clamp01 = (x: number): number => Math.max(0, Math.min(1, x));
 
 /**
  * The members answered as nothing, and what their setters hold. One of each
@@ -78,26 +72,12 @@ const clamp01 = (x: number): number => Math.max(0, Math.min(1, x));
  */
 export function notDrawnMembers(): { members: NotDrawnMembers; held: NotDrawnHeld } {
   const held: NotDrawnHeld = {
-    chase: 0, unsettle: 1, palette: null,
-    wireframe: false, skinShading: true, depthOfField: false, ending: null, endScene: null, scene: null,
+    wireframe: false, skinShading: true, ending: null, endScene: null, scene: null,
   };
   const members: NotDrawnMembers = {
     setSkinShading(on) {
       held.skinShading = on;
     },
-    setPalette(name) {
-      held.palette = name;
-    },
-    setChase(cast) {
-      held.chase = clamp01(cast);
-    },
-    setUnsettle(level) {
-      held.unsettle = clamp01(level);
-    },
-    setDepthOfField(on) {
-      held.depthOfField = on;
-    },
-    stare: () => STARE_LENS_REST,
     setEnding(kind: "died" | "won", scene?: EndSceneSetup) {
       if (held.ending !== null) return;
       held.ending = kind;

@@ -96,7 +96,7 @@ struct SkyOut{@builtin(position)position:vec4<f32>,@location(0)dir:vec3<f32>}
  * Neutral, the encode, the contrast), and the clamp the dither leaves at an
  * intensity of 0.
  */
-const FRAGMENT = /* wgsl */ `
+const fragment = (linear: boolean): string => /* wgsl */ `
 struct SkyOut{@builtin(position)position:vec4<f32>,@location(0)dir:vec3<f32>}
 ${SKY_RADIANCE_WGSL}
 fn skyNeutral(input:vec3<f32>)->vec3<f32>{
@@ -118,14 +118,16 @@ fn skyContrastOf(c:vec3<f32>,contrast:f32)->vec3<f32>{
 @fragment fn mainFragment(input:SkyOut)->@location(0)vec4<f32>{
   let u=shaderUniforms;
   let sky=skyRadiance(normalize(input.dir),u.skySunDir,u.skyScale,u.skyCloud,u.skyDeckZenith,u.skyNight,u.skyDisc,u.skyMistAir,u.skyMistWeight,0.0);
+  ${linear ? "return vec4<f32>(sky,1.0);" : ""}
   var toned=skyNeutral(sky*u.skyExposure);
   toned=clamp(pow(max(toned,vec3<f32>(0.0)),vec3<f32>(1.0/2.2)),vec3<f32>(0.0),vec3<f32>(1.0));
   toned=skyContrastOf(toned,u.skyContrast);
   return vec4<f32>(clamp(toned,vec3<f32>(0.0),vec3<f32>(1.0)),1.0);
 }`;
+const FRAGMENT = fragment(false);
 
-/** The stages' text, for the tests that hold it to the game's. */
-export const SKY_DOME_WGSL = { vertex: VERTEX, fragment: FRAGMENT } as const;
+/** The stages' text, for the tests that hold it to the game's: the fragment's on the material colour path, and with the radiance handed on as it is, for a post chain to grade (`skyToneMap` at 0 in the game's). */
+export const SKY_DOME_WGSL = { vertex: VERTEX, fragment: FRAGMENT, fragmentLinear: fragment(true) } as const;
 
 /** What the dome reads from the frame's block, by the block's names: the display curve. */
 export const SKY_FRAME_READS = { skyExposure: FRAME_EXPOSURE_NAME, skyContrast: FRAME_CONTRAST_NAME } as const;
@@ -150,13 +152,13 @@ export function skyTableTexture(engine: EngineContext): Texture2D {
 }
 
 /** The dome in `scene`, reading `frame`, the frame's block; the night sky alone until its first update. */
-export function createLiteSkyDome(engine: EngineContext, scene: SceneContext, frame: PluginUniformBlock): LiteSkyDome {
+export function createLiteSkyDome(engine: EngineContext, scene: SceneContext, frame: PluginUniformBlock, linear = false): LiteSkyDome {
   const values = emptySkyDomeUniforms();
   const own = stageOwn(values, SKY_FRAME_READS);
   const material = createShaderMaterial({
     name: "skyDome",
     vertexSource: VERTEX,
-    fragmentSource: stageReads(FRAGMENT, SKY_FRAME_READS),
+    fragmentSource: stageReads(linear ? SKY_DOME_WGSL.fragmentLinear : FRAGMENT, SKY_FRAME_READS),
     attributes: ["position"],
     // The view and the eye are the scene's own (`frameBlock.ts`): no system uniform.
     uniforms: [
@@ -166,6 +168,8 @@ export function createLiteSkyDome(engine: EngineContext, scene: SceneContext, fr
     samplers: ["skyTable"],
     // Seen from inside.
     backFaceCulling: false,
+    // Where a post chain reads the frame's depth, the sky leaves it as nothing drawn: the chain's far sky.
+    ...(linear ? { depthWrite: false } : {}),
   });
   const table = skyTableTexture(engine);
   setShaderTexture(material, "skyTable", table);

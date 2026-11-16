@@ -38,7 +38,7 @@ import type { RainLamp } from "../rainField.js";
 import { RAIN_MAP, SPLASH, SPLASH_CYCLES } from "../rainParams.js";
 import { emptySplashStageUniforms, splashInstances, splashStageUniforms, splashUniforms, splashesDrawn } from "../splashField.js";
 import type { WeatherParams } from "../weather.js";
-import { DISPLAY_CURVE_WGSL } from "./displayCurve.js";
+import { DISPLAY_CURVE_WGSL, onColourPath } from "./displayCurve.js";
 import { SEE_THROUGH_ORDER } from "./drawOrder.js";
 import { wgslFloat } from "./forestPlugins.js";
 import { FRAME_CONTRAST_NAME, FRAME_EXPOSURE_NAME, stageClocks, stageOwn, stageReads, type StageRecord } from "./frameBlock.js";
@@ -177,7 +177,7 @@ export type LiteRainSplash = {
 /** The tier's splashes in `scene` on the map `cover`, reading `frame`, the frame's block; hidden until a frame draws a
  * ring; null on a tier that draws none. */
 export function createLiteRainSplash(
-  engine: EngineContext, scene: SceneContext, tier: QualityTier, cover: RainCover, frame: PluginUniformBlock, uploads?: FrameUploads,
+  engine: EngineContext, scene: SceneContext, tier: QualityTier, cover: RainCover, frame: PluginUniformBlock, uploads?: FrameUploads, linear = false,
 ): LiteRainSplash | null {
   const instances = splashInstances(tier);
   if (instances.count === 0) return null;
@@ -186,7 +186,7 @@ export function createLiteRainSplash(
   const material = createShaderMaterial({
     name: "rainSplash",
     vertexSource: stageReads(VERTEX, SPLASH_FRAME_READS),
-    fragmentSource: stageReads(FRAGMENT, SPLASH_FRAME_READS),
+    fragmentSource: stageReads(onColourPath(FRAGMENT, linear), SPLASH_FRAME_READS),
     attributes: ["position"],
     // The view is the scene's own (`frameBlock.ts`): no system uniform, so nothing is written for a camera that moves.
     uniforms: shaderUniformDecls(own),

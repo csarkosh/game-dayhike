@@ -54,7 +54,7 @@ import {
 import { DRIP, RAIN_FADE_FAR, RAIN_FADE_NEAR, RAIN_LENGTH, RAIN_MAP, RAIN_SKY_FADE, RAIN_SKY_RAMP, RAIN_STRETCH, dripCountUnder, rainCountUnder } from "../rainParams.js";
 import type { WeatherParams } from "../weather.js";
 import type { WindRecord } from "../windParams.js";
-import { DISPLAY_CURVE_WGSL } from "./displayCurve.js";
+import { DISPLAY_CURVE_WGSL, onColourPath } from "./displayCurve.js";
 import { SEE_THROUGH_ORDER } from "./drawOrder.js";
 import { wgslFloat } from "./forestPlugins.js";
 import { FRAME_CONTRAST_NAME, FRAME_EXPOSURE_NAME, stageClocks, stageOwn, stageReads, type StageRecord } from "./frameBlock.js";
@@ -216,7 +216,7 @@ export type LiteRain = {
  * a tier that draws drips, none is drawn without it.
  */
 export function createLiteRain(
-  engine: EngineContext, scene: SceneContext, tier: QualityTier, cover: RainCover | null, frame: PluginUniformBlock, uploads?: FrameUploads,
+  engine: EngineContext, scene: SceneContext, tier: QualityTier, cover: RainCover | null, frame: PluginUniformBlock, uploads?: FrameUploads, linear = false,
 ): LiteRain {
   const field = createRainField(tier);
   const instances = rainInstances(tier);
@@ -225,7 +225,7 @@ export function createLiteRain(
   const material = createShaderMaterial({
     name: "rain",
     vertexSource: stageReads(cover === null ? RAIN_WGSL.vertex : RAIN_WGSL.vertexCovered, RAIN_FRAME_READS),
-    fragmentSource: stageReads(FRAGMENT, RAIN_FRAME_READS),
+    fragmentSource: stageReads(onColourPath(FRAGMENT, linear), RAIN_FRAME_READS),
     attributes: ["position", "uv"],
     // The view is the scene's own (`frameBlock.ts`): no system uniform, so nothing is written for a camera that moves.
     uniforms: shaderUniformDecls(own),

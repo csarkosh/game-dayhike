@@ -37,7 +37,7 @@ import { MIST_TEX_SIZE, mistAlphaMap } from "../mistField.js";
 import type { QualityTier } from "../quality.js";
 import type { WeatherParams } from "../weather.js";
 import type { WindRecord } from "../windParams.js";
-import { DISPLAY_CURVE_WGSL } from "./displayCurve.js";
+import { DISPLAY_CURVE_WGSL, onColourPath } from "./displayCurve.js";
 import { SEE_THROUGH_ORDER } from "./drawOrder.js";
 import { FRAME_CONTRAST_NAME, FRAME_EXPOSURE_NAME, stageOwn, stageReads } from "./frameBlock.js";
 import type { FrameUploads } from "./frameUploads.js";
@@ -128,7 +128,7 @@ export type LiteMistMeshes = {
 
 /** The banks of `seed`'s world in `scene`, reading `frame`, the frame's block; none shown until a frame with mist. */
 export function createLiteMistMeshes(
-  engine: EngineContext, scene: SceneContext, seed: number, tier: QualityTier, frame: PluginUniformBlock, uploads?: FrameUploads,
+  engine: EngineContext, scene: SceneContext, seed: number, tier: QualityTier, frame: PluginUniformBlock, uploads?: FrameUploads, linear = false,
 ): LiteMistMeshes {
   const banks = createMistBanks(seed, tier);
   const cap = banks.drawn.length;
@@ -137,7 +137,7 @@ export function createLiteMistMeshes(
   const material = createShaderMaterial({
     name: "mistBanks",
     vertexSource: stageReads(VERTEX, MIST_FRAME_READS),
-    fragmentSource: stageReads(FRAGMENT, MIST_FRAME_READS),
+    fragmentSource: stageReads(onColourPath(FRAGMENT, linear), MIST_FRAME_READS),
     attributes: ["position", "uv"],
     // The view is the scene's own (`frameBlock.ts`): no system uniform, so nothing is written for a camera that moves.
     uniforms: shaderUniformDecls(own),

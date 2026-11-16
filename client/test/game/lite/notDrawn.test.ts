@@ -1,6 +1,5 @@
 import { describe, expect, it } from "vitest";
 import { NOT_DRAWN, notDrawnMembers } from "../../../src/game/lite/notDrawn.js";
-import { STARE_LENS_REST } from "../../../src/game/stareLens.js";
 
 describe("what the renderer on Babylon Lite does not draw yet", () => {
   it("answers as nothing exactly the members its list names, each named once", () => {
@@ -12,29 +11,31 @@ describe("what the renderer on Babylon Lite does not draw yet", () => {
 
   it("names every part of the world it leaves out", () => {
     const all = NOT_DRAWN.map((part) => part.what).join("; ");
-    for (const word of [ "sea", "lake", "figure in the silhouette mask", "shadows", "rain on the lens", "post chain", "scenes", "endings", "posts", "body at the crest"]) {
+    for (const word of [ "sea", "lake", "Hollow's figure on the tiers with no post chain", "skin's shading", "shadows", "scenes", "endings", "posts", "body at the crest"]) {
       expect(all, word).toContain(word);
     }
   });
 
-  it("reads out nothing: no scene, no stare", () => {
+  it("reads out nothing: no scene", () => {
     const { members } = notDrawnMembers();
     expect(members.endScene()).toBeNull();
-    expect(members.stare()).toBe(STARE_LENS_REST);
     expect(members.gpuTime).toBeNull();
   });
 
-  it("keeps what its setters are told, held to the range each takes", () => {
+  it("keeps what its setters are told", () => {
     const { members, held } = notDrawnMembers();
-    members.setChase(2);
-    members.setUnsettle(0.5);
-    members.setPalette("dusk" as never);
     members.setWireframe(true);
     members.setSkinShading(false);
-    members.setDepthOfField(true);
-    expect(held).toMatchObject({
-      chase: 1, unsettle: 0.5, palette: "dusk", wireframe: true, skinShading: false, depthOfField: true,
-    });
+    expect(held).toMatchObject({ wireframe: true, skinShading: false });
+  });
+
+  it("leaves the post chain to the renderer: the grade's palette, the chase's cast, the unsettle, the stare and the depth of field are its own", () => {
+    const { members, held } = notDrawnMembers();
+    for (const name of ["setPalette", "setChase", "setUnsettle", "setDepthOfField", "stare"]) expect(name in members, name).toBe(false);
+    for (const name of ["chase", "unsettle", "palette", "depthOfField"]) expect(name in held, name).toBe(false);
+    expect(NOT_DRAWN.map((part) => part.what).join("; ")).not.toMatch(/anti-aliasing|far softening|palette|chase|depth of field/);
+    // The one part that names the chain is the tiers' without one: the veil's.
+    expect(NOT_DRAWN.filter((part) => /post chain|grade/.test(part.what)).map((part) => part.what.slice(0, 20))).toEqual(["the Hollow's figure "]);
   });
 
   it("leaves the air's weather to the renderer: the mist banks, the motes and the ground cloud are drawn", () => {
@@ -48,19 +49,21 @@ describe("what the renderer on Babylon Lite does not draw yet", () => {
     for (const name of ["hasWildlife", "wildlifeEvents", "wildlifeDirectorLog"]) expect(name in members, name).toBe(false);
     const all = NOT_DRAWN.map((part) => part.what).join("; ");
     expect(all).not.toMatch(/animals|bodies|lamps they wear|dropped cap/);
-    // What is left of the Hollow is its figure, which the post chain's mask draws, and the skin's shading with it.
+    // What is left of the Hollow is its figure where no chain's grade reads its mask: the veil's, with the stare's shade there.
     const hollow = NOT_DRAWN.filter((part) => /Hollow/.test(part.what));
     expect(hollow).toHaveLength(1);
-    expect(hollow[0]?.members).toEqual(["setSkinShading"]);
+    expect(hollow[0]?.what).toMatch(/no post chain/);
+    expect(hollow[0]?.what).toMatch(/veil/);
+    expect(hollow[0]?.members).toEqual([]);
+    // The skin's shading is held, and shows on no surface the game ships.
+    expect(NOT_DRAWN.filter((part) => /skin/.test(part.what)).map((part) => part.members)).toEqual([["setSkinShading"]]);
   });
 
   it("leaves the rain to the renderer: its streaks, drips, splashes and cover are drawn, and the canopy's read-outs are its own", () => {
     const { members } = notDrawnMembers();
     for (const name of ["canopyWater", "canopyOver"]) expect(name in members, name).toBe(false);
-    // The one rain still named is the post chain's, on the lens.
-    const rain = NOT_DRAWN.filter((part) => /rain|splash|drip|canopy/.test(part.what));
-    expect(rain).toHaveLength(1);
-    expect(rain[0]?.what).toContain("the post chain");
+    // The rain on the lens is the post chain's, which is drawn too: no part names any rain.
+    expect(NOT_DRAWN.filter((part) => /rain|splash|drip|canopy|lens/.test(part.what))).toEqual([]);
   });
 
   it("leaves the lakes' water, its calm, its plants and its life to the renderer: what is left of a lake is its reflections and the tier that reads through it", () => {
@@ -113,7 +116,7 @@ describe("what the renderer on Babylon Lite does not draw yet", () => {
   it("holds each renderer's own", () => {
     const a = notDrawnMembers();
     const b = notDrawnMembers();
-    a.members.setChase(1);
-    expect(b.held.chase).toBe(0);
+    a.members.setWireframe(true);
+    expect(b.held.wireframe).toBe(false);
   });
 });

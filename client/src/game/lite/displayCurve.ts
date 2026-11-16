@@ -7,6 +7,10 @@
  * curves and the dither, which the low tier grades with in its materials on
  * Babylon.js, are drawn on Lite by no material.
  *
+ * On a tier with a post chain the colour is the chain's to grade: a stage
+ * hands its linear colour on as it is (`onColourPath`), as Babylon.js's
+ * materials do when their image processing is a post-process's.
+ *
  * Loads nothing.
  */
 
@@ -40,3 +44,20 @@ fn displayColour(linear:vec3<f32>,exposure:f32,contrast:f32)->vec3<f32>{
   result=displayContrastOf(result,contrast);
   return clamp(result,vec3<f32>(0.0),vec3<f32>(1.0));
 }`;
+
+/** `displayColour` on a tier with a post chain: the linear colour, which the chain's grade exposes and shows. */
+export const LINEAR_COLOUR_WGSL = /* wgsl */ `
+fn displayColour(linear:vec3<f32>,exposure:f32,contrast:f32)->vec3<f32>{
+  return linear;
+}`;
+
+/**
+ * `wgsl`, a stage that ends with `displayColour`, for the tier's colour
+ * path: as it is on the material path, and with the linear colour handed on
+ * where `linear` (a post chain grades the frame). The stage carries
+ * `DISPLAY_CURVE_WGSL` whole; one that does not is refused.
+ */
+export function onColourPath(wgsl: string, linear: boolean): string {
+  if (!wgsl.includes(DISPLAY_CURVE_WGSL)) throw new Error("the stage does not end with the display curve");
+  return linear ? wgsl.replace(DISPLAY_CURVE_WGSL, LINEAR_COLOUR_WGSL) : wgsl;
+}

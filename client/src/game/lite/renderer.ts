@@ -78,14 +78,15 @@
  * to decide (`mistMeshes.ts`: nothing where no bank has moved; `motes.ts`:
  * the clock while a mote is shown).
  *
- * **The ground cloud is marched by the materials** on the tiers the game
- * marches it on (none on low), in the air's plugin, since there is no post
- * chain to march it once a pixel as the game's does. Its density is the
- * game's: the night's under the haunt and the chase's cast by how far the
- * mist has come in, or the level the console holds it at (`setMist`, which
- * says what is drawn). The ground it rests on is a map round the eye, built
- * again at once when the eye has left the last one's middle, as the game
- * builds it, and counted with the streamed world.
+ * **The ground cloud is marched once a pixel by the post chain** on the
+ * tiers the game marches it on (none on low), in the far softening's pass,
+ * as the game's chain marches it; a material's air marches it only on a tier
+ * that has the cloud and no chain, and no other material binds its map. Its
+ * density is the game's: the night's under the haunt and the chase's cast by
+ * how far the mist has come in, or the level the console holds it at
+ * (`setMist`, which says what is drawn). The ground it rests on is a map
+ * round the eye, built again at once when the eye has left the last one's
+ * middle, as the game builds it, and counted with the streamed world.
  *
  * **The rain is drawn while it falls, and costs nothing while it does
  * not.** The streaks and the drips are one draw and the splashes another,
@@ -168,15 +169,28 @@
  * sea's FFT, the swept curl and the spray are not drawn yet, nor the tier
  * that reads through the surface.
  *
- * **Colour** is the low tier's material path: Lite's display curve as
- * Babylon's image processing has it there (Khronos PBR Neutral, contrast
- * 1.1), under the weather's and the hour's exposure, and the dome's, the
- * mist banks', the motes' and the rain's own stages the same. There is no
- * post chain.
+ * **Colour is the tier's own path** (`postFeaturesFor`). With no post chain
+ * it is the material path: Lite's display curve as Babylon's image
+ * processing has it there (Khronos PBR Neutral, contrast 1.1), under the
+ * weather's and the hour's exposure, and the dome's, the mist banks', the
+ * motes' and the rain's own stages the same. With a chain every material
+ * and every stage hands its linear colour on, unexposed, into a half-float
+ * target four samples a pixel, and the chain grades the frame
+ * (`postChain.ts`): the far softening, the temporal anti-aliasing and its
+ * sharpen, the paint, the grade with its palette (`setPalette`), the chase's
+ * cast (`setChase`), the stare's shade and the dread on the lens
+ * (`setUnsettle`), and the rain on the lens while there is any. The canvas
+ * then takes the grade's one sample a pixel, and the sky leaves the frame's
+ * depth as nothing drawn, which the chain reads as the far sky.
+ *
+ * **The stare's lens is stepped on every tier** (`stare`, `stareLens.ts`):
+ * from the local player's own stare and the Hollow nearest their aim, for
+ * the grade's shade and for whoever voices the heartbeat.
  */
 import {
   NeutralToneMapping, addToScene, createBankedFreeCamera, createDirectionalLight, createEngine, createHemisphericLight, createPbrMaterial, createSpotLight,
-  createPluginUniformBlock, createSceneContext, disposeEngine, disposeScene, enableMaterialPlugins, enablePbrMaterialPluginVertexData, getProjectionMatrix,
+  createPluginUniformBlock, createSceneContext, disposeEngine, disposeScene, enableMaterialPlugins, enablePbrLinearOutput, enablePbrMaterialPluginVertexData,
+  getProjectionMatrix,
   markLightDirty, markMaterialUboDirty, onEngineDeviceLost, onEngineGpuError, registerScene, renderFrame, resizeEngine, vec3,
   writePluginUniformBlock,
   type BankedFreeCamera, type DirectionalLight, type EngineContext, type HemisphericLight, type MaterialPlugin, type PbrMaterialProps,
@@ -191,7 +205,7 @@ import type { ListenerPose } from "../ambientAudio.js";
 import { GRADIENT_MID_STEP, atmosphereUniforms, emptyAtmosphereUniforms, fogGradientAt } from "../atmosphereParams.js";
 import { BASE_SPACING_BY_TIER } from "../clipmap.js";
 import { clutterReachFor } from "../clutterField.js";
-import { cloudDensityNow, cloudFor, cloudGroundDue, cloudGroundMap, cloudMarchSteps, cloudOn, cloudStepsFor, noCloud } from "../cloudParams.js";
+import { cloudDensityNow, cloudFor, cloudGroundDue, cloudGroundMap, cloudMarchSteps, cloudOn, cloudStepsFor, cloudUniforms, emptyCloudUniforms, noCloud } from "../cloudParams.js";
 import type { EngineHandle } from "../engineHandle.js";
 import { createEntityPoses } from "../entityPoses.js";
 import { blendedEye, type EyePose } from "../eyeBlend.js";
@@ -200,14 +214,19 @@ import { featureTableFor } from "../featureTable.js";
 import { FOLIAGE_PLAYERS, FOLIAGE_PLAYER_PARKED, setFoliageWind } from "../foliageUniforms.js";
 import { nearRadiusFor } from "../forestField.js";
 import { GAME_FOV, lensProjection } from "../gameLens.js";
+import { PAINT_PALETTES, type PaintPaletteName } from "../gradeParams.js";
+import { isHollow } from "../../sim/hollow.js";
 import { LAMP_ANGLE, LAMP_COLOUR, LAMP_EXPONENT, LAMP_RANGE, lampUnder, type LampState } from "../lampParams.js";
 import { createCalmFade } from "../lakeCalmFrame.js";
 import { createLakeChoice } from "../lakeChoice.js";
 import { createLensCanopy } from "../lensCanopy.js";
+import { lensSmooth, lensStrengthUnder } from "../lensParams.js";
 import { droppedCapAt } from "../droppedCap.js";
 import type { CullPose } from "../grassCull.js";
 import { writeListenerPose } from "../listenerPose.js";
 import { sharedSeconds } from "../oceanWindSea.js";
+import type { PostView } from "../postFrame.js";
+import { shadeSmokeSeconds } from "../shadeMaskParams.js";
 import { postFeaturesFor } from "../postParams.js";
 import { fittingBed, fittingFeatureTable, fittingLake, fittingOcean, fittingRings, fittingWaterBump, fittingWaterRings } from "../preparedScene.js";
 import { QUALITY, detectTier } from "../quality.js";
@@ -218,6 +237,7 @@ import { emptySeaFrameUniforms } from "../seaUniforms.js";
 import { startSkySource, type SkySource } from "../skyWorker.js";
 import { SILENT_SURF_SOUND, createSurfSound, fillSurfSound, type SurfSound } from "../surfSound.js";
 import type { SkyState } from "../skyState.js";
+import { STARE_LENS_REST, stareSide, stepStareLens, type StareLens } from "../stareLens.js";
 import { DEFAULT_HOUR, sunAltitudeDeg, whenSkyHeld } from "../skyWait.js";
 import { createSyncJobs, finish, stepSlices, type SyncJobs } from "../syncJobs.js";
 import { followRoadCentre, terrainTablesFor, type TerrainTables } from "../terrainTables.js";
@@ -247,6 +267,8 @@ import { createLiteLakes, type LakeFrame, type LiteLakes } from "./lakeMeshes.js
 import { createLiteMistMeshes, type LiteMistMeshes, type MistFrame } from "./mistMeshes.js";
 import { createLiteMotes, type LiteMotes, type MotesFrame } from "./motes.js";
 import { notDrawnMembers } from "./notDrawn.js";
+import { createLitePostChain, type LitePostChain } from "./postChain.js";
+import { createLiteShadeMask, type LiteShadeMask } from "./shadeMask.js";
 import { createPropMeshes, type PropMeshes } from "./propMeshes.js";
 import { createLiteRain, type LiteRain, type RainFrame } from "./rain.js";
 import { createLiteRainMap, type CoverRegistry, type LiteRainMap } from "./rainMap.js";
@@ -308,6 +330,10 @@ type Standing = {
   capture: LiteSkyCapture;
   /** The frame's block: what every material reads alike, written once a frame (`frameBlock.ts`). */
   shared: PluginUniformBlock;
+  /** The post chain, on the tiers with one (`postChain.ts`). */
+  chain: LitePostChain | null;
+  /** The mask the haunt's figures are drawn into (`shadeMask.ts`), which the chain's grade reads. */
+  mask: LiteShadeMask | null;
   materials: PbrMaterialProps[];
   terrain: TerrainMeshes | null;
   road: TableTexture | null;
@@ -362,8 +388,10 @@ export function createLiteRenderer(canvas: HTMLCanvasElement, level: Level, fore
 
   const tier = options.tier ?? detectTier(globalThis.navigator);
   const clock = options.clock ?? (() => performance.now());
+  /** When the renderer was made, on its clock (ms): the shades' smoke rises from then. */
+  const madeAt = clock();
   const lens = lensProjection();
-  const { members: absent, held } = notDrawnMembers();
+  const { members: absent } = notDrawnMembers();
 
   // The sky's slices: the page's table or, given none, a source of this renderer's own.
   let ownSky: SkySource | null = null;
@@ -406,7 +434,23 @@ export function createLiteRenderer(canvas: HTMLCanvasElement, level: Level, fore
   // The ground cloud (`cloudParams.ts`): the night's mist as a volume the air's plugin marches through in each
   // material, on the tiers the game marches it on, resting on a map of the ground round the eye.
   let cloud = noCloud();
-  const cloudSteps = forest !== null ? cloudStepsFor(postFeaturesFor(tier, true)) : 0;
+  // Who owns colour: a tier with a post chain draws its scene in linear light for the chain to grade; the rest end
+  // every material with the display curve. Half-float targets are every WebGPU device's, so the tier alone decides.
+  const postFeatures = postFeaturesFor(tier, true);
+  const chained = postFeatures.pipeline;
+  const cloudSteps = forest !== null ? cloudStepsFor(postFeatures) : 0;
+  /** The cloud as the chain marches it (`cloudUniforms`): the materials march none where there is a chain. */
+  const chainCloud = emptyCloudUniforms();
+  /** The camera as the chain's passes rebuild a pixel's ray from it, filled in place a frame. */
+  const postView: PostView = { eye: { x: 0, y: 0, z: 0 }, forward: { x: 0, y: 0, z: 1 }, right: { x: 1, y: 0, z: 0 }, up: { x: 0, y: 1, z: 0 }, fov: lens.fov, aspect: 1 };
+  /** The rain on the lens, smoothed (`lensParams.ts`), and the local player's stare as their screen and ears take it (`stareLens.ts`). */
+  let lensStrength = 0;
+  let stareLens: StareLens = STARE_LENS_REST;
+  /** The chase's cast (`escalation.ts`) and how far the dread reaches the lens (`/unsettle`), as the app last set them. */
+  let chaseCast = 0;
+  let unsettle = 1;
+  /** The painted palette asked for before the chain stood: worn at once when it does. */
+  let palette: { name: PaintPaletteName; fadeSeconds?: number } | null = null;
   /** Where the ground's map is centred; none before its first build. */
   let cloudGroundAt: { x: number; z: number } | null = null;
   /** The density the console holds the cloud at, the density last drawn, how far the mist has come in and the haunt's level. */
@@ -547,6 +591,7 @@ export function createLiteRenderer(canvas: HTMLCanvasElement, level: Level, fore
 
   /** Lets go of what stands: the meshes, the scene, the engine and its device. */
   function release(made: Standing): void {
+    made.chain?.dispose();
     for (const life of made.waterLives) life.dispose();
     made.waterPlants?.dispose();
     made.lakes?.dispose();
@@ -554,6 +599,7 @@ export function createLiteRenderer(canvas: HTMLCanvasElement, level: Level, fore
     made.wildlife?.dispose();
     made.cap?.dispose();
     made.entities?.dispose();
+    made.mask?.dispose();
     made.wornLamps.dispose();
     made.skinClock.dispose();
     made.splash?.dispose();
@@ -575,7 +621,8 @@ export function createLiteRenderer(canvas: HTMLCanvasElement, level: Level, fore
   async function make(): Promise<void> {
     // The tier's scaling of the canvas's pixels: Lite sizes its surface by the
     // device's pixel ratio, held at the ratio the tier draws at.
-    const engine = await createEngine(canvas, { msaaSamples: 4, maxDevicePixelRatio: 1 / QUALITY[tier].hardwareScaling });
+    // A chain's scene is multisampled in its own target: the canvas then takes the grade's one sample a pixel.
+    const engine = await createEngine(canvas, { msaaSamples: chained ? 1 : 4, maxDevicePixelRatio: 1 / QUALITY[tier].hardwareScaling });
     if (disposed) {
       disposeEngine(engine);
       return;
@@ -589,11 +636,13 @@ export function createLiteRenderer(canvas: HTMLCanvasElement, level: Level, fore
     });
     // The frame's block, before any material: every material's plugins name it.
     const shared = createPluginUniformBlock(engine, FRAME_BLOCK, [...FRAME_FIELDS], "vertex-fragment");
-    const scene = createSceneContext(engine);
-    scene.imageProcessing.toneMappingEnabled = true;
+    // Under a chain every material hands its linear colour on, unexposed, and the scene has no pass but the chain's.
+    if (chained) enablePbrLinearOutput();
+    const scene = createSceneContext(engine, chained ? { defaultRenderTask: false } : undefined);
+    scene.imageProcessing.toneMappingEnabled = !chained;
     scene.imageProcessing.toneMapping = NeutralToneMapping;
     scene.imageProcessing.contrast = DISPLAY_CONTRAST;
-    scene.imageProcessing.exposure = light.exposure;
+    scene.imageProcessing.exposure = chained ? 1 : light.exposure;
 
     // Never given controls: the camera is placed by `sync` alone.
     const camera = createBankedFreeCamera(vec3(pose.x, pose.y, pose.z), vec3(pose.x, pose.y, pose.z + LOOK_AHEAD), vec3(0, 1, 0));
@@ -618,7 +667,7 @@ export function createLiteRenderer(canvas: HTMLCanvasElement, level: Level, fore
     const wornLamps = createWornLamps(scene, othersSeen);
     // The sky's dome, the night sky alone until the first frame's light, and its capture as the scene's
     // environment, made before the scene is registered.
-    const dome = createLiteSkyDome(engine, scene, shared);
+    const dome = createLiteSkyDome(engine, scene, shared, chained);
     const capture = await createLiteSkyCapture(engine, scene, dome.table);
     if (disposed) {
       disposeScene(scene);
@@ -636,22 +685,29 @@ export function createLiteRenderer(canvas: HTMLCanvasElement, level: Level, fore
     let cliffs: CliffMeshes | null = null;
     let props: PropMeshes | null = null;
     // The valley mist banks ride the same guard as the forest: a hand-authored level has no valley haze.
-    const mist = forest === null ? null : createLiteMistMeshes(engine, scene, forest.seed, tier, shared, uploads);
+    const mist = forest === null ? null : createLiteMistMeshes(engine, scene, forest.seed, tier, shared, uploads, chained);
     // The motes are the air's everywhere, on the tiers with the capacity for them.
-    const motes = createLiteMotes(engine, scene, tier, shared, uploads);
+    const motes = createLiteMotes(engine, scene, tier, shared, uploads, chained);
     // The rain's cover map, on the tiers that draw one, over the terrain the rings draw: the rings, the patches, the
     // props and the cliffs' near buckets stand in it as they are made. Then the rain, which is the weather's
     // everywhere, and the splashes, which land on the map.
     const rainMap = forest === null ? null : createLiteRainMap(engine, scene, tier);
-    const rain = createLiteRain(engine, scene, tier, rainMap, shared, uploads);
-    const splash = rainMap === null ? null : createLiteRainSplash(engine, scene, tier, rainMap, shared, uploads);
+    const rain = createLiteRain(engine, scene, tier, rainMap, shared, uploads, chained);
+    const splash = rainMap === null ? null : createLiteRainSplash(engine, scene, tier, rainMap, shared, uploads, chained);
     // Their clocks ride in the frame's block.
     frameValues.clocks = [motes?.clocks, rain.clocks, splash?.clocks].filter((clocks): clocks is StageRecord => clocks !== undefined);
     const coverAs = (kind: "terrain" | "hard" | "water"): CoverRegistry | undefined =>
       rainMap === null ? undefined : { add: (mesh) => rainMap.register(mesh, kind), remove: (mesh) => rainMap.unregister(mesh) };
-    // The ground cloud's map, which every material's air reads.
-    const cloudGround = forest === null ? null : cloudMapTexture(engine);
+    // The ground cloud's map: read by the chain's far softening, which marches the cloud once a pixel, or by every
+    // material's air where a tier marches it with no chain.
+    const cloudGround = forest === null && !chained ? null : cloudMapTexture(engine);
     const cloudMap = cloudGround?.texture ?? null;
+    /** The air's plugin, one a material: with the cloud's march only where no chain has it. */
+    const air = (): MaterialPlugin => atmospherePlugin(airValues, cloudMap as NonNullable<typeof cloudMap>, shared, !chained && cloudSteps > 0);
+    // The mask the haunt's figures are drawn into, where a chain's grade reads it, before the scene is registered.
+    const mask = forest !== null && chained ? createLiteShadeMask(engine, scene, { shared, linear: chained, near: lens.near, far: lens.far, fov: lens.fov }) : null;
+    // The chain: the scene's pass into its first target and its own passes after, before the scene is registered.
+    const chain = chained && cloudMap !== null ? createLitePostChain(engine, scene, { features: postFeatures, camera, cloudMap, now: clock, uploads }) : null;
     if (forest !== null && cloudMap !== null) {
       const arrays = await loadGroundArrays(engine, disposal.signal, () => {
         loading--;
@@ -681,7 +737,7 @@ export function createLiteRenderer(canvas: HTMLCanvasElement, level: Level, fore
           terrainPlugin(terrainValues, textures, cover.farLow, paints, shared),
           terrainWetPlugin(wetValues, shared),
           terrainSplitPlugin(),
-          atmospherePlugin(airValues, cloudMap, shared),
+          air(),
           ...extra,
         ];
         materials.push(made);
@@ -715,7 +771,7 @@ export function createLiteRenderer(canvas: HTMLCanvasElement, level: Level, fore
         eye: pose,
         frame: frameSize,
         wet: forestWet,
-        air: () => atmospherePlugin(airValues, cloudMap, shared), shared,
+        air, shared,
         jobs,
         firstBuilds: options.firstBuilds,
         uploads,
@@ -724,7 +780,7 @@ export function createLiteRenderer(canvas: HTMLCanvasElement, level: Level, fore
       // The near field of blade grass, on the tiers that can afford it.
       if (tier !== "low") {
         blades = createBladeMeshes(engine, scene, forest.seed, {
-          quality: tier, eye: pose, frame: frameSize, air: () => atmospherePlugin(airValues, cloudMap, shared), shared, jobs, firstBuilds: options.firstBuilds,
+          quality: tier, eye: pose, frame: frameSize, air, shared, jobs, firstBuilds: options.firstBuilds,
           uploads,
         });
       }
@@ -737,7 +793,7 @@ export function createLiteRenderer(canvas: HTMLCanvasElement, level: Level, fore
         eye: pose,
         frame: frameSize,
         wet: wetAt,
-        air: () => atmospherePlugin(airValues, cloudMap, shared), shared,
+        air, shared,
         jobs,
         firstBuilds: options.firstBuilds,
         uploads,
@@ -745,20 +801,20 @@ export function createLiteRenderer(canvas: HTMLCanvasElement, level: Level, fore
       // The near field of dead leaves, twigs and small branches, on the same tiers as the blades beside it.
       if (tier !== "low") {
         duff = createDuffMeshes(engine, scene, forest.seed, {
-          quality: tier, eye: pose, frame: frameSize, wet: wetAt(WET_CAP.duff), air: () => atmospherePlugin(airValues, cloudMap, shared), shared,
+          quality: tier, eye: pose, frame: frameSize, wet: wetAt(WET_CAP.duff), air, shared,
           jobs, firstBuilds: options.firstBuilds, uploads,
         });
       }
       // Rock-wall modules on the faces too steep to stand on, on every tier. At the shipped density the field
       // lays none and no model is fetched.
       cliffs = createCliffMeshes(engine, scene, forest.seed, {
-        quality: tier, eye: pose, frame: frameSize, wet: wetAt(WET_CAP.cliff), air: () => atmospherePlugin(airValues, cloudMap, shared), shared, uploads,
+        quality: tier, eye: pose, frame: frameSize, wet: wetAt(WET_CAP.cliff), air, shared, uploads,
         cover: coverAs("hard"),
       });
       // Every chunk prop the simulation collides with that no other mesh draws, as its box. A world as the game makes
       // it today has none, and none is made.
       props = createPropMeshes(engine, scene, forest.grid, {
-        wet: wetAt(WET_CAP.prop), air: () => atmospherePlugin(airValues, cloudMap, shared), shared, firstBuilds: options.firstBuilds, uploads,
+        wet: wetAt(WET_CAP.prop), air, shared, firstBuilds: options.firstBuilds, uploads,
         cover: coverAs("hard"),
       });
     }
@@ -767,19 +823,19 @@ export function createLiteRenderer(canvas: HTMLCanvasElement, level: Level, fore
     const skinClock = createSkinClock(engine);
     const entities = forest === null || cloudMap === null || disposed
       ? null
-      : createEntityMeshes(engine, scene, { wet: wetAt(0), air: () => atmospherePlugin(airValues, cloudMap, shared), shared, clock: skinClock, hollows: true, uploads });
+      : createEntityMeshes(engine, scene, { wet: wetAt(0), air, shared, clock: skinClock, hollows: true, uploads, mask });
     // The missing hiker's cap, where the world's trail has a stem to lie beside.
     let cap: CapMesh | null = null;
     if (forest !== null && cloudMap !== null && !disposed) {
       const graph = activeTerrainVariant().trailGraph?.(forest.seed) ?? null;
       const at = graph === null ? null : droppedCapAt(graph, forest.seed);
-      if (at !== null) cap = createCapMesh(engine, scene, at, elevationAt(forest.seed, at.x, at.z), () => atmospherePlugin(airValues, cloudMap, shared), uploads);
+      if (at !== null) cap = createCapMesh(engine, scene, at, elevationAt(forest.seed, at.x, at.z), air, uploads);
     }
     // The animals, which land as their models do; low scales every species' disc to 60%, as the game does.
     const wildlife = !hasWildlife || forest === null || cloudMap === null || disposed
       ? null
       : createLiteWildlifeMeshes(engine, scene, forest.seed, {
-        radiusScale: tier === "low" ? 0.6 : undefined, firstBuilds: options.firstBuilds, air: () => atmospherePlugin(airValues, cloudMap, shared), shared, clock: skinClock,
+        radiusScale: tier === "low" ? 0.6 : undefined, firstBuilds: options.firstBuilds, air, shared, clock: skinClock,
         planes: () => planes, uploads,
       });
     // The water, in a world with a sea level: the bed's square every body of it reads its depth from, round the
@@ -793,7 +849,7 @@ export function createLiteRenderer(canvas: HTMLCanvasElement, level: Level, fore
     if (forest !== null && cloudMap !== null && waterLevel !== undefined && !disposed) {
       bed = createLiteWaterBed(engine, tier, forest.seed, lakes, waterLevel, start.x, start.z, fittingBed(prepared, forest.seed, tier, start.x, start.z), uploads);
       sea = createLiteSea(engine, scene, forest.seed, tier, {
-        start, waterLevel, bed, air: () => atmospherePlugin(airValues, cloudMap, shared), shared,
+        start, waterLevel, bed, air, shared,
         rings: fittingWaterRings(prepared, forest.seed, start.x, start.z), ocean: fittingOcean(prepared, forest.seed, tier),
         bump: fittingWaterBump(prepared, forest.seed), uploads,
         cover: rainMap === null ? undefined : { add: (mesh, place) => rainMap.register(mesh, "water", place), remove: (mesh) => rainMap.unregister(mesh) },
@@ -803,14 +859,14 @@ export function createLiteRenderer(canvas: HTMLCanvasElement, level: Level, fore
       /** What the world's worker sampled for each lake, where it is that lake's. */
       const pieces = lakes.map((lake, i) => fittingLake(prepared, forest.seed, lake, i));
       lakeMeshes = createLiteLakes(engine, scene, forest.seed, lakes, tier, {
-        bed, calm: calmFade, air: () => atmospherePlugin(airValues, cloudMap, shared), shared,
+        bed, calm: calmFade, air, shared,
         made: pieces,
         bump: fittingWaterBump(prepared, forest.seed),
         uploads, cover: coverAs("water"),
       });
       // A murky lake's reeds, cattails and lilies: placed by the simulation, drawn once.
       waterPlants = createLiteWaterPlants(engine, scene, forest.seed, lakes, {
-        eye: pose, frame: frameSize, air: () => atmospherePlugin(airValues, cloudMap, shared), ahead: depthAheadPlugin, shared,
+        eye: pose, frame: frameSize, air, ahead: depthAheadPlugin, shared,
         placements: pieces.map((piece) => piece?.plants ?? null), uploads,
       });
       // The midges, the dragonflies and the frogs of every lake, each placed once and stepped only while the camera is
@@ -818,19 +874,21 @@ export function createLiteRenderer(canvas: HTMLCanvasElement, level: Level, fore
       if (hasWaterLife) {
         lakes.forEach((lake, i) => {
           waterLives.push(createLiteWaterLife(engine, scene, forest.seed, lake, tier, {
-            air: () => atmospherePlugin(airValues, cloudMap, shared), shared, planes: () => planes, made: pieces[i]?.life, uploads,
+            air, shared, planes: () => planes, made: pieces[i]?.life, uploads, linear: chained,
           }));
         });
       }
     }
     const made: Standing = {
-      engine, scene, camera, sun, fill, lamp, dome, capture, shared, materials, terrain, road, cloudGround, forest: trees, blades, clutter, duff, cliffs, props, mist, motes,
-      rain, rainMap, splash, skinClock, entities, wornLamps, cap, wildlife, bed, sea, lakes: lakeMeshes, waterPlants, waterLives,
+      engine, scene, camera, sun, fill, lamp, dome, capture, shared, chain, materials, terrain, road, cloudGround, forest: trees, blades, clutter, duff, cliffs, props, mist, motes,
+      rain, rainMap, splash, skinClock, entities, mask, wornLamps, cap, wildlife, bed, sea, lakes: lakeMeshes, waterPlants, waterLives,
     };
     if (disposed) {
       release(made);
       return;
     }
+    // A palette asked for while the renderer was being made is worn from the first frame.
+    if (palette !== null) chain?.setPalette(PAINT_PALETTES[palette.name], 0);
     standing = made;
   }
 
@@ -975,7 +1033,7 @@ export function createLiteRenderer(canvas: HTMLCanvasElement, level: Level, fore
     relight(made);
     placeLamp(made);
     redrawSky(made);
-    scene.imageProcessing.exposure = light.exposure;
+    if (!chained) scene.imageProcessing.exposure = light.exposure;
     // The road's table follows the eye before the uniforms are made: they carry where it is centred.
     if (tables.road !== null && made.road !== null && followRoadCentre(tables.road, pose.z)) {
       made.road.write();
@@ -991,8 +1049,20 @@ export function createLiteRenderer(canvas: HTMLCanvasElement, level: Level, fore
     // terrain's cap is none; every other material's is its own, and the rest of the look is this record's.
     const wetLine = wetLineFor(wetBodies, pose.x, pose.z);
     wetUniforms({ ...wetLine, attenuate: true, cap: 0 }, wetValues);
-    // The ground cloud is marched in the tier's steps while it has density.
-    atmosphereUniforms(light.air, cloud, cloudMarchSteps(cloud), airValues);
+    // The ground cloud is marched in the tier's steps while it has density: by the chain where there is one, and
+    // then by no material.
+    atmosphereUniforms(light.air, cloud, made.chain === null ? cloudMarchSteps(cloud) : 0, airValues);
+    if (made.chain !== null) {
+      // The chain's frame: the camera its passes rebuild a pixel's ray from, the sun and the cloud its far softening
+      // marches, and the jitter's next step, before the projection is read for the frame's block.
+      postView.eye = pose;
+      postView.forward = { x: axes.fx, y: axes.fy, z: axes.fz };
+      postView.right = { x: axes.rx, y: axes.ry, z: axes.rz };
+      postView.up = { x: axes.ux, y: axes.uy, z: axes.uz };
+      postView.fov = fov;
+      postView.aspect = canvas.height > 0 ? canvas.width / canvas.height : 1;
+      made.chain.frame(postView, airValues, cloudUniforms(cloud, cloudMarchSteps(cloud), chainCloud));
+    }
     // The terrain's two materials carry the ground's colour and roughness under the weather: written again when it moves.
     if (surface.albedo[0] !== groundWritten.r || surface.albedo[1] !== groundWritten.g || surface.albedo[2] !== groundWritten.b || surface.roughness !== groundWritten.roughness) {
       groundWritten.r = surface.albedo[0];
@@ -1235,6 +1305,13 @@ export function createLiteRenderer(canvas: HTMLCanvasElement, level: Level, fore
           standing.entities.update(poses.step(state, localId, alpha, frame.dt, standing.entities.models), dt);
           standing.wornLamps.update(standing.entities.lamps(), lensLamp.state);
         }
+        // The mask the figures were just written into: drawn from the frame's own camera, on the smoke's clock, and
+        // read by the grade while a figure is in it.
+        if (standing.mask !== null) {
+          standing.mask.place(pose, axes, fov);
+          frameValues.smokeTime = shadeSmokeSeconds(now - madeAt);
+          standing.chain?.setShades(standing.mask.texture, standing.mask.any);
+        }
         // The view's planes for the frame, and the cap while they hold it.
         viewPlanes(pose, axes, fov, canvas.height > 0 ? canvas.width / canvas.height : 1, lens.near, lens.far, planes);
         standing.cap?.seen(planes);
@@ -1343,9 +1420,29 @@ export function createLiteRenderer(canvas: HTMLCanvasElement, level: Level, fore
             uploads.stream("textures", standing.cloudGround.bytes);
             cloud = cloudOn(cloud, ground);
           }
-          cloudDensity = cloudDensityNow(cloudHold, sky?.night ?? 0, hauntLevel, held.chase, mistIn);
+          cloudDensity = cloudDensityNow(cloudHold, sky?.night ?? 0, hauntLevel, chaseCast, mistIn);
           cloud = cloudFor(cloud, cloudDensity, cloudSteps, seconds, hauntLevel, nearColour);
         }
+        // The stare's lens: the dead have none, and the Hollow nearest the aim is the side its darkness closes from.
+        const starer = state.players.get(localId);
+        const stare = starer !== undefined && starer.health > 0 ? starer.stare : 0;
+        let side: { x: number; y: number; cos: number } | null = null;
+        if (stare > 0) {
+          for (const enemy of state.enemies.values()) {
+            if (!isHollow(enemy)) continue;
+            const vx = enemy.pos.x - pose.x;
+            const vy = enemy.pos.y - pose.y;
+            const vz = enemy.pos.z - pose.z;
+            const at = stareSide(vx * axes.rx + vy * axes.ry + vz * axes.rz, vx * axes.ux + vy * axes.uy + vz * axes.uz, vx * axes.fx + vy * axes.fy + vz * axes.fz);
+            if (at !== null && (side === null || at.cos > side.cos)) side = at;
+          }
+        }
+        stareLens = stepStareLens(stareLens, stare, side, dt);
+        // Rain on the lens: strongest looking up, smoothed over a second.
+        lensStrength = lensSmooth(lensStrength, lensStrengthUnder(weather.rain, pose.pitch), dt);
+        // The chain's grade for the frame: before the sky's first slices there is no night factor, and the day's 0
+        // stands in, for frames no one sees.
+        standing.chain?.update(weather, light.hour, sky?.night ?? 0, unsettle, stareLens, lensStrength, chaseCast);
         draw(standing, weather.wetness);
       }
       // This frame's share of the rebuilds the updates above began, once every shell has seen the view.
@@ -1427,6 +1524,23 @@ export function createLiteRenderer(canvas: HTMLCanvasElement, level: Level, fore
     },
     setHaunt(level) {
       hauntLevel = Math.max(0, Math.min(1, level));
+    },
+    stare() {
+      return stareLens;
+    },
+    setChase(cast) {
+      chaseCast = Math.max(0, Math.min(1, cast));
+    },
+    setUnsettle(level) {
+      unsettle = Math.max(0, Math.min(1, level));
+    },
+    setPalette(name, fadeSeconds) {
+      // On the material path there is no grade and nothing changes, as on Babylon.js.
+      palette = { name, fadeSeconds };
+      standing?.chain?.setPalette(PAINT_PALETTES[name], fadeSeconds);
+    },
+    setDepthOfField() {
+      // The game's chain has no depth of field: nothing to draw.
     },
     setMist(density) {
       cloudHold = density === null ? null : Math.max(0, Math.min(1, density));

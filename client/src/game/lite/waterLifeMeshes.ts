@@ -38,7 +38,11 @@ export type LiteWaterLife = {
 /** The life of `lake` in `scene`, placed from the world's `seed`, its midges capped by `tier`; `made` is its layout made ahead. */
 export function createLiteWaterLife(
   engine: EngineContext, scene: SceneContext, seed: number, lake: LakeSource, tier: QualityTier,
-  options: { air: () => MaterialPlugin; shared: PluginUniformBlock; planes: () => readonly ViewPlane[]; made?: WaterLifeMade | null; uploads?: FrameUploads },
+  options: {
+    air: () => MaterialPlugin; shared: PluginUniformBlock; planes: () => readonly ViewPlane[]; made?: WaterLifeMade | null; uploads?: FrameUploads;
+    /** A post chain grades the frame: the midges hand their light on as it is. */
+    linear?: boolean;
+  },
 ): LiteWaterLife {
   const life = createWaterLifeScene(seed, lake, tier, options.made);
   const midges = createLiteMidges(engine, scene, life.blocks, options.planes, options.uploads);
@@ -48,7 +52,7 @@ export function createLiteWaterLife(
   let contrast = 1;
   const draws: WaterLifeDraws = {
     midges(frame) {
-      midges?.show(frame, exposure, contrast);
+      midges?.show(frame, exposure, contrast, options.linear !== true);
     },
     dragonflies(units, worldSeed) {
       dragonflies.update(units, worldSeed);

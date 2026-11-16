@@ -14,13 +14,17 @@
  *   `atmosphereUniforms` gives them; or, given the frame's block
  *   (`frameBlock.ts`), from the block, for the air is the same for every
  *   material and moves with the frame.
+ * - The ground cloud is marched here only where the plugin is asked to
+ *   (`cloud`): where a post chain marches it once a pixel, as the game's
+ *   does (`postChain.ts`), a material draws none, and carries neither the
+ *   march nor the cloud's map.
  */
 import type { MaterialPlugin, PluginUniformBlock, Texture2D } from "@babylonjs/lite";
 import type { AtmosphereUniforms } from "../atmosphereParams.js";
 import { frameReads } from "./frameBlock.js";
 import { uniformFields, writeUniforms } from "./pluginUniforms.js";
 
-const ATM_WGSL = /* wgsl */ `
+const atmWgsl = (cloud: boolean): string => /* wgsl */ `
 const ATM_NEAR_DIM:f32=0.85;
 const ATM_GRADIENT_BIAS:f32=1.6;
 const ATM_AIR_POWER:vec3<f32>=vec3<f32>(0.72,0.92,1.3);
@@ -36,6 +40,32 @@ fn atmHeightFog(y0:f32,rdY:f32,t:f32,a:f32,b:f32)->f32{
   if(abs(rdY)<ATM_LEVEL_SLOPE){slope=select(ATM_LEVEL_SLOPE,-ATM_LEVEL_SLOPE,rdY<0.0);}
   return (a/b)*exp(-y0*b)*(1.0-exp(-t*slope*b))/slope;
 }
+${cloud ? ATM_CLOUD_WGSL : ""}
+fn atmosphereFog(lit:vec3<f32>,worldPos:vec3<f32>,eye:vec3<f32>)->vec3<f32>{
+  let toFrag=worldPos-eye;
+  let d=length(toFrag);
+  // The distance fog's factor, exponential squared (1 clear, 0 fogged), linearised: what Babylon's PBR hands the GLSL.
+  let fog=pow(clamp(exp(-(d*material.atmBaseDensity)*(d*material.atmBaseDensity)),0.0,1.0),2.2);
+  if(material.atmOn<0.5){return lit;}
+  let rd=toFrag/max(d,1.0e-4);
+  let y0=eye.y-material.atmReferenceLevel;
+  let height=atmHeightFog(y0,rd.y,d,material.atmHeightDensity,material.atmHeightFalloff);
+  let haze=atmHeightFog(ATM_HAZE_SEAT,rd.y,d,ATM_HAZE_DENSITY,ATM_HAZE_FALLOFF);
+  let transmit=clamp(fog*exp(-max(height,0.0)),0.0,1.0);
+  let gradient=material.atmFarColour*mix(ATM_NEAR_DIM,1.0,pow(clamp(d*material.atmGradientScale,0.0,1.0),1.0/ATM_GRADIENT_BIAS));
+  let glow=pow(max(dot(rd,material.atmSunDir),0.0),material.atmSunPower)*material.atmSunWeight;
+  let air=mix(gradient,material.atmSunColour,glow);
+  var fogged=mix(air,lit,pow(vec3<f32>(transmit),ATM_AIR_POWER));
+  fogged=mix(mix(air,material.atmSunColour,ATM_HAZE_WARMTH),fogged,exp(-max(haze,0.0)));
+  ${cloud ? `if(material.atmCloudSteps<0.5){return fogged;}
+  let od=atmCloudDepth(eye,rd,d);
+  let cloudGlow=pow(max(dot(rd,material.atmSunDir),0.0),material.atmCloudGlow.y)*material.atmCloudGlow.x;
+  let cloud=material.atmCloudColour+material.atmSunColour*cloudGlow;
+  return mix(cloud,fogged,exp(-od));` : "return fogged;"}
+}`;
+
+/** The ground cloud's march, as the far softening's pass has it too (`postWgsl.ts`). */
+const ATM_CLOUD_WGSL = /* wgsl */ `
 fn atmCloudGround(xz:vec2<f32>)->vec2<f32>{
   let uv=clamp((xz-material.atmCloudGroundRect.xy)*material.atmCloudGroundRect.z+0.5,vec2<f32>(ATM_CLOUD_EDGE),vec2<f32>(1.0-ATM_CLOUD_EDGE));
   let g=textureSampleLevel(atmCloudMap,atmCloudMapSampler,uv,0.0);
@@ -65,28 +95,6 @@ fn atmCloudDepth(ro:vec3<f32>,rd:vec3<f32>,t:f32)->f32{
     prev=s;
   }
   return od;
-}
-fn atmosphereFog(lit:vec3<f32>,worldPos:vec3<f32>,eye:vec3<f32>)->vec3<f32>{
-  let toFrag=worldPos-eye;
-  let d=length(toFrag);
-  // The distance fog's factor, exponential squared (1 clear, 0 fogged), linearised: what Babylon's PBR hands the GLSL.
-  let fog=pow(clamp(exp(-(d*material.atmBaseDensity)*(d*material.atmBaseDensity)),0.0,1.0),2.2);
-  if(material.atmOn<0.5){return lit;}
-  let rd=toFrag/max(d,1.0e-4);
-  let y0=eye.y-material.atmReferenceLevel;
-  let height=atmHeightFog(y0,rd.y,d,material.atmHeightDensity,material.atmHeightFalloff);
-  let haze=atmHeightFog(ATM_HAZE_SEAT,rd.y,d,ATM_HAZE_DENSITY,ATM_HAZE_FALLOFF);
-  let transmit=clamp(fog*exp(-max(height,0.0)),0.0,1.0);
-  let gradient=material.atmFarColour*mix(ATM_NEAR_DIM,1.0,pow(clamp(d*material.atmGradientScale,0.0,1.0),1.0/ATM_GRADIENT_BIAS));
-  let glow=pow(max(dot(rd,material.atmSunDir),0.0),material.atmSunPower)*material.atmSunWeight;
-  let air=mix(gradient,material.atmSunColour,glow);
-  var fogged=mix(air,lit,pow(vec3<f32>(transmit),ATM_AIR_POWER));
-  fogged=mix(mix(air,material.atmSunColour,ATM_HAZE_WARMTH),fogged,exp(-max(haze,0.0)));
-  if(material.atmCloudSteps<0.5){return fogged;}
-  let od=atmCloudDepth(eye,rd,d);
-  let cloudGlow=pow(max(dot(rd,material.atmSunDir),0.0),material.atmCloudGlow.y)*material.atmCloudGlow.x;
-  let cloud=material.atmCloudColour+material.atmSunColour*cloudGlow;
-  return mix(cloud,fogged,exp(-od));
 }`;
 
 /** The plugin's place among a material's: after every plugin that shades the surface. */
@@ -98,10 +106,12 @@ export const ATMOSPHERE_PRIORITY = 900;
  * uniforms are written. `cloudMap` is the ground cloud's map
  * (`cloudNoiseMap`), repeating, read bilinearly. Given `shared`, the frame's
  * block, the air is read from it and the material carries none of it: the
- * renderer writes the block once a frame from the same record.
+ * renderer writes the block once a frame from the same record. `cloud`
+ * false leaves the ground cloud to a post chain: the material marches none
+ * and binds no map.
  */
-export function atmospherePlugin(uniforms: AtmosphereUniforms, cloudMap: Texture2D, shared?: PluginUniformBlock): MaterialPlugin {
-  const definitions = shared === undefined ? ATM_WGSL : frameReads(ATM_WGSL);
+export function atmospherePlugin(uniforms: AtmosphereUniforms, cloudMap: Texture2D, shared?: PluginUniformBlock, cloud = true): MaterialPlugin {
+  const definitions = shared === undefined ? atmWgsl(cloud) : frameReads(atmWgsl(cloud));
   return {
     name: "Atmosphere",
     priority: ATMOSPHERE_PRIORITY,
@@ -117,12 +127,18 @@ export function atmospherePlugin(uniforms: AtmosphereUniforms, cloudMap: Texture
         },
       }
       : { getUniformBlocks: () => [shared] }),
-    getSamplers: () => [{ texture: "atmCloudMap", sampler: "atmCloudMapSampler" }],
-    bindTextures(out) {
-      out.push({ texture: cloudMap });
-    },
-    getActiveTextures(out) {
-      out.push(cloudMap);
-    },
+    ...(cloud
+      ? {
+        getSamplers: () => [{ texture: "atmCloudMap", sampler: "atmCloudMapSampler" }],
+        bindTextures(out: { texture: Texture2D }[]) {
+          out.push({ texture: cloudMap });
+        },
+        getActiveTextures(out: Texture2D[]) {
+          out.push(cloudMap);
+        },
+      }
+      : {}),
+    // A material that marches no cloud is another program: the two are told apart.
+    defines: { cloud },
   };
 }

@@ -171,8 +171,8 @@ export const MIDGE_WGSL = { vertex: VERTEX, fragment: FRAGMENT } as const;
 /** The midges as they stand in a scene. */
 export type LiteMidges = {
   readonly mesh: Mesh;
-  /** Draws the midges with `frame`, toned by `exposure` and `contrast`; or hides them (null). */
-  show(frame: MidgeFrame | null, exposure: number, contrast: number): void;
+  /** Draws the midges with `frame`, toned by `exposure` and `contrast` where `toned` (no post chain grades the frame); or hides them (null). */
+  show(frame: MidgeFrame | null, exposure: number, contrast: number, toned?: boolean): void;
   /** Whether the midges are drawn, and the instances the one draw holds. */
   readonly shown: boolean;
   readonly instances: number;
@@ -239,7 +239,7 @@ export function createLiteMidges(
     get shown() {
       return shown;
     },
-    show(frame, exposure, contrast) {
+    show(frame, exposure, contrast, toned = true) {
       if (disposed) return;
       const now = frame !== null && inView(frame.table);
       if (now !== shown) {
@@ -247,7 +247,7 @@ export function createLiteMidges(
         setMeshVisible(mesh, now);
       }
       if (frame === null || !now) return;
-      packMidgeFrame(frame, exposure, true, contrast, data);
+      packMidgeFrame(frame, exposure, toned, contrast, data);
       updateStorageBuffer(engine, buffer, data);
       uploads?.count("uniforms", data.byteLength);
     },
