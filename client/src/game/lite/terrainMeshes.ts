@@ -1,8 +1,9 @@
 /**
  * The terrain's meshes on Babylon Lite: the clipmap's seven rings round the
  * camera (`clipmap.ts`) and the steep ground's patches in its reach
- * (`facePatches.ts`), each drawn with the terrain's material from the
- * vertex data the two make (`terrainVertices.ts`).
+ * (`facePatches.ts`), drawn with the terrain's material from the vertex
+ * data the two make (`terrainVertices.ts`): a mesh a ring, and one mesh
+ * for all the patches.
  *
  * A ring is two meshes for its life, one drawn and one hidden. Its vertices
  * are as many whatever it draws, so a ring that moves is written again in
@@ -10,8 +11,13 @@
  * own buffers, its triangles into an index buffer of the ring's full size
  * with the ones left out under a patch drawn as nothing, and the weights,
  * cover and colour into its plugin vertex data; then the two change places.
- * A patch is a mesh made when its cell enters the reach and let go when it
- * leaves or is wanted at another spacing or stitch.
+ *
+ * The patches are one mesh, and one draw (`patchPool.ts`). A patch is a
+ * slot of the mesh's vertex buffers, taken when its cell enters the reach
+ * and let go when the cell leaves or is wanted at another spacing or
+ * stitch, for the next patch of its size to be written over; and the set
+ * shown is the mesh's one list of triangles, each patch's in its slot, the
+ * patches in the order of their cells' places.
  *
  * **The rings and the patches change as the game's do on Babylon.js**
  * (`createClipmap` in `renderer.ts`, `facePatchMeshes.ts`), under the
@@ -30,16 +36,17 @@
  *
  * The patches change when the camera crosses a line of their cells: at a
  * walk as one patient job, the cells to build made one a slice, nearest
- * first, each into a mesh that is not in the scene yet, then in the last
- * slice the new ones added and the ones they replace or that left let go,
- * together. Until then the last set shown is drawn whole, and the rings
+ * first, each into a slot of the patches' mesh that no triangle drawn
+ * names yet, then in the last slice the list of triangles written with the
+ * new ones in it and without the ones they replace or that left, at once. Until then the last set shown is drawn whole, and the rings
  * leave out the ground that set covers. The first update draws the near
  * band at once and leaves the rest to the job; with nothing pending, idle
  * work builds ahead the cells the next crossing will want. The rings are
- * drawn first, the finest first, and the patches after them, each at its
- * cell's place, ahead of everything else (`drawOrder.ts`): whenever a set
- * is shown and whichever mesh was made last, two surfaces that share an
- * edge are drawn in one order.
+ * drawn first, the finest first, and the patches after them, ahead of
+ * everything else (`drawOrder.ts`), their triangles in the order of their
+ * cells' places (`patchPlace`): whenever a set is shown and whichever
+ * patch was built last, two surfaces that share an edge are drawn in one
+ * order.
  *
  * The first build, a jump of more than a cell and a view moving fast build
  * at once (`crossingAt`), or are stepped by the loader of first builds
@@ -52,9 +59,9 @@
  * once the mesh stands in the scene, shown or hidden. So a job sends a
  * ring whole to its hidden mesh, a ring at a time, each waiting for a frame
  * with room, and the frame that changes the rings' places sends nothing; a
- * patch's geometry goes ahead the same way, to a mesh not in the scene yet,
- * and what is left for the frame that shows a set is the plugin vertex
- * data of the patches it adds.
+ * patch goes ahead the same way, whole, to a slot no triangle drawn names
+ * yet, and what is left for the frame that shows a set is the list of
+ * triangles, from the first that differs.
  *
  * **Why a ring keeps two meshes.** A crossing leaves two rings stale at the
  * least (the finest, and the next, whose hole follows it) and all seven at
@@ -64,7 +71,8 @@
  * mebibytes. Written to meshes no frame draws, they go a ring a frame.
  */
 import {
-  addToScene, createMeshFromData, disposeMeshGpu, removeFromScene, setMeshVisible, updateMeshGeometry,
+  addToScene, createMeshFromData, disposeMeshGpu, markPluginVertexData, removeFromScene, resizeMeshGeometry, setMeshVisible, updateMeshGeometry,
+  updateMeshGeometryCapacity, updateMeshNormals, updateMeshPositions,
   type EngineContext, type Material, type Mesh, type SceneContext,
 } from "@babylonjs/lite";
 import type { TrailGraph } from "../../sim/trail.js";
@@ -84,8 +92,12 @@ import { createCrossing, crossingAt, finish, nextCrossing, type Slices, type Syn
 import { facePatchVertices, ringVertices, type TerrainVertices } from "../terrainVertices.js";
 import { DRAW_ORDER, DRAW_PLACES } from "./drawOrder.js";
 import type { FrameUploads } from "./frameUploads.js";
+import {
+  createMarkedRun, createPatchPool, firstDifference, patchIndexCapacity, patchIndexCount, patchVertexCount, writePatchTriangles,
+  type DrawnPatch, type PatchSlot,
+} from "./patchPool.js";
 import { RAIN_MAP_RINGS, type CoverRegistry } from "./rainMap.js";
-import { terrainVertexData } from "./terrainPlugins.js";
+import { TERRAIN_VERTEX_FLOATS, terrainVertexData } from "./terrainPlugins.js";
 
 /** What writing one ring's buffers is expected to take (ms): the game's own estimate for its rings on Babylon.js. The
  * rings' job says so before its last slice (`syncJobs.ts`). */
@@ -96,6 +108,23 @@ const CLIPMAP_UPLOAD_MS = 1;
 const FACE_PATCH_SLICE_MS: Readonly<Record<number, number>> = { [PATCH_NEAR_SPACING]: 5, [PATCH_FAR_SPACING]: 2 };
 const WIDE_SLICE_MS = 0.5;
 
+/**
+ * Vertices the patches' pool is made with room for, by tier. A set drawn holds 6,000 to 10,000 on low and 21,000 to
+ * 27,000 on medium, and at a run the pool also holds the set being built and the cells built ahead of the next: over
+ * 100 m at 6 m/s it has taken 27,000 and 43,000 in the forest, and 34,000 and 64,000 from the trailhead, where the
+ * ground is steepest. The high tier's reach covers 1.8 times the medium's ground. A view that wants more is given
+ * more (`growPatches`), at the cost of sending the whole pool again in one frame, which is why the pool starts with
+ * room to spare.
+ */
+export const PATCH_POOL_VERTICES: Readonly<Record<QualityTier, number>> = { low: 44_000, medium: 80_000, high: 144_000 };
+
+/** How much room a pool that has run out is given: half again what it had. */
+const PATCH_POOL_GROWTH = 1.5;
+
+/** Bytes a vertex of a patch is on the GPU: its position and its normal, and its plugin vertex data. */
+const PATCH_GEOMETRY_BYTES = 24;
+const PATCH_PLUGIN_BYTES = TERRAIN_VERTEX_FLOATS * 4;
+
 export type TerrainMeshes = {
   /** The rings' first build, as slices: each ring sampled (one slice a ring,
    * its level told to `onRing`), then every ring made and written. Run once;
@@ -104,8 +133,10 @@ export type TerrainMeshes = {
   /** Follows the camera: the patches first, then the rings, which leave out
    * the ground the patches now drawn cover. */
   update(camX: number, camZ: number): void;
-  /** Meshes drawn now: the rings built, and one a patched cell of the set last shown. */
+  /** Meshes drawn now: the rings built, and the patches' one while a cell of the set last shown has a patch. */
   meshCount(): number;
+  /** Cells of the set last shown that have a patch. */
+  patchCount(): number;
   dispose(): void;
 };
 
@@ -123,7 +154,7 @@ export type TerrainMeshOptions = {
   firstBuilds?: FirstBuilds;
   /** The renderer's record of its uploads, and its budget for the streamed ones (`frameUploads.ts`). */
   uploads?: FrameUploads;
-  /** The rain's cover map, as terrain: the rings that cover its square and every patch drawn, each from the frame it
+  /** The rain's cover map, as terrain: the rings that cover its square and the patches' mesh, each from the frame it
    * joins the scene until it is let go (`rainMap.ts`). */
   cover?: CoverRegistry;
 };
@@ -132,9 +163,10 @@ export type TerrainMeshOptions = {
 const PATCH_PLACE_SIDE = 32;
 
 /**
- * A patch's place among the draws (`drawOrder.ts`): its cell's, the same whenever its mesh was made, so two patches
- * that share an edge are drawn in one order on every page. The places repeat every `PATCH_PLACE_SIDE` cells a way,
- * further than two cells of one set share an edge.
+ * A patch's place among the draws (`drawOrder.ts`): its cell's, the same whenever the patch was built, so two patches
+ * that share an edge are drawn in one order on every page. The patches' triangles stand in their one mesh in the
+ * order of these (`patchPool.ts`). The places repeat every `PATCH_PLACE_SIDE` cells a way, further than two cells of
+ * one set share an edge.
  */
 export function patchPlace(ci: number, cj: number): number {
   const i = ((ci % PATCH_PLACE_SIDE) + PATCH_PLACE_SIDE) % PATCH_PLACE_SIDE;
@@ -155,7 +187,9 @@ type Drawn = { x: number; z: number; fx: number; fz: number; cx: number; cz: num
  * full size, and its plugin vertex data. Null until the ring is first made into it. */
 type RingTwin = { mesh: Mesh | null; geometry: RingGeometry | null; indices: Uint32Array | null; plugin: Float32Array | null; inScene: boolean };
 
-type PatchEntry = { spacing: number; stitch: number; mesh: Mesh | null };
+/** A cell as built: its spacing and stitch, its place among the draws, and its patch's slot in the pool, null for a
+ * cell with no steep ground. */
+type PatchEntry = { spacing: number; stitch: number; place: number; slot: PatchSlot | null };
 
 /** A set for a camera's cell: the cells walked from its centre, their stitches as numbers, and the indices of those
  * the set drawn does not hold as they are wanted, nearest the centre first. */
@@ -198,12 +232,156 @@ export function createTerrainMeshes(
   const nearReach: PatchReach = { near: reach.near, far: reach.near, wide: reach.near };
   /** The cells drawn: the set last shown. */
   let cells = new Map<number, PatchEntry>();
-  /** Cells built and not yet drawn, their meshes in no scene: a job's, or the idle work's ahead of a crossing, until a
-   * set is shown. One a cell, spacing and stitch (`readyKey`), so the sets of two headings keep their own builds. */
+  /** Cells built and not yet drawn, their patches in slots no triangle names: a job's, or the idle work's ahead of a
+   * crossing, until a set is shown. One a cell, spacing and stitch (`readyKey`), so the sets of two headings keep
+   * their own builds. */
   const ready = new Map<number, PatchEntry>();
   /** The ground the patches drawn cover; null before any set is. */
   let patchCover: CoveredGround | null = null;
   let live = 0;
+
+  /**
+   * The patches' one mesh (`patchPool.ts`), made with the first patch built: its slots, the arrays its vertex buffers
+   * and its plugin vertex data are written from, a slot's run at a time, and its list of triangles as the GPU holds
+   * it, with a second the next list is written to before the two change places.
+   */
+  const pool = createPatchPool(PATCH_POOL_VERTICES[tier]);
+  let patchMesh: Mesh | null = null;
+  let patchPositions = new Float32Array(0);
+  let patchNormals = new Float32Array(0);
+  let patchPlugin = new Float32Array(0);
+  let triangles = new Uint32Array(0);
+  let nextTriangles = new Uint32Array(0);
+  /** Indices of `triangles` drawn, and whether the list has been written since the mesh's buffers were made. */
+  let drawnIndices = 0;
+  let listWritten = false;
+  /** Whether the mesh is drawn: hidden while its list is empty, so a view with no patch has no draw of theirs. */
+  let patchesDrawn = false;
+  /** Each band's triangles, from 0: a patch's own, kept from the first built at its spacing. */
+  const patterns = new Map<number, Uint16Array>();
+  const drawnPatches: DrawnPatch[] = [];
+  /** The plugin vertex data marked this frame, which Lite sends as one run. */
+  const marked = createMarkedRun();
+  /** The floats of the plugin vertex data that are `slot`'s. */
+  const pluginRun = (slot: PatchSlot): [number, number] =>
+    [slot.at * TERRAIN_VERTEX_FLOATS, (slot.at + patchVertexCount(slot.spacing)) * TERRAIN_VERTEX_FLOATS];
+
+  /** The patches' mesh, made at the pool's size where there is none: in the scene from the start and hidden until a
+   * set is shown, so a patch's plugin vertex data goes up with the frame after it is written. */
+  function standPatches(): Mesh {
+    if (patchMesh !== null) return patchMesh;
+    const capacity = pool.capacity;
+    patchPositions = new Float32Array(capacity * 3);
+    patchNormals = new Float32Array(capacity * 3);
+    patchPlugin = new Float32Array(capacity * TERRAIN_VERTEX_FLOATS);
+    triangles = new Uint32Array(patchIndexCapacity(capacity));
+    nextTriangles = new Uint32Array(triangles.length);
+    // Every index the first vertex: triangles of no size, which draw nothing.
+    const made = createMeshFromData(engine, "facePatches", patchPositions, patchNormals, triangles);
+    made.pluginVertexData = patchPlugin;
+    made.material = materials.patches;
+    made.renderOrder = DRAW_ORDER.patches;
+    setMeshVisible(made, false);
+    addToScene(scene, made);
+    cover?.add(made);
+    uploads?.count("geometry", patchPositions.byteLength + patchNormals.byteLength + triangles.byteLength, 3);
+    uploads?.count("pluginVertices", patchPlugin.byteLength);
+    uploads?.made();
+    patchMesh = made;
+    return made;
+  }
+
+  /** The pool given room for `more` vertices past what it has taken, and the mesh's buffers made again at that size:
+   * every slot keeps its place, and the whole pool is sent again, which is why the pool starts with room to spare. */
+  function growPatches(more: number): void {
+    const capacity = Math.max(Math.ceil(pool.capacity * PATCH_POOL_GROWTH), pool.top + more);
+    pool.grow(capacity);
+    const mesh = patchMesh;
+    if (mesh === null) return;
+    const positions = new Float32Array(capacity * 3);
+    const normals = new Float32Array(capacity * 3);
+    const plugin = new Float32Array(capacity * TERRAIN_VERTEX_FLOATS);
+    const list = new Uint32Array(patchIndexCapacity(capacity));
+    positions.set(patchPositions);
+    normals.set(patchNormals);
+    plugin.set(patchPlugin);
+    list.set(triangles.subarray(0, drawnIndices));
+    resizeMeshGeometry(engine, mesh, positions, normals, list);
+    mesh.pluginVertexData = plugin;
+    mesh.pluginVertexVersion = (mesh.pluginVertexVersion ?? 0) + 1;
+    patchPositions = positions;
+    patchNormals = normals;
+    patchPlugin = plugin;
+    triangles = list;
+    nextTriangles = new Uint32Array(list.length);
+    listWritten = false;
+    uploads?.stream("geometry", positions.byteLength + normals.byteLength + list.byteLength, 3);
+    uploads?.stream("pluginVertices", plugin.byteLength);
+  }
+
+  /** A slot for a patch at `spacing`, the pool given more room where it has none. */
+  function allot(spacing: number): PatchSlot {
+    const slot = pool.take(spacing);
+    if (slot !== null) return slot;
+    growPatches(patchVertexCount(spacing));
+    return pool.take(spacing) as PatchSlot;
+  }
+
+  /** `patch` written to `slot`: into the mesh's arrays, and from them to the GPU, its positions and its normals now and
+   * its plugin vertex data with the next frame. No triangle drawn names the slot, so nothing shown changes. */
+  function writePatch(slot: PatchSlot, vertices: TerrainVertices): void {
+    const mesh = standPatches();
+    const count = patchVertexCount(slot.spacing);
+    if (vertices.positions.length !== count * 3) throw new Error(`a patch at ${slot.spacing} m has ${count} vertices, not ${vertices.positions.length / 3}`);
+    if (!patterns.has(slot.spacing)) patterns.set(slot.spacing, vertices.indices.slice());
+    patchPositions.set(vertices.positions, slot.at * 3);
+    patchNormals.set(vertices.normals, slot.at * 3);
+    const [from, to] = pluginRun(slot);
+    const run = patchPlugin.subarray(from, to);
+    if (terrainVertexData(vertices, run) !== run) throw new Error("a patch's plugin vertex data did not fit its slot");
+    updateMeshPositions(engine, mesh, patchPositions, slot.at, count, slot.at);
+    updateMeshNormals(engine, mesh, patchNormals, slot.at, count, slot.at);
+    markPluginVertexData(mesh, from, to);
+    uploads?.stream("geometry", count * PATCH_GEOMETRY_BYTES, 2);
+    // Lite sends the frame's marks as one run: this one is counted as what it adds to the run.
+    if (uploads !== undefined) {
+      const writes = marked.begins(uploads.frame) ? 1 : 0;
+      uploads.stream("pluginVertices", marked.mark(uploads.frame, from, to), writes);
+    }
+  }
+
+  /**
+   * The set `shown` drawn: its patches' triangles written to the spare list in the order of their places, and of
+   * that the mesh's index buffer sent what differs from the list it holds, from the first index that does. The one
+   * step that changes what is drawn.
+   */
+  function drawPatches(shown: ReadonlyMap<number, PatchEntry>): void {
+    const mesh = patchMesh;
+    // No patch was ever built: there is nothing to draw, and nothing drawn.
+    if (mesh === null) return;
+    drawnPatches.length = 0;
+    for (const entry of shown.values()) if (entry.slot !== null) drawnPatches.push({ slot: entry.slot, place: entry.place });
+    const count = writePatchTriangles(drawnPatches, patterns, nextTriangles);
+    const from = firstDifference(triangles, nextTriangles, Math.min(count, drawnIndices));
+    // What the buffer held past the new list is cleared by Lite: the whole of it the first time, the old list's end after.
+    const cleared = Math.max(0, (listWritten ? drawnIndices : triangles.length) - count);
+    if (from < count || cleared > 0) {
+      updateMeshGeometryCapacity(
+        engine, mesh, patchPositions, patchNormals, nextTriangles.subarray(0, count), undefined, undefined, undefined, undefined, 1,
+        { vertices: [], indices: [{ offset: from, count: count - from }] },
+      );
+      listWritten = true;
+      uploads?.stream("geometry", (count - from + cleared) * 4, (from < count ? 1 : 0) + (cleared > 0 ? 1 : 0));
+    }
+    const held = triangles;
+    triangles = nextTriangles;
+    nextTriangles = held;
+    drawnIndices = count;
+    if (patchesDrawn !== count > 0) {
+      patchesDrawn = count > 0;
+      setMeshVisible(mesh, patchesDrawn);
+    }
+  }
   const patchCrossing = createCrossing();
   let patchHeadingX = 0;
   let patchHeadingZ = 0;
@@ -216,25 +394,21 @@ export function createTerrainMeshes(
 
   /** Whether `entry` is the cell as wanted at `spacing` with `bits`: an empty cell is empty whatever its stitch. */
   const holds = (entry: PatchEntry | undefined, spacing: number, bits: number): entry is PatchEntry =>
-    entry !== undefined && entry.spacing === spacing && (entry.stitch === bits || entry.mesh === null);
+    entry !== undefined && entry.spacing === spacing && (entry.stitch === bits || entry.slot === null);
 
-  /** A drawn cell's mesh, taken out of the scene and let go. */
+  /** A drawn cell's patch let go: its slot is free once the list of triangles is next written (`drawPatches`). */
   function dropPatch(entry: PatchEntry): void {
-    if (entry.mesh === null) return;
-    cover?.remove(entry.mesh);
-    removeFromScene(scene, entry.mesh);
-    disposeMeshGpu(entry.mesh);
-    uploads?.dropped();
-    entry.mesh = null;
+    if (entry.slot === null) return;
+    pool.free(entry.slot);
+    entry.slot = null;
     live--;
   }
 
   /** A built cell never drawn, let go. */
   function discardPatch(entry: PatchEntry): void {
-    if (entry.mesh === null) return;
-    disposeMeshGpu(entry.mesh);
-    uploads?.dropped();
-    entry.mesh = null;
+    if (entry.slot === null) return;
+    pool.free(entry.slot);
+    entry.slot = null;
   }
 
   /** The set walked from cell (ci, cj)'s centre, and what of it to build. */
@@ -281,22 +455,26 @@ export function createTerrainMeshes(
     return facePatchGeometry(seed, c.ci, c.cj, c.spacing, w.stitches[i] as PatchStitch, options.trail ?? null);
   }
 
-  /** The bytes making `patch` into a mesh sends: its geometry. */
-  function shapeBytes(patch: FacePatch | null): number {
-    return patch === null ? 0 : patch.positions.byteLength + patch.normals.byteLength + patch.indices.length * 4;
+  /** The bytes writing `patch` to the slot it would take sends: its positions and its normals, and what its plugin
+   * vertex data adds to the run the frame's marks send. */
+  function shapeBytes(patch: FacePatch | null, spacing: number): number {
+    if (patch === null) return 0;
+    const slot = pool.peek(spacing);
+    const plugin = slot === null || uploads === undefined ? patch.vertexCount * PATCH_PLUGIN_BYTES : marked.cost(uploads.frame, ...pluginRun(slot));
+    return patch.vertexCount * PATCH_GEOMETRY_BYTES + plugin;
   }
 
-  /** Cell `i` of `w` entered among the cells built and not yet drawn, `patch` made into a mesh outside the scene,
-   * unless the cell was built meanwhile. */
+  /** Cell `i` of `w` entered among the cells built and not yet drawn, `patch` written to a slot of the pool, unless
+   * the cell was built meanwhile. */
   function enter(w: Wanted, i: number, patch: FacePatch | null): void {
     if (isReady(w, i)) return;
     const c = w.cells[i] as PatchCell;
-    let mesh: Mesh | null = null;
+    let slot: PatchSlot | null = null;
     if (patch !== null) {
-      const vertices = facePatchVertices(patch);
-      mesh = meshOf(`facePatch_${c.ci}_${c.cj}`, materials.patches, vertices, Uint32Array.from(vertices.indices), terrainVertexData(vertices), patchPlace(c.ci, c.cj));
+      slot = allot(c.spacing);
+      writePatch(slot, facePatchVertices(patch));
     }
-    ready.set(readyKey(w, i, mesh === null), { spacing: c.spacing, stitch: w.bits[i] as number, mesh });
+    ready.set(readyKey(w, i, slot === null), { spacing: c.spacing, stitch: w.bits[i] as number, place: patchPlace(c.ci, c.cj), slot });
   }
 
   /** Cell `i` of `w` built as wanted and not yet drawn, unless it is. */
@@ -304,22 +482,23 @@ export function createTerrainMeshes(
     if (!isReady(w, i)) enter(w, i, shape(w, i));
   }
 
-  /** Cell `i` of `w` built as a job builds it, in slices: computed, then made into a mesh once the frame's upload
-   * budget has room for its geometry. */
+  /** Cell `i` of `w` built as a job builds it, in slices: computed, then written to a slot once the frame's upload
+   * budget has room for it. */
   function* makeSlices(w: Wanted, i: number): Slices {
     const patch = shape(w, i);
-    if (uploads !== undefined) yield* uploads.hold(shapeBytes(patch));
+    if (uploads !== undefined) yield* uploads.hold(shapeBytes(patch, (w.cells[i] as PatchCell).spacing));
     if (disposed) return;
     enter(w, i, patch);
   }
 
-  /** The bytes showing the set `w` sends: the plugin vertex data of the cells built and not yet drawn that it shows. */
+  /** The bytes showing the set `w` sends at the most: the list of its triangles, whole. */
   function showBytes(w: Wanted, nearOnly: boolean): number {
     let bytes = 0;
     w.cells.forEach((c, i) => {
       if (nearOnly && c.spacing !== PATCH_NEAR_SPACING) return;
-      if (holds(cells.get(patchKey(c.ci, c.cj)), c.spacing, w.bits[i] as number)) return;
-      bytes += ready.get(readyAt(w, i))?.mesh?.pluginVertexData?.byteLength ?? 0;
+      const had = cells.get(patchKey(c.ci, c.cj));
+      const entry = holds(had, c.spacing, w.bits[i] as number) ? had : ready.get(readyAt(w, i));
+      if (entry !== undefined && entry.slot !== null) bytes += patchIndexCount(c.spacing) * 4;
     });
     return bytes;
   }
@@ -338,9 +517,10 @@ export function createTerrainMeshes(
   const sliceMs = (w: Wanted, i: number): number => FACE_PATCH_SLICE_MS[(w.cells[i] as PatchCell).spacing] ?? WIDE_SLICE_MS;
 
   /**
-   * The set `w` drawn: each cell built since added to the scene, and the patch it replaces dropped; then, unless
-   * `nearOnly`, every cell of the old set that left dropped and what was built and not wanted let go. With
-   * `nearOnly`, the near band alone, over a set with none drawn: the first update's.
+   * The set `w` drawn: each cell built since taken into the set, and the patch it replaces dropped; then, unless
+   * `nearOnly`, every cell of the old set that left dropped and what was built and not wanted let go; then the
+   * set's triangles written, which is what changes the picture. With `nearOnly`, the near band alone, over a set
+   * with none drawn: the first update's.
    */
   function showPatches(w: Wanted, nearOnly: boolean): void {
     const next = nearOnly ? cells : new Map<number, PatchEntry>();
@@ -355,19 +535,15 @@ export function createTerrainMeshes(
         next.set(key, had);
         return;
       }
-      // Built by now; one that is not (a set drawn at once) is built here.
-      const entry = take(w, i);
+      // The patch it replaces is let go first: one built here takes its slot, which no frame draws before the list is
+      // written below.
       if (had !== undefined) {
         dropPatch(had);
         cells.delete(key);
       }
-      if (entry.mesh !== null) {
-        addToScene(scene, entry.mesh);
-        cover?.add(entry.mesh);
-        // Its plugin vertex data goes up with the frame that first draws it.
-        uploads?.stream("pluginVertices", entry.mesh.pluginVertexData?.byteLength ?? 0);
-        live++;
-      }
+      // Built by now; one that is not (a set drawn at once) is built here.
+      const entry = take(w, i);
+      if (entry.slot !== null) live++;
       next.set(key, entry);
     });
     if (!nearOnly) {
@@ -379,6 +555,7 @@ export function createTerrainMeshes(
       stopAhead();
     }
     cells = next;
+    drawPatches(cells);
     patchCover = facePatchCover((w.ci + 0.5) * PATCH_CELL, (w.cj + 0.5) * PATCH_CELL, nearOnly ? nearReach : reach);
   }
 
@@ -764,7 +941,10 @@ export function createTerrainMeshes(
       updateRings(camX, camZ);
     },
     meshCount() {
-      return live + shown.filter((at) => at >= 0).length;
+      return (live > 0 ? 1 : 0) + shown.filter((at) => at >= 0).length;
+    },
+    patchCount() {
+      return live;
     },
     dispose() {
       if (disposed) return;
@@ -780,6 +960,13 @@ export function createTerrainMeshes(
       cells.clear();
       ready.clear();
       patchCover = null;
+      if (patchMesh !== null) {
+        cover?.remove(patchMesh);
+        removeFromScene(scene, patchMesh);
+        disposeMeshGpu(patchMesh);
+        uploads?.dropped();
+        patchMesh = null;
+      }
       for (const pair of twins) {
         for (const one of pair) {
           if (one.mesh === null) continue;
