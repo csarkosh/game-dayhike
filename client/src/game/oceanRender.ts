@@ -18,20 +18,12 @@ import { RawTexture } from "@babylonjs/core/Materials/Textures/rawTexture.js";
 import { Texture } from "@babylonjs/core/Materials/Textures/texture.js";
 import { Constants } from "@babylonjs/core/Engines/constants.js";
 import type { QualityTier } from "./quality.js";
-import { SWELL_COMPONENTS, SWELL_COMPONENTS_LOW, type SwellComponent } from "./oceanSwell.js";
-import { OCEAN_COAST_RECENTRE, OCEAN_COAST_STEP, coastProfilesFor, writeCoastRow } from "./oceanTables.js";
-import { oceanFieldFor, swellPhases, type OceanField } from "./oceanWaves.js";
-import { windSeaStateFor } from "./oceanWindSea.js";
+import { createOceanFrame } from "./oceanFrame.js";
+import type { OceanField } from "./oceanWaves.js";
 import { oceanArrayPlaceholder, type OceanBinding, type WaterPlugin } from "./waterPlugin.js";
 import { createWindSeaSource, type GpuStarter, type LoopStarter } from "./oceanWindSource.js";
-import { coveFor } from "../sim/olympic.js";
 
-/**
- * Where an absent headland tip is written (x, metres, at z = 0): far inland.
- * The swell travels toward +x, so every point of the world lies up-swell of
- * it and its shadow falls on none: the shelter it gives is 1 everywhere.
- */
-export const OCEAN_NO_TIP = 1e9;
+export { OCEAN_NO_TIP, oceanComponentsFor, oceanTipsFor } from "./oceanFrame.js";
 
 export type Ocean = {
   /** The swell the sea draws, the tier's count of its components: what the
@@ -56,36 +48,6 @@ export type Ocean = {
   dispose(): void;
 };
 
-/** The cove's headland tips as the uniform holds them: up to two, and an
- * absent one at (`OCEAN_NO_TIP`, 0). */
-export function oceanTipsFor(tips: readonly (readonly [number, number])[]): [number, number, number, number] {
-  const out: [number, number, number, number] = [OCEAN_NO_TIP, 0, OCEAN_NO_TIP, 0];
-  for (let i = 0; i < Math.min(2, tips.length); i++) {
-    const tip = tips[i] as readonly [number, number];
-    out[i * 2] = tip[0];
-    out[i * 2 + 1] = tip[1];
-  }
-  return out;
-}
-
-/**
- * The swell's components as the shaders read them, the `oceanK` uniforms:
- * (k0x, k0z, q0, a0) a component, twelve vec4s, the floats the atlas's
- * components row holds for the same components (`buildOceanTables`), so the
- * shaders read the same values as `swellAt`; zeros past those there are.
- */
-export function oceanComponentsFor(components: readonly SwellComponent[]): Float32Array {
-  const out = new Float32Array(SWELL_COMPONENTS * 4);
-  for (let c = 0; c < Math.min(components.length, SWELL_COMPONENTS); c++) {
-    const comp = components[c] as SwellComponent;
-    out[c * 4] = comp.k0x;
-    out[c * 4 + 1] = comp.k0z;
-    out[c * 4 + 2] = comp.q0;
-    out[c * 4 + 3] = comp.a0;
-  }
-  return out;
-}
-
 /**
  * The sea's waves for a world and a tier: the low tier draws the eight
  * largest of the swell's twelve components, the others all twelve. The wind
@@ -103,13 +65,10 @@ export function createOcean(
   wind: { startLoop?: LoopStarter; startGpu?: GpuStarter } = {},
   made?: OceanField | null,
 ): Ocean {
-  const field = made ?? oceanFieldFor(seed, tier === "low" ? SWELL_COMPONENTS_LOW : SWELL_COMPONENTS);
-  const profiles = coastProfilesFor(seed);
+  // What the sea is drawn with, kept and stepped with no engine (`oceanFrame.ts`).
+  const frame = createOceanFrame(seed, tier, made);
+  const { field } = frame;
   const { tables } = field;
-  const cove = coveFor(seed);
-  // The field's coastline row is about the cove's middle (`oceanFieldFor`):
-  // the first update moves it to the camera if the camera is far from there.
-  let coastCentreZ = cove.z0;
   const atlas = new RawTexture(
     tables.data,
     tables.width,
@@ -125,24 +84,9 @@ export function createOcean(
   atlas.wrapU = Texture.CLAMP_ADDRESSMODE;
   atlas.wrapV = Texture.CLAMP_ADDRESSMODE;
   const placeholder = oceanArrayPlaceholder(scene);
-  const windMode = 0;
   const windSea = createWindSeaSource(scene, seed, tier, wind.startLoop, wind.startGpu);
-  // The wind sea's fields turn with the wind about the cove's waterline
-  // centre, where the sea is seen up close, so nothing slides there.
-  const binding: OceanBinding = {
-    atlas,
-    windDisp: placeholder,
-    windSlope: placeholder,
-    phases: new Float32Array(12),
-    components: oceanComponentsFor(field.components),
-    swell: [field.travel[0], field.travel[1], field.tp, field.hs],
-    tips: oceanTipsFor(field.tips),
-    coast: [tables.coastOriginZ, OCEAN_COAST_STEP, field.count, windMode],
-    wind: [0, 0, 0, 0],
-    windDir: [1, 0, 0, 0],
-    windStats: [0, 0, 0, 0],
-    windPivot: [profiles.coastlineX(cove.z0), cove.z0, 0, 0],
-  };
+  // The frame's numbers with the textures beside them: one object, written in place.
+  const binding: OceanBinding = Object.assign(frame.numbers, { atlas, windDisp: placeholder, windSlope: placeholder });
   return {
     field,
     atlas,
@@ -156,36 +100,15 @@ export function createOcean(
     get windMode() {
       return binding.coast[3] as 0 | 1 | 2;
     },
-    update(camX, camZ, seconds, wind01, windDir, hour, drawn = true) {
-      if (Math.abs(camZ - coastCentreZ) > OCEAN_COAST_RECENTRE) {
-        coastCentreZ = camZ;
-        writeCoastRow(tables, profiles, coastCentreZ);
-        // The whole atlas, 466 KB, once a kilometre at most.
-        atlas.update(tables.data);
-        binding.coast[0] = tables.coastOriginZ;
-      }
-      swellPhases(field, seconds, binding.phases);
-      const blowing = windSeaStateFor(wind01, windDir, hour);
-      // The tier's wind sea: its field and mode, the loop's time (0 while no
-      // loop is drawn) and the numbers the shaders normalise it by; and the
-      // sea's own state, at the speed the sea follows, a minute behind its
-      // wind's (`lagSeaWind`).
-      const sea = windSea.update(blowing, seconds, drawn);
-      // The fully developed height, uncut: `windSeaShare` takes the share of it that the fetch allows.
-      binding.wind[0] = sea.hs;
-      binding.wind[1] = sea.loopScale;
-      binding.wind[3] = sea.coverage;
-      // The wind as it blows now: its direction turns the fields, and its
-      // speed sets the roughness, whose short slopes follow it within seconds.
-      binding.windDir[0] = blowing.dir[0];
-      binding.windDir[1] = blowing.dir[1];
-      binding.windDir[2] = blowing.u10;
-      binding.windDir[3] = blowing.onshoreWeight;
+    update(_camX, camZ, seconds, wind01, windDir, hour, drawn = true) {
+      const rowWritten = frame.update(camZ, seconds, wind01, windDir, hour, (blowing) => {
+        const sea = windSea.update(blowing, seconds, drawn);
+        return { sea, mode: windSea.mode, loopTime: windSea.loopTime, stats: windSea.stats };
+      });
+      // The whole atlas, 466 KB, once a kilometre at most.
+      if (rowWritten) atlas.update(tables.data);
       binding.windDisp = windSea.disp ?? placeholder;
       binding.windSlope = windSea.slope ?? placeholder;
-      binding.coast[3] = windSea.mode;
-      binding.wind[2] = windSea.loopTime;
-      for (let i = 0; i < 4; i++) binding.windStats[i] = windSea.stats[i] as number;
     },
     bind(plugin) {
       plugin.ocean = binding;

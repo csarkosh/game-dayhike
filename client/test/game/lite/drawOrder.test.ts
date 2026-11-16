@@ -61,6 +61,11 @@ describe("the places of the hike's see-through draws on Babylon Lite", () => {
     expect(SEE_THROUGH_ORDER.rain).toBeLessThan(SEE_THROUGH_ORDER.water);
   });
 
+  it("blends the sea over the rain too, and before the lakes that stand over it", () => {
+    expect(SEE_THROUGH_ORDER.rain).toBeLessThan(SEE_THROUGH_ORDER.sea);
+    expect(SEE_THROUGH_ORDER.sea).toBeLessThan(SEE_THROUGH_ORDER.water);
+  });
+
   it("draws a lake's insects last of all, the midges before the dragonflies, as the game's highest index puts them", () => {
     expect(SEE_THROUGH_ORDER.water).toBeLessThan(SEE_THROUGH_ORDER.midges);
     expect(SEE_THROUGH_ORDER.midges).toBeLessThan(SEE_THROUGH_ORDER.dragonflies);

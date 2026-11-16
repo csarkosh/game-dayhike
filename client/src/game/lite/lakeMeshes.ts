@@ -3,7 +3,7 @@
  * on Babylon.js (`createWater`'s lakes in `renderer.ts`), from what the game
  * draws them with, computed with no engine: the surface's grid and the
  * bed's depth under each vertex (`lakeSurfaceGrid.ts`), the bed's square
- * following the camera (`bedFollow.ts`), the ripple bump and its drift
+ * following the camera (`bedFollow.ts`, in `waterBed.ts`), the ripple bump and its drift
  * (`waterBump.ts`, `waterSurface.ts`), each lake's numbers
  * (`waterSurface.ts`), its calm by the hour and the weather's name
  * (`lakeCalmFrame.ts`), its skyline (`lakeSkyline.ts`) and whether a view
@@ -19,9 +19,9 @@
  *   lake's own buffer is written when its calm, its cat's-paws, its
  *   roughness, its shade or the bed's square has moved, and only while it
  *   is shown: one that moved out of view is written when it comes back.
- * - **The bed's square is one texture**, sent again when the camera's
- *   square changes and a body of water can reach the new one, whole, as
- *   the game sends it.
+ * - **The bed's square is one texture**, the sea's too (`waterBed.ts`),
+ *   which the renderer steps once a frame before the lakes read where it
+ *   stands.
  * - **Among the see-through draws it stands where the game's does**: after
  *   the rain (`drawOrder.ts`). Its vertices are laid in the world's own
  *   coordinates, so the mesh stands at the origin as the others do and its
@@ -35,8 +35,6 @@ import {
   type EngineContext, type MaterialPlugin, type Mesh, type PbrMaterialProps, type PluginUniformBlock, type SceneContext, type Texture2D,
 } from "@babylonjs/lite";
 import type { LakeSource } from "../../sim/terrain.js";
-import { createBedFollow } from "../bedFollow.js";
-import type { BedGrid } from "../bedHeight.js";
 import { LAKE_SURFACE_REACH } from "../bedHeight.js";
 import { lakeCalmUnder, type CalmFade, type LakeCalmFrame } from "../lakeCalmFrame.js";
 import { lakeSunShare } from "../lakeRipples.js";
@@ -60,6 +58,7 @@ import { SEE_THROUGH_ORDER } from "./drawOrder.js";
 import type { FrameUploads } from "./frameUploads.js";
 import { lakePlugin } from "./lakePlugin.js";
 import type { CoverRegistry } from "./rainMap.js";
+import type { LiteWaterBed } from "./waterBed.js";
 
 /** How far over its lake's level a surface stands, metres. */
 export const LAKE_SURFACE_LIFT = 0.02;
@@ -69,31 +68,25 @@ export type LakeMade = { surface?: PreparedLakeSurface | null; skyline?: Float32
 
 /** What the lakes are made with. */
 export type LakeOptions = {
-  /** Where the bed's square is first centred: the hike's start. */
-  start: { x: number; z: number };
+  /** The bed's square, which the renderer steps before each `update`. */
+  bed: LiteWaterBed;
   /** The air's plugin, one a material. */
   air: () => MaterialPlugin;
   /** The frame's block. */
   shared: PluginUniformBlock;
-  /** The sea's level, which the bed's square is baked for as well. */
-  waterLevel: number;
   /** The weather's preset as the calm follows it: the renderer's, which names it; stepped here, a frame at a time. */
   calm: CalmFade;
   /** The rain's cover map, which every surface stands in as open water. */
   cover?: CoverRegistry;
   /** Each lake's pieces made ahead, by its place in the list. */
   made?: readonly (LakeMade | null)[];
-  /** The bump's picture and the bed's first grid made ahead. */
+  /** The bump's picture made ahead. */
   bump?: Uint8Array | null;
-  bed?: BedGrid | null;
   uploads?: FrameUploads;
 };
 
 /** A frame as the lakes read it. */
 export type LakeFrame = {
-  /** Where the world is centred: the player, or the camera in freecam. */
-  centreX: number;
-  centreZ: number;
   /** The eye and the way it looks. */
   eye: { readonly x: number; readonly y: number; readonly z: number };
   forward: { readonly fx: number; readonly fy: number; readonly fz: number };
@@ -124,13 +117,12 @@ export type LiteLakes = {
   readonly meshes: readonly Mesh[];
   /** What every lake reads alike, as the last `update` left it: the frame's block is written from it. */
   readonly frame: WaterFrameUniforms;
-  /** A frame: the bed, the calm, each lake's numbers and whether it is shown. */
+  /** A frame: where the bed stands, the calm, each lake's numbers and whether it is shown. */
   update(frame: LakeFrame): void;
   /** Lakes shown by the last `update`. */
   readonly shown: number;
-  /** Times a lake's own buffer was marked to be written, and the bed's square sent. */
+  /** Times a lake's own buffer was marked to be written. */
   readonly marks: number;
-  readonly bedUploads: number;
   dispose(): void;
 };
 
@@ -167,11 +159,9 @@ export function createLiteLakes(
     addressModeU: "repeat", addressModeV: "repeat", minFilter: "linear", magFilter: "linear", mipMaps: true,
   });
   uploads?.count("textures", bumpData.byteLength);
-  // The bed's square, first filled round the start, unless it came baked ahead.
-  const bed = createBedFollow(tier, seed, lakes, options.waterLevel, options.start.x, options.start.z, options.bed ?? null);
-  const bedTexture = floatTable(engine, bed.texels, bed.texels);
-  const bedRegion = { width: bed.texels, height: bed.texels, bytesPerRow: bed.texels * 4 };
-  let bedUploads = 0;
+  const { bed } = options;
+  /** The bed's square the lakes' records were last written for. */
+  let bedSeen = -1;
   const drift = createBumpDrift();
   const { calm } = options;
   const calmFrame: LakeCalmFrame = { share: 0, rough: false, roughShare: 0, cover: 0, smearPx: 0 };
@@ -201,7 +191,7 @@ export function createLiteLakes(
       // One alpha blends it over what lies under it; seen from either side, as the game leaves it unculled.
       alphaBlend: true, doubleSided: true, usePhysicalLightFalloff: true,
     });
-    material.plugins = [lakePlugin(uniforms, { bump, bed: bedTexture, skyline }, options.shared), options.air()];
+    material.plugins = [lakePlugin(uniforms, { bump, bed: bed.texture, skyline }, options.shared), options.air()];
     // The surface's grid about the lake's centre, laid in the world's coordinates: the mesh stands at the origin.
     const grid = ahead?.surface ?? lakeSurfaceGrid(source.shape);
     const depths = ahead?.surface?.depths ?? lakeSurfaceDepths(seed, source, grid.positions);
@@ -230,15 +220,13 @@ export function createLiteLakes(
     };
   });
 
-  /** The bed's grid as it now stands, to the texture and to every lake's record. */
-  function sendBed(): void {
-    const grid = bed.grid;
-    updateTextureRegion(engine, bedTexture, grid.heights, bedRegion);
-    uploads?.stream("textures", grid.heights.byteLength);
-    bedUploads++;
-    for (const lake of made) lake.surface.bedOrigin = [grid.originX, grid.originZ];
+  /** Where the bed's square now stands, to every lake's record. */
+  function readBed(): void {
+    if (bedSeen === bed.sent) return;
+    bedSeen = bed.sent;
+    for (const lake of made) lake.surface.bedOrigin = [bed.originX, bed.originZ];
   }
-  sendBed();
+  readBed();
 
   return {
     meshes: made.map((lake) => lake.mesh),
@@ -249,12 +237,9 @@ export function createLiteLakes(
     get marks() {
       return marks;
     },
-    get bedUploads() {
-      return bedUploads;
-    },
     update(f) {
       if (disposed) return;
-      if (bed.step(f.centreX, f.centreZ)) sendBed();
+      readBed();
       calm.step(f.dt);
       // The lakes' bump drifts downwind at the wind's speed.
       const windDir: [number, number] = [f.wind.dirX, f.wind.dirZ];

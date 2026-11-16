@@ -83,7 +83,10 @@ afterEach(() => engine?.dispose());
 describe("the wind sea's field by tier", () => {
   it("bakes the loop in a module worker, in the form Vite bundles, and imports the compute on the high tier's path alone", () => {
     const source = readFileSync(new URL("../../src/game/oceanWindSource.ts", import.meta.url), "utf8");
-    expect(source).toContain('new Worker(new URL("./oceanLoop.worker.ts", import.meta.url), { type: "module" })');
+    // The worker is started from the module that loads no engine, which this one hands on under the same name.
+    const start = readFileSync(new URL("../../src/game/oceanLoopStart.ts", import.meta.url), "utf8");
+    expect(start).toContain('new Worker(new URL("./oceanLoop.worker.ts", import.meta.url), { type: "module" })');
+    expect(source).toContain('export { startLoopWorker, type LoopStarter } from "./oceanLoopStart.js";');
     expect(source).toContain('await import("./oceanGpuFft.js")');
     expect(source).not.toMatch(/^import \{[^\n]*from "\.\/oceanGpuFft\.js";$/m);
   });

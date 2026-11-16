@@ -18,7 +18,10 @@
  * ground and in the air; and the lakes' water where a tier blends it over
  * what lies under it, calm by the hour and the weather's name, with the
  * skyline's shade for its shore, the reeds and the lilies that grow in it,
- * and its midges and dragonflies, with its frogs to hear. Every other part of the world is absent, and the
+ * and its midges and dragonflies, with its frogs to hear; and the sea
+ * where a tier blends it: its swell, its wind sea (the ripple bump on low,
+ * the baked loop above it) and its white water, the swash up the cove's
+ * face, and its surf to hear. Every other part of the world is absent, and the
  * members of `Renderer` that belong to an absent part are answered here as
  * nothing: a setter keeps what it was told (`held`), for the day its part is
  * drawn; a read-out returns nothing heard, nothing seen or nothing pending;
@@ -28,14 +31,13 @@
 import type { PaintPaletteName } from "../gradeParams.js";
 import type { EndSceneSetup, Renderer } from "../renderer.js";
 import { STARE_LENS_REST } from "../stareLens.js";
-import { SILENT_SURF_SOUND } from "../surfSound.js";
 
 /** A part of the world not drawn yet, and the members of `Renderer` answered as nothing for it. */
 export type NotDrawn = { readonly what: string; readonly members: readonly (keyof Renderer)[] };
 
 export const NOT_DRAWN: readonly NotDrawn[] = [
-  { what: "the sea, the surf and its spray", members: ["hasSea", "surfSound"] },
-  { what: "the shore a lake reflects beyond its skyline's shade (the panorama, the mirror), and a lake's water on the tier that reads what lies under it through the surface", members: [] },
+  { what: "the sea's wind waves by the FFT on the tier that runs one (the baked loop is drawn there meanwhile), the swept curl of its plunging lip and the surf's spray", members: [] },
+  { what: "the shore a lake reflects beyond its skyline's shade (the panorama, the mirror), and the water, a lake's and the sea's, on the tier that reads what lies under it through the surface", members: [] },
   { what: "the Hollow's figure in the silhouette mask (its eyes are drawn), and with it the skin's shading, which has no other surface to show on", members: ["setSkinShading"] },
   { what: "the sun's cast shadows", members: [] },
   { what: "the post chain: the grade and its palettes, the anti-aliasing, the far softening, the rain on the lens, the stare's shade, the chase's cast, depth of field", members: ["setPalette", "setChase", "setUnsettle", "setDepthOfField", "stare"] },
@@ -62,7 +64,6 @@ export type NotDrawnHeld = {
 /** The members answered as nothing: every member `NOT_DRAWN` names. */
 export type NotDrawnMembers = Pick<
   Renderer,
-  | "hasSea" | "surfSound"
   | "setSkinShading"
   | "setPalette" | "setChase" | "setUnsettle" | "setDepthOfField" | "stare"
   | "setEnding" | "endScene" | "setScene" | "clearEnding"
@@ -81,8 +82,6 @@ export function notDrawnMembers(): { members: NotDrawnMembers; held: NotDrawnHel
     wireframe: false, skinShading: true, depthOfField: false, ending: null, endScene: null, scene: null,
   };
   const members: NotDrawnMembers = {
-    hasSea: false,
-    surfSound: () => SILENT_SURF_SOUND,
     setSkinShading(on) {
       held.skinShading = on;
     },

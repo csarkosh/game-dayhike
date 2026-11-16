@@ -57,6 +57,7 @@ import {
   setWaterWind, waterRoughnessDue, type WaterSurface,
 } from "./waterSurface.js";
 import { MIRROR_OFFSET_K } from "./mirrorView.js";
+import type { OceanNumbers } from "./oceanFrame.js";
 
 /** Babylon's dielectric F0 at metallicF0Factor 1 is 0.04; water's 0.02 is half of it. */
 const PBR_DIELECTRIC_F0 = 0.04;
@@ -88,39 +89,16 @@ export const OCEAN_ROUGHNESS_CODE = "float roughness=min(sqrt(sqrt(2.0 * wOceanV
 
 /**
  * What the sea's material draws its waves from, filled in place each frame
- * by `oceanRender.ts`. The tuples are the shader's vec4 uniforms, in order.
+ * by `oceanRender.ts`: the sea's numbers (`oceanFrame.ts`, whose tuples are
+ * the shader's vec4 uniforms, in order) and the textures beside them.
  */
-export type OceanBinding = {
+export type OceanBinding = OceanNumbers & {
   /** The swell's tables (`oceanTables.ts`): RGBA32F, nearest, clamped. */
   atlas: BaseTexture;
   /** The wind sea's displacement and slopes, 2D arrays: the scene's 1×1
    * placeholder (`oceanArrayPlaceholder`) where the tier draws none. */
   windDisp: BaseTexture;
   windSlope: BaseTexture;
-  /** The swell's twelve phases, radians (`swellPhases`), zeros past the drawn count. */
-  phases: Float32Array;
-  /** The swell's components, (k0x, k0z, q0, a0) a component, twelve vec4s
-   * (`oceanComponentsFor`): the `oceanK` uniforms, constant for the world. */
-  components: Float32Array;
-  /** The swell's unit direction of travel (x, z), its peak period (s) and its significant height (m). */
-  swell: [number, number, number, number];
-  /** The cove's two headland tips, (x0, z0, x1, z1); an absent one far inland (`OCEAN_NO_TIP`). */
-  tips: [number, number, number, number];
-  /** The coastline row's first z (m), its step (m), the swell components drawn, and the wind sea's mode (0 low, 1 loop, 2 FFT). */
-  coast: [number, number, number, number];
-  /** The wind sea's fully developed height (m), the loop's length scale, the loop's time (s), the whitecap coverage:
-   * the sea's, at the speed it follows a minute behind its wind (`lagSeaWind`). */
-  wind: [number, number, number, number];
-  /** The wind sea's direction (x, z), its wind speed U10 (m/s), and the onshore weight (0 to 1). */
-  windDir: [number, number, number, number];
-  /** What the shaders normalise the drawn wind sea by: its height's standard
-   * deviation (m) at the wind, fully developed, before its share near shore,
-   * then each field's slope variance (the loop's alone, or the FFT's three
-   * cascades'); zeros where none is drawn (`oceanWindSource.ts`). */
-  windStats: [number, number, number, number];
-  /** The point the wind sea's fields turn about as the wind turns, (x, z, 0, 0): the cove's waterline centre,
-   * where the sea is seen up close, so nothing slides there (`oceanWindFrame`). */
-  windPivot: [number, number, number, number];
 };
 
 /** The ten vec4 uniforms the sea's waves read, in the order they are bound. */

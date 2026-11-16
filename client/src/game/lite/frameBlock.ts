@@ -11,7 +11,9 @@
  * fades and the foliage measure from and the frame's height
  * (`distanceFade.ts`), the clock the birds' wings beat on (`wingParams.ts`),
  * what every lake's water reads alike (`waterSurface.ts`: the lakes' time,
- * the wind and its integral, the rain, the sun's share, the bump's drift)
+ * the wind and its integral, the rain, the sun's share, the bump's drift),
+ * what moves the sea (`seaUniforms.ts`: the swell's phases, the wind sea's
+ * numbers, its clock, and where each ring of its lattice stands)
  * and the terrain's whole record (`terrainUniforms.ts`, which its two
  * materials share). They are the same for every material and
  * most of them move every frame, so with them in each material's buffer
@@ -57,6 +59,8 @@ import { emptyFadeUniforms } from "../distanceFade.js";
 import { emptyMoteUniforms } from "../moteField.js";
 import { emptyRainUniforms } from "../rainField.js";
 import { emptySplashUniforms } from "../splashField.js";
+import { emptySeaFrameUniforms, type SeaFrameUniforms } from "../seaUniforms.js";
+import { WATER_RING_COUNT } from "../water.js";
 import { FOLIAGE_PLAYERS, FOLIAGE_PROFILES, emptyFoliageUniforms, foliageLook, foliageUniforms } from "../foliageUniforms.js";
 import { emptyTerrainUniforms, type TerrainUniforms } from "../terrainUniforms.js";
 import { emptyWaterFrameUniforms, type WaterFrameUniforms } from "../waterSurface.js";
@@ -100,7 +104,10 @@ function scalarFields(record: object, arrays: readonly string[]): UniformField[]
   return uniformFields(scalars);
 }
 
-/** The block's fields, part by part: the air's, the wet look's, the wind's, the fade's, the terrain's, the wings' clock, the lakes'. */
+/** The rings' records of the sea's lattice, a vec4 a ring. */
+export const SEA_RINGS_NAME = "seaRings";
+
+/** The block's fields, part by part: the air's, the wet look's, the wind's, the fade's, the terrain's, the wings' clock, the lakes', the sea's. */
 export const FRAME_FIELDS: readonly UniformField[] = [
   ...uniformFields(emptyAtmosphereUniforms()),
   ...scalarFields(emptyWetUniforms(), ["wetSwash"]).filter((field) => field.name !== WET_OWN_NAME),
@@ -117,6 +124,8 @@ export const FRAME_FIELDS: readonly UniformField[] = [
   { name: FRAME_CONTRAST_NAME, type: "f32" },
   ...uniformFields({ ...emptyMoteUniforms(), ...emptyRainUniforms(), ...emptySplashUniforms() }).filter((field) => (FRAME_CLOCK_NAMES as readonly string[]).includes(field.name)),
   { name: FRAME_PROJECTION_NAME, type: "mat4x4<f32>" },
+  ...scalarFields(emptySeaFrameUniforms(), [SEA_RINGS_NAME]),
+  bits(SEA_RINGS_NAME, WATER_RING_COUNT),
 ];
 
 const FRAME_NAMES: ReadonlySet<string> = new Set(FRAME_FIELDS.map((field) => field.name));
@@ -206,6 +215,8 @@ export type FrameValues = {
   clocks: readonly Readonly<Record<string, readonly number[]>>[];
   /** The camera's projection, sixteen floats as Lite hands a matrix; absent, the block's stands as it was. */
   projection?: ArrayLike<number>;
+  /** What moves the sea (`seaFrameUniforms`): zeros in a world with no sea. */
+  sea: SeaFrameUniforms;
 };
 
 /** The wind's values are the foliage's own, read through a look that adds nothing to them. */
@@ -222,8 +233,8 @@ function offsetOf(offsets: UniformOffsets, name: string): number {
  * Writes a frame's values into `data`, the block's floats, at `offsets`:
  * the air, the wet look but its cap (the swash's table float for float),
  * the page's wind with the eye and the players (xyz each, a vec4 a player),
- * the fade's eye and rows, the wings' clock, the lakes' record and the
- * terrain's.
+ * the fade's eye and rows, the wings' clock, the lakes' record, the sea's
+ * (its rings' records float for float) and the terrain's.
  */
 export function writeFrameBlock(data: Float32Array, offsets: UniformOffsets, values: FrameValues): void {
   writeUniforms(data, offsets, values.air);
@@ -251,6 +262,9 @@ export function writeFrameBlock(data: Float32Array, offsets: UniformOffsets, val
   data[offsetOf(offsets, FADE_ROWS_NAME)] = values.rows;
   data[offsetOf(offsets, WING_TIME_NAME)] = values.wingTime;
   writeUniforms(data, offsets, values.water);
+  const { seaRings, ...sea } = values.sea;
+  writeUniforms(data, offsets, sea);
+  data.set(seaRings, offsetOf(offsets, SEA_RINGS_NAME));
   writeUniforms(data, offsets, values.terrain);
   data[offsetOf(offsets, FRAME_EXPOSURE_NAME)] = values.exposure;
   data[offsetOf(offsets, FRAME_CONTRAST_NAME)] = values.contrast;

@@ -559,6 +559,10 @@ describe("layer boundaries", () => {
       join(SRC, "game", "waterLifeInputs.ts"),
       join(SRC, "game", "midgeLook.ts"),
       join(SRC, "game", "dragonflyShapes.ts"),
+      join(SRC, "game", "oceanFrame.ts"),
+      join(SRC, "game", "seaEdge.ts"),
+      join(SRC, "game", "seaLattice.ts"),
+      join(SRC, "game", "seaUniforms.ts"),
     ];
 
     // Guards against the guard: a rename or deletion of one of these files
@@ -748,6 +752,42 @@ describe("layer boundaries", () => {
   });
 
   /**
+   * What the sea is drawn with, for a renderer that is not Babylon.js to
+   * draw it by: the swell and the wind sea as numbers, the sea following its
+   * wind, the wind sea's loop asked of its worker, its edge on the cove with the swash's table and the breaker's
+   * tracker, the rings as one lattice, their samples and the box each has
+   * water in, the sea's uniforms by name, and the surf as heard. The shell
+   * that draws it on Babylon.js takes its values from these.
+   */
+  it("what the sea is drawn with is computed without loading Babylon, whatever it imports", () => {
+    const ENGINE_FREE = [
+      "oceanFrame.ts", "oceanWindSea.ts", "oceanLoopStart.ts", "oceanLoopBake.ts", "oceanWaves.ts", "oceanTables.ts", "oceanSwell.ts", "seaEdge.ts", "swashTable.ts",
+      "oceanBreaker.ts", "seaLattice.ts", "seaUniforms.ts", "surfSound.ts", "water.ts", "waterSurface.ts",
+    ];
+    const loaded = (file: string): string[] =>
+      [...readFileSync(file, "utf8").matchAll(/^\s*(?:import|export)\s+(?!type\s)(?:[^"'();]*?\s+from\s+)?["']([^"']+)["']/gm)].map((m) => m[1] as string);
+    const seen = new Set<string>();
+    const stack = ENGINE_FREE.map((name) => join(SRC, "game", name));
+    for (const file of stack) expect(existsSync(file), file).toBe(true);
+    const bad: string[] = [];
+    while (stack.length > 0) {
+      const file = stack.pop() as string;
+      if (seen.has(file)) continue;
+      seen.add(file);
+      for (const spec of loaded(file)) {
+        if (spec.startsWith("@babylonjs")) bad.push(`${relative(SRC, file)} imports ${spec}`);
+        if (spec.startsWith(".") && spec.endsWith(".js")) stack.push(join(file, "..", spec.replace(/\.js$/, ".ts")));
+      }
+    }
+    expect(seen.size).toBeGreaterThan(ENGINE_FREE.length);
+    expect(bad).toEqual([]);
+    // And the shells on Babylon.js read them: the sea's numbers, its wind's lag and its edge are made in one place.
+    expect(readFileSync(join(SRC, "game/oceanRender.ts"), "utf8")).toContain("createOceanFrame(seed, tier, made)");
+    expect(readFileSync(join(SRC, "game/oceanWindSource.ts"), "utf8")).toContain("createSeaWindLag()");
+    expect(readFileSync(join(SRC, "game/renderer.ts"), "utf8")).toContain("createSeaEdgeStep(seed, ocean.field)");
+  });
+
+  /**
    * The hike's renderer is drawn with Babylon Lite, and nothing of it is
    * Babylon.js: not a module under `game/lite/`, and not anything one of
    * them loads. What it shares with the renderer on Babylon.js is the game's
@@ -777,8 +817,8 @@ describe("layer boundaries", () => {
     // Lite itself is loaded only by the modules that draw: the plugins, the pose and the light name its types alone.
     expect(lite.sort()).toEqual([
       "game/lite/bladeMeshes.ts", "game/lite/capMesh.ts", "game/lite/cliffMeshes.ts", "game/lite/clutterMeshes.ts", "game/lite/dragonflyMeshes.ts", "game/lite/duffMeshes.ts", "game/lite/entityMeshes.ts", "game/lite/forestMeshes.ts", "game/lite/forestModels.ts", "game/lite/groundTextures.ts", "game/lite/impostorBake.ts",
-      "game/lite/lakeMeshes.ts", "game/lite/listMeshes.ts", "game/lite/midgeMeshes.ts", "game/lite/mistMeshes.ts", "game/lite/motes.ts", "game/lite/propMeshes.ts", "game/lite/rain.ts", "game/lite/rainMap.ts", "game/lite/rainSplash.ts", "game/lite/renderer.ts", "game/lite/shaderUniforms.ts",
-      "game/lite/skinnedModels.ts", "game/lite/skyCapture.ts", "game/lite/skyDome.ts", "game/lite/terrainMeshes.ts", "game/lite/waterPlantMeshes.ts", "game/lite/wildlifeMeshes.ts", "game/lite/wornLamps.ts",
+      "game/lite/lakeMeshes.ts", "game/lite/listMeshes.ts", "game/lite/midgeMeshes.ts", "game/lite/mistMeshes.ts", "game/lite/motes.ts", "game/lite/propMeshes.ts", "game/lite/rain.ts", "game/lite/rainMap.ts", "game/lite/rainSplash.ts", "game/lite/renderer.ts", "game/lite/seaMeshes.ts", "game/lite/shaderUniforms.ts",
+      "game/lite/skinnedModels.ts", "game/lite/skyCapture.ts", "game/lite/skyDome.ts", "game/lite/terrainMeshes.ts", "game/lite/waterBed.ts", "game/lite/waterPlantMeshes.ts", "game/lite/wildlifeMeshes.ts", "game/lite/wornLamps.ts",
     ]);
     // And the hike is handed that renderer, which reaches the Babylon.js one's module for its types alone.
     const renderer = readFileSync(join(SRC, "game/renderer.ts"), "utf8");
