@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { NOT_DRAWN, notDrawnMembers } from "../../../src/game/lite/notDrawn.js";
+import { QUALITY } from "../../../src/game/quality.js";
 
 describe("what the renderer on Babylon Lite does not draw yet", () => {
   it("answers as nothing exactly the members its list names, each named once", () => {
@@ -11,7 +12,7 @@ describe("what the renderer on Babylon Lite does not draw yet", () => {
 
   it("names every part of the world it leaves out", () => {
     const all = NOT_DRAWN.map((part) => part.what).join("; ");
-    for (const word of [ "sea", "lake", "skin's shading", "shadows", "scenes", "endings", "posts", "body at the crest"]) {
+    for (const word of [ "sea", "lake", "skin's shading", "shadows", "scenes", "endings"]) {
       expect(all, word).toContain(word);
     }
   });
@@ -51,6 +52,21 @@ describe("what the renderer on Babylon Lite does not draw yet", () => {
     expect(NOT_DRAWN.filter((part) => /Hollow|veil|mask|stare/.test(part.what))).toEqual([]);
     // The skin's shading is held, and shows on no surface the game ships.
     expect(NOT_DRAWN.filter((part) => /skin/.test(part.what)).map((part) => part.members)).toEqual([["setSkinShading"]]);
+  });
+
+  it("leaves the scenery a hike places once to the renderer: the posts, the trailhead's car and board and the body are drawn", () => {
+    const all = NOT_DRAWN.map((part) => part.what).join("; ");
+    expect(all).not.toMatch(/posts|board|body at the crest|trailhead/);
+    // The car the end scene drives is the scenes' own, with their cameras and their stage.
+    expect(NOT_DRAWN.filter((part) => /\bcar\b/.test(part.what)).map((part) => part.members)).toEqual([["setEnding", "endScene", "setScene", "clearEnding"]]);
+  });
+
+  it("names the sun's cast shadows as what no tier draws: the game casts none either", () => {
+    const shadows = NOT_DRAWN.filter((part) => /shadows/.test(part.what));
+    expect(shadows.map((part) => part.members)).toEqual([[]]);
+    expect(shadows[0]?.what).toMatch(/no tier has one/);
+    // What the game's settings say today: a shadow map of no size on every tier.
+    for (const tier of ["low", "medium", "high"] as const) expect(QUALITY[tier].shadowMapSize).toBe(0);
   });
 
   it("leaves the rain to the renderer: its streaks, drips, splashes and cover are drawn, and the canopy's read-outs are its own", () => {

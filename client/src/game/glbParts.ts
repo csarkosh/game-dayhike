@@ -39,8 +39,12 @@ type GltfMaterial = {
   alphaMode?: string;
   alphaCutoff?: number;
   doubleSided?: boolean;
+  pbrMetallicRoughness?: { roughnessFactor?: number; metallicFactor?: number; metallicRoughnessTexture?: { index: number } };
+  occlusionTexture?: { index: number; strength?: number };
   extensions?: { KHR_materials_specular?: { specularFactor?: number }; KHR_materials_ior?: { ior?: number } };
 };
+type GltfTexture = { source?: number; extensions?: { EXT_texture_webp?: { source?: number } } };
+type GltfImage = { bufferView?: number; mimeType?: string };
 type GltfAccessor = { bufferView?: number; byteOffset?: number; componentType: number; count: number; type: string };
 type GltfBufferView = { buffer: number; byteOffset?: number; byteLength: number; byteStride?: number };
 type Gltf = {
@@ -49,6 +53,8 @@ type Gltf = {
   materials?: GltfMaterial[];
   accessors?: GltfAccessor[];
   bufferViews?: GltfBufferView[];
+  textures?: GltfTexture[];
+  images?: GltfImage[];
 };
 
 const GLB_MAGIC = 0x46546c67;
@@ -102,6 +108,50 @@ export function glbEmissive(file: ArrayBuffer): Map<string, readonly [number, nu
     if (material.name === undefined) continue;
     const e = material.emissiveFactor;
     out.set(material.name, [e?.[0] ?? 0, e?.[1] ?? 0, e?.[2] ?? 0]);
+  }
+  return out;
+}
+
+/** What a file says of a material's occlusion map. */
+export type GlbOcclusion = {
+  /** How much of the map's occlusion the material takes (glTF's `strength`, 1 where the file gives none). */
+  strength: number;
+  /**
+   * The map's own image and the material's roughness and metalness factors,
+   * where the material has an occlusion map and no map of roughness and
+   * metalness: the two are then plain factors, which a map packed with the
+   * occlusion has to carry. Null where the file gives the material both maps.
+   */
+  alone: { bytes: Uint8Array; mime: string; roughness: number; metallic: number } | null;
+};
+
+/**
+ * What each material of `file` with an occlusion map says of it, by the
+ * material's name. A loader that packs occlusion, roughness and metalness
+ * into one map, takes every occlusion map at full strength and reads a lone
+ * occlusion map's green and blue as the roughness and the metalness leaves
+ * this to be read here.
+ */
+export function glbOcclusion(file: ArrayBuffer): Map<string, GlbOcclusion> {
+  const { json, bin } = chunks(file);
+  const out = new Map<string, GlbOcclusion>();
+  for (const material of json.materials ?? []) {
+    const occlusion = material.occlusionTexture;
+    if (material.name === undefined || occlusion === undefined) continue;
+    const pbr = material.pbrMetallicRoughness;
+    let alone: GlbOcclusion["alone"] = null;
+    if (pbr?.metallicRoughnessTexture === undefined) {
+      const texture = json.textures?.[occlusion.index];
+      const image = json.images?.[texture?.extensions?.EXT_texture_webp?.source ?? texture?.source ?? -1];
+      const view = image?.bufferView === undefined ? undefined : json.bufferViews?.[image.bufferView];
+      if (image !== undefined && view !== undefined) {
+        alone = {
+          bytes: bin.subarray(view.byteOffset ?? 0, (view.byteOffset ?? 0) + view.byteLength), mime: image.mimeType ?? "image/png",
+          roughness: pbr?.roughnessFactor ?? 1, metallic: pbr?.metallicFactor ?? 1,
+        };
+      }
+    }
+    out.set(material.name, { strength: occlusion.strength ?? 1, alone });
   }
   return out;
 }

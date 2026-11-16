@@ -73,6 +73,11 @@ function meshesUnder(node: SceneNode, above: readonly SceneNode[], meshes: Reado
  * primitives vertex for vertex.
  */
 export async function loadModel(engine: EngineContext, url: string, lods: readonly string[], signal: AbortSignal): Promise<LoadedModel> {
+  return (await loadModelFile(engine, url, lods, signal)).model;
+}
+
+/** `loadModel`, with the file's own bytes beside the model, for whoever reads more of the file than its LODs. */
+export async function loadModelFile(engine: EngineContext, url: string, lods: readonly string[], signal: AbortSignal): Promise<{ model: LoadedModel; file: ArrayBuffer }> {
   const response = await fetch(url, { signal });
   if (!response.ok) throw new Error(`${url}: ${response.status}`);
   const file = await response.arrayBuffer();
@@ -110,7 +115,7 @@ export async function loadModel(engine: EngineContext, url: string, lods: readon
     // Nothing draws the loader's own meshes: their buffers go, their materials' textures stay.
     for (const mesh of all) disposeMeshGpu(mesh);
   }
-  return model;
+  return { model, file };
 }
 
 const KTX2_BASE = `${BASE}libs/ktx2`;

@@ -12,6 +12,7 @@ import type { Node } from "@babylonjs/core/node.js";
 import type { CharacterInstance } from "../characterModel.js";
 import type { FreecamView } from "../renderer.js";
 import type { PlacedModel } from "../staticModel.js";
+import { CAB_SKY } from "../sceneryParts.js";
 import type { CaptionPanel } from "./captions.js";
 import { coiledCord } from "./cord.js";
 import type { ActorPose, CarPose, Frame } from "./timeline.js";
@@ -82,10 +83,8 @@ export function carModelOf(placed: PlacedModel, warn: (line: string) => void): C
   return { root: placed.node, wheels, door: byName(DOOR_NAME), steering: byName("wheel_steering"), handset, cradle: byName("cradle"), handsetRest };
 }
 
-/** How much of the sky's reflected light the radio and its handset take, the rest of it roof: the
- * environment lights a part as if all the sky were open around it, and these plain dark parts,
- * unlike the cab's own textures, carry no darkness of their own. Set by eye on the insert. */
-export const CAB_SKY = 0.3;
+// How much of the sky the cab's plain parts take is the scenery's own number (`sceneryParts.ts`); named from here too.
+export { CAB_SKY } from "../sceneryParts.js";
 
 /** The radio's and the handset's materials under `CAB_SKY` of the sky's reflection. */
 export function dimCabParts(car: CarModel): void {

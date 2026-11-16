@@ -25,7 +25,7 @@
  */
 
 /** Each shell's first place. A shell's own run on from it by less than one. */
-export const DRAW_ORDER = { rings: 80, patches: 90, forest: 100, clutter: 110, blades: 120, duff: 130, cliffs: 140, props: 150, bodies: 152, cap: 154, animals: 156, waterPlants: 158, sky: 160 } as const;
+export const DRAW_ORDER = { rings: 80, patches: 90, forest: 100, clutter: 110, blades: 120, duff: 130, cliffs: 140, props: 150, scenery: 151, bodies: 152, cap: 154, animals: 156, waterPlants: 158, sky: 160 } as const;
 
 /**
  * The places of the see-through draws, which follow every opaque one and the
@@ -56,12 +56,20 @@ export const DRAW_ORDER = { rings: 80, patches: 90, forest: 100, clutter: 110, b
  * at the origin with the rest, and its place says the same from every
  * view.
  *
+ * Then the see-through parts of the scenery a hike places once
+ * (`sceneryMeshes.ts`), which the game leaves at Babylon.js's default place
+ * too and that renderer orders by how far each is: they stand near, with
+ * the water beyond them, so they follow it. The patch under the car first,
+ * which lies on the ground; then the lettering on the fingerposts' planks
+ * and the board's face; then the car's glass, through which the patch and
+ * the ground are seen.
+ *
  * Then a lake's insects, which the game gives the highest index of all:
  * the midges' one draw, then the dragonflies', a kind a draw. And last, on
  * the tiers with no post chain, the shade veil, which the game draws over
  * the finished frame (`shadeVeil.ts`).
  */
-export const SEE_THROUGH_ORDER = { motes: 200, mist: 210, splashes: 220, rain: 230, sea: 238, water: 240, midges: 250, dragonflies: 252, veil: 260 } as const;
+export const SEE_THROUGH_ORDER = { motes: 200, mist: 210, splashes: 220, rain: 230, sea: 238, water: 240, carShadow: 242, lettering: 244, boardFace: 245, glass: 246, midges: 250, dragonflies: 252, veil: 260 } as const;
 
 /** The places a shell has past its first. */
 export const DRAW_PLACES = 1024;
