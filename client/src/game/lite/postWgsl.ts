@@ -503,6 +503,68 @@ ${taps}
 }`;
 }
 
+/** grade.fragment.fx's blotches for the shades' going: one octave of value noise on a hash. */
+export const SHADE_HELPERS_WGSL = /* wgsl */ `fn shadeHash(p:vec2<f32>)->f32{
+  return fract(sin(dot(p,vec2<f32>(127.1,311.7)))*43758.5453);
+}
+fn shadeNoise(p:vec2<f32>)->f32{
+  let i=floor(p);
+  var f=fract(p);
+  f=f*f*(3.0-2.0*f);
+  let a=shadeHash(i);
+  let b=shadeHash(i+vec2<f32>(1.0,0.0));
+  let c=shadeHash(i+vec2<f32>(0.0,1.0));
+  let d=shadeHash(i+vec2<f32>(1.0,1.0));
+  return mix(mix(a,b,f.x),mix(c,d,f.x),f.y);
+}`;
+
+/**
+ * grade.fragment.fx's shade block: the mask read back through its blur
+ * (`shadeRead`, the reader's own) and the frame `c` darkened by the figure,
+ * only while a figure is in the mask. The veil on the tiers with no chain
+ * runs the same text (`shadeVeil.ts`), as the game's veil carries the
+ * grade's block.
+ */
+export const SHADE_BLOCK_WGSL = /* wgsl */ `  if(u.shadeShape.w>0.0){
+    let shadeStep=vec2<f32>(u.shadeShape.x,u.shadeShape.x*u.shadeShape.z);
+    var shadeInner=shadeRead(vUV)*2.0;
+    shadeInner+=shadeRead(vUV+shadeStep*vec2<f32>(0.5,0.0));
+    shadeInner+=shadeRead(vUV+shadeStep*vec2<f32>(-0.5,0.0));
+    shadeInner+=shadeRead(vUV+shadeStep*vec2<f32>(0.0,0.5));
+    shadeInner+=shadeRead(vUV+shadeStep*vec2<f32>(0.0,-0.5));
+    shadeInner+=shadeRead(vUV+shadeStep*vec2<f32>(0.35,0.35));
+    shadeInner+=shadeRead(vUV+shadeStep*vec2<f32>(-0.35,0.35));
+    shadeInner+=shadeRead(vUV+shadeStep*vec2<f32>(0.35,-0.35));
+    shadeInner+=shadeRead(vUV+shadeStep*vec2<f32>(-0.35,-0.35));
+    var shadeOuter=shadeRead(vUV+shadeStep*vec2<f32>(1.0,0.0));
+    shadeOuter+=shadeRead(vUV+shadeStep*vec2<f32>(-1.0,0.0));
+    shadeOuter+=shadeRead(vUV+shadeStep*vec2<f32>(0.0,1.0));
+    shadeOuter+=shadeRead(vUV+shadeStep*vec2<f32>(0.0,-1.0));
+    shadeOuter+=shadeRead(vUV+shadeStep*vec2<f32>(0.7,0.7));
+    shadeOuter+=shadeRead(vUV+shadeStep*vec2<f32>(-0.7,0.7));
+    shadeOuter+=shadeRead(vUV+shadeStep*vec2<f32>(0.7,-0.7));
+    shadeOuter+=shadeRead(vUV+shadeStep*vec2<f32>(-0.7,-0.7));
+    let shadeRGB=(shadeInner+shadeOuter)*u.shadeShape.w/18.0;
+    let shadeReal=shadeInner.z*u.shadeShape.w/10.0;
+    let shadeFigure=shadeRGB.x+shadeRGB.z;
+    let shadeGone=shadeRGB.y/max(shadeFigure,1.0e-4);
+    let shadeBlot=shadeNoise(vUV*vec2<f32>(u.shadeShape.z,1.0)*9.0+u.stareShade.w*0.12);
+    let shadeKeep=smoothstep(shadeGone-0.35,shadeGone+0.05,shadeBlot);
+    c*=1.0-min(1.0,shadeRGB.x*u.shadeShape.y+shadeReal*u.shadeMonster)*shadeKeep;
+  }`;
+
+/** grade.fragment.fx's stare block: the darkness closing on an open centre (`centred` the place from the frame's middle), only while it has closed at all. */
+export const STARE_BLOCK_WGSL = /* wgsl */ `  if(u.stareShade.z>0.0){
+    let sp=centred-u.stareShade.xy;
+    let sa=atan2(sp.y,sp.x);
+    let st=u.stareShade.w;
+    let crawl=0.5*sin(sa*2.0+st*0.37)+0.3*sin(sa*3.0-st*0.56+1.7)+0.2*sin(sa*7.0+st*0.94+4.1);
+    let sr=length(sp)/1.41421356+crawl*0.11*u.stareShade.z;
+    let openTo=mix(1.25,0.3,u.stareShade.z);
+    let dark=smoothstep(openTo-0.42,openTo+0.14,sr)*min(1.0,u.stareShade.z*3.0);
+    c*=1.0-0.97*dark;
+  }`;
+
 /**
  * grade.fragment.fx, the compose ahead of it. `halation`: the tier makes a
  * halation, read from `halationSampler`; without it the GLSL screens the
@@ -555,19 +617,7 @@ fn gradeBand(c:vec3<f32>,mask:f32,tintColour:vec3<f32>,amount:vec2<f32>)->vec3<f
   let sat=mix(grey,tinted,1.0+amount.y*SPLIT_TONE_SATURATION_SCALE);
   return mix(c,sat,mask);
 }
-fn shadeHash(p:vec2<f32>)->f32{
-  return fract(sin(dot(p,vec2<f32>(127.1,311.7)))*43758.5453);
-}
-fn shadeNoise(p:vec2<f32>)->f32{
-  let i=floor(p);
-  var f=fract(p);
-  f=f*f*(3.0-2.0*f);
-  let a=shadeHash(i);
-  let b=shadeHash(i+vec2<f32>(1.0,0.0));
-  let c=shadeHash(i+vec2<f32>(0.0,1.0));
-  let d=shadeHash(i+vec2<f32>(1.0,1.0));
-  return mix(mix(a,b,f.x),mix(c,d,f.x),f.y);
-}
+${SHADE_HELPERS_WGSL}
 fn shadeRead(uv:vec2<f32>)->vec3<f32>{return textureSampleLevel(shadeSampler,postSampler,tx(uv),0.0).rgb;}
 fn toSrgb(c:vec3<f32>)->vec3<f32>{
   return pow(c,vec3<f32>(1.0/2.2));
@@ -599,50 +649,13 @@ fn toSrgb(c:vec3<f32>)->vec3<f32>{
   if(u.chaseTint.w>0.0){
     c=mix(c,c*u.chaseTint.xyz+u.chaseLift,u.chaseTint.w);
   }
-  if(u.shadeShape.w>0.0){
-    let shadeStep=vec2<f32>(u.shadeShape.x,u.shadeShape.x*u.shadeShape.z);
-    var shadeInner=shadeRead(vUV)*2.0;
-    shadeInner+=shadeRead(vUV+shadeStep*vec2<f32>(0.5,0.0));
-    shadeInner+=shadeRead(vUV+shadeStep*vec2<f32>(-0.5,0.0));
-    shadeInner+=shadeRead(vUV+shadeStep*vec2<f32>(0.0,0.5));
-    shadeInner+=shadeRead(vUV+shadeStep*vec2<f32>(0.0,-0.5));
-    shadeInner+=shadeRead(vUV+shadeStep*vec2<f32>(0.35,0.35));
-    shadeInner+=shadeRead(vUV+shadeStep*vec2<f32>(-0.35,0.35));
-    shadeInner+=shadeRead(vUV+shadeStep*vec2<f32>(0.35,-0.35));
-    shadeInner+=shadeRead(vUV+shadeStep*vec2<f32>(-0.35,-0.35));
-    var shadeOuter=shadeRead(vUV+shadeStep*vec2<f32>(1.0,0.0));
-    shadeOuter+=shadeRead(vUV+shadeStep*vec2<f32>(-1.0,0.0));
-    shadeOuter+=shadeRead(vUV+shadeStep*vec2<f32>(0.0,1.0));
-    shadeOuter+=shadeRead(vUV+shadeStep*vec2<f32>(0.0,-1.0));
-    shadeOuter+=shadeRead(vUV+shadeStep*vec2<f32>(0.7,0.7));
-    shadeOuter+=shadeRead(vUV+shadeStep*vec2<f32>(-0.7,0.7));
-    shadeOuter+=shadeRead(vUV+shadeStep*vec2<f32>(0.7,-0.7));
-    shadeOuter+=shadeRead(vUV+shadeStep*vec2<f32>(-0.7,-0.7));
-    let shadeRGB=(shadeInner+shadeOuter)*u.shadeShape.w/18.0;
-    let shadeReal=shadeInner.z*u.shadeShape.w/10.0;
-    let shadeFigure=shadeRGB.x+shadeRGB.z;
-    let shadeGone=shadeRGB.y/max(shadeFigure,1.0e-4);
-    let shadeBlot=shadeNoise(vUV*vec2<f32>(u.shadeShape.z,1.0)*9.0+u.stareShade.w*0.12);
-    let shadeKeep=smoothstep(shadeGone-0.35,shadeGone+0.05,shadeBlot);
-    c*=1.0-min(1.0,shadeRGB.x*u.shadeShape.y+shadeReal*u.shadeMonster)*shadeKeep;
-  }
   let centred=(vUV-0.5)*2.0;
-  let vr=length(centred)/1.41421356;
+${SHADE_BLOCK_WGSL}  let vr=length(centred)/1.41421356;
   let vig=1.0-smoothstep(0.55,1.0,vr)*clamp(u.vignetteWeight*0.22,0.0,0.8);
   c=mix(u.vignetteColour,c,vig);
 ${halation ? `  let halo=textureSampleLevel(halationSampler,postSampler,tx(vUV),0.0).rgb*u.halationStrength;
   c=1.0-(1.0-c)*(1.0-clamp(halo,vec3<f32>(0.0),vec3<f32>(1.0)));` : ""}
-  if(u.stareShade.z>0.0){
-    let sp=centred-u.stareShade.xy;
-    let sa=atan2(sp.y,sp.x);
-    let st=u.stareShade.w;
-    let crawl=0.5*sin(sa*2.0+st*0.37)+0.3*sin(sa*3.0-st*0.56+1.7)+0.2*sin(sa*7.0+st*0.94+4.1);
-    let sr=length(sp)/1.41421356+crawl*0.11*u.stareShade.z;
-    let openTo=mix(1.25,0.3,u.stareShade.z);
-    let dark=smoothstep(openTo-0.42,openTo+0.14,sr)*min(1.0,u.stareShade.z*3.0);
-    c*=1.0-0.97*dark;
-  }
-  var shown=toSrgb(clamp(c,vec3<f32>(0.0),vec3<f32>(1.0)));
+${STARE_BLOCK_WGSL}  var shown=toSrgb(clamp(c,vec3<f32>(0.0),vec3<f32>(1.0)));
   let pixel=vUV/u.texelSize;
   let d1=gradeNoise(pixel,fract(u.time*3.17));
   let d2=gradeNoise(pixel+vec2<f32>(37.0,11.0),fract(u.time*5.03));

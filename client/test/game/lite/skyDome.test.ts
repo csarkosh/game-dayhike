@@ -94,6 +94,17 @@ describe("the sky's dome on Babylon Lite", () => {
     expect(SKY_DOME_WGSL.fragmentLinear.replace("return vec4<f32>(sky,1.0);", "")).toBe(SKY_DOME_WGSL.fragment);
   });
 
+  it("grades its own colour with no chain, as the game's stage does: the vignette ahead of the tone map, the curves and the dither after the contrast", () => {
+    const glsl = tight(GLSL);
+    expect(glsl).toContain("vec3toned=skyNeutral(skyVignetteOf(sky*skyExposure));");
+    expect(glsl).toContain("toned=skyContrastOf(toned);toned=skyCurvesOf(toned);toned=skyDitherOf(toned);");
+    const graded = tight(SKY_DOME_WGSL.fragmentGraded);
+    expect(graded).toContain("vartoned=skyNeutral(gradeVignette(sky*u.skyExposure,input.position.xy));");
+    expect(graded).toContain("toned=skyContrastOf(toned,u.skyContrast);toned=gradeCurves(toned);toned=gradeDither(toned,input.position.xy);");
+    expect(graded).toContain("fngradeVignette(");
+    expect(SKY_DOME_WGSL.fragment).not.toContain("gradeVignette");
+  });
+
   it("reads every uniform the game draws the dome with from its own, and rides with the eye", () => {
     const read = new Set([...SKY_DOME_WGSL.fragment.matchAll(/\bu\.(sky\w+)/g)].map((m) => m[1]));
     expect([...read].sort()).toEqual(Object.keys(emptySkyDomeUniforms()).sort());

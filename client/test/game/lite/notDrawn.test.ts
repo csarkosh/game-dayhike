@@ -11,7 +11,7 @@ describe("what the renderer on Babylon Lite does not draw yet", () => {
 
   it("names every part of the world it leaves out", () => {
     const all = NOT_DRAWN.map((part) => part.what).join("; ");
-    for (const word of [ "sea", "lake", "Hollow's figure on the tiers with no post chain", "skin's shading", "shadows", "scenes", "endings", "posts", "body at the crest"]) {
+    for (const word of [ "sea", "lake", "skin's shading", "shadows", "scenes", "endings", "posts", "body at the crest"]) {
       expect(all, word).toContain(word);
     }
   });
@@ -33,9 +33,7 @@ describe("what the renderer on Babylon Lite does not draw yet", () => {
     const { members, held } = notDrawnMembers();
     for (const name of ["setPalette", "setChase", "setUnsettle", "setDepthOfField", "stare"]) expect(name in members, name).toBe(false);
     for (const name of ["chase", "unsettle", "palette", "depthOfField"]) expect(name in held, name).toBe(false);
-    expect(NOT_DRAWN.map((part) => part.what).join("; ")).not.toMatch(/anti-aliasing|far softening|palette|chase|depth of field/);
-    // The one part that names the chain is the tiers' without one: the veil's.
-    expect(NOT_DRAWN.filter((part) => /post chain|grade/.test(part.what)).map((part) => part.what.slice(0, 20))).toEqual(["the Hollow's figure "]);
+    expect(NOT_DRAWN.map((part) => part.what).join("; ")).not.toMatch(/post chain|grade|anti-aliasing|far softening|palette|chase|depth of field|vignette|dither/);
   });
 
   it("leaves the air's weather to the renderer: the mist banks, the motes and the ground cloud are drawn", () => {
@@ -49,12 +47,8 @@ describe("what the renderer on Babylon Lite does not draw yet", () => {
     for (const name of ["hasWildlife", "wildlifeEvents", "wildlifeDirectorLog"]) expect(name in members, name).toBe(false);
     const all = NOT_DRAWN.map((part) => part.what).join("; ");
     expect(all).not.toMatch(/animals|bodies|lamps they wear|dropped cap/);
-    // What is left of the Hollow is its figure where no chain's grade reads its mask: the veil's, with the stare's shade there.
-    const hollow = NOT_DRAWN.filter((part) => /Hollow/.test(part.what));
-    expect(hollow).toHaveLength(1);
-    expect(hollow[0]?.what).toMatch(/no post chain/);
-    expect(hollow[0]?.what).toMatch(/veil/);
-    expect(hollow[0]?.members).toEqual([]);
+    // Nothing of the Hollow is left: its figure is in the mask on every tier, the grade's to read or the veil's.
+    expect(NOT_DRAWN.filter((part) => /Hollow|veil|mask|stare/.test(part.what))).toEqual([]);
     // The skin's shading is held, and shows on no surface the game ships.
     expect(NOT_DRAWN.filter((part) => /skin/.test(part.what)).map((part) => part.members)).toEqual([["setSkinShading"]]);
   });

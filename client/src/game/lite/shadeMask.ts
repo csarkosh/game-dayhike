@@ -32,8 +32,11 @@
  *   along the normal in the vertex stage, and the fragment's alpha is the
  *   figure's opacity times what the smoke keeps. Under a post chain the
  *   colour is raised to 2.2 as Babylon.js's material hands it on in linear
- *   light; with no chain it is the material colour path's
- *   (`displayCurve.ts`), as it is there.
+ *   light; with no chain it goes through the material colour path
+ *   (`displayCurve.ts`: the exposure, the display curve, the colour curves),
+ *   as every Standard material's does there. The game's mask also takes the
+ *   vignette and the dither there, laid out by the mask's own size; those
+ *   two are left out.
  * - **The eyes are not in the mask.** The game draws them there with the
  *   body; they lie on the head, which covers them.
  *
@@ -52,7 +55,7 @@ import {
   SHADE_SMOKE_FEET, SHADE_SMOKE_FRAY, SHADE_SMOKE_RISE, SHADE_SMOKE_SCALE, SHADE_SMOKE_SOFT, SHADE_SMOKE_SWELL_M, shadeMaskColour, shadeMaskSize,
 } from "../shadeMaskParams.js";
 import type { CameraAxes, CameraPose } from "./cameraPose.js";
-import { DISPLAY_CURVE_WGSL } from "./displayCurve.js";
+import { DISPLAY_CURVE_WGSL, MATERIAL_GRADE_WGSL } from "./displayCurve.js";
 import { wgslFloat } from "./forestPlugins.js";
 import { FRAME_BLOCK, FRAME_CONTRAST_NAME, FRAME_EXPOSURE_NAME, SHADE_SMOKE_TIME_NAME } from "./frameBlock.js";
 
@@ -129,7 +132,7 @@ export function shadeMaskFragmentWgsl(linear: boolean): string {
   let normalW=normalize(input.worldNormal);
   let viewDirectionW=normalize(scene.vEyePosition.xyz-vPositionW);
   var shadeColour=pow(clamp(vec3<f32>(input.vShadeLook.x,0.0,input.vShadeLook.y),vec3<f32>(0.0),vec3<f32>(1.0)),vec3<f32>(2.2));
-  ${linear ? "" : `shadeColour=displayColour(shadeColour,${FRAME_BLOCK}.${FRAME_EXPOSURE_NAME},${FRAME_BLOCK}.${FRAME_CONTRAST_NAME});`}
+  ${linear ? "" : `shadeColour=gradeCurves(displayColour(shadeColour,${FRAME_BLOCK}.${FRAME_EXPOSURE_NAME},${FRAME_BLOCK}.${FRAME_CONTRAST_NAME}));`}
   var shadeAlpha=input.vShadeLook.z;
   let shadeSmokeUp=clamp((vPositionW.y-shadeSmoke.z)/max(shadeSmoke.w,0.01),0.0,1.0);
   let shadeSmokeN=shadeSmokeFbm(shadeSmokeAt(vPositionW,shadeSmoke.y));
@@ -154,7 +157,7 @@ export function shadeMaskPlugin(shared: PluginUniformBlock, linear: boolean): Ma
     getCustomCode: (stage) =>
       stage === "vertex"
         ? { CUSTOM_VERTEX_DEFINITIONS: SHADE_SMOKE_NOISE_WGSL, CUSTOM_VERTEX_MAIN_END: SHADE_SMOKE_VERTEX_WGSL }
-        : { CUSTOM_FRAGMENT_DEFINITIONS: `${SHADE_SMOKE_NOISE_WGSL}${linear ? "" : DISPLAY_CURVE_WGSL}`, CUSTOM_FRAGMENT_BEFORE_FRAGCOLOR: shadeMaskFragmentWgsl(linear) },
+        : { CUSTOM_FRAGMENT_DEFINITIONS: `${SHADE_SMOKE_NOISE_WGSL}${linear ? "" : `${DISPLAY_CURVE_WGSL}${MATERIAL_GRADE_WGSL}`}`, CUSTOM_FRAGMENT_BEFORE_FRAGCOLOR: shadeMaskFragmentWgsl(linear) },
     getInstanceAttributes: () => [
       { name: "shadeLook", type: "vec4<f32>", format: "float32x4" as const, stride: SHADE_LOOK_FLOATS * 4, offset: 0 },
       { name: "shadeFeet", type: "vec4<f32>", format: "float32x4" as const, stride: SHADE_LOOK_FLOATS * 4, offset: 16 },
@@ -280,7 +283,10 @@ export function createLiteShadeMask(
   let draws = 0;
   let disposed = false;
   const own = target as unknown as { _colorTexture: GPUTexture | null; _colorView: GPUTextureView | null };
+  const device = (engine as unknown as { _device: GPUDevice })._device;
+  const sampler = device.createSampler({ label: "shade_mask", magFilter: "linear", minFilter: "linear", addressModeU: "clamp-to-edge", addressModeV: "clamp-to-edge" });
   const texture = {
+    sampler,
     get texture() {
       return own._colorTexture as GPUTexture;
     },

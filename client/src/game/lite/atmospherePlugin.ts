@@ -21,6 +21,7 @@
  */
 import type { MaterialPlugin, PluginUniformBlock, Texture2D } from "@babylonjs/lite";
 import type { AtmosphereUniforms } from "../atmosphereParams.js";
+import { DISPLAY_ENCODE_WGSL, GRADE_BLOCK, MATERIAL_GRADE_WGSL } from "./displayCurve.js";
 import { frameReads } from "./frameBlock.js";
 import { uniformFields, writeUniforms } from "./pluginUniforms.js";
 
@@ -108,16 +109,32 @@ export const ATMOSPHERE_PRIORITY = 900;
  * block, the air is read from it and the material carries none of it: the
  * renderer writes the block once a frame from the same record. `cloud`
  * false leaves the ground cloud to a post chain: the material marches none
- * and binds no map.
+ * and binds no map. `grade`: the tier has no post chain, and the material
+ * grades its own colour as Babylon.js's image processing does there
+ * (`displayCurve.ts`): the vignette on the fogged colour ahead of the tone
+ * map, the colour curves and the dither after Lite's display curve.
+ * `curve`: Lite's materials no longer end with that curve (the page has
+ * drawn a tier with a chain, and Lite's linear output is the whole page's
+ * from then), so the plugin encodes the colour for the display itself,
+ * ahead of the curves.
  */
-export function atmospherePlugin(uniforms: AtmosphereUniforms, cloudMap: Texture2D, shared?: PluginUniformBlock, cloud = true): MaterialPlugin {
-  const definitions = shared === undefined ? atmWgsl(cloud) : frameReads(atmWgsl(cloud));
+export function atmospherePlugin(
+  uniforms: AtmosphereUniforms, cloudMap: Texture2D, shared?: PluginUniformBlock, cloud = true, grade = false, curve = false,
+): MaterialPlugin {
+  if (grade && shared === undefined) throw new Error("the material path's grade is read from the frame's block");
+  if (curve && !grade) throw new Error("the display curve is laid on by the material path's grade");
+  const definitions = `${shared === undefined ? atmWgsl(cloud) : frameReads(atmWgsl(cloud))}${grade ? MATERIAL_GRADE_WGSL : ""}${curve ? DISPLAY_ENCODE_WGSL : ""}`;
   return {
     name: "Atmosphere",
     priority: ATMOSPHERE_PRIORITY,
     getCustomCode: (stage) =>
       stage === "fragment"
-        ? { CUSTOM_FRAGMENT_DEFINITIONS: definitions, CUSTOM_FRAGMENT_BEFORE_FINALCOLORCOMPOSITION: "color=atmosphereFog(color,input.worldPos,scene.vEyePosition.xyz);" }
+        ? {
+          CUSTOM_FRAGMENT_DEFINITIONS: definitions,
+          CUSTOM_FRAGMENT_BEFORE_FINALCOLORCOMPOSITION: `color=atmosphereFog(color,input.worldPos,scene.vEyePosition.xyz);${grade ? "color=gradeVignette(color,input.clipPos.xy);" : ""}`,
+          // After Lite's own display curve, last in the fragment.
+          ...(grade ? { CUSTOM_FRAGMENT_BEFORE_FRAGCOLOR: `${curve ? `color=displayEncoded(color,${GRADE_BLOCK}.frameContrast);` : ""}color=gradeDither(gradeCurves(color),input.clipPos.xy);` } : {}),
+        }
         : null,
     ...(shared === undefined
       ? {
@@ -139,6 +156,6 @@ export function atmospherePlugin(uniforms: AtmosphereUniforms, cloudMap: Texture
       }
       : {}),
     // A material that marches no cloud is another program: the two are told apart.
-    defines: { cloud },
+    defines: { cloud, grade, curve },
   };
 }

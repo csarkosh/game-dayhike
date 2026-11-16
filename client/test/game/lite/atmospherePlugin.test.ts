@@ -83,7 +83,31 @@ describe("the atmosphere's plugin on Babylon Lite", () => {
     expect(plain.getSamplers).toBeUndefined();
     expect(plain.bindTextures).toBeUndefined();
     expect(plain.getActiveTextures).toBeUndefined();
-    expect(plain.defines).toEqual({ cloud: false });
-    expect(marching.defines).toEqual({ cloud: true });
+    expect(plain.defines).toEqual({ cloud: false, grade: false, curve: false });
+    expect(marching.defines).toEqual({ cloud: true, grade: false, curve: false });
+  });
+
+  it("grades the material's own colour where the tier has no post chain: the vignette on the fogged colour, the curves and the dither last", () => {
+    const shared = { name: "hikeFrame" } as never;
+    const graded = atmospherePlugin(emptyAtmosphereUniforms(), MAP, shared, false, true);
+    const code = graded.getCustomCode?.("fragment") ?? {};
+    expect(code.CUSTOM_FRAGMENT_BEFORE_FINALCOLORCOMPOSITION).toBe("color=atmosphereFog(color,input.worldPos,scene.vEyePosition.xyz);color=gradeVignette(color,input.clipPos.xy);");
+    expect(code.CUSTOM_FRAGMENT_BEFORE_FRAGCOLOR).toBe("color=gradeDither(gradeCurves(color),input.clipPos.xy);");
+    expect(code.CUSTOM_FRAGMENT_DEFINITIONS).toContain("fn gradeVignette(");
+    expect(graded.defines).toEqual({ cloud: false, grade: true, curve: false });
+    const plain = atmospherePlugin(emptyAtmosphereUniforms(), MAP, shared, false).getCustomCode?.("fragment") ?? {};
+    expect(plain.CUSTOM_FRAGMENT_BEFORE_FRAGCOLOR).toBeUndefined();
+    expect(plain.CUSTOM_FRAGMENT_DEFINITIONS).not.toContain("gradeVignette");
+    // Where Lite's materials no longer end with the display curve (the page has drawn a tier with a chain), the
+    // plugin lays it on itself, ahead of the curves, and is another program for it.
+    const encoding = atmospherePlugin(emptyAtmosphereUniforms(), MAP, shared, false, true, true);
+    const encoded = encoding.getCustomCode?.("fragment") ?? {};
+    expect(encoded.CUSTOM_FRAGMENT_BEFORE_FRAGCOLOR).toBe("color=displayEncoded(color,hikeFrame.frameContrast);color=gradeDither(gradeCurves(color),input.clipPos.xy);");
+    expect(encoded.CUSTOM_FRAGMENT_DEFINITIONS).toContain("fn displayEncoded(");
+    expect(code.CUSTOM_FRAGMENT_DEFINITIONS).not.toContain("displayEncoded");
+    expect(encoding.defines).toEqual({ cloud: false, grade: true, curve: true });
+    expect(() => atmospherePlugin(emptyAtmosphereUniforms(), MAP, shared, false, false, true)).toThrow(/material path's grade/);
+    // The grade's numbers are the frame's block's: a material that carries its own air cannot have it.
+    expect(() => atmospherePlugin(emptyAtmosphereUniforms(), MAP, undefined, false, true)).toThrow(/frame's block/);
   });
 });

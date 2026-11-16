@@ -1,5 +1,6 @@
 import type { MaterialPlugin, PluginUniformBlock } from "@babylonjs/lite";
 import { describe, expect, it } from "vitest";
+import { emptyMaterialGradeUniforms } from "../../../src/game/materialGrade.js";
 import "../../../src/sim/passes/index.js";
 import { atmosphereUniforms, emptyAtmosphereUniforms, type AtmosphereRecord } from "../../../src/game/atmosphereParams.js";
 import { noCloud } from "../../../src/game/cloudParams.js";
@@ -94,6 +95,10 @@ function frame(): FrameValues {
       seaRings: Float32Array.from({ length: 28 }, (_, i) => 1000 + i * 0.5),
     },
     smokeTime: 12.5,
+    grade: {
+      gradeCurveNeutral: [1.02, 0.98, 1.01, 0.9], gradeCurvePositive: [0.01, 0.02, 0.03, 0.04], gradeCurveNegative: [0.05, 0.06, 0.07, 0.08],
+      gradeVignette1: [0.39, 0.25, 0, 0], gradeVignette2: [0.01, 0.02, 0.03, -3], gradeScreen: [1 / 980, 1 / 637, 0.5 / 255, 0],
+    },
   };
 }
 
@@ -121,8 +126,10 @@ describe("the frame's uniform block on Babylon Lite", () => {
     const order = FRAME_FIELDS.map((field) => field.name);
     expect(order.slice(order.indexOf("wingTime") + 1)).toEqual([
       ...Object.keys(emptyWaterFrameUniforms()), "frameExposure", "frameContrast", ...FRAME_CLOCK_NAMES, "frameProjection", ...Object.keys(emptySeaFrameUniforms()),
-      "shadeSmokeTime",
+      "shadeSmokeTime", ...Object.keys(emptyMaterialGradeUniforms()),
     ]);
+    // The grade a tier with no post chain lays on in every material: six vectors.
+    for (const name of Object.keys(emptyMaterialGradeUniforms())) expect(fields.get(name), name).toBe("vec4<f32>");
     // The clock the shades' smoke rises on, which the mask's material reads.
     expect(fields.get("shadeSmokeTime")).toBe("f32");
     // The projection alone of the camera's matrices: the view and the eye are the scene's own, which every stage reads.
@@ -169,6 +176,10 @@ describe("the frame's uniform block on Babylon Lite", () => {
     // What moves the sea, as the sea's own module names it, its rings' records float for float.
     expect(Object.keys(values.sea)).toEqual(Object.keys(emptySeaFrameUniforms()));
     for (const [name, value] of Object.entries(values.sea)) expect(read(name)).toEqual(f32(value));
+    // The material path's grade, as its module names it; a frame that hands none leaves the block's as it stands.
+    for (const [name, value] of Object.entries(values.grade ?? {})) expect(read(name)).toEqual(f32(value as number[]));
+    writeFrameBlock(made.data, made.offsets, { ...values, grade: undefined });
+    expect(read("gradeVignette2")).toEqual(f32([0.01, 0.02, 0.03, -3]));
     // The smoke's clock, and nothing where a frame hands none.
     expect(read("shadeSmokeTime")).toEqual([12.5]);
     writeFrameBlock(made.data, made.offsets, { ...values, smokeTime: undefined });

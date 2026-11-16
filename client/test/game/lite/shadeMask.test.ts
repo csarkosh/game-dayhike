@@ -61,9 +61,10 @@ describe("the haunt's figures in their mask on Babylon Lite", () => {
     const raised = "varshadeColour=pow(clamp(vec3<f32>(input.vShadeLook.x,0.0,input.vShadeLook.y),vec3<f32>(0.0),vec3<f32>(1.0)),vec3<f32>(2.2));";
     expect(tight(shadeMaskFragmentWgsl(true))).toContain(raised);
     expect(tight(shadeMaskFragmentWgsl(true))).not.toContain("displayColour(");
-    expect(tight(shadeMaskFragmentWgsl(false))).toContain(`${raised}shadeColour=displayColour(shadeColour,${FRAME_BLOCK}.frameExposure,${FRAME_BLOCK}.frameContrast);`);
+    expect(tight(shadeMaskFragmentWgsl(false))).toContain(`${raised}shadeColour=gradeCurves(displayColour(shadeColour,${FRAME_BLOCK}.frameExposure,${FRAME_BLOCK}.frameContrast));`);
     const material = shadeMaskPlugin(SHARED, false).getCustomCode?.("fragment")?.CUSTOM_FRAGMENT_DEFINITIONS ?? "";
     expect(material).toContain("fn displayColour(");
+    expect(material).toContain("fn gradeCurves(");
     expect(shadeMaskPlugin(SHARED, true).getCustomCode?.("fragment")?.CUSTOM_FRAGMENT_DEFINITIONS).not.toContain("fn displayColour(");
     expect(shadeMaskPlugin(SHARED, true).defines).toEqual({ linear: true });
   });

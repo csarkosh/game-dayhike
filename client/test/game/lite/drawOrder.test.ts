@@ -66,10 +66,16 @@ describe("the places of the hike's see-through draws on Babylon Lite", () => {
     expect(SEE_THROUGH_ORDER.sea).toBeLessThan(SEE_THROUGH_ORDER.water);
   });
 
+  it("lays the shade veil over the finished frame: after every other see-through draw", () => {
+    expect(Math.max(...Object.values(SEE_THROUGH_ORDER))).toBe(SEE_THROUGH_ORDER.veil);
+    expect(SEE_THROUGH_ORDER.dragonflies).toBeLessThan(SEE_THROUGH_ORDER.veil);
+  });
+
   it("draws a lake's insects last of all, the midges before the dragonflies, as the game's highest index puts them", () => {
     expect(SEE_THROUGH_ORDER.water).toBeLessThan(SEE_THROUGH_ORDER.midges);
     expect(SEE_THROUGH_ORDER.midges).toBeLessThan(SEE_THROUGH_ORDER.dragonflies);
-    expect(Math.max(...Object.values(SEE_THROUGH_ORDER))).toBe(SEE_THROUGH_ORDER.dragonflies);
+    // Last of what stands in the world: only the veil, which is laid over the finished frame, follows.
+    expect(Math.max(...Object.values(SEE_THROUGH_ORDER).filter((place) => place !== SEE_THROUGH_ORDER.veil))).toBe(SEE_THROUGH_ORDER.dragonflies);
   });
 
   it("draws the bodies, the cap and the animals after the world they stand in and before the sky", () => {

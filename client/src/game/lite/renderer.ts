@@ -4,7 +4,7 @@
  * atmosphere and the sky's dome, the valley mist banks and the motes in the air
  * and the ground cloud marched through it, the rain with its drips, its
  * splashes and the cover it falls under, and in that world the other
- * hikers' bodies, the Hollows' eyes, the dropped cap, the animals, the
+ * hikers' bodies, the Hollows' eyes and their figures' shadows, the dropped cap, the animals, the
  * lakes' water with the reeds and the lilies that grow in it and the
  * insects over it, and the sea with its swell, its white water and its
  * swash, lit by
@@ -172,8 +172,13 @@
  * **Colour is the tier's own path** (`postFeaturesFor`). With no post chain
  * it is the material path: Lite's display curve as Babylon's image
  * processing has it there (Khronos PBR Neutral, contrast 1.1), under the
- * weather's and the hour's exposure, and the dome's, the mist banks', the
- * motes' and the rain's own stages the same. With a chain every material
+ * weather's and the hour's exposure less what the stare takes of it, with
+ * the grade Babylon's image processing lays on there in every material: the
+ * vignette, the colour curves that carry the weather's split-tone and the
+ * chase's cast, and the dither (`materialGrade.ts`, read from the frame's
+ * block by the air's plugin at the material's last point, and by the
+ * dome's, the mist banks', the motes' and the rain's own stages). No pass is
+ * added for it. With a chain every material
  * and every stage hands its linear colour on, unexposed, into a half-float
  * target four samples a pixel, and the chain grades the frame
  * (`postChain.ts`): the far softening, the temporal anti-aliasing and its
@@ -181,14 +186,24 @@
  * cast (`setChase`), the stare's shade and the dread on the lens
  * (`setUnsettle`), and the rain on the lens while there is any. The canvas
  * then takes the grade's one sample a pixel, and the sky leaves the frame's
- * depth as nothing drawn, which the chain reads as the far sky.
+ * depth as nothing drawn, which the chain reads as the far sky. Lite's linear
+ * output is the whole page's once it is on: a tier with no chain made in a
+ * page that has drawn one lays the display curve on in its own materials
+ * (`linearPage`).
  *
  * **The stare's lens is stepped on every tier** (`stare`, `stareLens.ts`):
  * from the local player's own stare and the Hollow nearest their aim, for
  * the grade's shade and for whoever voices the heartbeat.
+ *
+ * **A Hollow's figure is a shadow from a mask** (`shadeMask.ts`): its body
+ * drawn through its smoke into a target of its own, on the frames with a
+ * figure in it, from the bodies its eyes are drawn from. With a chain the
+ * grade reads the mask; with none the veil does (`shadeVeil.ts`): one
+ * triangle multiplied into the frame, last of the see-through draws, with
+ * the stare's darkness, hidden while there is neither.
  */
 import {
-  NeutralToneMapping, addToScene, createBankedFreeCamera, createDirectionalLight, createEngine, createHemisphericLight, createPbrMaterial, createSpotLight,
+  NeutralToneMapping, addToScene, createBankedFreeCamera, createTexture2DFromPixels, createDirectionalLight, createEngine, createHemisphericLight, createPbrMaterial, createSpotLight,
   createPluginUniformBlock, createSceneContext, disposeEngine, disposeScene, enableMaterialPlugins, enablePbrLinearOutput, enablePbrMaterialPluginVertexData,
   getProjectionMatrix,
   markLightDirty, markMaterialUboDirty, onEngineDeviceLost, onEngineGpuError, registerScene, renderFrame, resizeEngine, vec3,
@@ -214,7 +229,8 @@ import { featureTableFor } from "../featureTable.js";
 import { FOLIAGE_PLAYERS, FOLIAGE_PLAYER_PARKED, setFoliageWind } from "../foliageUniforms.js";
 import { nearRadiusFor } from "../forestField.js";
 import { GAME_FOV, lensProjection } from "../gameLens.js";
-import { PAINT_PALETTES, type PaintPaletteName } from "../gradeParams.js";
+import { PAINT_PALETTES, gradeRecordUnder, sightUnder, type PaintPaletteName } from "../gradeParams.js";
+import { emptyMaterialGradeUniforms, materialGradeUniforms } from "../materialGrade.js";
 import { isHollow } from "../../sim/hollow.js";
 import { LAMP_ANGLE, LAMP_COLOUR, LAMP_EXPONENT, LAMP_RANGE, lampUnder, type LampState } from "../lampParams.js";
 import { createCalmFade } from "../lakeCalmFrame.js";
@@ -237,7 +253,7 @@ import { emptySeaFrameUniforms } from "../seaUniforms.js";
 import { startSkySource, type SkySource } from "../skyWorker.js";
 import { SILENT_SURF_SOUND, createSurfSound, fillSurfSound, type SurfSound } from "../surfSound.js";
 import type { SkyState } from "../skyState.js";
-import { STARE_LENS_REST, stareSide, stepStareLens, type StareLens } from "../stareLens.js";
+import { STARE_LENS_REST, stareShadeUnder, stareSide, stepStareLens, type StareLens } from "../stareLens.js";
 import { DEFAULT_HOUR, sunAltitudeDeg, whenSkyHeld } from "../skyWait.js";
 import { createSyncJobs, finish, stepSlices, type SyncJobs } from "../syncJobs.js";
 import { followRoadCentre, terrainTablesFor, type TerrainTables } from "../terrainTables.js";
@@ -269,6 +285,7 @@ import { createLiteMotes, type LiteMotes, type MotesFrame } from "./motes.js";
 import { notDrawnMembers } from "./notDrawn.js";
 import { createLitePostChain, type LitePostChain } from "./postChain.js";
 import { createLiteShadeMask, type LiteShadeMask } from "./shadeMask.js";
+import { createLiteShadeVeil, type LiteShadeVeil } from "./shadeVeil.js";
 import { createPropMeshes, type PropMeshes } from "./propMeshes.js";
 import { createLiteRain, type LiteRain, type RainFrame } from "./rain.js";
 import { createLiteRainMap, type CoverRegistry, type LiteRainMap } from "./rainMap.js";
@@ -285,6 +302,14 @@ import { createLiteWildlifeMeshes, type LiteWildlifeMeshes } from "./wildlifeMes
 import { emptyTerrainMaterialUniforms, terrainPlugin, terrainSplitPlugin, terrainWetPlugin } from "./terrainPlugins.js";
 import { createWorldLight } from "./worldLight.js";
 import { createWornLamps, type WornLamps } from "./wornLamps.js";
+
+/**
+ * Whether a renderer of this page has drawn a tier with a post chain. Lite's
+ * linear output is the whole page's and stays on, so a tier with no chain
+ * made after it lays the display curve on in its own materials
+ * (`atmospherePlugin`'s `curve`).
+ */
+let linearPage = false;
 
 /** The display curve's contrast on the material colour path, as the lighting sets Babylon's. */
 const DISPLAY_CONTRAST = 1.1;
@@ -356,6 +381,8 @@ type Standing = {
   chain: LitePostChain | null;
   /** The mask the haunt's figures are drawn into (`shadeMask.ts`), which the chain's grade reads. */
   mask: LiteShadeMask | null;
+  /** The veil that lays the mask and the stare's shade over the frame on a tier with no chain (`shadeVeil.ts`). */
+  veil: LiteShadeVeil | null;
   materials: PbrMaterialProps[];
   terrain: TerrainMeshes | null;
   road: TableTexture | null;
@@ -468,6 +495,10 @@ export function createLiteRenderer(canvas: HTMLCanvasElement, level: Level, fore
   /** The rain on the lens, smoothed (`lensParams.ts`), and the local player's stare as their screen and ears take it (`stareLens.ts`). */
   let lensStrength = 0;
   let stareLens: StareLens = STARE_LENS_REST;
+  /** The frame's exposure as shown: the weather's and the hour's, less what the stare takes of it where no chain's grade does (`sightUnder`). */
+  const shownExposure = (): number => (chained ? light.exposure : light.exposure * sightUnder(stareLens.level));
+  /** The material path's grade for the frame (`materialGrade.ts`), filled in place. */
+  const gradeValues = emptyMaterialGradeUniforms();
   /** The chase's cast (`escalation.ts`) and how far the dread reaches the lens (`/unsettle`), as the app last set them. */
   let chaseCast = 0;
   let unsettle = 1;
@@ -621,6 +652,7 @@ export function createLiteRenderer(canvas: HTMLCanvasElement, level: Level, fore
     made.wildlife?.dispose();
     made.cap?.dispose();
     made.entities?.dispose();
+    made.veil?.dispose();
     made.mask?.dispose();
     made.wornLamps.dispose();
     made.skinClock.dispose();
@@ -659,7 +691,10 @@ export function createLiteRenderer(canvas: HTMLCanvasElement, level: Level, fore
     // The frame's block, before any material: every material's plugins name it.
     const shared = createPluginUniformBlock(engine, FRAME_BLOCK, [...FRAME_FIELDS], "vertex-fragment");
     // Under a chain every material hands its linear colour on, unexposed, and the scene has no pass but the chain's.
-    if (chained) enablePbrLinearOutput();
+    if (chained) {
+      enablePbrLinearOutput();
+      linearPage = true;
+    }
     const scene = createSceneContext(engine, chained ? { defaultRenderTask: false } : undefined);
     scene.imageProcessing.toneMappingEnabled = !chained;
     scene.imageProcessing.toneMapping = NeutralToneMapping;
@@ -724,10 +759,12 @@ export function createLiteRenderer(canvas: HTMLCanvasElement, level: Level, fore
     // material's air where a tier marches it with no chain.
     const cloudGround = forest === null && !chained ? null : cloudMapTexture(engine);
     const cloudMap = cloudGround?.texture ?? null;
-    /** The air's plugin, one a material: with the cloud's march only where no chain has it. */
-    const air = (): MaterialPlugin => atmospherePlugin(airValues, cloudMap as NonNullable<typeof cloudMap>, shared, !chained && cloudSteps > 0);
-    // The mask the haunt's figures are drawn into, where a chain's grade reads it, before the scene is registered.
-    const mask = forest !== null && chained ? createLiteShadeMask(engine, scene, { shared, linear: chained, near: lens.near, far: lens.far, fov: lens.fov }) : null;
+    /** The air's plugin, one a material: with the cloud's march only where no chain has it, and with the material path's grade where no chain grades the frame. */
+    const air = (): MaterialPlugin => atmospherePlugin(airValues, cloudMap as NonNullable<typeof cloudMap>, shared, !chained && cloudSteps > 0, !chained, !chained && linearPage);
+    // The mask the haunt's figures are drawn into, before the scene is registered: the chain's grade reads it, and
+    // where there is no chain the veil does, one triangle multiplied into the frame last of all.
+    const mask = forest !== null ? createLiteShadeMask(engine, scene, { shared, linear: chained, near: lens.near, far: lens.far, fov: lens.fov }) : null;
+    const veil = mask !== null && !chained ? createLiteShadeVeil(engine, scene, createTexture2DFromPixels(engine, new Uint8Array([0, 0, 0, 255]), 1, 1)) : null;
     // The chain: the scene's pass into its first target and its own passes after, before the scene is registered.
     const chain = chained && cloudMap !== null ? createLitePostChain(engine, scene, { features: postFeatures, camera, cloudMap, now: clock, uploads }) : null;
     if (forest !== null && cloudMap !== null) {
@@ -903,7 +940,7 @@ export function createLiteRenderer(canvas: HTMLCanvasElement, level: Level, fore
     }
     const made: Standing = {
       engine, scene, camera, sun, fill, lamp, dome, capture, shared, chain, materials, terrain, road, cloudGround, forest: trees, blades, clutter, duff, cliffs, props, mist, motes,
-      rain, rainMap, splash, skinClock, entities, mask, wornLamps, cap, wildlife, bed, sea, lakes: lakeMeshes, waterPlants, waterLives,
+      rain, rainMap, splash, skinClock, entities, mask, veil, wornLamps, cap, wildlife, bed, sea, lakes: lakeMeshes, waterPlants, waterLives,
     };
     if (disposed) {
       release(made);
@@ -1000,7 +1037,7 @@ export function createLiteRenderer(canvas: HTMLCanvasElement, level: Level, fore
     const lights = light.lights;
     if (sky === null || lights === null || sky === domeSky) return;
     domeSky = sky;
-    const table = made.dome.update(sky, light.exposure, DISPLAY_CONTRAST);
+    const table = made.dome.update(sky, shownExposure(), DISPLAY_CONTRAST);
     if (table > 0) uploads.count("textures", table);
     uploads.marked();
     made.capture.capture(sky, lights.environmentIntensity, pose);
@@ -1055,7 +1092,7 @@ export function createLiteRenderer(canvas: HTMLCanvasElement, level: Level, fore
     relight(made);
     placeLamp(made);
     redrawSky(made);
-    if (!chained) scene.imageProcessing.exposure = light.exposure;
+    if (!chained) scene.imageProcessing.exposure = shownExposure();
     // The road's table follows the eye before the uniforms are made: they carry where it is centred.
     if (tables.road !== null && made.road !== null && followRoadCentre(tables.road, pose.z)) {
       made.road.write();
@@ -1109,7 +1146,12 @@ export function createLiteRenderer(canvas: HTMLCanvasElement, level: Level, fore
     frameValues.eye = pose;
     frameValues.rows = canvas.height;
     frameValues.wingTime = wingTime(clock());
-    frameValues.exposure = light.exposure;
+    frameValues.exposure = shownExposure();
+    if (made.chain === null) {
+      // No chain: the frame is graded in its materials, by the weather's curves, the chase's cast and the vignette.
+      const record = gradeRecordUnder(light.weather, light.hour, light.sky?.night ?? 0, unsettle, (clock() - madeAt) / 1000, stareLens, chaseCast);
+      frameValues.grade = materialGradeUniforms(light.weather, record, canvas.width, canvas.height, gradeValues);
+    }
     // The projection as Lite makes it for the hike's own pass, at the canvas's shape.
     frameValues.projection = getProjectionMatrix(camera, canvas.height > 0 ? canvas.width / canvas.height : 1);
     writeFrameBlock(made.shared.data, made.shared.offsets, frameValues);
@@ -1288,11 +1330,11 @@ export function createLiteRenderer(canvas: HTMLCanvasElement, level: Level, fore
         if (centre !== null && mistFrame !== null) {
           // The mist banks, round the camera's place and turned to its yaw.
           mistFrame.yaw = pose.yaw;
-          mistFrame.exposure = light.exposure;
+          mistFrame.exposure = shownExposure();
           standing.mist?.update(centre.x, centre.z, weather, wind, seconds, mistFrame);
           // The motes, round the camera the frame is drawn from, in the gradient's near colour.
           motesFrame.seconds = seconds;
-          motesFrame.exposure = light.exposure;
+          motesFrame.exposure = shownExposure();
           standing.motes?.update(weather, light.hour, nearColour, wind, motesFrame);
         }
         coverDrawn = false;
@@ -1313,11 +1355,11 @@ export function createLiteRenderer(canvas: HTMLCanvasElement, level: Level, fore
           coverDrawn = standing.rainMap?.update(coverAt, standing.rain.reads(weather)) ?? false;
           rainFrame.yaw = pose.yaw;
           rainFrame.dt = dt;
-          rainFrame.exposure = light.exposure;
+          rainFrame.exposure = shownExposure();
           standing.rain.update(weather, wind, rainFrame);
           canopyWater = standing.rain.canopyWater;
           splashFrame.seconds = seconds;
-          splashFrame.exposure = light.exposure;
+          splashFrame.exposure = shownExposure();
           standing.splash?.update(weather, splashFrame);
         }
         // The hikers' bodies, the Hollows' eyes and the lamps the other hikers wear, from the frame's poses: the
@@ -1422,7 +1464,7 @@ export function createLiteRenderer(canvas: HTMLCanvasElement, level: Level, fore
           f.hollowDistance = wildlifeInputs.director.match.hollowDistance;
           const served = lakeChoice.choose(f.camX, f.camZ);
           standing.waterLives.forEach((life, i) => {
-            if (lakeChoice.live[i] === 1) life.update(f, light.exposure, DISPLAY_CONTRAST);
+            if (lakeChoice.live[i] === 1) life.update(f, shownExposure(), DISPLAY_CONTRAST);
             else life.rest();
           });
           heardLife = served === null ? null : (standing.waterLives[served.index] ?? null);
@@ -1465,6 +1507,8 @@ export function createLiteRenderer(canvas: HTMLCanvasElement, level: Level, fore
         // The chain's grade for the frame: before the sky's first slices there is no night factor, and the day's 0
         // stands in, for frames no one sees.
         standing.chain?.update(weather, light.hour, sky?.night ?? 0, unsettle, stareLens, lensStrength, chaseCast);
+        // With no chain the veil lays the mask and the stare's darkness over the frame, while there is either.
+        standing.veil?.update(standing.mask?.texture ?? null, standing.mask?.any ?? false, stareShadeUnder(stareLens, seconds), canvas.width, canvas.height);
         draw(standing, weather.wetness);
       }
       // This frame's share of the rebuilds the updates above began, once every shell has seen the view.

@@ -126,7 +126,8 @@ describe("the dragonflies' instances on Babylon Lite", () => {
     expect(vertexAlphaPlugin().getCustomCode?.("vertex")).toBeNull();
     expect(SEE_THROUGH_ORDER.water).toBeLessThan(SEE_THROUGH_ORDER.midges);
     expect(SEE_THROUGH_ORDER.midges).toBeLessThan(SEE_THROUGH_ORDER.dragonflies);
-    expect(Math.max(...Object.values(SEE_THROUGH_ORDER))).toBe(SEE_THROUGH_ORDER.dragonflies);
+    // Last of what stands in the world: only the shade veil, laid over the finished frame, follows.
+    expect(Math.max(...Object.values(SEE_THROUGH_ORDER).filter((place) => place !== SEE_THROUGH_ORDER.veil))).toBe(SEE_THROUGH_ORDER.dragonflies);
   });
 });
 

@@ -14,7 +14,8 @@
  * the wind and its integral, the rain, the sun's share, the bump's drift),
  * what moves the sea (`seaUniforms.ts`: the swell's phases, the wind sea's
  * numbers, its clock, and where each ring of its lattice stands), the clock
- * the shades' smoke rises on (`shadeMaskParams.ts`)
+ * the shades' smoke rises on (`shadeMaskParams.ts`), the grade a tier with
+ * no post chain lays on in every material (`materialGrade.ts`)
  * and the terrain's whole record (`terrainUniforms.ts`, which its two
  * materials share). They are the same for every material and
  * most of them move every frame, so with them in each material's buffer
@@ -57,6 +58,7 @@
  */
 import { emptyAtmosphereUniforms, type AtmosphereUniforms } from "../atmosphereParams.js";
 import { emptyFadeUniforms } from "../distanceFade.js";
+import { emptyMaterialGradeUniforms, type MaterialGradeUniforms } from "../materialGrade.js";
 import { emptyMoteUniforms } from "../moteField.js";
 import { emptyRainUniforms } from "../rainField.js";
 import { emptySplashUniforms } from "../splashField.js";
@@ -131,6 +133,7 @@ export const FRAME_FIELDS: readonly UniformField[] = [
   ...scalarFields(emptySeaFrameUniforms(), [SEA_RINGS_NAME]),
   bits(SEA_RINGS_NAME, WATER_RING_COUNT),
   { name: SHADE_SMOKE_TIME_NAME, type: "f32" },
+  ...uniformFields(emptyMaterialGradeUniforms()),
 ];
 
 const FRAME_NAMES: ReadonlySet<string> = new Set(FRAME_FIELDS.map((field) => field.name));
@@ -224,6 +227,8 @@ export type FrameValues = {
   sea: SeaFrameUniforms;
   /** The clock the shades' smoke rises on, seconds, folded; absent, 0. */
   smokeTime?: number;
+  /** The material path's grade (`materialGradeUniforms`), on a tier with no post chain; absent, the block's stands as it was. */
+  grade?: MaterialGradeUniforms;
 };
 
 /** The wind's values are the foliage's own, read through a look that adds nothing to them. */
@@ -276,6 +281,7 @@ export function writeFrameBlock(data: Float32Array, offsets: UniformOffsets, val
   data[offsetOf(offsets, FRAME_EXPOSURE_NAME)] = values.exposure;
   data[offsetOf(offsets, FRAME_CONTRAST_NAME)] = values.contrast;
   data[offsetOf(offsets, SHADE_SMOKE_TIME_NAME)] = values.smokeTime ?? 0;
+  if (values.grade !== undefined) writeUniforms(data, offsets, values.grade);
   for (const clocks of values.clocks) writeUniforms(data, offsets, clocks);
   if (values.projection !== undefined) {
     const at = offsetOf(offsets, FRAME_PROJECTION_NAME);

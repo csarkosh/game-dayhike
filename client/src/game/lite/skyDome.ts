@@ -31,6 +31,7 @@ import {
   addToScene, createBox, createRenderTexture2D, createShaderMaterial, setShaderTexture, setShaderUniform, updateTextureRegion,
   type EngineContext, type Mesh, type PluginUniformBlock, type SceneContext, type ShaderMaterial, type Texture2D,
 } from "@babylonjs/lite";
+import { MATERIAL_GRADE_WGSL } from "./displayCurve.js";
 import { rgbToHalfRgba } from "../halfFloat.js";
 import { SKY_DOME_SIZE, createSkyTableUploads, emptySkyDomeUniforms, skyDomeUniforms } from "../skyDomeParams.js";
 import { SLICE_AZIMUTHS, SLICE_ELEVATIONS } from "../skyModel.js";
@@ -96,8 +97,9 @@ struct SkyOut{@builtin(position)position:vec4<f32>,@location(0)dir:vec3<f32>}
  * Neutral, the encode, the contrast), and the clamp the dither leaves at an
  * intensity of 0.
  */
-const fragment = (linear: boolean): string => /* wgsl */ `
+const fragment = (linear: boolean, graded = false): string => /* wgsl */ `
 struct SkyOut{@builtin(position)position:vec4<f32>,@location(0)dir:vec3<f32>}
+${graded ? MATERIAL_GRADE_WGSL : ""}
 ${SKY_RADIANCE_WGSL}
 fn skyNeutral(input:vec3<f32>)->vec3<f32>{
   let x=min(input.r,min(input.g,input.b));
@@ -119,15 +121,16 @@ fn skyContrastOf(c:vec3<f32>,contrast:f32)->vec3<f32>{
   let u=shaderUniforms;
   let sky=skyRadiance(normalize(input.dir),u.skySunDir,u.skyScale,u.skyCloud,u.skyDeckZenith,u.skyNight,u.skyDisc,u.skyMistAir,u.skyMistWeight,0.0);
   ${linear ? "return vec4<f32>(sky,1.0);" : ""}
-  var toned=skyNeutral(sky*u.skyExposure);
+  var toned=skyNeutral(${graded ? "gradeVignette(sky*u.skyExposure,input.position.xy)" : "sky*u.skyExposure"});
   toned=clamp(pow(max(toned,vec3<f32>(0.0)),vec3<f32>(1.0/2.2)),vec3<f32>(0.0),vec3<f32>(1.0));
   toned=skyContrastOf(toned,u.skyContrast);
+  ${graded ? "toned=gradeCurves(toned);toned=gradeDither(toned,input.position.xy);" : ""}
   return vec4<f32>(clamp(toned,vec3<f32>(0.0),vec3<f32>(1.0)),1.0);
 }`;
 const FRAGMENT = fragment(false);
 
 /** The stages' text, for the tests that hold it to the game's: the fragment's on the material colour path, and with the radiance handed on as it is, for a post chain to grade (`skyToneMap` at 0 in the game's). */
-export const SKY_DOME_WGSL = { vertex: VERTEX, fragment: FRAGMENT, fragmentLinear: fragment(true) } as const;
+export const SKY_DOME_WGSL = { vertex: VERTEX, fragment: FRAGMENT, fragmentLinear: fragment(true), fragmentGraded: fragment(false, true) } as const;
 
 /** What the dome reads from the frame's block, by the block's names: the display curve. */
 export const SKY_FRAME_READS = { skyExposure: FRAME_EXPOSURE_NAME, skyContrast: FRAME_CONTRAST_NAME } as const;
@@ -158,7 +161,8 @@ export function createLiteSkyDome(engine: EngineContext, scene: SceneContext, fr
   const material = createShaderMaterial({
     name: "skyDome",
     vertexSource: VERTEX,
-    fragmentSource: stageReads(linear ? SKY_DOME_WGSL.fragmentLinear : FRAGMENT, SKY_FRAME_READS),
+    // With no chain the dome grades its own colour as the game's stage does: the vignette, the colour curves, the dither.
+    fragmentSource: stageReads(linear ? SKY_DOME_WGSL.fragmentLinear : SKY_DOME_WGSL.fragmentGraded, SKY_FRAME_READS),
     attributes: ["position"],
     // The view and the eye are the scene's own (`frameBlock.ts`): no system uniform.
     uniforms: [

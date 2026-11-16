@@ -1,7 +1,9 @@
 import { describe, expect, it } from "vitest";
 import { ShaderStore } from "@babylonjs/core/Engines/shaderStore.js";
 import "@babylonjs/core/Shaders/ShadersInclude/imageProcessingFunctions.js";
-import { DISPLAY_CURVE_WGSL, LINEAR_COLOUR_WGSL, onColourPath } from "../../../src/game/lite/displayCurve.js";
+import { DISPLAY_CURVE_WGSL, DISPLAY_ENCODE_WGSL, DISPLAY_SHOWN_WGSL, GRADE_BLOCK, LINEAR_COLOUR_WGSL, MATERIAL_GRADE_WGSL, onColourPath } from "../../../src/game/lite/displayCurve.js";
+import { FRAME_BLOCK, inFrameBlock } from "../../../src/game/lite/frameBlock.js";
+import { emptyMaterialGradeUniforms } from "../../../src/game/materialGrade.js";
 import { inOrder, tight } from "./wgslText.js";
 
 const BABYLON = tight(ShaderStore.IncludesShadersStore["imageProcessingFunctions"] as string);
@@ -44,13 +46,54 @@ describe("the material colour path in WGSL", () => {
     expect(WGSL).toContain("returnmax(shaped,vec3<f32>(0.0));");
   });
 
-  it("draws no vignette, no colour curve and no dither: no material on Lite does", () => {
+  it("keeps the curve itself free of the grade: the vignette, the colour curves and the dither are laid round it", () => {
     expect(DISPLAY_CURVE_WGSL).not.toMatch(/vignette|curve|dither|rand/i);
+  });
+
+  it("grades as Babylon's image processing does on the material path: the vignette, the colour curves and the dither, statement for statement", () => {
+    const grade = tight(MATERIAL_GRADE_WGSL);
+    const b = GRADE_BLOCK;
+    for (const [glsl, wgsl] of [
+      ["vec2viewportXY=gl_FragCoord.xy*vInverseScreenSize;viewportXY=viewportXY*2.0-1.0;", `varviewportXY=gradeAt(at)*${b}.gradeScreen.xy;viewportXY=viewportXY*2.0-1.0;`],
+      ["vec3vignetteXY1=vec3(viewportXY*vignetteSettings1.xy+vignetteSettings1.zw,1.0);floatvignetteTerm=dot(vignetteXY1,vignetteXY1);floatvignette=pow(vignetteTerm,vignetteSettings2.w);", `letvignetteXY1=vec3<f32>(viewportXY*${b}.gradeVignette1.xy+${b}.gradeVignette1.zw,1.0);letvignetteTerm=dot(vignetteXY1,vignetteXY1);letvignette=pow(vignetteTerm,${b}.gradeVignette2.w);`],
+      ["vec3vignetteColorMultiplier=mix(vignetteColor,vec3(1,1,1),vignette);result.rgb*=vignetteColorMultiplier;", "letvignetteColorMultiplier=mix(vignetteColor,vec3<f32>(1.0,1.0,1.0),vignette);returncolor*vignetteColorMultiplier;"],
+      ["vec2curveMix=clamp(vec2(luma*3.0-1.5,luma*-3.0+1.5),vec2(0.0),vec2(1.0));", "letcurveMix=clamp(vec2<f32>(luma*3.0-1.5,luma*-3.0+1.5),vec2<f32>(0.0),vec2<f32>(1.0));"],
+      ["vec4colorCurve=vCameraColorCurveNeutral+curveMix.x*vCameraColorCurvePositive-curveMix.y*vCameraColorCurveNegative;result.rgb*=colorCurve.rgb;result.rgb=mix(vec3(luma),result.rgb,colorCurve.a);", `letcolorCurve=${b}.gradeCurveNeutral+curveMix.x*${b}.gradeCurvePositive-curveMix.y*${b}.gradeCurveNegative;color*=colorCurve.rgb;color=mix(vec3<f32>(luma),color,colorCurve.a);`],
+      ["floatrand=getRand(gl_FragCoord.xy*vInverseScreenSize);floatdither=mix(-ditherIntensity,ditherIntensity,rand);result.rgb=saturate(result.rgb+vec3(dither));", `letrand=gradeRand(gradeAt(at)*${b}.gradeScreen.xy);letdither=mix(-${b}.gradeScreen.z,${b}.gradeScreen.z,rand);returnclamp(color+vec3<f32>(dither),vec3<f32>(0.0),vec3<f32>(1.0));`],
+    ] as const) {
+      expect(BABYLON, glsl).toContain(glsl);
+      expect(grade, wgsl).toContain(wgsl);
+    }
+    // The place is the game's: its rows counted up from the frame's foot.
+    expect(grade).toContain(`fngradeAt(at:vec2<f32>)->vec2<f32>{returnvec2<f32>(at.x,1.0/${b}.gradeScreen.y-at.y);}`);
+    // Babylon's luminance and its random number, from its helpers.
+    expect(grade).toContain("letluma=clamp(dot(color,vec3<f32>(0.2126,0.7152,0.0722)),0.0,1.0);");
+    expect(grade).toContain("returnfract(sin(dot(seed.xy,vec2<f32>(12.9898,78.233)))*43758.5453);");
+    // In Babylon's order: the vignette ahead of the tone map, the curves after the contrast, the dither last.
+    expect(inOrder(BABYLON, ["vignetteColorMultiplier", "PBRNeutralToneMapping(result.rgb)", "resultHighContrast", "vCameraColorCurveNeutral", "ditherIntensity"])).toBe(true);
+    expect(tight(DISPLAY_SHOWN_WGSL)).toContain("returngradeDither(gradeCurves(displayColour(gradeVignette(linear,at),exposure,contrast)),at);");
+    // Every number it reads is the frame's block's, under the names the material grade's record gives them.
+    expect(GRADE_BLOCK).toBe(FRAME_BLOCK);
+    const read = [...new Set([...MATERIAL_GRADE_WGSL.matchAll(new RegExp(`${GRADE_BLOCK}\\.(\\w+)`, "g"))].map((m) => m[1] as string))];
+    expect(read.sort()).toEqual(Object.keys(emptyMaterialGradeUniforms()).sort());
+    for (const name of read) expect(inFrameBlock(name), name).toBe(true);
+  });
+
+  it("encodes a tone-mapped colour for the display as the curve's own last steps do: the encode, the clamp, the contrast", () => {
+    const encode = tight(DISPLAY_ENCODE_WGSL);
+    expect(encode).toContain("fndisplayEncoded(color:vec3<f32>,contrast:f32)->vec3<f32>{varresult=pow(max(color,vec3<f32>(0.0)),vec3<f32>(1.0/2.2));result=clamp(result,vec3<f32>(0.0),vec3<f32>(1.0));returndisplayContrastOf(result,contrast);}");
+    // The same three statements `displayColour` ends with, after its exposure and its tone map.
+    expect(inOrder(WGSL, ["result=pow(max(result,vec3<f32>(0.0)),vec3<f32>(1.0/2.2));", "result=clamp(result,vec3<f32>(0.0),vec3<f32>(1.0));", "result=displayContrastOf(result,contrast);"])).toBe(true);
+    expect(DISPLAY_ENCODE_WGSL.startsWith(DISPLAY_CURVE_WGSL)).toBe(true);
   });
 
   it("hands a stage's linear colour on where a post chain grades the frame, and leaves the stage as it is where none does", () => {
     const stage = `struct U{a:f32}\n${DISPLAY_CURVE_WGSL}\n@fragment fn f()->@location(0)vec4<f32>{return vec4<f32>(displayColour(c,e,k),1.0);}`;
-    expect(onColourPath(stage, false)).toBe(stage);
+    // With no chain the stage grades its own colour: the grade follows the curve, and each call takes the fragment's place.
+    const graded = onColourPath(stage, false);
+    expect(graded).toContain(`${DISPLAY_CURVE_WGSL}${MATERIAL_GRADE_WGSL}${DISPLAY_SHOWN_WGSL}`);
+    expect(graded).toContain("return vec4<f32>(displayShown(c,e,k,input.position.xy),1.0);");
+    expect(graded.startsWith("struct U{a:f32}\n")).toBe(true);
     const linear = onColourPath(stage, true);
     expect(linear).not.toContain("displayNeutral");
     expect(tight(linear)).toContain("fndisplayColour(linear:vec3<f32>,exposure:f32,contrast:f32)->vec3<f32>{returnlinear;}");

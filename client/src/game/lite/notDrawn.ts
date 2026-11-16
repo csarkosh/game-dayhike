@@ -11,8 +11,10 @@
  * ground cloud marched through it on the tiers that march it, the post
  * chain on the tiers that have one (the far softening, the anti-aliasing,
  * the paint, the grade with its palettes, the chase's cast and the stare's
- * shade, the rain on the lens), the Hollows' figures in their mask where the
- * chain's grade reads it, and the rain
+ * shade, the rain on the lens), the grade in the materials on the tiers
+ * with none (the colour curves, the vignette, the dither), the Hollows'
+ * figures in their mask, which the chain's grade reads and, with no chain,
+ * the veil lays over the frame with the stare's shade, and the rain
  * (its streaks, and on the tiers that draw them the drips under the canopy,
  * the splashes and the cover map they are drawn under), lit by the sun, the
  * sky's fill and the sky's capture as the image-based light for the hour and
@@ -40,7 +42,6 @@ export type NotDrawn = { readonly what: string; readonly members: readonly (keyo
 export const NOT_DRAWN: readonly NotDrawn[] = [
   { what: "the sea's wind waves by the FFT on the tier that runs one (the baked loop is drawn there meanwhile), the swept curl of its plunging lip and the surf's spray", members: [] },
   { what: "the shore a lake reflects beyond its skyline's shade (the panorama, the mirror), and the water, a lake's and the sea's, on the tier that reads what lies under it through the surface", members: [] },
-  { what: "the Hollow's figure on the tiers with no post chain, where a veil lays its mask over the frame (with a chain the grade reads the mask, and its eyes are drawn on every tier), and the stare's shade there", members: [] },
   { what: "the skin's shading (`skin.ts`): no model the game ships has a surface that shows it", members: ["setSkinShading"] },
   { what: "the sun's cast shadows", members: [] },
   { what: "the scenes and the endings: their cameras, their stage, the local hiker's own body in them and the end scene's car", members: ["setEnding", "endScene", "setScene", "clearEnding"] },
