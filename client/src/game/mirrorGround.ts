@@ -3,8 +3,9 @@
  * far too costly to draw again with its own material, so in the mirror and
  * in the shore's panorama it is one flat lit colour, darker under the
  * canopy, fogged as the scene fogs (`lakeMirrorTerrain.*.fx`). The shells on
- * Babylon.js (`lakeMirror.ts`, and `renderer.ts`, which colours both) take
- * the colour and the shade from here.
+ * Babylon.js (`lakeMirror.ts`, and `renderer.ts`, which colours both) and
+ * the hike's own renderer (`lite/lakePanorama.ts`) take the colour and the
+ * shade from here.
  */
 import { NEEDLE_BED } from "./terrainSurface.js";
 import { ambientCollapseUnder, type WeatherParams } from "./weather.js";

@@ -82,6 +82,8 @@ export type LakeOptions = {
   made?: readonly (LakeMade | null)[];
   /** The bump's picture made ahead. */
   bump?: Uint8Array | null;
+  /** The shore's panorama, on the tier that draws one (`lakePanorama.ts`): every lake's material carries its read, and the lake it is of reads it. */
+  panorama?: Texture2D;
   uploads?: FrameUploads;
 };
 
@@ -110,6 +112,8 @@ export type LakeFrame = {
    * hidden mesh is in no pass, the map's among them.
    */
   cover: { x: number; z: number; half: number } | null;
+  /** The lake the shore's panorama is of, by its place in the list; -1 where there is none. */
+  served?: number;
 };
 
 export type LiteLakes = {
@@ -121,6 +125,8 @@ export type LiteLakes = {
   update(frame: LakeFrame): void;
   /** Lakes shown by the last `update`. */
   readonly shown: number;
+  /** Whether the lake at `index` read its shore in the last `update`: its water in the view, with glass on it. */
+  readsShore(index: number): boolean;
   /** Times a lake's own buffer was marked to be written. */
   readonly marks: number;
   dispose(): void;
@@ -136,6 +142,8 @@ type Lake = {
   half: number;
   points: Float32Array;
   shown: boolean;
+  /** The view holds its water and the water has glass on it: its shore is read. */
+  reads: boolean;
   /** The lake's own buffer stands behind its record: marked when it is next shown. */
   stale: boolean;
 };
@@ -191,7 +199,7 @@ export function createLiteLakes(
       // One alpha blends it over what lies under it; seen from either side, as the game leaves it unculled.
       alphaBlend: true, doubleSided: true, usePhysicalLightFalloff: true,
     });
-    material.plugins = [lakePlugin(uniforms, { bump, bed: bed.texture, skyline }, options.shared), options.air()];
+    material.plugins = [lakePlugin(uniforms, { bump, bed: bed.texture, skyline, panorama: options.panorama }, options.shared), options.air()];
     // The surface's grid about the lake's centre, laid in the world's coordinates: the mesh stands at the origin.
     const grid = ahead?.surface ?? lakeSurfaceGrid(source.shape);
     const depths = ahead?.surface?.depths ?? lakeSurfaceDepths(seed, source, grid.positions);
@@ -216,7 +224,7 @@ export function createLiteLakes(
       source, surface, uniforms, material, mesh,
       half: source.shape.shoreMax + LAKE_SURFACE_REACH + LAKE_SURFACE_SPACING,
       points: lakeViewPoints(source.shape, source.level),
-      shown: false, stale: true,
+      shown: false, reads: false, stale: true,
     };
   });
 
@@ -237,6 +245,9 @@ export function createLiteLakes(
     get marks() {
       return marks;
     },
+    readsShore(index) {
+      return made[index]?.reads === true;
+    },
     update(f) {
       if (disposed) return;
       readBed();
@@ -252,7 +263,8 @@ export function createLiteLakes(
       }
       const sun = f.sky === null ? 0 : lakeSunShare(f.sky.sunIntensity, f.sky.sunDir.y, SUN_PEAK);
       shownCount = 0;
-      for (const lake of made) {
+      for (let index = 0; index < made.length; index++) {
+        const lake = made[index] as Lake;
         const { surface, source } = lake;
         setWaterWind(surface, f.wind.speed, windDir);
         surface.rain = f.weather.rain;
@@ -269,12 +281,14 @@ export function createLiteLakes(
           lake.material.roughnessFactor = roughness;
           lake.stale = true;
         }
-        if (lakeUniforms(surface, source.level, { panorama: false, skyline: f.sky !== null }, lake.uniforms)) lake.stale = true;
+        if (lakeUniforms(surface, source.level, { panorama: options.panorama !== undefined && f.served === index, skyline: f.sky !== null }, lake.uniforms)) lake.stale = true;
         const covered = f.cover !== null
           && Math.abs(source.shape.cx - f.cover.x) < lake.half + f.cover.half && Math.abs(source.shape.cz - f.cover.z) < lake.half + f.cover.half;
-        const shown = covered || lakeDrawnFrom(
+        const seen = lakeDrawnFrom(
           source.shape, source.level, lake.half, lake.points, f.planes, f.eye.x, f.eye.y, f.eye.z, f.forward.fx, f.forward.fy, f.forward.fz,
         );
+        lake.reads = seen && surface.mirrorWeight * surface.calmShare > 0;
+        const shown = covered || seen;
         if (shown !== lake.shown) {
           lake.shown = shown;
           setMeshVisible(lake.mesh, shown);

@@ -73,6 +73,31 @@ describe("a lake's water as a plugin on Babylon Lite", () => {
     expect(plugin.getVaryings?.()).toEqual([{ name: "vBedDepth", type: "f32" }, { name: "vWaterViewDepth", type: "f32" }]);
   });
 
+  it("carries the shore's panorama only where it is handed one: a fourth picture with a sampler of its own, and the read of it", () => {
+    const code = (plugin: ReturnType<typeof lakePlugin>): string => Object.values(plugin.getCustomCode?.("fragment") ?? {}).join("\n");
+    const without = lakePlugin(emptyLakeUniforms(), TEXTURES, SHARED);
+    expect(code(without)).not.toContain("waterPanorama");
+    const panorama = standInTexture("panorama");
+    const plugin = lakePlugin(emptyLakeUniforms(), { ...TEXTURES, panorama }, SHARED);
+    expect(plugin.getSamplers?.()).toEqual([
+      { texture: "waterBump", sampler: "waterBumpSampler" },
+      { texture: "waterBedHeight", sampleType: "unfilterable-float" },
+      { texture: "waterSkyline", sampleType: "unfilterable-float" },
+      { texture: "waterPanorama", sampler: "waterPanoramaSampler" },
+    ]);
+    const bound: { texture: unknown; sampler?: boolean }[] = [];
+    plugin.bindTextures?.(bound as never);
+    expect(bound[3]).toEqual({ texture: panorama });
+    const active: unknown[] = [];
+    plugin.getActiveTextures?.(active as never);
+    expect(active).toEqual([TEXTURES.bump, TEXTURES.bed, TEXTURES.skyline, panorama]);
+    // The read, the cylinder it is made on and the flag that gates it: all the material's own uniforms.
+    expect(code(plugin)).toContain("textureSampleLevel(waterPanorama,waterPanoramaSampler,");
+    for (const name of ["waterPanoramaOn", "waterLakeCentre", "waterLakeRadius"]) expect(code(plugin), name).toContain(`material.${name}`);
+    // The uniforms are the same record either way.
+    expect(plugin.getUniforms?.().ubo).toEqual(without.getUniforms?.().ubo);
+  });
+
   it("shades before the air is laid over it, at the three points the game's plugin uses", () => {
     const plugin = lakePlugin(emptyLakeUniforms(), TEXTURES, SHARED);
     expect(WATER_PRIORITY).toBeLessThan(ATMOSPHERE_PRIORITY);

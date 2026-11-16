@@ -33,6 +33,7 @@ import { loadModel, type ModelPart } from "./forestModels.js";
 import { baseColourPlugin, surfaceWetPlugin, vegetationInstanceLayout, vegetationPlugin, type Vegetation } from "./forestPlugins.js";
 import { DRAW_ORDER, createDrawOrders } from "./drawOrder.js";
 import type { FrameUploads } from "./frameUploads.js";
+import type { ReflectionRegistry } from "./lakePanorama.js";
 import type { CoverRegistry } from "./rainMap.js";
 import { listMesh, showList, type ListMesh } from "./listMeshes.js";
 
@@ -72,6 +73,8 @@ export type CliffMeshOptions = {
   /** The rain's cover map: the near rings' buckets are hard cover, each registered once as its model lands; its
    * instances come and go inside it (`rainMap.ts`). */
   cover?: CoverRegistry;
+  /** What a lake's shore panorama draws of the cliffs: the far ring's buckets, each as its model lands (`lakePanorama.ts`). */
+  reflections?: ReflectionRegistry;
 };
 
 /** A bucket: the mesh of one model's one LOD root, and the list it draws. */
@@ -166,6 +169,7 @@ export function createCliffMeshes(engine: EngineContext, scene: SceneContext, se
           list: (lists.lists[model] as InstanceList[])[lod] as InstanceList,
         };
         if (lod !== CLIFF_FAR_LOD) options.cover?.add(mesh);
+        else options.reflections?.add(mesh);
       });
     });
     adopted = true;
@@ -209,6 +213,7 @@ export function createCliffMeshes(engine: EngineContext, scene: SceneContext, se
         for (const [lod, bucket] of row.entries()) {
           if (bucket === null) continue;
           options.cover?.remove(bucket.target.mesh);
+          options.reflections?.remove(bucket.target.mesh);
           removeFromScene(scene, bucket.target.mesh);
           disposeMeshGpu(bucket.target.mesh);
           row[lod] = null;
