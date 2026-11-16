@@ -37,15 +37,16 @@ import { Vector3 } from "@babylonjs/core/Maths/math.vector.js";
 import type { AbstractMesh } from "@babylonjs/core/Meshes/abstractMesh.js";
 import type { TransformNode } from "@babylonjs/core/Meshes/transformNode.js";
 import { Material } from "@babylonjs/core/Materials/material.js";
-import { attachShadeSmoke, SHADE_SMOKE_FOLD_S, type ShadeSmokePlugin } from "./shadeSmoke.js";
+import { attachShadeSmoke, type ShadeSmokePlugin } from "./shadeSmoke.js";
 import { HOLLOW_FIGURE_M } from "./hollowLook.js";
+import { SHADE_MASK_RATIO, shadeMaskColour, shadeSmokeSeconds } from "./shadeMaskParams.js";
 
 /** The layer bit the mask's camera sees and the main camera (Babylon's default mask, 0x0FFFFFFF) does not. */
 export const SHADE_LAYER = 0x10000000;
 /** The main camera's layer, Babylon's default. */
 export const MAIN_LAYER = 0x0fffffff;
-/** The mask's size as a share of the frame: a blurred figure wants no more. */
-export const SHADE_MASK_RATIO = 0.5;
+// The mask's size as a share of the frame is made with no engine (`shadeMaskParams.ts`).
+export { SHADE_MASK_RATIO } from "./shadeMaskParams.js";
 
 /** One figure in the mask: its node, how far in it is (0 to 1), how soft (1 a blur in the mist, 0 the Hollow itself), and how near (1 close, less far off: a far figure is fainter in the mist). */
 /**
@@ -91,6 +92,7 @@ export function createShadeSilhouette(scene: Scene, camera: Camera): ShadeSilhou
   const materials = new Map<TransformNode, StandardMaterial>();
   const smokes = new Map<TransformNode, ShadeSmokePlugin>();
   const started = performance.now();
+  const maskColour: [number, number, number] = [0, 0, 0];
   let current: readonly ShadeEntry[] = [];
   let anyNow = false;
 
@@ -135,7 +137,7 @@ export function createShadeSilhouette(scene: Scene, camera: Camera): ShadeSilhou
         smokes.delete(node);
       }
       anyNow = false;
-      const seconds = ((performance.now() - started) / 1000) % SHADE_SMOKE_FOLD_S;
+      const seconds = shadeSmokeSeconds(performance.now() - started);
       for (const e of entries) {
         let material = materials.get(e.node);
         if (material === undefined) {
@@ -155,9 +157,10 @@ export function createShadeSilhouette(scene: Scene, camera: Camera): ShadeSilhou
           }
         }
         // Red the shade (fainter far off), blue the real thing resolved out of it.
-        material.emissiveColor.r = e.soft * e.near;
-        material.emissiveColor.g = 0;
-        material.emissiveColor.b = 1 - e.soft;
+        shadeMaskColour(e.soft, e.near, maskColour);
+        material.emissiveColor.r = maskColour[0];
+        material.emissiveColor.g = maskColour[1];
+        material.emissiveColor.b = maskColour[2];
         const smoke = smokes.get(e.node);
         if (smoke !== undefined) {
           smoke.presence = e.presence;

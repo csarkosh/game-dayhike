@@ -21,17 +21,10 @@ import type { SubMesh } from "@babylonjs/core/Meshes/subMesh.js";
 import noise from "./shaders/shadeSmokeNoise.fx?raw";
 import vertexWorldPos from "./shaders/shadeSmokeWorldPos.vertex.fx?raw";
 import fragmentColour from "./shaders/shadeSmokeColour.fragment.fx?raw";
+import { shadeSmokeUniforms } from "./shadeMaskParams.js";
 
-/** Noise cells a metre, the metres a second the smoke rises through the figure, the soft edge of its coming and going, and the share of the figure's height at its feet lost in the mist. Mirrored in shaders/shadeSmokeNoise.fx; the lockstep test asserts them. */
-export const SHADE_SMOKE_SCALE = 0.9;
-export const SHADE_SMOKE_RISE = 0.6;
-export const SHADE_SMOKE_SOFT = 0.12;
-export const SHADE_SMOKE_FEET = 0.16;
-/** How much of the figure's turned edge the fraying may take, 0 to 1, and the most its outline swells or draws in, metres. */
-export const SHADE_SMOKE_FRAY = 0.55;
-export const SHADE_SMOKE_SWELL_M = 0.35;
-/** The smoke's clock folds at this many seconds, so its noise keeps its precision through a long night. */
-export const SHADE_SMOKE_FOLD_S = 3600;
+// The smoke's numbers are made with no engine (`shadeMaskParams.ts`).
+export { SHADE_SMOKE_FEET, SHADE_SMOKE_FOLD_S, SHADE_SMOKE_FRAY, SHADE_SMOKE_RISE, SHADE_SMOKE_SCALE, SHADE_SMOKE_SOFT, SHADE_SMOKE_SWELL_M } from "./shadeMaskParams.js";
 
 export class ShadeSmokePlugin extends MaterialPluginBase {
   /** How far in the figure is: 0 nothing, 1 whole. */
@@ -81,8 +74,9 @@ uniform vec2 shadeSmokeEdge;
 
   // eslint-disable-next-line @typescript-eslint/no-unused-vars
   override bindForSubMesh(uniformBuffer: UniformBuffer, _scene: Scene, _engine: AbstractEngine, _subMesh: SubMesh): void {
-    uniformBuffer.updateFloat4("shadeSmoke", this.presence, this.time, this.feetY, this.height);
-    uniformBuffer.updateFloat2("shadeSmokeEdge", SHADE_SMOKE_FRAY, SHADE_SMOKE_SWELL_M);
+    const u = shadeSmokeUniforms(this.presence, this.time, this.feetY, this.height);
+    uniformBuffer.updateFloat4("shadeSmoke", u.shadeSmoke[0], u.shadeSmoke[1], u.shadeSmoke[2], u.shadeSmoke[3]);
+    uniformBuffer.updateFloat2("shadeSmokeEdge", u.shadeSmokeEdge[0], u.shadeSmokeEdge[1]);
   }
 
   override getCustomCode(shaderType: string): { [pointName: string]: string } | null {
