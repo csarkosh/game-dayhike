@@ -4,6 +4,9 @@
  * props are a box here and which are another shell's to draw, and a box's
  * mesh as plain arrays. The shells that draw them (`propMeshes.ts`, and
  * `lite/propMeshes.ts` on Babylon Lite) keep the meshes and the materials.
+ * A hand-authored level's brushes are boxes of the same kind, in the same
+ * colours by their materials' names (`brushBoxes`), drawn where a world has
+ * no forest.
  *
  * Loads no engine: nothing here knows what a mesh is.
  */
@@ -122,5 +125,33 @@ export function propBoxGeometry(box: PropBox): { positions: Float32Array; normal
     });
     indices.set([f * 4, f * 4 + 2, f * 4 + 1, f * 4, f * 4 + 3, f * 4 + 2], f * 6);
   });
+  return { positions, normals, indices };
+}
+
+/** A hand-authored level's brushes as the boxes drawn for them, in the level's order: each its box's size, standing at its middle. */
+export function brushBoxes(brushes: readonly { box: { min: { x: number; y: number; z: number }; max: { x: number; y: number; z: number } }; material: string }[]): PropBox[] {
+  return brushes.map((brush, i) => {
+    const width = brush.box.max.x - brush.box.min.x;
+    const height = brush.box.max.y - brush.box.min.y;
+    const depth = brush.box.max.z - brush.box.min.z;
+    return {
+      name: `brush_${i}`, material: brush.material,
+      x: brush.box.min.x + width / 2, y: brush.box.min.y + height / 2, z: brush.box.min.z + depth / 2,
+      width, height, depth,
+    };
+  });
+}
+
+/** Several boxes as one mesh's arrays (`propBoxGeometry`, a box after another). */
+export function propBoxesGeometry(boxes: readonly PropBox[]): { positions: Float32Array; normals: Float32Array; indices: Uint32Array } {
+  const positions = new Float32Array(boxes.length * 72);
+  const normals = new Float32Array(boxes.length * 72);
+  const indices = new Uint32Array(boxes.length * 36);
+  for (const [b, box] of boxes.entries()) {
+    const one = propBoxGeometry(box);
+    positions.set(one.positions, b * 72);
+    normals.set(one.normals, b * 72);
+    for (let i = 0; i < 36; i++) indices[b * 36 + i] = (one.indices[i] as number) + b * 24;
+  }
   return { positions, normals, indices };
 }

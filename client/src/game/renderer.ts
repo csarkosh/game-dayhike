@@ -148,7 +148,7 @@ import { createMotes, type Motes } from "./motes.js";
 import { createWaterLife, type WaterLife, type WaterLifeFrame } from "./waterLife.js";
 import { SILENT_WATER_LIFE, createPlayerSlots, pixelAtOneMetre, skyLumaOf } from "./waterLifeInputs.js";
 import type { WaterLifeSound } from "./waterLifeAudio.js";
-import { PROP_ROUGHNESS, propColour } from "./propBoxes.js";
+import { PROP_ROUGHNESS, brushBoxes, propColour } from "./propBoxes.js";
 import { createPropMeshes, type MeshRegistry, type PropShadows } from "./propMeshes.js";
 import { buildOrUndo, whenSceneReady } from "./rendererSwap.js";
 import { createCalmFade, lakeCalmUnder, type LakeCalmFrame } from "./lakeCalmFrame.js";
@@ -2186,23 +2186,15 @@ function buildRenderer(
   // stays available as the fallback, and without this guard its 64x64 floor and
   // 6 m perimeter walls get drawn straight through the middle of the forest.
   const brushMeshes: Mesh[] = [];
-  for (const [i, brush] of forest === null ? level.brushes.entries() : []) {
-    const size = {
-      x: brush.box.max.x - brush.box.min.x,
-      y: brush.box.max.y - brush.box.min.y,
-      z: brush.box.max.z - brush.box.min.z,
-    };
+  // A brush is a box of its own size at its box's middle, in its material's colour (`propBoxes.ts` `brushBoxes`).
+  for (const box of forest === null ? brushBoxes(level.brushes) : []) {
     const mesh = MeshBuilder.CreateBox(
-      `brush_${i}`,
-      { width: size.x, height: size.y, depth: size.z },
+      box.name,
+      { width: box.width, height: box.height, depth: box.depth },
       scene,
     );
-    mesh.position.set(
-      brush.box.min.x + size.x / 2,
-      brush.box.min.y + size.y / 2,
-      brush.box.min.z + size.z / 2,
-    );
-    mesh.material = terrainMaterialFor(scene, brush.material);
+    mesh.position.set(box.x, box.y, box.z);
+    mesh.material = terrainMaterialFor(scene, box.material);
     mesh.freezeWorldMatrix();
     lighting.addShadowMesh(mesh);
     brushMeshes.push(mesh);

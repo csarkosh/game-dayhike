@@ -12,7 +12,7 @@ describe("what the renderer on Babylon Lite does not draw yet", () => {
 
   it("names every part of the world it leaves out", () => {
     const all = NOT_DRAWN.map((part) => part.what).join("; ");
-    for (const word of [ "sea", "lake", "skin's shading", "shadows", "brushes", "wireframe"]) {
+    for (const word of [ "sea", "lake", "skin's shading", "shadows", "wireframe"]) {
       expect(all, word).toContain(word);
     }
   });
@@ -108,6 +108,14 @@ describe("what the renderer on Babylon Lite does not draw yet", () => {
     for (const name of ["scene", "ending", "endScene"]) expect(name in held, name).toBe(false);
     const all = NOT_DRAWN.map((part) => part.what).join("; ");
     expect(all).not.toMatch(/cameras|summit|\bcap\b|endings?|own body|scenes?\b/);
+  });
+
+  it("leaves a hand-authored level's brushes to the renderer: what is left of the debugging views is the wireframe, held", () => {
+    const { members, held } = notDrawnMembers();
+    expect(NOT_DRAWN.filter((part) => /brush/.test(part.what))).toEqual([]);
+    expect(NOT_DRAWN.filter((part) => /wireframe/.test(part.what)).map((part) => part.members)).toEqual([["setWireframe"]]);
+    members.setWireframe(true);
+    expect(held.wireframe).toBe(true);
   });
 
   it("tells no compile and keeps no shader: the stop it hands back does nothing", () => {

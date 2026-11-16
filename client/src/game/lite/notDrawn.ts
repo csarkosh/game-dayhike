@@ -35,7 +35,8 @@
  * a scene's camera (the summit's five shots, the cap's turn) through its
  * own lens, the local hiker's own body in a shot with the lamp it wears
  * there, a death's fall and its closing dark, and the end scene with the
- * car it drives, its headlamp and its tail lamps. Every other part of the world is absent, and the
+ * car it drives, its headlamp and its tail lamps; and, in a world with no
+ * forest, a hand-authored level's brushes. Every other part of the world is absent, and the
  * members of `Renderer` that belong to an absent part are answered here as
  * nothing: a setter keeps what it was told (`held`), for the day its part is
  * drawn; a read-out returns nothing heard, nothing seen or nothing pending;
@@ -52,7 +53,7 @@ export const NOT_DRAWN: readonly NotDrawn[] = [
   { what: "the mirror a lake reflects its shore in on the tier that draws one, and the water, a lake's and the sea's, on the tier that reads what lies under it through the surface", members: [] },
   { what: "the skin's shading (`skin.ts`): no model the game ships has a surface that shows it", members: ["setSkinShading"] },
   { what: "the sun's cast shadows on a tier given a shadow map: no tier has one (`quality.ts`), so the game casts none either", members: [] },
-  { what: "the hand-authored levels' brushes, and the wireframe view", members: ["setWireframe"] },
+  { what: "the wireframe view: Lite draws a material's triangles alone, and has no way to draw a mesh's edges through its own material", members: ["setWireframe"] },
   { what: "the shaders' compiles told as they happen, kept shaders, and the GPU's timings", members: ["onShaderCompiled", "keepShaders", "gpuTime"] },
 ];
 

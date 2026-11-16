@@ -25,7 +25,8 @@
  * clutter's (`clutterMeshes.ts`) and the cliffs' (`cliffMeshes.ts`), which
  * land as their models do, the grass's and the duff's
  * (`bladeMeshes.ts`, `duffMeshes.ts`), on the tiers that draw them, the
- * chunk props' boxes (`propMeshes.ts`), the mist banks (`mistMeshes.ts`), the
+ * chunk props' boxes (`propMeshes.ts`) or, in a world with no forest, a
+ * hand-authored level's brushes (`brushMeshes.ts`), the mist banks (`mistMeshes.ts`), the
  * motes (`motes.ts`) and the rain (`rain.ts`, `rainSplash.ts`, under the
  * cover map of `rainMap.ts`), the hikers' bodies and the Hollows' eyes
  * (`entityMeshes.ts`), the lamps the other hikers wear (`wornLamps.ts`), the
@@ -284,6 +285,7 @@ import { FOLIAGE_PLAYERS, FOLIAGE_PLAYER_PARKED, setFoliageWind } from "../folia
 import { nearRadiusFor } from "../forestField.js";
 import { GAME_FOV, lensProjection } from "../gameLens.js";
 import { PAINT_PALETTES, gradeRecordUnder, sightUnder, type PaintPaletteName } from "../gradeParams.js";
+import { brushBoxes } from "../propBoxes.js";
 import { emptyMaterialGradeUniforms, materialGradeUniforms } from "../materialGrade.js";
 import { isHollow } from "../../sim/hollow.js";
 import { LAMP_ANGLE, LAMP_COLOUR, LAMP_EXPONENT, LAMP_RANGE, lampUnder, type LampState } from "../lampParams.js";
@@ -315,6 +317,7 @@ import { createSyncJobs, finish, stepSlices, type SyncJobs } from "../syncJobs.j
 import { followRoadCentre, terrainTablesFor, type TerrainTables } from "../terrainTables.js";
 import { terrainCoverFor, terrainSurfaceUnder, terrainUniforms, type TerrainUniformInputs } from "../terrainUniforms.js";
 import { createViewBob } from "../viewBob.js";
+import { wetSurfaceUnder } from "../weather.js";
 import { createWildlifeInputs } from "../wildlifeInputs.js";
 import { wingTime } from "../wingParams.js";
 import { WATER_ROWS, lakeWaterRow } from "../waterShading.js";
@@ -325,6 +328,7 @@ import { WET_CAP, emptyWetUniforms, setWetCove, setWetSwash, setWetWeather, wetL
 import { windRecordUnder, type WindRecord } from "../windParams.js";
 import { atmospherePlugin } from "./atmospherePlugin.js";
 import { createBladeMeshes, type BladeMeshes } from "./bladeMeshes.js";
+import { createLiteBrushes, type LiteBrushes } from "./brushMeshes.js";
 import { cameraAxes, projectToCanvas, restAxes, restPlanes, viewCorners, viewPlanes, type CameraPose } from "./cameraPose.js";
 import { createCapMesh, type CapMesh } from "./capMesh.js";
 import { createCliffMeshes, type CliffMeshes } from "./cliffMeshes.js";
@@ -452,6 +456,8 @@ type Standing = {
   duff: DuffMeshes | null;
   cliffs: CliffMeshes | null;
   props: PropMeshes | null;
+  /** A hand-authored level's brushes (`brushMeshes.ts`); null in a forest's world, which draws terrain in their place. */
+  brushes: LiteBrushes | null;
   /** The valley mist banks (`mistMeshes.ts`). */
   mist: LiteMistMeshes | null;
   /** The motes, on the tiers that draw them (`motes.ts`). */
@@ -487,7 +493,7 @@ type Standing = {
 
 /**
  * A hike's renderer on `canvas` for `forest`'s world (null: a hand-authored
- * level, of which nothing is drawn yet). Of `options` it reads the tier, the
+ * level, whose brushes are drawn under the same sky, air and light). Of `options` it reads the tier, the
  * clock, the start, the prepared scene's rings and feature table, whether
  * the rings' first build is deferred, the loader of first builds, the
  * measurement mode and the sky's table; the rest belong to parts not drawn
@@ -495,8 +501,6 @@ type Standing = {
  */
 export function createLiteRenderer(canvas: HTMLCanvasElement, level: Level, forest: Forest | null, options: RendererOptions = {}): Renderer {
   if (options.engine !== undefined) throw new Error("the hike's renderer makes its own engine from its canvas: none is handed to it");
-
-  if (forest === null && level.brushes.length > 0) console.info(`the level's ${level.brushes.length} brushes are not drawn yet`);
 
   const tier = options.tier ?? detectTier(globalThis.navigator);
   const clock = options.clock ?? (() => performance.now());
@@ -752,6 +756,7 @@ export function createLiteRenderer(canvas: HTMLCanvasElement, level: Level, fore
     made.motes?.dispose();
     made.mist?.dispose();
     made.props?.dispose();
+    made.brushes?.dispose();
     made.cliffs?.dispose();
     made.duff?.dispose();
     made.clutter?.dispose();
@@ -991,6 +996,10 @@ export function createLiteRenderer(canvas: HTMLCanvasElement, level: Level, fore
         cover: both(coverAs("hard"), reflectedAs(false)),
       });
     }
+    // A forest draws terrain instead of brushes: a hand-authored level's are drawn only where there is none.
+    const brushes = forest === null && level.brushes.length > 0 && !disposed
+      ? createLiteBrushes(engine, scene, brushBoxes(level.brushes), { air, uploads })
+      : null;
     // The hikers' bodies and the Hollows' eyes, which land as their models do, under the air as the rest of the
     // world is. A body takes the water's line and not the rain: its porosity is none.
     const skinClock = createSkinClock(engine);
@@ -1059,7 +1068,7 @@ export function createLiteRenderer(canvas: HTMLCanvasElement, level: Level, fore
       }
     }
     const made: Standing = {
-      engine, scene, camera, sun, fill, lamp, dome, capture, shared, chain, materials, terrain, road, cloudGround, forest: trees, blades, clutter, duff, cliffs, props, mist, motes,
+      engine, scene, camera, sun, fill, lamp, dome, capture, shared, chain, materials, terrain, road, cloudGround, forest: trees, blades, clutter, duff, cliffs, props, brushes, mist, motes,
       rain, rainMap, panorama, splash, skinClock, entities, mask, veil, wornLamps, cap, wildlife, scenery, bed, sea, lakes: lakeMeshes, waterPlants, waterLives,
     };
     if (disposed) {
@@ -1233,6 +1242,11 @@ export function createLiteRenderer(canvas: HTMLCanvasElement, level: Level, fore
     terrainValues.terrainAlbedo[1] = surface.albedo[1];
     terrainValues.terrainAlbedo[2] = surface.albedo[2];
     setWetWeather(wetness);
+    // A level's brushes take the weather's wet as a whole: darker and glossier, written when it moves.
+    if (made.brushes !== null) {
+      const wet = wetSurfaceUnder(light.weather);
+      made.brushes.wet(wet.albedoScale, wet.roughnessScale);
+    }
     // Everywhere but under the water of the high tier's own path, the water above darkens what stands in it. The
     // terrain's cap is none; every other material's is its own, and the rest of the look is this record's.
     const wetLine = wetLineFor(wetBodies, pose.x, pose.z);

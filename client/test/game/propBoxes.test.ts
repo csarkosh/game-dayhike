@@ -6,9 +6,11 @@ import { Scene } from "@babylonjs/core/scene.js";
 import type { ChunkGrid } from "../../src/sim/chunkGrid.js";
 import { CHUNK_SIZE } from "../../src/sim/forestConstants.js";
 import {
-  PROP_COLOURS, PROP_DRAWN_ELSEWHERE, PROP_MESH_RADIUS_CHUNKS, PROP_ROUGHNESS, chunkPropBoxes, propBoxGeometry, propChunk, propChunkKey, propColour,
-  propWindow,
+  PROP_COLOURS, PROP_DRAWN_ELSEWHERE, PROP_MESH_RADIUS_CHUNKS, PROP_ROUGHNESS, brushBoxes, chunkPropBoxes, propBoxGeometry, propBoxesGeometry, propChunk,
+  propChunkKey, propColour, propWindow,
 } from "../../src/game/propBoxes.js";
+import { parseLevel } from "../../src/sim/level.js";
+import sandbox01 from "../../levels/sandbox01.json" with { type: "json" };
 
 /** A grid of one chunk's props, wherever it is asked. */
 const gridOf = (props: { material: string; box: { min: { x: number; y: number; z: number }; max: { x: number; y: number; z: number } } }[]): ChunkGrid =>
@@ -91,5 +93,35 @@ describe("the chunk props as boxes", () => {
       scene.dispose();
       engine.dispose();
     }
+  });
+});
+
+describe("a hand-authored level's brushes as boxes", () => {
+  it("makes a box of every brush, in the level's order: its box's size, at its middle, in its material's colour", () => {
+    const level = parseLevel(sandbox01);
+    const boxes = brushBoxes(level.brushes);
+    expect(boxes).toHaveLength(13);
+    expect(boxes.map((box) => box.name)).toEqual(level.brushes.map((_, i) => `brush_${i}`));
+    // The floor: 64 m square, a metre thick, its top at the ground.
+    expect(boxes[0]).toEqual({ name: "brush_0", material: "concrete", x: 0, y: -0.5, z: 0, width: 64, height: 1, depth: 64 });
+    for (const [i, box] of boxes.entries()) {
+      const brush = level.brushes[i]!;
+      expect([box.x - box.width / 2, box.y - box.height / 2, box.z - box.depth / 2]).toEqual([brush.box.min.x, brush.box.min.y, brush.box.min.z]);
+      expect([box.x + box.width / 2, box.y + box.height / 2, box.z + box.depth / 2]).toEqual([brush.box.max.x, brush.box.max.y, brush.box.max.z]);
+      expect(propColour(box.material)).toBe(PROP_COLOURS[box.material]);
+    }
+    // Six names for the thirteen: a renderer that draws a mesh a name draws six.
+    expect(new Set(boxes.map((box) => box.material)).size).toBe(6);
+  });
+
+  it("lays several boxes as one mesh: each box's own corners and triangles, a box after another", () => {
+    const a = { name: "a", material: "crate", x: 0, y: 0, z: 0, width: 2, height: 2, depth: 2 };
+    const b = { name: "b", material: "crate", x: 10, y: 1, z: -4, width: 1, height: 3, depth: 5 };
+    const both = propBoxesGeometry([a, b]);
+    const one = propBoxGeometry(a), two = propBoxGeometry(b);
+    expect([...both.positions]).toEqual([...one.positions, ...two.positions]);
+    expect([...both.normals]).toEqual([...one.normals, ...two.normals]);
+    expect([...both.indices]).toEqual([...one.indices, ...[...two.indices].map((i) => i + 24)]);
+    expect(propBoxesGeometry([]).positions).toHaveLength(0);
   });
 });
