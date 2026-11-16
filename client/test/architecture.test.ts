@@ -571,6 +571,10 @@ describe("layer boundaries", () => {
       join(SRC, "game", "signParts.ts"),
       join(SRC, "game", "sceneryParts.ts"),
       join(SRC, "game", "boardDraw.ts"),
+      join(SRC, "game", "scenePlay.ts"),
+      join(SRC, "game", "cutscene.ts"),
+      join(SRC, "game", "ending.ts"),
+      join(SRC, "game", "endScene.ts"),
     ];
 
     // Guards against the guard: a rename or deletion of one of these files
@@ -793,6 +797,38 @@ describe("layer boundaries", () => {
     expect(readFileSync(join(SRC, "game/oceanRender.ts"), "utf8")).toContain("createOceanFrame(seed, tier, made)");
     expect(readFileSync(join(SRC, "game/oceanWindSource.ts"), "utf8")).toContain("createSeaWindLag()");
     expect(readFileSync(join(SRC, "game/renderer.ts"), "utf8")).toContain("createSeaEdgeStep(seed, ocean.field)");
+  });
+
+  /**
+   * What a scene and an ending are played with, for a renderer that is not
+   * Babylon.js to play them by: the summit's shots and the cap's, the death's
+   * fall and its closing dark, the end scene's four shots, its car along the
+   * road and its lamps, and the state that runs between them from frame to
+   * frame (whose camera the frame has, the local body in a shot, who is in
+   * the car, where the one lamp is worn). The renderer on Babylon.js steps
+   * the same play.
+   */
+  it("what the scenes and the endings are played with is computed without loading Babylon, whatever it imports", () => {
+    const ENGINE_FREE = ["scenePlay.ts", "cutscene.ts", "ending.ts", "endScene.ts", "carAudio.ts", "scene/roadPath.ts", "scene/timeline.ts", "scene/shots.ts"];
+    const loaded = (file: string): string[] =>
+      [...readFileSync(file, "utf8").matchAll(/^\s*(?:import|export)\s+(?!type\s)(?:[^"'();]*?\s+from\s+)?["']([^"']+)["']/gm)].map((m) => m[1] as string);
+    const seen = new Set<string>();
+    const stack = ENGINE_FREE.map((name) => join(SRC, "game", name));
+    for (const file of stack) expect(existsSync(file), file).toBe(true);
+    const bad: string[] = [];
+    while (stack.length > 0) {
+      const file = stack.pop() as string;
+      if (seen.has(file)) continue;
+      seen.add(file);
+      for (const spec of loaded(file)) {
+        if (spec.startsWith("@babylonjs")) bad.push(`${relative(SRC, file)} imports ${spec}`);
+        if (spec.startsWith(".") && spec.endsWith(".js")) stack.push(join(file, "..", spec.replace(/\.js$/, ".ts")));
+      }
+    }
+    expect(seen.size).toBeGreaterThan(ENGINE_FREE.length);
+    expect(bad).toEqual([]);
+    // And the shell on Babylon.js steps it: the scenes' state is kept in one place.
+    expect(readFileSync(join(SRC, "game/renderer.ts"), "utf8")).toContain("const play = createScenePlay({");
   });
 
   /**
