@@ -48,10 +48,20 @@
  *
  * **What a frame sends is held to the renderer's budget**
  * (`frameUploads.ts`). Lite sends a mesh's geometry as it is made or
- * written, drawn or not, and its plugin vertex data when its draw is first
- * recorded. So a job sends the geometry ahead, a ring's or a patch's at a
- * time, each waiting for a frame with room, and what is left for the frame
- * that shows the build is the plugin vertex data of what it shows.
+ * written, drawn or not, and its plugin vertex data with the next frame
+ * once the mesh stands in the scene, shown or hidden. So a job sends a
+ * ring whole to its hidden mesh, a ring at a time, each waiting for a frame
+ * with room, and the frame that changes the rings' places sends nothing; a
+ * patch's geometry goes ahead the same way, to a mesh not in the scene yet,
+ * and what is left for the frame that shows a set is the plugin vertex
+ * data of the patches it adds.
+ *
+ * **Why a ring keeps two meshes.** A crossing leaves two rings stale at the
+ * least (the finest, and the next, whose hole follows it) and all seven at
+ * the most, about 1.6 MB a ring. Written in place they would have to go in
+ * one frame, since a ring drawn moved against a neighbour that has not
+ * leaves a gap: 3.2 MB to 11 MB in a frame against a budget of two
+ * mebibytes. Written to meshes no frame draws, they go a ring a frame.
  */
 import {
   addToScene, createMeshFromData, disposeMeshGpu, removeFromScene, setMeshVisible, updateMeshGeometry,
@@ -354,7 +364,7 @@ export function createTerrainMeshes(
       if (entry.mesh !== null) {
         addToScene(scene, entry.mesh);
         cover?.add(entry.mesh);
-        // Its plugin vertex data goes up as its draw is first recorded.
+        // Its plugin vertex data goes up with the frame that first draws it.
         uploads?.stream("pluginVertices", entry.mesh.pluginVertexData?.byteLength ?? 0);
         live++;
       }
@@ -526,14 +536,16 @@ export function createTerrainMeshes(
     whole.fill(0, vertices.indices.length);
   }
 
-  /** The bytes writing ring `level`'s geometry to its hidden mesh sends. */
+  /** The bytes writing ring `level` to its hidden mesh sends: its geometry, and its plugin vertex data where the
+   * mesh stands in the scene. */
   function stageBytes(level: number): number {
     const to = hidden(level);
-    return geometryBytes(ringVertices(to.geometry as RingGeometry), to.indices as Uint32Array);
+    return geometryBytes(ringVertices(to.geometry as RingGeometry), to.indices as Uint32Array) + (to.inScene ? (to.plugin?.byteLength ?? 0) : 0);
   }
 
   /** Ring `level` as `emit` made it, written to its hidden mesh, or to a mesh made for it: Lite sends the geometry
-   * now, and the plugin vertex data when the mesh is shown. */
+   * now, and the plugin vertex data with the next frame, or, for a mesh not in the scene yet, with the frame that
+   * shows it. */
   function stage(level: number): void {
     const to = hidden(level);
     const vertices = ringVertices(to.geometry as RingGeometry);
@@ -547,10 +559,17 @@ export function createTerrainMeshes(
     to.mesh.pluginVertexData = to.plugin;
     to.mesh.pluginVertexVersion = (to.mesh.pluginVertexVersion ?? 0) + 1;
     uploads?.stream("geometry", geometryBytes(vertices, whole), 3);
+    if (to.inScene) uploads?.stream("pluginVertices", to.plugin?.byteLength ?? 0);
   }
 
-  /** Ring `level`'s hidden mesh shown in the drawn one's place: its draw is recorded again, which sends its plugin
-   * vertex data, and the other is hidden for the next rebuild to write. */
+  /** The bytes showing ring `level`'s hidden mesh sends: its plugin vertex data, where the mesh first joins the scene. */
+  function showBytesOf(level: number): number {
+    const to = hidden(level);
+    return to.inScene ? 0 : (to.plugin?.byteLength ?? 0);
+  }
+
+  /** Ring `level`'s hidden mesh shown in the drawn one's place, and the other hidden for the next rebuild to write. A
+   * mesh that first joins the scene sends its plugin vertex data with the frame. */
   function show(level: number): void {
     const ring = rings[level] as RingSamples;
     const finer = level > 0 ? (rings[level - 1] as RingSamples) : null;
@@ -561,10 +580,10 @@ export function createTerrainMeshes(
     else {
       addToScene(scene, mesh);
       to.inScene = true;
+      uploads?.stream("pluginVertices", to.plugin?.byteLength ?? 0);
       // Both of a ring's meshes stand in the map; it draws the one shown.
       if (level < RAIN_MAP_RINGS) cover?.add(mesh);
     }
-    uploads?.stream("pluginVertices", to.plugin?.byteLength ?? 0);
     const was = shown[level] as number;
     if (was >= 0) {
       const old = (twins[level] as [RingTwin, RingTwin])[was] as RingTwin;
@@ -638,8 +657,8 @@ export function createTerrainMeshes(
   }
 
   /** The rings for a camera at (camX, camZ): every ring's samples moved, then each stale ring made again, in slices
-   * of its own, and written to its hidden mesh once the frame's upload budget has room for its geometry, then all of
-   * them shown in the last slice. Without `uncovered` the rings leave out the ground the patches now drawn cover. */
+   * of its own, and written to its hidden mesh once the frame's upload budget has room for it, then all of them
+   * shown in the last slice. Without `uncovered` the rings leave out the ground the patches now drawn cover. */
   function* build(camX: number, camZ: number, uncovered = false): Slices {
     covered = uncovered ? null : patchCover;
     for (let level = 0; level < RING_COUNT; level++) {
@@ -668,9 +687,9 @@ export function createTerrainMeshes(
       if (disposed) return;
       stage(level);
       made.push(level);
-      showing += hidden(level).plugin?.byteLength ?? 0;
+      showing += showBytesOf(level);
     }
-    // The rings change places in one step: what it sends is their plugin vertex data, as the frame is drawn.
+    // The rings change places in one step, which sends nothing but for a mesh that first joins the scene.
     if (made.length > 0) {
       yield;
       if (uploads !== undefined) yield* uploads.hold(showing);

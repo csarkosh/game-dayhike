@@ -7,12 +7,11 @@
  * of a mesh's geometry and of its plugin vertex data, of a table written to
  * a texture and of the frame's uniform block, each with the buffer or
  * texture writes it costs; how many instances it composed, the meshes it
- * made and let go, the times it asked for every draw to be recorded again,
- * and the materials whose own uniforms it marked to be written. Lite sends
- * most of it as the frame is drawn, so a frame's record is closed once the
- * frame's jobs have run, and `last` is the record of the frame before. It
- * counts what the game's code hands over, not what Lite writes for itself
- * (the scene's uniforms, a light's).
+ * made and let go, and the materials whose own uniforms it marked to be
+ * written. Lite sends most of it as the frame is drawn, so a frame's
+ * record is closed once the frame's jobs have run, and `last` is the
+ * record of the frame before. It counts what the game's code hands over,
+ * not what Lite writes for itself (the scene's uniforms, a light's).
  *
  * **The bound.** What follows the camera is streamed: the rings and the
  * patches, the forest's lists and the ground cover's. A frame's streamed
@@ -68,8 +67,6 @@ export type FrameUploadCounts = {
   /** Meshes made, and let go. */
   meshesMade: number;
   meshesDropped: number;
-  /** Times every draw was asked to be recorded again. */
-  recordings: number;
   /** Materials whose own uniforms were marked to be written again: a buffer write each, of a size that is Lite's. */
   materialsMarked: number;
   /** Hand-overs that waited for this frame to end. */
@@ -89,11 +86,10 @@ export type FrameUploads = {
    * fits, and after one wait where the scheduler runs the job on within the same frame (it is late, or built at once).
    */
   hold(bytes: number): Slices;
-  /** Counts instances composed, meshes made and let go, a recording asked for, materials marked. */
+  /** Counts instances composed, meshes made and let go, materials marked. */
   composed(instances: number): void;
   made(meshes?: number): void;
   dropped(meshes?: number): void;
-  recorded(): void;
   marked(materials?: number): void;
   /** Closes the frame's record: it becomes `last`, and the next frame's begins with the whole budget. */
   close(): void;
@@ -109,7 +105,7 @@ function emptyCounts(): FrameUploadCounts {
   return {
     bytes: 0, writes: 0, streamed: 0,
     byKind: { instances: 0, pluginInstances: 0, geometry: 0, pluginVertices: 0, textures: 0, uniforms: 0 },
-    instances: 0, meshesMade: 0, meshesDropped: 0, recordings: 0, materialsMarked: 0, held: 0,
+    instances: 0, meshesMade: 0, meshesDropped: 0, materialsMarked: 0, held: 0,
   };
 }
 
@@ -121,7 +117,6 @@ function copyCounts(from: Readonly<FrameUploadCounts>, to: FrameUploadCounts): v
   to.instances = from.instances;
   to.meshesMade = from.meshesMade;
   to.meshesDropped = from.meshesDropped;
-  to.recordings = from.recordings;
   to.materialsMarked = from.materialsMarked;
   to.held = from.held;
 }
@@ -173,9 +168,6 @@ export function createFrameUploads(budget: number = UPLOAD_BUDGET_BYTES): FrameU
     },
     dropped(meshes = 1) {
       now.meshesDropped += meshes;
-    },
-    recorded() {
-      now.recordings++;
     },
     marked(materials = 1) {
       now.materialsMarked += materials;

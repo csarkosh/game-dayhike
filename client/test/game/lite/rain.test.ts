@@ -2,7 +2,8 @@ import { describe, expect, it } from "vitest";
 import { ShaderStore } from "@babylonjs/core/Engines/shaderStore.js";
 import "@babylonjs/core/Shaders/default.fragment.js";
 import "@babylonjs/core/Shaders/ShadersInclude/fogVertex.js";
-import { RAIN_WGSL } from "../../../src/game/lite/rain.js";
+import { FRAME_BLOCK, stageClocks, stageOwn, stageReads } from "../../../src/game/lite/frameBlock.js";
+import { RAIN_FRAME_READS, RAIN_WGSL } from "../../../src/game/lite/rain.js";
 import { emptyRainStageUniforms } from "../../../src/game/rainField.js";
 import { RainPlugin } from "../../../src/game/rainPlugin.js";
 import { inOrder, tight } from "./wgslText.js";
@@ -134,8 +135,8 @@ describe("the rain's vertex stage on Babylon Lite", () => {
     expect(FOG_VERTEX).toContain("vFogDistance=(view*worldPos).xyz;");
     expect(inOrder(OPEN, [
       "letworldPos=vec4<f32>(positionUpdated,1.0);",
-      "out.position=select(shaderSystem.viewProjection*worldPos,vec4<f32>(2.0,2.0,2.0,1.0),drip&&input.world1.y>=u.rainDripShown);",
-      "out.fogDistance=(shaderSystem.view*worldPos).xyz;", "out.uv=input.uv;",
+      "out.position=select(scene.viewProjection*worldPos,vec4<f32>(2.0,2.0,2.0,1.0),drip&&input.world1.y>=u.rainDripShown);",
+      "out.fogDistance=(scene.view*worldPos).xyz;", "out.uv=input.uv;",
     ])).toBe(true);
   });
 
@@ -147,6 +148,20 @@ describe("the rain's vertex stage on Babylon Lite", () => {
     expect([...stages].sort()).toEqual([...names].sort());
     // The open stage reads no map.
     for (const name of ["rainMapCentre", "rainMapExtent", "rainCanopyWater"]) expect(read(RAIN_WGSL.vertex).has(name), name).toBe(false);
+  });
+
+  it("is made reading its clocks, the eye, the scene's fog and the display curve from the frame's block", () => {
+    const framed = ["rainCam", "rainCanopyWater", "rainContrast", "rainDrift", "rainDt", "rainExposure", "rainFogColour", "rainFogDensity", "rainFold"];
+    const made = tight(`${stageReads(RAIN_WGSL.vertexCovered, RAIN_FRAME_READS)}${stageReads(RAIN_WGSL.fragment, RAIN_FRAME_READS)}`);
+    const read = [...new Set([...made.matchAll(/\bu\.(\w+)/g)].map((m) => m[1] as string))].sort();
+    const own = Object.keys(stageOwn(emptyRainStageUniforms(), RAIN_FRAME_READS)).sort();
+    expect(read).toEqual(own);
+    expect(Object.keys(emptyRainStageUniforms()).filter((name) => !own.includes(name)).sort()).toEqual(framed);
+    expect(Object.keys(stageClocks(emptyRainStageUniforms())).sort()).toEqual(["rainCanopyWater", "rainDrift", "rainDt", "rainFold"]);
+    expect(made).toContain(`letrToCam=${FRAME_BLOCK}.fadeEye-rp;`);
+    expect(made).toContain(`-rSpeed*${FRAME_BLOCK}.rainFold/rainBoxSize.y`);
+    expect(made).toContain(`letfog=rainFogFactor(input.fogDistance,${FRAME_BLOCK}.atmBaseDensity);`);
+    expect(made).toContain(`color=vec4<f32>(displayColour(color.rgb,${FRAME_BLOCK}.frameExposure,${FRAME_BLOCK}.frameContrast),color.a);`);
   });
 });
 

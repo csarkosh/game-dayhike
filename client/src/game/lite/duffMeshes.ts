@@ -26,7 +26,7 @@
  * the cells the next one adds are looked up as idle work.
  */
 import {
-  createMeshFromData, createPbrMaterial, disposeMeshGpu, invalidateRenderBundles, removeFromScene, setPbrMetallicReflectance,
+  createMeshFromData, createPbrMaterial, disposeMeshGpu, removeFromScene, setPbrMetallicReflectance,
   type EngineContext, type MaterialPlugin, type PluginUniformBlock, type PbrMaterialProps, type SceneContext,
 } from "@babylonjs/lite";
 import { DUFF_ALBEDO, DUFF_CHARACTERS, DUFF_CHARACTER_COUNT, DUFF_TIER_COUNTS, duffClumpGeometry } from "../duffClump.js";
@@ -137,20 +137,14 @@ export function createDuffMeshes(engine: EngineContext, scene: SceneContext, see
       let sending = 0;
       for (let i = 0; i < buckets.length; i++) {
         const list = lists.all[i] as InstanceList;
-        sending += listBytes(list.count, list.buf.length / 16, (buckets[i] as ListMesh).layout.floats);
+        sending += listBytes(list.count, (buckets[i] as ListMesh).layout.floats);
       }
       yield* options.uploads.hold(sending);
     }
     if (disposed) return;
-    let resent = false;
     for (let i = 0; i < buckets.length; i++) {
       const list = lists.all[i] as InstanceList;
-      resent = showList(buckets[i] as ListMesh, list, list.count, options.uploads) || resent;
-    }
-    // Plugin instance data goes up as its draw is recorded again.
-    if (resent) {
-      invalidateRenderBundles(engine);
-      options.uploads?.recorded();
+      showList(buckets[i] as ListMesh, list, list.count, options.uploads);
     }
   }
   const rebuilds = createRebuilds({

@@ -20,6 +20,10 @@
  *   speck's coverage darkens; tested against the depth, never written to
  *   it, never culled; toned on the material colour path by the stage's own
  *   copy of the display's curve.
+ * - **The view is the scene's.** Lite declares its scene uniforms ahead of
+ *   every stage and writes them once a pass, so the stage reads
+ *   `scene.viewProjection` and declares no system uniform: a camera that
+ *   moves writes no copy of its matrix for the midges, drawn or hidden.
  */
 import {
   addToScene, createPlane, createShaderMaterial, createStorageBuffer, disposeMeshGpu, removeFromScene, setMeshVisible, setShaderStorageBuffer,
@@ -100,7 +104,7 @@ fn midgeAxis(slot:f32,seed:f32,axis:f32,t:f32)->f32{
   side=normalize(mix(vec3<f32>(1.0,0.0,0.0),side,step(1.0e-8,dot(side,side))));
   let rise=cross(view,side);
   let corner=centre+(side*input.position.x+rise*input.position.y)*size*alive;
-  out.position=shaderSystem.viewProjection*vec4<f32>(corner,1.0);
+  out.position=scene.viewProjection*vec4<f32>(corner,1.0);
   out.vCorner=2.0*input.position.xy;
   let nearFloor=MIDGE_ALPHA_FLOOR*clamp((MIDGE_FLOOR_FAR-far)/(MIDGE_FLOOR_FAR-MIDGE_FLOOR_NEAR),0.0,1.0);
   out.vAlpha=max(MIDGE_CARD/size,nearFloor)*shape.z*alive;
@@ -192,7 +196,6 @@ export function createLiteMidges(
     vertexSource: VERTEX,
     fragmentSource: FRAGMENT,
     attributes: ["position"],
-    uniforms: ["viewProjection"],
     storageBuffers: [{ name: "midgeData", type: "MidgeData" }],
     needAlphaBlending: true,
     // Premultiplied: the light adds, the coverage darkens.

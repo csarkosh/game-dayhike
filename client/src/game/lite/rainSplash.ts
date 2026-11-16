@@ -16,8 +16,10 @@
  * - **A ring is its instance's matrix**, which is no matrix: its seed in
  *   the first four floats (`splashInstances`). The list goes up once, when
  *   the mesh is made; a frame changes only how many are drawn.
- * - **A frame writes the material's uniforms once**, while a ring is shown
- *   (the clock moves); a frame with no rain draws nothing and writes
+ * - **The clock is the frame's block's** (`frameBlock.ts`), with the eye,
+ *   the scene's fog and the display curve. The material's own uniforms are
+ *   written once in a frame that moves one (the lamp, the sun, the rain,
+ *   the map's centre); a frame with no rain draws nothing and writes
  *   nothing for them.
  * - **Blended over what is behind them, tested against the depth and never
  *   written to it**, before the drips and the streaks, as the game draws
@@ -26,9 +28,9 @@
  * None on a tier without a cover map to land them on.
  */
 import {
-  addToScene, createPlane, createShaderMaterial, disposeMeshGpu, enableShaderMaterialVisiblePacketUpdates, removeFromScene, setMeshVisible, setShaderTexture,
+  addToScene, createPlane, createShaderMaterial, disposeMeshGpu, removeFromScene, setMeshVisible, setShaderTexture,
   setThinInstanceDrawCount, setThinInstances,
-  type EngineContext, type Mesh, type SceneContext, type ShaderMaterial,
+  type EngineContext, type Mesh, type PluginUniformBlock, type SceneContext, type ShaderMaterial,
 } from "@babylonjs/lite";
 import type { AtmosphereRecord } from "../atmosphereParams.js";
 import type { QualityTier } from "../quality.js";
@@ -39,6 +41,7 @@ import type { WeatherParams } from "../weather.js";
 import { DISPLAY_CURVE_WGSL } from "./displayCurve.js";
 import { SEE_THROUGH_ORDER } from "./drawOrder.js";
 import { wgslFloat } from "./forestPlugins.js";
+import { FRAME_CONTRAST_NAME, FRAME_EXPOSURE_NAME, stageClocks, stageOwn, stageReads, type StageRecord } from "./frameBlock.js";
 import type { FrameUploads } from "./frameUploads.js";
 import type { RainCover } from "./rain.js";
 import { shaderUniformDecls, shaderUniformWriter } from "./shaderUniforms.js";
@@ -97,8 +100,8 @@ fn splashHash(p:vec2<f32>)->vec2<f32>{
   out.splashPhase=sPhase;
   out.splashUv=input.position.xy+0.5;
   let worldPos=vec4<f32>(positionUpdated,1.0);
-  out.position=shaderSystem.viewProjection*worldPos;
-  out.fogDistance=(shaderSystem.view*worldPos).xyz;
+  out.position=scene.viewProjection*worldPos;
+  out.fogDistance=(scene.view*worldPos).xyz;
   return out;
 }`;
 
@@ -137,6 +140,13 @@ fn splashFogFactor(vFogDistance:vec3<f32>,fogDensity:f32)->f32{
 /** The stages' text, for the tests that hold it to the game's. */
 export const SPLASH_WGSL = { vertex: VERTEX, fragment: FRAGMENT } as const;
 
+/** What the splashes read from the frame's block under another name: the eye, the scene's fog and the display curve.
+ * Their clock is the block's under its own. */
+export const SPLASH_FRAME_READS = {
+  splashCam: "fadeEye", splashFogColour: "atmFarColour", splashFogDensity: "atmBaseDensity", splashExposure: FRAME_EXPOSURE_NAME,
+  splashContrast: FRAME_CONTRAST_NAME,
+} as const;
+
 /** What a frame draws the splashes with beside the weather: the eye, the clock, the headlamp, the way the sun's light
  * travels, the rain's colour, the scene's fog and the display curve. */
 export type SplashFrame = {
@@ -155,6 +165,8 @@ export type SplashFrame = {
 export type LiteRainSplash = {
   readonly mesh: Mesh;
   readonly material: ShaderMaterial;
+  /** The splashes' clock as the last update that drew a ring left it, for the frame's block (`stageClocks`). */
+  readonly clocks: StageRecord;
   /** The rings under `w`, as the game's shell is handed them. */
   update(w: WeatherParams, frame: SplashFrame): void;
   /** Rings drawn by the last update. */
@@ -162,27 +174,31 @@ export type LiteRainSplash = {
   dispose(): void;
 };
 
-/** The tier's splashes in `scene` on the map `cover`, hidden until a frame draws a ring; null on a tier that draws none. */
-export function createLiteRainSplash(engine: EngineContext, scene: SceneContext, tier: QualityTier, cover: RainCover, uploads?: FrameUploads): LiteRainSplash | null {
+/** The tier's splashes in `scene` on the map `cover`, reading `frame`, the frame's block; hidden until a frame draws a
+ * ring; null on a tier that draws none. */
+export function createLiteRainSplash(
+  engine: EngineContext, scene: SceneContext, tier: QualityTier, cover: RainCover, frame: PluginUniformBlock, uploads?: FrameUploads,
+): LiteRainSplash | null {
   const instances = splashInstances(tier);
   if (instances.count === 0) return null;
   const values = emptySplashStageUniforms();
+  const own = stageOwn(values, SPLASH_FRAME_READS);
   const material = createShaderMaterial({
     name: "rainSplash",
-    vertexSource: VERTEX,
-    fragmentSource: FRAGMENT,
+    vertexSource: stageReads(VERTEX, SPLASH_FRAME_READS),
+    fragmentSource: stageReads(FRAGMENT, SPLASH_FRAME_READS),
     attributes: ["position"],
-    uniforms: ["viewProjection", "view", ...shaderUniformDecls(values)],
+    // The view is the scene's own (`frameBlock.ts`): no system uniform, so nothing is written for a camera that moves.
+    uniforms: shaderUniformDecls(own),
+    uniformBlocks: [frame],
     samplers: ["splashMap"],
     needAlphaBlending: true,
     blendMode: "alpha",
     depthWrite: false,
     backFaceCulling: false,
   });
-  // Nothing of hidden splashes is written, the view's matrices included.
-  enableShaderMaterialVisiblePacketUpdates(material);
   setShaderTexture(material, "splashMap", cover.texture);
-  const writeUniforms = shaderUniformWriter(material, values);
+  const writeUniforms = shaderUniformWriter(material, own);
 
   const mesh = createPlane(engine, { size: 1 });
   mesh.material = material;
@@ -199,6 +215,7 @@ export function createLiteRainSplash(engine: EngineContext, scene: SceneContext,
   return {
     mesh,
     material,
+    clocks: stageClocks(values),
     get shown() {
       return shown;
     },

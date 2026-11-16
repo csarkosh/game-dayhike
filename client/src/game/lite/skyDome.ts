@@ -15,7 +15,8 @@
  *   weather fade uploads nothing. The stage reads it once, at level 0.
  * - **Colour** is the low tier's material path, as every other material on
  *   Lite: the frame's exposure, Khronos PBR Neutral, the encode and the
- *   display curve's contrast. The vignette, the colour curves and the
+ *   display curve's contrast, the exposure and the contrast read from the
+ *   frame's block (`frameBlock.ts`). The vignette, the colour curves and the
  *   dither, which the low tier grades with in its materials on Babylon.js,
  *   are not drawn on Lite by any material, and not by this one.
  * - **The image-based light's capture** draws the same sky in linear light
@@ -28,14 +29,15 @@
  */
 import {
   addToScene, createBox, createRenderTexture2D, createShaderMaterial, setShaderTexture, setShaderUniform, updateTextureRegion,
-  type EngineContext, type Mesh, type SceneContext, type ShaderMaterial, type Texture2D,
+  type EngineContext, type Mesh, type PluginUniformBlock, type SceneContext, type ShaderMaterial, type Texture2D,
 } from "@babylonjs/lite";
 import { rgbToHalfRgba } from "../halfFloat.js";
-import { SKY_DOME_SIZE, createSkyTableUploads, emptySkyDomeUniforms, skyDomeUniforms, type SkyDomeUniforms } from "../skyDomeParams.js";
+import { SKY_DOME_SIZE, createSkyTableUploads, emptySkyDomeUniforms, skyDomeUniforms } from "../skyDomeParams.js";
 import { SLICE_AZIMUTHS, SLICE_ELEVATIONS } from "../skyModel.js";
 import { MIST_HORIZON, SUN_DISC_CAPTURE_MAX, SUN_DISC_COS, type SkyState } from "../skyState.js";
 import { DRAW_ORDER } from "./drawOrder.js";
 import { wgslFloat } from "./forestPlugins.js";
+import { FRAME_CONTRAST_NAME, FRAME_EXPOSURE_NAME, stageOwn, stageReads } from "./frameBlock.js";
 
 const f = wgslFloat;
 
@@ -84,7 +86,7 @@ struct SkyOut{@builtin(position)position:vec4<f32>,@location(0)dir:vec3<f32>}
 @vertex fn mainVertex(input:VertexInput)->SkyOut{
   var out:SkyOut;
   out.dir=input.position;
-  out.position=shaderSystem.viewProjection*vec4<f32>(shaderSystem.cameraPosition+input.position,1.0);
+  out.position=scene.viewProjection*vec4<f32>(scene.vEyePosition.xyz+input.position,1.0);
   return out;
 }`;
 
@@ -125,6 +127,9 @@ fn skyContrastOf(c:vec3<f32>,contrast:f32)->vec3<f32>{
 /** The stages' text, for the tests that hold it to the game's. */
 export const SKY_DOME_WGSL = { vertex: VERTEX, fragment: FRAGMENT } as const;
 
+/** What the dome reads from the frame's block, by the block's names: the display curve. */
+export const SKY_FRAME_READS = { skyExposure: FRAME_EXPOSURE_NAME, skyContrast: FRAME_CONTRAST_NAME } as const;
+
 /** The dome as it stands in a scene. */
 export type LiteSkyDome = {
   readonly mesh: Mesh;
@@ -144,18 +149,20 @@ export function skyTableTexture(engine: EngineContext): Texture2D {
   return createRenderTexture2D(engine, SLICE_AZIMUTHS, SLICE_ELEVATIONS, { format: "rgba16float", minFilter: "linear", magFilter: "linear" });
 }
 
-/** The dome in `scene`, the night sky alone until its first update. */
-export function createLiteSkyDome(engine: EngineContext, scene: SceneContext): LiteSkyDome {
+/** The dome in `scene`, reading `frame`, the frame's block; the night sky alone until its first update. */
+export function createLiteSkyDome(engine: EngineContext, scene: SceneContext, frame: PluginUniformBlock): LiteSkyDome {
   const values = emptySkyDomeUniforms();
+  const own = stageOwn(values, SKY_FRAME_READS);
   const material = createShaderMaterial({
     name: "skyDome",
     vertexSource: VERTEX,
-    fragmentSource: FRAGMENT,
+    fragmentSource: stageReads(FRAGMENT, SKY_FRAME_READS),
     attributes: ["position"],
+    // The view and the eye are the scene's own (`frameBlock.ts`): no system uniform.
     uniforms: [
-      "viewProjection", "cameraPosition",
-      ...Object.entries(values).map(([name, value]) => ({ name, type: value.length === 1 ? ("f32" as const) : ("vec3<f32>" as const), defaultValue: value })),
+      ...Object.entries(own).map(([name, value]) => ({ name, type: value.length === 1 ? ("f32" as const) : ("vec3<f32>" as const), defaultValue: value })),
     ],
+    uniformBlocks: [frame],
     samplers: ["skyTable"],
     // Seen from inside.
     backFaceCulling: false,
@@ -164,10 +171,11 @@ export function createLiteSkyDome(engine: EngineContext, scene: SceneContext): L
   setShaderTexture(material, "skyTable", table);
   const halves = new Uint16Array(SLICE_AZIMUTHS * SLICE_ELEVATIONS * 4);
   const uploads = createSkyTableUploads();
-  const write = (record: SkyDomeUniforms): void => {
-    for (const [name, value] of Object.entries(record) as [string, number[]][]) setShaderUniform(material, name, value.length === 1 ? (value[0] as number) : value);
+  /** Writes the dome's own uniforms, as `values` now stands. */
+  const write = (): void => {
+    for (const [name, value] of Object.entries(own)) setShaderUniform(material, name, value.length === 1 ? (value[0] as number) : value);
   };
-  write(values);
+  write();
 
   const mesh = createBox(engine, { size: SKY_DOME_SIZE });
   mesh.material = material;
@@ -184,7 +192,8 @@ export function createLiteSkyDome(engine: EngineContext, scene: SceneContext): L
         updateTextureRegion(engine, table, rgbToHalfRgba(s.clear.texels, halves, s.scale), { width: SLICE_AZIMUTHS, height: SLICE_ELEVATIONS, bytesPerRow: SLICE_AZIMUTHS * 8 });
         bytes += SKY_TABLE_BYTES;
       }
-      write(skyDomeUniforms(s, exposure, contrast, values));
+      skyDomeUniforms(s, exposure, contrast, values);
+      write();
       return bytes;
     },
   };

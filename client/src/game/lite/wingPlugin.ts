@@ -7,9 +7,9 @@
  * statement). Position only: normals are left unturned, as there.
  *
  * What differs is where a bird's own numbers ride. On Babylon.js they are
- * a buffer of their own, two floats an instance. Lite sends a material's
- * per-instance data only when its draw is recorded again, and a flock's
- * beats change every frame; so here they ride in the instance's matrix,
+ * a buffer of their own, two floats an instance. A flock's beats change
+ * every frame, as its matrices do, and a second buffer would be a second
+ * write a frame; so here they ride in the instance's matrix,
  * in the three floats of its last row a placed thing leaves at zero: the
  * phase, the amplitude and, for the one model that wears them, which of
  * its colourways the instance is. The stage reads them there, turns the

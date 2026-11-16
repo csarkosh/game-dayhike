@@ -21,6 +21,14 @@
  *
  * The materials are the files' own, lit as every surface is and under the
  * air; the game wets none of them.
+ *
+ * **The species share their places among the draws, and so do the flying
+ * models** (`ANIMAL_PLACES`): a primitive stands at the place of its order
+ * in its model, whichever the animal. Lite draws the meshes of one place
+ * grouped by pipeline, and the species are models of one make, as the birds
+ * are: at a place each, their draws alternated between the pipelines they
+ * share. An animal's own primitives keep their order; no two animals lie
+ * at one depth, so the order among them decides no pixel.
  */
 import {
   acquireTexture, addToScene, createMeshFromData, createPbrMaterial, disposeMeshGpu, releaseTexture, removeFromScene, setMeshVisible,
@@ -85,6 +93,9 @@ export type LiteWildlifeOptions = {
   uploads?: FrameUploads;
 };
 
+/** The animals' places among the draws, from the shell's first: a ground species' primitives, a place each by their order in the model, then a flying model's. */
+export const ANIMAL_PLACES = { ground: 0, flying: 512 } as const;
+
 type Species = { asset: CreatureAsset; model: SkinnedModel | null; roles: Map<ClipRole, BakedClip | null> | null; count: number; moved: boolean; reclipped: boolean };
 type Flock = { bucket: BirdBucket; meshes: Mesh[]; matrices: Float32Array; count: number };
 
@@ -116,7 +127,7 @@ export function createLiteWildlifeMeshes(engine: EngineContext, scene: SceneCont
   );
 
   // The ground species: every creature the catalog ships, each landing on its own.
-  for (const [index, asset] of resolveCreatureAssets(catalog).entries()) {
+  for (const asset of resolveCreatureAssets(catalog)) {
     const entry: Species = { asset, model: null, roles: null, count: 0, moved: false, reclipped: false };
     species.set(asset.id, entry);
     waiting++;
@@ -127,7 +138,7 @@ export function createLiteWildlifeMeshes(engine: EngineContext, scene: SceneCont
       dress(part, n) {
         part.material.usePhysicalLightFalloff = true;
         part.material.plugins = [options.air()];
-        orders.put(part.material, index * 4 + n);
+        orders.put(part.material, ANIMAL_PLACES.ground + n);
         part.mesh.renderOrder = orders.of(part.material);
         return true;
       },
@@ -175,7 +186,6 @@ export function createLiteWildlifeMeshes(engine: EngineContext, scene: SceneCont
       const id = BIRD_ASSET[s];
       if (id !== null && id !== undefined) wanted.add(id);
     }
-    let place = 512;
     for (const assetId of wanted) {
       if (disposed) return;
       if (assetId === BIRD_ASSET[SPECIES_BUTTERFLY]) {
@@ -187,7 +197,7 @@ export function createLiteWildlifeMeshes(engine: EngineContext, scene: SceneCont
         // White under the pattern and the colourway, matt, seen from both sides and lit as the side it was built facing.
         const material = createPbrMaterial({ baseColorFactor: [1, 1, 1, 1], metallicFactor: 0, roughnessFactor: 1, doubleSided: true, usePhysicalLightFalloff: true });
         material.plugins = [oneSidedLightPlugin(), wingPlugin(halfSpanOf(shape.positions), birdBucketOmega(assetId), options.shared, BUTTERFLY_COLOURWAYS), options.air()];
-        orders.put(material, place++);
+        orders.put(material, ANIMAL_PLACES.flying);
         mesh.material = material;
         mesh.renderOrder = orders.of(material);
         adopt(assetId, [mesh]);
@@ -219,7 +229,7 @@ export function createLiteWildlifeMeshes(engine: EngineContext, scene: SceneCont
           }
           material.usePhysicalLightFalloff = true;
           material.plugins = [wingPlugin(0.5 * (maxX - minX), birdBucketOmega(assetId), options.shared), options.air()];
-          orders.put(material, place++);
+          orders.put(material, ANIMAL_PLACES.flying + n);
           mesh.material = material;
           mesh.renderOrder = orders.of(material);
           return mesh;

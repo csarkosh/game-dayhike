@@ -48,6 +48,16 @@
  * The materials are the files' own under the game's stack: the base
  * colour's block, the wet look at no porosity (a body takes the water's
  * line, not the rain), and the air.
+ *
+ * **The rangers share their places among the draws** (`BODY_PLACES`): a
+ * primitive stands at the place of its order in its model, whichever the
+ * ranger, and the capsule after them. Lite draws the meshes of one place
+ * grouped by pipeline, and the rangers are five models of one make: at a
+ * place a ranger's primitive, their draws alternated between the pipelines
+ * their primitives share, and a crowd set a pipeline for nearly every
+ * draw. A ranger's own primitives keep their order, which decides the
+ * pixels where two of them lie at one depth; no two rangers lie at one
+ * depth, so the order among them decides none.
  */
 import {
   addToScene, createCapsule, createPbrMaterial, disposeMeshGpu, removeFromScene, setMeshVisible, setPbrEmissive, setThinInstanceColors, setThinInstanceCount,
@@ -57,7 +67,7 @@ import {
 import catalog from "../../../assets/catalog.json" with { type: "json" };
 import { PLAYER_HALF } from "../../sim/constants.js";
 import { clipNameFor, resolveCharacterAssets, type CharacterAsset, type ClipKind } from "../characterAssets.js";
-import { HOLLOW_MODEL, RANGER_IDS, stepClip, type ClipClock, type EntityFrame, type EntityModels } from "../entityPoses.js";
+import { HOLLOW_MODEL, stepClip, type ClipClock, type EntityFrame, type EntityModels } from "../entityPoses.js";
 import { HOLLOW_EYE_COLOR, HOLLOW_EYE_INTENSITY, HOLLOW_SCALE } from "../hollowLook.js";
 import { writeBodyMatrix, writeClipParams, type BakedClip } from "../skinInstances.js";
 import type { WetUniforms } from "../wetSurface.js";
@@ -66,6 +76,9 @@ import { baseColourPlugin, surfaceWetPlugin } from "./forestPlugins.js";
 import type { FrameUploads } from "./frameUploads.js";
 import { MATRIX_BYTES } from "./listMeshes.js";
 import { loadSkinnedModel, type SkinClock, type SkinnedModel, type SkinnedPart } from "./skinnedModels.js";
+
+/** The bodies' places among the draws, from the shell's first: a ranger's primitives, a place each by their order in the model, then the capsule. */
+export const BODY_PLACES = { rangers: 0, capsule: 4 } as const;
 
 /** The most hikers of one ranger drawn at once: every player may wear the same one. */
 export const RANGER_CAPACITY = 8;
@@ -211,7 +224,7 @@ export function createEntityMeshes(engine: EngineContext, scene: SceneContext, o
       return true;
     }
     material.plugins = [baseColourPlugin(), surfaceWetPlugin(options.wet, options.shared), options.air()];
-    orders.put(material, RANGER_IDS.indexOf(id) * 4 + index);
+    orders.put(material, BODY_PLACES.rangers + index);
     part.mesh.renderOrder = orders.of(material);
     return true;
   }
@@ -295,7 +308,7 @@ export function createEntityMeshes(engine: EngineContext, scene: SceneContext, o
         baseColorFactor: [CAPSULE_COLOUR[0], CAPSULE_COLOUR[1], CAPSULE_COLOUR[2], 1], metallicFactor: 0, roughnessFactor: CAPSULE_ROUGHNESS, usePhysicalLightFalloff: true,
       });
       material.plugins = [options.air()];
-      orders.put(material, RANGER_IDS.length * 4);
+      orders.put(material, BODY_PLACES.capsule);
       mesh.material = material;
       mesh.renderOrder = orders.of(material);
       const own = new Float32Array(RANGER_CAPACITY * 16);

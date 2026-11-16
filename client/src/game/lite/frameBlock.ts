@@ -31,9 +31,34 @@
  * them; which names are the block's; the rewrite of a plugin's WGSL from
  * `material.<name>` to the block for those names; and the write of a
  * frame's values at the offsets Lite lays the fields out at.
+ *
+ * **The hike's own stages read it too** (the sky's dome, the mist banks,
+ * the motes, the rain and its splashes: shader materials, which name the
+ * block as a plugin does). Each carried a copy of what the block holds, the
+ * scene's fog and the eye, and was written its own exposure, contrast and
+ * clock every frame. So the block carries the display curve's exposure and
+ * contrast and those stages' clocks, under the names their records give
+ * them, and a stage's text is rewritten from `u.<name>` to the block for
+ * every name the block holds (`stageReads`), the stage's name for a value
+ * the block holds under another given beside it. What is left in a stage's
+ * own buffer (`stageOwn`) is written when the hour or the weather moves it:
+ * a frame with the camera still and the clocks running writes the block
+ * and nothing of theirs.
+ *
+ * **The view is the scene's own.** Lite declares its scene uniforms ahead
+ * of every stage, a shader material's too: the view, the view's projection
+ * of the world and the eye, written once a pass. The hike's own stages read
+ * those (`scene.viewProjection`, `scene.view`, `scene.vEyePosition`) and
+ * declare none of Lite's system uniforms, which are a copy of the same
+ * matrices in a buffer a mesh, written again for each whenever the camera
+ * moves. The one matrix the scene's do not hold, the projection alone,
+ * which the motes lay their quads out by, rides in the block.
  */
 import { emptyAtmosphereUniforms, type AtmosphereUniforms } from "../atmosphereParams.js";
 import { emptyFadeUniforms } from "../distanceFade.js";
+import { emptyMoteUniforms } from "../moteField.js";
+import { emptyRainUniforms } from "../rainField.js";
+import { emptySplashUniforms } from "../splashField.js";
 import { emptySeaFrameUniforms, type SeaFrameUniforms } from "../seaUniforms.js";
 import { WATER_RING_COUNT } from "../water.js";
 import { FOLIAGE_PLAYERS, FOLIAGE_PROFILES, emptyFoliageUniforms, foliageLook, foliageUniforms } from "../foliageUniforms.js";
@@ -55,6 +80,19 @@ export const FADE_ROWS_NAME = "fadeRows";
 export const TERRAIN_ALBEDO_NAME = "terrainAlbedo";
 /** The clock every wing beats on, seconds, wrapped (`wingParams.ts`). */
 export const WING_TIME_NAME = "wingTime";
+
+/** The display curve's exposure and contrast, for the stages that end with it themselves (`displayCurve.ts`). */
+export const FRAME_EXPOSURE_NAME = "frameExposure";
+export const FRAME_CONTRAST_NAME = "frameContrast";
+/**
+ * The clocks of the hike's own stages, under the names their records give them: the motes' clock and the wind's carry
+ * of them (`moteField.ts`), the rain's folded time, its smoothed frame, the wind's drift of it and the canopy's water
+ * (`rainField.ts`), and the splashes' folded time (`splashField.ts`).
+ */
+export const FRAME_CLOCK_NAMES = ["moteClock", "moteTravel", "rainDrift", "rainFold", "rainDt", "rainCanopyWater", "splashTime"] as const;
+
+/** The camera's projection, for a stage that lays a quad out in the view's space (the motes). */
+export const FRAME_PROJECTION_NAME = "frameProjection";
 
 /** A table of floats laid out as Lite lays a plugin's array out: vec4s of bits, which the shader casts back. */
 const bits = (name: string, vecs: number): UniformField => ({ name, type: `array<vec4<u32>,${vecs}>` });
@@ -82,6 +120,10 @@ export const FRAME_FIELDS: readonly UniformField[] = [
   { name: TERRAIN_ALBEDO_NAME, type: "vec3<f32>" },
   { name: WING_TIME_NAME, type: "f32" },
   ...uniformFields(emptyWaterFrameUniforms()),
+  { name: FRAME_EXPOSURE_NAME, type: "f32" },
+  { name: FRAME_CONTRAST_NAME, type: "f32" },
+  ...uniformFields({ ...emptyMoteUniforms(), ...emptyRainUniforms(), ...emptySplashUniforms() }).filter((field) => (FRAME_CLOCK_NAMES as readonly string[]).includes(field.name)),
+  { name: FRAME_PROJECTION_NAME, type: "mat4x4<f32>" },
   ...scalarFields(emptySeaFrameUniforms(), [SEA_RINGS_NAME]),
   bits(SEA_RINGS_NAME, WATER_RING_COUNT),
 ];
@@ -114,6 +156,44 @@ export function frameReads(wgsl: string): string {
   return wgsl.replace(READS, `${FRAME_BLOCK}.$1`);
 }
 
+/** A stage's uniforms by name, as its module fills them: one to four floats each. */
+export type StageRecord = Readonly<Record<string, readonly number[]>>;
+
+/** The block's name for the stage's uniform `name`: `as`'s for it, or its own. */
+function blockName(name: string, as: Readonly<Record<string, string>>): string {
+  const field = Object.hasOwn(as, name) ? (as[name] as string) : name;
+  if (Object.hasOwn(as, name) && !FRAME_NAMES.has(field)) throw new Error(`the frame's block holds no ${field} for a stage to read as ${name}`);
+  return field;
+}
+
+/**
+ * `wgsl`, a stage of the hike's own, with every read of `u.<name>` that the
+ * frame's block holds turned to the block: a name the block holds itself (a
+ * clock), or one `as` gives the block's name for (the stage's exposure, its
+ * fog, its eye).
+ */
+export function stageReads(wgsl: string, as: Readonly<Record<string, string>> = {}): string {
+  return wgsl.replace(/\bu\.(\w+)\b/g, (whole, name: string) => {
+    const field = blockName(name, as);
+    return FRAME_NAMES.has(field) ? `${FRAME_BLOCK}.${field}` : whole;
+  });
+}
+
+/** Of `record`, a stage's uniforms, the stage's own: those it does not read from the frame's block (`stageReads`). The
+ * values are the record's own arrays. */
+export function stageOwn(record: StageRecord, as: Readonly<Record<string, string>> = {}): Record<string, number[]> {
+  const own: Record<string, number[]> = {};
+  for (const name in record) if (!FRAME_NAMES.has(blockName(name, as))) own[name] = record[name] as number[];
+  return own;
+}
+
+/** Of `record`, a stage's uniforms, the clocks the frame's block carries: the record's own arrays, read at each write. */
+export function stageClocks(record: StageRecord): Record<string, readonly number[]> {
+  const clocks: Record<string, readonly number[]> = {};
+  for (const name of FRAME_CLOCK_NAMES) if (Object.hasOwn(record, name)) clocks[name] = record[name] as readonly number[];
+  return clocks;
+}
+
 /** What a frame's block is written from: the plain modules' records as the renderer fills them, the eye and the frame's height. */
 export type FrameValues = {
   air: AtmosphereUniforms;
@@ -128,6 +208,13 @@ export type FrameValues = {
   wingTime: number;
   /** What every lake reads alike (`waterFrameUniforms`): zeros in a world with no lake. */
   water: WaterFrameUniforms;
+  /** The display curve's exposure and contrast. */
+  exposure: number;
+  contrast: number;
+  /** The clocks of the stages that stand (`stageClocks`), each as its stage's last update left it. */
+  clocks: readonly Readonly<Record<string, readonly number[]>>[];
+  /** The camera's projection, sixteen floats as Lite hands a matrix; absent, the block's stands as it was. */
+  projection?: ArrayLike<number>;
   /** What moves the sea (`seaFrameUniforms`): zeros in a world with no sea. */
   sea: SeaFrameUniforms;
 };
@@ -179,4 +266,11 @@ export function writeFrameBlock(data: Float32Array, offsets: UniformOffsets, val
   writeUniforms(data, offsets, sea);
   data.set(seaRings, offsetOf(offsets, SEA_RINGS_NAME));
   writeUniforms(data, offsets, values.terrain);
+  data[offsetOf(offsets, FRAME_EXPOSURE_NAME)] = values.exposure;
+  data[offsetOf(offsets, FRAME_CONTRAST_NAME)] = values.contrast;
+  for (const clocks of values.clocks) writeUniforms(data, offsets, clocks);
+  if (values.projection !== undefined) {
+    const at = offsetOf(offsets, FRAME_PROJECTION_NAME);
+    for (let i = 0; i < 16; i++) data[at + i] = values.projection[i] as number;
+  }
 }

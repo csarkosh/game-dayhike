@@ -2,7 +2,8 @@ import { describe, expect, it } from "vitest";
 import { ShaderStore } from "@babylonjs/core/Engines/shaderStore.js";
 import "@babylonjs/core/Shaders/default.fragment.js";
 import "@babylonjs/core/Shaders/ShadersInclude/fogVertex.js";
-import { MIST_INSTANCE_BYTES, MIST_WGSL } from "../../../src/game/lite/mistMeshes.js";
+import { FRAME_BLOCK, stageOwn, stageReads } from "../../../src/game/lite/frameBlock.js";
+import { MIST_FRAME_READS, MIST_INSTANCE_BYTES, MIST_WGSL } from "../../../src/game/lite/mistMeshes.js";
 import { emptyMistUniforms } from "../../../src/game/mistBanks.js";
 import { inOrder, tight } from "./wgslText.js";
 
@@ -24,7 +25,7 @@ describe("the mist banks' stage on Babylon Lite", () => {
       "letfogDistance=length(vFogDistance);", "letfogCoeff=1.0/pow(MIST_E,fogDistance*fogDistance*fogDensity*fogDensity);", "returnclamp(fogCoeff,0.0,1.0);",
     ])).toBe(true);
     expect(FOG_VERTEX).toContain("vFogDistance=(view*worldPos).xyz;");
-    expect(VERTEX).toContain("out.fogDistance=(shaderSystem.view*worldPos).xyz;");
+    expect(VERTEX).toContain("out.fogDistance=(scene.view*worldPos).xyz;");
   });
 
   it("composes the colour in the Standard material's order: the opacity, the emissive, the fog, to linear, the display curve, the visibility", () => {
@@ -54,10 +55,22 @@ describe("the mist banks' stage on Babylon Lite", () => {
     expect(MIST_WGSL.vertex).not.toMatch(/shaderUniforms/);
   });
 
+  it("is made reading the scene's fog and the display curve from the frame's block, the banks' colour alone its own", () => {
+    const made = tight(stageReads(MIST_WGSL.fragment, MIST_FRAME_READS));
+    expect([...made.matchAll(/\bu\.(\w+)/g)].map((m) => m[1])).toEqual(["mistEmissive"]);
+    expect(Object.keys(stageOwn(emptyMistUniforms(), MIST_FRAME_READS))).toEqual(["mistEmissive"]);
+    expect(made).toContain(`letfog=mistFogFactor(input.fogDistance,${FRAME_BLOCK}.atmBaseDensity);`);
+    expect(made).toContain(`color=vec4<f32>(mix(${FRAME_BLOCK}.atmFarColour,color.rgb,fog),color.a);`);
+    expect(made).toContain(`color=vec4<f32>(displayColour(color.rgb,${FRAME_BLOCK}.frameExposure,${FRAME_BLOCK}.frameContrast),color.a);`);
+    expect(stageReads(MIST_WGSL.vertex, MIST_FRAME_READS)).toBe(MIST_WGSL.vertex);
+  });
+
   it("stands a corner through its instance's matrix, whose last float is the bank's visibility and not the matrix's", () => {
     expect(VERTEX).toContain("letworld=mat4x4<f32>(input.world0,input.world1,input.world2,vec4<f32>(input.world3.xyz,1.0));");
     expect(VERTEX).toContain("letworldPos=world*vec4<f32>(input.position,1.0);");
-    expect(VERTEX).toContain("out.position=shaderSystem.viewProjection*worldPos;");
+    expect(VERTEX).toContain("out.position=scene.viewProjection*worldPos;");
+    // The view is the scene's own: no copy of it is the banks'.
+    expect(`${MIST_WGSL.vertex}${MIST_WGSL.fragment}`).not.toMatch(/shaderSystem/);
     expect(VERTEX).toContain("out.visibility=input.world3.w;");
     expect(VERTEX).toContain("out.uv=input.uv;");
     expect(MIST_INSTANCE_BYTES).toBe(64);

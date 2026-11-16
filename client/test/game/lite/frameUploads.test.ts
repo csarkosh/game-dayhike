@@ -44,7 +44,6 @@ describe("what a frame of the hike's renderer on Babylon Lite hands to the GPU",
     uploads.composed(100);
     uploads.made(2);
     uploads.dropped();
-    uploads.recorded();
     uploads.marked(40);
     expect(uploads.now.bytes).toBe(6400 + 1024 + 3000 + 4096 + 256);
     expect(uploads.now.streamed).toBe(6400 + 1024 + 3000);
@@ -55,7 +54,7 @@ describe("what a frame of the hike's renderer on Babylon Lite hands to the GPU",
     expect(uploads.last).toEqual({
       bytes: 14776, writes: 8, streamed: 10424,
       byKind: { instances: 6400, pluginInstances: 1024, geometry: 3000, pluginVertices: 0, textures: 4096, uniforms: 256 },
-      instances: 100, meshesMade: 2, meshesDropped: 1, recordings: 1, materialsMarked: 40, held: 0,
+      instances: 100, meshesMade: 2, meshesDropped: 1, materialsMarked: 40, held: 0,
     });
     // The next frame begins from nothing, with the whole budget.
     expect(uploads.now.bytes).toBe(0);

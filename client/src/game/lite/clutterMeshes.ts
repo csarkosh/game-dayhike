@@ -40,7 +40,7 @@
  * for it.
  */
 import {
-  createMeshFromData, createPbrMaterial, disposeMeshGpu, invalidateRenderBundles, removeFromScene, setPbrAlphaCutoff,
+  createMeshFromData, createPbrMaterial, disposeMeshGpu, removeFromScene, setPbrAlphaCutoff,
   setPbrMetallicReflectance,
   type EngineContext, type MaterialPlugin, type PluginUniformBlock, type Mesh, type PbrMaterialProps, type SceneContext,
 } from "@babylonjs/lite";
@@ -304,20 +304,12 @@ export function createClutterMeshes(engine: EngineContext, scene: SceneContext, 
   /** A rebuild has filled the lists and waits to show them: no cut is made of them meanwhile, so the cut classes are
    * not shown ahead of the rest. */
   let holding = false;
-  /** Whether a cut changed what a bucket's material reads an instance: the draws are then recorded again. */
-  let cutResent = false;
-  const showCut = (bucket: ClutterBucket): void => {
-    if (show(bucket)) cutResent = true;
-  };
-
-  /** Shows a bucket's list on its meshes: true where a mesh's plugin data changed. */
-  function show(bucket: ClutterBucket): boolean {
+  /** Shows a bucket's list on its meshes. */
+  function show(bucket: ClutterBucket): void {
     const { list } = bucket;
     const from = list.culled ? list.drawn : list;
     const count = list.culled ? (list.cull?.kept ?? 0) : list.count;
-    let resent = false;
-    for (const target of drawnBy.get(bucket) ?? []) resent = showList(target, from, count, options.uploads) || resent;
-    return resent;
+    for (const target of drawnBy.get(bucket) ?? []) showList(target, from, count, options.uploads);
   }
 
   /** The rebuild for an eye at (x, z): the lists' own, whose last slice fills every list, and in that same step each bucket shown. */
@@ -331,7 +323,7 @@ export function createClutterMeshes(engine: EngineContext, scene: SceneContext, 
       let sending = 0;
       for (const bucket of made.all) {
         if (bucket.list.culled) continue;
-        for (const target of drawnBy.get(bucket) ?? []) sending += listBytes(bucket.list.count, bucket.list.buf.length / 16, target.layout.floats);
+        for (const target of drawnBy.get(bucket) ?? []) sending += listBytes(bucket.list.count, target.layout.floats);
       }
       holding = true;
       try {
@@ -342,13 +334,7 @@ export function createClutterMeshes(engine: EngineContext, scene: SceneContext, 
     }
     if (disposed) return;
     // A culled bucket goes on drawing its last cut until the next one.
-    let resent = false;
-    for (const bucket of made.all) if (!bucket.list.culled) resent = show(bucket) || resent;
-    // Plugin instance data goes up as its draw is recorded again.
-    if (resent) {
-      invalidateRenderBundles(engine);
-      options.uploads?.recorded();
-    }
+    for (const bucket of made.all) if (!bucket.list.culled) show(bucket);
   }
   // One snap for every class, on the smallest cell.
   const rebuilds = createRebuilds({
@@ -413,13 +399,7 @@ export function createClutterMeshes(engine: EngineContext, scene: SceneContext, 
     },
     cull(pose) {
       if (disposed || lists === null || holding) return;
-      cutResent = false;
-      lists.cut(pose, showCut);
-      // Plugin instance data goes up as its draw is recorded again.
-      if (cutResent) {
-        invalidateRenderBundles(engine);
-        options.uploads?.recorded();
-      }
+      lists.cut(pose, show);
     },
     waiting() {
       return Math.max(0, waiting);

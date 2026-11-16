@@ -1,12 +1,12 @@
 import { describe, expect, it } from "vitest";
 import { MAX_PLAYERS } from "../../../src/sim/constants.js";
-import { RANGER_IDS, SHADE_EYES_DULL, SHADE_EYES_SHADE, eyeLevelOf } from "../../../src/game/entityPoses.js";
+import { SHADE_EYES_DULL, SHADE_EYES_SHADE, eyeLevelOf } from "../../../src/game/entityPoses.js";
 import { HOLLOW_EYE_INTENSITY, HOLLOW_SCALE } from "../../../src/game/hollowLook.js";
 import { writeBodyMatrix } from "../../../src/game/skinInstances.js";
 import { ATMOSPHERE_PRIORITY } from "../../../src/game/lite/atmospherePlugin.js";
 import { DRAW_ORDER, DRAW_PLACES, SEE_THROUGH_ORDER } from "../../../src/game/lite/drawOrder.js";
 import {
-  CAPSULE_COLOUR, CAPSULE_ROUGHNESS, EYE_LEVEL_BYTES, HOLLOW_CAPACITY, RANGER_CAPACITY, eyeLevelPlugin, liftBody, setEyeLevel,
+  BODY_PLACES, CAPSULE_COLOUR, CAPSULE_ROUGHNESS, EYE_LEVEL_BYTES, HOLLOW_CAPACITY, RANGER_CAPACITY, eyeLevelPlugin, liftBody, setEyeLevel,
 } from "../../../src/game/lite/entityMeshes.js";
 import { tight } from "./wgslText.js";
 
@@ -21,8 +21,10 @@ describe("the hikers' bodies and the Hollows' eyes on Babylon Lite", () => {
     expect(HOLLOW_CAPACITY).toBeGreaterThanOrEqual(8);
   });
 
-  it("places every ranger's primitives and the capsule among the draws, within the bodies' own run", () => {
-    expect((RANGER_IDS.length * 4 + 1) / DRAW_PLACES).toBeLessThan(DRAW_ORDER.cap - DRAW_ORDER.bodies);
+  it("stands the rangers' primitives at the same places among the draws and the capsule after them, within the bodies' own run", () => {
+    // A place a primitive by its order in the model, the same for every ranger: four at the most, then the capsule.
+    expect(BODY_PLACES).toEqual({ rangers: 0, capsule: 4 });
+    expect((BODY_PLACES.capsule + 1) / DRAW_PLACES).toBeLessThan(DRAW_ORDER.cap - DRAW_ORDER.bodies);
   });
 
   it("draws the capsule in the game's blue, matt", () => {

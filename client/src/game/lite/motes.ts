@@ -12,10 +12,11 @@
  * path a mote at a time, then added to the frame, as Babylon.js draws a
  * particle on the low tier's path) and are placed by the GPU.
  *
- * - **Nothing is kept or sent a frame but the clock.** The slots go up
- *   once. A frame writes the material's uniforms where they have moved: the
- *   clock while a mote is shown, the wind's carry while it blows, the rest
- *   when the hour or the weather moves them.
+ * - **Nothing is kept or sent a frame.** The slots go up once. The clock
+ *   and the wind's carry are the frame's block's, with the display curve
+ *   (`frameBlock.ts`); the material's own uniforms are the two species'
+ *   settings and the colour, written when the hour or the weather moves
+ *   them.
  * - **The fragment stage is Babylon.js's particle stage** with no ramp and
  *   no fog (a particle system takes the scene's fog only where it is asked
  *   to, and the game's are not): the sprite times the mote's colour, to
@@ -30,7 +31,7 @@
 import {
   addToScene, createPlane, createShaderMaterial, createTexture2DFromPixels, disposeMeshGpu, removeFromScene, setMeshVisible, setShaderTexture,
   setThinInstances,
-  type EngineContext, type Mesh, type SceneContext, type ShaderMaterial,
+  type EngineContext, type Mesh, type PluginUniformBlock, type SceneContext, type ShaderMaterial,
 } from "@babylonjs/lite";
 import type { Rgb } from "../colour.js";
 import { MOTE_BOX, MOTE_SALT, emptyMoteUniforms, moteSlots, moteUniforms, motesShown, stepMoteTravel } from "../moteField.js";
@@ -41,6 +42,9 @@ import type { WindRecord } from "../windParams.js";
 import { DISPLAY_CURVE_WGSL } from "./displayCurve.js";
 import { SEE_THROUGH_ORDER } from "./drawOrder.js";
 import { wgslFloat } from "./forestPlugins.js";
+import {
+  FRAME_BLOCK, FRAME_CONTRAST_NAME, FRAME_EXPOSURE_NAME, FRAME_PROJECTION_NAME, stageClocks, stageOwn, stageReads, type StageRecord,
+} from "./frameBlock.js";
 import type { FrameUploads } from "./frameUploads.js";
 import { shaderUniformDecls, shaderUniformWriter } from "./shaderUniforms.js";
 
@@ -79,15 +83,15 @@ fn moteRandom(slot:u32,life:u32,salt:u32)->f32{
   let n=u32(lives)+1u;
   let born=vec3<f32>(moteRandom(slot,n,${MOTE_SALT.x}u),moteRandom(slot,n,${MOTE_SALT.y}u),moteRandom(slot,n,${MOTE_SALT.z}u));
   let carried=vec3<f32>(u.moteTravel.x,0.0,u.moteTravel.y);
-  let eye=shaderSystem.cameraPosition;
+  let eye=scene.vEyePosition.xyz;
   let jitter=vec3<f32>(moteRandom(slot,n,${MOTE_SALT.driftX}u),moteRandom(slot,n,${MOTE_SALT.driftY}u),moteRandom(slot,n,${MOTE_SALT.driftZ}u))*2.0-1.0;
   let velocity=vec3<f32>(drift.y*jitter.x,drift.x+0.5*drift.y*jitter.y,drift.y*jitter.z);
   let anchored=(born-0.5)*MOTE_BOX+carried-eye;
   let place=eye+(fract(anchored/MOTE_BOX+0.5)-0.5)*MOTE_BOX+velocity*age;
   let size=span.x+(span.y-span.x)*moteRandom(slot,n,${MOTE_SALT.size}u);
   let cornerPos=input.position.xy*size;
-  let viewPos=(shaderSystem.view*vec4<f32>(place,1.0)).xyz+vec3<f32>(cornerPos,0.0);
-  out.position=select(vec4<f32>(2.0,2.0,2.0,1.0),shaderSystem.projection*vec4<f32>(viewPos,1.0),input.world0.z<drift.z);
+  let viewPos=(scene.view*vec4<f32>(place,1.0)).xyz+vec3<f32>(cornerPos,0.0);
+  out.position=select(vec4<f32>(2.0,2.0,2.0,1.0),${FRAME_BLOCK}.${FRAME_PROJECTION_NAME}*vec4<f32>(viewPos,1.0),input.world0.z<drift.z);
   out.uv=input.uv;
   out.colour=vec4<f32>(u.moteColour.rgb,u.moteColour.a*(1.0-age/life));
   return out;
@@ -109,6 +113,10 @@ ${DISPLAY_CURVE_WGSL}
 /** The stages' text, for the tests that hold it to the game's. */
 export const MOTES_WGSL = { vertex: VERTEX, fragment: FRAGMENT } as const;
 
+/** What the motes read from the frame's block under another name: the display curve. Their clock and the wind's carry
+ * are the block's under their own. */
+export const MOTES_FRAME_READS = { moteExposure: FRAME_EXPOSURE_NAME, moteContrast: FRAME_CONTRAST_NAME } as const;
+
 /** What a frame draws the motes with, beside the game's own arguments: the render clock and the display curve. */
 export type MotesFrame = { seconds: number; exposure: number; contrast: number };
 
@@ -116,6 +124,8 @@ export type MotesFrame = { seconds: number; exposure: number; contrast: number }
 export type LiteMotes = {
   readonly mesh: Mesh;
   readonly material: ShaderMaterial;
+  /** The clock and the wind's carry as the last update left them, for the frame's block (`stageClocks`). */
+  readonly clocks: StageRecord;
   /** The motes under `w` at `hour`, coloured `air`, in `wind`, as the game's shell is handed them. The emitter's box is
    * round the camera the frame is drawn from. */
   update(w: WeatherParams, hour: number, air: Rgb, wind: WindRecord, frame: MotesFrame): void;
@@ -124,17 +134,22 @@ export type LiteMotes = {
   dispose(): void;
 };
 
-/** The tier's motes in `scene`, none shown until a frame has some; null on a tier that draws none. */
-export function createLiteMotes(engine: EngineContext, scene: SceneContext, tier: QualityTier, uploads?: FrameUploads): LiteMotes | null {
+/** The tier's motes in `scene`, reading `frame`, the frame's block; none shown until a frame has some; null on a tier
+ * that draws none. */
+export function createLiteMotes(engine: EngineContext, scene: SceneContext, tier: QualityTier, frame: PluginUniformBlock, uploads?: FrameUploads): LiteMotes | null {
   const slots = moteSlots(tier);
   if (slots === null) return null;
   const values = emptyMoteUniforms();
+  const own = stageOwn(values, MOTES_FRAME_READS);
   const material = createShaderMaterial({
     name: "motes",
-    vertexSource: VERTEX,
-    fragmentSource: FRAGMENT,
+    vertexSource: stageReads(VERTEX, MOTES_FRAME_READS),
+    fragmentSource: stageReads(FRAGMENT, MOTES_FRAME_READS),
     attributes: ["position", "uv"],
-    uniforms: ["view", "projection", "cameraPosition", ...shaderUniformDecls(values)],
+    // The view and the eye are the scene's own and the projection the frame's block's (`frameBlock.ts`): no system
+    // uniform, so nothing is written for a camera that moves.
+    uniforms: shaderUniformDecls(own),
+    uniformBlocks: [frame],
     samplers: ["moteSprite"],
     needAlphaBlending: true,
     // Faint alone, bright where many overlap in lit air.
@@ -147,7 +162,7 @@ export function createLiteMotes(engine: EngineContext, scene: SceneContext, tier
     addressModeU: "repeat", addressModeV: "repeat", minFilter: "linear", magFilter: "linear", mipMaps: true,
   });
   setShaderTexture(material, "moteSprite", sprite);
-  const writeUniforms = shaderUniformWriter(material, values);
+  const writeUniforms = shaderUniformWriter(material, own);
 
   const mesh = createPlane(engine, { size: 1 });
   mesh.material = material;
@@ -166,6 +181,7 @@ export function createLiteMotes(engine: EngineContext, scene: SceneContext, tier
   return {
     mesh,
     material,
+    clocks: stageClocks(values),
     get shown() {
       return shown;
     },

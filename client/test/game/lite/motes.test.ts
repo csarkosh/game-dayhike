@@ -2,7 +2,8 @@ import { describe, expect, it } from "vitest";
 import { ShaderStore } from "@babylonjs/core/Engines/shaderStore.js";
 import "@babylonjs/core/Shaders/particles.fragment.js";
 import "@babylonjs/core/Shaders/particles.vertex.js";
-import { MOTES_WGSL } from "../../../src/game/lite/motes.js";
+import { FRAME_BLOCK, stageClocks, stageOwn, stageReads } from "../../../src/game/lite/frameBlock.js";
+import { MOTES_FRAME_READS, MOTES_WGSL } from "../../../src/game/lite/motes.js";
 import { MOTE_BOX, MOTE_SALT, emptyMoteUniforms } from "../../../src/game/moteField.js";
 import { inOrder, tight } from "./wgslText.js";
 
@@ -36,8 +37,8 @@ describe("the motes' stages on Babylon Lite", () => {
     expect(PARTICLE_VERTEX).toContain("gl_Position=projection*vec4(viewPos,1.0);");
     // A unit plane's corner is Babylon's offset less a half; no pivot, no turn.
     expect(inOrder(VERTEX, [
-      "letcornerPos=input.position.xy*size;", "letviewPos=(shaderSystem.view*vec4<f32>(place,1.0)).xyz+vec3<f32>(cornerPos,0.0);",
-      "shaderSystem.projection*vec4<f32>(viewPos,1.0)",
+      "letcornerPos=input.position.xy*size;", "letviewPos=(scene.view*vec4<f32>(place,1.0)).xyz+vec3<f32>(cornerPos,0.0);",
+      `${FRAME_BLOCK}.frameProjection*vec4<f32>(viewPos,1.0)`,
     ])).toBe(true);
     expect(VERTEX).toContain("out.uv=input.uv;");
   });
@@ -74,7 +75,9 @@ describe("the motes' stages on Babylon Lite", () => {
     // A slot's number, its species and its rank, from its instance; the emitter's box round the camera the frame is drawn from.
     expect(VERTEX).toContain("letslot=u32(input.world0.x);");
     expect(VERTEX).toContain("letfrost=input.world0.y>0.5;");
-    expect(VERTEX).toContain("leteye=shaderSystem.cameraPosition;");
+    expect(VERTEX).toContain("leteye=scene.vEyePosition.xyz;");
+    // The view and the eye are the scene's own and the projection the frame's: no copy of them is the motes'.
+    expect(`${MOTES_WGSL.vertex}${MOTES_WGSL.fragment}`).not.toMatch(/shaderSystem/);
     // A slot not shown stands outside the view.
     expect(VERTEX).toContain("out.position=select(vec4<f32>(2.0,2.0,2.0,1.0),");
   });
@@ -82,5 +85,16 @@ describe("the motes' stages on Babylon Lite", () => {
   it("reads every uniform the motes are drawn with, and no other", () => {
     const read = new Set([...`${MOTES_WGSL.vertex}${MOTES_WGSL.fragment}`.matchAll(/\bu\.(mote\w+)/g)].map((m) => m[1]));
     expect([...read].sort()).toEqual(Object.keys(emptyMoteUniforms()).sort());
+  });
+
+  it("is made reading its clock, the wind's carry and the display curve from the frame's block, its settings and colour its own", () => {
+    const made = tight(`${stageReads(MOTES_WGSL.vertex, MOTES_FRAME_READS)}${stageReads(MOTES_WGSL.fragment, MOTES_FRAME_READS)}`);
+    const own = ["moteColour", "moteFrostDrift", "moteFrostSpan", "motePollenDrift", "motePollenSpan"];
+    expect([...new Set([...made.matchAll(/\bu\.(\w+)/g)].map((m) => m[1]))].sort()).toEqual(own);
+    expect(Object.keys(stageOwn(emptyMoteUniforms(), MOTES_FRAME_READS)).sort()).toEqual(own);
+    expect(Object.keys(stageClocks(emptyMoteUniforms()))).toEqual(["moteClock", "moteTravel"]);
+    expect(made).toContain(`lett=${FRAME_BLOCK}.moteClock+moteRandom(slot,0u,${MOTE_SALT.phase}u)*life;`);
+    expect(made).toContain(`letcarried=vec3<f32>(${FRAME_BLOCK}.moteTravel.x,0.0,${FRAME_BLOCK}.moteTravel.y);`);
+    expect(made).toContain(`baseColor=vec4<f32>(displayColour(baseColor.rgb,${FRAME_BLOCK}.frameExposure,${FRAME_BLOCK}.frameContrast),baseColor.a);`);
   });
 });

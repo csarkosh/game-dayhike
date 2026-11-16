@@ -28,7 +28,7 @@
  * buckets draw the last cut of the last one.
  */
 import {
-  createMeshFromData, createPbrMaterial, disposeMeshGpu, invalidateRenderBundles, removeFromScene, setPbrMetallicReflectance,
+  createMeshFromData, createPbrMaterial, disposeMeshGpu, removeFromScene, setPbrMetallicReflectance,
   type EngineContext, type MaterialPlugin, type PluginUniformBlock, type PbrMaterialProps, type SceneContext,
 } from "@babylonjs/lite";
 import { BLADE_ALBEDO, BLADE_CHARACTERS, bladeClumpGeometry, bladeCountFor, type BladeQuality } from "../bladeClump.js";
@@ -142,10 +142,8 @@ export function createBladeMeshes(engine: EngineContext, scene: SceneContext, se
     jobs: options.jobs,
     firstBuilds: options.firstBuilds,
   });
-  /** Whether a cut changed what a bucket's material reads an instance: the draws are then recorded again. */
-  let resent = false;
   const show = (list: InstanceList, index: number): void => {
-    if (showList(buckets[index] as ListMesh, list.drawn, list.cull?.kept ?? 0, options.uploads)) resent = true;
+    showList(buckets[index] as ListMesh, list.drawn, list.cull?.kept ?? 0, options.uploads);
   };
 
   return {
@@ -156,13 +154,7 @@ export function createBladeMeshes(engine: EngineContext, scene: SceneContext, se
     },
     cull(pose) {
       if (disposed) return;
-      resent = false;
       lists.cut(pose, show);
-      // Plugin instance data goes up as its draw is recorded again.
-      if (resent) {
-        invalidateRenderBundles(engine);
-        options.uploads?.recorded();
-      }
     },
     drawn() {
       let meshes = 0;

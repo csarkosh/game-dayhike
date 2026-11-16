@@ -176,7 +176,7 @@
  */
 import {
   NeutralToneMapping, addToScene, createBankedFreeCamera, createDirectionalLight, createEngine, createHemisphericLight, createPbrMaterial, createSpotLight,
-  createPluginUniformBlock, createSceneContext, disposeEngine, disposeScene, enableMaterialPlugins, enablePbrMaterialPluginVertexData,
+  createPluginUniformBlock, createSceneContext, disposeEngine, disposeScene, enableMaterialPlugins, enablePbrMaterialPluginVertexData, getProjectionMatrix,
   markLightDirty, markMaterialUboDirty, onEngineDeviceLost, onEngineGpuError, registerScene, renderFrame, resizeEngine, vec3,
   writePluginUniformBlock,
   type BankedFreeCamera, type DirectionalLight, type EngineContext, type HemisphericLight, type MaterialPlugin, type PbrMaterialProps,
@@ -240,7 +240,7 @@ import { createClutterMeshes, type ClutterMeshes } from "./clutterMeshes.js";
 import { createDuffMeshes, type DuffMeshes } from "./duffMeshes.js";
 import { createEntityMeshes, type EntityMeshes } from "./entityMeshes.js";
 import { createForestMeshes, type ForestMeshes } from "./forestMeshes.js";
-import { FRAME_BLOCK, FRAME_FIELDS, writeFrameBlock, type FrameValues } from "./frameBlock.js";
+import { FRAME_BLOCK, FRAME_FIELDS, writeFrameBlock, type FrameValues, type StageRecord } from "./frameBlock.js";
 import { createFrameUploads, uploadCountsCopy, type FrameUploadCounts } from "./frameUploads.js";
 import { GROUND_IMAGES, cloudMapTexture, loadGroundArrays, tableTexture, type CloudMapTexture, type TableTexture } from "./groundTextures.js";
 import { createLiteLakes, type LakeFrame, type LiteLakes } from "./lakeMeshes.js";
@@ -417,6 +417,7 @@ export function createLiteRenderer(canvas: HTMLCanvasElement, level: Level, fore
   /** What the frame's block is written from: the records above, the eye and the frame's height. */
   const frameValues: FrameValues = {
     air: airValues, wet: wetValues, terrain: terrainValues, eye: { x: 0, y: 0, z: 0 }, rows: canvas.height, wingTime: 0, water: emptyWaterFrameUniforms(),
+    exposure: light.exposure, contrast: DISPLAY_CONTRAST, clocks: [],
     sea: emptySeaFrameUniforms(),
   };
   /** The ground's colour and roughness the terrain's materials were last written with. */
@@ -617,7 +618,7 @@ export function createLiteRenderer(canvas: HTMLCanvasElement, level: Level, fore
     const wornLamps = createWornLamps(scene, othersSeen);
     // The sky's dome, the night sky alone until the first frame's light, and its capture as the scene's
     // environment, made before the scene is registered.
-    const dome = createLiteSkyDome(engine, scene);
+    const dome = createLiteSkyDome(engine, scene, shared);
     const capture = await createLiteSkyCapture(engine, scene, dome.table);
     if (disposed) {
       disposeScene(scene);
@@ -635,15 +636,17 @@ export function createLiteRenderer(canvas: HTMLCanvasElement, level: Level, fore
     let cliffs: CliffMeshes | null = null;
     let props: PropMeshes | null = null;
     // The valley mist banks ride the same guard as the forest: a hand-authored level has no valley haze.
-    const mist = forest === null ? null : createLiteMistMeshes(engine, scene, forest.seed, tier, uploads);
+    const mist = forest === null ? null : createLiteMistMeshes(engine, scene, forest.seed, tier, shared, uploads);
     // The motes are the air's everywhere, on the tiers with the capacity for them.
-    const motes = createLiteMotes(engine, scene, tier, uploads);
+    const motes = createLiteMotes(engine, scene, tier, shared, uploads);
     // The rain's cover map, on the tiers that draw one, over the terrain the rings draw: the rings, the patches, the
     // props and the cliffs' near buckets stand in it as they are made. Then the rain, which is the weather's
     // everywhere, and the splashes, which land on the map.
     const rainMap = forest === null ? null : createLiteRainMap(engine, scene, tier);
-    const rain = createLiteRain(engine, scene, tier, rainMap, uploads);
-    const splash = rainMap === null ? null : createLiteRainSplash(engine, scene, tier, rainMap, uploads);
+    const rain = createLiteRain(engine, scene, tier, rainMap, shared, uploads);
+    const splash = rainMap === null ? null : createLiteRainSplash(engine, scene, tier, rainMap, shared, uploads);
+    // Their clocks ride in the frame's block.
+    frameValues.clocks = [motes?.clocks, rain.clocks, splash?.clocks].filter((clocks): clocks is StageRecord => clocks !== undefined);
     const coverAs = (kind: "terrain" | "hard" | "water"): CoverRegistry | undefined =>
       rainMap === null ? undefined : { add: (mesh) => rainMap.register(mesh, kind), remove: (mesh) => rainMap.unregister(mesh) };
     // The ground cloud's map, which every material's air reads.
@@ -1014,6 +1017,9 @@ export function createLiteRenderer(canvas: HTMLCanvasElement, level: Level, fore
     frameValues.eye = pose;
     frameValues.rows = canvas.height;
     frameValues.wingTime = wingTime(clock());
+    frameValues.exposure = light.exposure;
+    // The projection as Lite makes it for the hike's own pass, at the canvas's shape.
+    frameValues.projection = getProjectionMatrix(camera, canvas.height > 0 ? canvas.width / canvas.height : 1);
     writeFrameBlock(made.shared.data, made.shared.offsets, frameValues);
     writePluginUniformBlock(made.engine, made.shared);
     uploads.count("uniforms", made.shared.data.byteLength);

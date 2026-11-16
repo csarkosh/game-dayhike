@@ -70,7 +70,7 @@
  * vertex colours. Both are matt, drawn on both sides and lit on one.
  */
 import {
-  acquireTexture, addToScene, createMeshFromData, createPbrMaterial, createTexture2DFromPixels, disposeMeshGpu, getOrCreateSampler, invalidateRenderBundles,
+  acquireTexture, addToScene, createMeshFromData, createPbrMaterial, createTexture2DFromPixels, disposeMeshGpu, getOrCreateSampler, markThinInstancePluginData,
   releaseTexture, removeFromScene, setMeshVisible, setPbrAlphaCutoff, setPbrGammaAlbedo, setPbrMetallicReflectance, setThinInstanceCount,
   setThinInstances,
   type EngineContext, type MaterialPlugin, type PluginUniformBlock, type Mesh, type PbrMaterialProps, type SceneContext, type Texture2D,
@@ -107,13 +107,13 @@ import type { WetUniforms } from "../wetSurface.js";
 import { loadKtx2Map, loadModel, type LoadedModel, type ModelPart } from "./forestModels.js";
 import {
   baseColourPlugin, directOcclusionPlugin, impostorBakePlugin, oneSidedLightPlugin, surfaceSplitPlugin, surfaceWetPlugin, vegetationInstanceLayout,
-  vegetationPlugin, writeVegetationInstances,
+  vegetationPlugin,
   type Vegetation, type VegetationInstanceLayout,
 } from "./forestPlugins.js";
 import { DRAW_ORDER, createDrawOrders } from "./drawOrder.js";
 import type { FrameUploads } from "./frameUploads.js";
 import { createImpostorBaker, type BakeMesh } from "./impostorBake.js";
-import { MATRIX_BYTES, listBytes, sentInstances } from "./listMeshes.js";
+import { KEPT_INSTANCES, MATRIX_BYTES, listBytes, sameFloats, writeListData } from "./listMeshes.js";
 import { createRebuilds } from "./rebuildJobs.js";
 
 /** The canopy giants' models by `TreeInstance.species`: the fir, then the pine. */
@@ -624,8 +624,6 @@ export function createForestMeshes(engine: EngineContext, scene: SceneContext, s
       board.bake.ms = performance.now() - board.startedAt;
       // A rebuild may have split the far lists while the bake was drawn: the card takes its own now.
       fillBillboard(slot);
-      invalidateRenderBundles(engine);
-      options.uploads?.recorded();
     } catch (error) {
       if (!disposed && !abandoned) console.error(`forest impostor bake failed: ${name}`, error);
       fail();
@@ -691,9 +689,8 @@ export function createForestMeshes(engine: EngineContext, scene: SceneContext, s
 
   /** The bytes handing `target` a list of `count` instances sends: each of its meshes' matrices and plugin instance data. */
   function handOverBytes(target: Bucket, count: number): number {
-    const capacity = count > target.capacity ? Math.ceil(count * 1.5) : target.capacity;
     let bytes = 0;
-    for (const layout of target.layouts) bytes += listBytes(count, capacity, layout.floats);
+    for (const layout of target.layouts) bytes += listBytes(count, layout.floats);
     return bytes;
   }
 
@@ -706,7 +703,8 @@ export function createForestMeshes(engine: EngineContext, scene: SceneContext, s
   /** A bucket's new list: its matrices and what its materials read an instance (its own bands, where `from` carries them), written over the old. */
   function apply(target: Bucket, matrices: Float32Array, from: { groundGrad?: Float32Array; deadwoodRole?: Float32Array; fadeBands?: Float32Array }): void {
     const count = matrices.length / 16;
-    if (count > target.capacity) {
+    const outgrown = count > target.capacity;
+    if (outgrown) {
       // Outgrown: new arrays with room to spare, so a walk through thicker forest does not take new ones each cell.
       target.capacity = Math.ceil(count * 1.5);
       target.matrices = new Float32Array(target.capacity * 16);
@@ -718,7 +716,10 @@ export function createForestMeshes(engine: EngineContext, scene: SceneContext, s
         if (mesh.thinInstances !== undefined && mesh.thinInstances !== null) mesh.thinInstances.pluginData = data;
       });
     }
-    target.matrices.set(matrices);
+    // A short list may be the one the bucket holds: what of it is the same is handed to no mesh again (`listMeshes.ts`).
+    const stands = !outgrown && count === target.count && count <= KEPT_INSTANCES;
+    const moved = !stands || !sameFloats(matrices, target.matrices, count * 16);
+    if (moved) target.matrices.set(matrices);
     target.count = count;
     // A bucket's bands are one for its every instance, but a billboard's, whose two lists end at different ranges.
     const fadeBands = from.fadeBands ?? fadeBandsBuffer(count, target.fade);
@@ -726,18 +727,24 @@ export function createForestMeshes(engine: EngineContext, scene: SceneContext, s
       const data = target.data[i];
       if (data !== null && data !== undefined) {
         const layout = target.layouts[i] as VegetationInstanceLayout;
-        writeVegetationInstances(layout, count, { ...from, fadeBands }, data);
+        const changed = writeListData(layout, count, { ...from, fadeBands }, data, stands);
         const instances = mesh.thinInstances;
         if (instances !== undefined && instances !== null) {
-          // Lite sends the whole of the array it is handed: a view of the instances shown, rounded up (`listMeshes.ts`).
-          instances.pluginData = data.subarray(0, sentInstances(count, target.capacity) * layout.floats);
-          instances.pluginVersion = (instances.pluginVersion ?? 0) + 1;
-          options.uploads?.stream("pluginInstances", instances.pluginData.byteLength);
+          // The mesh holds the whole array, and Lite sends the floats named, at the next frame (`listMeshes.ts`).
+          // An array that has outgrown the mesh's buffer is sent whole.
+          if (instances.pluginData !== data) instances.pluginData = data;
+          if (changed) {
+            markThinInstancePluginData(mesh, 0, count * layout.floats);
+            if (outgrown) options.uploads?.stream("pluginInstances", data.byteLength);
+            else if (count > 0) options.uploads?.stream("pluginInstances", count * layout.floats * 4);
+          }
         }
       }
-      if (count > 0) options.uploads?.stream("instances", count * MATRIX_BYTES);
-      options.uploads?.composed(count);
-      setThinInstanceCount(mesh, count);
+      if (moved) {
+        if (count > 0) options.uploads?.stream("instances", count * MATRIX_BYTES);
+        options.uploads?.composed(count);
+        setThinInstanceCount(mesh, count);
+      }
       setMeshVisible(mesh, count > 0);
     });
   }
@@ -831,9 +838,6 @@ export function createForestMeshes(engine: EngineContext, scene: SceneContext, s
     for (const show of shows) show();
     // A billboard whose bake landed while the lists were made has none among them: it takes its own now.
     for (let slot = 0; slot < billboards.length; slot++) if (!filled.has(slot)) fillBillboard(slot);
-    // Plugin instance data goes up as its draw is recorded again.
-    invalidateRenderBundles(engine);
-    options.uploads?.recorded();
   }
 
   /** Idle work: the bands of the tree cell the camera reaches next. */
