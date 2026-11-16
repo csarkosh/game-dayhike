@@ -160,9 +160,13 @@
  * clock) is the frame's; the swash's table is sent on a frame that shows
  * the sea. Its edge is stepped every frame, shown or not
  * (`seaEdge.ts`): the wet ground on the cove reads the swash's table, and
- * the surf is heard by it (`surfSound`, `hasSea`). The wind sea as a field
- * (the baked loop, the FFT), the swept curl and the spray are not drawn
- * yet, nor the tier that reads through the surface.
+ * the surf is heard by it (`surfSound`, `hasSea`). On the tiers above low
+ * the wind sea is the loop the game bakes in a worker, its 64 frames sent
+ * once when the bake lands, moving the vertices and tilting the normal, and
+ * the sea stands in the rain's cover map as open water at rest, shown for
+ * the frame that draws the map where the view does not hold it. The wind
+ * sea's FFT, the swept curl and the spray are not drawn yet, nor the tier
+ * that reads through the surface.
  *
  * **Colour** is the low tier's material path: Lite's display curve as
  * Babylon's image processing has it there (Khronos PBR Neutral, contrast
@@ -435,7 +439,7 @@ export function createLiteRenderer(canvas: HTMLCanvasElement, level: Level, fore
   /** The weather's preset as the lakes' calm follows it (`lakeCalmFrame.ts`): `setWeatherName`. */
   const calmFade = createCalmFade();
   /** What a frame hands the sea (`SeaFrame`), filled in place. */
-  const seaFrame: SeaFrame = { centreX: 0, centreZ: 0, planes: [], seconds: 0, dt: 0, wind: windRecordUnder(light.weather, 0), hour: light.hour };
+  const seaFrame: SeaFrame = { centreX: 0, centreZ: 0, planes: [], seconds: 0, dt: 0, wind: windRecordUnder(light.weather, 0), hour: light.hour, cover: null };
   /** The surf as heard, one record refilled each frame (`surfSound.ts`), and whether this frame's `sync` stepped it: the sound of a frame that did not is silence. */
   const surf: SurfSound = createSurfSound();
   let surfStepped = false;
@@ -789,6 +793,7 @@ export function createLiteRenderer(canvas: HTMLCanvasElement, level: Level, fore
         start, waterLevel, bed, air: () => atmospherePlugin(airValues, cloudMap, shared), shared,
         rings: fittingWaterRings(prepared, forest.seed, start.x, start.z), ocean: fittingOcean(prepared, forest.seed, tier),
         bump: fittingWaterBump(prepared, forest.seed), uploads,
+        cover: rainMap === null ? undefined : { add: (mesh, place) => rainMap.register(mesh, "water", place), remove: (mesh) => rainMap.unregister(mesh) },
       });
     }
     if (forest !== null && cloudMap !== null && bed !== null && lakes.length > 0 && !disposed) {
@@ -1242,6 +1247,12 @@ export function createLiteRenderer(canvas: HTMLCanvasElement, level: Level, fore
           f.dt = dt;
           f.wind = wind;
           f.hour = light.hour;
+          f.cover = null;
+          if (coverDrawn && standing.rainMap !== null) {
+            coverSquare.x = standing.rainMap.centre.x;
+            coverSquare.z = standing.rainMap.centre.z;
+            f.cover = coverSquare;
+          }
           standing.sea.update(f);
           frameValues.sea = standing.sea.frame;
           // The rain rings the sea as it does a lake: the lakes' record carries it where there are any.

@@ -28,19 +28,30 @@
  *   whole of its tables).
  * - **The edge is stepped every frame, shown or not**: the wet ground reads
  *   the swash's table, and the surf is heard by it.
+ * - **The wind sea's field is the loop** on the tiers that draw one, baked
+ *   in the game's worker (`oceanLoopStart.ts`) and sent once when it lands,
+ *   64 frames of 128 texels a side; until then the sea is the swell alone.
+ *   A tier whose own field is the FFT draws the loop, as the game does
+ *   where the FFT is not to be had.
+ * - **In the rain's cover map it is open water, at rest**: the same mesh
+ *   through the map's material and a plugin that places the lattice at the
+ *   level, shown for the frame that draws the map where the view does not
+ *   hold it and the map's square reaches its water.
  * - **Among the see-through draws it stands before the lakes**
  *   (`drawOrder.ts`), the rings laid outermost first.
  */
 import {
   addToScene, createMeshFromData, createPbrMaterial, createRenderTexture2D, createTexture2DArray, createTexture2DFromPixels, disposeMeshGpu,
   markMaterialUboDirty, removeFromScene, setMeshVisible, updateTextureRegion,
-  type EngineContext, type MaterialPlugin, type Mesh, type PluginUniformBlock, type SceneContext, type Texture2D,
+  type EngineContext, type MaterialPlugin, type Mesh, type PluginUniformBlock, type SceneContext, type Texture2D, type Texture2DArray,
 } from "@babylonjs/lite";
 import { boxInPlanes, type ViewPlane } from "../lakeSeen.js";
 import { createOceanFrame, type WindSeaDrawn } from "../oceanFrame.js";
 import { OCEAN_ATLAS_ROWS, OCEAN_ROW_COAST, OCEAN_TABLE_SAMPLES } from "../oceanTables.js";
 import type { OceanField } from "../oceanWaves.js";
-import { createSeaWindLag } from "../oceanWindSea.js";
+import { startLoopWorker, type LoopStarter } from "../oceanLoopStart.js";
+import { LOOP_FRAMES, LOOP_N } from "../oceanSpectrum.js";
+import { createSeaWindLag, loopTimeAfter } from "../oceanWindSea.js";
 import type { QualityTier } from "../quality.js";
 import { createSeaEdgeStep, type SeaEdgeStep } from "../seaEdge.js";
 import { SEA_SIDE, seaBedDepths, seaLattice, seaRingRecords, seaWetBounds } from "../seaLattice.js";
@@ -54,13 +65,13 @@ import { advanceWater, createBumpDrift, createWaterSurface, setWaterCove, setWat
 import type { WindRecord } from "../windParams.js";
 import { SEE_THROUGH_ORDER } from "./drawOrder.js";
 import type { FrameUploads } from "./frameUploads.js";
-import { seaPlugin } from "./seaPlugin.js";
+import { seaPlugin, seaRestPlugin } from "./seaPlugin.js";
 import type { SeaLook } from "./seaWgsl.js";
 import type { LiteWaterBed } from "./waterBed.js";
 
-/** What a tier's sea is drawn with beside its swell: the ripple bump for the wind sea where no field of it is drawn. */
+/** What a tier's sea is drawn with beside its swell: the ripple bump for the wind sea on low, the baked loop above it. */
 export function seaLookFor(tier: QualityTier): SeaLook {
-  return { bump: tier === "low", loop: false };
+  return { bump: tier === "low", loop: tier !== "low" };
 }
 
 /** What the sea is made with. */
@@ -79,6 +90,10 @@ export type SeaOptions = {
   rings?: WaterRingSamples[] | null;
   ocean?: OceanField | null;
   bump?: Uint8Array | null;
+  /** The rain's cover map, which the sea stands in as open water, placed by the plugin handed with it. */
+  cover?: { add(mesh: Mesh, place: MaterialPlugin): void; remove(mesh: Mesh): void };
+  /** How the wind sea's loop is baked: the game's worker unless said. */
+  startLoop?: LoopStarter;
   uploads?: FrameUploads;
 };
 
@@ -94,6 +109,12 @@ export type SeaFrame = {
   dt: number;
   wind: WindRecord;
   hour: number;
+  /**
+   * The square (its centre and half its side, metres) the rain's cover map is drawn over with this frame; null on a
+   * frame that does not draw it. A sea that reaches into it is shown for the frame whatever the view holds: a hidden
+   * mesh is in no pass, the map's among them.
+   */
+  cover: { x: number; z: number; half: number } | null;
 };
 
 export type LiteSea = {
@@ -114,6 +135,8 @@ export type LiteSea = {
   readonly swashUploads: number;
   readonly coastUploads: number;
   readonly marks: number;
+  /** How the wind sea is drawn: 0 with no field, 1 the loop once it has landed. */
+  readonly windMode: 0 | 1;
   dispose(): void;
 };
 
@@ -182,7 +205,26 @@ export function createLiteSea(engine: EngineContext, scene: SceneContext, seed: 
     // One alpha blends it over what lies under it; seen from either side, as the game leaves it unculled.
     alphaBlend: true, doubleSided: true, usePhysicalLightFalloff: true,
   });
-  material.plugins = [seaPlugin(own, { atlas, swash, ringBeds, bed: bed.texture, bump, loop: null }, options.shared, look), options.air()];
+  // The wind sea's loop: its frames' table made now and filled when the worker answers; the sea is the swell alone
+  // until then. Without a worker, or if the bake fails, it never arrives.
+  let loop: Texture2DArray | null = null;
+  let loopMade: { heightStd: number; slopeVar: number } | null = null;
+  let loopTime = 0;
+  const loopStats: [number, number, number, number] = [0, 0, 0, 0];
+  const abort = new AbortController();
+  if (look.loop) {
+    const frames = createTexture2DArray(engine, LOOP_N, LOOP_N, LOOP_FRAMES, {
+      format: "rgba16float", mipMaps: false, addressModeU: "repeat", addressModeV: "repeat", minFilter: "linear", magFilter: "linear",
+    });
+    loop = frames;
+    (options.startLoop ?? startLoopWorker)(seed, abort.signal).then((reply) => {
+      if (disposed || reply.n !== LOOP_N || reply.frames !== LOOP_FRAMES) return;
+      updateTextureRegion(engine, frames, reply.data, { width: LOOP_N, height: LOOP_N, layerCount: LOOP_FRAMES, bytesPerRow: LOOP_N * 8, rowsPerImage: LOOP_N });
+      uploads?.count("textures", reply.data.byteLength);
+      loopMade = { heightStd: reply.heightStd, slopeVar: reply.slopeVar };
+    }).catch(() => undefined);
+  }
+  material.plugins = [seaPlugin(own, { atlas, swash, ringBeds, bed: bed.texture, bump, loop }, options.shared, look), options.air()];
 
   // The lattice, made once: the rings outermost first.
   const lattice = seaLattice();
@@ -194,6 +236,7 @@ export function createLiteSea(engine: EngineContext, scene: SceneContext, seed: 
   // Hidden until a view holds water.
   setMeshVisible(mesh, false);
   addToScene(scene, mesh);
+  options.cover?.add(mesh, seaRestPlugin(options.shared, waterLevel));
 
   // The rings' samples of the ground, and the box each has water in.
   const rings: WaterRingSamples[] = [];
@@ -264,6 +307,9 @@ export function createLiteSea(engine: EngineContext, scene: SceneContext, seed: 
     get marks() {
       return marks;
     },
+    get windMode() {
+      return windSea.mode === 0 ? 0 : 1;
+    },
     update(f) {
       if (disposed) return;
       for (let level = 0; level < WATER_RING_COUNT; level++) moved[level] = updateWaterRingSamples(rings[level] as WaterRingSamples, seed, f.centreX, f.centreZ);
@@ -278,6 +324,15 @@ export function createLiteSea(engine: EngineContext, scene: SceneContext, seed: 
       // The swell's phases and the wind sea's state, the sea following its wind a minute behind.
       const rowWritten = ocean.update(f.centreZ, f.seconds, f.wind.speed, windDir, f.hour, (blowing) => {
         windSea.sea = lag.step(blowing, f.seconds);
+        if (loopMade !== null) {
+          // The loop's own clock, run at the sea's rate, and what the shaders normalise the loop by at this wind.
+          loopTime = loopTimeAfter(loopTime, lag.dt, windSea.sea);
+          loopStats[0] = loopMade.heightStd * windSea.sea.loopScale;
+          loopStats[1] = loopMade.slopeVar;
+          windSea.mode = 1;
+          windSea.loopTime = loopTime;
+          windSea.stats = loopStats;
+        }
         return windSea;
       });
       if (rowWritten) {
@@ -293,7 +348,10 @@ export function createLiteSea(engine: EngineContext, scene: SceneContext, seed: 
       if (seaUniforms(surface, waterLevel, ocean.numbers, own)) stale = true;
       let seen = false;
       for (const box of boxes) {
-        if (box !== null && boxInPlanes(box.min[0], box.min[1], box.min[2], box.max[0], box.max[1], box.max[2], f.planes)) {
+        if (box === null) continue;
+        const covered = f.cover !== null
+          && box.min[0] < f.cover.x + f.cover.half && box.max[0] > f.cover.x - f.cover.half && box.min[2] < f.cover.z + f.cover.half && box.max[2] > f.cover.z - f.cover.half;
+        if (covered || boxInPlanes(box.min[0], box.min[1], box.min[2], box.max[0], box.max[1], box.max[2], f.planes)) {
           seen = true;
           break;
         }
@@ -317,6 +375,8 @@ export function createLiteSea(engine: EngineContext, scene: SceneContext, seed: 
     dispose() {
       if (disposed) return;
       disposed = true;
+      abort.abort();
+      options.cover?.remove(mesh);
       removeFromScene(scene, mesh);
       disposeMeshGpu(mesh);
       uploads?.dropped();

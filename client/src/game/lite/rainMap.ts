@@ -23,7 +23,10 @@
  *   by a plugin on a plain material, last in its fragment. The terrain's
  *   reads the canopy's density from the terrain's own vertex data
  *   (`TERRAIN_VERTEX_LAYOUT`); water is open, the rain landing on its
- *   surface; anything else is hard cover. A mesh that is hidden is in no
+ *   surface; anything else is hard cover. A mesh whose vertices are placed
+ *   by its own material's vertex stage (the sea's lattice) is registered
+ *   with the plugin that places them, which the map's material of its kind
+ *   then wears for it. A mesh that is hidden is in no
  *   pass of Lite's, this one among them: a surface of water hidden because
  *   the view does not hold it is shown for the frame that draws the map
  *   (`lakeMeshes.ts`).
@@ -89,7 +92,8 @@ export type LiteRainMap = {
   readonly texture: Texture2D;
   /** The centre the map was last placed at (NaN before the first `update`). */
   readonly centre: Readonly<Vec3>;
-  register(mesh: Mesh, kind: RainMapKind): void;
+  /** `place`: the plugin that places the mesh's vertices, for a mesh whose own material's vertex stage does. */
+  register(mesh: Mesh, kind: RainMapKind, place?: MaterialPlugin): void;
   unregister(mesh: Mesh): void;
   /**
    * Moves the map to `player` by the step rule, and draws it with the frame
@@ -125,10 +129,10 @@ export function createLiteRainMap(engine: EngineContext, scene: SceneContext, ti
   // The pass's own, never the scene's: it is in no scene, and the pass names it.
   enableOrthographicCamera(camera, { halfHeight: half, left: -half, right: half, bottom: half, top: -half });
 
-  const material = (kind: RainMapKind): PbrMaterialProps => {
+  const material = (kind: RainMapKind, place?: MaterialPlugin): PbrMaterialProps => {
     const made = createPbrMaterial({ baseColorFactor: [1, 1, 1, 1], metallicFactor: 0, roughnessFactor: 1 });
     made.doubleSided = true;
-    made.plugins = [rainMapPlugin(kind)];
+    made.plugins = place === undefined ? [rainMapPlugin(kind)] : [rainMapPlugin(kind), place];
     return made;
   };
   const materials = { terrain: material("terrain"), hard: material("hard"), water: material("water") };
@@ -168,11 +172,11 @@ export function createLiteRainMap(engine: EngineContext, scene: SceneContext, ti
     get draws() {
       return draws;
     },
-    register(mesh, kind) {
+    register(mesh, kind, place) {
       // A mesh is in the list once.
       if (disposed || registered.has(mesh)) return;
       registered.add(mesh);
-      addMeshToTask(task, mesh, { material: materials[kind] });
+      addMeshToTask(task, mesh, { material: place === undefined ? materials[kind] : material(kind, place) });
     },
     unregister(mesh) {
       if (disposed || !registered.delete(mesh)) return;

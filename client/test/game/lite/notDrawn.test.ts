@@ -75,13 +75,14 @@ describe("what the renderer on Babylon Lite does not draw yet", () => {
     expect(lakes[0]?.what).not.toMatch(/calm/);
   });
 
-  it("leaves the sea's swell, its white water, its swash and its surf to the renderer: what is left of the sea is its wind waves as a field, the curl and the spray", () => {
+  it("leaves the sea's swell, its wind sea, its white water, its swash and its surf to the renderer: what is left of the sea is the FFT, the curl and the spray", () => {
     const { members } = notDrawnMembers();
     for (const name of ["hasSea", "surfSound"]) expect(name in members, name).toBe(false);
     const sea = NOT_DRAWN.filter((part) => /\bsea\b/.test(part.what));
     expect(sea.map((part) => part.members)).toEqual([[], []]);
-    expect(sea[0]?.what).toMatch(/loop/);
     expect(sea[0]?.what).toMatch(/FFT/);
+    // The loop is named as what is drawn in the FFT's place.
+    expect(sea[0]?.what).toMatch(/loop is drawn/);
     expect(sea[0]?.what).toMatch(/curl/);
     expect(sea[0]?.what).toMatch(/spray/);
     expect(sea[0]?.what).not.toMatch(/swash|surf's sound|swell/);

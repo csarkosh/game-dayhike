@@ -4,7 +4,7 @@ import { ATMOSPHERE_PRIORITY } from "../../../src/game/lite/atmospherePlugin.js"
 import { FRAME_BLOCK, FRAME_FIELDS, SEA_RINGS_NAME, inFrameBlock } from "../../../src/game/lite/frameBlock.js";
 import { WATER_PRIORITY } from "../../../src/game/lite/lakePlugin.js";
 import { seaLookFor } from "../../../src/game/lite/seaMeshes.js";
-import { seaFields, seaPlugin } from "../../../src/game/lite/seaPlugin.js";
+import { seaFields, seaPlugin, seaRestPlugin } from "../../../src/game/lite/seaPlugin.js";
 import { SEA_COMPONENT_VECS, emptySeaFrameUniforms, emptySeaUniforms } from "../../../src/game/seaUniforms.js";
 import { WATER_RING_COUNT } from "../../../src/game/water.js";
 import { laidOut, readUniform, standInTexture } from "./pluginFixture.js";
@@ -17,10 +17,11 @@ const codeOf = (plugin: ReturnType<typeof seaPlugin>): string =>
   (["vertex", "fragment"] as const).map((stage) => Object.values(plugin.getCustomCode?.(stage) ?? {}).join("\n")).join("\n");
 
 describe("the sea's water as a plugin on Babylon Lite", () => {
-  it("draws the wind sea with the ripple bump on low, and with no field of it above", () => {
+  it("draws the wind sea with the ripple bump on low, and with the baked loop above it", () => {
     expect(seaLookFor("low")).toEqual({ bump: true, loop: false });
-    expect(seaLookFor("medium")).toEqual({ bump: false, loop: false });
-    expect(seaLookFor("high")).toEqual({ bump: false, loop: false });
+    expect(seaLookFor("medium")).toEqual({ bump: false, loop: true });
+    // The tier whose own field is the FFT draws the loop, as the game does where the FFT is not to be had.
+    expect(seaLookFor("high")).toEqual({ bump: false, loop: true });
   });
 
   it("declares the sea's own uniforms by the names its record gives them, for both stages, and leaves the frame's to the block", () => {
@@ -118,5 +119,19 @@ describe("the sea's water as a plugin on Babylon Lite", () => {
     expect(plugin.priority).toBe(WATER_PRIORITY);
     expect(WATER_PRIORITY).toBeLessThan(ATMOSPHERE_PRIORITY);
     expect(plugin.getFragmentDirectives?.()).toBe("diagnostic(off,derivative_uniformity);");
+  });
+
+  it("places the lattice at rest for the rain's cover map: the rings' records from the frame's block, the level its own, no wave", () => {
+    const plugin = seaRestPlugin(SHARED, 0.25);
+    expect(plugin.getUniformBlocks?.()).toEqual([SHARED]);
+    expect(plugin.getUniforms).toBeUndefined();
+    expect(plugin.getSamplers).toBeUndefined();
+    expect(plugin.getCustomCode?.("fragment")).toBeNull();
+    const vertex = plugin.getCustomCode?.("vertex")?.CUSTOM_VERTEX_MAIN_END ?? "";
+    expect(vertex).toContain(`${FRAME_BLOCK}.seaRings[seaRing]`);
+    expect(vertex).toContain("out.worldPos=vec3<f32>(seaAt.x,0.2500,seaAt.y);");
+    expect(vertex).not.toMatch(/oceanDisplace|swashLift|material\./);
+    // Another level is another shader.
+    expect(seaRestPlugin(SHARED, 1).defines).not.toEqual(plugin.defines);
   });
 });

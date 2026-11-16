@@ -2,7 +2,9 @@ import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
 import { HOLE_CELLS } from "../../../src/game/clipmap.js";
-import { SEA_ALBEDO_WGSL, SEA_BUMP_WGSL, SEA_COMPOSE_WGSL, SEA_RAIN_WGSL, SEA_VERTEX_WGSL, seaLightsWgsl, seaShadeWgsl, seaSurfaceWgsl } from "../../../src/game/lite/seaWgsl.js";
+import {
+  SEA_ALBEDO_WGSL, SEA_BUMP_WGSL, SEA_COMPOSE_WGSL, SEA_RAIN_WGSL, SEA_VERTEX_WGSL, seaLightsWgsl, seaRestVertexWgsl, seaShadeWgsl, seaSurfaceWgsl,
+} from "../../../src/game/lite/seaWgsl.js";
 import { WATER_RING_CELLS, WATER_RING_COUNT, WATER_UV_SCALE } from "../../../src/game/water.js";
 import { inOrder, tight } from "./wgslText.js";
 
@@ -247,5 +249,21 @@ describe("the sea's waves and shading in WGSL, against the game's GLSL", () => {
       // A frame cell the hole covers is drawn as nothing.
       `if(seaCell.x>=0.0&&seaCell.x<${HOLE_CELLS}.0&&seaCell.y>=0.0&&seaCell.y<${HOLE_CELLS}.0){out.clipPos=vec4<f32>(0.0,0.0,-1.0,1.0);}`,
     ])).toBe(true);
+  });
+
+  it("places a vertex at rest as it places one under the waves: the same ring, the same place, the same cells drawn as nothing", () => {
+    const rest = tight(seaRestVertexWgsl(0));
+    const moved = tight(SEA_VERTEX_WGSL);
+    for (const shared of [
+      "letseaRing=u32(position.y+0.5);letseaRecord=bitcast<vec4<f32>>(material.seaRings[seaRing]);letseaSpacing=f32(1u<<seaRing);",
+      "letseaAt=seaRecord.xy+position.xz*seaSpacing;",
+      `if(seaRing>0u&&uv.x>=0.0){letseaCell=uv-seaRecord.zw;if(seaCell.x>=0.0&&seaCell.x<${HOLE_CELLS}.0&&seaCell.y>=0.0&&seaCell.y<${HOLE_CELLS}.0){out.clipPos=vec4<f32>(0.0,0.0,-1.0,1.0);}}`,
+    ]) {
+      expect(rest).toContain(shared);
+      expect(moved).toContain(shared);
+    }
+    expect(rest).toContain("out.worldPos=vec3<f32>(seaAt.x,0.0000,seaAt.y);out.clipPos=scene.viewProjection*vec4<f32>(out.worldPos,1.0);");
+    // The map's rings are not stitched: its material draws the game's rings where their vertices stand.
+    expect(rest).not.toMatch(/oceanMorph|oceanDisplace/);
   });
 });

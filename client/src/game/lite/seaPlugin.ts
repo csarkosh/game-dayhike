@@ -26,7 +26,10 @@ import { SEA_COMPONENT_VECS, type SeaUniforms } from "../seaUniforms.js";
 import { frameReads } from "./frameBlock.js";
 import { WATER_PRIORITY } from "./lakePlugin.js";
 import { uniformFields, writeUniforms, type UniformField } from "./pluginUniforms.js";
-import { SEA_ALBEDO_WGSL, SEA_BUMP_WGSL, SEA_COMPOSE_WGSL, SEA_RAIN_WGSL, SEA_VERTEX_WGSL, seaLightsWgsl, seaShadeWgsl, seaSurfaceWgsl, type SeaLook } from "./seaWgsl.js";
+import {
+  SEA_ALBEDO_WGSL, SEA_BUMP_WGSL, SEA_COMPOSE_WGSL, SEA_RAIN_WGSL, SEA_VERTEX_WGSL, seaLightsWgsl, seaRestVertexWgsl, seaShadeWgsl, seaSurfaceWgsl,
+  type SeaLook,
+} from "./seaWgsl.js";
 import { WATER_DEFS_WGSL, WATER_SPLIT_WGSL } from "./waterWgsl.js";
 
 /** The pictures and tables the sea's material reads. */
@@ -107,5 +110,20 @@ export function seaPlugin(uniforms: SeaUniforms, textures: SeaTextures, shared: 
       if (textures.bump !== null) out.push(textures.bump);
       if (textures.loop !== null) out.push(textures.loop);
     },
+  };
+}
+
+/**
+ * The sea in the rain's cover map: the plugin that places the lattice's
+ * vertices for the map's own material, at rest at `waterLevel`, from the
+ * rings' records in the frame's block `shared`.
+ */
+export function seaRestPlugin(shared: PluginUniformBlock, waterLevel: number): MaterialPlugin {
+  return {
+    name: "SeaAtRest",
+    priority: WATER_PRIORITY,
+    defines: { level: waterLevel },
+    getCustomCode: (stage) => (stage === "vertex" ? { CUSTOM_VERTEX_MAIN_END: frameReads(seaRestVertexWgsl(waterLevel)) } : null),
+    getUniformBlocks: () => [shared],
   };
 }

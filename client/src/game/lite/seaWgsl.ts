@@ -354,15 +354,25 @@ fn swashDepth(p:vec2<f32>)->f32{
 }`;
 }
 
+/** A lattice vertex's ring, where the ring and its hole stand, and the ring's spacing. */
+const SEA_RING_WGSL = /* wgsl */ `
+  let seaRing=u32(position.y+0.5);
+  let seaRecord=bitcast<vec4<f32>>(material.seaRings[seaRing]);
+  let seaSpacing=f32(1u<<seaRing);`;
+
+/** A cell of the hole's frame that the finer ring covers, drawn as nothing: its four vertices at one point. */
+const SEA_HOLE_WGSL = /* wgsl */ `
+  if(seaRing>0u&&uv.x>=0.0){
+    let seaCell=uv-seaRecord.zw;
+    if(seaCell.x>=0.0&&seaCell.x<${HOLE_CELLS}.0&&seaCell.y>=0.0&&seaCell.y<${HOLE_CELLS}.0){out.clipPos=vec4<f32>(0.0,0.0,-1.0,1.0);}
+  }`;
+
 /**
  * The vertex stage's last step: the lattice's vertex placed on its ring
  * (`seaVertexAt`), then `oceanDisplace.vertex.fx` on that place, and the
  * depth of water under it from its ring's table.
  */
-export const SEA_VERTEX_WGSL = /* wgsl */ `{
-  let seaRing=u32(position.y+0.5);
-  let seaRecord=bitcast<vec4<f32>>(material.seaRings[seaRing]);
-  let seaSpacing=f32(1u<<seaRing);
+export const SEA_VERTEX_WGSL = /* wgsl */ `{${SEA_RING_WGSL}
   var oceanMorph=0.0;
   var oceanCoarse=vec2<f32>(0.0);
   if(seaRing<${WATER_RING_COUNT - 1}u){
@@ -393,12 +403,21 @@ export const SEA_VERTEX_WGSL = /* wgsl */ `{
   out.clipPos=scene.viewProjection*vec4<f32>(positionUpdated,1.0);
   out.uv=seaAt/${WATER_UV_SCALE}.0;
   out.vBedDepth=textureLoad(seaBed,vec2<i32>(position.xz),i32(seaRing),0).r;
-  out.vWaterViewDepth=out.clipPos.w;
-  if(seaRing>0u&&uv.x>=0.0){
-    let seaCell=uv-seaRecord.zw;
-    if(seaCell.x>=0.0&&seaCell.x<${HOLE_CELLS}.0&&seaCell.y>=0.0&&seaCell.y<${HOLE_CELLS}.0){out.clipPos=vec4<f32>(0.0,0.0,-1.0,1.0);}
-  }
+  out.vWaterViewDepth=out.clipPos.w;${SEA_HOLE_WGSL}
 }`;
+
+/**
+ * The lattice's vertex at rest: on its ring at `level`, no wave on it. What
+ * the rain's cover map draws the sea as, as the game draws its rings there
+ * with the map's own material.
+ */
+export function seaRestVertexWgsl(level: number): string {
+  return /* wgsl */ `{${SEA_RING_WGSL}
+  let seaAt=seaRecord.xy+position.xz*seaSpacing;
+  out.worldPos=vec3<f32>(seaAt.x,${level.toFixed(4)},seaAt.y);
+  out.clipPos=scene.viewProjection*vec4<f32>(out.worldPos,1.0);${SEA_HOLE_WGSL}
+}`;
+}
 
 /** The rain's rings of `water.fragment.fx`, the puddles' own: the sea's. */
 export const SEA_RAIN_WGSL = /* wgsl */ `
