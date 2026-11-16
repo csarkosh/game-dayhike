@@ -61,7 +61,8 @@
  * **What every material reads alike is one block** (`frameBlock.ts`): the
  * air, the wet line and the weather, the wind and the players, the eye and
  * the frame's height, and the terrain's record are written once a frame to
- * one uniform buffer every material's plugins name. A material's own
+ * one uniform buffer every material's plugins name, and the buffer is sent
+ * the run of its words that moved: nothing on a frame none did. A material's own
  * uniforms are written when it is made, and again only when its own values
  * change: the terrain's two when the weather moves the ground's colour.
  *
@@ -303,7 +304,7 @@ import { createClutterMeshes, type ClutterMeshes } from "./clutterMeshes.js";
 import { createDuffMeshes, type DuffMeshes } from "./duffMeshes.js";
 import { createEntityMeshes, type EntityMeshes } from "./entityMeshes.js";
 import { createForestMeshes, type ForestMeshes } from "./forestMeshes.js";
-import { FADE_ROWS_NAME, FRAME_BLOCK, FRAME_FIELDS, FRAME_PROJECTION_NAME, writeFrameBlock, type FrameValues, type StageRecord } from "./frameBlock.js";
+import { FADE_ROWS_NAME, FRAME_BLOCK, FRAME_FIELDS, FRAME_PROJECTION_NAME, movedWords, writeFrameBlock, type FrameValues, type StageRecord } from "./frameBlock.js";
 import { createFrameUploads, uploadCountsCopy, type FrameUploadCounts } from "./frameUploads.js";
 import { GROUND_IMAGES, cloudMapTexture, loadGroundArrays, tableTexture, type CloudMapTexture, type TableTexture } from "./groundTextures.js";
 import { createLiteLakes, type LakeFrame, type LiteLakes } from "./lakeMeshes.js";
@@ -583,6 +584,11 @@ export function createLiteRenderer(canvas: HTMLCanvasElement, level: Level, fore
   const coverSquare = { x: 0, z: 0, half: RAIN_MAP.extent / 2 };
   /** Whether this frame draws the rain's cover map. */
   let coverDrawn = false;
+  /** The frame's block as its buffer holds it (`movedWords`): the block these are of, its data as words, and the words sent. */
+  let blockOf: PluginUniformBlock | null = null;
+  let blockBits: Uint32Array = new Uint32Array(0);
+  let blockSent: Uint32Array = new Uint32Array(0);
+  const blockRange = { from: 0, to: 0 };
 
   // The view: where the camera stands and how it is turned, as `sync` last left it.
   const pose: CameraPose = { x: 0, y: 2, z: 0, yaw: 0, pitch: 0, roll: 0 };
@@ -1225,9 +1231,19 @@ export function createLiteRenderer(canvas: HTMLCanvasElement, level: Level, fore
     }
     // The projection as Lite makes it for the hike's own pass, at the canvas's shape.
     frameValues.projection = getProjectionMatrix(camera, canvas.height > 0 ? canvas.width / canvas.height : 1);
-    writeFrameBlock(made.shared.data, made.shared.offsets, frameValues);
-    writePluginUniformBlock(made.engine, made.shared);
-    uploads.count("uniforms", made.shared.data.byteLength);
+    const { data } = made.shared;
+    writeFrameBlock(data, made.shared.offsets, frameValues);
+    // The block's buffer is sent the run of words that moved, and nothing on a frame none did.
+    if (blockOf !== made.shared) {
+      blockOf = made.shared;
+      blockBits = new Uint32Array(data.buffer, data.byteOffset, data.length);
+      // A buffer that has been sent nothing holds zeros.
+      blockSent = new Uint32Array(data.length);
+    }
+    if (movedWords(blockBits, blockSent, blockRange)) {
+      writePluginUniformBlock(made.engine, made.shared, blockRange.from * 4, blockRange.to * 4);
+      uploads.count("uniforms", (blockRange.to - blockRange.from) * 4);
+    }
   }
 
   let skyWait: Promise<void> | null = null;

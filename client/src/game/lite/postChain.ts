@@ -22,7 +22,8 @@
  *
  * **Every uniform of the chain is one buffer, written once a frame**: each
  * pass reads its own part of it, laid out from the record its values come
- * in. The materials read none of it.
+ * in, and the buffer is sent the run of its words that moved since it was
+ * last sent (`movedWords`). The materials read none of it.
  *
  * **The targets are the frame's size and follow it.** The scene's pass owns
  * its two (the samples and their resolve), which stand while the frame's
@@ -57,6 +58,7 @@ import {
 import { MSAA_SAMPLES, paintTargetSize, type PostFeatures } from "../postParams.js";
 import type { StareLens } from "../stareLens.js";
 import { WEATHER_PRESETS, type WeatherParams } from "../weather.js";
+import { movedWords } from "./frameBlock.js";
 import type { FrameUploads } from "./frameUploads.js";
 import {
   FAR_SOFT_WGSL, HALATION_EXTRACT_WGSL, LENS_WGSL, PAINT_WGSL, POST_VERTEX_WGSL, TAA_SHARPEN_WGSL, TAA_WGSL, blurWgsl, depthResolveWgsl, gradeWgsl, passLayout,
@@ -113,7 +115,7 @@ export type PostChainCounts = {
   passes: number;
   /** Whether the last frame drew the lens. */
   lens: boolean;
-  /** Bytes of the chain's buffer, written once a frame. */
+  /** Bytes of the chain's buffer, of which a frame sends the run that moved. */
   uniformBytes: number;
   /** Times the chain's own targets were made: once a size of the frame. */
   builds: number;
@@ -206,6 +208,10 @@ export function createLitePostChain(engine: EngineContext, scene: SceneContext, 
   }
   const data = new Float32Array(bytes / 4);
   const buffer = device.createBuffer({ label: "post chain", size: bytes, usage: UNIFORM | COPY_DST });
+  /** The buffer as it holds the chain's uniforms: `data` as words, the words sent (a new buffer holds zeros), and the run that moved. */
+  const dataBits = new Uint32Array(data.buffer);
+  const dataSent = new Uint32Array(dataBits.length);
+  const dataMoved = { from: 0, to: 0 };
   const part = (name: SectionName): { layout: PassLayout; offset: number } => layouts.get(name) as { layout: PassLayout; offset: number };
   const write = (name: SectionName, record: Readonly<Record<string, ArrayLike<number>>>): void => {
     const { layout, offset } = part(name);
@@ -486,8 +492,11 @@ export function createLitePostChain(engine: EngineContext, scene: SceneContext, 
         write("halationBlurX" as SectionName, { delta: [1 / w, 0] });
         write("halationBlurY" as SectionName, { delta: [0, 1 / h] });
       }
-      device.queue.writeBuffer(buffer, 0, data);
-      options.uploads?.count("uniforms", bytes);
+      // The run of the buffer's words that moved, and nothing on a frame none did.
+      if (movedWords(dataBits, dataSent, dataMoved)) {
+        device.queue.writeBuffer(buffer, dataMoved.from * 4, data.buffer, dataMoved.from * 4, (dataMoved.to - dataMoved.from) * 4);
+        options.uploads?.count("uniforms", (dataMoved.to - dataMoved.from) * 4);
+      }
     },
     dispose() {
       if (disposed) return;
