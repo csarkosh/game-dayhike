@@ -59,7 +59,9 @@ describe("the midges' stages on Babylon Lite, against the game's GLSL", () => {
     expect(wgsl).toContain("letmidge=input.world0.xy;");
     expect(wgsl).toContain("letat=3*i32(midge.x+0.5);letslot=midge.y;");
     expect(wgsl).toContain("varside=cross(vec3<f32>(0.0,1.0,0.0),view);side=normalize(mix(vec3<f32>(1.0,0.0,0.0),side,step(1.0e-8,dot(side,side))));");
-    expect(wgsl).toContain("out.position=shaderSystem.viewProjection*vec4<f32>(corner,1.0);");
+    // The view is the scene's own, which Lite declares ahead of every stage: no copy of it is the midges'.
+    expect(wgsl).toContain("out.position=scene.viewProjection*vec4<f32>(corner,1.0);");
+    expect(`${MIDGE_WGSL.vertex}${MIDGE_WGSL.fragment}`).not.toMatch(/shaderSystem/);
     expect(tight(vertex)).toContain("gl_Position=viewProjection*vec4(corner,1.0);");
   });
 
