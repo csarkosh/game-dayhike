@@ -72,8 +72,8 @@ export const MIRROR_MOTION_SMOOTH = 0.3;
 export const MIRROR_MOTION_STEP_MAX_M = 5;
 /** The mirror's plane over the lake's level, metres: the lake's surface mesh's own lift (`lakeSurface`, renderer.ts). */
 export const MIRROR_LIFT = 0.02;
-/** How much darker the ground draws under a full canopy in the mirror: `lakeMirrorTerrain.fragment.fx`'s LAKE_MIRROR_CANOPY_SHADE. */
-export const MIRROR_CANOPY_SHADE = 0.5;
+// How much darker the ground draws under a full canopy in the mirror is kept with no engine (`mirrorGround.ts`).
+export { MIRROR_CANOPY_SHADE } from "./mirrorGround.js";
 /** How far (m, across the ground) the eye may stand past the lake's bound
  * with the pass armed: past it the lake is a sliver of the frame, and the
  * probe's sheen stands in for its image. */

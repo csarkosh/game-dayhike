@@ -76,14 +76,14 @@ describe("what the renderer on Babylon Lite does not draw yet", () => {
     expect(NOT_DRAWN.filter((part) => /rain|splash|drip|canopy|lens/.test(part.what))).toEqual([]);
   });
 
-  it("leaves the lakes' water, its calm, its plants and its life to the renderer: what is left of a lake is its reflections and the tier that reads through it", () => {
+  it("leaves the lakes' water, its calm, its plants, its life and its shore's panorama to the renderer: what is left of a lake is its mirror and the tier that reads through it", () => {
     const { members } = notDrawnMembers();
     for (const name of ["setWeatherName", "hasWaterLife", "waterLifeSound"]) expect(name in members, name).toBe(false);
     const lakes = NOT_DRAWN.filter((part) => /lake/.test(part.what));
     expect(lakes.map((part) => part.members)).toEqual([[]]);
     expect(NOT_DRAWN.map((part) => part.what).join("; ")).not.toMatch(/insects|frogs|midges|dragonfl/);
     expect(lakes[0]?.what).not.toMatch(/plants|reeds|lil/);
-    expect(lakes[0]?.what).toMatch(/panorama/);
+    expect(lakes[0]?.what).not.toMatch(/panorama/);
     expect(lakes[0]?.what).toMatch(/mirror/);
     expect(lakes[0]?.what).not.toMatch(/calm/);
   });

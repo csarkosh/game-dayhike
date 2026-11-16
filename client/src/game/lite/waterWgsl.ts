@@ -35,11 +35,15 @@
  * Left out, as nothing here reads them: the cat's-paws' mask (`lakePaw`,
  * `lakePawThreshold`), which the GLSL keeps and no longer calls; the lens
  * of the second octave and the read of the frame behind the surface, which
- * belong to the tier that draws its water opaque; the mirror's read.
+ * belong to the tier that draws its water opaque; the mirror's read. The
+ * shore's panorama is read only by a material that is handed one
+ * (`LAKE_PANORAMA_WGSL`, `lakeComposeWgsl`): the tier that draws none
+ * carries neither the read nor its picture.
  *
  * Loads nothing.
  */
 import { SKYLINE_TEXELS } from "../lakeSkyline.js";
+import { PANORAMA_EYE_UP, PANORAMA_HEIGHT_M } from "../panoramaTurn.js";
 import { WATER_F0 } from "../waterShading.js";
 
 /** Babylon.js's dielectric F0 at an F0 factor of 1: water's F0 is the factor's share of it. */
@@ -257,6 +261,35 @@ fn waterSkylineRadiance(dir:vec3<f32>,probeRadiance:vec3<f32>)->vec3<f32>{
 }`;
 
 /**
+ * `lakeMirror.fragment.fx`'s shore on the tier with a panorama: the picture
+ * of the shore where the reflected ray meets the cylinder of the lake's
+ * radius under the skyline and the capture drew something, the fallback
+ * elsewhere. The picture is laid top row first, as a pass writes it here,
+ * so a hit's height over the level is read down from the picture's last
+ * row where the GLSL reads it up from its first; the skyline is read at the
+ * hit's own azimuth.
+ */
+export const LAKE_PANORAMA_WGSL = /* wgsl */ `
+const PANORAMA_HEIGHT_M:f32=${PANORAMA_HEIGHT_M.toFixed(1)};
+const PANORAMA_EYE_UP:f32=${PANORAMA_EYE_UP.toFixed(1)};
+fn waterCylinderHit(origin:vec3<f32>,dir:vec3<f32>)->vec3<f32>{
+  let o=origin.xz-material.waterLakeCentre.xz;
+  let a=max(dot(dir.xz,dir.xz),1.0e-8);
+  let b=dot(o,dir.xz);
+  let c=dot(o,o)-material.waterLakeRadius*material.waterLakeRadius;
+  let disc=b*b-a*c;
+  let t=(sqrt(max(disc,0.0))-b)/a;
+  return vec3<f32>(waterAzimuth(o+dir.xz*t),origin.y+dir.y*t-material.waterLakeCentre.y,step(0.0,disc)*step(0.0,t));
+}
+fn waterPanoramaRadiance(origin:vec3<f32>,dir:vec3<f32>,fallback:vec3<f32>)->vec3<f32>{
+  let hit=waterCylinderHit(origin,dir);
+  let shore=textureSampleLevel(waterPanorama,waterPanoramaSampler,vec2<f32>(hit.x,1.0-clamp(hit.y/PANORAMA_HEIGHT_M,0.0,1.0)),0.0);
+  let skyline=waterSkylineAt(hit.x);
+  let below=step(hit.y-PANORAMA_EYE_UP,material.waterLakeRadius*tan(skyline));
+  return mix(fallback,shore.rgb,hit.z*below*shore.a);
+}`;
+
+/**
  * The first ripple octave: the bump's picture at the mesh's coordinate plus
  * the drift, turned on the level surface's frame (the world's x and z, each
  * turned over, as Babylon.js's frame comes out for the side seen from
@@ -320,17 +353,26 @@ NdotV=abs(NdotVUnclamped)+0.0000001;
 /**
  * `waterCompose.fragment.fx` on a lake: the shore in place of the probe's
  * radiance, and the skin held matte; then the lit colour summed again from
- * its parts, which Lite has summed already by this point.
+ * its parts, which Lite has summed already by this point. With a
+ * `panorama` the shore is the picture's where the lake is the one it is
+ * of (`waterPanoramaOn`, 0 or 1, which the GLSL mixes by: here the read is
+ * not made where it would be dropped).
  */
-export const LAKE_COMPOSE_WGSL = /* wgsl */ `
+export function lakeComposeWgsl(panorama: boolean): string {
+  return /* wgsl */ `
 var wRadianceScaled=finalRadianceScaled;
 if(material.waterMirrorWeight*material.waterCalmShare>0.0){
   let wProbeRadiance=environmentRadiance;
   let wShoreRay=reflect(-V,N);
-  let wShore=mix(wProbeRadiance,waterSkylineRadiance(wShoreRay,wProbeRadiance),step(0.5,material.waterSkylineOn));
+  ${panorama ? "var" : "let"} wShore=mix(wProbeRadiance,waterSkylineRadiance(wShoreRay,wProbeRadiance),step(0.5,material.waterSkylineOn));${panorama ? `
+  if(material.waterPanoramaOn>0.5){wShore=waterPanoramaRadiance(input.worldPos,wShoreRay,wShore);}` : ""}
   let wMirrorW=material.waterMirrorWeight*(1.0-wPaw)*material.waterCalmShare;
   wRadianceScaled=mix(wRadianceScaled,wShore*colorSpecularEnvReflectance,wMirrorW);
 }
 wRadianceScaled*=1.0-wSkin;
 let wSpecularScaled=finalSpecularScaled*(1.0-wSkin);
 color=finalIrradiance+wRadianceScaled+wSpecularScaled+directDiffuse+emissive;`;
+}
+
+/** The compose of a lake with no panorama. */
+export const LAKE_COMPOSE_WGSL = lakeComposeWgsl(false);

@@ -45,26 +45,14 @@ import { Matrix, Vector3 } from "@babylonjs/core/Maths/math.vector.js";
 import { Viewport } from "@babylonjs/core/Maths/math.viewport.js";
 import { Color4 } from "@babylonjs/core/Maths/math.color.js";
 import type { LakeSource } from "../sim/terrain.js";
-import { SKYLINE_EYE_UP, SKYLINE_TEXELS, skylineTexels } from "./lakeSkyline.js";
+import { SKYLINE_TEXELS, skylineTexels } from "./lakeSkyline.js";
+import {
+  PANORAMA_EYE_UP, PANORAMA_FAR, PANORAMA_HEIGHT, PANORAMA_NEAR, PANORAMA_SECTORS, PANORAMA_SECTOR_WIDTH, PANORAMA_WIDTH, TURN_HOLD, createPanoramaTurn,
+  panoramaFrustum, sectorYaw, type PanoramaFrustum,
+} from "./panoramaTurn.js";
 
-export const PANORAMA_WIDTH = 1024, PANORAMA_HEIGHT = 128, PANORAMA_SECTORS = 16;
-/** The capture's eye over the level (m): the skyline's own, so the panorama
- * and the skyline that masks it see the shore from one place. */
-export const PANORAMA_EYE_UP = SKYLINE_EYE_UP;
-/**
- * The height over the level the capture reaches on the cylinder of the
- * lake's radius (m): the texture's v is a hit's height over this. It holds
- * the tallest giant (17.18 m model × GIANT_SCALE_MAX 4.1 = 70.4 m) standing
- * at the forest's edge 8 m past the rim of the smallest lake (25 m), on
- * ground 8 m over the level: seen from the eye 0.4 m up, its crown crosses
- * the cylinder at 0.4 + 25 × (70.4 + 8 − 0.4) / 33 = 59.5 m. Anything taller
- * clamps to the top row, the crowns.
- */
-export const PANORAMA_HEIGHT_M = 64;
-/** The capture camera's near and far planes (m): nothing it draws stands
- * within half a metre of the lake's centre, and the forest's impostors reach
- * 2 km. */
-export const PANORAMA_NEAR = 0.5, PANORAMA_FAR = 2500;
+// The picture's size, its sectors, its eye and its reach are kept with no engine (`panoramaTurn.ts`).
+export { PANORAMA_EYE_UP, PANORAMA_FAR, PANORAMA_HEIGHT, PANORAMA_HEIGHT_M, PANORAMA_NEAR, PANORAMA_SECTORS, PANORAMA_WIDTH, sectorYaw } from "./panoramaTurn.js";
 
 export type LakePanorama = {
   readonly texture: RenderTargetTexture;
@@ -89,12 +77,7 @@ export type LakePanorama = {
  * `out` and returns it.
  */
 export function panoramaProjection(radius: number, halfZ: boolean, out: Matrix): Matrix {
-  const across = 1 / Math.tan(Math.PI / PANORAMA_SECTORS);
-  // The tangents of the frustum's lowest and highest elevations.
-  const bottom = -PANORAMA_EYE_UP / radius;
-  const top = (PANORAMA_HEIGHT_M - PANORAMA_EYE_UP) / radius;
-  const up = 2 / (top - bottom);
-  const shift = -(top + bottom) / (top - bottom);
+  const { across, up, shift } = panoramaFrustum(radius, frustum);
   const n = PANORAMA_NEAR;
   const f = PANORAMA_FAR;
   const depth = halfZ ? f / (f - n) : (f + n) / (f - n);
@@ -103,10 +86,8 @@ export function panoramaProjection(radius: number, halfZ: boolean, out: Matrix):
   return out;
 }
 
-/** The yaw of sector `sector`'s middle (rad): 0 faces +z, a quarter turn +x. */
-export function sectorYaw(sector: number): number {
-  return ((sector + 0.5) * 2 * Math.PI) / PANORAMA_SECTORS;
-}
+/** The frustum's terms, reused. */
+const frustum: PanoramaFrustum = { across: 0, up: 0, shift: 0 };
 
 /** The medium tier's shore panorama for `lake`. */
 export function createLakePanorama(scene: Scene, lake: LakeSource): LakePanorama {
@@ -153,13 +134,12 @@ export function createLakePanorama(scene: Scene, lake: LakeSource): LakePanorama
   // capture running (0 when none). The strip holds a whole turn when the count
   // runs out: a rearm gives sixteen more from the current sector, so one that
   // lands mid-capture continues the turn rather than restarting it.
-  let sector = 0;
-  let remaining = 0;
+  const turn = createPanoramaTurn();
   // Once disposed, a rearm asks for nothing: the target is gone.
   let disposed = false;
   // The column the sector now being drawn owns, for the clear.
   let column = 0;
-  const columnWidth = PANORAMA_WIDTH / PANORAMA_SECTORS;
+  const columnWidth = PANORAMA_SECTOR_WIDTH;
 
   // A sector clears its own column and nothing else, colour and depth, so
   // the columns of the other fifteen keep what they hold. This replaces the
@@ -195,23 +175,23 @@ export function createLakePanorama(scene: Scene, lake: LakeSource): LakePanorama
       if (!mesh.isDisposed()) texture.setMaterialForRendering(mesh, undefined);
     },
     rearm() {
-      if (disposed) return;
-      remaining = PANORAMA_SECTORS;
+      turn.rearm();
     },
     setLake(next) {
       if (disposed) return;
       camera.position.set(next.x, next.level + PANORAMA_EYE_UP, next.z);
       camera.freezeProjectionMatrix(panoramaProjection(next.shape.meanRadius, scene.getEngine().isNDCHalfZRange, projection));
-      remaining = PANORAMA_SECTORS;
+      turn.rearm();
     },
     update() {
-      if (remaining <= 0) {
+      if (turn.remaining <= 0) {
         listed(false);
         return false;
       }
       // A stand-in whose effect is still compiling would draw nothing: hold
       // at this sector, off the list, until the target can render.
-      if (!texture.isReadyForRendering()) {
+      const sector = turn.step(texture.isReadyForRendering());
+      if (sector === TURN_HOLD) {
         listed(false);
         return true;
       }
@@ -219,14 +199,12 @@ export function createLakePanorama(scene: Scene, lake: LakeSource): LakePanorama
       camera.viewport.x = sector / PANORAMA_SECTORS;
       column = sector;
       listed(true);
-      sector = (sector + 1) % PANORAMA_SECTORS;
-      remaining--;
       return true;
     },
     dispose() {
       if (disposed) return;
       disposed = true;
-      remaining = 0;
+      turn.end();
       listed(false);
       texture.dispose();
       camera.dispose();

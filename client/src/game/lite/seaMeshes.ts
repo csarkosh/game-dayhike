@@ -45,7 +45,7 @@ import {
   markMaterialUboDirty, removeFromScene, setMeshVisible, updateTextureRegion,
   type EngineContext, type MaterialPlugin, type Mesh, type PluginUniformBlock, type SceneContext, type Texture2D, type Texture2DArray,
 } from "@babylonjs/lite";
-import { boxInPlanes, type ViewPlane } from "../lakeSeen.js";
+import { boxInPlanes, cornersPastBox, type ViewPlane } from "../lakeSeen.js";
 import { createOceanFrame, type WindSeaDrawn } from "../oceanFrame.js";
 import { OCEAN_ATLAS_ROWS, OCEAN_ROW_COAST, OCEAN_TABLE_SAMPLES } from "../oceanTables.js";
 import type { OceanField } from "../oceanWaves.js";
@@ -102,8 +102,9 @@ export type SeaFrame = {
   /** Where the world is centred: the player, or the camera in freecam. */
   centreX: number;
   centreZ: number;
-  /** The view's planes. */
+  /** The view's planes, and its eight corners (`viewCorners`). */
   planes: readonly ViewPlane[];
+  corners: ArrayLike<number>;
   /** The shared seconds the sea moves on, and the frame's length on the renderer's clock. */
   seconds: number;
   dt: number;
@@ -351,7 +352,10 @@ export function createLiteSea(engine: EngineContext, scene: SceneContext, seed: 
         if (box === null) continue;
         const covered = f.cover !== null
           && box.min[0] < f.cover.x + f.cover.half && box.max[0] > f.cover.x - f.cover.half && box.min[2] < f.cover.z + f.cover.half && box.max[2] > f.cover.z - f.cover.half;
-        if (covered || boxInPlanes(box.min[0], box.min[1], box.min[2], box.max[0], box.max[1], box.max[2], f.planes)) {
+        // A ring's box is kilometres across: the planes alone keep one that lies wholly beside the view.
+        const held = boxInPlanes(box.min[0], box.min[1], box.min[2], box.max[0], box.max[1], box.max[2], f.planes)
+          && !cornersPastBox(box.min[0], box.min[1], box.min[2], box.max[0], box.max[1], box.max[2], f.corners);
+        if (covered || held) {
           seen = true;
           break;
         }

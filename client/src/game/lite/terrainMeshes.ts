@@ -96,6 +96,7 @@ import {
   createMarkedRun, createPatchPool, firstDifference, patchIndexCapacity, patchIndexCount, patchVertexCount, writePatchTriangles,
   type DrawnPatch, type PatchSlot,
 } from "./patchPool.js";
+import type { ReflectionRegistry } from "./lakePanorama.js";
 import { RAIN_MAP_RINGS, type CoverRegistry } from "./rainMap.js";
 import { TERRAIN_VERTEX_FLOATS, terrainVertexData } from "./terrainPlugins.js";
 
@@ -157,7 +158,13 @@ export type TerrainMeshOptions = {
   /** The rain's cover map, as terrain: the rings that cover its square and the patches' mesh, each from the frame it
    * joins the scene until it is let go (`rainMap.ts`). */
   cover?: CoverRegistry;
+  /** What a lake's shore panorama draws of the ground: the rings out to the ridges (`REFLECTED_RINGS`) and the patches'
+   * mesh, likewise (`lakePanorama.ts`). */
+  reflections?: ReflectionRegistry;
 };
+
+/** The rings of the terrain in a lake's reflections: the five finest, to the ridges past the fourth's 512 m. */
+export const REFLECTED_RINGS = 5;
 
 /** Cells a side of the square the patches' places among the draws repeat over. */
 const PATCH_PLACE_SIDE = 32;
@@ -203,7 +210,7 @@ export function createTerrainMeshes(
   tier: QualityTier,
   options: TerrainMeshOptions = {},
 ): TerrainMeshes {
-  const { jobs, firstBuilds, uploads, cover } = options;
+  const { jobs, firstBuilds, uploads, cover, reflections } = options;
   const base = BASE_SPACING_BY_TIER[tier];
   /**
    * Ring 0's snap step (m): `snapOrigin` puts it on a lattice of twice its spacing, and every coarser ring moves only
@@ -284,6 +291,7 @@ export function createTerrainMeshes(
     setMeshVisible(made, false);
     addToScene(scene, made);
     cover?.add(made);
+    reflections?.add(made);
     uploads?.count("geometry", patchPositions.byteLength + patchNormals.byteLength + triangles.byteLength, 3);
     uploads?.count("pluginVertices", patchPlugin.byteLength);
     uploads?.made();
@@ -760,6 +768,8 @@ export function createTerrainMeshes(
       uploads?.stream("pluginVertices", to.plugin?.byteLength ?? 0);
       // Both of a ring's meshes stand in the map; it draws the one shown.
       if (level < RAIN_MAP_RINGS) cover?.add(mesh);
+      // And both in a lake's reflections, which draw the one shown too.
+      if (level < REFLECTED_RINGS) reflections?.add(mesh);
     }
     const was = shown[level] as number;
     if (was >= 0) {
@@ -962,6 +972,7 @@ export function createTerrainMeshes(
       patchCover = null;
       if (patchMesh !== null) {
         cover?.remove(patchMesh);
+        reflections?.remove(patchMesh);
         removeFromScene(scene, patchMesh);
         disposeMeshGpu(patchMesh);
         uploads?.dropped();
@@ -971,6 +982,7 @@ export function createTerrainMeshes(
         for (const one of pair) {
           if (one.mesh === null) continue;
           cover?.remove(one.mesh);
+          reflections?.remove(one.mesh);
           if (one.inScene) removeFromScene(scene, one.mesh);
           disposeMeshGpu(one.mesh);
           one.mesh = null;

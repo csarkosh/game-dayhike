@@ -113,6 +113,7 @@ import {
 import { DRAW_ORDER, createDrawOrders } from "./drawOrder.js";
 import type { FrameUploads } from "./frameUploads.js";
 import { createImpostorBaker, type BakeMesh } from "./impostorBake.js";
+import type { ReflectionRegistry } from "./lakePanorama.js";
 import { KEPT_INSTANCES, MATRIX_BYTES, listBytes, sameFloats, writeListData } from "./listMeshes.js";
 import { createRebuilds } from "./rebuildJobs.js";
 
@@ -189,6 +190,8 @@ export type ForestMeshOptions = {
   firstBuilds?: FirstBuilds;
   /** The renderer's record of its uploads, and its budget for the streamed ones (`frameUploads.ts`). */
   uploads?: FrameUploads;
+  /** What a lake's shore panorama draws of the forest: each billboard's card, from when its bake lands (`lakePanorama.ts`). */
+  reflections?: ReflectionRegistry;
 };
 
 /** One bucket: the meshes of a LOD (a tree's bark and crown are two), one instance list for all of them. */
@@ -666,6 +669,7 @@ export function createForestMeshes(engine: EngineContext, scene: SceneContext, s
     mesh.renderOrder = orders.of(made);
     // The bands are each instance's own (`fillBillboard`): the bucket's are the lattice's, for a list that carries none.
     board.bucket = bucket([mesh], [vegetationInstanceLayout(fade)], fades.impostorLattice);
+    options.reflections?.add(mesh);
   }
 
   /** What the far lists' split of a rebuild holds: each list by the billboard that draws the tree, and where the camera stood. */
@@ -979,6 +983,7 @@ export function createForestMeshes(engine: EngineContext, scene: SceneContext, s
       nurse = null;
       for (const made of buckets) {
         for (const mesh of made.meshes) {
+          options.reflections?.remove(mesh);
           removeFromScene(scene, mesh);
           disposeMeshGpu(mesh);
         }

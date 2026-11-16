@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { Matrix, Vector3 } from "@babylonjs/core/Maths/math.vector.js";
 import { Frustum } from "@babylonjs/core/Maths/math.frustum.js";
-import { cameraAxes, projectToCanvas, restAxes, restPlanes, viewPlanes, type CameraPose } from "../../../src/game/lite/cameraPose.js";
+import { cameraAxes, projectToCanvas, restAxes, restPlanes, viewCorners, viewPlanes, type CameraPose } from "../../../src/game/lite/cameraPose.js";
 
 const POSES: [number, number, number][] = [
   [0, 0, 0], [0.7, 0, 0], [0, 0.4, 0], [0, 0, 0.3], [1.09, -0.35, 0.0105], [-2.4, 1.1, -0.6], [3.14, 0.2, 0.5],
@@ -116,5 +116,26 @@ describe("the view's six planes", () => {
     expect(planes[4]?.normal.y).toBeCloseTo(-Math.SQRT1_2, 9);
     expect(planes[5]?.normal.y).toBeCloseTo(Math.SQRT1_2, 9);
     for (const plane of planes.slice(2)) expect(plane.d).toBeCloseTo(0, 12);
+  });
+});
+
+describe("the view's eight corners", () => {
+  it("lie on the planes that meet at each: the near plane's four, then the far plane's", () => {
+    const eye: CameraPose = { x: 12, y: 30, z: -7, yaw: 1.1, pitch: -0.3, roll: 0.05 };
+    const axes = cameraAxes(eye.yaw, eye.pitch, eye.roll, restAxes());
+    const planes = viewPlanes(eye, axes, 1.1, 1.5, 0.5, 900, restPlanes());
+    const corners = viewCorners(eye, axes, 1.1, 1.5, 0.5, 900, new Float32Array(24));
+    const on = (plane: number, corner: number): number => {
+      const p = planes[plane] as (typeof planes)[number];
+      return p.normal.x * (corners[corner * 3] as number) + p.normal.y * (corners[corner * 3 + 1] as number) + p.normal.z * (corners[corner * 3 + 2] as number) + p.d;
+    };
+    for (let c = 0; c < 8; c++) {
+      // Near or far, left or right, bottom or top: a corner is on three planes and inside the other three.
+      const meets = [c < 4 ? 0 : 1, c % 2 === 0 ? 2 : 3, (c >> 1) % 2 === 0 ? 5 : 4];
+      for (let plane = 0; plane < 6; plane++) {
+        if (meets.includes(plane)) expect(Math.abs(on(plane, c)), `corner ${c} on plane ${plane}`).toBeLessThan(2e-3);
+        else expect(on(plane, c), `corner ${c} inside plane ${plane}`).toBeGreaterThan(0);
+      }
+    }
   });
 });

@@ -135,9 +135,19 @@
  * with a cover map the surface stands in it as open water, shown for the
  * frame that draws the map where the view does not hold it. A murky lake's
  * reeds, cattails and lilies are five instanced draws, placed once, each
- * shown while the view holds a cell of its plants (`waterPlantMeshes.ts`). The
- * shore a lake reflects beyond that shade (the panorama, the mirror) and the
- * tier that reads through the surface are not drawn yet.
+ * shown while the view holds a cell of its plants (`waterPlantMeshes.ts`).
+ *
+ * **On the tier with a shore panorama a lake's glass reflects its shore
+ * under the skyline** (`lakePanorama.ts`): the ground as one flat lit
+ * colour, the far forest's billboards, the cliffs' far ring, the props and
+ * the lake's plants, seen from the lake's centre in sixteen sectors, one a
+ * frame, each a pass of its own drawn before the frame's and copied into
+ * its column of one picture the water reads. A capture is asked for under
+ * each new sky state and when something it draws lands late, as the game
+ * asks, and runs only on frames whose view holds the lake's glass: with
+ * no lake in view there is no pass, no copy and no write. The mirror a
+ * lake reflects its shore in on the tier that draws one, and the tier that
+ * reads through the surface, are not drawn yet.
  *
  * **A lake's life is the game's, stepped for the lakes within the camera's
  * reach** (`waterLifeMeshes.ts`, over `waterLifeScene.ts`): the midges one
@@ -284,7 +294,7 @@ import { WET_CAP, emptyWetUniforms, setWetCove, setWetSwash, setWetWeather, wetL
 import { windRecordUnder, type WindRecord } from "../windParams.js";
 import { atmospherePlugin } from "./atmospherePlugin.js";
 import { createBladeMeshes, type BladeMeshes } from "./bladeMeshes.js";
-import { cameraAxes, projectToCanvas, restAxes, restPlanes, viewPlanes, type CameraPose } from "./cameraPose.js";
+import { cameraAxes, projectToCanvas, restAxes, restPlanes, viewCorners, viewPlanes, type CameraPose } from "./cameraPose.js";
 import { createCapMesh, type CapMesh } from "./capMesh.js";
 import { createCliffMeshes, type CliffMeshes } from "./cliffMeshes.js";
 import { createClutterMeshes, type ClutterMeshes } from "./clutterMeshes.js";
@@ -295,6 +305,7 @@ import { FADE_ROWS_NAME, FRAME_BLOCK, FRAME_FIELDS, FRAME_PROJECTION_NAME, write
 import { createFrameUploads, uploadCountsCopy, type FrameUploadCounts } from "./frameUploads.js";
 import { GROUND_IMAGES, cloudMapTexture, loadGroundArrays, tableTexture, type CloudMapTexture, type TableTexture } from "./groundTextures.js";
 import { createLiteLakes, type LakeFrame, type LiteLakes } from "./lakeMeshes.js";
+import { createLitePanorama, type LitePanorama, type ReflectionRegistry } from "./lakePanorama.js";
 import { createLiteMistMeshes, type LiteMistMeshes, type MistFrame } from "./mistMeshes.js";
 import { createLiteMotes, type LiteMotes, type MotesFrame } from "./motes.js";
 import { notDrawnMembers } from "./notDrawn.js";
@@ -418,6 +429,8 @@ type Standing = {
   rain: LiteRain;
   /** The rain's cover map and the splashes that land on it, on the tiers that draw them (`rainMap.ts`, `rainSplash.ts`). */
   rainMap: LiteRainMap | null;
+  /** The shore panorama a lake's glass reflects, on the tier that draws one (`lakePanorama.ts`); null with no lake. */
+  panorama: LitePanorama | null;
   splash: LiteRainSplash | null;
   /** The clock every skinned model's clips are read by (`skinnedModels.ts`). */
   skinClock: SkinClock;
@@ -555,7 +568,7 @@ export function createLiteRenderer(canvas: HTMLCanvasElement, level: Level, fore
   /** The weather's preset as the lakes' calm follows it (`lakeCalmFrame.ts`): `setWeatherName`. */
   const calmFade = createCalmFade();
   /** What a frame hands the sea (`SeaFrame`), filled in place. */
-  const seaFrame: SeaFrame = { centreX: 0, centreZ: 0, planes: [], seconds: 0, dt: 0, wind: windRecordUnder(light.weather, 0), hour: light.hour, cover: null };
+  const seaFrame: SeaFrame = { centreX: 0, centreZ: 0, planes: [], corners: new Float32Array(24), seconds: 0, dt: 0, wind: windRecordUnder(light.weather, 0), hour: light.hour, cover: null };
   /** The surf as heard, one record refilled each frame (`surfSound.ts`), and whether this frame's `sync` stepped it: the sound of a frame that did not is silence. */
   const surf: SurfSound = createSurfSound();
   let surfStepped = false;
@@ -568,6 +581,8 @@ export function createLiteRenderer(canvas: HTMLCanvasElement, level: Level, fore
   const coverSquare = { x: 0, z: 0, half: RAIN_MAP.extent / 2 };
   /** Whether this frame draws the rain's cover map. */
   let coverDrawn = false;
+  /** Whether this frame draws a sector of a lake's shore panorama. */
+  let shoreDrawn = false;
 
   // The view: where the camera stands and how it is turned, as `sync` last left it.
   const pose: CameraPose = { x: 0, y: 2, z: 0, yaw: 0, pitch: 0, roll: 0 };
@@ -663,6 +678,7 @@ export function createLiteRenderer(canvas: HTMLCanvasElement, level: Level, fore
   /** Lets go of what stands: the meshes, the scene, the engine and its device. */
   function release(made: Standing): void {
     made.chain?.dispose();
+    made.panorama?.dispose();
     for (const life of made.waterLives) life.dispose();
     made.waterPlants?.dispose();
     made.lakes?.dispose();
@@ -768,12 +784,31 @@ export function createLiteRenderer(canvas: HTMLCanvasElement, level: Level, fore
     // props and the cliffs' near buckets stand in it as they are made. Then the rain, which is the weather's
     // everywhere, and the splashes, which land on the map.
     const rainMap = forest === null ? null : createLiteRainMap(engine, scene, tier);
+    // The shore panorama a lake's glass reflects under its skyline, on the tier that draws one: a pass of its own, made
+    // before the scene is registered, which the ground, the far forest, the cliffs' far ring, the props and the lakes'
+    // plants stand in as they are made.
+    const firstLake = lakes[0];
+    const panorama = forest !== null && firstLake !== undefined && tier === "medium" && chained ? createLitePanorama(engine, scene, firstLake, { shared, uploads }) : null;
+    /** What stands in the panorama in its own material: `late` for what lands after the first frames, which the picture is taken again for. */
+    const reflectedAs = (late: boolean): ReflectionRegistry | undefined =>
+      panorama === null
+        ? undefined
+        : {
+          add: (mesh) => {
+            panorama.own.add(mesh);
+            if (late) panorama.landed();
+          },
+          remove: (mesh) => panorama.own.remove(mesh),
+        };
     const rain = createLiteRain(engine, scene, tier, rainMap, shared, uploads, chained);
     const splash = rainMap === null ? null : createLiteRainSplash(engine, scene, tier, rainMap, shared, uploads, chained);
     // Their clocks ride in the frame's block.
     frameValues.clocks = [motes?.clocks, rain.clocks, splash?.clocks].filter((clocks): clocks is StageRecord => clocks !== undefined);
     const coverAs = (kind: "terrain" | "hard" | "water"): CoverRegistry | undefined =>
       rainMap === null ? undefined : { add: (mesh) => rainMap.register(mesh, kind), remove: (mesh) => rainMap.unregister(mesh) };
+    /** One registry for a shell that hands its meshes to two. */
+    const both = (a: CoverRegistry | undefined, b: CoverRegistry | undefined): CoverRegistry | undefined =>
+      a === undefined ? b : b === undefined ? a : { add: (mesh) => (a.add(mesh), b.add(mesh)), remove: (mesh) => (a.remove(mesh), b.remove(mesh)) };
     // The ground cloud's map: read by the chain's far softening, which marches the cloud once a pixel, or by every
     // material's air where a tier marches it with no chain.
     const cloudGround = forest === null && !chained ? null : cloudMapTexture(engine);
@@ -834,6 +869,7 @@ export function createLiteRenderer(canvas: HTMLCanvasElement, level: Level, fore
           firstBuilds: options.firstBuilds,
           uploads,
           cover: coverAs("terrain"),
+          reflections: panorama?.ground,
         },
       );
       if (options.deferClipmap !== true) finish(terrain.firstBuild());
@@ -853,7 +889,10 @@ export function createLiteRenderer(canvas: HTMLCanvasElement, level: Level, fore
         jobs,
         firstBuilds: options.firstBuilds,
         uploads,
+        reflections: reflectedAs(true),
       });
+      // Settled either way: what landed is what the panorama can draw.
+      if (panorama !== null) void trees.ready.then(panorama.landed, panorama.landed);
       if (abandoned) trees.abandon();
       // The near field of blade grass, on the tiers that can afford it.
       if (tier !== "low") {
@@ -887,13 +926,14 @@ export function createLiteRenderer(canvas: HTMLCanvasElement, level: Level, fore
       // lays none and no model is fetched.
       cliffs = createCliffMeshes(engine, scene, forest.seed, {
         quality: tier, eye: pose, frame: frameSize, wet: wetAt(WET_CAP.cliff), air, shared, uploads,
-        cover: coverAs("hard"),
+        cover: coverAs("hard"), reflections: reflectedAs(true),
       });
       // Every chunk prop the simulation collides with that no other mesh draws, as its box. A world as the game makes
       // it today has none, and none is made.
       props = createPropMeshes(engine, scene, forest.grid, {
         wet: wetAt(WET_CAP.prop), air, shared, firstBuilds: options.firstBuilds, uploads,
-        cover: coverAs("hard"),
+        // The shore's props stand in a lake's reflections as they are.
+        cover: both(coverAs("hard"), reflectedAs(false)),
       });
     }
     // The hikers' bodies and the Hollows' eyes, which land as their models do, under the air as the rest of the
@@ -944,13 +984,15 @@ export function createLiteRenderer(canvas: HTMLCanvasElement, level: Level, fore
         bed, calm: calmFade, air, shared,
         made: pieces,
         bump: fittingWaterBump(prepared, forest.seed),
-        uploads, cover: coverAs("water"),
+        uploads, cover: coverAs("water"), panorama: panorama?.texture,
       });
       // A murky lake's reeds, cattails and lilies: placed by the simulation, drawn once.
       waterPlants = createLiteWaterPlants(engine, scene, forest.seed, lakes, {
         eye: pose, frame: frameSize, air, ahead: depthAheadPlugin, shared,
         placements: pieces.map((piece) => piece?.plants ?? null), uploads,
       });
+      // The reeds and the lilies stand in the shore's panorama on their own materials.
+      for (const mesh of waterPlants.meshes) panorama?.own.add(mesh);
       // The midges, the dragonflies and the frogs of every lake, each placed once and stepped only while the camera is
       // within its lake's reach.
       if (hasWaterLife) {
@@ -963,7 +1005,7 @@ export function createLiteRenderer(canvas: HTMLCanvasElement, level: Level, fore
     }
     const made: Standing = {
       engine, scene, camera, sun, fill, lamp, dome, capture, shared, chain, materials, terrain, road, cloudGround, forest: trees, blades, clutter, duff, cliffs, props, mist, motes,
-      rain, rainMap, splash, skinClock, entities, mask, veil, wornLamps, cap, wildlife, scenery, bed, sea, lakes: lakeMeshes, waterPlants, waterLives,
+      rain, rainMap, panorama, splash, skinClock, entities, mask, veil, wornLamps, cap, wildlife, scenery, bed, sea, lakes: lakeMeshes, waterPlants, waterLives,
     };
     if (disposed) {
       release(made);
@@ -1368,6 +1410,7 @@ export function createLiteRenderer(canvas: HTMLCanvasElement, level: Level, fore
           standing.motes?.update(weather, light.hour, nearColour, wind, motesFrame);
         }
         coverDrawn = false;
+        shoreDrawn = false;
         if (coverAt !== null && rainFrame !== null && splashFrame !== null) {
           // The headlamp as the rain reads it: the frame's, at the eye and along the view.
           rainLamp.x = pose.x;
@@ -1419,7 +1462,6 @@ export function createLiteRenderer(canvas: HTMLCanvasElement, level: Level, fore
           }
           standing.scenery.update(sceneryView);
         }
-        standing.waterPlants?.seen(planes);
         // The bed's square round the world's centre, for the sea and the lakes alike.
         if (centre !== null) standing.bed?.step(centre.x, centre.z);
         // The sea: its rings round the world's centre, its swell and wind sea on the shared seconds, its edge on the
@@ -1430,6 +1472,7 @@ export function createLiteRenderer(canvas: HTMLCanvasElement, level: Level, fore
           f.centreX = centre.x;
           f.centreZ = centre.z;
           f.planes = planes;
+          viewCorners(pose, axes, fov, canvas.height > 0 ? canvas.width / canvas.height : 1, lens.near, lens.far, f.corners as Float32Array);
           f.seconds = sharedNow;
           f.dt = dt;
           f.wind = wind;
@@ -1472,9 +1515,18 @@ export function createLiteRenderer(canvas: HTMLCanvasElement, level: Level, fore
             coverSquare.z = standing.rainMap.centre.z;
             f.cover = coverSquare;
           }
+          // The lake the shore's panorama is of: the nearest past its bound, held until another is nearer by a lead.
+          const served = standing.panorama === null ? null : lakeChoice.choose(pose.x, pose.z);
+          f.served = served?.index ?? -1;
+          if (served !== null) standing.panorama?.setLake(lakes[served.index] as LakeSource);
           standing.lakes.update(f);
           frameValues.water = standing.lakes.frame;
+          // A sector of the panorama with this frame, while a capture is owed and that lake's glass reads the picture.
+          shoreDrawn = served !== null && standing.panorama !== null && standing.panorama.update(sky, weather, standing.lakes.readsShore(served.index));
         }
+        // The lakes' plants, each kind while the view holds it; and all of them on a frame that draws the shore's
+        // panorama, which looks all the way round.
+        standing.waterPlants?.seen(planes, shoreDrawn);
         // The animals, round the camera in freecam and the player otherwise, judged by the view's planes: the
         // director is handed the sim's place and aim, never the camera's own, which the walk's bob has moved.
         if (standing.wildlife !== null && centre !== null) {
@@ -1581,6 +1633,8 @@ export function createLiteRenderer(canvas: HTMLCanvasElement, level: Level, fore
       renderFrame(standing.engine, 1000 / 60, [standing.engine]);
       // The cover map is drawn with the frame that asked for it, and no other.
       standing.rainMap?.frameDrawn();
+      // And a sector of the shore's panorama with the frame that drew it.
+      standing.panorama?.frameDrawn();
     },
     runLoop(frame) {
       if (disposed) return;
