@@ -269,7 +269,7 @@ import { WET_CAP, emptyWetUniforms, setWetCove, setWetSwash, setWetWeather, wetL
 import { windRecordUnder, type WindRecord } from "../windParams.js";
 import { atmospherePlugin } from "./atmospherePlugin.js";
 import { createBladeMeshes, type BladeMeshes } from "./bladeMeshes.js";
-import { cameraAxes, projectToCanvas, restAxes, restPlanes, viewPlanes, type CameraPose } from "./cameraPose.js";
+import { cameraAxes, projectToCanvas, restAxes, restPlanes, viewCorners, viewPlanes, type CameraPose } from "./cameraPose.js";
 import { createCapMesh, type CapMesh } from "./capMesh.js";
 import { createCliffMeshes, type CliffMeshes } from "./cliffMeshes.js";
 import { createClutterMeshes, type ClutterMeshes } from "./clutterMeshes.js";
@@ -537,7 +537,7 @@ export function createLiteRenderer(canvas: HTMLCanvasElement, level: Level, fore
   /** The weather's preset as the lakes' calm follows it (`lakeCalmFrame.ts`): `setWeatherName`. */
   const calmFade = createCalmFade();
   /** What a frame hands the sea (`SeaFrame`), filled in place. */
-  const seaFrame: SeaFrame = { centreX: 0, centreZ: 0, planes: [], seconds: 0, dt: 0, wind: windRecordUnder(light.weather, 0), hour: light.hour, cover: null };
+  const seaFrame: SeaFrame = { centreX: 0, centreZ: 0, planes: [], corners: new Float32Array(24), seconds: 0, dt: 0, wind: windRecordUnder(light.weather, 0), hour: light.hour, cover: null };
   /** The surf as heard, one record refilled each frame (`surfSound.ts`), and whether this frame's `sync` stepped it: the sound of a frame that did not is silence. */
   const surf: SurfSound = createSurfSound();
   let surfStepped = false;
@@ -1390,6 +1390,7 @@ export function createLiteRenderer(canvas: HTMLCanvasElement, level: Level, fore
           f.centreX = centre.x;
           f.centreZ = centre.z;
           f.planes = planes;
+          viewCorners(pose, axes, fov, canvas.height > 0 ? canvas.width / canvas.height : 1, lens.near, lens.far, f.corners as Float32Array);
           f.seconds = sharedNow;
           f.dt = dt;
           f.wind = wind;

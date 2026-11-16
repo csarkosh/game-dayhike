@@ -79,6 +79,27 @@ export function projectToCanvas(
 /** A plane of a view: its inward unit normal and its distance, a point p inside where n·p + d ≥ 0. */
 export type ViewFrustumPlane = { normal: { x: number; y: number; z: number }; d: number };
 
+/**
+ * The eight corners of the view `viewPlanes` bounds, x, y, z each, into
+ * `out` (24 floats): the near plane's four, then the far plane's.
+ */
+export function viewCorners(pose: CameraPose, axes: CameraAxes, fov: number, aspect: number, near: number, far: number, out: Float32Array): Float32Array {
+  const tanV = Math.tan(fov / 2);
+  const tanH = tanV * aspect;
+  const { fx, fy, fz, ux, uy, uz, rx, ry, rz } = axes;
+  let at = 0;
+  for (const depth of [near, far]) {
+    for (const [h, v] of [[-1, -1], [1, -1], [-1, 1], [1, 1]] as const) {
+      const across = h * tanH * depth;
+      const up = v * tanV * depth;
+      out[at++] = pose.x + fx * depth + rx * across + ux * up;
+      out[at++] = pose.y + fy * depth + ry * across + uy * up;
+      out[at++] = pose.z + fz * depth + rz * across + uz * up;
+    }
+  }
+  return out;
+}
+
 /** Six planes for `viewPlanes` to fill: near, far, left, right, top, bottom. */
 export function restPlanes(): ViewFrustumPlane[] {
   return Array.from({ length: 6 }, () => ({ normal: { x: 0, y: 0, z: 1 }, d: 0 }));
