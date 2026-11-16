@@ -43,12 +43,25 @@
  * The target is the size Babylon.js gives a mask of the frame's
  * (`shadeMaskSize`) and follows it; it has no depth, since nothing but the
  * figures is in it and they write none.
+ *
+ * **A target is kept while its size stands, and its picture names its one
+ * texture** (`createMaskTargets`). Lite makes a plain target's texture again
+ * every time the frame's passes are recorded, which it does when a light
+ * joins the scene (another hiker's lamp) and when the window is fitted, and
+ * it destroys a texture when the last claim on it is let go. A picture that
+ * named whatever texture the target held at the moment had the new texture
+ * destroyed by the release of the old one's claim: every frame with a
+ * figure was then lost to a destroyed texture. So the target is one Lite
+ * makes once and holds a claim on (`createRenderTargetTexture`), a recording
+ * leaves it alone, and only a move of the mask's own size makes another; the
+ * one replaced is kept until the frame after, for whatever was handed its
+ * picture before the frame was fitted.
  */
 import {
-  addMeshToTask, addTaskAtStart, addToScene, createBankedFreeCamera, createMeshFromData, createPbrMaterial, createRenderTarget, createRenderTask,
-  disposeMeshGpu, markThinInstancePluginData, removeFromScene, removeMeshFromTask, setMeshVisible, setThinInstances, vec3,
-  type BankedFreeCamera, type EngineContext, type MaterialPlugin, type Mesh, type PbrMaterialProps, type PluginUniformBlock, type RenderTarget, type RenderTask,
-  type SceneContext, type Task, type Texture2D,
+  addMeshToTask, addTaskAtStart, addToScene, createBankedFreeCamera, createMeshFromData, createPbrMaterial, createRenderTargetTexture, createRenderTask,
+  disposeMeshGpu, disposeRenderTargetTexture, markThinInstancePluginData, removeFromScene, removeMeshFromTask, setMeshVisible, setThinInstances, vec3,
+  type BankedFreeCamera, type EngineContext, type MaterialPlugin, type Mesh, type PbrMaterialProps, type PluginUniformBlock, type RenderTargetTextureResult,
+  type RenderTask, type RenderTaskConfig, type SceneContext, type Task, type Texture2D,
 } from "@babylonjs/lite";
 import { HOLLOW_FIGURE_M } from "../hollowLook.js";
 import {
@@ -202,9 +215,46 @@ export function writeShadeLook(out: Float32Array, index: number, figure: ShadeFi
   return changed;
 }
 
+/** The mask's targets over a hike: the one its pass draws into, and those it has replaced. */
+export type MaskTargets<T> = {
+  /** The target drawn into. */
+  readonly current: T;
+  /** Fits the target to a size: true where another was made, which is only where the size has moved. */
+  fit(width: number, height: number): boolean;
+  /** Lets go of the targets replaced before this frame. */
+  settle(): void;
+};
+
+/**
+ * The mask's targets from one `width` by `height`, each made by `make` and
+ * let go by `drop`. A target stands while its size does, so the frame's
+ * passes recorded again make nothing; one replaced is not let go at once but
+ * at the next `settle`, the frame after.
+ */
+export function createMaskTargets<T>(width: number, height: number, make: (width: number, height: number) => T, drop: (target: T) => void): MaskTargets<T> {
+  let current = make(width, height);
+  const replaced: T[] = [];
+  return {
+    get current() {
+      return current;
+    },
+    fit(nextWidth, nextHeight) {
+      if (nextWidth === width && nextHeight === height) return false;
+      width = nextWidth;
+      height = nextHeight;
+      replaced.push(current);
+      current = make(width, height);
+      return true;
+    },
+    settle() {
+      for (const target of replaced.splice(0)) drop(target);
+    },
+  };
+}
+
 /** The mask as it stands in a scene. */
 export type LiteShadeMask = {
-  /** The mask's picture, for the grade or the veil to read: its view is the target's as it stands. */
+  /** The mask's picture, for the grade or the veil to read: the target's as it stands, and another object when another target has taken its place. */
   readonly texture: Texture2D;
   /** Whether any figure is in the mask this frame. */
   readonly any: boolean;
@@ -231,7 +281,13 @@ export function createLiteShadeMask(
 ): LiteShadeMask {
   const canvas = (engine as unknown as { canvas: { width: number; height: number } }).canvas;
   const size = shadeMaskSize(Math.max(1, canvas.width), Math.max(1, canvas.height));
-  const target: RenderTarget = createRenderTarget({ lbl: "shade_mask", format: "rgba8unorm", samples: 1, size });
+  // Lite's own target with a picture to read: made once for a size, claimed by Lite for as long as it stands, read
+  // with a linear sampler held to its edges.
+  const targets = createMaskTargets<RenderTargetTextureResult>(
+    size.width, size.height,
+    (width, height) => createRenderTargetTexture(engine, { lbl: "shade_mask", format: "rgba8unorm", samples: 1, size: { width, height } }),
+    disposeRenderTargetTexture,
+  );
   const camera: BankedFreeCamera = createBankedFreeCamera(vec3(0, 0, 0), vec3(0, 0, LOOK_AHEAD), vec3(0, 1, 0));
   camera.fov = options.fov;
   camera.nearPlane = options.near;
@@ -252,7 +308,11 @@ export function createLiteShadeMask(
   setMeshVisible(seed, false);
   addToScene(scene, seed);
 
-  // The mask's size follows the frame's: read again whenever the frame's passes are recorded, ahead of the pass.
+  // The frame's own shape whatever the target's, as the game's mask camera has it. Lite keeps this record and reads
+  // the pass's target from it at each recording, which is how the pass is given another.
+  const config: RenderTaskConfig = { name: "shade_mask", rt: targets.current.rt, cam: camera, cs: true, clr: true, clrColor: { r: 0, g: 0, b: 0, a: 0 }, autoMirror: false };
+  // The mask's size follows the frame's: read again whenever the frame's passes are recorded, ahead of the pass,
+  // which draws into the target as it then stands.
   const sizer: Task = {
     name: "shade mask size",
     engine,
@@ -261,6 +321,7 @@ export function createLiteShadeMask(
       const next = shadeMaskSize(Math.max(1, canvas.width), Math.max(1, canvas.height));
       size.width = next.width;
       size.height = next.height;
+      if (targets.fit(next.width, next.height)) config.rt = targets.current.rt;
     },
     execute: () => 0,
     dispose() {
@@ -268,11 +329,7 @@ export function createLiteShadeMask(
     },
   };
   (sizer as unknown as { _passes: unknown[] })._passes = [];
-  const task: RenderTask = createRenderTask(
-    // The frame's own shape whatever the target's, as the game's mask camera has it.
-    { name: "shade_mask", rt: target, cam: camera, cs: true, clr: true, clrColor: { r: 0, g: 0, b: 0, a: 0 }, autoMirror: false },
-    engine, scene,
-  );
+  const task: RenderTask = createRenderTask(config, engine, scene);
   task.enabled = false;
   // Before the hike's own pass, whose grade reads the mask in the same frame; the size before the pass.
   addTaskAtStart(scene, task);
@@ -282,21 +339,11 @@ export function createLiteShadeMask(
   let any = false;
   let draws = 0;
   let disposed = false;
-  const own = target as unknown as { _colorTexture: GPUTexture | null; _colorView: GPUTextureView | null };
-  const device = (engine as unknown as { _device: GPUDevice })._device;
-  const sampler = device.createSampler({ label: "shade_mask", magFilter: "linear", minFilter: "linear", addressModeU: "clamp-to-edge", addressModeV: "clamp-to-edge" });
-  const texture = {
-    sampler,
-    get texture() {
-      return own._colorTexture as GPUTexture;
-    },
-    get view() {
-      return own._colorView as GPUTextureView;
-    },
-  } as unknown as Texture2D;
 
   return {
-    texture,
+    get texture() {
+      return targets.current.texture;
+    },
     size,
     get any() {
       return any;
@@ -318,6 +365,8 @@ export function createLiteShadeMask(
     },
     show(count, changed, anyNow) {
       if (disposed) return;
+      // A frame on from a move of the mask's size: whatever read the target replaced has been handed this one.
+      targets.settle();
       if (changed && count > 0) for (const mesh of looks.keys()) markThinInstancePluginData(mesh, 0, count * SHADE_LOOK_FLOATS);
       any = anyNow && count > 0 && looks.size > 0;
       task.enabled = any;
@@ -342,6 +391,7 @@ export function createLiteShadeMask(
       looks.clear();
       task.enabled = false;
       any = false;
+      targets.settle();
       removeFromScene(scene, seed);
       disposeMeshGpu(seed);
     },
