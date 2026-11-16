@@ -2,7 +2,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import "../../../src/sim/passes/index.js";
 import { PLAYER_EYE_OFFSET } from "../../../src/sim/constants.js";
 import { GAME_FOV } from "../../../src/game/gameLens.js";
-import { depthAheadPlugin } from "../../../src/game/lite/renderer.js";
+import { DEPTH_AHEAD_MAX_DEGREES, depthAheadPlugin } from "../../../src/game/lite/renderer.js";
 import { createHikeRenderer, sceneRendererOf, type Renderer } from "../../../src/game/renderer.js";
 import { WEATHER_PRESETS } from "../../../src/game/weather.js";
 import { windRecordUnder } from "../../../src/game/windParams.js";
@@ -197,5 +197,24 @@ describe("a depth offset toward the eye, in the vertex stage", () => {
     expect(plugin.getCustomCode?.("vertex")).toEqual({ CUSTOM_VERTEX_MAIN_END: `out.clipPos.z+=${(120 / 2 ** 24).toExponential(6)}*out.clipPos.w;` });
     expect(plugin.getCustomCode?.("fragment")).toBeNull();
     expect(plugin.defines).toEqual({ units: 120 });
+  });
+
+  it("adds the slope's half where it is asked for: a pixel's step of depth on the surface, by the vertex normal's angle to the eye", () => {
+    const plugin = depthAheadPlugin(120, 1);
+    const code = (plugin.getCustomCode?.("vertex") as { CUSTOM_VERTEX_MAIN_END: string }).CUSTOM_VERTEX_MAIN_END;
+    // The constant half as it was, then the slope's.
+    expect(code.startsWith(`out.clipPos.z+=${(120 / 2 ** 24).toExponential(6)}*out.clipPos.w;`)).toBe(true);
+    // The angle is the normal's to the eye, held under the plugin's steepest; its tangent is sqrt(1 - c^2) / c.
+    expect(code).toContain(`clamp(abs(dot(normalize(out.worldNormal),normalize(scene.vEyePosition.xyz-out.worldPos))),${Math.cos((DEPTH_AHEAD_MAX_DEGREES * Math.PI) / 180).toExponential(6)},1.0)`);
+    expect(code).toContain("sqrt(1.0-daC*daC)/daC");
+    // The projection's constant term over a pixel's angle: both read from the frame's block.
+    expect(code).toContain("abs(daP[3].z)");
+    expect(code).toContain("2.0/(abs(daP[1].y)*hikeFrame.fadeRows)");
+    expect(code).toContain("let daP=hikeFrame.frameProjection;");
+    // Toward the eye, as the constant half: Lite's depth is 1 at the near plane.
+    expect(code).toContain(`out.clipPos.z+=${(1).toExponential(6)}*abs(daP[3].z)`);
+    expect(plugin.defines).toEqual({ units: 120, slope: 1 });
+    expect(DEPTH_AHEAD_MAX_DEGREES).toBeGreaterThan(60);
+    expect(DEPTH_AHEAD_MAX_DEGREES).toBeLessThan(90);
   });
 });
