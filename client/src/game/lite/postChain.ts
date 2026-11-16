@@ -25,9 +25,13 @@
  * in. The materials read none of it.
  *
  * **The targets are the frame's size and follow it.** The scene's pass owns
- * its two (the samples and their resolve); the chain's own are made when the
- * frame's passes are recorded, which is again whenever the canvas's size
- * changes, and the anti-aliasing starts a new history then. The sharpen
+ * its two (the samples and their resolve), which stand while the frame's
+ * size does (`keep`); the chain's own are made for those, and again only
+ * when those are, which is when the canvas's size changes: the
+ * anti-aliasing starts a new history then. Lite records the frame's passes
+ * at other times too (a hiker's lamp joining the scene's lights, the
+ * scene's first builds), and such a recording makes no texture and leaves
+ * the history as it stands (`chainTargetsStand`). The sharpen
  * writes over the scene's resolve, which nothing reads after the far
  * softening, and the grade's frame for the lens is the far softening's
  * target, which nothing reads after the anti-aliasing: a frame holds the
@@ -111,6 +115,8 @@ export type PostChainCounts = {
   lens: boolean;
   /** Bytes of the chain's buffer, written once a frame. */
   uniformBytes: number;
+  /** Times the chain's own targets were made: once a size of the frame. */
+  builds: number;
   /** The chain's own targets as they stand: a name, a size and a format each. */
   targets: readonly { name: string; width: number; height: number; format: string; samples: number }[];
 };
@@ -151,6 +157,18 @@ export type PostChainOptions = {
 type Target = { texture: GPUTexture; view: GPUTextureView; width: number; height: number; format: GPUTextureFormat; name: string };
 
 /**
+ * Whether the chain's own targets still fit the scene's: they were made for
+ * the scene's depth and resolve `made` (null: none are made), and `depth`
+ * and `resolve` are the scene's as they now stand. Lite makes a target's
+ * texture and view again only when it makes the target again, so the same
+ * two objects are the same frame's size, and whatever the chain's groups
+ * bound of them is still what is drawn into.
+ */
+export function chainTargetsStand<D, V>(made: { readonly depth: D; readonly resolve: V } | null, depth: D | null, resolve: V | null): boolean {
+  return made !== null && depth !== null && resolve !== null && made.depth === depth && made.resolve === resolve;
+}
+
+/**
  * The chain of `scene`, which was made with no pass of its own
  * (`defaultRenderTask: false`): the scene's pass into the chain's first
  * target, then the chain's task. Made before the scene is registered. A
@@ -168,9 +186,10 @@ export function createLitePostChain(engine: EngineContext, scene: SceneContext, 
   const resolvedNow = {} as RenderTargetAttachments;
 
   // The scene's pass: linear, half floats, the tier's samples a pixel, resolved at its end; its depth kept for the chain.
+  // Its targets stand while the frame's size does: a recording of the frame's passes that is no resize makes none again.
   const frameSize = { surface: engine, scale: 1 };
-  const samples: RenderTarget = createRenderTarget({ lbl: "post_scene", format: POST_FORMAT, dFormat: POST_DEPTH_FORMAT, samples: MSAA_SAMPLES, size: frameSize });
-  const resolved: RenderTarget = createRenderTarget({ lbl: "post_scene_resolved", format: POST_FORMAT, samples: 1, size: frameSize });
+  const samples: RenderTarget = createRenderTarget({ lbl: "post_scene", format: POST_FORMAT, dFormat: POST_DEPTH_FORMAT, samples: MSAA_SAMPLES, size: frameSize, keep: true });
+  const resolved: RenderTarget = createRenderTarget({ lbl: "post_scene_resolved", format: POST_FORMAT, samples: 1, size: frameSize, keep: true });
   const sceneTask: RenderTask = createRenderTask({ name: "scene", rt: samples, rst: resolved, clr: true }, engine, scene);
   addTask(scene, sceneTask);
 
@@ -230,6 +249,8 @@ export function createLitePostChain(engine: EngineContext, scene: SceneContext, 
   let targets: Record<"depth" | "far" | "historyA" | "historyB" | "paint", Target> | null = null;
   let quarter: [Target, Target] | null = null;
   let depthSamples: GPUTextureView | null = null;
+  /** The scene's depth and resolve the chain's targets and groups were made for (`chainTargetsStand`). */
+  let madeFor: { depth: GPUTexture; resolve: GPUTextureView } | null = null;
   let groups: {
     depth: GPUBindGroup; farSoft: GPUBindGroup; taa: [GPUBindGroup, GPUBindGroup]; taaSharpen: [GPUBindGroup, GPUBindGroup]; paint: GPUBindGroup;
     halationExtract: GPUBindGroup | null; halationBlurX: GPUBindGroup | null; halationBlurY: GPUBindGroup | null;
@@ -257,7 +278,7 @@ export function createLitePostChain(engine: EngineContext, scene: SceneContext, 
     projection[8] = (projection[8] as number) + jitter.x;
     projection[9] = (projection[9] as number) + jitter.y;
   };
-  const counts: { passes: number; lens: boolean; uniformBytes: number; targets: PostChainCounts["targets"] } = { passes: 0, lens: false, uniformBytes: bytes, targets: [] };
+  const counts: { passes: number; lens: boolean; uniformBytes: number; builds: number; targets: PostChainCounts["targets"] } = { passes: 0, lens: false, uniformBytes: bytes, builds: 0, targets: [] };
 
   const target = (name: string, width: number, height: number, format: GPUTextureFormat): Target => {
     const texture = device.createTexture({ label: `post_${name}`, size: { width, height }, format, usage: RENDER_ATTACHMENT | TEXTURE_BINDING });
@@ -268,6 +289,7 @@ export function createLitePostChain(engine: EngineContext, scene: SceneContext, 
     if (quarter !== null) for (const t of quarter) t.texture.destroy();
     targets = null;
     quarter = null;
+    madeFor = null;
     groups = null;
     gradeGroup = null;
     gradeLensGroup = null;
@@ -277,12 +299,18 @@ export function createLitePostChain(engine: EngineContext, scene: SceneContext, 
   const group = (made: GPURenderPipeline, entries: GPUBindingResource[]): GPUBindGroup =>
     device.createBindGroup({ layout: made.getBindGroupLayout(0), entries: entries.map((resource, binding) => ({ binding, resource })) });
 
-  /** The targets and the groups that read them, for the frame's size as the scene's pass has just made its own. */
+  /**
+   * The targets and the groups that read them, for the frame's size as the scene's pass has just made its own; nothing
+   * where the scene's own stand as they were, so the history the anti-aliasing has gathered is kept.
+   */
   function build(): void {
-    release();
     const own = getRenderTargetAttachments(samples);
     const scene = getRenderTargetAttachments(resolved).colorView;
+    if (chainTargetsStand(madeFor, own.depthTexture, scene)) return;
+    release();
     if (own.depthTexture === null || scene === null) return;
+    madeFor = { depth: own.depthTexture, resolve: scene };
+    counts.builds++;
     const { width, height } = own;
     const half = paintTargetSize(width, height);
     targets = {
