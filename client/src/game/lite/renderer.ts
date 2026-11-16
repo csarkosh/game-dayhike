@@ -288,7 +288,7 @@ import { PAINT_PALETTES, gradeRecordUnder, sightUnder, type PaintPaletteName } f
 import { brushBoxes } from "../propBoxes.js";
 import { emptyMaterialGradeUniforms, materialGradeUniforms } from "../materialGrade.js";
 import { isHollow } from "../../sim/hollow.js";
-import { LAMP_ANGLE, LAMP_COLOUR, LAMP_EXPONENT, LAMP_RANGE, lampUnder, type LampState } from "../lampParams.js";
+import { LAMP_ANGLE, LAMP_COLOUR, LAMP_EXPONENT, LAMP_RANGE, lampPlace, lampUnder, type LampState } from "../lampParams.js";
 import { createCalmFade } from "../lakeCalmFrame.js";
 import { createLakeChoice } from "../lakeChoice.js";
 import { createLensCanopy } from "../lensCanopy.js";
@@ -1181,7 +1181,10 @@ export function createLiteRenderer(canvas: HTMLCanvasElement, level: Level, fore
 
   /**
    * The headlamp where the frame has it (`lampAt`), at the frame's state, or at an intensity of 0: written only where
-   * any of it has moved, so a still frame writes nothing, and a lamp that is off is not moved.
+   * any of it has moved, so a still frame writes nothing. A lamp that is dark stands overhead (`lampPlace`), not
+   * where it last shone, and is put there once: it is the first light of every mesh, and Lite's clear coat takes
+   * what it dims a surface's direct light by from the first light's bearing whatever its intensity, so the car's
+   * paint would lose light by where the lamp went dark.
    */
   function placeLamp(made: Standing): void {
     const { lamp } = made;
@@ -1190,15 +1193,17 @@ export function createLiteRenderer(canvas: HTMLCanvasElement, level: Level, fore
     const at = lampAt;
     const { r, g, b } = lensLamp.state.colour;
     const lit = intensity > 0;
-    const moved = lit && (w.x !== at.x || w.y !== at.y || w.z !== at.z || w.dx !== at.dx || w.dy !== at.dy || w.dz !== at.dz || w.angle !== at.angle || w.range !== at.range);
+    const stands = lampPlace(lit, at);
+    const moved = w.x !== stands.x || w.y !== stands.y || w.z !== stands.z
+      || (lit && (w.dx !== at.dx || w.dy !== at.dy || w.dz !== at.dz || w.angle !== at.angle || w.range !== at.range));
     const recoloured = lit && (w.r !== r || w.g !== g || w.b !== b);
     if (intensity === w.intensity && !moved && !recoloured) return;
     w.intensity = intensity;
     lamp.intensity = intensity;
+    w.x = lamp.position.x = stands.x;
+    w.y = lamp.position.y = stands.y;
+    w.z = lamp.position.z = stands.z;
     if (lit) {
-      w.x = lamp.position.x = at.x;
-      w.y = lamp.position.y = at.y;
-      w.z = lamp.position.z = at.z;
       w.dx = lamp.direction.x = at.dx;
       w.dy = lamp.direction.y = at.dy;
       w.dz = lamp.direction.z = at.dz;

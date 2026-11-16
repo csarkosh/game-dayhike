@@ -85,3 +85,18 @@ export function lampUnder(w: WeatherParams, t: number): LampState {
     colour: mixRgb(LAMP_DEFAULT.colour, LAMP_DREAD_TINT, world),
   };
 }
+
+/**
+ * Where a lamp that is dark stands on the renderer drawn with Lite (m): high
+ * over the world's middle, wherever it last shone. Lite's clear coat dims all
+ * of a surface's direct light by the angle between the eye and the surface's
+ * first light, which the lens's lamp is, lit or dark; from overhead that is
+ * the angle of the sky's fill, the one Babylon.js dims the fill by, so the
+ * car's paint keeps its light wherever the lamp went dark.
+ */
+export const DARK_LAMP_PLACE: { readonly x: number; readonly y: number; readonly z: number } = Object.freeze({ x: 0, y: 1e6, z: 0 });
+
+/** Where that renderer stands its lamp: where the frame has it (`at`) while it is lit, `DARK_LAMP_PLACE` while it is dark. */
+export function lampPlace(lit: boolean, at: { readonly x: number; readonly y: number; readonly z: number }): { readonly x: number; readonly y: number; readonly z: number } {
+  return lit ? at : DARK_LAMP_PLACE;
+}
