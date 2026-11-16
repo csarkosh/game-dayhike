@@ -14,8 +14,12 @@
  *   again once that frame is drawn (`frameDrawn`). A frame that does not
  *   draw the sea is not stepped: no pass, no dispatch, no write.
  * - **A frame writes four bytes**: the seconds, folded into the sea's
- *   repeat, sent as the pass begins. The spectrum's amplitudes, 3 MB, go up
- *   when the sea's wind has moved by a step (`windSeaField.ts`).
+ *   repeat, sent as the pass begins. The spectrum's amplitudes, 3 MB, are
+ *   asked for when the sea's wind has moved by a step (`windSeaField.ts`)
+ *   and are built and sent with the next frame that is stepped: a wind that
+ *   moves while the sea is out of sight builds nothing and sends nothing
+ *   until the sea is drawn again, and then once, for the wind as it last
+ *   stood.
  * - **The first frame is dispatched by itself, inside a validation error
  *   scope on the device**, in commands of its own: a pipeline or a binding
  *   the device refuses is reported there, and the field fails (the sea then
@@ -133,6 +137,8 @@ export async function createLiteSeaFft(engine: EngineContext, scene: SceneContex
   let validation: "unasked" | "awaited" | "clean" = "unasked";
   let steps = 0;
   let sent = 0;
+  // The spectrum asked for and not built yet: the wind's state and the seed, kept until a frame is stepped.
+  let asked: { u10: number; dir: [number, number]; seed: number } | null = null;
   const fail = (what: string, why: unknown): void => {
     if (!failed && !disposed) console.warn(`Ocean: ${what}; the sea draws without it.`, why);
     failed = true;
@@ -152,13 +158,16 @@ export async function createLiteSeaFft(engine: EngineContext, scene: SceneContex
       return sent;
     },
     setSpectrum(state, seed) {
-      if (disposed) return;
-      updateStorageBuffer(engine, h0, gpuWindSeaH0(state, seed));
-      uploads?.count("uniforms", OCEAN_FFT_H0_BYTES);
-      sent++;
+      if (!disposed) asked = { u10: state.u10, dir: [state.dir[0], state.dir[1]], seed };
     },
     step(at) {
       if (disposed || failed || !ready || validation === "awaited") return;
+      if (asked !== null) {
+        updateStorageBuffer(engine, h0, gpuWindSeaH0(asked, asked.seed));
+        uploads?.count("uniforms", OCEAN_FFT_H0_BYTES);
+        sent++;
+        asked = null;
+      }
       seconds[0] = fftSeconds(at);
       updateComputeUniformSlot(params, 0, seconds);
       uploads?.count("uniforms", seconds.byteLength);
