@@ -8,20 +8,23 @@ import type { Vec3 } from "../sim/types.js";
 import type { PropShadows } from "./propMeshes.js";
 import { defaultModelLoader, loaderUntilAborted, placeStaticModel, type ModelLoader, type PlacedModel } from "./staticModel.js";
 
-export const BODY_OUTPUT = "models/summit.body.glb";
+import { BODY_OUTPUT, BODY_STAND_IN } from "./sceneryParts.js";
 
-const WOOD = new Color3(0.16, 0.11, 0.07);
-const FIGURE = new Color3(0.72, 0.66, 0.6);
+// The model's file and the stand-in's numbers are the scenery's own (`sceneryParts.ts`); the file named from here too.
+export { BODY_OUTPUT } from "./sceneryParts.js";
 
-const UPRIGHT_SIZE = { width: 0.25, height: 3.2, depth: 0.25 };
-const UPRIGHT_UP = 1.6;
-const CROSSBAR_SIZE = { width: 2.0, height: 0.25, depth: 0.25 };
-const CROSSBAR_UP = 2.4;
-const CAPSULE_HEIGHT = 1.7;
-const CAPSULE_RADIUS = 0.25;
-const CAPSULE_UP = 1.75;
+const WOOD = new Color3(BODY_STAND_IN.wood.r, BODY_STAND_IN.wood.g, BODY_STAND_IN.wood.b);
+const FIGURE = new Color3(BODY_STAND_IN.figure.r, BODY_STAND_IN.figure.g, BODY_STAND_IN.figure.b);
+
+const UPRIGHT_SIZE = { width: BODY_STAND_IN.upright.width, height: BODY_STAND_IN.upright.height, depth: BODY_STAND_IN.upright.depth };
+const UPRIGHT_UP = BODY_STAND_IN.upright.up;
+const CROSSBAR_SIZE = { width: BODY_STAND_IN.crossbar.width, height: BODY_STAND_IN.crossbar.height, depth: BODY_STAND_IN.crossbar.depth };
+const CROSSBAR_UP = BODY_STAND_IN.crossbar.up;
+const CAPSULE_HEIGHT = BODY_STAND_IN.capsule.height;
+const CAPSULE_RADIUS = BODY_STAND_IN.capsule.radius;
+const CAPSULE_UP = BODY_STAND_IN.capsule.up;
 /** Hung this far in front of the upright, along the node's local +z. */
-const CAPSULE_FORWARD = 0.15;
+const CAPSULE_FORWARD = BODY_STAND_IN.capsule.forward;
 
 let instanceCount = 0;
 
