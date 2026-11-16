@@ -117,13 +117,11 @@ import { createWaterPlants } from "./waterPlants.js";
 import { WATER_GROUP, createWaterFrame, waterFrameSupported } from "./waterFrame.js";
 import { WATER_ROWS, lakeSkin, lakeWaterRow, waterSkinOffset } from "./waterShading.js";
 import { attachWet, setWetCove, setWetLine, setWetSwash, setWetWeather, wetCapOf, wetLineFor, type WetBody } from "./wetPlugin.js";
-import { SWELL_COMPONENTS } from "./oceanSwell.js";
-import { swellPhases, type OceanField } from "./oceanWaves.js";
-import { coastProfilesFor } from "./oceanTables.js";
-import { COVE_FACE_GRADE, COVE_TOE_DEPTH, coveFor } from "../sim/olympic.js";
-import { SwashTable, type SwashCove } from "./swashTable.js";
+import type { OceanField } from "./oceanWaves.js";
+import { createSeaEdgeStep } from "./seaEdge.js";
+import type { SwashTable, SwashCove } from "./swashTable.js";
 import { createSwashTexture } from "./swashTexture.js";
-import { LIP_SPEED_MAX, LIP_SPEED_MIN, LipTracker, lipProfile } from "./oceanBreaker.js";
+import { LIP_SPEED_MAX, LIP_SPEED_MIN, lipProfile, type LipTracker } from "./oceanBreaker.js";
 import { createOceanLip, type OceanLip } from "./oceanLip.js";
 import { SURF_SPRAY_BURSTS, SURF_SPRAY_RANGE_M, createSurfSpray, type SurfSpray } from "./surfSpray.js";
 import { SILENT_SURF_SOUND, createSurfSound, fillSurfSound, type SurfSound } from "./surfSound.js";
@@ -1163,17 +1161,8 @@ export function createWater(
   for (const p of plugins) p.octaves = tier === "low" ? 1 : 2;
   uploadBed();
 
-  // The cove the sea's edge runs along (below), and the span of z its
-  // swash can climb the face over: the cove and its ends' blends.
-  const profiles = coastProfilesFor(seed);
-  const coveOf = coveFor(seed);
-  const cove: SwashCove = {
-    z0: coveOf.z0,
-    halfWidth: coveOf.halfWidth,
-    toeD: -COVE_TOE_DEPTH / COVE_FACE_GRADE,
-    faceGrade: COVE_FACE_GRADE,
-    coastX: (z) => profiles.coastlineX(z),
-  };
+  // The span of z the sea's swash can climb the cove's face over: the cove
+  // and its ends' blends.
   const faceZ = seaFaceZ(seed);
 
   const rings: WaterRingSamples[] = [];
@@ -1230,9 +1219,10 @@ export function createWater(
   // the high tier's own path (WebGPU, where the FFT can draw the wind sea).
   // The curl shows only while the FFT does: in any other wind mode the
   // sea's fragment lip draws, and the two never draw together.
-  const table = new SwashTable(ocean.field, cove);
+  // The cove, the table and the tracker are kept and stepped with no engine (`seaEdge.ts`).
+  const edgeStep = createSeaEdgeStep(seed, ocean.field);
+  const { cove, table, tracker } = edgeStep;
   const swash = createSwashTexture(scene, table);
-  const tracker = new LipTracker(ocean.field, cove);
   seaPlugin.setCove(cove.z0, cove.halfWidth, cove.toeD, cove.faceGrade);
   const lip = high ? createOceanLip(scene, () => seaMat, tracker, lipProfile(), cove, waterLevel) : null;
   if (lip !== null) {
@@ -1242,9 +1232,8 @@ export function createWater(
     waterMeshes.push(lip.fine, lip.coarse);
   }
   const spray = tier === "high" ? createSurfSpray(scene, group) : null;
-  // The frame's phases of the sea's swell, the wind as the spray reads it,
-  // and the plunges a frame has thrown spray for: made once, refilled.
-  const edgePhases = new Float32Array(SWELL_COMPONENTS);
+  // The wind as the spray reads it, and the plunges a frame has thrown spray
+  // for: made once, refilled.
   const sprayWind: WindRecord = { dirX: 1, dirZ: 0, speed: 0, lean: 0, gustAmp: 0, flutterAmp: 0, time: 0 };
   const thrown = new Uint8Array(tracker.plunges.d.length);
   let filled = false;
@@ -1339,9 +1328,7 @@ export function createWater(
       ocean.update(camX, camZ, seconds, seaWind, seaWindDir, hour, seaDrawn());
       // The sea's edge, on the same seconds and swell, under the onshore
       // weight the ocean has just written for its wind sea (`windSeaStateFor`).
-      swellPhases(ocean.field, seconds, edgePhases);
-      table.update(seconds, edgePhases);
-      tracker.update(seconds, edgePhases, seaPlugin.ocean?.windDir[3] ?? 0);
+      edgeStep.step(seconds, seaPlugin.ocean?.windDir[3] ?? 0);
       swash.update();
       if (!filled) {
         // The sheet from the first fill on: an empty swash until then.
