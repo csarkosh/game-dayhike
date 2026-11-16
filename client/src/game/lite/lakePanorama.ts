@@ -41,9 +41,10 @@
  * draws a sector (`waterPlantMeshes.ts`).
  */
 import {
-  addMeshToTask, addTaskAtStart, addToScene, createBankedFreeCamera, createMeshFromData, createPbrMaterial, createRenderTargetTexture, createRenderTask,
-  createRenderTexture2D, disposeMeshGpu, markMaterialUboDirty, removeFromScene, removeMeshFromTask, setMeshVisible, setThinInstances, vec3,
-  type EngineContext, type MaterialPlugin, type Mesh, type PluginUniformBlock, type SceneContext, type Task, type Texture2D,
+  addMeshToTask, addTaskAtStart, addToScene, createBankedFreeCamera, createCustomTask, createMeshFromData, createPbrMaterial, createRenderTargetTexture,
+  createRenderTask, createRenderTexture2D, disposeMeshGpu, getFrameEncoder, getGpuDevice, markMaterialUboDirty, removeFromScene, removeMeshFromTask,
+  setMeshVisible, setThinInstances, vec3,
+  type EngineContext, type MaterialPlugin, type Mesh, type PluginUniformBlock, type SceneContext, type Texture2D,
 } from "@babylonjs/lite";
 import type { LakeSource } from "../../sim/terrain.js";
 import { MIRROR_CANOPY_SHADE, mirrorGroundColour, type MirrorGroundSky } from "../mirrorGround.js";
@@ -153,9 +154,6 @@ export type PanoramaOptions = {
   uploads?: FrameUploads;
 };
 
-/** A pass of the hike's own is drawn on the engine's device with the frame's encoder. */
-type Encoding = { _device: GPUDevice; _currentEncoder?: GPUCommandEncoder };
-
 /**
  * A sector laid into its column: a triangle over the column, each texel of
  * the sector read whole at the column's own texel, its alpha 1 where the
@@ -240,7 +238,7 @@ export function createLitePanorama(engine: EngineContext, scene: SceneContext, l
   let disposed = false;
 
   // The sector into its column: one triangle over the column alone, every texel read whole.
-  const device = (engine as unknown as Encoding)._device;
+  const device = getGpuDevice(engine);
   const module = device.createShaderModule({ label: "lake_panorama_column", code: PANORAMA_COLUMN_WGSL });
   const pipeline = device.createRenderPipeline({
     label: "lake_panorama_column", layout: "auto",
@@ -249,13 +247,10 @@ export function createLitePanorama(engine: EngineContext, scene: SceneContext, l
   const group = device.createBindGroup({ layout: pipeline.getBindGroupLayout(0), entries: [{ binding: 0, resource: sector.texture.view }] });
 
   // The column follows the sector's pass and comes before the frame's own, which reads the picture.
-  const lay: Task = {
+  const lay = createCustomTask(engine, scene, {
     name: "lake_panorama_column",
-    engine,
-    scene,
-    record() {},
     execute() {
-      const encoder = (engine as unknown as Encoding)._currentEncoder;
+      const encoder = getFrameEncoder(engine);
       if (disposed || encoder === undefined || (column < 0 && !clearDue)) return 0;
       // Another lake's shore is emptied whole as the first sector of this one's lands, or by itself.
       const pass = encoder.beginRenderPass({
@@ -273,9 +268,7 @@ export function createLitePanorama(engine: EngineContext, scene: SceneContext, l
       pass.end();
       return column >= 0 ? 1 : 0;
     },
-    dispose() {},
-  } as unknown as Task;
-  (lay as unknown as { _passes: unknown[] })._passes = [];
+  });
   // Each put first in turn: the sector's pass, then its column, then what the scene held.
   addTaskAtStart(scene, lay);
   addTaskAtStart(scene, task);

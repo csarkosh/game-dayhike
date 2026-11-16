@@ -28,7 +28,7 @@
  * has no body to draw.
  */
 import {
-  acquireTexture, addToScene, attachVat, bakeVatMany, disposeMeshGpu, getContainerMeshes, loadGltf, releaseTexture, removeFromScene, setMeshVisible,
+  acquireTexture, addToScene, attachVat, bakeVatMany, disposeMeshGpu, getContainerMeshes, getGpuDevice, loadGltf, releaseTexture, removeFromScene, setMeshVisible,
   setThinInstanceCount, setThinInstances,
   type AssetContainer, type EngineContext, type Mesh, type PbrMaterialProps, type SceneContext, type SceneNode, type Texture2D, type VatHandle,
 } from "@babylonjs/lite";
@@ -64,7 +64,7 @@ const CLOCK_OFFSET = 16;
 type BakedMesh = { vat?: { settingsBuffer: GPUBuffer; instanceTexture?: GPUTexture | null } | null };
 
 export function createSkinClock(engine: EngineContext): SkinClock {
-  const device = (engine as unknown as { _device: GPUDevice })._device;
+  const device = getGpuDevice(engine);
   const buffer = device.createBuffer({ label: "skin clock", size: SETTINGS_BYTES, usage: UNIFORM | COPY_DST });
   const value = new Float32Array(1);
   let seconds = 0;

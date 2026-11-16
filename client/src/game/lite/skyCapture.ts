@@ -33,7 +33,7 @@
  * The reflectance table the materials weigh the cube by is Babylon.js's own
  * (`virtual:dayhike-environment-brdf`). The cube goes with the scene.
  */
-import { createCustomEnvironment, type CustomEnvironment, type EngineContext, type SceneContext, type Texture2D } from "@babylonjs/lite";
+import { createCustomEnvironment, getGpuDevice, type CustomEnvironment, type EngineContext, type SceneContext, type Texture2D } from "@babylonjs/lite";
 import environmentBrdf from "virtual:dayhike-environment-brdf";
 import { SKY_DOME_SIZE } from "../skyDomeParams.js";
 import { SKY_PROBE_FACES, SKY_PROBE_SIZE } from "../skyProbeParams.js";
@@ -142,8 +142,8 @@ export type LiteSkyCapture = {
  */
 export async function createLiteSkyCapture(engine: EngineContext, scene: SceneContext, table: Texture2D): Promise<LiteSkyCapture> {
   const environment = await createCustomEnvironment(scene, { size: SKY_PROBE_SIZE, brdfUrl: environmentBrdf, lodGenerationScale: 0, mipmaps: false });
-  // Lite draws its own passes on the engine's device and names it to none: the capture's pass is drawn there too.
-  const device = (engine as unknown as { _device: GPUDevice })._device;
+  // The capture's passes are drawn on the engine's device, as Lite's own are.
+  const device = getGpuDevice(engine);
   const module = device.createShaderModule({ label: "sky capture", code: SKY_CAPTURE_WGSL });
   const pipeline = device.createRenderPipeline({
     label: "sky capture",

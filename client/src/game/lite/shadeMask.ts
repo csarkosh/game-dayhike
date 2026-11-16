@@ -58,10 +58,11 @@
  * picture before the frame was fitted.
  */
 import {
-  addMeshToTask, addTaskAtStart, addToScene, createBankedFreeCamera, createMeshFromData, createPbrMaterial, createRenderTargetTexture, createRenderTask,
-  disposeMeshGpu, disposeRenderTargetTexture, markThinInstancePluginData, removeFromScene, removeMeshFromTask, setMeshVisible, setThinInstances, vec3,
+  addMeshToTask, addTaskAtStart, addToScene, createBankedFreeCamera, createCustomTask, createMeshFromData, createPbrMaterial, createRenderTargetTexture,
+  createRenderTask, disposeMeshGpu, disposeRenderTargetTexture, markThinInstancePluginData, removeFromScene, removeMeshFromTask, setMeshVisible,
+  setThinInstances, vec3,
   type BankedFreeCamera, type EngineContext, type MaterialPlugin, type Mesh, type PbrMaterialProps, type PluginUniformBlock, type RenderTargetTextureResult,
-  type RenderTask, type RenderTaskConfig, type SceneContext, type Task, type Texture2D,
+  type RenderTask, type RenderTaskConfig, type SceneContext, type Texture2D,
 } from "@babylonjs/lite";
 import { HOLLOW_FIGURE_M } from "../hollowLook.js";
 import {
@@ -279,7 +280,7 @@ export type LiteShadeMask = {
 export function createLiteShadeMask(
   engine: EngineContext, scene: SceneContext, options: { shared: PluginUniformBlock; linear: boolean; near: number; far: number; fov: number },
 ): LiteShadeMask {
-  const canvas = (engine as unknown as { canvas: { width: number; height: number } }).canvas;
+  const { canvas } = engine;
   const size = shadeMaskSize(Math.max(1, canvas.width), Math.max(1, canvas.height));
   // Lite's own target with a picture to read: made once for a size, claimed by Lite for as long as it stands, read
   // with a linear sampler held to its edges.
@@ -313,10 +314,8 @@ export function createLiteShadeMask(
   const config: RenderTaskConfig = { name: "shade_mask", rt: targets.current.rt, cam: camera, cs: true, clr: true, clrColor: { r: 0, g: 0, b: 0, a: 0 }, autoMirror: false };
   // The mask's size follows the frame's: read again whenever the frame's passes are recorded, ahead of the pass,
   // which draws into the target as it then stands.
-  const sizer: Task = {
+  const sizer = createCustomTask(engine, scene, {
     name: "shade mask size",
-    engine,
-    scene,
     record() {
       const next = shadeMaskSize(Math.max(1, canvas.width), Math.max(1, canvas.height));
       size.width = next.width;
@@ -324,11 +323,7 @@ export function createLiteShadeMask(
       if (targets.fit(next.width, next.height)) config.rt = targets.current.rt;
     },
     execute: () => 0,
-    dispose() {
-      // Nothing of its own.
-    },
-  };
-  (sizer as unknown as { _passes: unknown[] })._passes = [];
+  });
   const task: RenderTask = createRenderTask(config, engine, scene);
   task.enabled = false;
   // Before the hike's own pass, whose grade reads the mask in the same frame; the size before the pass.

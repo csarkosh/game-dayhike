@@ -39,8 +39,8 @@
  * through and no other pass.
  */
 import {
-  addTask, createRenderTarget, createRenderTask, getProjectionMatrix,
-  type BankedFreeCamera, type EngineContext, type RenderTarget, type RenderTask, type SceneContext, type Task, type Texture2D,
+  addTask, createCustomTask, createRenderTarget, createRenderTask, getFrameEncoder, getGpuDevice, getProjectionMatrix, getRenderTargetAttachments,
+  type BankedFreeCamera, type EngineContext, type RenderTarget, type RenderTargetAttachments, type RenderTask, type SceneContext, type Task, type Texture2D,
 } from "@babylonjs/lite";
 import type { AtmosphereUniforms } from "../atmosphereParams.js";
 import { emptyCloudUniforms, type CloudUniforms } from "../cloudParams.js";
@@ -161,8 +161,11 @@ export function createLitePostChain(engine: EngineContext, scene: SceneContext, 
   if (!features.pipeline || !features.taa || features.paint <= 0) throw new Error("the post chain is a tier's with the far softening, the anti-aliasing and the paint");
   const now = options.now ?? (() => performance.now());
   const start = now();
-  const device = (engine as unknown as { _device: GPUDevice })._device;
-  const surface = engine as unknown as { format: GPUTextureFormat; canvas: { width: number; height: number }; scRT: { _colorView: GPUTextureView | null }; _currentEncoder?: GPUCommandEncoder };
+  const device = getGpuDevice(engine);
+  const surface = engine;
+  /** The canvas's own target and the scene's resolve as they stand in a frame, each read into its one record. */
+  const canvasNow = {} as RenderTargetAttachments;
+  const resolvedNow = {} as RenderTargetAttachments;
 
   // The scene's pass: linear, half floats, the tier's samples a pixel, resolved at its end; its depth kept for the chain.
   const frameSize = { surface: engine, scale: 1 };
@@ -277,11 +280,10 @@ export function createLitePostChain(engine: EngineContext, scene: SceneContext, 
   /** The targets and the groups that read them, for the frame's size as the scene's pass has just made its own. */
   function build(): void {
     release();
-    const own = samples as unknown as { _depthTexture: GPUTexture | null; _width: number; _height: number };
-    const scene = resolved as unknown as { _colorView: GPUTextureView | null };
-    if (own._depthTexture === null || scene._colorView === null) return;
-    const width = own._width;
-    const height = own._height;
+    const own = getRenderTargetAttachments(samples);
+    const scene = getRenderTargetAttachments(resolved).colorView;
+    if (own.depthTexture === null || scene === null) return;
+    const { width, height } = own;
     const half = paintTargetSize(width, height);
     targets = {
       depth: target("depth", width, height, POST_DEPTH_RESOLVE_FORMAT),
@@ -290,7 +292,7 @@ export function createLitePostChain(engine: EngineContext, scene: SceneContext, 
       historyB: target("history_b", width, height, POST_FORMAT),
       paint: target("paint", half.width, half.height, POST_FORMAT),
     };
-    depthSamples = own._depthTexture.createView();
+    depthSamples = own.depthTexture.createView();
     const histories = [targets.historyA, targets.historyB] as const;
     if (features.halation) {
       const w = Math.max(1, Math.floor(width * HALATION_RATIO));
@@ -299,12 +301,12 @@ export function createLitePostChain(engine: EngineContext, scene: SceneContext, 
     }
     groups = {
       depth: group(pipelines.depth, [uniforms("depth"), depthSamples]),
-      farSoft: group(pipelines.farSoft, [uniforms("farSoft"), linear, scene._colorView, targets.depth.view, options.cloudMap.view, repeat]),
+      farSoft: group(pipelines.farSoft, [uniforms("farSoft"), linear, scene, targets.depth.view, options.cloudMap.view, repeat]),
       // Writing history `flip`, the anti-aliasing reads the other; the sharpen then reads the one just written.
       taa: [0, 1].map((to) => group(pipelines.taa, [uniforms("taa"), linear, (targets as NonNullable<typeof targets>).far.view, (histories[1 - to] as Target).view, (targets as NonNullable<typeof targets>).depth.view])) as [GPUBindGroup, GPUBindGroup],
       taaSharpen: [0, 1].map((from) => group(pipelines.taaSharpen, [uniforms("taaSharpen"), linear, (histories[from] as Target).view])) as [GPUBindGroup, GPUBindGroup],
-      paint: group(pipelines.paint, [uniforms("paint"), linear, scene._colorView]),
-      halationExtract: pipelines.halationExtract === null ? null : group(pipelines.halationExtract, [uniforms("halationExtract" as SectionName), linear, scene._colorView, targets.paint.view]),
+      paint: group(pipelines.paint, [uniforms("paint"), linear, scene]),
+      halationExtract: pipelines.halationExtract === null ? null : group(pipelines.halationExtract, [uniforms("halationExtract" as SectionName), linear, scene, targets.paint.view]),
       halationBlurX: pipelines.halationBlurX === null || quarter === null ? null : group(pipelines.halationBlurX, [uniforms("halationBlurX" as SectionName), linear, quarter[0].view]),
       halationBlurY: pipelines.halationBlurY === null || quarter === null ? null : group(pipelines.halationBlurY, [uniforms("halationBlurY" as SectionName), linear, quarter[1].view]),
     };
@@ -335,17 +337,15 @@ export function createLitePostChain(engine: EngineContext, scene: SceneContext, 
     pass.end();
   };
 
-  const task: Task = {
+  const task: Task = createCustomTask(engine, scene, {
     name: "post chain",
-    engine,
-    scene,
     record() {
       if (!disposed) build();
     },
     execute() {
-      const encoder = surface._currentEncoder;
-      const canvas = surface.scRT._colorView;
-      const scene = (resolved as unknown as { _colorView: GPUTextureView | null })._colorView;
+      const encoder = getFrameEncoder(engine);
+      const canvas = getRenderTargetAttachments(surface.scRT, canvasNow).colorView;
+      const scene = getRenderTargetAttachments(resolved, resolvedNow).colorView;
       if (disposed || encoder === undefined || canvas === null || scene === null || targets === null || groups === null) return 0;
       let drawn = 0;
       const history = flip === 0 ? targets.historyA : targets.historyB;
@@ -396,8 +396,7 @@ export function createLitePostChain(engine: EngineContext, scene: SceneContext, 
     dispose() {
       release();
     },
-  };
-  (task as unknown as { _passes: unknown[] })._passes = [];
+  });
   addTask(scene, task);
 
   return {

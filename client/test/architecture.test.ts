@@ -835,6 +835,20 @@ describe("layer boundaries", () => {
   });
 
   /**
+   * Babylon Lite names what a pass of the hike's own is drawn with
+   * (`getGpuDevice`, `getFrameEncoder`, `getRenderTargetAttachments`,
+   * `createCustomTask`), so nothing under `game/lite/` reaches into an
+   * engine, a render target or a task for a field Lite keeps to itself: such
+   * a read breaks without a word when Lite renames the field.
+   */
+  it("reads none of Babylon Lite's private fields under game/lite/: the device, the frame's encoder, a target's attachments, a task's passes", () => {
+    const PRIVATE = /\b_(?:device|currentEncoder|colorView|colorTexture|depthView|depthTexture|passes|width|height)\b/;
+    const own = sourceFiles(join(SRC, "game", "lite"));
+    expect(own.length).toBeGreaterThan(5);
+    expect(own.filter((file) => PRIVATE.test(readFileSync(file, "utf8"))).map((file) => relative(SRC, file))).toEqual([]);
+  });
+
+  /**
    * `Math.sin` and friends are implementation-defined and may differ by an ULP
    * between JS engines. A generator that uses one produces a different forest in
    * Chrome than in Firefox from the identical seed, which is unrecoverable —
