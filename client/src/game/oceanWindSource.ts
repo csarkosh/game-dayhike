@@ -25,9 +25,12 @@ import { Texture } from "@babylonjs/core/Materials/Textures/texture.js";
 import { Constants } from "@babylonjs/core/Engines/constants.js";
 import type { GpuWindSea } from "./oceanGpuFft.js";
 import type { QualityTier } from "./quality.js";
-import { FFT_CASCADES, FFT_N, LOOP_SECONDS, cascadeBands } from "./oceanSpectrum.js";
-import { windSeaBandStats, type LoopReply, type LoopRequest } from "./oceanLoopBake.js";
-import { lagSeaWind, windSeaAtSpeed, type WindSeaState } from "./oceanWindSea.js";
+import { FFT_CASCADES, FFT_N, cascadeBands } from "./oceanSpectrum.js";
+import { windSeaBandStats } from "./oceanLoopBake.js";
+import { startLoopWorker, type LoopStarter } from "./oceanLoopStart.js";
+import { createSeaWindLag, loopTimeAfter, type WindSeaState } from "./oceanWindSea.js";
+
+export { startLoopWorker, type LoopStarter } from "./oceanLoopStart.js";
 
 /** m/s the wind's speed moves before the high tier's spectrum is rebuilt. */
 export const WIND_SEA_RESPECTRUM_U = 0.5;
@@ -61,46 +64,8 @@ export type WindSeaSource = {
   dispose(): void;
 };
 
-/** Bakes the loop for a seed: by default in the worker, which `signal` ends when the sea is disposed. */
-export type LoopStarter = (seed: number, signal: AbortSignal) => Promise<LoopReply>;
 /** Makes the high tier's FFT: by default `createGpuWindSea`, imported on that path alone. */
 export type GpuStarter = (scene: Scene) => Promise<GpuWindSea | null>;
-
-/**
- * The loop baked in the module worker. Rejects where there is no Worker (Node), where one cannot be made, on
- * a worker's error or a reply it cannot read, and when `signal` aborts first. The worker is ended whatever
- * happens: on its reply, on an error, and on the abort.
- */
-export function startLoopWorker(seed: number, signal?: AbortSignal): Promise<LoopReply> {
-  return new Promise<LoopReply>((resolve, reject) => {
-    if (typeof Worker === "undefined") throw new Error("no Worker to bake the wind sea's loop in");
-    if (signal?.aborted === true) throw new Error("the wind sea's loop is no longer wanted");
-    const worker = new Worker(new URL("./oceanLoop.worker.ts", import.meta.url), { type: "module" });
-    const end = (): void => {
-      worker.terminate();
-      signal?.removeEventListener("abort", abandon);
-    };
-    function abandon(): void {
-      end();
-      reject(new Error("the wind sea's loop is no longer wanted"));
-    }
-    signal?.addEventListener("abort", abandon);
-    worker.onmessage = (event: MessageEvent<LoopReply>): void => {
-      end();
-      resolve(event.data);
-    };
-    worker.onerror = (event: ErrorEvent): void => {
-      end();
-      reject(new Error(event.message));
-    };
-    worker.onmessageerror = (): void => {
-      end();
-      reject(new Error("the wind sea's loop arrived unreadable"));
-    };
-    const request: LoopRequest = { seed };
-    worker.postMessage(request);
-  });
-}
 
 /** The FFT on the scene's engine, null where the engine has no compute (every engine but WebGPU's). */
 export async function startGpuWindSea(scene: Scene): Promise<GpuWindSea | null> {
@@ -129,10 +94,6 @@ export function cascadeStats(u10: number): [number, number, number, number] {
   return out;
 }
 
-function fold(x: number, m: number): number {
-  return x - m * Math.floor(x / m);
-}
-
 export function createWindSeaSource(
   scene: Scene,
   seed: number,
@@ -145,9 +106,8 @@ export function createWindSeaSource(
   let slope: BaseTexture | null = null;
   const stats: [number, number, number, number] = [0, 0, 0, 0];
   let loopTime = 0;
-  let lastSeconds: number | null = null;
-  // The speed the sea follows (m/s): the wind's own on the first frame, then lagged behind it.
-  let seaU10: number | null = null;
+  // The speed the sea follows: the wind's own on the first frame, then lagged behind it (`oceanWindSea.ts`).
+  const lag = createSeaWindLag();
   let loop: { texture: RawTexture2DArray; heightStd: number; slopeVar: number } | null = null;
   let gpu: GpuWindSea | null = null;
   let gpuU10: number | null = null;
@@ -233,14 +193,10 @@ export function createWindSeaSource(
       return loopTime;
     },
     update(state, seconds, drawn = true) {
-      // The shared seconds step back a few ticks when a client's tick is
-      // reconciled to the host's: the clocks here hold through the step and
-      // run on only once the seconds pass the latest counted, so no second is
-      // counted twice.
-      const dt = lastSeconds === null ? 0 : Math.max(0, seconds - lastSeconds);
-      lastSeconds = lastSeconds === null ? seconds : Math.max(lastSeconds, seconds);
-      seaU10 = seaU10 === null ? state.u10 : lagSeaWind(seaU10, state.u10, dt);
-      const sea = windSeaAtSpeed(state, seaU10);
+      // The shared seconds can step back: the lag's clock holds through the
+      // step, so no second is counted twice.
+      const sea = lag.step(state, seconds);
+      const dt = lag.dt;
       if (gpu !== null && gpu.status() === "failed") dropGpu();
       if (gpu !== null) {
         if (needsRespectrum(gpuU10, sea.u10)) {
@@ -266,7 +222,7 @@ export function createWindSeaSource(
       // The loop's own clock, run at the sea's rate: a fully developed sea's
       // times scale with the wind as its lengths do with its square.
       if (loop !== null) {
-        loopTime = fold(loopTime + dt * sea.loopRate, LOOP_SECONDS);
+        loopTime = loopTimeAfter(loopTime, dt, sea);
         stats[0] = loop.heightStd * sea.loopScale;
         stats[1] = loop.slopeVar;
         stats[2] = 0;

@@ -15,7 +15,7 @@
  */
 import { TICK_DT } from "../sim/constants.js";
 import { OCEAN_G, whitecapCoverage } from "./oceanPhysics.js";
-import { WIND_SEA_FP_COEFF, WIND_SEA_HS_COEFF } from "./oceanSpectrum.js";
+import { LOOP_SECONDS, WIND_SEA_FP_COEFF, WIND_SEA_HS_COEFF } from "./oceanSpectrum.js";
 
 /** The spectrum's own constants, defined beside it (`windSeaH0` reads them) and
  * importable from here too: Hs ≈ WIND_SEA_HS_COEFF·U²/g and fp ≈
@@ -109,6 +109,51 @@ export function windSeaAtSpeed(heading: Pick<WindSeaState, "dir" | "onshore" | "
  * u10 by the first-order lag OCEAN_SEA_LAG. A step back of the seconds (dt below 0) moves it not at all. */
 export function lagSeaWind(lagged: number, u10: number, dt: number): number {
   return lagged + (u10 - lagged) * (1 - Math.exp(-Math.max(dt, 0) / OCEAN_SEA_LAG));
+}
+
+/**
+ * The sea following its wind from frame to frame: the speed it has (m/s),
+ * the wind's own on the first frame and lagged behind it after
+ * (`lagSeaWind`), on the shared seconds.
+ */
+export type SeaWindLag = {
+  /** The seconds the last `step` counted, 0 on the first and across a step back. */
+  readonly dt: number;
+  /** A frame under the wind as it blows now (`state`): the sea's own state, the same heading at the speed the sea follows. */
+  step(state: WindSeaState, seconds: number): WindSeaState;
+};
+
+/** A sea that has followed no wind yet. */
+export function createSeaWindLag(): SeaWindLag {
+  let lastSeconds: number | null = null;
+  // The speed the sea follows (m/s): the wind's own on the first frame, then lagged behind it.
+  let seaU10: number | null = null;
+  let dt = 0;
+  return {
+    get dt() {
+      return dt;
+    },
+    step(state, seconds) {
+      // The shared seconds step back a few ticks when a client's tick is
+      // reconciled to the host's: the clocks here hold through the step and
+      // run on only once the seconds pass the latest counted, so no second is
+      // counted twice.
+      dt = lastSeconds === null ? 0 : Math.max(0, seconds - lastSeconds);
+      lastSeconds = lastSeconds === null ? seconds : Math.max(lastSeconds, seconds);
+      seaU10 = seaU10 === null ? state.u10 : lagSeaWind(seaU10, state.u10, dt);
+      return windSeaAtSpeed(state, seaU10);
+    },
+  };
+}
+
+/**
+ * The loop's time `dt` seconds on from `loopTime`, run at the sea's rate and
+ * folded into [0, LOOP_SECONDS): a fully developed sea's times scale with
+ * the wind as its lengths do with its square.
+ */
+export function loopTimeAfter(loopTime: number, dt: number, sea: WindSeaState): number {
+  const t = loopTime + dt * sea.loopRate;
+  return t - LOOP_SECONDS * Math.floor(t / LOOP_SECONDS);
 }
 
 /**
