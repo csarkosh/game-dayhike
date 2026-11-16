@@ -205,6 +205,11 @@
  * drawn while the view holds it within its reach, and shown for the frame
  * that draws the rain's cover map where it stands in the map's square.
  *
+ * **The sun casts no shadow**: no tier of the game has a shadow map
+ * (`quality.ts`), so there is no pass for one and no material reads one.
+ * The dark under the parked car is a patch of the scenery's own
+ * (`carShadow.ts`), the same on every tier.
+ *
  * **A Hollow's figure is a shadow from a mask** (`shadeMask.ts`): its body
  * drawn through its smoke into a target of its own, on the frames with a
  * figure in it, from the bodies its eyes are drawn from. With a chain the

@@ -46,7 +46,7 @@ export const NOT_DRAWN: readonly NotDrawn[] = [
   { what: "the sea's wind waves by the FFT on the tier that runs one (the baked loop is drawn there meanwhile), the swept curl of its plunging lip and the surf's spray", members: [] },
   { what: "the shore a lake reflects beyond its skyline's shade (the panorama, the mirror), and the water, a lake's and the sea's, on the tier that reads what lies under it through the surface", members: [] },
   { what: "the skin's shading (`skin.ts`): no model the game ships has a surface that shows it", members: ["setSkinShading"] },
-  { what: "the sun's cast shadows", members: [] },
+  { what: "the sun's cast shadows on a tier given a shadow map: no tier has one (`quality.ts`), so the game casts none either", members: [] },
   { what: "the scenes and the endings: their cameras, their stage, the local hiker's own body in them and the end scene's car", members: ["setEnding", "endScene", "setScene", "clearEnding"] },
   { what: "the hand-authored levels' brushes, and the wireframe view", members: ["setWireframe"] },
   { what: "the shaders' compiles told as they happen, kept shaders, and the GPU's timings", members: ["onShaderCompiled", "keepShaders", "gpuTime"] },
