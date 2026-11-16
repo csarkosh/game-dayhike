@@ -3,7 +3,8 @@ import { describe, expect, it } from "vitest";
 import { SHADE_BLUR, SHADE_DARK, SHADE_MONSTER_DARK } from "../../../src/game/postFrame.js";
 import { GRADE_SHADE_BLOCK, GRADE_STARE_BLOCK, VEIL_GAMMA } from "../../../src/game/shadeVeilParams.js";
 import { SHADE_BLOCK_WGSL, STARE_BLOCK_WGSL, gradeWgsl } from "../../../src/game/lite/postWgsl.js";
-import { SHADE_VEIL_WGSL, veilShown, veilUniforms } from "../../../src/game/lite/shadeVeil.js";
+import { SHADE_VEIL_WGSL, holdTexture, veilShown, veilUniforms } from "../../../src/game/lite/shadeVeil.js";
+import { binder, picture } from "./textureClaims.js";
 import { tight } from "./wgslText.js";
 
 const GLSL = readFileSync(new URL("../../../src/game/shaders/shadeVeil.fragment.fx", import.meta.url), "utf8");
@@ -53,5 +54,39 @@ describe("the shade veil on Babylon Lite", () => {
       shadeShape: [SHADE_BLUR, SHADE_DARK, 980 / 637, 1], shadeMonster: [SHADE_MONSTER_DARK], stareShade: [0.1, -0.2, 0.5, 7],
     });
     expect(veilUniforms(rest, false, 980, 637).shadeShape[3]).toBe(0);
+  });
+
+  it("holds the black texel through the mask's binding in its place, which is otherwise its last release", () => {
+    // Lite destroys a texture when the last claim on it is let go, and a texel only the veil's material ever bound
+    // has no other: the first figure in the mask would destroy it, and the stare's darkness read it after.
+    const unheld = picture();
+    const mask = picture();
+    const loose = binder();
+    loose(unheld);
+    loose(mask);
+    expect(unheld.texture.destroyed).toBe(true);
+    // Held, it stands through every figure that comes and goes, and goes when the veil lets it.
+    const black = picture();
+    const letGo = holdTexture(black);
+    const bind = binder();
+    for (let figure = 0; figure < 3; figure++) {
+      bind(black);
+      bind(mask);
+      expect(black.texture.destroyed).toBe(false);
+    }
+    letGo();
+    expect(black.texture.destroyed).toBe(true);
+    // Let go once and no more: the claim is one.
+    const again = picture();
+    const once = holdTexture(again);
+    const other = holdTexture(again);
+    once();
+    once();
+    expect(again.texture.destroyed).toBe(false);
+    other();
+    expect(again.texture.destroyed).toBe(true);
+    // The veil holds its texel from the start and lets it go with itself.
+    expect(src).toContain("const letGo = holdTexture(black);");
+    expect(src).toContain("letGo();");
   });
 });

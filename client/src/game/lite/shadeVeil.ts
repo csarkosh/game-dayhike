@@ -13,9 +13,20 @@
  * draw: with no figure in the mask and the stare at rest the triangle is
  * hidden, so a day's frame is what it was. Its uniforms are its own, written
  * on a frame that shows it.
+ *
+ * What it reads is the mask while a figure is in it and a black texel
+ * otherwise, bound again whenever the picture to read is another
+ * (`shadeMask.ts`: a mask whose size has moved is another picture). Lite
+ * counts the claims on a texture a material binds and destroys it when the
+ * last is let go, and one nobody else has claimed goes with its first
+ * unbinding: the veil holds a claim of its own on the black texel
+ * (`holdTexture`), which is otherwise destroyed the first time the mask is
+ * bound in its place, and the stare's darkness with no figure then reads a
+ * destroyed texture.
  */
 import {
-  addToScene, createMeshFromData, createShaderMaterial, disposeMeshGpu, removeFromScene, setMeshVisible, setShaderTexture, setShaderUniform,
+  acquireTexture, addToScene, createMeshFromData, createShaderMaterial, disposeMeshGpu, releaseTexture, removeFromScene, setMeshVisible, setShaderTexture,
+  setShaderUniform,
   type EngineContext, type Mesh, type SceneContext, type Texture2D,
 } from "@babylonjs/lite";
 import { SHADE_BLUR, SHADE_DARK, SHADE_MONSTER_DARK } from "../postFrame.js";
@@ -73,6 +84,22 @@ ${STARE_BLOCK_WGSL}
   return vec4<f32>(pow(c,vec3<f32>(${wgslFloat(VEIL_GAMMA)})),1.0);
 }`;
 
+/**
+ * A claim on `texture` for as long as its holder may bind it again; the
+ * function handed back lets it go. Lite destroys a texture at the last
+ * release of its claims, and a material's binding is a claim that goes when
+ * another texture is bound in its place.
+ */
+export function holdTexture(texture: Texture2D): () => void {
+  acquireTexture(texture);
+  let held = true;
+  return () => {
+    if (!held) return;
+    held = false;
+    releaseTexture(texture);
+  };
+}
+
 /** The stages' text, for the tests that hold it to the game's. */
 export const SHADE_VEIL_WGSL = { vertex: VERTEX, fragment: FRAGMENT } as const;
 
@@ -110,6 +137,8 @@ export function createLiteShadeVeil(engine: EngineContext, scene: SceneContext, 
     depthCompare: "always",
     backFaceCulling: false,
   });
+  // The black texel is bound again whenever the stare darkens a frame with no figure in the mask.
+  const letGo = holdTexture(black);
   setShaderTexture(material, "shadeSampler", black);
   const mesh = createMeshFromData(
     engine, "shade_veil", new Float32Array([-1, -1, 0, 3, -1, 0, -1, 3, 0]), new Float32Array([0, 0, 1, 0, 0, 1, 0, 0, 1]), new Uint32Array([0, 1, 2]),
@@ -148,7 +177,7 @@ export function createLiteShadeVeil(engine: EngineContext, scene: SceneContext, 
         setMeshVisible(mesh, now);
       }
       if (!now) return;
-      // The mask as it stands: its target is made again with the frame's size.
+      // The mask as it stands: another picture once its size has moved with the frame's.
       const view = reads ? (mask as Texture2D).view : black.view;
       if (view !== bound) {
         bound = view;
@@ -163,6 +192,7 @@ export function createLiteShadeVeil(engine: EngineContext, scene: SceneContext, 
       disposed = true;
       removeFromScene(scene, mesh);
       disposeMeshGpu(mesh);
+      letGo();
     },
   };
 }
