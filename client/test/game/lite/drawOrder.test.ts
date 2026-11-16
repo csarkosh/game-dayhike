@@ -66,9 +66,12 @@ describe("the places of the hike's see-through draws on Babylon Lite", () => {
     expect(SEE_THROUGH_ORDER.sea).toBeLessThan(SEE_THROUGH_ORDER.water);
   });
 
-  it("draws the plunging lip's curl over the sea its feet lie on, before the lakes", () => {
+  it("draws the plunging lip's curl over the sea its feet lie on, and the surf's spray after the water", () => {
     expect(SEE_THROUGH_ORDER.sea).toBeLessThan(SEE_THROUGH_ORDER.lip);
     expect(SEE_THROUGH_ORDER.lip).toBeLessThan(SEE_THROUGH_ORDER.water);
+    expect(SEE_THROUGH_ORDER.water).toBeLessThan(SEE_THROUGH_ORDER.spray);
+    // Before a lake's insects, which stay last of what stands in the world: no ray meets both.
+    expect(SEE_THROUGH_ORDER.spray).toBeLessThan(SEE_THROUGH_ORDER.midges);
   });
 
   it("lays the shade veil over the finished frame: after every other see-through draw", () => {

@@ -7,7 +7,7 @@
  * hikers' bodies, the Hollows' eyes and their figures' shadows, the dropped cap, the animals, the
  * lakes' water with the reeds and the lilies that grow in it and the
  * insects over it, and the sea with its swell, its wind waves, its white
- * water, its swash and its lip's curl, lit by
+ * water, its swash, its lip's curl and its spray, lit by
  * the sun, the sky's fill and the sky's capture as the image-based light for
  * the hour and the weather, by the local player's headlamp and by the lamps
  * the other hikers wear, seen from the player's eye or the free camera. It
@@ -32,8 +32,9 @@
  * dropped cap (`capMesh.ts`), the animals (`wildlifeMeshes.ts`), the
  * lakes' water (`lakeMeshes.ts`), their plants (`waterPlantMeshes.ts`) and
  * their life (`waterLifeMeshes.ts`), and the sea (`seaMeshes.ts`, with the
- * wind sea's cascades of `seaFft.ts` and the lip's curl of `lipMeshes.ts`),
- * over the bed's square the two waters share (`waterBed.ts`).
+ * wind sea's cascades of `seaFft.ts`, the lip's curl of `lipMeshes.ts` and
+ * the spray of `surfSpray.ts`), over the bed's square the two waters share
+ * (`waterBed.ts`).
  *
  * **The engine is Lite's own, made from the canvas, and making it takes
  * time**: a device is asked for, the ground's images are decoded, the scene
@@ -189,9 +190,11 @@
  * the cascades the plunging lip is the swept curl (`lipMeshes.ts`): a strip
  * over the cove's face, after the sea among the see-through draws, drawn
  * and sent its crests only while a crest is in mid-plunge and the view
- * holds the face. The surf's spray is not drawn yet. The water's surface
- * on that tier is blended, as on the tier below: the read of what lies
- * under it through the surface is not drawn yet.
+ * holds the face. And the plunges throw the surf's spray
+ * (`surfSpray.ts`): one instanced draw after the water, hidden while no
+ * burst is alive. The water's surface on that tier is blended, as on the
+ * tier below: the read of what lies under it through the surface is not
+ * drawn yet.
  *
  * **Colour is the tier's own path** (`postFeaturesFor`). With no post chain
  * it is the material path: Lite's display curve as Babylon's image
@@ -275,6 +278,7 @@ import { RAIN_MAP } from "../rainParams.js";
 import type { FreecamView, Renderer, RendererOptions } from "../renderer.js";
 import { emptySeaFrameUniforms } from "../seaUniforms.js";
 import { startSkySource, type SkySource } from "../skyWorker.js";
+import { createSprayThrow, type SprayLight } from "../sprayField.js";
 import { SILENT_SURF_SOUND, createSurfSound, fillSurfSound, type SurfSound } from "../surfSound.js";
 import type { SkyState } from "../skyState.js";
 import { STARE_LENS_REST, stareShadeUnder, stareSide, stepStareLens, type StareLens } from "../stareLens.js";
@@ -320,6 +324,7 @@ import { createLiteSea, seaLookFor, type LiteSea, type SeaFrame } from "./seaMes
 import { createSkinClock, type SkinClock } from "./skinnedModels.js";
 import { SKY_CAPTURE_BYTES, createLiteSkyCapture, type LiteSkyCapture } from "./skyCapture.js";
 import { createLiteSkyDome, type LiteSkyDome } from "./skyDome.js";
+import { createLiteSurfSpray, type LiteSurfSpray } from "./surfSpray.js";
 import { createTerrainMeshes, type TerrainMeshes } from "./terrainMeshes.js";
 import { createLiteWaterBed, type LiteWaterBed } from "./waterBed.js";
 import { createLiteWaterLife, type LiteWaterLife } from "./waterLifeMeshes.js";
@@ -443,6 +448,8 @@ type Standing = {
   /** The bed's square every body of water reads its depth from (`waterBed.ts`), and the sea (`seaMeshes.ts`); null in a world with no sea level. */
   bed: LiteWaterBed | null;
   sea: LiteSea | null;
+  /** The surf's spray, on the tier that draws it (`surfSpray.ts`), and the rule that throws a burst at a plunge; null elsewhere. */
+  spray: { drawn: LiteSurfSpray; thrown: ReturnType<typeof createSprayThrow> } | null;
   /** The lakes' water (`lakeMeshes.ts`); null in a world with no lake. */
   lakes: LiteLakes | null;
   /** The lakes' reeds and lilies (`waterPlantMeshes.ts`); null in a world with no lake. */
@@ -564,6 +571,8 @@ export function createLiteRenderer(canvas: HTMLCanvasElement, level: Level, fore
   }
   /** The weather's preset as the lakes' calm follows it (`lakeCalmFrame.ts`): `setWeatherName`. */
   const calmFade = createCalmFade();
+  /** The sun and the fill as the spray takes its colour from them, refilled each frame it is aged. */
+  const sprayLights: SprayLight[] = [];
   /** What a frame hands the sea (`SeaFrame`), filled in place. */
   const seaFrame: SeaFrame = { centreX: 0, centreZ: 0, planes: [], corners: new Float32Array(24), seconds: 0, dt: 0, wind: windRecordUnder(light.weather, 0), hour: light.hour, cover: null };
   /** The surf as heard, one record refilled each frame (`surfSound.ts`), and whether this frame's `sync` stepped it: the sound of a frame that did not is silence. */
@@ -680,6 +689,7 @@ export function createLiteRenderer(canvas: HTMLCanvasElement, level: Level, fore
     made.waterPlants?.dispose();
     made.lakes?.dispose();
     made.sea?.dispose();
+    made.spray?.drawn.dispose();
     made.wildlife?.dispose();
     made.cap?.dispose();
     made.entities?.dispose();
@@ -956,6 +966,7 @@ export function createLiteRenderer(canvas: HTMLCanvasElement, level: Level, fore
     // hike's start, then the sea, then the lakes, each lake one surface, where the world has any.
     let bed: LiteWaterBed | null = null;
     let sea: LiteSea | null = null;
+    let spray: Standing["spray"] = null;
     let lakeMeshes: LiteLakes | null = null;
     let waterPlants: LiteWaterPlants | null = null;
     const waterLives: LiteWaterLife[] = [];
@@ -978,6 +989,11 @@ export function createLiteRenderer(canvas: HTMLCanvasElement, level: Level, fore
         bump: fittingWaterBump(prepared, forest.seed), uploads, fft: seaFft,
         cover: rainMap === null ? undefined : { add: (mesh, place) => rainMap.register(mesh, "water", place), remove: (mesh) => rainMap.unregister(mesh) },
       });
+      // The spray of the plunges, on the tier whose sea is the cascades': thrown along the swell's travel while the
+      // curl is the lip drawn, else along the face's normal.
+      if (seaLookFor(tier).fft === true) {
+        spray = { drawn: createLiteSurfSpray(engine, scene, shared, uploads, chained), thrown: createSprayThrow(sea.edge.tracker, sea.edge.cove, waterLevel) };
+      }
     }
     if (forest !== null && cloudMap !== null && bed !== null && lakes.length > 0 && !disposed) {
       /** What the world's worker sampled for each lake, where it is that lake's. */
@@ -1007,7 +1023,7 @@ export function createLiteRenderer(canvas: HTMLCanvasElement, level: Level, fore
     }
     const made: Standing = {
       engine, scene, camera, sun, fill, lamp, dome, capture, shared, chain, materials, terrain, road, cloudGround, forest: trees, blades, clutter, duff, cliffs, props, mist, motes,
-      rain, rainMap, panorama, splash, skinClock, entities, mask, veil, wornLamps, cap, wildlife, bed, sea, lakes: lakeMeshes, waterPlants, waterLives,
+      rain, rainMap, panorama, splash, skinClock, entities, mask, veil, wornLamps, cap, wildlife, bed, sea, spray, lakes: lakeMeshes, waterPlants, waterLives,
     };
     if (disposed) {
       release(made);
@@ -1477,6 +1493,18 @@ export function createLiteRenderer(canvas: HTMLCanvasElement, level: Level, fore
           setWetSwash(edge.table.data);
           fillSurfSound(surf, pose, edge.tracker, edge.table, edge.cove, waterLevel, standing.sea.hs, canopyRead?.value ?? 0, frame.dt);
           surfStepped = true;
+          // The spray: this frame's plunges near the world's centre throw their bursts, then every burst is aged, and
+          // the sprites drawn while one is alive, the foam's white under the sun and the fill.
+          if (standing.spray !== null) {
+            standing.spray.thrown(standing.sea.curl, standing.sea.travel, centre.x, centre.z, sharedNow, standing.spray.drawn.burst);
+            const lights = light.lights;
+            sprayLights.length = 0;
+            if (lights !== null) {
+              sprayLights.push({ r: lights.sun.colour.r, g: lights.sun.colour.g, b: lights.sun.colour.b, intensity: lights.sun.intensity });
+              sprayLights.push({ r: lights.fill.colour.r, g: lights.fill.colour.g, b: lights.fill.colour.b, intensity: lights.fill.intensity });
+            }
+            standing.spray.drawn.update(sharedNow, wind, sprayLights);
+          }
         }
         // The lakes' water: each lake's calm and numbers, and each shown while the view holds it. What every lake
         // reads alike goes to the frame's block below.

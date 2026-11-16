@@ -211,6 +211,61 @@ export function sprayColour(lights: readonly SprayLight[], out: [number, number,
   return out;
 }
 
+/**
+ * The spray's uniforms by name, for a renderer that binds them so: each
+ * slot's two vec4s under a name of its own (`sprayBurst0` on), the wind's
+ * level velocity, the colour, and what the stage reads beside them and a
+ * renderer may hold elsewhere (the eye, the scene's fog, the display
+ * curve's exposure and contrast). One to four floats each, filled in place.
+ */
+export type SprayUniforms = Record<string, number[]>;
+
+/** The name of the `i`th vec4 of the slots: a slot's origin and age, then its direction and speed. */
+export const sprayBurstName = (i: number): string => `sprayBurst${i}`;
+
+/** The spray's uniforms, at rest. */
+export function emptySprayUniforms(): SprayUniforms {
+  const out: SprayUniforms = {};
+  for (let i = 0; i < SURF_SPRAY_BURSTS * 2; i++) out[sprayBurstName(i)] = [0, 0, 0, i % 2 === 0 ? SURF_SPRAY_NEVER_AGE : 0];
+  out.sprayWind = [0, 0];
+  out.sprayEmissive = [0, 0, 0];
+  out.sprayCam = [0, 0, 0];
+  out.sprayFogColour = [0, 0, 0];
+  out.sprayFogDensity = [0];
+  out.sprayExposure = [0];
+  out.sprayContrast = [1];
+  return out;
+}
+
+/** Fills `out` for a frame: the slots as `bursts` holds them, the wind's velocity and the colour. */
+export function sprayUniforms(bursts: Float32Array, wind: readonly [number, number], colour: readonly [number, number, number], out: SprayUniforms): SprayUniforms {
+  for (let i = 0; i < SURF_SPRAY_BURSTS * 2; i++) {
+    const to = out[sprayBurstName(i)] as number[];
+    for (let c = 0; c < 4; c++) to[c] = bursts[i * 4 + c] as number;
+  }
+  (out.sprayWind as number[])[0] = wind[0];
+  (out.sprayWind as number[])[1] = wind[1];
+  for (let c = 0; c < 3; c++) (out.sprayEmissive as number[])[c] = colour[c] as number;
+  return out;
+}
+
+/**
+ * The sprites as instances whose matrix is no matrix: a sprite's seed in
+ * its first four floats and its slot in the fifth, sixteen floats each,
+ * for a renderer whose instances carry a matrix alone.
+ */
+export function sprayInstances(): { data: Float32Array; count: number } {
+  const count = SURF_SPRAY_BURSTS * SURF_SPRAY_PER_BURST;
+  const seeds = spraySeeds(count, SURF_SPRAY_SEED);
+  const slots = spraySlots(count);
+  const data = new Float32Array(count * 16);
+  for (let i = 0; i < count; i++) {
+    data.set(seeds.subarray(i * 4, i * 4 + 4), i * 16);
+    data[i * 16 + 4] = slots[i] as number;
+  }
+  return { data, count };
+}
+
 /** What throws a burst: `SprayBursts.burst`, or whoever stands in for it. */
 export type SprayThrown = (x: number, y: number, z: number, dirX: number, dirZ: number, speed: number, seconds: number) => void;
 

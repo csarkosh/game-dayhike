@@ -3,7 +3,7 @@ import { LIP_SPEED_MAX, LIP_SPEED_MIN, type LipTracker } from "../../src/game/oc
 import { WIND_SEA_U_PER_WIND } from "../../src/game/oceanWindSea.js";
 import {
   SURF_SPRAY_BURSTS, SURF_SPRAY_LIFE_S, SURF_SPRAY_NEVER_AGE, SURF_SPRAY_PER_BURST, SURF_SPRAY_RANGE_M, SURF_SPRAY_SLOT_FLOATS, SURF_SPRAY_THROW,
-  createSprayBursts, createSprayThrow, sprayColour, spraySlots, sprayWind,
+  SURF_SPRAY_SEED, createSprayBursts, createSprayThrow, emptySprayUniforms, sprayBurstName, sprayColour, sprayInstances, spraySeeds, spraySlots, sprayUniforms, sprayWind,
 } from "../../src/game/sprayField.js";
 import { SWASH_G } from "../../src/game/swashRunUp.js";
 import type { SwashCove } from "../../src/game/swashTable.js";
@@ -57,6 +57,27 @@ describe("the surf's spray", () => {
     expect(slots[SURF_SPRAY_PER_BURST - 1]).toBe(0);
     expect(slots[SURF_SPRAY_PER_BURST]).toBe(1);
     expect(slots[slots.length - 1]).toBe(SURF_SPRAY_BURSTS - 1);
+  });
+
+  it("hands a renderer its uniforms by name and its sprites as instances: a slot's two vec4s, the wind, the colour; a seed and a slot a sprite", () => {
+    const values = emptySprayUniforms();
+    // At rest every slot is past its life: nothing is drawn of it.
+    for (let s = 0; s < SURF_SPRAY_BURSTS; s++) expect(values[sprayBurstName(2 * s)]).toEqual([0, 0, 0, SURF_SPRAY_NEVER_AGE]);
+    const bursts = createSprayBursts();
+    bursts.burst(1, 2, 3, 1, 0, 5, 10);
+    bursts.age(10.25);
+    sprayUniforms(bursts.data, [0.5, -0.5], [0.4, 0.3, 0.2], values);
+    expect(values[sprayBurstName(0)]).toEqual([1, 2, 3, 0.25]);
+    expect(values[sprayBurstName(1)]).toEqual([1, 0, 5, 0]);
+    expect(values[sprayBurstName(2)]?.[3]).toBe(SURF_SPRAY_NEVER_AGE);
+    expect(values.sprayWind).toEqual([0.5, -0.5]);
+    expect(values.sprayEmissive).toEqual([0.4, 0.3, 0.2]);
+    const instances = sprayInstances();
+    expect(instances.count).toBe(SURF_SPRAY_BURSTS * SURF_SPRAY_PER_BURST);
+    expect(instances.data.length).toBe(instances.count * 16);
+    const seeds = spraySeeds(instances.count, SURF_SPRAY_SEED);
+    const last = instances.count - 1;
+    expect(Array.from(instances.data.subarray(last * 16, last * 16 + 6))).toEqual([...seeds.subarray(last * 4, last * 4 + 4), SURF_SPRAY_BURSTS - 1, 0]);
   });
 
   it("is carried by the sea's reading of the wind and coloured the foam's white under the lights' sum", () => {
