@@ -12,7 +12,9 @@
  * - **A lake is one blended draw, and none out of view.** Lite culls no
  *   mesh, so each surface is shown only while the view holds its lake
  *   (`lakeDrawnFrom`: its square in the view's planes, and then its shore,
- *   or the eye beside it).
+ *   or the eye beside it). The rain's cover map has its own word on it:
+ *   drawn there while the lake reaches into the map's square, whatever the
+ *   view holds.
  * - **A lake writes nothing while nothing of its own moves.** What moves
  *   every frame (the lakes' time, the wind's integral, the bump's drift) is
  *   the frame's block, which is written once a frame whatever is drawn. A
@@ -76,7 +78,7 @@ export type LakeOptions = {
   shared: PluginUniformBlock;
   /** The weather's preset as the calm follows it: the renderer's, which names it; stepped here, a frame at a time. */
   calm: CalmFade;
-  /** The rain's cover map, which every surface stands in as open water. */
+  /** The rain's cover map, which every surface stands in as open water, each by the map's own word (`show`). */
   cover?: CoverRegistry;
   /** Each lake's pieces made ahead, by its place in the list. */
   made?: readonly (LakeMade | null)[];
@@ -108,8 +110,8 @@ export type LakeFrame = {
   fov: number;
   /**
    * The square (its centre and half its side, metres) the rain's cover map is drawn over with this frame; null on a
-   * frame that does not draw it. A lake that reaches into it is shown for the frame whatever the view holds: a
-   * hidden mesh is in no pass, the map's among them.
+   * frame that does not draw it. A lake that reaches into it is drawn in the map whatever the view holds, and one
+   * that does not is left out of it.
    */
   cover: { x: number; z: number; half: number } | null;
   /** The lake the shore's panorama is of, by its place in the list; -1 where there is none. */
@@ -282,13 +284,15 @@ export function createLiteLakes(
           lake.stale = true;
         }
         if (lakeUniforms(surface, source.level, { panorama: options.panorama !== undefined && f.served === index, skyline: f.sky !== null }, lake.uniforms)) lake.stale = true;
-        const covered = f.cover !== null
-          && Math.abs(source.shape.cx - f.cover.x) < lake.half + f.cover.half && Math.abs(source.shape.cz - f.cover.z) < lake.half + f.cover.half;
+        // The cover map's own word, said on each frame that draws the map: whether its square reaches the lake.
+        if (f.cover !== null) {
+          options.cover?.show?.(lake.mesh, Math.abs(source.shape.cx - f.cover.x) < lake.half + f.cover.half && Math.abs(source.shape.cz - f.cover.z) < lake.half + f.cover.half);
+        }
         const seen = lakeDrawnFrom(
           source.shape, source.level, lake.half, lake.points, f.planes, f.eye.x, f.eye.y, f.eye.z, f.forward.fx, f.forward.fy, f.forward.fz,
         );
         lake.reads = seen && surface.mirrorWeight * surface.calmShare > 0;
-        const shown = covered || seen;
+        const shown = seen;
         if (shown !== lake.shown) {
           lake.shown = shown;
           setMeshVisible(lake.mesh, shown);

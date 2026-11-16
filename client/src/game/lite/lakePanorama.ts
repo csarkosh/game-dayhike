@@ -36,14 +36,13 @@
  * - **The picture is laid top row first**, as a pass of WebGPU writes it:
  *   the level is its last row, and the water reads it so (`waterWgsl.ts`).
  *
- * A mesh that is hidden is in no pass of Lite's, this one among them: what
- * the hike hides by the view (a lake's plants) is shown for a frame that
- * draws a sector (`waterPlantMeshes.ts`).
+ * What the hike hides by its own view (a lake's plants) the panorama's pass
+ * draws all the same: the pass has its own word on them (`add`'s `always`).
  */
 import {
   addMeshToTask, addTaskAtStart, addToScene, createBankedFreeCamera, createCustomTask, createMeshFromData, createPbrMaterial, createRenderTargetTexture,
   createRenderTask, createRenderTexture2D, disposeMeshGpu, getFrameEncoder, getGpuDevice, markMaterialUboDirty, removeFromScene, removeMeshFromTask,
-  setMeshVisible, setThinInstances, vec3,
+  setMeshVisible, setTaskMeshVisible, setThinInstances, vec3,
   type EngineContext, type MaterialPlugin, type Mesh, type PluginUniformBlock, type SceneContext, type Texture2D,
 } from "@babylonjs/lite";
 import type { LakeSource } from "../../sim/terrain.js";
@@ -106,7 +105,11 @@ export function panoramaGroundPlugin(uniforms: PanoramaGroundUniforms, shared: P
 }
 
 /** What a shell hands the panorama: each mesh it draws of a kind, from when it is made until it is let go. */
-export type ReflectionRegistry = { add(mesh: Mesh): void; remove(mesh: Mesh): void };
+export type ReflectionRegistry = {
+  /** `always`: the panorama draws the mesh whatever the frame's own pass shows of it, for what the hike hides by its own view. */
+  add(mesh: Mesh, always?: boolean): void;
+  remove(mesh: Mesh): void;
+};
 
 /** What the panorama has drawn, for whoever counts it. */
 export type PanoramaCounts = {
@@ -274,12 +277,13 @@ export function createLitePanorama(engine: EngineContext, scene: SceneContext, l
   addTaskAtStart(scene, task);
 
   const registry = (ground: boolean): ReflectionRegistry => ({
-    add(mesh) {
+    add(mesh, always) {
       // A mesh is in the list once.
       if (disposed || registered.has(mesh)) return;
       registered.add(mesh);
       counts.meshes = registered.size;
       addMeshToTask(task, mesh, ground ? { material: groundMaterial } : undefined);
+      if (always === true) setTaskMeshVisible(task, mesh, true);
     },
     remove(mesh) {
       if (disposed || !registered.delete(mesh)) return;

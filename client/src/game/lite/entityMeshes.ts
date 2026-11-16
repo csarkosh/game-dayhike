@@ -21,8 +21,8 @@
  * **Of a Hollow the frame shows its eyes, glowing at their level.** The
  * figure itself is a shadow in the silhouette mask, which the grade lays
  * over the frame: the model's other primitives are drawn there, by the mask
- * (`shadeMask.ts`), from the same bodies, and in the frame's own pass as
- * nothing; this file stands the bodies and hands the mask each figure's
+ * (`shadeMask.ts`), from the same bodies, and by no other pass: they stand
+ * hidden; this file stands the bodies and hands the mask each figure's
  * values (`ShadeLook`: how far in it is, how soft, how near). A body stands
  * from when its figure is in the mask at all or its eyes' level is above
  * nothing. What is drawn on the frame is the model's glowing primitive
@@ -84,10 +84,10 @@ import { DRAW_ORDER, createDrawOrders } from "./drawOrder.js";
 import { baseColourPlugin, surfaceWetPlugin } from "./forestPlugins.js";
 import type { FrameUploads } from "./frameUploads.js";
 import { MATRIX_BYTES } from "./listMeshes.js";
-import { unseenPlugin, writeShadeLook, type LiteShadeMask } from "./shadeMask.js";
+import { writeShadeLook, type LiteShadeMask } from "./shadeMask.js";
 import { loadSkinnedModel, type SkinClock, type SkinnedModel, type SkinnedPart } from "./skinnedModels.js";
 
-/** The bodies' places among the draws, from the shell's first: a ranger's primitives, a place each by their order in the model, then the capsule, then the Hollow's body, which the mask draws and the frame's own pass draws as nothing, then the Hollows' eyes. */
+/** The bodies' places among the draws, from the shell's first: a ranger's primitives, a place each by their order in the model, then the capsule, then the Hollow's body, which the mask draws and the frame's own pass does not, then the Hollows' eyes. */
 export const BODY_PLACES = { rangers: 0, capsule: 4, figure: 5, eyes: 6 } as const;
 
 /** The most hikers of one ranger drawn at once: every player may wear the same one. */
@@ -144,7 +144,7 @@ export type EntityMeshes = {
   lamps(): readonly WornLamp[];
   /** Models still on the way. */
   waiting(): number;
-  /** What is drawn now: the bodies as models and as capsules, the pairs of eyes, the Hollows' figures (in the mask, or standing for their eyes), and the draws they take in the frame's own pass. */
+  /** What is drawn now: the bodies as models and as capsules, the pairs of eyes, the Hollows' figures (in the mask, or standing for their eyes), and the draws they take in the frame's own pass, where a figure's body takes none. */
   drawn(): { bodies: number; capsules: number; eyes: number; figures: number; draws: number };
   /** Resolved once the Hollow's model has landed, or could not. */
   readonly ready: Promise<void>;
@@ -214,13 +214,13 @@ export function createEntityMeshes(engine: EngineContext, scene: SceneContext, o
     material.usePhysicalLightFalloff = true;
     if (id === HOLLOW_MODEL) {
       // The eyes are the material that glows in the file; the rest of the figure is the mask's: drawn there with the
-      // mask's own material, and in the frame's pass as nothing. It stands in the scene either way, so it is placed
-      // after the bodies, where Lite's own place for a mesh left unplaced is among the forest's.
+      // mask's own material, by the mask's own word, and hidden for every other pass. It stands in the scene either
+      // way, so it is placed after the bodies, where Lite's own place for a mesh left unplaced is among the forest's.
       if (!part.emissive.some((channel) => channel > 0)) {
         orders.put(material, BODY_PLACES.figure);
         part.mesh.renderOrder = orders.of(material);
         if (mask === null) return false;
-        material.plugins = [unseenPlugin()];
+        part.elsewhere = true;
         bodyMeshes.push(part.mesh);
         return true;
       }
@@ -453,7 +453,8 @@ export function createEntityMeshes(engine: EngineContext, scene: SceneContext, o
             eyesShown = wanted;
             for (const mesh of eyeMeshes) setMeshVisible(mesh, wanted);
           }
-          if (fill.count > 0) counts.draws += (wanted ? eyeMeshes.length : 0) + bodyMeshes.length;
+          // The body is the mask's pass's alone: the frame's own draws the eyes.
+          if (wanted) counts.draws += eyeMeshes.length;
           continue;
         }
         if (fill.count > 0) counts.draws += model.parts.filter((part) => part.drawn).length;

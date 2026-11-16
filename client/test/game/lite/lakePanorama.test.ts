@@ -83,4 +83,16 @@ describe("the ground in a lake's shore panorama on Babylon Lite", () => {
     expect(text).toContain("task.enabled = false;");
     expect(src("lite/renderer.ts")).toContain("standing.panorama?.frameDrawn();");
   });
+
+  it("draws a lake's plants by its own word, whatever the frame's view holds of them: a sector's frame shows none for it", () => {
+    // The pass's word on a mesh outranks the mesh's own, which the view sets.
+    expect(src("lite/lakePanorama.ts")).toContain("      if (always === true) setTaskMeshVisible(task, mesh, true);");
+    const renderer = src("lite/renderer.ts");
+    expect(renderer).toContain("for (const mesh of waterPlants.meshes) panorama?.own.add(mesh, true);");
+    // The frame's own pass shows each kind by the view alone.
+    expect(renderer).toContain("standing.waterPlants?.seen(planes);");
+    const plants = src("lite/waterPlantMeshes.ts");
+    expect(plants).toContain("    seen(planes) {");
+    expect(plants).toContain("        let now = false;");
+  });
 });

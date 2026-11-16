@@ -25,7 +25,8 @@
  * The loader's own materials are kept, each dressed by its owner
  * (`dress`); its textures are claimed, since the loader leaves them
  * unowned. A model stands in the scene from when it lands, hidden while it
- * has no body to draw.
+ * has no body to draw; a primitive that only a pass of its owner's draws
+ * (`elsewhere`) stays hidden whatever the bodies.
  */
 import {
   acquireTexture, addToScene, attachVat, bakeVatMany, disposeMeshGpu, getContainerMeshes, getGpuDevice, loadGltf, releaseTexture, removeFromScene, setMeshVisible,
@@ -114,6 +115,11 @@ export type SkinnedPart = {
   readonly emissive: readonly [number, number, number];
   /** Whether the primitive is drawn at all: its owner's to say (`dress`). One that is not stays hidden. */
   drawn: boolean;
+  /**
+   * Whether a pass of its owner's alone draws the primitive (`dress` sets it): it is given its bodies as the others
+   * are, and stays hidden, which leaves it out of every pass but one that shows it by its own word.
+   */
+  elsewhere: boolean;
 };
 
 export type SkinnedModel = {
@@ -199,7 +205,7 @@ export async function loadSkinnedModel(engine: EngineContext, scene: SceneContex
       acquireTexture(texture);
     }
     const name = (material as { name?: string }).name ?? "";
-    const part: SkinnedPart = { mesh, material, name, emissive: emissive.get(name) ?? [0, 0, 0], drawn: true };
+    const part: SkinnedPart = { mesh, material, name, emissive: emissive.get(name) ?? [0, 0, 0], drawn: true, elsewhere: false };
     part.drawn = options.dress(part, index);
     parts.push(part);
     // Every primitive draws the same bodies, from the same array of matrices, and reads the first one's clips.
@@ -246,7 +252,7 @@ export async function loadSkinnedModel(engine: EngineContext, scene: SceneContex
           if (next > 0) options.uploads?.count("instances", next * MATRIX_BYTES);
         }
       }
-      if ((next > 0) !== (count > 0)) for (const part of parts) if (part.drawn) setMeshVisible(part.mesh, next > 0);
+      if ((next > 0) !== (count > 0)) for (const part of parts) if (part.drawn && !part.elsewhere) setMeshVisible(part.mesh, next > 0);
       count = next;
     },
     dispose() {

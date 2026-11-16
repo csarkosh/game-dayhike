@@ -35,8 +35,8 @@
  *   where the FFT is not to be had.
  * - **In the rain's cover map it is open water, at rest**: the same mesh
  *   through the map's material and a plugin that places the lattice at the
- *   level, shown for the frame that draws the map where the view does not
- *   hold it and the map's square reaches its water.
+ *   level, drawn there by the map's own word while the map's square
+ *   reaches its water, whatever the view holds.
  * - **Among the see-through draws it stands before the lakes**
  *   (`drawOrder.ts`), the rings laid outermost first.
  */
@@ -91,7 +91,7 @@ export type SeaOptions = {
   ocean?: OceanField | null;
   bump?: Uint8Array | null;
   /** The rain's cover map, which the sea stands in as open water, placed by the plugin handed with it. */
-  cover?: { add(mesh: Mesh, place: MaterialPlugin): void; remove(mesh: Mesh): void };
+  cover?: { add(mesh: Mesh, place: MaterialPlugin): void; remove(mesh: Mesh): void; show?(mesh: Mesh, shown: boolean): void };
   /** How the wind sea's loop is baked: the game's worker unless said. */
   startLoop?: LoopStarter;
   uploads?: FrameUploads;
@@ -112,8 +112,8 @@ export type SeaFrame = {
   hour: number;
   /**
    * The square (its centre and half its side, metres) the rain's cover map is drawn over with this frame; null on a
-   * frame that does not draw it. A sea that reaches into it is shown for the frame whatever the view holds: a hidden
-   * mesh is in no pass, the map's among them.
+   * frame that does not draw it. A sea that reaches into it is drawn in the map whatever the view holds, and one that
+   * does not is left out of it.
    */
   cover: { x: number; z: number; half: number } | null;
 };
@@ -347,19 +347,19 @@ export function createLiteSea(engine: EngineContext, scene: SceneContext, seed: 
       drift.step(f.dt, f.wind.speed, windDir, look.bump, false);
       seaFrameUniforms(ocean.numbers, surface, drift, frameValues);
       if (seaUniforms(surface, waterLevel, ocean.numbers, own)) stale = true;
+      // The frame's own pass draws the sea while the view holds a ring's water; the cover map has its own word, said on
+      // each frame that draws it: whether its square reaches a ring's water.
       let seen = false;
+      let covered = false;
       for (const box of boxes) {
         if (box === null) continue;
-        const covered = f.cover !== null
+        covered ||= f.cover !== null
           && box.min[0] < f.cover.x + f.cover.half && box.max[0] > f.cover.x - f.cover.half && box.min[2] < f.cover.z + f.cover.half && box.max[2] > f.cover.z - f.cover.half;
         // A ring's box is kilometres across: the planes alone keep one that lies wholly beside the view.
-        const held = boxInPlanes(box.min[0], box.min[1], box.min[2], box.max[0], box.max[1], box.max[2], f.planes)
+        seen ||= boxInPlanes(box.min[0], box.min[1], box.min[2], box.max[0], box.max[1], box.max[2], f.planes)
           && !cornersPastBox(box.min[0], box.min[1], box.min[2], box.max[0], box.max[1], box.max[2], f.corners);
-        if (covered || held) {
-          seen = true;
-          break;
-        }
       }
+      if (f.cover !== null) options.cover?.show?.(mesh, covered);
       if (seen !== shown) {
         shown = seen;
         setMeshVisible(mesh, shown);

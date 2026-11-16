@@ -16,10 +16,10 @@
  *   own shape whatever the target's. A frame with no figure skips the pass
  *   whole, and the grade then reads none of the mask.
  * - **The body is drawn nowhere else.** On Babylon.js the mask's camera sees
- *   a layer the frame's does not. Lite has no layers and leaves a hidden
- *   mesh out of every pass, so the body stands shown, and its own material
- *   puts every vertex of it at one point outside the view: the frame's pass
- *   rasterises nothing of it (`unseenPlugin`).
+ *   a layer the frame's does not. Lite has no layers; a pass has its own
+ *   word on a mesh instead: the body stands hidden, which leaves it out of
+ *   the frame's own pass and every other, and the mask's pass shows it
+ *   (`setTaskMeshVisible`).
  * - **One material for every figure, a figure's own values an instance's.**
  *   Babylon.js makes a material a figure and writes each its colour and its
  *   smoke's uniforms. Here every body is an instance of the model's one draw
@@ -60,7 +60,7 @@
 import {
   addMeshToTask, addTaskAtStart, addToScene, createBankedFreeCamera, createCustomTask, createMeshFromData, createPbrMaterial, createRenderTargetTexture,
   createRenderTask, disposeMeshGpu, disposeRenderTargetTexture, markThinInstancePluginData, removeFromScene, removeMeshFromTask, setMeshVisible,
-  setThinInstances, vec3,
+  setTaskMeshVisible, setThinInstances, vec3,
   type BankedFreeCamera, type EngineContext, type MaterialPlugin, type Mesh, type PbrMaterialProps, type PluginUniformBlock, type RenderTargetTextureResult,
   type RenderTask, type RenderTaskConfig, type SceneContext, type Texture2D,
 } from "@babylonjs/lite";
@@ -181,15 +181,6 @@ export function shadeMaskPlugin(shared: PluginUniformBlock, linear: boolean): Ma
   };
 }
 
-/** A body's own material in the frame's pass: every vertex at one point outside the view, so nothing of it is rasterised. */
-export function unseenPlugin(): MaterialPlugin {
-  return {
-    name: "Unseen",
-    priority: 999,
-    getCustomCode: (stage) => (stage === "vertex" ? { CUSTOM_VERTEX_MAIN_END: "out.clipPos=vec4<f32>(2.0,2.0,2.0,1.0);" } : null),
-  };
-}
-
 /** A figure in the mask, as `entityPoses.ts` has it (`ShadeLook`), and where its feet stand. */
 export type ShadeFigure = { fade: number; presence: number; soft: number; near: number; feetY: number };
 
@@ -259,7 +250,11 @@ export type LiteShadeMask = {
   readonly texture: Texture2D;
   /** Whether any figure is in the mask this frame. */
   readonly any: boolean;
-  /** Puts `mesh`, a primitive of the figure's body with room for `capacity` bodies, in the mask; its figures' values are `look`, which it keeps. */
+  /**
+   * Puts `mesh`, a primitive of the figure's body with room for `capacity` bodies, in the mask; its figures' values are
+   * `look`, which it keeps. The mask's pass draws the mesh whatever the mesh's own word: a body is hidden, so that no
+   * other pass draws it.
+   */
   add(mesh: Mesh, capacity: number): Float32Array;
   remove(mesh: Mesh): void;
   /** The frame's figures are written (`writeShadeLook` into each mesh's values): `count` of them, `changed` where a value moved, `any` where one is in at all. */
@@ -352,6 +347,7 @@ export function createLiteShadeMask(
       if (mesh.thinInstances !== undefined && mesh.thinInstances !== null) mesh.thinInstances.pluginData = look;
       looks.set(mesh, look);
       addMeshToTask(task, mesh, { material });
+      setTaskMeshVisible(task, mesh, true);
       return look;
     },
     remove(mesh) {

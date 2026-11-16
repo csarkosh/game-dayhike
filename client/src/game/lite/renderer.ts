@@ -132,15 +132,16 @@
  * and under the weather's name (`setWeatherName`, through its fade). What
  * every lake reads alike rides in the frame's block; a lake's own buffer is
  * written when its calm, its shade or the bed's square moves. On the tiers
- * with a cover map the surface stands in it as open water, shown for the
- * frame that draws the map where the view does not hold it. A murky lake's
+ * with a cover map the surface stands in it as open water, by the map's
+ * own word while its square reaches the lake. A murky lake's
  * reeds, cattails and lilies are five instanced draws, placed once, each
  * shown while the view holds a cell of its plants (`waterPlantMeshes.ts`).
  *
  * **On the tier with a shore panorama a lake's glass reflects its shore
  * under the skyline** (`lakePanorama.ts`): the ground as one flat lit
  * colour, the far forest's billboards, the cliffs' far ring, the props and
- * the lake's plants, seen from the lake's centre in sixteen sectors, one a
+ * the lake's plants (by the pass's own word, whatever the frame's view
+ * holds of them), seen from the lake's centre in sixteen sectors, one a
  * frame, each a pass of its own drawn before the frame's and copied into
  * its column of one picture the water reads. A capture is asked for under
  * each new sky state and when something it draws lands late, as the game
@@ -175,8 +176,8 @@
  * the surf is heard by it (`surfSound`, `hasSea`). On the tiers above low
  * the wind sea is the loop the game bakes in a worker, its 64 frames sent
  * once when the bake lands, moving the vertices and tilting the normal, and
- * the sea stands in the rain's cover map as open water at rest, shown for
- * the frame that draws the map where the view does not hold it. The wind
+ * the sea stands in the rain's cover map as open water at rest, by the
+ * map's own word while its square reaches the sea's water. The wind
  * sea's FFT, the swept curl and the spray are not drawn yet, nor the tier
  * that reads through the surface.
  *
@@ -222,7 +223,8 @@
  *
  * **A Hollow's figure is a shadow from a mask** (`shadeMask.ts`): its body
  * drawn through its smoke into a target of its own, on the frames with a
- * figure in it, from the bodies its eyes are drawn from. With a chain the
+ * figure in it, from the bodies its eyes are drawn from, and by no other
+ * pass: the body stands hidden and the mask's pass shows it by its own word. With a chain the
  * grade reads the mask; with none the veil does (`shadeVeil.ts`): one
  * triangle multiplied into the frame, last of the see-through draws, with
  * the stare's darkness, hidden while there is neither.
@@ -581,8 +583,6 @@ export function createLiteRenderer(canvas: HTMLCanvasElement, level: Level, fore
   const coverSquare = { x: 0, z: 0, half: RAIN_MAP.extent / 2 };
   /** Whether this frame draws the rain's cover map. */
   let coverDrawn = false;
-  /** Whether this frame draws a sector of a lake's shore panorama. */
-  let shoreDrawn = false;
 
   // The view: where the camera stands and how it is turned, as `sync` last left it.
   const pose: CameraPose = { x: 0, y: 2, z: 0, yaw: 0, pitch: 0, roll: 0 };
@@ -805,7 +805,7 @@ export function createLiteRenderer(canvas: HTMLCanvasElement, level: Level, fore
     // Their clocks ride in the frame's block.
     frameValues.clocks = [motes?.clocks, rain.clocks, splash?.clocks].filter((clocks): clocks is StageRecord => clocks !== undefined);
     const coverAs = (kind: "terrain" | "hard" | "water"): CoverRegistry | undefined =>
-      rainMap === null ? undefined : { add: (mesh) => rainMap.register(mesh, kind), remove: (mesh) => rainMap.unregister(mesh) };
+      rainMap === null ? undefined : { add: (mesh) => rainMap.register(mesh, kind), remove: (mesh) => rainMap.unregister(mesh), show: (mesh, shown) => rainMap.show(mesh, shown) };
     /** One registry for a shell that hands its meshes to two. */
     const both = (a: CoverRegistry | undefined, b: CoverRegistry | undefined): CoverRegistry | undefined =>
       a === undefined ? b : b === undefined ? a : { add: (mesh) => (a.add(mesh), b.add(mesh)), remove: (mesh) => (a.remove(mesh), b.remove(mesh)) };
@@ -974,7 +974,7 @@ export function createLiteRenderer(canvas: HTMLCanvasElement, level: Level, fore
         start, waterLevel, bed, air, shared,
         rings: fittingWaterRings(prepared, forest.seed, start.x, start.z), ocean: fittingOcean(prepared, forest.seed, tier),
         bump: fittingWaterBump(prepared, forest.seed), uploads,
-        cover: rainMap === null ? undefined : { add: (mesh, place) => rainMap.register(mesh, "water", place), remove: (mesh) => rainMap.unregister(mesh) },
+        cover: rainMap === null ? undefined : { add: (mesh, place) => rainMap.register(mesh, "water", place), remove: (mesh) => rainMap.unregister(mesh), show: (mesh, shown) => rainMap.show(mesh, shown) },
       });
     }
     if (forest !== null && cloudMap !== null && bed !== null && lakes.length > 0 && !disposed) {
@@ -991,8 +991,8 @@ export function createLiteRenderer(canvas: HTMLCanvasElement, level: Level, fore
         eye: pose, frame: frameSize, air, ahead: depthAheadPlugin, shared,
         placements: pieces.map((piece) => piece?.plants ?? null), uploads,
       });
-      // The reeds and the lilies stand in the shore's panorama on their own materials.
-      for (const mesh of waterPlants.meshes) panorama?.own.add(mesh);
+      // The reeds and the lilies stand in the shore's panorama on their own materials, whatever the frame's view holds.
+      for (const mesh of waterPlants.meshes) panorama?.own.add(mesh, true);
       // The midges, the dragonflies and the frogs of every lake, each placed once and stepped only while the camera is
       // within its lake's reach.
       if (hasWaterLife) {
@@ -1410,7 +1410,6 @@ export function createLiteRenderer(canvas: HTMLCanvasElement, level: Level, fore
           standing.motes?.update(weather, light.hour, nearColour, wind, motesFrame);
         }
         coverDrawn = false;
-        shoreDrawn = false;
         if (coverAt !== null && rainFrame !== null && splashFrame !== null) {
           // The headlamp as the rain reads it: the frame's, at the eye and along the view.
           rainLamp.x = pose.x;
@@ -1522,11 +1521,11 @@ export function createLiteRenderer(canvas: HTMLCanvasElement, level: Level, fore
           standing.lakes.update(f);
           frameValues.water = standing.lakes.frame;
           // A sector of the panorama with this frame, while a capture is owed and that lake's glass reads the picture.
-          shoreDrawn = served !== null && standing.panorama !== null && standing.panorama.update(sky, weather, standing.lakes.readsShore(served.index));
+          if (served !== null) standing.panorama?.update(sky, weather, standing.lakes.readsShore(served.index));
         }
-        // The lakes' plants, each kind while the view holds it; and all of them on a frame that draws the shore's
-        // panorama, which looks all the way round.
-        standing.waterPlants?.seen(planes, shoreDrawn);
+        // The lakes' plants, each kind while the view holds it; the shore's panorama, which looks all the way round,
+        // draws them all by its own word.
+        standing.waterPlants?.seen(planes);
         // The animals, round the camera in freecam and the player otherwise, judged by the view's planes: the
         // director is handed the sim's place and aim, never the camera's own, which the walk's bob has moved.
         if (standing.wildlife !== null && centre !== null) {

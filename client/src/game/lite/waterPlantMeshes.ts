@@ -66,11 +66,10 @@ export type LiteWaterPlants = {
   /** The reeds' three meshes, the pads' and the flowers': those with a plant. */
   readonly meshes: readonly Mesh[];
   /**
-   * Shows each mesh while the view's planes hold one of its plants' boxes, and hides it while they hold none. With
-   * `all`, every mesh is shown whatever the view holds: for a frame that draws them from another eye as well (a
-   * lake's shore panorama), since a hidden mesh is in no pass.
+   * Shows each mesh while the view's planes hold one of its plants' boxes, and hides it while they hold none. A pass
+   * that draws them from another eye (a lake's shore panorama) has its own word on them.
    */
-  seen(planes: readonly ViewPlane[], all?: boolean): void;
+  seen(planes: readonly ViewPlane[]): void;
   /** Meshes shown, and the plants each mesh holds. */
   readonly shown: number;
   readonly counts: readonly number[];
@@ -148,11 +147,11 @@ export function createLiteWaterPlants(
     get shown() {
       return shown;
     },
-    seen(planes, all = false) {
+    seen(planes) {
       if (disposed) return;
       for (let m = 0; m < meshes.length; m++) {
         const cells = boxes[m] as Float32Array;
-        let now = all;
+        let now = false;
         for (let at = 0; at < cells.length && !now; at += 6) {
           now = boxInPlanes(cells[at] as number, cells[at + 1] as number, cells[at + 2] as number, cells[at + 3] as number, cells[at + 4] as number, cells[at + 5] as number, planes);
         }
