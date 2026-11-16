@@ -11,17 +11,18 @@ import { laidOut, readUniform, standInTexture } from "./pluginFixture.js";
 
 const SHARED = { name: FRAME_BLOCK } as unknown as PluginUniformBlock;
 const TABLES = { atlas: standInTexture("atlas"), swash: standInTexture("swash"), ringBeds: standInTexture("ringBeds"), bed: standInTexture("bed") };
-const LOW = { ...TABLES, bump: standInTexture("bump"), loop: null };
-const LOOP = { ...TABLES, bump: null, loop: standInTexture("loop") };
+const LOW = { ...TABLES, bump: standInTexture("bump"), windDisp: null, windSlope: null };
+const LOOP = { ...TABLES, bump: null, windDisp: standInTexture("loop"), windSlope: null };
+const FFT = { ...TABLES, bump: null, windDisp: standInTexture("disp"), windSlope: standInTexture("slope") };
 const codeOf = (plugin: ReturnType<typeof seaPlugin>): string =>
   (["vertex", "fragment"] as const).map((stage) => Object.values(plugin.getCustomCode?.(stage) ?? {}).join("\n")).join("\n");
 
 describe("the sea's water as a plugin on Babylon Lite", () => {
-  it("draws the wind sea with the ripple bump on low, and with the baked loop above it", () => {
+  it("draws the wind sea with the ripple bump on low, with the baked loop above it, and with the cascades computed each frame on high", () => {
     expect(seaLookFor("low")).toEqual({ bump: true, loop: false });
     expect(seaLookFor("medium")).toEqual({ bump: false, loop: true });
-    // The tier whose own field is the FFT draws the loop, as the game does where the FFT is not to be had.
-    expect(seaLookFor("high")).toEqual({ bump: false, loop: true });
+    // The tier whose own field is the FFT reads its cascades, and the loop after them, which the game draws where the FFT is not to be had.
+    expect(seaLookFor("high")).toEqual({ bump: false, loop: true, fft: true });
   });
 
   it("declares the sea's own uniforms by the names its record gives them, for both stages, and leaves the frame's to the block", () => {
@@ -96,9 +97,36 @@ describe("the sea's water as a plugin on Babylon Lite", () => {
     expect(loop.getSamplers?.()?.at(-1)).toEqual({ texture: "oceanWindDisp", sampler: "oceanWindDispSampler", textureType: "texture_2d_array<f32>", visibility: "vertex-fragment" });
     const active: Texture2D[] = [];
     loop.getActiveTextures?.(active);
-    expect(active).toEqual([LOOP.atlas, LOOP.swash, LOOP.ringBeds, LOOP.bed, LOOP.loop]);
+    expect(active).toEqual([LOOP.atlas, LOOP.swash, LOOP.ringBeds, LOOP.bed, LOOP.windDisp]);
     // A look and its pictures are handed together.
     expect(() => seaPlugin(emptySeaUniforms(), LOOP, SHARED, { bump: true, loop: false })).toThrow(/disagree/);
+  });
+
+  it("binds the cascades' two pictures on the tier that computes them, the slopes through the displacement's sampler, and no tier below gains a picture", () => {
+    const names = (plugin: ReturnType<typeof seaPlugin>): string[] => (plugin.getSamplers?.() ?? []).map((d) => d.texture);
+    const low = seaPlugin(emptySeaUniforms(), LOW, SHARED, seaLookFor("low"));
+    const loop = seaPlugin(emptySeaUniforms(), LOOP, SHARED, seaLookFor("medium"));
+    expect([low.defines, loop.defines]).toEqual([{ loop: false, bump: true }, { loop: true, bump: false }]);
+    expect(names(low)).toEqual(["oceanAtlas", "oceanSwash", "seaBed", "waterBedHeight", "waterBump"]);
+    expect(names(loop)).toEqual(["oceanAtlas", "oceanSwash", "seaBed", "waterBedHeight", "oceanWindDisp"]);
+    expect(codeOf(low) + codeOf(loop)).not.toMatch(/oceanWindSlope\b|FFT_CASCADE|oceanCoast\.w>1\.5/);
+    const fft = seaPlugin(emptySeaUniforms(), FFT, SHARED, seaLookFor("high"));
+    expect(fft.defines).toEqual({ loop: true, bump: false, fft: true });
+    expect(names(fft)).toEqual(["oceanAtlas", "oceanSwash", "seaBed", "waterBedHeight", "oceanWindDisp", "oceanWindSlope"]);
+    expect(fft.getSamplers?.()?.at(-1)).toEqual({ texture: "oceanWindSlope", textureType: "texture_2d_array<f32>" });
+    const bound: PluginTextureBinding[] = [];
+    fft.bindTextures?.(bound);
+    expect(bound.slice(-2)).toEqual([{ texture: FFT.windDisp }, { texture: FFT.windSlope, sampler: false }]);
+    // What the material binds is read when its bindings are made: the loop's frames take the displacement's place where the cascades fail.
+    const textures = { ...FFT };
+    const swapped = seaPlugin(emptySeaUniforms(), textures, SHARED, seaLookFor("high"));
+    textures.windDisp = standInTexture("loop");
+    const again: PluginTextureBinding[] = [];
+    swapped.bindTextures?.(again);
+    expect(again.at(-2)).toEqual({ texture: textures.windDisp });
+    // The cascades are read with a field's branch, never without it; and never without their slopes.
+    expect(() => seaPlugin(emptySeaUniforms(), FFT, SHARED, { bump: false, loop: true })).toThrow(/disagree/);
+    expect(() => seaPlugin(emptySeaUniforms(), LOOP, SHARED, { bump: false, loop: true, fft: true })).toThrow(/disagree/);
   });
 
   it("carries no vertex data: a vertex is its place in the lattice, and the stage hands on the swell it sums", () => {

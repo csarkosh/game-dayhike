@@ -18,7 +18,11 @@
  *   texel), the depth of water under each ring's vertices (a layer a ring,
  *   the vertex stage's alone) and the bed's heights (the fragment's).
  * - **Its pictures** are the ripple bump, on the tier that draws the wind
- *   sea with it, and the wind sea's loop, on the tier that bakes one.
+ *   sea with it, and the wind sea's field on the tiers that draw one: the
+ *   baked loop's frames, or the displacement and the slopes of the cascades
+ *   computed each frame (`seaFft.ts`), with the loop's frames in the
+ *   displacement's place where those cannot be had. What `textures` holds
+ *   is read whenever the material's bindings are made.
  * - **Its vertex data is none**: a vertex is its place in the lattice.
  */
 import type { MaterialPlugin, PluginUniformBlock, Texture2D, Texture2DArray } from "@babylonjs/lite";
@@ -44,8 +48,10 @@ export type SeaTextures = {
   bed: Texture2D;
   /** The ripple bump, where the look reads it. */
   bump: Texture2D | null;
-  /** The wind sea's loop, a layer a frame, where the look reads it. */
-  loop: Texture2DArray | null;
+  /** The wind sea's displacement where the look reads a field: the loop's frames, a layer a frame, or the cascades', a layer a cascade. */
+  windDisp: Texture2DArray | null;
+  /** The cascades' slopes, a layer a cascade, where the look reads the cascades. */
+  windSlope: Texture2DArray | null;
 };
 
 const BOTH = "vertex-fragment" as const;
@@ -63,13 +69,17 @@ export function seaFields(uniforms: SeaUniforms): UniformField[] {
  * and by the frame's block `shared`, from `textures`, with `look`.
  */
 export function seaPlugin(uniforms: SeaUniforms, textures: SeaTextures, shared: PluginUniformBlock, look: SeaLook): MaterialPlugin {
-  if (look.bump !== (textures.bump !== null) || look.loop !== (textures.loop !== null)) throw new Error("the sea's look and its pictures disagree");
+  const fft = look.fft === true;
+  if (look.bump !== (textures.bump !== null) || look.loop !== (textures.windDisp !== null) || fft !== (textures.windSlope !== null) || (fft && !look.loop)) {
+    throw new Error("the sea's look and its pictures disagree");
+  }
   const surface = frameReads(seaSurfaceWgsl(look));
   const fields = seaFields(uniforms);
   return {
     name: "SeaWater",
     priority: WATER_PRIORITY,
-    defines: { loop: look.loop, bump: look.bump },
+    // A tier below the cascades' keeps the two it had.
+    defines: { loop: look.loop, bump: look.bump, ...(fft ? { fft } : {}) },
     getFragmentDirectives: () => "diagnostic(off,derivative_uniformity);",
     getCustomCode: (stage) =>
       stage === "fragment"
@@ -92,6 +102,7 @@ export function seaPlugin(uniforms: SeaUniforms, textures: SeaTextures, shared: 
       { texture: "waterBedHeight", sampleType: "unfilterable-float" as const },
       ...(look.bump ? [{ texture: "waterBump", sampler: "waterBumpSampler" }] : []),
       ...(look.loop ? [{ texture: "oceanWindDisp", sampler: "oceanWindDispSampler", textureType: "texture_2d_array<f32>" as const, visibility: BOTH }] : []),
+      ...(fft ? [{ texture: "oceanWindSlope", textureType: "texture_2d_array<f32>" as const }] : []),
     ],
     writeUbo(data, offsets) {
       const { oceanK, ...scalars } = uniforms;
@@ -103,12 +114,14 @@ export function seaPlugin(uniforms: SeaUniforms, textures: SeaTextures, shared: 
     bindTextures(out) {
       out.push({ texture: textures.atlas, sampler: false }, { texture: textures.swash, sampler: false }, { texture: textures.ringBeds, sampler: false }, { texture: textures.bed, sampler: false });
       if (textures.bump !== null) out.push({ texture: textures.bump });
-      if (textures.loop !== null) out.push({ texture: textures.loop });
+      if (textures.windDisp !== null) out.push({ texture: textures.windDisp });
+      if (textures.windSlope !== null) out.push({ texture: textures.windSlope, sampler: false });
     },
     getActiveTextures(out) {
       out.push(textures.atlas, textures.swash, textures.ringBeds, textures.bed);
       if (textures.bump !== null) out.push(textures.bump);
-      if (textures.loop !== null) out.push(textures.loop);
+      if (textures.windDisp !== null) out.push(textures.windDisp);
+      if (textures.windSlope !== null) out.push(textures.windSlope);
     },
   };
 }

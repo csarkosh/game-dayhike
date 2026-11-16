@@ -6,8 +6,8 @@
  * splashes and the cover it falls under, and in that world the other
  * hikers' bodies, the Hollows' eyes and their figures' shadows, the dropped cap, the animals, the
  * lakes' water with the reeds and the lilies that grow in it and the
- * insects over it, and the sea with its swell, its white water and its
- * swash, lit by
+ * insects over it, and the sea with its swell, its wind waves, its white
+ * water and its swash, lit by
  * the sun, the sky's fill and the sky's capture as the image-based light for
  * the hour and the weather, by the local player's headlamp and by the lamps
  * the other hikers wear, seen from the player's eye or the free camera. It
@@ -31,8 +31,9 @@
  * (`entityMeshes.ts`), the lamps the other hikers wear (`wornLamps.ts`), the
  * dropped cap (`capMesh.ts`), the animals (`wildlifeMeshes.ts`), the
  * lakes' water (`lakeMeshes.ts`), their plants (`waterPlantMeshes.ts`) and
- * their life (`waterLifeMeshes.ts`), and the sea (`seaMeshes.ts`), over the
- * bed's square the two waters share (`waterBed.ts`).
+ * their life (`waterLifeMeshes.ts`), and the sea (`seaMeshes.ts`, with the
+ * wind sea's cascades of `seaFft.ts`), over the bed's square the two waters
+ * share (`waterBed.ts`).
  *
  * **The engine is Lite's own, made from the canvas, and making it takes
  * time**: a device is asked for, the ground's images are decoded, the scene
@@ -172,12 +173,22 @@
  * the sea. Its edge is stepped every frame, shown or not
  * (`seaEdge.ts`): the wet ground on the cove reads the swash's table, and
  * the surf is heard by it (`surfSound`, `hasSea`). On the tiers above low
- * the wind sea is the loop the game bakes in a worker, its 64 frames sent
- * once when the bake lands, moving the vertices and tilting the normal, and
+ * the wind sea is a field, moving the vertices and tilting the normal, and
  * the sea stands in the rain's cover map as open water at rest, shown for
- * the frame that draws the map where the view does not hold it. The wind
- * sea's FFT, the swept curl and the spray are not drawn yet, nor the tier
- * that reads through the surface.
+ * the frame that draws the map where the view does not hold it. The field
+ * is the loop the game bakes in a worker, its 64 frames sent once when the
+ * bake lands, on the tier that bakes one.
+ *
+ * **On the tier that computes its wind sea each frame the field is the
+ * game's FFT on Lite's compute** (`seaFft.ts`): three cascades, four
+ * dispatches in one compute pass before the frame's draws, on a frame
+ * whose view holds the sea and on no other; the spectrum's amplitudes go
+ * up when the sea's wind has moved by a step. Which field is drawn is the
+ * game's rule (`windSeaField.ts`): the cascades once they run, the baked
+ * loop where they fail or are still compiling past their deadline. The
+ * swept curl of the plunging lip and the surf's spray are not drawn yet.
+ * The water's surface on that tier is blended, as on the tier below: the
+ * read of what lies under it through the surface is not drawn yet.
  *
  * **Colour is the tier's own path** (`postFeaturesFor`). With no post chain
  * it is the material path: Lite's display curve as Babylon's image
@@ -301,7 +312,8 @@ import { createPropMeshes, type PropMeshes } from "./propMeshes.js";
 import { createLiteRain, type LiteRain, type RainFrame } from "./rain.js";
 import { createLiteRainMap, type CoverRegistry, type LiteRainMap } from "./rainMap.js";
 import { createLiteRainSplash, type LiteRainSplash, type SplashFrame } from "./rainSplash.js";
-import { createLiteSea, type LiteSea, type SeaFrame } from "./seaMeshes.js";
+import { createLiteSeaFft } from "./seaFft.js";
+import { createLiteSea, seaLookFor, type LiteSea, type SeaFrame } from "./seaMeshes.js";
 import { createSkinClock, type SkinClock } from "./skinnedModels.js";
 import { SKY_CAPTURE_BYTES, createLiteSkyCapture, type LiteSkyCapture } from "./skyCapture.js";
 import { createLiteSkyDome, type LiteSkyDome } from "./skyDome.js";
@@ -945,12 +957,22 @@ export function createLiteRenderer(canvas: HTMLCanvasElement, level: Level, fore
     let waterPlants: LiteWaterPlants | null = null;
     const waterLives: LiteWaterLife[] = [];
     const start = { x: options.start?.x ?? level.playerSpawns[0]?.x ?? 0, z: options.start?.z ?? level.playerSpawns[0]?.z ?? 0 };
+    // The wind sea's cascades, on the tier that computes them: made before the sea, whose material binds their
+    // pictures. Where they cannot be made the sea draws the baked loop.
+    const seaFft = forest !== null && cloudMap !== null && waterLevel !== undefined && !disposed && seaLookFor(tier).fft === true
+      ? await createLiteSeaFft(engine, scene, uploads).catch((error: unknown) => {
+        console.warn("Ocean: the wind sea's field could not be made; the sea draws without it.", error);
+        return null;
+      })
+      : null;
+    // A renderer let go while they were made keeps nothing of them.
+    if (disposed) seaFft?.dispose();
     if (forest !== null && cloudMap !== null && waterLevel !== undefined && !disposed) {
       bed = createLiteWaterBed(engine, tier, forest.seed, lakes, waterLevel, start.x, start.z, fittingBed(prepared, forest.seed, tier, start.x, start.z), uploads);
       sea = createLiteSea(engine, scene, forest.seed, tier, {
         start, waterLevel, bed, air, shared,
         rings: fittingWaterRings(prepared, forest.seed, start.x, start.z), ocean: fittingOcean(prepared, forest.seed, tier),
-        bump: fittingWaterBump(prepared, forest.seed), uploads,
+        bump: fittingWaterBump(prepared, forest.seed), uploads, fft: seaFft,
         cover: rainMap === null ? undefined : { add: (mesh, place) => rainMap.register(mesh, "water", place), remove: (mesh) => rainMap.unregister(mesh) },
       });
     }
@@ -1595,6 +1617,8 @@ export function createLiteRenderer(canvas: HTMLCanvasElement, level: Level, fore
       standing.rainMap?.frameDrawn();
       // And a sector of the shore's panorama with the frame that drew it.
       standing.panorama?.frameDrawn();
+      // And the wind sea's cascades with the frame that asked for them.
+      standing.sea?.frameDrawn();
     },
     runLoop(frame) {
       if (disposed) return;

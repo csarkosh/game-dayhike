@@ -148,6 +148,44 @@ describe("the sea's waves and shading in WGSL, against the game's GLSL", () => {
     }
   });
 
+  it("reads the three cascades before the loop on the tier that computes them, as the GLSL's first branch does, and on no tier below", () => {
+    const FFT = { loop: true, bump: false, fft: true };
+    const high = tight(seaSurfaceWgsl(FFT) + seaShadeWgsl(FFT) + seaLightsWgsl(FFT));
+    const below = tight(seaSurfaceWgsl(LOOP) + seaShadeWgsl(LOOP) + seaLightsWgsl(LOOP) + seaSurfaceWgsl(LOW) + seaShadeWgsl(LOW) + seaLightsWgsl(LOW));
+    expect(below).not.toMatch(/FFT_|oceanWindSlope\b|oceanCoast\.w>1\.5/);
+    expect(seaSurfaceWgsl({ ...LOOP, fft: false })).toBe(seaSurfaceWgsl(LOOP));
+    expect(seaShadeWgsl({ ...LOOP, fft: false })).toBe(seaShadeWgsl(LOOP));
+    // The cascades' constants at the GLSL's values.
+    const constants = [...surface.matchAll(/const float (FFT_[A-Z0-9_]+) = ([-0-9.e]+);/g)];
+    expect(constants.map((c) => c[1])).toEqual(["FFT_N", "FFT_CASCADE_0", "FFT_CASCADE_1", "FFT_CASCADE_2"]);
+    for (const [, name, value] of constants) expect(high).toContain(`const${name}:f32=${value};`);
+    // The displacement: each cascade at its own tile's coordinate and layer, faded on a ring too coarse for it, then the loop's branch.
+    const glslDisp = tight(surface.slice(surface.indexOf("vec3 oceanWindDisplaceAt"), surface.indexOf("vec3 oceanWindDisplace(vec2 p)")));
+    for (const c of [0, 1, 2]) {
+      expect(glslDisp).toContain(`textureLod(oceanWindDisp,vec3(w/FFT_CASCADE_${c},${c}.0),0.0).xyz*oceanWindRingKeep(FFT_CASCADE_${c},cell)`);
+    }
+    expect(high).toContain(
+      "if(material.oceanCoast.w>1.5){t=textureSampleLevel(oceanWindDisp,oceanWindDispSampler,w/FFT_CASCADE_0,0,0.0).xyz*oceanWindRingKeep(FFT_CASCADE_0,cell)"
+      + "+textureSampleLevel(oceanWindDisp,oceanWindDispSampler,w/FFT_CASCADE_1,1,0.0).xyz*oceanWindRingKeep(FFT_CASCADE_1,cell)"
+      + "+textureSampleLevel(oceanWindDisp,oceanWindDispSampler,w/FFT_CASCADE_2,2,0.0).xyz*oceanWindRingKeep(FFT_CASCADE_2,cell);}elseif(material.oceanCoast.w>0.5){letsize=oceanLoopSize();",
+    );
+    // The slopes: each cascade's kept by the pixel's footprint, and the variance they carry by the share squared.
+    const glslSlope = tight(shade.slice(shade.indexOf("vec2 oceanWindSlopesAt"), shade.indexOf("vec2 oceanWindSlopes(vec2 p)")));
+    for (const c of [0, 1, 2]) {
+      expect(glslSlope).toContain(`floatk${c}=oceanWindPixelKeep(FFT_CASCADE_${c},FFT_N,pixel);`);
+      expect(high).toContain(`letk${c}=oceanWindPixelKeep(FFT_CASCADE_${c},FFT_N,pixel);`);
+      expect(glslSlope).toContain(`textureLod(oceanWindSlope,vec3(w/FFT_CASCADE_${c},${c}.0),0.0).xy*k${c}`);
+      expect(high).toContain(`textureSampleLevel(oceanWindSlope,oceanWindDispSampler,w/FFT_CASCADE_${c},${c},0.0).xy*k${c}`);
+    }
+    expect(glslSlope).toContain("drawn=k0*k0*oceanWindStats.y+k1*k1*oceanWindStats.z+k2*k2*oceanWindStats.w;");
+    expect(high).toContain("o.drawn=k0*k0*material.oceanWindStats.y+k1*k1*material.oceanWindStats.z+k2*k2*material.oceanWindStats.w;}elseif(material.oceanCoast.w>0.5){");
+    // The crests' fade: cascade 1's shortest wave where the cascades are drawn, the loop's otherwise.
+    expect(tight(shade)).toContain("if(oceanCoast.w>1.5)returnoceanWindPixelKeep(FFT_CASCADE_1,FFT_N,pixel);returnoceanWindPixelKeep(oceanLoopSize(),LOOP_N,pixel);");
+    expect(high).toContain("fnoceanCrestKeep(pixel:f32)->f32{if(material.oceanCoast.w>1.5){returnoceanWindPixelKeep(FFT_CASCADE_1,FFT_N,pixel);}returnoceanWindPixelKeep(oceanLoopSize(),LOOP_N,pixel);}");
+    // The fragment lip stands down while the cascades are drawn: the strip draws the curl then.
+    expect(high).toContain("step(material.oceanCoast.w,1.5)");
+  });
+
   it("reads the wind sea's field only where the look bakes one, and the bump only where it draws the wind sea", () => {
     const low = tight(seaSurfaceWgsl(LOW) + seaShadeWgsl(LOW) + seaLightsWgsl(LOW));
     const loop = tight(seaSurfaceWgsl(LOOP) + seaShadeWgsl(LOOP) + seaLightsWgsl(LOOP));

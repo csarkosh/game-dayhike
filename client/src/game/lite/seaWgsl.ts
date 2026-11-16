@@ -40,9 +40,14 @@
  *   the frame Babylon.js derives from the screen's derivatives of the place
  *   and the coordinate about the ring's own normal, which is up
  *   (`SEA_BUMP_WGSL`), for the side seen from above.
- * - **The wind sea's field** is read only on the tier that draws one (the
- *   loop). Where none is drawn its displacement and its slopes are nothing
- *   in the GLSL, and the statements that only scale them are left out.
+ * - **The wind sea's field** is read only on the tiers that draw one: the
+ *   loop's branch where the field is the baked loop, and before it the three
+ *   cascades' branch on the tier whose field is computed each frame, which
+ *   falls back to the loop where that cannot be had (`windSeaField.ts`). The
+ *   cascades' slopes are read through the displacement's sampler, which is
+ *   set as theirs is. Where no field is drawn its displacement and its
+ *   slopes are nothing in the GLSL, and the statements that only scale them
+ *   are left out.
  * - **The skin** is off on the sea (its share is 0), and its statements are
  *   left out; the roughness the GLSL writes over Babylon.js's own line is
  *   set where the sea's statements end, before Lite derives anything from
@@ -50,8 +55,8 @@
  * - **`mod`** is written out as `x - y * floor(x / y)`: WGSL's `%`
  *   truncates.
  *
- * Left out, as nothing here reads them: the three cascades of the tier that
- * runs the wind sea's FFT, and the read of the frame behind the surface.
+ * Left out, as nothing here reads it: the read of the frame behind the
+ * surface.
  *
  * Loads nothing.
  */
@@ -60,17 +65,38 @@ import { WATER_RING_CELLS, WATER_RING_COUNT, WATER_UV_SCALE } from "../water.js"
 
 /** What a tier's sea is drawn with beside its swell. */
 export type SeaLook = {
-  /** The wind sea's loop is read (the tier that bakes one). */
+  /** A field of the wind sea is read: the baked loop's branch is in the stages. */
   loop: boolean;
+  /** The three cascades computed each frame are read too, before the loop (the tier that computes them; never without `loop`). */
+  fft?: boolean;
   /** The ripple bump draws the wind sea (the tier with no field of it). */
   bump: boolean;
 };
 
 const mod = (x: string, y: string): string => `(${x}-${y}*floor((${x})/${y}))`;
 
+/** The cascades' size and their tiles' lengths, metres (`oceanSpectrum.ts`). */
+const FFT_CONSTS_WGSL = /* wgsl */ `
+const FFT_N:f32=256.0;
+const FFT_CASCADE_0:f32=1000.0;
+const FFT_CASCADE_1:f32=150.0;
+const FFT_CASCADE_2:f32=25.0;`;
+
+/**
+ * The cascades' branch before the loop's, where the look reads them: `body`
+ * while the wind sea's mode says the cascades are drawn, else the loop's
+ * branch, which follows. Nothing where the look has no cascades.
+ */
+function cascadesBranch(look: SeaLook): (body: string) => string {
+  return (body) => (look.fft === true ? `if(material.oceanCoast.w>1.5){
+    ${body}
+  }else ` : "");
+}
+
 /** `oceanSurface.fx` and `oceanSwash.fx`: the swell's sum, the wind sea's field and the swash's sheet, for both stages. */
 export function seaSurfaceWgsl(look: SeaLook): string {
-  const loop = !look.loop ? "" : /* wgsl */ `
+  const cascades = cascadesBranch(look);
+  const loop = !look.loop ? "" : /* wgsl */ `${look.fft === true ? FFT_CONSTS_WGSL : ""}
 fn oceanWindFrame(p:vec2<f32>)->vec2<f32>{
   let d=material.oceanWindDir.xy;
   let r=p-material.oceanWindPivot.xy;
@@ -96,7 +122,9 @@ fn oceanWindRingKeep(size:f32,cell:f32)->f32{
 fn oceanWindDisplaceAt(p:vec2<f32>,cell:f32)->vec3<f32>{
   let w=oceanWindFrame(p);
   var t=vec3<f32>(0.0);
-  if(material.oceanCoast.w>0.5){
+  ${cascades(`t=textureSampleLevel(oceanWindDisp,oceanWindDispSampler,w/FFT_CASCADE_0,0,0.0).xyz*oceanWindRingKeep(FFT_CASCADE_0,cell)
+      +textureSampleLevel(oceanWindDisp,oceanWindDispSampler,w/FFT_CASCADE_1,1,0.0).xyz*oceanWindRingKeep(FFT_CASCADE_1,cell)
+      +textureSampleLevel(oceanWindDisp,oceanWindDispSampler,w/FFT_CASCADE_2,2,0.0).xyz*oceanWindRingKeep(FFT_CASCADE_2,cell);`)}if(material.oceanCoast.w>0.5){
     let size=oceanLoopSize();
     t=oceanLoopRead(w/size)*(size/LOOP_SIZE)*oceanWindRingKeep(size,cell);
   }
@@ -449,6 +477,7 @@ fn waterRainSlope(xz:vec2<f32>)->vec2<f32>{
 
 /** `oceanShade.fragment.fx`: the white water, the whitecaps, the wind sea's slopes and the plunging lip. */
 export function seaShadeWgsl(look: SeaLook): string {
+  const cascades = cascadesBranch(look);
   const loop = !look.loop ? "" : /* wgsl */ `
 fn oceanWindPixelKeep(size:f32,n:f32,pixel:f32)->f32{
   return 1.0-smoothstep(OCEAN_RESOLVE_PHASE_LO,OCEAN_RESOLVE_PHASE_HI,0.5*OCEAN_TWO_PI*n*pixel/size);
@@ -459,7 +488,13 @@ fn oceanWindSlopesAt(p:vec2<f32>,pixel:f32)->OceanWindSlopes{
   var g=vec2<f32>(0.0);
   var o:OceanWindSlopes;
   o.drawn=0.0;
-  if(material.oceanCoast.w>0.5){
+  ${cascades(`let k0=oceanWindPixelKeep(FFT_CASCADE_0,FFT_N,pixel);
+    let k1=oceanWindPixelKeep(FFT_CASCADE_1,FFT_N,pixel);
+    let k2=oceanWindPixelKeep(FFT_CASCADE_2,FFT_N,pixel);
+    g=textureSampleLevel(oceanWindSlope,oceanWindDispSampler,w/FFT_CASCADE_0,0,0.0).xy*k0
+      +textureSampleLevel(oceanWindSlope,oceanWindDispSampler,w/FFT_CASCADE_1,1,0.0).xy*k1
+      +textureSampleLevel(oceanWindSlope,oceanWindDispSampler,w/FFT_CASCADE_2,2,0.0).xy*k2;
+    o.drawn=k0*k0*material.oceanWindStats.y+k1*k1*material.oceanWindStats.z+k2*k2*material.oceanWindStats.w;`)}if(material.oceanCoast.w>0.5){
     let size=oceanLoopSize();
     let uv=w/size;
     let e=1.0/LOOP_N;
@@ -473,7 +508,7 @@ fn oceanWindSlopesAt(p:vec2<f32>,pixel:f32)->OceanWindSlopes{
   return o;
 }
 fn oceanCrestKeep(pixel:f32)->f32{
-  return oceanWindPixelKeep(oceanLoopSize(),LOOP_N,pixel);
+  ${look.fft === true ? "if(material.oceanCoast.w>1.5){return oceanWindPixelKeep(FFT_CASCADE_1,FFT_N,pixel);}\n  " : ""}return oceanWindPixelKeep(oceanLoopSize(),LOOP_N,pixel);
 }
 fn oceanCapThreshold(coverage:f32)->f32{
   let s=sqrt(-2.0*log(clamp(coverage,1.0e-6,0.5)));
