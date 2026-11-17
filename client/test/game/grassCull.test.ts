@@ -4,14 +4,10 @@ import {
   cullInvalidate, cullPlanes, cullPrefix, cullSet, needsCull, viewPlanes, type CullPose,
 } from "../../src/game/grassCull.js";
 import { BOB_ROLL, MAX_BOB_SCALE } from "../../src/game/viewBob.js";
-import { NullEngine } from "@babylonjs/core/Engines/nullEngine.js";
-import { Scene } from "@babylonjs/core/scene.js";
-import { UniversalCamera } from "@babylonjs/core/Cameras/universalCamera.js";
-import { Frustum } from "@babylonjs/core/Maths/math.frustum.js";
-import { Vector3 } from "@babylonjs/core/Maths/math.vector.js";
 import { inCone } from "../../src/game/wildlifeDirector.js";
-import { CLUTTER_CULLED } from "../../src/game/clutterMeshes.js";
+import { CLUTTER_CULLED } from "../../src/game/clutterInstances.js";
 import { bladeReach, cardReach, CULLED_MODELS, seen, WIND_FRACTION } from "./helpers/cullReach.js";
+import { babylonValues } from "../helpers/babylonFixture.js";
 import { timeLimit } from "../helpers/timeLimit.js";
 
 const POSE: CullPose = { x: 0, y: 1.6, z: 0, yaw: 0, pitch: 0, roll: 0, fov: 1.4, aspect: 1200 / 2029 };
@@ -361,13 +357,12 @@ describe("the pass against a reference", () => {
 
 describe("the planes against Babylon's own frustum", () => {
   it("are the render camera's side planes, rolled or not, at no margin and no pushback", () => {
-    const engine = new NullEngine({ renderWidth: 1200, renderHeight: 2029, textureSize: 512, deterministicLockstep: false, lockstepMaxSteps: 1 });
-    const scene = new Scene(engine);
-    // The renderer's camera: a UniversalCamera driven by position and rotation (pitch, yaw, roll).
-    const camera = new UniversalCamera("camera", Vector3.Zero(), scene);
-    camera.fov = 1.4;
-    camera.minZ = 0.05;
-    camera.maxZ = 10000;
+    // The renderer's camera on Babylon.js: a UniversalCamera driven by position and rotation (pitch, yaw, roll), at
+    // the game's lens (fov 1.4, from 0.05 m to 10 km), under an engine drawing 1200 by 2029. What it gave at each
+    // pose below is recorded: its fov, the engine's aspect ratio for it, and its frustum's six planes.
+    type Plane = { normal: { x: number; y: number; z: number }; d: number };
+    const babylon = babylonValues<{ views: { pose: number[]; fov: number; aspect: number; planes: Plane[] }[] }>("numbers/cullFrustum.json");
+    const dot = (a: { x: number; y: number; z: number }, b: { x: number; y: number; z: number }): number => a.x * b.x + a.y * b.y + a.z * b.z;
     const poses: [number, number, number, number, number, number][] = [
       [0, 1.6, 0, 0, 0, 0],
       [123, 110.87, -105.5, 1.571, 0.3, 0],
@@ -376,31 +371,29 @@ describe("the planes against Babylon's own frustum", () => {
       [1, 1, 1, 0.4, 0.2, 0.3],
     ];
     let matched = 0;
-    for (const [x, y, z, yaw, pitch, roll] of poses) {
-      camera.position.set(x, y, z);
-      camera.rotation.set(pitch, yaw, roll);
-      camera.getViewMatrix(true);
-      camera.getProjectionMatrix(true);
-      const pose: CullPose = { x, y, z, yaw, pitch, roll, fov: camera.fov, aspect: engine.getAspectRatio(camera) };
+    expect(babylon.views.map((view) => view.pose)).toEqual(poses);
+    for (const [at, [x, y, z, yaw, pitch, roll]] of poses.entries()) {
+      const camera = babylon.views[at] as (typeof babylon.views)[number];
+      const pose: CullPose = { x, y, z, yaw, pitch, roll, fov: camera.fov, aspect: camera.aspect };
+      expect(pose.fov).toBe(1.4);
       expect(pose.aspect).toBeCloseTo(0.5914, 4);
       const ours = new Float32Array(20);
       viewPlanes(pose, 0, 0, ours);
       // Babylon's six, inward and normalised: near, far, left, right, top, bottom.
-      const theirs = Frustum.GetPlanes(camera.getTransformationMatrix());
+      const theirs = camera.planes;
+      expect(theirs).toHaveLength(6);
       for (let k = 0; k < 16; k += 4) {
-        const n = new Vector3(ours[k]!, ours[k + 1]!, ours[k + 2]!);
-        const best = theirs.slice(2).reduce((a, b) => (Vector3.Dot(a.normal, n) > Vector3.Dot(b.normal, n) ? a : b));
-        expect(Vector3.Dot(best.normal, n)).toBeGreaterThan(0.999999);
+        const n = { x: ours[k]!, y: ours[k + 1]!, z: ours[k + 2]! };
+        const best = theirs.slice(2).reduce((a, b) => (dot(a.normal, n) > dot(b.normal, n) ? a : b));
+        expect(dot(best.normal, n)).toBeGreaterThan(0.999999);
         expect(Math.abs(best.d - ours[k + 3]!)).toBeLessThan(0.002);
         matched++;
       }
       // The near plane faces the same way; Babylon's stands minZ in front of the eye.
       const near = theirs[0]!;
-      expect(Vector3.Dot(near.normal, new Vector3(ours[16]!, ours[17]!, ours[18]!))).toBeGreaterThan(0.999999);
+      expect(dot(near.normal, { x: ours[16]!, y: ours[17]!, z: ours[18]! })).toBeGreaterThan(0.999999);
       expect(Math.abs(near.d - (ours[19]! - 0.05))).toBeLessThan(0.002);
     }
     expect(matched).toBe(20);
-    scene.dispose();
-    engine.dispose();
   });
 });

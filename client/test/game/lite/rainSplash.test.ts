@@ -1,18 +1,19 @@
 import { describe, expect, it } from "vitest";
-import { ShaderStore } from "@babylonjs/core/Engines/shaderStore.js";
-import "@babylonjs/core/Shaders/default.fragment.js";
+import { babylonText } from "../../helpers/babylonFixture.js";
 import { FRAME_BLOCK, stageClocks, stageOwn, stageReads } from "../../../src/game/lite/frameBlock.js";
 import { SPLASH_FRAME_READS, SPLASH_WGSL } from "../../../src/game/lite/rainSplash.js";
-import { SplashPlugin } from "../../../src/game/rainSplash.js";
 import { emptySplashStageUniforms, emptySplashUniforms } from "../../../src/game/splashField.js";
 import { inOrder, tight } from "./wgslText.js";
 
-/** The splash plugin's own code at its points, and the Standard material's fragment stage, as installed. */
-const code = (stage: "vertex" | "fragment"): Record<string, string> => SplashPlugin.prototype.getCustomCode.call({}, stage) as Record<string, string>;
-const PLUGIN_DEFS = code("vertex")["CUSTOM_VERTEX_DEFINITIONS"] as string;
-const PLUGIN_VERTEX = code("vertex")["CUSTOM_VERTEX_UPDATE_POSITION"] as string;
-const PLUGIN_FRAGMENT = code("fragment")["CUSTOM_FRAGMENT_BEFORE_FRAGCOLOR"] as string;
-const STANDARD = tight(ShaderStore.ShadersStore["defaultPixelShader"] as string);
+/**
+ * The splash plugin's own code at its points on Babylon.js (`rainSplash.ts`: its vertex definitions, where it
+ * updates the position, and before the fragment's colour), and the Standard material's fragment stage, as
+ * Babylon.js installs it (all recorded).
+ */
+const PLUGIN_DEFS = babylonText("stages/splash.vertexDefinitions.glsl");
+const PLUGIN_VERTEX = babylonText("stages/splash.vertexUpdatePosition.glsl");
+const PLUGIN_FRAGMENT = babylonText("stages/splash.fragmentBeforeFragColor.glsl");
+const STANDARD = tight(babylonText("shaders/defaultPixelShader.glsl"));
 const VERTEX = tight(SPLASH_WGSL.vertex);
 const FRAGMENT = tight(SPLASH_WGSL.fragment);
 

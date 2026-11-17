@@ -9,7 +9,7 @@
  *
  * Loads no engine: it names the renderer's scenery by its types alone.
  */
-import type { FreecamView } from "../renderer.js";
+import type { FreecamView } from "../rendererTypes.js";
 import type { CaptionPanel } from "../scene/captions.js";
 import type { Frame } from "../scene/timeline.js";
 import type { LiteActor, LiteCar } from "./sceneryMeshes.js";

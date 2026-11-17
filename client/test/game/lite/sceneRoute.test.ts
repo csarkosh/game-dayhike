@@ -2,7 +2,7 @@ import { describe, expect, it, vi } from "vitest";
 import "../../../src/sim/passes/index.js";
 import { SETTLE_FRAMES, SETTLE_STRETCH, startLiteSceneRoute, type LiteSceneRouteDeps } from "../../../src/game/lite/sceneRoute.js";
 import type { LiteActor, LiteCar, SceneryHost } from "../../../src/game/lite/sceneryMeshes.js";
-import type { FreecamView, Renderer } from "../../../src/game/renderer.js";
+import type { FreecamView, Renderer } from "../../../src/game/rendererTypes.js";
 import { JUMP_M, WARM_FRAMES } from "../../../src/game/scene/cameraJump.js";
 import { INTRO_HOUR, INTRO_SHOTS, INTRO_WEATHER } from "../../../src/game/scene/intro.js";
 import { FILM_PATCH_DARKNESS } from "../../../src/game/scene/routeWorld.js";

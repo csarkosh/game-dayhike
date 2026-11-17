@@ -1,12 +1,12 @@
 import { describe, expect, it } from "vitest";
-import { ShaderStore } from "@babylonjs/core/Engines/shaderStore.js";
-import "@babylonjs/core/Shaders/ShadersInclude/imageProcessingFunctions.js";
+import { babylonText } from "../../helpers/babylonFixture.js";
 import { DISPLAY_CURVE_WGSL, DISPLAY_ENCODE_WGSL, DISPLAY_SHOWN_WGSL, GRADE_BLOCK, LINEAR_COLOUR_WGSL, MATERIAL_GRADE_WGSL, onColourPath } from "../../../src/game/lite/displayCurve.js";
 import { FRAME_BLOCK, inFrameBlock } from "../../../src/game/lite/frameBlock.js";
 import { emptyMaterialGradeUniforms } from "../../../src/game/materialGrade.js";
 import { inOrder, tight } from "./wgslText.js";
 
-const BABYLON = tight(ShaderStore.IncludesShadersStore["imageProcessingFunctions"] as string);
+/** Babylon.js's image processing include, as it installs it (recorded). */
+const BABYLON = tight(babylonText("shaders/imageProcessingFunctions.glsl"));
 const WGSL = tight(DISPLAY_CURVE_WGSL);
 
 describe("the material colour path in WGSL", () => {

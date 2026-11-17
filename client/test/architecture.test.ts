@@ -497,7 +497,10 @@ describe("layer boundaries", () => {
       }
       return seen;
     };
-    const webgl2 = graph(join(SRC, "main.ts"));
+    // The page loads no module of Babylon.js any more, with the hike under it or without: the WebGL2 path
+    // is what the renderer on Babylon.js loads, and the two engines now meet only where that renderer is built.
+    expect([...graph(join(SRC, "main.ts"))].filter((f) => f.includes("@babylonjs"))).toEqual([]);
+    const webgl2 = graph(join(SRC, "game/renderer.ts"));
     const webgpu = [...graph(join(SRC, "game/gpuEngine.ts"))].filter((f) => f.includes("@babylonjs") && !webgl2.has(f));
     // What registers on load, at the top level of a module: a call such as
     // `RegisterTools();`, a bare import, a class registered by name, a
@@ -729,6 +732,8 @@ describe("layer boundaries", () => {
       join(SRC, "game", "endScene.ts"),
       join(SRC, "game", "carParts.ts"),
       join(SRC, "game", "loadReport.ts"),
+      join(SRC, "game", "rendererTypes.ts"),
+      join(SRC, "game", "hikeRenderer.ts"),
       join(SRC, "game", "scene", "routeWorld.ts"),
       join(SRC, "game", "scene", "scenePlayer.ts"),
       join(SRC, "game", "scene", "actorPose.ts"),
@@ -1014,10 +1019,11 @@ describe("layer boundaries", () => {
    * scaling and the render scale under the paint, the watch a renderer
    * keeps on an engine it made for itself, the count of what a device is
    * asked to make of shaders, and the measurement mode's report. Both
-   * renderers read the rule that says where the render scale runs.
+   * renderers read the rule that says where the render scale runs, and both
+   * answer the one type a renderer is held by (`rendererTypes.ts`).
    */
   it("what a renderer is sized and started by is computed without loading Babylon, whatever it imports", () => {
-    const ENGINE_FREE = ["frameSize.ts", "renderScale.ts", "quality.ts", "engineWatch.ts", "deviceMakes.ts", "gpuTimeTasks.ts", "gpuTimeReport.ts", "gpuFaults.ts", "deviceHeld.ts", "lossBound.ts"];
+    const ENGINE_FREE = ["frameSize.ts", "renderScale.ts", "quality.ts", "engineWatch.ts", "deviceMakes.ts", "gpuTimeTasks.ts", "gpuTimeReport.ts", "gpuFaults.ts", "deviceHeld.ts", "lossBound.ts", "rendererTypes.ts"];
     const loaded = (file: string): string[] =>
       [...readFileSync(file, "utf8").matchAll(/^\s*(?:import|export)\s+(?!type\s)(?:[^"'();]*?\s+from\s+)?["']([^"']+)["']/gm)].map((m) => m[1] as string);
     const seen = new Set<string>();
@@ -1130,10 +1136,104 @@ describe("layer boundaries", () => {
       "game/lite/lakeMeshes.ts", "game/lite/lakePanorama.ts", "game/lite/lipMeshes.ts", "game/lite/listMeshes.ts", "game/lite/midgeMeshes.ts", "game/lite/mistMeshes.ts", "game/lite/motes.ts", "game/lite/postChain.ts", "game/lite/propMeshes.ts", "game/lite/rain.ts", "game/lite/rainMap.ts", "game/lite/rainSplash.ts", "game/lite/renderer.ts", "game/lite/sceneActor.ts", "game/lite/sceneryMeshes.ts", "game/lite/sceneryModels.ts", "game/lite/sceneryPaint.ts", "game/lite/seaFft.ts", "game/lite/seaMeshes.ts", "game/lite/shadeMask.ts", "game/lite/shadeVeil.ts", "game/lite/shaderUniforms.ts",
       "game/lite/skinnedModels.ts", "game/lite/skyCapture.ts", "game/lite/skyDome.ts", "game/lite/surfSpray.ts", "game/lite/terrainMeshes.ts", "game/lite/waterBed.ts", "game/lite/waterPlantMeshes.ts", "game/lite/wildlifeMeshes.ts", "game/lite/wornLamps.ts",
     ]);
-    // And the hike is handed that renderer, which reaches the Babylon.js one's module for its types alone.
-    const renderer = readFileSync(join(SRC, "game/renderer.ts"), "utf8");
-    expect(renderer).toContain("  return createLiteRenderer(canvas, level, forest, options);");
-    expect(loaded(join(SRC, "game/lite/renderer.ts")).filter((spec) => spec === "../renderer.js")).toEqual([]);
+    // And the hike is handed that renderer by a module that loads it and nothing else that draws.
+    expect(readFileSync(join(SRC, "game/hikeRenderer.ts"), "utf8")).toContain("  return createLiteRenderer(canvas, level, forest, options);");
+    expect(loaded(join(SRC, "game/hikeRenderer.ts"))).toEqual(["./lite/renderer.js"]);
+    // Nothing under game/lite/ names the module of the renderer on Babylon.js, for a value or for a type.
+    expect(own.filter((file) => importsOf(file).includes("../renderer.js")).map((file) => relative(SRC, file))).toEqual([]);
+  });
+
+  /**
+   * A renderer is held by types alone (`rendererTypes.ts`): the hike, the
+   * ladders that swap one renderer for another, the staged scenes and the
+   * renderer on Babylon Lite name them there, and naming them loads nothing.
+   * The renderer on Babylon.js answers the same type, which it takes from
+   * there too, and does not load the hike's renderer.
+   */
+  it("holds a renderer by types that load nothing: the hike's, the swap's, the staged scenes' and both renderers' name them in one module", () => {
+    const loaded = (file: string): string[] =>
+      [...readFileSync(file, "utf8").matchAll(/^\s*(?:import|export)\s+(?!type\s)(?:[^"'();]*?\s+from\s+)?["']([^"']+)["']/gm)].map((m) => m[1] as string);
+    const types = join(SRC, "game/rendererTypes.ts");
+    // Every import of it is a type's, and it names nothing of an engine's own package.
+    expect(loaded(types)).toEqual([]);
+    expect(importsOf(types).length).toBeGreaterThan(10);
+    expect(importsOf(types).filter((spec) => spec.startsWith("@babylonjs"))).toEqual([]);
+    const text = readFileSync(types, "utf8");
+    for (const name of ["FreecamView", "FrameView", "Renderer", "RendererOptions"]) expect(text, name).toContain(`export type ${name} = {`);
+    // Each of them is defined once in src/.
+    const defined = sourceFiles(SRC).flatMap((file) =>
+      [...stripComments(readFileSync(file, "utf8")).matchAll(/\bexport type (?:FreecamView|FrameView|Renderer|RendererOptions) =/g)].map(() => relative(SRC, file)),
+    );
+    expect(defined).toEqual(["game/rendererTypes.ts", "game/rendererTypes.ts", "game/rendererTypes.ts", "game/rendererTypes.ts"]);
+    // Who holds a renderer takes the types from there.
+    for (const holder of ["app.ts", "game/hikeRenderer.ts", "game/rendererSwap.ts", "game/scene/sceneStage.ts", "game/lite/renderer.ts", "game/lite/notDrawn.ts", "game/lite/probeScene.ts", "game/lite/sceneRoute.ts", "game/lite/sceneStage.ts", "game/lite/sceneryMeshes.ts"]) {
+      const specs = importsOf(join(SRC, holder));
+      expect(specs.some((spec) => spec.endsWith("/rendererTypes.js")), holder).toBe(true);
+    }
+    // The renderer on Babylon.js takes them from there and names them on for what builds on it; it loads no renderer but itself.
+    const babylon = readFileSync(join(SRC, "game/renderer.ts"), "utf8");
+    expect(babylon).toContain('import type { FrameView, FreecamView, Renderer, RendererOptions } from "./rendererTypes.js";');
+    expect(babylon).toContain("export type { FrameView, FreecamView, Renderer, RendererOptions };");
+    expect(importsOf(join(SRC, "game/renderer.ts"))).not.toContain("./lite/renderer.js");
+  });
+
+  /**
+   * A hike loads no Babylon.js: not `app.ts` by an import of its own (the
+   * test above) and not anything it imports, by an import or by a dynamic
+   * one, however deep. What it loads of an engine is Babylon Lite, through
+   * the renderer it is handed (`hikeRenderer.ts`). So what it is told by
+   * comes from the modules that compute it with no engine (`skyWait.ts`,
+   * `droppedCap.ts`, `loadReport.ts`), never from the shell on Babylon.js
+   * that names them on, and the scenery it places once is asked of its
+   * renderer (`hikeScenery.ts`), which builds into no Babylon scene.
+   */
+  it("loads no Babylon.js under a hike: nothing app.ts imports, by an import or a dynamic one, reaches a module that loads it", () => {
+    const loads = (file: string): string[] => {
+      const text = readFileSync(file, "utf8");
+      const imported = [...text.matchAll(/^\s*(?:import|export)\s+(?!type\s)(?:[^"'();]*?\s+from\s+)?["']([^"']+)["']/gm)].map((m) => m[1] as string);
+      const asked = [...stripComments(text).matchAll(/\bimport\(\s*["']([^"']+)["']\s*\)/g)].map((m) => m[1] as string);
+      return [...imported, ...asked];
+    };
+    /** Every module `entry` loads, with the Babylon.js each loads (and the chain it is reached by) and the modules that load Babylon Lite. */
+    const reach = (entry: string): { seen: number; babylon: string[]; lite: string[] } => {
+      const from = new Map<string, string | null>([[entry, null]]);
+      const queue = [entry];
+      const babylon: string[] = [];
+      const lite: string[] = [];
+      for (let at = 0; at < queue.length; at++) {
+        const file = queue[at] as string;
+        if (!existsSync(file)) continue;
+        for (const spec of loads(file)) {
+          if (spec === "@babylonjs/lite") lite.push(relative(SRC, file));
+          else if (spec.startsWith("@babylonjs")) {
+            const chain: string[] = [];
+            for (let f: string | null = file; f !== null; f = from.get(f) ?? null) chain.unshift(relative(SRC, f));
+            babylon.push(`${chain.join(" > ")} loads ${spec}`);
+          }
+          if (!spec.startsWith(".") || !spec.endsWith(".js")) continue;
+          const next = join(file, "..", spec.replace(/\.js$/, ".ts"));
+          if (!from.has(next)) {
+            from.set(next, file);
+            queue.push(next);
+          }
+        }
+      }
+      return { seen: from.size, babylon, lite: [...new Set(lite)] };
+    };
+    const hike = reach(join(SRC, "app.ts"));
+    // Guards against the guard: the walk goes through the whole hike, finds the engine it does load, and finds
+    // Babylon.js where it is loaded (the renderer on Babylon.js, which no hike reaches).
+    expect(hike.seen).toBeGreaterThan(300);
+    expect(hike.lite).toContain("game/lite/renderer.ts");
+    expect(reach(join(SRC, "game/renderer.ts")).babylon.length).toBeGreaterThan(50);
+    expect(reach(join(SRC, "game/webgl2Shaders.ts")).babylon.length).toBeGreaterThan(10);
+    expect(hike.babylon).toEqual([]);
+    // What the hike is told by is taken where it is computed, and its scenery is asked of its renderer alone.
+    const app = importsOf(join(SRC, "app.ts"));
+    for (const home of ["./game/skyWait.js", "./game/droppedCap.js", "./game/loadReport.js", "./game/hikeRenderer.js", "./game/hikeScenery.js"]) expect(app, home).toContain(home);
+    for (const shell of ["./game/renderer.js", "./game/lighting.js", "./game/droppedItem.js", "./game/modelLoad.js", "./game/atmosphere.js", "./game/webgl2Shaders.js"]) expect(app, shell).not.toContain(shell);
+    expect(loads(join(SRC, "game/hikeScenery.ts")).filter((spec) => spec.startsWith("./"))).toEqual(["./boardImages.js", "./boardDraw.js", "./posterPanel.js", "./lite/sceneryMeshes.js"]);
+    expect(importsOf(join(SRC, "game/clutterField.ts"))).not.toContain("./distanceFadePlugin.js");
   });
 
   /**

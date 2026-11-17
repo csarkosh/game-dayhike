@@ -38,7 +38,7 @@ import catalog from "../../../assets/catalog.json" with { type: "json" };
 import type { WorldState } from "../../sim/types.js";
 import { resolveCharacterAssets } from "../characterAssets.js";
 import type { QualityTier } from "../quality.js";
-import type { FreecamView, Renderer } from "../renderer.js";
+import type { FreecamView, Renderer } from "../rendererTypes.js";
 import { SETTLE_MAX_MS, WARM_FRAMES, cameraJumped } from "../scene/cameraJump.js";
 import { createCaptionPanel } from "../scene/captions.js";
 import { INTRO_RANGER } from "../scene/intro.js";

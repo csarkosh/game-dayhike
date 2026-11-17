@@ -1,24 +1,33 @@
 import { describe, expect, it } from "vitest";
-import { Matrix, Vector3 } from "@babylonjs/core/Maths/math.vector.js";
-import { Frustum } from "@babylonjs/core/Maths/math.frustum.js";
 import { cameraAxes, projectToCanvas, restAxes, restPlanes, viewCorners, viewPlanes, type CameraPose } from "../../../src/game/lite/cameraPose.js";
+
+import { babylonValues } from "../../helpers/babylonFixture.js";
 
 const POSES: [number, number, number][] = [
   [0, 0, 0], [0.7, 0, 0], [0, 0.4, 0], [0, 0, 0.3], [1.09, -0.35, 0.0105], [-2.4, 1.1, -0.6], [3.14, 0.2, 0.5],
 ];
+/**
+ * What Babylon.js gave for each of those poses, recorded: +z, +y and +x turned by its
+ * `Matrix.RotationYawPitchRoll`, and the six planes `Frustum.GetPlanes` cuts the view by, from the eye and the
+ * lens the planes' test below uses and a view matrix looking along this module's own axes for the pose.
+ */
+const BABYLON = babylonValues<{
+  poses: [number, number, number][];
+  axes: { forward: number[]; up: number[]; right: number[] }[];
+  planes: { normal: { x: number; y: number; z: number }; d: number }[][];
+}>("numbers/cameraPose.json");
 
 describe("the camera's axes from its yaw, pitch and roll", () => {
   it("are the ones Babylon's camera makes of the same rotation", () => {
-    for (const [yaw, pitch, roll] of POSES) {
-      const turned = Matrix.RotationYawPitchRoll(yaw, pitch, roll);
+    expect(BABYLON.poses).toEqual(POSES);
+    for (const [n, [yaw, pitch, roll]] of POSES.entries()) {
       const axes = cameraAxes(yaw, pitch, roll, restAxes());
-      const forward = Vector3.TransformNormal(new Vector3(0, 0, 1), turned);
-      const up = Vector3.TransformNormal(new Vector3(0, 1, 0), turned);
-      const right = Vector3.TransformNormal(new Vector3(1, 0, 0), turned);
+      const { forward, up, right } = BABYLON.axes[n] as (typeof BABYLON.axes)[number];
+      expect([forward.length, up.length, right.length]).toEqual([3, 3, 3]);
       const label = `${yaw} ${pitch} ${roll}`;
-      expect([axes.fx, axes.fy, axes.fz].map((v, i) => v - forward.asArray()[i]!).every((d) => Math.abs(d) < 1e-6), label).toBe(true);
-      expect([axes.ux, axes.uy, axes.uz].map((v, i) => v - up.asArray()[i]!).every((d) => Math.abs(d) < 1e-6), label).toBe(true);
-      expect([axes.rx, axes.ry, axes.rz].map((v, i) => v - right.asArray()[i]!).every((d) => Math.abs(d) < 1e-6), label).toBe(true);
+      expect([axes.fx, axes.fy, axes.fz].map((v, i) => v - forward[i]!).every((d) => Math.abs(d) < 1e-6), label).toBe(true);
+      expect([axes.ux, axes.uy, axes.uz].map((v, i) => v - up[i]!).every((d) => Math.abs(d) < 1e-6), label).toBe(true);
+      expect([axes.rx, axes.ry, axes.rz].map((v, i) => v - right[i]!).every((d) => Math.abs(d) < 1e-6), label).toBe(true);
     }
   });
 
@@ -78,14 +87,14 @@ describe("the view's six planes", () => {
     const aspect = 1470 / 956;
     const near = 0.1;
     const far = 600;
-    for (const [yaw, pitch, roll] of POSES) {
+    let compared = 0;
+    for (const [n, [yaw, pitch, roll]] of POSES.entries()) {
       const eye: CameraPose = { x: 12, y: 30, z: -7, yaw, pitch, roll };
       const axes = cameraAxes(yaw, pitch, roll, restAxes());
       const ours = viewPlanes(eye, axes, fov, aspect, near, far, restPlanes());
-      const view = Matrix.LookAtLH(
-        new Vector3(eye.x, eye.y, eye.z), new Vector3(eye.x + axes.fx, eye.y + axes.fy, eye.z + axes.fz), new Vector3(axes.ux, axes.uy, axes.uz),
-      );
-      const theirs = Frustum.GetPlanes(view.multiply(Matrix.PerspectiveFovLH(fov, aspect, near, far)));
+      // Babylon.js's six, from `Matrix.LookAtLH(eye, eye + forward, up)` by `Matrix.PerspectiveFovLH(fov, aspect, near, far)`.
+      const theirs = BABYLON.planes[n] as (typeof BABYLON.planes)[number];
+      expect(theirs).toHaveLength(6);
       for (const plane of ours) expect(Math.hypot(plane.normal.x, plane.normal.y, plane.normal.z)).toBeCloseTo(1, 9);
       // Points all round the eye, near and far: each is inside both sets of planes or outside both.
       for (let i = 0; i < 400; i++) {
@@ -99,8 +108,11 @@ describe("the view's six planes", () => {
         // A point within a hair of a plane may fall either side by rounding: only the clear ones are compared.
         if (inside(theirs, 0.05) !== inside(theirs, -0.05)) continue;
         expect(inside(ours, 0), `${yaw} ${pitch} ${roll} ${i}`).toBe(inside(theirs, 0));
+        compared++;
       }
     }
+    // Most of the points stand clear of every plane, and so are compared.
+    expect(compared).toBeGreaterThan(2000);
   });
 
   it("fills the planes it is handed: near, far, left, right, top, bottom, each facing in", () => {

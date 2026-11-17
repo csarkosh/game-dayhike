@@ -1,15 +1,13 @@
 import { describe, expect, it } from "vitest";
-import { ShaderStore } from "@babylonjs/core/Engines/shaderStore.js";
-import "@babylonjs/core/Shaders/particles.fragment.js";
-import "@babylonjs/core/Shaders/particles.vertex.js";
+import { babylonText } from "../../helpers/babylonFixture.js";
 import { FRAME_BLOCK, stageClocks, stageOwn, stageReads } from "../../../src/game/lite/frameBlock.js";
 import { MOTES_FRAME_READS, MOTES_WGSL } from "../../../src/game/lite/motes.js";
 import { MOTE_BOX, MOTE_SALT, emptyMoteUniforms } from "../../../src/game/moteField.js";
 import { inOrder, tight } from "./wgslText.js";
 
-/** Babylon.js's particle stages, as installed. */
-const PARTICLE_FRAGMENT = tight(ShaderStore.ShadersStore["particlesPixelShader"] as string);
-const PARTICLE_VERTEX = tight(ShaderStore.ShadersStore["particlesVertexShader"] as string);
+/** Babylon.js's particle stages, as it installs them (recorded). */
+const PARTICLE_FRAGMENT = tight(babylonText("shaders/particlesPixelShader.glsl"));
+const PARTICLE_VERTEX = tight(babylonText("shaders/particlesVertexShader.glsl"));
 const VERTEX = tight(MOTES_WGSL.vertex);
 const FRAGMENT = tight(MOTES_WGSL.fragment);
 /** `moteField.ts`'s own text: the stage's steps in plain code. */

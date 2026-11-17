@@ -2,12 +2,15 @@ import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 import { RAIN_MAP_RINGS, RAIN_MAP_WGSL, rainMapPlugin } from "../../../src/game/lite/rainMap.js";
 import { TERRAIN_VERTEX_FLOATS, TERRAIN_VERTEX_LAYOUT } from "../../../src/game/lite/terrainPlugins.js";
-import { RAIN_HEIGHT_FRAGMENT, RAIN_HEIGHT_VERTEX } from "../../../src/game/rainMap.js";
 import { rainMapTexel } from "../../../src/game/rainCover.js";
 import { RAIN_MAP } from "../../../src/game/rainParams.js";
 import { TERRAIN_ATTRIBUTES } from "../../../src/game/terrainVertices.js";
+import { babylonText } from "../../helpers/babylonFixture.js";
 import { tight } from "./wgslText.js";
 
+/** The height shader's two stages on Babylon.js (`rainMap.ts`), recorded. */
+const RAIN_HEIGHT_FRAGMENT = babylonText("stages/rainHeight.fragment.glsl");
+const RAIN_HEIGHT_VERTEX = babylonText("stages/rainHeight.vertex.glsl");
 const GLSL = tight(RAIN_HEIGHT_FRAGMENT);
 
 describe("the cover map's texel on Babylon Lite", () => {

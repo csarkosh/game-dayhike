@@ -5,9 +5,9 @@ import {
   rainInstancesDrawn, rainMilk, rainStageUniforms, rainStreakMap, type RainLamp,
 } from "../../src/game/rainField.js";
 import { DRIP, DRIP_TIERS, RAIN_BOX, RAIN_CLASSES, RAIN_FOLD_S, RAIN_MAP, RAIN_TIERS, rainSeeds } from "../../src/game/rainParams.js";
-import { RainPlugin } from "../../src/game/rainPlugin.js";
 import { WEATHER_PRESETS } from "../../src/game/weather.js";
 import { windRecordUnder } from "../../src/game/windParams.js";
+import { babylonValues } from "../helpers/babylonFixture.js";
 
 const STILL = windRecordUnder(WEATHER_PRESETS.clear, 0, 0);
 const CAM = { x: 10, y: 5, z: -20 };
@@ -48,8 +48,9 @@ describe("the rain's sprite, seeds and colour", () => {
 
 describe("a volume's uniforms", () => {
   it("are the streak plugin's, name for name and component for component", () => {
-    // The plugin's own list is the one its material's buffer is laid out by.
-    const declared = RainPlugin.prototype.getUniforms.call({}).ubo;
+    // The plugin's own list on Babylon.js (`rainPlugin.ts`, recorded) is the one its material's buffer is laid out by.
+    const declared = babylonValues<{ rainUniforms: { name: string; size: number }[] }>("stages/declared.json").rainUniforms;
+    expect(declared.length).toBeGreaterThan(10);
     const record = emptyRainUniforms();
     expect(Object.keys(record)).toEqual(declared.map((u) => u.name));
     for (const u of declared) expect((record as Record<string, number[]>)[u.name], u.name).toHaveLength(u.size);

@@ -8,12 +8,8 @@ import { DITHER_LSB, HALATION_CAP, HALATION_THRESHOLD, PAINT_JOINT_SHARPNESS, PA
 import {
   FAR_SOFT_WGSL, HALATION_EXTRACT_WGSL, LENS_WGSL, PAINT_WGSL, POST_VERTEX_WGSL, TAA_SHARPEN_WGSL, TAA_WGSL, blurKernel, blurTaps, blurWgsl, depthResolveWgsl, gradeWgsl, passLayout, writePass,
 } from "../../../src/game/lite/postWgsl.js";
-import { NullEngine } from "@babylonjs/core/Engines/nullEngine.js";
-import { UniversalCamera } from "@babylonjs/core/Cameras/universalCamera.js";
-import { Vector2, Vector3 } from "@babylonjs/core/Maths/math.vector.js";
-import { BlurPostProcess } from "@babylonjs/core/PostProcesses/blurPostProcess.js";
-import { Scene } from "@babylonjs/core/scene.js";
 import { HALATION_KERNEL, HALATION_RATIO } from "../../../src/game/postFrame.js";
+import { babylonValues } from "../../helpers/babylonFixture.js";
 import { inOrder, tight } from "./wgslText.js";
 
 const glsl = (name: string): string => readFileSync(new URL(`../../../src/game/shaders/${name}.fragment.fx`, import.meta.url), "utf8");
@@ -230,13 +226,13 @@ describe("the post chain's passes in WGSL", () => {
   });
 
   it("blurs the halation with the kernel and the reads Babylon.js's blur pass makes for the game's", () => {
-    // Babylon.js's own pass, made as the game makes the halation's, says its reads in its shader's defines.
-    const engine = new NullEngine();
-    const scene = new Scene(engine);
-    const camera = new UniversalCamera("cam", new Vector3(0, 0, 0), scene);
-    const blur = new BlurPostProcess("halationBlurX", new Vector2(1, 0), HALATION_KERNEL, HALATION_RATIO, camera);
+    // Babylon.js's own pass, made as the game makes the halation's (`new BlurPostProcess` along x with the game's
+    // kernel and ratio), says its reads in its shader's defines: the kernel it then said it had and those defines,
+    // recorded.
+    const blur = babylonValues<{ asked: { kernel: number; ratio: number }; kernel: number; defines: string }>("numbers/halationBlur.json");
+    expect(blur.asked).toEqual({ kernel: HALATION_KERNEL, ratio: HALATION_RATIO });
     expect(blur.kernel).toBe(HALATION_KERNEL);
-    const defines = (blur as unknown as { _effectWrapper: { options: { defines: string } } })._effectWrapper.options.defines;
+    const defines = blur.defines;
     const number = (name: string): number[] => [...defines.matchAll(new RegExp(`#define ${name}(\\d+) ([-0-9.]+)`, "g"))].map((m) => Number(m[2]));
     const offsets = [...number("KERNEL_OFFSET"), ...number("KERNEL_DEP_OFFSET")];
     const weights = [...number("KERNEL_WEIGHT"), ...number("KERNEL_DEP_WEIGHT")];
@@ -249,8 +245,6 @@ describe("the post chain's passes in WGSL", () => {
     const wgsl = blurWgsl(HALATION_KERNEL);
     expect(wgsl.match(/blend\+=textureSampleLevel\(textureSampler,postSampler,tx\(vUV\+u\.delta\*/g)).toHaveLength(offsets.length);
     expect(wgsl).toContain(`tx(vUV+u.delta*${(ours.offsets[0] as number).toFixed(8)}),0.0)*${(ours.weights[0] as number).toFixed(8)};`);
-    scene.dispose();
-    engine.dispose();
   });
 
   it("resolves the depth as the mean of a pixel's samples, each its distance along the view and nothing where nothing was drawn", () => {
