@@ -1,11 +1,22 @@
 import { describe, expect, it } from "vitest";
-import { Matrix, Quaternion, Vector3 } from "@babylonjs/core/Maths/math.vector.js";
 import { matrixMultiply } from "../../src/game/instancePose.js";
 import { bakeGeometry, boundsOf, chainMatrix, mirrors, type PlacedNode } from "../../src/game/modelBake.js";
+import { babylonValues } from "../helpers/babylonFixture.js";
+
+/**
+ * What Babylon.js gave, recorded: the quaternion of each node's Euler angles (`Quaternion.FromEulerAngles`, by the
+ * angles), the matrix of the chain below as it multiplies a child's by its parent's, and two composed matrices.
+ */
+const BABYLON = babylonValues<{ quats: Record<string, number[]>; chain: number[]; a: number[]; b: number[] }>("numbers/modelBake.json");
+const turned = (euler: [number, number, number]): PlacedNode["rotationQuaternion"] => {
+  const q = BABYLON.quats[euler.join(",")];
+  if (q === undefined) throw new Error(`no quaternion recorded for the angles ${euler.join(", ")}`);
+  return { x: q[0] as number, y: q[1] as number, z: q[2] as number, w: q[3] as number };
+};
 
 const node = (position: [number, number, number], euler: [number, number, number], scaling: [number, number, number]): PlacedNode => ({
   position: { x: position[0], y: position[1], z: position[2] },
-  rotationQuaternion: Quaternion.FromEulerAngles(...euler),
+  rotationQuaternion: turned(euler),
   scaling: { x: scaling[0], y: scaling[1], z: scaling[2] },
 });
 /** A glTF loader's root in a left-handed scene: the mirror across x. */
@@ -22,20 +33,18 @@ const triangle = (): { positions: Float32Array; normals: Float32Array; tangents:
 describe("a loaded model's geometry stood where its nodes put it", () => {
   it("multiplies a chain of nodes root first, as Babylon multiplies a child's matrix by its parent's", () => {
     const chain = [ROOT, node([1, 2, 3], [0.2, -0.7, 0.4], [2, 2, 2]), node([-4, 0.5, 9], [1.1, 0.3, -0.2], [1, 1, 1])];
-    let want = Matrix.Identity();
-    for (const n of chain) {
-      const q = n.rotationQuaternion as Quaternion;
-      const local = Matrix.Compose(new Vector3(n.scaling.x, n.scaling.y, n.scaling.z), q, new Vector3(n.position.x, n.position.y, n.position.z));
-      // Babylon's row vectors: a child's world is its local times its parent's.
-      want = local.multiply(want);
-    }
+    // Babylon's row vectors: a child's world is its local (`Matrix.Compose` of its scale, turn and place) times its parent's.
+    const want = BABYLON.chain;
+    expect(want).toHaveLength(16);
     const got = chainMatrix(chain);
-    for (let i = 0; i < 16; i++) expect(got[i], `float ${i}`).toBeCloseTo(want.m[i] as number, 4);
+    for (let i = 0; i < 16; i++) expect(got[i], `float ${i}`).toBeCloseTo(want[i] as number, 4);
   });
 
   it("multiplies into either operand", () => {
-    const a = [...Matrix.Compose(new Vector3(1, 2, 3), Quaternion.FromEulerAngles(0.3, 0.2, 0.1), new Vector3(4, 5, 6)).m];
-    const b = [...Matrix.Compose(new Vector3(-1, 1, 1), Quaternion.FromEulerAngles(-0.5, 0.9, 0), new Vector3(0, 7, 0)).m];
+    // Two matrices Babylon.js composed: of a scale, a turn and a place each, the second a mirror.
+    const a = [...BABYLON.a];
+    const b = [...BABYLON.b];
+    expect([a.length, b.length]).toEqual([16, 16]);
     const fresh = new Float32Array(16);
     matrixMultiply(a, b, fresh);
     const into = [...a];

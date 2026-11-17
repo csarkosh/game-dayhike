@@ -1,26 +1,21 @@
 import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
-import { NullEngine, NullEngineOptions } from "@babylonjs/core/Engines/nullEngine.js";
-import { RenderTargetTexture } from "@babylonjs/core/Materials/Textures/renderTargetTexture.js";
-import { Scene } from "@babylonjs/core/scene.js";
 import {
   SHADE_MASK_RATIO, SHADE_SMOKE_FOLD_S, SHADE_SMOKE_FRAY, SHADE_SMOKE_SWELL_M, shadeMaskColour, shadeMaskSide, shadeMaskSize, shadeSmokeSeconds, shadeSmokeUniforms,
 } from "../../src/game/shadeMaskParams.js";
+
+import { babylonValues } from "../helpers/babylonFixture.js";
 
 const src = (name: string): string => readFileSync(new URL(`../../src/game/${name}`, import.meta.url), "utf8");
 
 describe("what the haunt's figures are drawn into their mask with", () => {
   it("sizes the mask as Babylon.js sizes a render target given the mask's ratio, at every frame's size", () => {
-    for (const [width, height] of [[1470, 956], [1920, 1080], [2560, 1440], [1280, 720], [975, 776], [640, 360], [390, 844], [300, 150], [3840, 2160]] as const) {
-      const options = new NullEngineOptions();
-      options.renderWidth = width;
-      options.renderHeight = height;
-      const engine = new NullEngine(options);
-      const scene = new Scene(engine);
-      const target = new RenderTargetTexture("mask", { ratio: SHADE_MASK_RATIO }, scene);
-      expect(shadeMaskSize(width, height), `${width} by ${height}`).toEqual({ width: target.getSize().width, height: target.getSize().height });
-      scene.dispose();
-      engine.dispose();
+    // The size Babylon.js gave a render target made with that ratio under an engine drawing each frame's size, recorded.
+    const babylon = babylonValues<{ ratio: number; sizes: { width: number; height: number; target: { width: number; height: number } }[] }>("numbers/shadeMask.json");
+    expect(babylon.ratio).toBe(SHADE_MASK_RATIO);
+    expect(babylon.sizes.map((size) => [size.width, size.height])).toEqual([[1470, 956], [1920, 1080], [2560, 1440], [1280, 720], [975, 776], [640, 360], [390, 844], [300, 150], [3840, 2160]]);
+    for (const { width, height, target } of babylon.sizes) {
+      expect(shadeMaskSize(width, height), `${width} by ${height}`).toEqual({ width: target.width, height: target.height });
     }
     // A laptop's window: half of 1470 is 735, taken to 512, the nearer power of two.
     expect(shadeMaskSize(1470, 956)).toEqual({ width: 512, height: 512 });
