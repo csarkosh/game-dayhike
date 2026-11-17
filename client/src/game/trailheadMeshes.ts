@@ -24,6 +24,7 @@ import { carModelOf, dimCabParts, type CarModel } from "./scene/sceneStage.js";
 import { TAIL_LAMP_APART, TAIL_LAMP_BACK, TAIL_LAMP_COLOUR, TAIL_LAMP_H, TAIL_LAMP_UP, TAIL_LAMP_W } from "./endScene.js";
 import { BOARD_FACE_LIFT, TRAILHEAD_CAR_OUTPUT, TRAILHEAD_KIOSK_OUTPUT, boardYaw, carYaw, type TrailheadSites } from "./sceneryParts.js";
 import { defaultModelLoader, loaderUntilAborted, placeStaticModel, type ModelLoader, type PlacedModel } from "./staticModel.js";
+import type { CarHandle } from "./scenePlay.js";
 import { attachWet, WET_CAP } from "./wetPlugin.js";
 import { effectsWaitingOn } from "./effectTurns.js";
 
@@ -45,16 +46,8 @@ export type TrailheadDeps = {
   loader?: ModelLoader;
 };
 
-/**
- * The car the end scene drives, as the hike passes it from its scenery to
- * the renderer that plays the scene: `leave()`, which takes it out of the
- * rain's cover as it drives off (the cover map is drawn once for a place,
- * and a car that has gone would keep the rain off the pad it left; once is
- * enough, again is nothing), and `tailLamps(on)`, which lights and shows the
- * film's car's tail lamps at its rear, or hides them (the parked car has
- * none).
- */
-export type CarHandle = { leave(): void; tailLamps(on: boolean): void };
+// The car the end scene drives, as the hike passes it to the renderer that plays the scene, is the scenes' own (`scenePlay.ts`); named from here too.
+export type { CarHandle } from "./scenePlay.js";
 
 /** That car with what the scene moves it by: its node, and its parts where
  * it has them. */

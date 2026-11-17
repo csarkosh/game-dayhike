@@ -25,24 +25,16 @@ import type { Vec3, WorldState } from "../sim/types.js";
 import type { Forest } from "../sim/forest.js";
 import { isHollow } from "../sim/hollow.js";
 import { STARE_LENS_REST, stareShadeUnder, stareSide, stepStareLens, type StareLens } from "./stareLens.js";
-import { endingPose, liftShare, type EndingBase, type EndingKind } from "./ending.js";
-import {
-  runnerPose, type RunnerPose,
-  DOOR_IN_M, HEADLAMP_CONE, HEADLAMP_INTENSITY, HEADLAMP_RANGE,
-  arrived, carDistance, carSpeed, endCar, endShot, endShotIndex, headlampAt, roadRelease, type EndShotContext, type LampAim,
-} from "./endScene.js";
-import { CATCH_AT_S } from "./carAudio.js";
-import { CAR_HALF } from "../sim/trailhead.js";
-import type { CarPose } from "./scene/timeline.js";
-import type { Road } from "./scene/roadPath.js";
+import type { EndingKind } from "./ending.js";
+import { HEADLAMP_CONE, HEADLAMP_INTENSITY, HEADLAMP_RANGE, type LampAim } from "./endScene.js";
 import { stageCar } from "./scene/sceneStage.js";
-import type { CarHandle, TrailheadCar } from "./trailheadMeshes.js";
+import type { TrailheadCar } from "./trailheadMeshes.js";
+import { createScenePlay, type EndSceneNow, type EndSceneSetup, type PlayCamera, type PlayNow } from "./scenePlay.js";
 import { createShadeSilhouette } from "./shadeSilhouette.js";
 import { createShadeVeil } from "./shadeVeil.js";
 import { cloudDensityNow, cloudGroundDue, cloudGroundMap, cloudStepsFor } from "./cloudParams.js";
 import { createDroppedCap, droppedCapAt } from "./droppedItem.js";
-import { CAP_SCENE_S, SHOTS, SUMMIT_SCENE_S, capPose, summitShot, type SceneBase, type SceneContext } from "./cutscene.js";
-import { MAX_PLAYERS, PLAYER_EYE_OFFSET, PLAYER_HALF } from "../sim/constants.js";
+import { MAX_PLAYERS, PLAYER_EYE_OFFSET } from "../sim/constants.js";
 import { blendedEye, type EyePose } from "./eyeBlend.js";
 import { createViewBob } from "./viewBob.js";
 import { FOG_DISTANCE } from "../sim/forestConstants.js";
@@ -86,7 +78,7 @@ import { buildAtOnce, type FirstBuilds } from "./firstBuilds.js";
 import { createPost, fxSupportedBy } from "./post.js";
 import { lensSmooth, lensStrengthUnder } from "./lensParams.js";
 import { postFeaturesFor } from "./postParams.js";
-import { createRenderScale } from "./renderScale.js";
+import { createRenderScale, renderScaleRuns } from "./renderScale.js";
 import { installGpuTimeReadout } from "./gpuTime.js";
 import type { GpuTimeReport } from "./gpuTimeReport.js";
 import { createSkinShading } from "./skin.js";
@@ -108,7 +100,7 @@ import {
   type WaterGeometry,
   type WaterRingSamples,
 } from "./water.js";
-import { SWASH_FACE_LIFT_M, SWASH_G } from "./swashRunUp.js";
+import { SWASH_FACE_LIFT_M } from "./swashRunUp.js";
 import { Constants } from "@babylonjs/core/Engines/constants.js";
 import { attachWater, type WaterPlugin } from "./waterPlugin.js";
 import { createBumpDrift } from "./waterSurface.js";
@@ -121,9 +113,10 @@ import type { OceanField } from "./oceanWaves.js";
 import { createSeaEdgeStep } from "./seaEdge.js";
 import type { SwashTable, SwashCove } from "./swashTable.js";
 import { createSwashTexture } from "./swashTexture.js";
-import { LIP_SPEED_MAX, LIP_SPEED_MIN, lipProfile, type LipTracker } from "./oceanBreaker.js";
+import { lipProfile, type LipTracker } from "./oceanBreaker.js";
 import { createOceanLip, type OceanLip } from "./oceanLip.js";
-import { SURF_SPRAY_BURSTS, SURF_SPRAY_RANGE_M, createSurfSpray, type SurfSpray } from "./surfSpray.js";
+import { createSprayThrow } from "./sprayField.js";
+import { createSurfSpray, type SurfSpray } from "./surfSpray.js";
 import { SILENT_SURF_SOUND, createSurfSound, fillSurfSound, type SurfSound } from "./surfSound.js";
 import { createBedFollow } from "./bedFollow.js";
 import type { BedGrid } from "./bedHeight.js";
@@ -156,9 +149,9 @@ import { createMotes, type Motes } from "./motes.js";
 import { createWaterLife, type WaterLife, type WaterLifeFrame } from "./waterLife.js";
 import { SILENT_WATER_LIFE, createPlayerSlots, pixelAtOneMetre, skyLumaOf } from "./waterLifeInputs.js";
 import type { WaterLifeSound } from "./waterLifeAudio.js";
-import { PROP_ROUGHNESS, propColour } from "./propBoxes.js";
+import { PROP_ROUGHNESS, brushBoxes, propColour } from "./propBoxes.js";
 import { createPropMeshes, type MeshRegistry, type PropShadows } from "./propMeshes.js";
-import { buildOrUndo, whenSceneReady } from "./rendererSwap.js";
+import { buildOrUndo, whenSceneReady, type WatchEngine } from "./rendererSwap.js";
 import { createCalmFade, lakeCalmUnder, type LakeCalmFrame } from "./lakeCalmFrame.js";
 import { lakeSunShare } from "./lakeRipples.js";
 import { SUN_PEAK } from "./sky.js";
@@ -924,9 +917,6 @@ const CLIFF_FAR_SUFFIX = `_l${CLIFF_LOD_NODES.length - 1}`;
  * that holds a lake's shore stacks, which the high mirror draws as well. */
 const CLIFF_LOD1_SUFFIX = "_l1";
 
-/** The mean of the lip's throw over the wave's speed (`LIP_SPEED_MIN`..`LIP_SPEED_MAX`): the spray's launch. */
-const SPRAY_THROW = (LIP_SPEED_MIN + LIP_SPEED_MAX) / 2;
-
 export { LAKE_SURFACE_SPACING, lakeSurfaceGrid };
 export { SILENT_WATER_LIFE, createPlayerSlots, pixelAtOneMetre, skyLumaOf, type PlayerSlots, type SlotPoint } from "./waterLifeInputs.js";
 export { PAW_COVER_SHELTER, fadedCalmShare, lakeCalmUnder, type LakeCalmFrame } from "./lakeCalmFrame.js";
@@ -1228,51 +1218,12 @@ export function createWater(
     waterMeshes.push(lip.fine, lip.coarse);
   }
   const spray = tier === "high" ? createSurfSpray(scene, group) : null;
-  // The wind as the spray reads it, and the plunges a frame has thrown spray
-  // for: made once, refilled.
+  // The wind as the spray reads it: made once, refilled.
   const sprayWind: WindRecord = { dirX: 1, dirZ: 0, speed: 0, lean: 0, gustAmp: 0, flutterAmp: 0, time: 0 };
-  const thrown = new Uint8Array(tracker.plunges.d.length);
+  // Which of a frame's plunges throw spray, and how, is kept with no engine (`sprayField.ts`): along the swell's
+  // travel while the curl is shown (made, and the FFT drawing the wind sea), else along the face's normal.
+  const throwSpray = createSprayThrow(tracker, cove, waterLevel);
   let filled = false;
-
-  /**
-   * Spray for this frame's plunges within SURF_SPRAY_RANGE_M of the camera,
-   * nearest first, SURF_SPRAY_BURSTS at most: each thrown landward from the
-   * crest's top at the lip's throw, the mean of 1.3 to 1.5 times the
-   * shallow-water speed of a wave of the plunge's height. While the curl is
-   * shown (made, and the FFT drawing the wind sea) it is thrown along the
-   * swell's travel, as the curl throws its lip; otherwise along the face's
-   * normal, as the sea's fragment lip, which draws then, tilts.
-   */
-  function throwSpray(sprayOf: SurfSpray, camX: number, camZ: number, seconds: number): void {
-    const plunges = tracker.plunges;
-    const curl = lip !== null && ocean.windMode === 2;
-    const count = Math.min(plunges.count, thrown.length);
-    thrown.fill(0, 0, count);
-    for (let k = 0; k < SURF_SPRAY_BURSTS; k++) {
-      let best = -1;
-      let bestDist = SURF_SPRAY_RANGE_M;
-      for (let i = 0; i < count; i++) {
-        if (thrown[i] === 1) continue;
-        const z = plunges.z[i] as number;
-        const dist = Math.hypot(cove.coastX(z) + (plunges.d[i] as number) - camX, z - camZ);
-        if (dist <= bestDist) {
-          best = i;
-          bestDist = dist;
-        }
-      }
-      if (best < 0) return;
-      thrown[best] = 1;
-      const z = plunges.z[best] as number;
-      const height = Math.max(0, plunges.height[best] as number);
-      // The coast runs along z with the land toward +x: its landward normal.
-      const slope = (cove.coastX(z + 1) - cove.coastX(z - 1)) / 2;
-      sprayOf.burst(
-        cove.coastX(z) + (plunges.d[best] as number), waterLevel + height, z,
-        curl ? ocean.field.travel[0] : 1, curl ? ocean.field.travel[1] : -slope,
-        SPRAY_THROW * Math.sqrt(SWASH_G * height), seconds,
-      );
-    }
-  }
 
   const edge: SeaEdge = {
     cove,
@@ -1340,7 +1291,7 @@ export function createWater(
         }
       }
       if (spray !== null) {
-        throwSpray(spray, camX, camZ, seconds);
+        throwSpray(lip !== null && ocean.windMode === 2, ocean.field.travel, camX, camZ, seconds, spray.burst);
         spray.update(seconds, sprayWind);
       }
       // The copy's depth is linearised with the camera's planes, read each
@@ -1397,24 +1348,8 @@ export type FreecamView = { x: number; y: number; z: number; yaw: number; pitch:
 // The game's own lens (rad, vertical) is `gameLens.ts`'s; named from here too.
 export { GAME_FOV };
 
-/** What the end scene (endScene.ts) is played over: the car's site and the way it faces, the road, the door spot, and the car as it stands each frame. */
-export type EndSceneSetup = {
-  site: { x: number; z: number };
-  direction: 1 | -1;
-  road: Road;
-  door: { x: number; z: number };
-  car: () => CarHandle | null;
-  /** The player whose run the scene shows, where it is not this screen's own (endScene.ts `endSceneRunner`): another's, who reached the car. */
-  runner?: number;
-};
-
-/** The end scene this frame, for app.ts: seconds since it began, the arrival (or none yet), the shot, and the car's pose and speed. */
-export type EndSceneNow = {
-  t: number;
-  arrival: number | null;
-  shot: number;
-  car: { x: number; y: number; z: number; yaw: number; speed: number };
-};
+// What the end scene is played over, and what is read of it a frame, are the scenes' own (`scenePlay.ts`); named from here too.
+export type { EndSceneNow, EndSceneSetup };
 
 /** This frame's view inputs that come from neither the world nor the clock. */
 /** `before` is the local player's pose as the frame's last tick began
@@ -1441,6 +1376,14 @@ export type Renderer = {
   /** Which engine the renderer draws with, for its life: WebGPU where it
    * was given one (`RendererOptions.engine`, `engineChoice.ts`), else WebGL2. */
   readonly engineName: EngineName;
+  /**
+   * The renderer's own watch on the engine it made for itself
+   * (`engineWatch.ts`): the hike's ladders put it on once the renderer stands
+   * and answer what it tells (a lost device) by building the renderer again.
+   * Null for a renderer drawing with an engine it was handed, which is
+   * watched by the module that made it (`EngineWatchers.failures`).
+   */
+  readonly ownWatch: WatchEngine | null;
   /** The measurement mode's readout (`?gpuTime`, `gpuTime.ts`); null without it. */
   gpuTime: { read(): GpuTimeReport } | null;
   /** Resolves once the forest's first fill, billboards included, is drawn
@@ -2093,7 +2036,7 @@ function buildRenderer(
   // scaling (`QUALITY`, set by the lighting) is the scale's full. The
   // measurement mode holds it at full for the page's life, so a timing is
   // always of the same pixels.
-  const renderScale = postFeatures.paint > 0 && options.gpuTime !== true ? createRenderScale() : null;
+  const renderScale = renderScaleRuns(postFeatures.paint, options.gpuTime === true) ? createRenderScale() : null;
   const baseScaling = QUALITY[tier].hardwareScaling;
   partOf(lighting);
   /** Aborted on dispose, or as a build that throws is undone: a wait for the
@@ -2133,111 +2076,26 @@ function buildRenderer(
   let stareLens: StareLens = STARE_LENS_REST;
   /** The chase's cast (escalation.ts), as the app last set it. */
   let chaseCast = 0;
-  /** What the ending asks of the pass: the picture's softness and the dark's closing, 0 to 1, posed after the pass reads them, so a frame late. */
-  let endBlur = 0;
-  let endClose = 0;
-  /** The death's ending, once begun: when it began, and the pose it began from, taken on its first frame. */
-  let ending: { kind: "died"; since: number; base: EndingBase | null } = { kind: "died", since: -1, base: null };
-  /** A death's dark and blur lifting after it was undone (`clearEnding`): what they were, since when, over how long; null when none is. */
-  let lift: { close: number; blur: number; since: number; forS: number } | null = null;
   /**
-   * The end scene, once begun: when, what it is played over, the shots'
-   * context (filled in place each frame), what app.ts reads of it, where the
-   * other bodies are hidden, the two headlamps the lamps become at the catch,
-   * and the tail lamps, made then.
+   * The scenes and the endings as the frames play them (`scenePlay.ts`): whose
+   * camera the frame has, the local body in a shot, the lamp's place, the
+   * death's dark and the end scene's car, which is staged here: its parts
+   * where it has them, else moved whole.
    */
-  let endRun: {
-    since: number;
-    setup: EndSceneSetup;
-    ctx: EndShotContext;
-    now: EndSceneNow;
-    hide: { x: number; z: number; radius: number };
-    lens: LampAim;
-    /** The car whose tail lamps were last lit, at the catch. */
-    tailsLit: TrailheadCar | null;
-    /** The car standing parked, where its lamps stay when there is no model to drive. */
-    parked: CarPose;
-    /** The car last taken out of the rain's cover, once clear of its footprint. */
-    left: TrailheadCar | null;
-  } | null = null;
-  /** The summit scene, while it plays: when it began, the eye it began from, and the body it looks at. */
-  let summitScene: { kind: "summit" | "cap"; since: number; base: SceneBase | null; body: { x: number; y: number; z: number }; more: { hollow: { x: number; y: number; z: number }; party: { x: number; y: number; z: number } } | null } | null = null;
-  /** The scene's lens this frame, or null for the game's; and the summit's shot, -1 outside one. */
-  let sceneFov: number | null = null;
-  let sceneShot = -1;
-
-  /**
-   * One frame of the end scene: the arrival judged from the local body, the
-   * pursuit's standpoint held from its first frame, the shot's camera and
-   * lens, the local body drawn through the run and in the car from the
-   * arrival, the other bodies at the door hidden, the car staged at its pose
-   * (its parts where it has them, else moved whole), and from the catch the
-   * headlamp's place at the car's nose as posed this frame and the tail lamps lit.
-   */
-  /** The runner the end scene is stepped on this frame, reused. */
-  const runnerNow: RunnerPose = { pos: { x: 0, y: 0, z: 0 }, yaw: 0, at: { x: 0, z: 0 } };
-  /**
-   * Whose run the end scene is stepped on: this screen's own player, or the
-   * one the setup names (who reached the car), where their body is drawn
-   * this frame (endScene.ts `runnerPose`).
-   */
-  function endRunner(e: NonNullable<typeof endRun>, state: WorldState, local: { pos: Vec3; yaw: number }): RunnerPose {
-    const id = e.setup.runner;
-    const other = id === undefined ? undefined : state.players.get(id);
-    return runnerPose(runnerNow, local, other, other === undefined || id === undefined ? null : views.drawnAt(id), PLAYER_HALF.y);
-  }
-  function stepEndScene(e: NonNullable<typeof endRun>, runner: RunnerPose, seconds: number): void {
-    const t = seconds - e.since;
-    const ctx = e.ctx;
-    ctx.runner.x = runner.pos.x;
-    ctx.runner.y = runner.pos.y - PLAYER_HALF.y;
-    ctx.runner.z = runner.pos.z;
-    ctx.runner.yaw = runner.yaw;
-    ctx.eyeY = runner.pos.y + PLAYER_EYE_OFFSET;
-    // By where the runner truly is: another screen's runner is hidden as they near the door, and their drawn place stops short of it.
-    if (ctx.arrival === null && arrived(runner.at, ctx.door, t)) ctx.arrival = t;
-    const shot = endShotIndex(t, ctx.arrival);
-    if (shot === 1 && ctx.pursuitFrom === null) ctx.pursuitFrom = { x: runner.pos.x, z: runner.pos.z };
-    const pose = endShot(t, ctx);
-    camera.position.set(pose.x, pose.y, pose.z);
-    camera.rotation.set(pose.pitch, pose.yaw, 0);
-    sceneFov = pose.fov;
-    // This screen's own body runs in the shot only where the run is its own.
-    views.showLocal = ctx.arrival === null && e.setup.runner === undefined;
-    views.hideNear = e.hide;
-    const after = ctx.arrival === null ? 0 : t - ctx.arrival;
-    const car = endCar(after, ctx.road, ctx.site, ctx.direction);
-    const handle = e.setup.car() as TrailheadCar | null;
-    if (handle !== null) {
-      if (handle.model !== null) stageCar(car, handle.model);
+  const play = createScenePlay({
+    stage(pose, car) {
+      const handle = car as TrailheadCar;
+      if (handle.model !== null) stageCar(pose, handle.model);
       else {
-        handle.root.position.set(car.x, car.y, car.z);
-        handle.root.rotation.y = car.yaw;
+        handle.root.position.set(pose.x, pose.y, pose.z);
+        handle.root.rotation.y = pose.yaw;
       }
-      // Clear of its own footprint, it is no roof over the pad: out of the cover, and the map drawn again.
-      if (carDistance(after) >= 2 * CAR_HALF.z && e.left !== handle) {
-        handle.leave();
-        rainMap?.redraw();
-        e.left = handle;
-      }
-    }
-    const now = e.now;
-    now.t = t;
-    now.arrival = ctx.arrival;
-    now.shot = shot;
-    now.car.x = car.x;
-    now.car.y = car.y;
-    now.car.z = car.z;
-    now.car.yaw = car.yaw;
-    now.car.speed = carSpeed(after);
-    if (ctx.arrival === null || after < CATCH_AT_S) return;
-    // With no car drawn to drive (its box alone), the lamp stays where it stands.
-    headlampAt(handle === null ? e.parked : car, e.lens);
-    if (handle !== null && e.tailsLit !== handle) {
-      handle.tailLamps(true);
-      e.tailsLit = handle;
-    }
-  }
+    },
+    // Out of the cover, and the map drawn again.
+    coverLeft: () => rainMap?.redraw(),
+  });
+  /** The frame's camera as the scenes step it: the player's own eye in, the frame's camera out. */
+  const playCamera: PlayCamera = { x: 0, y: 0, z: 0, yaw: 0, pitch: 0, roll: 0 };
 
   /** The car's headlamp as lit: the tuned lamp's colour, as bright as the car's two lamps, no dread in it. */
   const carLamp = { intensity: HEADLAMP_INTENSITY, colour: { r: LAMP_COLOUR[0], g: LAMP_COLOUR[1], b: LAMP_COLOUR[2] } };
@@ -2261,14 +2119,13 @@ function buildRenderer(
    * it, so the lights every material binds are the same all game (a body's
    * lamp of its own was a fourth: docs/rendering/2026-11-09-summit-scene-and-chase-frames.md).
    */
-  function placeLensLamp(on: boolean, lampState: LampState): void {
-    const e = endRun;
-    if (e !== null && e.ctx.arrival !== null && e.now.t - e.ctx.arrival >= CATCH_AT_S) {
-      lensLampAt(e.lens, HEADLAMP_CONE, HEADLAMP_RANGE);
+  function placeLensLamp(on: boolean, lampState: LampState, now: PlayNow): void {
+    if (now.lamp === "car") {
+      lensLampAt(now.carLamp, HEADLAMP_CONE, HEADLAMP_RANGE);
       setLamp(localLamp, true, carLamp);
       return;
     }
-    if (views.showLocal) {
+    if (now.lamp === "body") {
       const eye = views.localEye;
       if (eye !== null) lensLampAt(eye, LAMP_ANGLE, LAMP_RANGE);
       setLamp(localLamp, eye !== null, lampState);
@@ -2282,7 +2139,7 @@ function buildRenderer(
       localLamp.range = LAMP_RANGE;
     }
     // In the end scene the camera is not the eye: off there from the arrival to the catch.
-    setLamp(localLamp, on && e === null, lampState);
+    setLamp(localLamp, on && !now.lensDark, lampState);
   }
 
   const stareAt = new Vector3();
@@ -2296,23 +2153,15 @@ function buildRenderer(
   // stays available as the fallback, and without this guard its 64x64 floor and
   // 6 m perimeter walls get drawn straight through the middle of the forest.
   const brushMeshes: Mesh[] = [];
-  for (const [i, brush] of forest === null ? level.brushes.entries() : []) {
-    const size = {
-      x: brush.box.max.x - brush.box.min.x,
-      y: brush.box.max.y - brush.box.min.y,
-      z: brush.box.max.z - brush.box.min.z,
-    };
+  // A brush is a box of its own size at its box's middle, in its material's colour (`propBoxes.ts` `brushBoxes`).
+  for (const box of forest === null ? brushBoxes(level.brushes) : []) {
     const mesh = MeshBuilder.CreateBox(
-      `brush_${i}`,
-      { width: size.x, height: size.y, depth: size.z },
+      box.name,
+      { width: box.width, height: box.height, depth: box.depth },
       scene,
     );
-    mesh.position.set(
-      brush.box.min.x + size.x / 2,
-      brush.box.min.y + size.y / 2,
-      brush.box.min.z + size.z / 2,
-    );
-    mesh.material = terrainMaterialFor(scene, brush.material);
+    mesh.position.set(box.x, box.y, box.z);
+    mesh.material = terrainMaterialFor(scene, box.material);
     mesh.freezeWorldMatrix();
     lighting.addShadowMesh(mesh);
     brushMeshes.push(mesh);
@@ -3023,6 +2872,8 @@ function buildRenderer(
     waitingItems() {
       return scene.getWaitingItemsCount();
     },
+    // The engine was handed in, or is WebGL2's: whoever made it watches it.
+    ownWatch: null,
     gpuTime,
     sync(state, localId, alpha, frame = { dt: 0, sprinting: false }) {
       if (renderScale !== null && renderScale.frame(frame.dt)) engine.setHardwareScalingLevel(baseScaling / renderScale.scale);
@@ -3179,9 +3030,9 @@ function buildRenderer(
       // Before the sky's first slices there is no night factor; the day's 0
       // stands in, for frames no one sees.
       // The death's closing dark rides the stare's shade, driven to full.
-      const shown = endClose > 0 ? { ...stareLens, level: Math.max(stareLens.level, endClose), phase: 0.9 } : stareLens;
+      const shown = play.shown(stareLens);
       lighting.setStare(shown.level);
-      post.update(weather, lighting.hour, sky?.night ?? 0, unsettle, shown, lensStrength, chaseCast, endBlur);
+      post.update(weather, lighting.hour, sky?.night ?? 0, unsettle, shown, lensStrength, chaseCast, play.blur);
       // The stare's closing darkness on the material path is the veil's.
       veil?.setStare(stareShadeUnder(shown, seconds));
 
@@ -3229,7 +3080,8 @@ function buildRenderer(
         // What the world is built round: the player, but in an end scene shown on another's run
         // (who reached the car while this screen's player was far up the mountain), that runner,
         // or the pad would be drawn from a kilometre off, in the far rings' detail.
-        const shown = endRun !== null && endRun.setup.runner !== undefined ? state.players.get(endRun.setup.runner) : undefined;
+        const shownId = play.runnerId();
+        const shown = shownId === undefined ? undefined : state.players.get(shownId);
         const centre = shown !== undefined ? shown.pos : local.pos;
         // The patches first, as above.
         facePatches?.update(centre.x, centre.z);
@@ -3283,58 +3135,27 @@ function buildRenderer(
         // and its default forward is +Z, which matches the sim convention.
         // Roll goes on z — the only thing that ever writes it.
         camera.rotation.set(eye.pitch, eye.yaw, offset.roll);
-        // The summit scene: from the flip's frame the camera is the scene's,
-        // from the eye the player had then, for the reveal's seconds.
-        sceneFov = null;
-        sceneShot = -1;
-        if (summitScene !== null && ending.since < 0 && endRun === null) {
-          const t = seconds - summitScene.since;
-          if (t >= (summitScene.kind === "summit" ? SUMMIT_SCENE_S : CAP_SCENE_S)) summitScene = null;
-          else {
-            summitScene.base ??= { x: camera.position.x, y: camera.position.y, z: camera.position.z, yaw: local.yaw, pitch: local.pitch };
-            if (summitScene.kind === "summit" && summitScene.more !== null) {
-              const ctx: SceneContext = { base: summitScene.base, body: summitScene.body, hollow: summitScene.more.hollow, party: summitScene.more.party };
-              const shot = summitShot(t, ctx);
-              // A live shot (the threshold) is the player's own camera: the look app.ts drives, the lens the game's.
-              if (!shot.live) {
-                camera.position.set(shot.x, shot.y, shot.z);
-                camera.rotation.set(shot.pitch, shot.yaw, 0);
-              }
-              sceneFov = shot.fov;
-              sceneShot = shot.shot;
-            } else {
-              const pose = capPose(t, summitScene.base, summitScene.body);
-              camera.position.set(pose.x, pose.y, pose.z);
-              camera.rotation.set(pose.pitch, pose.yaw, 0);
-            }
-          }
-        }
-        // The local body stands in the summit's shots, until the last returns to its eye.
-        views.showLocal = sceneShot >= 0 && sceneShot < SHOTS.length - 1;
-        // The end scene: its camera and lens, the body through the run, the car.
-        if (endRun !== null) stepEndScene(endRun, endRunner(endRun, state, local), seconds);
-        // The end: from its first frame the camera is the ending's, from the
-        // pose the player had then, and the pass takes its blur and its dark.
-        if (ending.since >= 0) {
-          ending.base ??= { x: camera.position.x, y: camera.position.y, z: camera.position.z, yaw: local.yaw, pitch: local.pitch, feetY: local.pos.y - PLAYER_HALF.y };
-          const pose = endingPose(ending.kind, seconds - ending.since, ending.base);
-          camera.position.set(pose.x, pose.y, pose.z);
-          camera.rotation.set(pose.pitch, pose.yaw, pose.roll);
-          endBlur = pose.blur;
-          endClose = pose.close;
-        } else if (lift !== null) {
-          // A death undone (a return): its dark and blur lifting, evenly, to nothing.
-          const share = liftShare(seconds - lift.since, lift.forS);
-          endClose = lift.close * share;
-          endBlur = lift.blur * share;
-          if (share <= 0) lift = null;
-        }
-        // A hike after a scene draws with the game's lens again; a shot of the summit's with its own.
-        camera.fov = sceneFov ?? GAME_FOV;
+        // The scenes and the endings, from the eye just placed (`scenePlay.ts`): the summit's scene or the
+        // cap's, the end scene with its car, the death's fall and its closing dark; each takes the camera
+        // from the one before, and the pass takes the dark a frame late.
+        playCamera.x = camera.position.x;
+        playCamera.y = camera.position.y;
+        playCamera.z = camera.position.z;
+        playCamera.pitch = camera.rotation.x;
+        playCamera.yaw = camera.rotation.y;
+        playCamera.roll = camera.rotation.z;
+        const now = play.step(seconds, playCamera, local, state.players, (id) => views.drawnAt(id));
+        camera.position.set(playCamera.x, playCamera.y, playCamera.z);
+        camera.rotation.set(playCamera.pitch, playCamera.yaw, playCamera.roll);
+        // The local body stands in the summit's shots and runs in the end scene's; the others at the car's door are in it.
+        views.showLocal = now.showLocal;
+        views.hideNear = now.hideNear;
+        // A hike after a scene draws with the game's lens again; a shot with its own.
+        camera.fov = now.fov ?? GAME_FOV;
         // On the lens, on the body a scene shows, or on the car.
-        placeLensLamp(local.lamp.on, lampState);
+        placeLensLamp(local.lamp.on, lampState, now);
         // The end scene's camera goes down the road from the player: the rain's cover goes with it.
-        rainMap?.update(endRun !== null ? camera.position : local.pos);
+        rainMap?.update(now.endRun ? camera.position : local.pos);
         rain.update(camera.position, camera.rotation.y, weather, wind, engine.getDeltaTime() / 1000, lampForRain(localLamp, rainLamp));
         rainSplash?.update(camera.position, weather, rainLamp, lighting.sunDirection, seconds);
         if (sky !== null) motes?.update(camera.position, weather, lighting.hour, atmosphere.nearColour(), wind);
@@ -3382,44 +3203,16 @@ function buildRenderer(
       mistIn = Math.max(0, Math.min(1, level));
     },
     setScene(kind, at, more, fromS = 0) {
-      // Begun `fromS` seconds in: a return plays the summit's last shot alone (its seventeenth second on).
-      summitScene = { kind, since: clock() / 1000 - fromS, base: null, body: { x: at.x, y: at.y, z: at.z }, more: more ?? null };
+      play.setScene(kind, at, more, fromS, clock() / 1000);
     },
     clearEnding(liftS = 0) {
-      ending = { kind: "died", since: -1, base: null };
-      // The dark and the blur go over `liftS` seconds from what they are now (the frame's step below).
-      lift = liftS > 0 && (endClose > 0 || endBlur > 0) ? { close: endClose, blur: endBlur, since: clock() / 1000, forS: liftS } : null;
-      if (lift === null) {
-        endBlur = 0;
-        endClose = 0;
-      }
+      play.clearEnding(liftS, clock() / 1000);
     },
     setEnding(kind: EndingKind, scene?: EndSceneSetup) {
-      if (kind === "won") {
-        if (endRun !== null || scene === undefined) return;
-        const groundY = scene.road.groundY(scene.site.x, scene.site.z);
-        endRun = {
-          since: clock() / 1000,
-          setup: scene,
-          ctx: {
-            runner: { x: 0, y: 0, z: 0, yaw: 0 }, eyeY: 0, site: scene.site, groundY, direction: scene.direction,
-            road: scene.road, door: scene.door, arrival: null, pursuitFrom: null,
-          },
-          now: { t: 0, arrival: null, shot: 0, car: { x: scene.site.x, y: groundY, z: scene.site.z, yaw: scene.direction === 1 ? 0 : Math.PI, speed: 0 } },
-          hide: { x: scene.door.x, z: scene.door.z, radius: DOOR_IN_M },
-          lens: { x: 0, y: 0, z: 0, dx: 0, dy: 0, dz: 1 },
-          tailsLit: null,
-          parked: endCar(0, scene.road, scene.site, scene.direction),
-          left: null,
-        };
-        endRun.ctx.held = roadRelease(scene.road, scene.site, scene.direction);
-        return;
-      }
-      if (ending.since >= 0) return;
-      ending = { kind, since: clock() / 1000, base: null };
+      play.setEnding(kind, scene, clock() / 1000);
     },
     endScene() {
-      return endRun === null ? null : endRun.now;
+      return play.endScene();
     },
     listener() {
       // `camera.rotation` rather than the sim's yaw/pitch: it is set on both of

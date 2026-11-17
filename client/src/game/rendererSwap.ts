@@ -41,7 +41,9 @@
  * **Only a standing engine is listened to.** The old engine's watcher is
  * taken off before anything of it is disposed (`unwatch`), so a disposed
  * engine is never heard as a failing one, and the new engine's is put on only
- * once its rung stands (`watch`): a rung that failed is never watched.
+ * once its rung stands (`watch`): a rung that failed is never watched. A
+ * renderer that made its engine for itself is listened to through its own
+ * watch (`Renderer.ownWatch`), on the same terms.
  */
 import type { Scene } from "@babylonjs/core/scene.js";
 import type { AsyncPipelines } from "./asyncPipelines.js";
@@ -160,6 +162,16 @@ function ladderOf(first: Rung, later: readonly QualityTier[]): Rung[] {
   return rungs;
 }
 
+/**
+ * What listens to a rung's engine once the rung stands: the detector that
+ * came with an engine made for it, or, where the renderer made its engine
+ * for itself, the renderer's own (`Renderer.ownWatch`). Null where there is
+ * neither: WebGL2, which the renderer makes and nothing watches.
+ */
+function detectorOf(renderer: Renderer, engine: EngineHandle | null, watch: WatchEngine | null): WatchEngine | null {
+  return engine !== null ? watch : (renderer.ownWatch ?? null);
+}
+
 /** What the game gives a swap: how to build, where, and what to put back. */
 export type SwapBindings<R extends Renderer = Renderer> = {
   /** A renderer at `tier` on `canvas`, on `engine` when one is given. */
@@ -271,7 +283,8 @@ function climb<R extends Renderer>(
       void standing.skyReady().then(() => {
         if (stands && !standing.engine.isDisposed) standing.runLoop(bindings.loop);
       });
-      if (engine !== null && watch !== null) bindings.watch(renderer, watch);
+      const detector = detectorOf(renderer, engine, watch);
+      if (detector !== null) bindings.watch(renderer, detector);
       engineFaultShown(engineThrow, tier, bindings);
       return { renderer, canvas, tier, fellBack: tier !== target.tier, engineFellBack: target.engine !== null && engine === null };
     } catch (error) {
@@ -360,7 +373,8 @@ export function buildFirstRenderer<R extends Renderer>(
     if (rung > 0) current = replaceCanvas(current, bindings.freshCanvas());
     try {
       const renderer = bindings.build(current, tier, engine);
-      if (engine !== null && watch !== null) bindings.watch(renderer, watch);
+      const detector = detectorOf(renderer, engine, watch);
+      if (detector !== null) bindings.watch(renderer, detector);
       engineFaultShown(engineThrow, tier, bindings);
       return { renderer, canvas: current, tier, fellBack: tier !== asked, engineFellBack: first !== null && engine === null };
     } catch (error) {

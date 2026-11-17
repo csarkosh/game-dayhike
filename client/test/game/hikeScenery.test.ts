@@ -29,8 +29,10 @@ function searched(): World {
 function liteRenderer() {
   const asked = {
     posts: [] as (readonly SignPost[])[], sites: [] as TrailheadSites[], boards: [] as BoardDrawing[], bodies: [] as { pos: { x: number; y: number; z: number }; yaw: number }[],
-    film: [] as AbortSignal[], disposed: [] as string[], ground: Number.NaN,
+    film: [] as AbortSignal[], disposed: [] as string[], ground: Number.NaN, warm: false,
   };
+  /** The car that trailhead hands out once the film's car is asked for. */
+  const car = { stage: () => undefined, leave: () => undefined, tailLamps: () => undefined };
   const scenery: SceneryHost = {
     signs(posts, groundH) {
       asked.posts.push(posts);
@@ -40,14 +42,17 @@ function liteRenderer() {
     trailhead(sites, _groundH, board) {
       asked.sites.push(sites);
       asked.boards.push(board);
-      return { filmCar: (signal) => void asked.film.push(signal), filmCarIn: () => asked.film.length > 0, dispose: () => void asked.disposed.push("trailhead") };
+      return {
+        filmCar: (signal) => void asked.film.push(signal), filmCarIn: () => asked.film.length > 0, car: () => (asked.film.length > 0 ? car : null), warm: () => asked.warm,
+        dispose: () => void asked.disposed.push("trailhead"),
+      };
     },
     body(body) {
       asked.bodies.push(body);
       return { dispose: () => void asked.disposed.push("body") };
     },
   };
-  return { renderer: { scenery } as unknown as Renderer, asked };
+  return { renderer: { scenery } as unknown as Renderer, asked, car };
 }
 
 describe("the scenery a hike places once, on the hike's own renderer", () => {
@@ -71,17 +76,22 @@ describe("the scenery a hike places once, on the hike's own renderer", () => {
     expect(asked.boards[0]?.seed).toBe(SEED);
   });
 
-  it("stands the film's car in the parked car's place through the trailhead it was handed, and plays no scene with it yet", () => {
-    const { renderer, asked } = liteRenderer();
+  it("stands the film's car in the parked car's place through the trailhead it was handed, and hands on the car the end scene drives", () => {
+    const { renderer, asked, car } = liteRenderer();
     const signs = createHikeSigns(renderer, searched(), SEED) as NonNullable<ReturnType<typeof createHikeSigns>>;
     expect(signs.filmCarIn()).toBe(false);
+    // Nothing to drive while only the car's box stands.
+    expect(signs.car()).toBeNull();
     const loads = new AbortController();
     loadFilmCar(renderer, signs, loads.signal);
     expect(asked.film).toEqual([loads.signal]);
     expect(signs.filmCarIn()).toBe(true);
-    // No scene is played by that renderer: the car it would drive is not handed out, and none is in its first frames.
-    expect(signs.car()).toBeNull();
+    // The car as that trailhead stands it, the same each time, and whether it is still in its first frames.
+    expect(signs.car()).toBe(car);
+    expect(signs.car()).toBe(car);
     expect(signs.warm()).toBe(false);
+    asked.warm = true;
+    expect(signs.warm()).toBe(true);
     signs.dispose();
     expect(asked.disposed).toEqual(["signs", "trailhead"]);
   });

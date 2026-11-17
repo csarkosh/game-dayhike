@@ -1,7 +1,7 @@
 import { describe, it, expect } from "vitest";
 import { WEATHER_PRESETS } from "../../src/game/weather.js";
 import {
-  lampUnder, lampFlicker, LAMP_DREAD_DIM, LAMP_DREAD_TINT, LAMP_FLICKER_DEPTH, LAMP_COLOUR, LAMP_INTENSITY, LAMP_ANGLE, LAMP_EXPONENT, LAMP_RANGE,
+  lampUnder, lampFlicker, lampPlace, DARK_LAMP_PLACE, LAMP_DREAD_DIM, LAMP_DREAD_TINT, LAMP_FLICKER_DEPTH, LAMP_COLOUR, LAMP_INTENSITY, LAMP_ANGLE, LAMP_EXPONENT, LAMP_RANGE,
 } from "../../src/game/lampParams.js";
 import * as headlamp from "../../src/game/headlamp.js";
 
@@ -50,5 +50,20 @@ describe("the lamp's cone", () => {
     expect([headlamp.LAMP_ANGLE, headlamp.LAMP_RANGE, headlamp.LAMP_EXPONENT, headlamp.LAMP_INTENSITY, headlamp.LAMP_COLOUR]).toEqual([
       LAMP_ANGLE, LAMP_RANGE, LAMP_EXPONENT, LAMP_INTENSITY, LAMP_COLOUR,
     ]);
+  });
+});
+
+describe("a dark lamp", () => {
+  it("stands where the frame has it while lit, and overhead while dark", () => {
+    const at = { x: -262, y: 9.6, z: -1 };
+    expect(lampPlace(true, at)).toBe(at);
+    expect(lampPlace(false, at)).toBe(DARK_LAMP_PLACE);
+  });
+
+  it("is within a hundredth of a radian of straight up from anywhere within five kilometres of the world's middle", () => {
+    for (const [x, y, z] of [[0, 0, 0], [5000, 300, 0], [-3500, 1200, 3500], [0, -40, -5000]] as const) {
+      const dx = DARK_LAMP_PLACE.x - x, dy = DARK_LAMP_PLACE.y - y, dz = DARK_LAMP_PLACE.z - z;
+      expect(Math.acos(dy / Math.hypot(dx, dy, dz))).toBeLessThan(0.01);
+    }
   });
 });

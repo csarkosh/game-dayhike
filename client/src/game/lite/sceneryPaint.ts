@@ -24,12 +24,18 @@
  *   its texture's alpha, the scene's distance fog mixed in before the colour
  *   is taken to linear, then the tier's colour path. It writes no depth and
  *   is set ahead of the ground it lies on.
+ * - **The film's car's tail lamps are the same material again, as the game
+ *   sets it for them**: unlit, their red given off whole, and no fog on
+ *   them (two red points down the highway into the mist, which the fog
+ *   would take first); opaque, seen from behind the car alone, one mesh for
+ *   the pair.
  */
 import {
   createMeshFromData, createPbrMaterial, createShaderMaterial, createTexture2DFromExternalImage, createTexture2DFromPixels, setPbrGammaAlbedo, setShaderTexture,
   type EngineContext, type MaterialPlugin, type Mesh, type PbrMaterialProps, type PluginUniformBlock, type ShaderMaterial, type Texture2D,
 } from "@babylonjs/lite";
 import { CAR_SHADOW_BIAS, CAR_SHADOW_TEX, carShadowAlphaMap, type CarShadowGrid } from "../carShadow.js";
+import { TAIL_LAMP_APART, TAIL_LAMP_BACK, TAIL_LAMP_H, TAIL_LAMP_UP, TAIL_LAMP_W } from "../endScene.js";
 import { LABEL_TEXTURE, paintLabel, type LabelFace } from "../signParts.js";
 import { DISPLAY_CURVE_WGSL, onColourPath } from "./displayCurve.js";
 import { FRAME_CONTRAST_NAME, FRAME_EXPOSURE_NAME, stageOwn, stageReads } from "./frameBlock.js";
@@ -253,3 +259,95 @@ export function patchGeometry(grid: CarShadowGrid, yaw = 0): { positions: Float3
   }
   return { positions, normals: grid.normals, uvs: grid.uvs, indices: Uint32Array.from(grid.indices) };
 }
+
+/** What the two stages of the tail lamps hand each other. */
+const TAIL_VARYINGS = "struct TailOut{@builtin(position)position:vec4<f32>}";
+
+/** The vertex stage: a corner of a lamp, already in the world's coordinates. */
+const TAIL_VERTEX = /* wgsl */ `
+${TAIL_VARYINGS}
+@vertex fn mainVertex(input:VertexInput)->TailOut{
+  var out:TailOut;
+  let worldPos=vec4<f32>(input.position,1.0);
+  out.position=scene.viewProjection*worldPos;
+  return out;
+}`;
+
+/**
+ * The fragment stage: the Standard material's, with no light, the lamp's
+ * colour given off and no fog (`fogEnabled` false), in Babylon.js's order.
+ */
+const TAIL_FRAGMENT = /* wgsl */ `
+${TAIL_VARYINGS}
+${DISPLAY_CURVE_WGSL}
+@fragment fn mainFragment(input:TailOut)->@location(0)vec4<f32>{
+  let u=shaderUniforms;
+  let alpha=1.0;
+  let emissiveColor=u.tailColour;
+  let finalDiffuse=clamp(emissiveColor,vec3<f32>(0.0),vec3<f32>(1.0));
+  var color=vec4<f32>(finalDiffuse,alpha);
+  color=vec4<f32>(max(color.rgb,vec3<f32>(0.0)),color.a);
+  color=vec4<f32>(pow(color.rgb,vec3<f32>(2.2)),color.a);
+  color=vec4<f32>(displayColour(color.rgb,u.tailExposure,u.tailContrast),color.a);
+  return color;
+}`;
+
+/** The stages' text, for the tests that hold it to the patch's. */
+export const TAIL_WGSL = { vertex: TAIL_VERTEX, fragment: TAIL_FRAGMENT } as const;
+
+/** What the tail lamps read from the frame's block, by the block's names: the display curve. */
+export const TAIL_FRAME_READS = { tailExposure: FRAME_EXPOSURE_NAME, tailContrast: FRAME_CONTRAST_NAME } as const;
+
+/** The tail lamps' material, dark until `colour` is given, and the writer that sends a change of it. `linear`: a post chain grades the frame. */
+export function tailLampMaterial(frame: PluginUniformBlock, linear: boolean): { material: ShaderMaterial; colour(r: number, g: number, b: number): void } {
+  const values = { tailColour: [0, 0, 0], tailExposure: [1], tailContrast: [1] };
+  const own = stageOwn(values, TAIL_FRAME_READS);
+  const material = createShaderMaterial({
+    name: "carTailLamp",
+    vertexSource: TAIL_VERTEX,
+    fragmentSource: stageReads(onColourPath(TAIL_FRAGMENT, linear), TAIL_FRAME_READS),
+    attributes: ["position"],
+    uniforms: shaderUniformDecls(own),
+    uniformBlocks: [frame],
+    // Seen from behind the car alone, as the game's planes are: a lamp's quad faces out of the tail.
+    backFaceCulling: true,
+  });
+  const write = shaderUniformWriter(material, own);
+  write();
+  return {
+    material,
+    colour(r, g, b) {
+      values.tailColour[0] = r;
+      values.tailColour[1] = g;
+      values.tailColour[2] = b;
+      write();
+    },
+  };
+}
+
+/**
+ * The two tail lamps of a car standing at (x, y, z) turned by `yaw`, in the
+ * world's own coordinates, into `out` (eight corners, xyz each): a quad at
+ * each rear corner, `TAIL_LAMP_BACK` behind the car's middle (or `back`: in
+ * its middle, where they stand hidden in their first frames), facing out of
+ * its tail: its corners in the order Babylon.js lays a plane's, so the side
+ * that faces backward is its front.
+ */
+export function tailLampCorners(x: number, y: number, z: number, yaw: number, out: Float32Array, back = TAIL_LAMP_BACK): Float32Array {
+  const sin = Math.sin(yaw), cos = Math.cos(yaw);
+  let at = 0;
+  for (const side of [-1, 1]) {
+    for (const [cx, cy] of [[-1, -1], [1, -1], [1, 1], [-1, 1]] as const) {
+      const lx = (side * TAIL_LAMP_APART) / 2 + (cx * TAIL_LAMP_W) / 2;
+      const ly = TAIL_LAMP_UP + (cy * TAIL_LAMP_H) / 2;
+      const lz = -back;
+      out[at++] = x + lx * cos + lz * sin;
+      out[at++] = y + ly;
+      out[at++] = z - lx * sin + lz * cos;
+    }
+  }
+  return out;
+}
+
+/** The triangles of the two tail lamps' quads, and a normal a corner (the stage reads none). */
+export const TAIL_LAMP_INDICES = new Uint32Array([0, 1, 2, 0, 2, 3, 4, 5, 6, 4, 6, 7]);

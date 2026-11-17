@@ -6,8 +6,8 @@
  * splashes and the cover it falls under, and in that world the other
  * hikers' bodies, the Hollows' eyes and their figures' shadows, the dropped cap, the animals, the
  * lakes' water with the reeds and the lilies that grow in it and the
- * insects over it, and the sea with its swell, its white water and its
- * swash, lit by
+ * insects over it, and the sea with its swell, its wind waves, its white
+ * water, its swash, its lip's curl and its spray, lit by
  * the sun, the sky's fill and the sky's capture as the image-based light for
  * the hour and the weather, by the local player's headlamp and by the lamps
  * the other hikers wear, seen from the player's eye or the free camera. It
@@ -25,15 +25,17 @@
  * clutter's (`clutterMeshes.ts`) and the cliffs' (`cliffMeshes.ts`), which
  * land as their models do, the grass's and the duff's
  * (`bladeMeshes.ts`, `duffMeshes.ts`), on the tiers that draw them, the
- * chunk props' boxes (`propMeshes.ts`), the mist banks (`mistMeshes.ts`), the
+ * chunk props' boxes (`propMeshes.ts`) or, in a world with no forest, a
+ * hand-authored level's brushes (`brushMeshes.ts`), the mist banks (`mistMeshes.ts`), the
  * motes (`motes.ts`) and the rain (`rain.ts`, `rainSplash.ts`, under the
  * cover map of `rainMap.ts`), the hikers' bodies and the Hollows' eyes
  * (`entityMeshes.ts`), the lamps the other hikers wear (`wornLamps.ts`), the
  * dropped cap (`capMesh.ts`), the animals (`wildlifeMeshes.ts`), the
  * lakes' water (`lakeMeshes.ts`), their plants (`waterPlantMeshes.ts`) and
- * their life (`waterLifeMeshes.ts`), and the sea (`seaMeshes.ts`), over the
- * bed's square the two waters share (`waterBed.ts`), and the scenery a hike
- * places once (`sceneryMeshes.ts`).
+ * their life (`waterLifeMeshes.ts`), and the sea (`seaMeshes.ts`, with the
+ * wind sea's cascades of `seaFft.ts`, the lip's curl of `lipMeshes.ts` and
+ * the spray of `surfSpray.ts`), over the bed's square the two waters share
+ * (`waterBed.ts`), and the scenery a hike places once (`sceneryMeshes.ts`).
  *
  * **The engine is Lite's own, made from the canvas, and making it takes
  * time**: a device is asked for, the ground's images are decoded, the scene
@@ -43,6 +45,37 @@
  * resolve only once it stands, so no start draws a frame before it. A
  * renderer that cannot be made (no WebGPU device, a shader refused) says so
  * in the console and stays empty.
+ *
+ * **A lost device is the hike's to answer** (`engineWatch.ts`): the renderer
+ * says the loss, tells whoever watches it (`ownWatch`, which the hike's
+ * ladders put on once a renderer stands) and draws nothing more; the hike
+ * covers play and builds a new renderer on a new engine and a fresh canvas,
+ * as it does for any engine that fails under it (`answerFailures`). Lite's
+ * own recovery in place is not used. A GPU error nobody caught is said in
+ * the console, the first few of them, and is not answered by a rebuild.
+ *
+ * **What the engine tells on Babylon.js is told here in WebGPU's terms.** A
+ * shader's compile is no event in WGSL: a module is handed to the device,
+ * which compiles it when a pipeline first needs it, and a pipeline made the
+ * synchronous way holds the frame that asked. So `onShaderCompiled` tells
+ * of each frame that asked the device for a shader module or a pipeline
+ * (`deviceMakes.ts`, counted at the device's own calls), which is what the
+ * hike voids when it judges the frame rate. `keepShaders` keeps nothing:
+ * the device goes with the renderer. In the measurement mode `gpuTime`
+ * reads the GPU's own time for the frame and for each of its tasks from
+ * Lite's timers (`gpuTimeReadout.ts`), as `window.__gpuTime()` and the
+ * corner's line; outside it no timestamp is written.
+ *
+ * **The frame is sized by the game's rule, not by the display**
+ * (`frameSize.ts`): the canvas's box in CSS pixels over the tier's scaling,
+ * the display's pixel ratio unread, as the game sizes it on Babylon.js, and
+ * kept through a zoom made while the hike runs. Where a paint pass draws,
+ * the render scale steps the frame down while the page's frames are slow
+ * and back up when they have room (`renderScale.ts`), never in the
+ * measurement mode. The surface is sized before anything is made for it,
+ * and again by the frame drawn after the box, the ratio or the scale has
+ * moved: Lite then makes the frame's own targets again at the new size,
+ * and nothing else.
  *
  * **The world changes under the game's scheduler** (`syncJobs.ts`), by the
  * rules the renderer on Babylon.js gives it: a rebuild a crossing starts
@@ -115,8 +148,9 @@
  * a pair of eyes come, a ground animal in its disc. A part that shows
  * nothing draws nothing and writes nothing: no other hiker, no ranger
  * fetched and no light made; no bird of a model in the air, its mesh
- * hidden. The local hiker's own body is not drawn: the camera is its eyes,
- * and the scenes that show it are not drawn yet.
+ * hidden. The local hiker's own body is drawn only in a scene's shot,
+ * where the camera stands elsewhere, from the shot's first frame to its
+ * last (`shotBodies.ts`): in a hike the camera is its eyes.
  *
  * **A lamp's light is made for a hiker, not for a seat** (`wornLamps.ts`):
  * the scene holds the lens's lamp, the sun, the fill and a spot light for
@@ -175,12 +209,27 @@
  * the sea. Its edge is stepped every frame, shown or not
  * (`seaEdge.ts`): the wet ground on the cove reads the swash's table, and
  * the surf is heard by it (`surfSound`, `hasSea`). On the tiers above low
- * the wind sea is the loop the game bakes in a worker, its 64 frames sent
- * once when the bake lands, moving the vertices and tilting the normal, and
+ * the wind sea is a field, moving the vertices and tilting the normal, and
  * the sea stands in the rain's cover map as open water at rest, by the
- * map's own word while its square reaches the sea's water. The wind
- * sea's FFT, the swept curl and the spray are not drawn yet, nor the tier
- * that reads through the surface.
+ * map's own word while its square reaches the sea's water. The field is the
+ * loop the game bakes in a worker, its 64 frames sent once when the bake
+ * lands, on the tier that bakes one.
+ *
+ * **On the tier that computes its wind sea each frame the field is the
+ * game's FFT on Lite's compute** (`seaFft.ts`): three cascades, four
+ * dispatches in one compute pass before the frame's draws, on a frame
+ * whose view holds the sea and on no other; the spectrum's amplitudes go
+ * up when the sea's wind has moved by a step. Which field is drawn is the
+ * game's rule (`windSeaField.ts`): the cascades once they run, the baked
+ * loop where they fail or are still compiling past their deadline. With
+ * the cascades the plunging lip is the swept curl (`lipMeshes.ts`): a strip
+ * over the cove's face, after the sea among the see-through draws, drawn
+ * and sent its crests only while a crest is in mid-plunge and the view
+ * holds the face. And the plunges throw the surf's spray
+ * (`surfSpray.ts`): one instanced draw after the water, hidden while no
+ * burst is alive. The water's surface on that tier is blended, as on the
+ * tier below: the read of what lies under it through the surface is not
+ * drawn yet.
  *
  * **Colour is the tier's own path** (`postFeaturesFor`). With no post chain
  * it is the material path: Lite's display curve as Babylon's image
@@ -217,6 +266,34 @@
  * drawn while the view holds it within its reach, and shown for the frame
  * that draws the rain's cover map where it stands in the map's square.
  *
+ * **A scene plays on the hike's one camera** (`scenePlay.ts`): the summit's
+ * five shots and the cap's turn are stepped once a frame on the player's
+ * eye, after it is placed, and what comes back is the frame's camera and
+ * its lens, as on Babylon.js, whose renderer steps the same play. Nothing
+ * is made, built again or recorded again for a scene. The chain's passes
+ * rebuild a pixel's ray from the pose the frame is drawn with, and its
+ * anti-aliasing weighs its history by how far that pose has moved since
+ * the last frame and clips it to the new frame's neighbourhood, so a cut is
+ * a large move like any other, as it is in the game's own chain; the mask,
+ * the rain and every part's test against the view read the same pose. The
+ * rain's cover map and a lake's panorama have cameras of their own, which
+ * no scene moves.
+ *
+ * **The endings are the same play.** The death takes the camera down to
+ * the ground and closes its dark through the stare's shade, a frame late as
+ * the game's passes read it: the grade's on a tier with a chain, the veil's
+ * and the exposure's on a tier with none; undone, it lifts over the seconds
+ * given. The game never softens the picture at an end (`endingPose` asks
+ * for no blur), so no pass is added for one. The end scene is its four
+ * shots, the local hiker's own body in the run, the other bodies at the
+ * car's door hidden, the world built round the runner, the rain's cover
+ * following the camera down the road, and the scenery's car stood at its
+ * pose each frame (`sceneryMeshes.ts` `LiteCar`), out of the rain's cover
+ * once it has left its place, its tail lamps lit at the catch. The local
+ * player's one lamp is worn at the eye of their body wherever a scene shows
+ * it and is the car's headlamp from the catch: one light all game, as on
+ * Babylon.js, so no scene adds a light and nothing is built again for one.
+ *
  * **The sun casts no shadow**: no tier of the game has a shadow map
  * (`quality.ts`), so there is no pass for one and no material reads one.
  * The dark under the parked car is a patch of the scenery's own
@@ -233,8 +310,8 @@
 import {
   NeutralToneMapping, addTask, addToScene, createBankedFreeCamera, createTexture2DFromPixels, createDirectionalLight, createEngine, createHemisphericLight, createPbrMaterial, createSpotLight,
   createPluginUniformBlock, createRenderTarget, createRenderTask, createSceneContext, disposeEngine, disposeScene, enableMaterialPlugins, enablePbrLinearOutput, enablePbrMaterialPluginVertexData,
-  getProjectionMatrix,
-  markLightDirty, markMaterialUboDirty, onEngineDeviceLost, onEngineGpuError, registerScene, renderFrame, resizeEngine, vec3,
+  getGpuDevice, getProjectionMatrix,
+  markLightDirty, markMaterialUboDirty, onEngineDeviceLost, onEngineGpuError, registerScene, renderFrame, setSurfaceSize, vec3,
   writePluginUniformBlock,
   type BankedFreeCamera, type DirectionalLight, type EngineContext, type HemisphericLight, type MaterialPlugin, type PbrMaterialProps,
   type PluginUniformBlock, type SceneContext, type SpotLight,
@@ -250,17 +327,22 @@ import { BASE_SPACING_BY_TIER } from "../clipmap.js";
 import { clutterReachFor } from "../clutterField.js";
 import { cloudDensityNow, cloudFor, cloudGroundDue, cloudGroundMap, cloudMarchSteps, cloudOn, cloudStepsFor, cloudUniforms, emptyCloudUniforms, noCloud } from "../cloudParams.js";
 import type { EngineHandle } from "../engineHandle.js";
-import { createEntityPoses } from "../entityPoses.js";
+import { createDeviceMakes, type MakesDevice } from "../deviceMakes.js";
+import { createEngineWatch } from "../engineWatch.js";
+import { HEADLAMP_CONE, HEADLAMP_INTENSITY, HEADLAMP_RANGE } from "../endScene.js";
+import { createEntityPoses, type EntityFrame } from "../entityPoses.js";
 import { blendedEye, type EyePose } from "../eyeBlend.js";
 import { FACE_PATCH_Z_OFFSET, FACE_PATCH_Z_UNITS } from "../facePatches.js";
 import { featureTableFor } from "../featureTable.js";
 import { FOLIAGE_PLAYERS, FOLIAGE_PLAYER_PARKED, setFoliageWind } from "../foliageUniforms.js";
+import { createFrameFit } from "../frameSize.js";
 import { nearRadiusFor } from "../forestField.js";
 import { GAME_FOV, lensProjection } from "../gameLens.js";
 import { PAINT_PALETTES, gradeRecordUnder, sightUnder, type PaintPaletteName } from "../gradeParams.js";
+import { brushBoxes } from "../propBoxes.js";
 import { emptyMaterialGradeUniforms, materialGradeUniforms } from "../materialGrade.js";
 import { isHollow } from "../../sim/hollow.js";
-import { LAMP_ANGLE, LAMP_COLOUR, LAMP_EXPONENT, LAMP_RANGE, lampUnder, type LampState } from "../lampParams.js";
+import { LAMP_ANGLE, LAMP_COLOUR, LAMP_EXPONENT, LAMP_RANGE, lampPlace, lampUnder, type LampState } from "../lampParams.js";
 import { createCalmFade } from "../lakeCalmFrame.js";
 import { createLakeChoice } from "../lakeChoice.js";
 import { createLensCanopy } from "../lensCanopy.js";
@@ -271,14 +353,19 @@ import { writeListenerPose } from "../listenerPose.js";
 import { sharedSeconds } from "../oceanWindSea.js";
 import type { PostView } from "../postFrame.js";
 import { shadeSmokeSeconds } from "../shadeMaskParams.js";
+import { bodiesInShot } from "../shotBodies.js";
 import { postFeaturesFor } from "../postParams.js";
 import { fittingBed, fittingFeatureTable, fittingLake, fittingOcean, fittingRings, fittingWaterBump, fittingWaterRings } from "../preparedScene.js";
 import { QUALITY, detectTier } from "../quality.js";
 import type { RainLamp } from "../rainField.js";
 import { RAIN_MAP } from "../rainParams.js";
+import { renderScaleRuns } from "../renderScale.js";
 import type { FreecamView, Renderer, RendererOptions } from "../renderer.js";
+import { createScenePlay, stareWithDark, type EndSceneSetup, type PlayNow } from "../scenePlay.js";
+import type { EndingKind } from "../ending.js";
 import { emptySeaFrameUniforms } from "../seaUniforms.js";
 import { startSkySource, type SkySource } from "../skyWorker.js";
+import { createSprayThrow, type SprayLight } from "../sprayField.js";
 import { SILENT_SURF_SOUND, createSurfSound, fillSurfSound, type SurfSound } from "../surfSound.js";
 import type { SkyState } from "../skyState.js";
 import { STARE_LENS_REST, stareShadeUnder, stareSide, stepStareLens, type StareLens } from "../stareLens.js";
@@ -287,6 +374,7 @@ import { createSyncJobs, finish, stepSlices, type SyncJobs } from "../syncJobs.j
 import { followRoadCentre, terrainTablesFor, type TerrainTables } from "../terrainTables.js";
 import { terrainCoverFor, terrainSurfaceUnder, terrainUniforms, type TerrainUniformInputs } from "../terrainUniforms.js";
 import { createViewBob } from "../viewBob.js";
+import { wetSurfaceUnder } from "../weather.js";
 import { createWildlifeInputs } from "../wildlifeInputs.js";
 import { wingTime } from "../wingParams.js";
 import { WATER_ROWS, lakeWaterRow } from "../waterShading.js";
@@ -297,6 +385,7 @@ import { WET_CAP, emptyWetUniforms, setWetCove, setWetSwash, setWetWeather, wetL
 import { windRecordUnder, type WindRecord } from "../windParams.js";
 import { atmospherePlugin } from "./atmospherePlugin.js";
 import { createBladeMeshes, type BladeMeshes } from "./bladeMeshes.js";
+import { createLiteBrushes, type LiteBrushes } from "./brushMeshes.js";
 import { cameraAxes, projectToCanvas, restAxes, restPlanes, viewCorners, viewPlanes, type CameraPose } from "./cameraPose.js";
 import { createCapMesh, type CapMesh } from "./capMesh.js";
 import { createCliffMeshes, type CliffMeshes } from "./cliffMeshes.js";
@@ -306,6 +395,7 @@ import { createEntityMeshes, type EntityMeshes } from "./entityMeshes.js";
 import { createForestMeshes, type ForestMeshes } from "./forestMeshes.js";
 import { FADE_ROWS_NAME, FRAME_BLOCK, FRAME_FIELDS, FRAME_PROJECTION_NAME, movedWords, writeFrameBlock, type FrameValues, type StageRecord } from "./frameBlock.js";
 import { createFrameUploads, uploadCountsCopy, type FrameUploadCounts } from "./frameUploads.js";
+import { createLiteGpuTime } from "./gpuTimeReadout.js";
 import { GROUND_IMAGES, cloudMapTexture, loadGroundArrays, tableTexture, type CloudMapTexture, type TableTexture } from "./groundTextures.js";
 import { createLiteLakes, type LakeFrame, type LiteLakes } from "./lakeMeshes.js";
 import { createLitePanorama, type LitePanorama, type ReflectionRegistry } from "./lakePanorama.js";
@@ -319,11 +409,13 @@ import { createPropMeshes, type PropMeshes } from "./propMeshes.js";
 import { createLiteRain, type LiteRain, type RainFrame } from "./rain.js";
 import { createLiteRainMap, type CoverRegistry, type LiteRainMap } from "./rainMap.js";
 import { createLiteRainSplash, type LiteRainSplash, type SplashFrame } from "./rainSplash.js";
-import { createLiteScenery, deferredScenery, type LiteScenery, type SceneryHost, type SceneryView } from "./sceneryMeshes.js";
-import { createLiteSea, type LiteSea, type SeaFrame } from "./seaMeshes.js";
+import { createLiteScenery, deferredScenery, type LiteCar, type LiteScenery, type SceneryHost, type SceneryView } from "./sceneryMeshes.js";
+import { createLiteSeaFft } from "./seaFft.js";
+import { createLiteSea, seaLookFor, type LiteSea, type SeaFrame } from "./seaMeshes.js";
 import { createSkinClock, type SkinClock } from "./skinnedModels.js";
 import { SKY_CAPTURE_BYTES, createLiteSkyCapture, type LiteSkyCapture } from "./skyCapture.js";
 import { createLiteSkyDome, type LiteSkyDome } from "./skyDome.js";
+import { createLiteSurfSpray, type LiteSurfSpray } from "./surfSpray.js";
 import { createTerrainMeshes, type TerrainMeshes } from "./terrainMeshes.js";
 import { createLiteWaterBed, type LiteWaterBed } from "./waterBed.js";
 import { createLiteWaterLife, type LiteWaterLife } from "./waterLifeMeshes.js";
@@ -427,6 +519,8 @@ type Standing = {
   duff: DuffMeshes | null;
   cliffs: CliffMeshes | null;
   props: PropMeshes | null;
+  /** A hand-authored level's brushes (`brushMeshes.ts`); null in a forest's world, which draws terrain in their place. */
+  brushes: LiteBrushes | null;
   /** The valley mist banks (`mistMeshes.ts`). */
   mist: LiteMistMeshes | null;
   /** The motes, on the tiers that draw them (`motes.ts`). */
@@ -452,6 +546,8 @@ type Standing = {
   /** The bed's square every body of water reads its depth from (`waterBed.ts`), and the sea (`seaMeshes.ts`); null in a world with no sea level. */
   bed: LiteWaterBed | null;
   sea: LiteSea | null;
+  /** The surf's spray, on the tier that draws it (`surfSpray.ts`), and the rule that throws a burst at a plunge; null elsewhere. */
+  spray: { drawn: LiteSurfSpray; thrown: ReturnType<typeof createSprayThrow> } | null;
   /** The lakes' water (`lakeMeshes.ts`); null in a world with no lake. */
   lakes: LiteLakes | null;
   /** The lakes' reeds and lilies (`waterPlantMeshes.ts`); null in a world with no lake. */
@@ -462,7 +558,7 @@ type Standing = {
 
 /**
  * A hike's renderer on `canvas` for `forest`'s world (null: a hand-authored
- * level, of which nothing is drawn yet). Of `options` it reads the tier, the
+ * level, whose brushes are drawn under the same sky, air and light). Of `options` it reads the tier, the
  * clock, the start, the prepared scene's rings and feature table, whether
  * the rings' first build is deferred, the loader of first builds, the
  * measurement mode and the sky's table; the rest belong to parts not drawn
@@ -470,7 +566,6 @@ type Standing = {
  */
 export function createLiteRenderer(canvas: HTMLCanvasElement, level: Level, forest: Forest | null, options: RendererOptions = {}): Renderer {
   if (options.engine !== undefined) throw new Error("the hike's renderer makes its own engine from its canvas: none is handed to it");
-  if (forest === null && level.brushes.length > 0) console.info(`the level's ${level.brushes.length} brushes are not drawn yet`);
 
   const tier = options.tier ?? detectTier(globalThis.navigator);
   const clock = options.clock ?? (() => performance.now());
@@ -532,8 +627,10 @@ export function createLiteRenderer(canvas: HTMLCanvasElement, level: Level, fore
   /** The rain on the lens, smoothed (`lensParams.ts`), and the local player's stare as their screen and ears take it (`stareLens.ts`). */
   let lensStrength = 0;
   let stareLens: StareLens = STARE_LENS_REST;
+  /** The stare as the frame shows it: a death's closing dark rides its shade (`stareWithDark`). */
+  let shownStare: StareLens = STARE_LENS_REST;
   /** The frame's exposure as shown: the weather's and the hour's, less what the stare takes of it where no chain's grade does (`sightUnder`). */
-  const shownExposure = (): number => (chained ? light.exposure : light.exposure * sightUnder(stareLens.level));
+  const shownExposure = (): number => (chained ? light.exposure : light.exposure * sightUnder(shownStare.level));
   /** The material path's grade for the frame (`materialGrade.ts`), filled in place. */
   const gradeValues = emptyMaterialGradeUniforms();
   /** The chase's cast (`escalation.ts`) and how far the dread reaches the lens (`/unsettle`), as the app last set them. */
@@ -573,6 +670,8 @@ export function createLiteRenderer(canvas: HTMLCanvasElement, level: Level, fore
   }
   /** The weather's preset as the lakes' calm follows it (`lakeCalmFrame.ts`): `setWeatherName`. */
   const calmFade = createCalmFade();
+  /** The sun and the fill as the spray takes its colour from them, refilled each frame it is aged. */
+  const sprayLights: SprayLight[] = [];
   /** What a frame hands the sea (`SeaFrame`), filled in place. */
   const seaFrame: SeaFrame = { centreX: 0, centreZ: 0, planes: [], corners: new Float32Array(24), seconds: 0, dt: 0, wind: windRecordUnder(light.weather, 0), hour: light.hour, cover: null };
   /** The surf as heard, one record refilled each frame (`surfSound.ts`), and whether this frame's `sync` stepped it: the sound of a frame that did not is silence. */
@@ -626,10 +725,18 @@ export function createLiteRenderer(canvas: HTMLCanvasElement, level: Level, fore
   let standing: Standing | null = null;
   /** The light's version the lights and the cleared frame were last written for. */
   let litVersion = -1;
-  /** The headlamp as the frame lights it: on while the local player's is and the camera is the eye, at the weather's
-   * state (`lampUnder`); and what the light was last written with. */
+  /**
+   * The local player's one lamp as the frame lights it. On the lens through a hike: on while the player's is, at the
+   * weather's state (`lampUnder`). Worn at the eye of the local body wherever a scene shows it, lit for the shot
+   * whether the player's was or not; dark in the end scene, whose camera is not the eye; and from the catch the car's
+   * headlamp, at its nose, as bright as its two lamps and with no dread in it. One light for all of it, so the lights
+   * every material reads are the same all game. `at` is where it stands and how it points, and what the light was
+   * last written with is beside it.
+   */
   const lensLamp: { on: boolean; state: LampState } = { on: false, state: lampUnder(light.weather, 0) };
-  const lampWritten = { intensity: Number.NaN, r: 0, g: 0, b: 0, x: 0, y: 0, z: 0, dx: 0, dy: 0, dz: 0 };
+  const lampAt = { x: 0, y: 0, z: 0, dx: 0, dy: 0, dz: 1, angle: LAMP_ANGLE, range: LAMP_RANGE };
+  const carLamp: LampState = { intensity: HEADLAMP_INTENSITY, colour: { r: LAMP_COLOUR[0], g: LAMP_COLOUR[1], b: LAMP_COLOUR[2] } };
+  const lampWritten = { intensity: Number.NaN, r: 0, g: 0, b: 0, x: 0, y: 0, z: 0, dx: 0, dy: 0, dz: 0, angle: LAMP_ANGLE, range: LAMP_RANGE };
   /** The sky's state the dome was last drawn for: the light makes a new one at each apply. */
   let domeSky: SkyState | null = null;
   /** What a frame draws the mist banks with (`MistFrame`), and the sky's state the haze's colours were last read for. */
@@ -669,14 +776,47 @@ export function createLiteRenderer(canvas: HTMLCanvasElement, level: Level, fore
   let heardLife: LiteWaterLife | null = null;
   /** Where the hikers and the Hollows stand a frame, and how (`entityPoses.ts`). */
   const poses = createEntityPoses();
+  /**
+   * The scenes and the endings as the frames play them (`scenePlay.ts`): stepped once a frame on the player's eye,
+   * which it hands back as the frame's camera with the shot's lens. Everything that reads the view reads it after:
+   * the chain's passes and their last camera, the mask, the rain, every part's test against the view's planes. The
+   * end scene's car is the scenery's own, stood where the scene has it; once it has left the rain's cover the map is
+   * drawn again.
+   */
+  const play = createScenePlay({
+    stage: (pose, car) => (car as LiteCar).stage(pose),
+    coverLeft: () => standing?.rainMap?.redraw(),
+  });
+  /** What the frame's scene asks, as the play last said; null on a frame with no local player or under the free camera. */
+  let playNow: PlayNow | null = null;
   /** The most hikers other than the local one the state has held at once: a lamp's light is made for each. */
   let othersSeen = 0;
-  /** The canvas's size the engine was last fitted to, CSS pixels. */
-  let fittedWidth = -1;
-  let fittedHeight = -1;
+  /**
+   * The frame's size (`frameSize.ts`): the canvas's box over the tier's scaling, whatever the display's pixel ratio,
+   * as the game sizes it on Babylon.js, and under the render scale where a paint pass hides its steps. The surface
+   * is the engine's own, once it stands.
+   */
+  let surface: EngineContext | null = null;
+  const frameFit = createFrameFit(tier, renderScaleRuns(postFeatures.paint, options.gpuTime === true), {
+    clientWidth: () => canvas.clientWidth,
+    clientHeight: () => canvas.clientHeight,
+    ratio: () => globalThis.devicePixelRatio ?? 1,
+    set: (width, height) => {
+      if (surface !== null) setSurfaceSize(surface, width, height);
+    },
+  });
   /** Ground images still being fetched or decoded. */
   let loading = forest === null ? 0 : GROUND_IMAGES;
   let gpuErrors = 0;
+  /**
+   * What the device is asked to make of shaders (`deviceMakes.ts`): a frame that asked for a shader module or a
+   * pipeline is told to whoever hears a shader compile on Babylon.js (`onShaderCompiled`).
+   */
+  const makes = createDeviceMakes();
+  /** The measurement mode's readout of the GPU's own time (`gpuTimeReadout.ts`); none outside it. */
+  const gpuTime = options.gpuTime === true ? createLiteGpuTime(canvas, import.meta.env.VITE_BUILD_SHA || "dev") : null;
+  /** The watch on the renderer's own engine (`engineWatch.ts`): the hike is told when the device is lost under it. */
+  const engineWatch = createEngineWatch();
   const disposal = new AbortController();
 
   let markSynced: () => void = () => undefined;
@@ -692,6 +832,7 @@ export function createLiteRenderer(canvas: HTMLCanvasElement, level: Level, fore
     made.waterPlants?.dispose();
     made.lakes?.dispose();
     made.sea?.dispose();
+    made.spray?.drawn.dispose();
     made.wildlife?.dispose();
     made.scenery?.dispose();
     made.cap?.dispose();
@@ -706,6 +847,7 @@ export function createLiteRenderer(canvas: HTMLCanvasElement, level: Level, fore
     made.motes?.dispose();
     made.mist?.dispose();
     made.props?.dispose();
+    made.brushes?.dispose();
     made.cliffs?.dispose();
     made.duff?.dispose();
     made.clutter?.dispose();
@@ -725,12 +867,21 @@ export function createLiteRenderer(canvas: HTMLCanvasElement, level: Level, fore
       disposeEngine(engine);
       return;
     }
+    // The frame at the game's own size before anything is made for it.
+    surface = engine;
+    frameFit.fit();
+    // Counted from the device's first shader, and timed from its first frame where the page measures.
+    makes.count(getGpuDevice(engine) as unknown as MakesDevice);
+    gpuTime?.attach(engine);
     onEngineGpuError(engine, (error) => {
       if (gpuErrors++ < GPU_ERRORS_SAID) console.error(`the hike's renderer: ${error.message}`);
     });
     onEngineDeviceLost(engine, (info) => {
-      // Its own letting go destroys the device too: only a loss it did not ask for is said.
-      if (!disposed) console.error(`the hike's renderer lost its device (${info.reason === undefined ? "no reason given" : info.reason}): ${info.message}`);
+      // Its own letting go destroys the device too: only a loss it did not ask for is said, and told to the hike,
+      // which builds the renderer again on a new engine. Nothing is drawn with a lost device meanwhile.
+      if (disposed) return;
+      console.error(`the hike's renderer lost its device (${info.reason === undefined ? "no reason given" : info.reason}): ${info.message}`);
+      engineWatch.fail("lost");
     });
     // The frame's block, before any material: every material's plugins name it.
     const shared = createPluginUniformBlock(engine, FRAME_BLOCK, [...FRAME_FIELDS], "vertex-fragment");
@@ -954,6 +1105,10 @@ export function createLiteRenderer(canvas: HTMLCanvasElement, level: Level, fore
         cover: both(coverAs("hard"), reflectedAs(false)),
       });
     }
+    // A forest draws terrain instead of brushes: a hand-authored level's are drawn only where there is none.
+    const brushes = forest === null && level.brushes.length > 0 && !disposed
+      ? createLiteBrushes(engine, scene, brushBoxes(level.brushes), { air, uploads })
+      : null;
     // The hikers' bodies and the Hollows' eyes, which land as their models do, under the air as the rest of the
     // world is. A body takes the water's line and not the rain: its porosity is none.
     const skinClock = createSkinClock(engine);
@@ -982,18 +1137,34 @@ export function createLiteRenderer(canvas: HTMLCanvasElement, level: Level, fore
     // hike's start, then the sea, then the lakes, each lake one surface, where the world has any.
     let bed: LiteWaterBed | null = null;
     let sea: LiteSea | null = null;
+    let spray: Standing["spray"] = null;
     let lakeMeshes: LiteLakes | null = null;
     let waterPlants: LiteWaterPlants | null = null;
     const waterLives: LiteWaterLife[] = [];
     const start = { x: options.start?.x ?? level.playerSpawns[0]?.x ?? 0, z: options.start?.z ?? level.playerSpawns[0]?.z ?? 0 };
+    // The wind sea's cascades, on the tier that computes them: made before the sea, whose material binds their
+    // pictures. Where they cannot be made the sea draws the baked loop.
+    const seaFft = forest !== null && cloudMap !== null && waterLevel !== undefined && !disposed && seaLookFor(tier).fft === true
+      ? await createLiteSeaFft(engine, scene, uploads).catch((error: unknown) => {
+        console.warn("Ocean: the wind sea's field could not be made; the sea draws without it.", error);
+        return null;
+      })
+      : null;
+    // A renderer let go while they were made keeps nothing of them.
+    if (disposed) seaFft?.dispose();
     if (forest !== null && cloudMap !== null && waterLevel !== undefined && !disposed) {
       bed = createLiteWaterBed(engine, tier, forest.seed, lakes, waterLevel, start.x, start.z, fittingBed(prepared, forest.seed, tier, start.x, start.z), uploads);
       sea = createLiteSea(engine, scene, forest.seed, tier, {
         start, waterLevel, bed, air, shared,
         rings: fittingWaterRings(prepared, forest.seed, start.x, start.z), ocean: fittingOcean(prepared, forest.seed, tier),
-        bump: fittingWaterBump(prepared, forest.seed), uploads,
+        bump: fittingWaterBump(prepared, forest.seed), uploads, fft: seaFft,
         cover: rainMap === null ? undefined : { add: (mesh, place) => rainMap.register(mesh, "water", place), remove: (mesh) => rainMap.unregister(mesh), show: (mesh, shown) => rainMap.show(mesh, shown) },
       });
+      // The spray of the plunges, on the tier whose sea is the cascades': thrown along the swell's travel while the
+      // curl is the lip drawn, else along the face's normal.
+      if (seaLookFor(tier).fft === true) {
+        spray = { drawn: createLiteSurfSpray(engine, scene, shared, uploads, chained), thrown: createSprayThrow(sea.edge.tracker, sea.edge.cove, waterLevel) };
+      }
     }
     if (forest !== null && cloudMap !== null && bed !== null && lakes.length > 0 && !disposed) {
       /** What the world's worker sampled for each lake, where it is that lake's. */
@@ -1022,8 +1193,8 @@ export function createLiteRenderer(canvas: HTMLCanvasElement, level: Level, fore
       }
     }
     const made: Standing = {
-      engine, scene, camera, sun, fill, lamp, dome, capture, shared, chain, materials, terrain, road, cloudGround, forest: trees, blades, clutter, duff, cliffs, props, mist, motes,
-      rain, rainMap, panorama, splash, skinClock, entities, mask, veil, wornLamps, cap, wildlife, scenery, bed, sea, lakes: lakeMeshes, waterPlants, waterLives,
+      engine, scene, camera, sun, fill, lamp, dome, capture, shared, chain, materials, terrain, road, cloudGround, forest: trees, blades, clutter, duff, cliffs, props, brushes, mist, motes,
+      rain, rainMap, panorama, splash, skinClock, entities, mask, veil, wornLamps, cap, wildlife, scenery, bed, sea, spray, lakes: lakeMeshes, waterPlants, waterLives,
     };
     if (disposed) {
       release(made);
@@ -1052,6 +1223,9 @@ export function createLiteRenderer(canvas: HTMLCanvasElement, level: Level, fore
       if (handle.isDisposed) return;
       handle.isDisposed = true;
       disposed = true;
+      engineWatch.close();
+      makes.stop();
+      gpuTime?.dispose();
       stopLoop();
       disposal.abort();
       light.dispose();
@@ -1059,6 +1233,7 @@ export function createLiteRenderer(canvas: HTMLCanvasElement, level: Level, fore
       markSynced();
       if (standing !== null) release(standing);
       standing = null;
+      surface = null;
       if (options.gpuTime === true) {
         if (measured.__syncJobs !== undefined) delete measured.__syncJobs;
         if (measured.__frameUploads !== undefined) delete measured.__frameUploads;
@@ -1082,14 +1257,6 @@ export function createLiteRenderer(canvas: HTMLCanvasElement, level: Level, fore
       cancelAnimationFrame(scheduled);
       scheduled = null;
     }
-  }
-
-  /** The engine's surface fitted to the canvas, when the canvas's size has moved. */
-  function fit(made: Standing): void {
-    if (canvas.clientWidth === fittedWidth && canvas.clientHeight === fittedHeight) return;
-    fittedWidth = canvas.clientWidth;
-    fittedHeight = canvas.clientHeight;
-    resizeEngine(made.engine);
   }
 
   /** The lights and the cleared frame, written again when the hour's or the weather's light has moved. */
@@ -1134,27 +1301,35 @@ export function createLiteRenderer(canvas: HTMLCanvasElement, level: Level, fore
   }
 
   /**
-   * The headlamp at the eye, along the view, at the frame's state, or at an intensity of 0: written only where any of
-   * it has moved, so a still frame writes nothing, and a lamp that is off is not moved.
+   * The headlamp where the frame has it (`lampAt`), at the frame's state, or at an intensity of 0: written only where
+   * any of it has moved, so a still frame writes nothing. A lamp that is dark stands overhead (`lampPlace`), not
+   * where it last shone, and is put there once: it is the first light of every mesh, and Lite's clear coat takes
+   * what it dims a surface's direct light by from the first light's bearing whatever its intensity, so the car's
+   * paint would lose light by where the lamp went dark.
    */
   function placeLamp(made: Standing): void {
     const { lamp } = made;
     const intensity = lensLamp.on ? lensLamp.state.intensity : 0;
     const w = lampWritten;
+    const at = lampAt;
     const { r, g, b } = lensLamp.state.colour;
     const lit = intensity > 0;
-    const moved = lit && (w.x !== pose.x || w.y !== pose.y || w.z !== pose.z || w.dx !== axes.fx || w.dy !== axes.fy || w.dz !== axes.fz);
+    const stands = lampPlace(lit, at);
+    const moved = w.x !== stands.x || w.y !== stands.y || w.z !== stands.z
+      || (lit && (w.dx !== at.dx || w.dy !== at.dy || w.dz !== at.dz || w.angle !== at.angle || w.range !== at.range));
     const recoloured = lit && (w.r !== r || w.g !== g || w.b !== b);
     if (intensity === w.intensity && !moved && !recoloured) return;
     w.intensity = intensity;
     lamp.intensity = intensity;
+    w.x = lamp.position.x = stands.x;
+    w.y = lamp.position.y = stands.y;
+    w.z = lamp.position.z = stands.z;
     if (lit) {
-      w.x = lamp.position.x = pose.x;
-      w.y = lamp.position.y = pose.y;
-      w.z = lamp.position.z = pose.z;
-      w.dx = lamp.direction.x = axes.fx;
-      w.dy = lamp.direction.y = axes.fy;
-      w.dz = lamp.direction.z = axes.fz;
+      w.dx = lamp.direction.x = at.dx;
+      w.dy = lamp.direction.y = at.dy;
+      w.dz = lamp.direction.z = at.dz;
+      w.angle = lamp.angle = at.angle;
+      w.range = lamp.range = at.range;
       // Its highlight takes its own colour, as the game's lamp's does.
       w.r = r;
       w.g = g;
@@ -1193,6 +1368,11 @@ export function createLiteRenderer(canvas: HTMLCanvasElement, level: Level, fore
     terrainValues.terrainAlbedo[1] = surface.albedo[1];
     terrainValues.terrainAlbedo[2] = surface.albedo[2];
     setWetWeather(wetness);
+    // A level's brushes take the weather's wet as a whole: darker and glossier, written when it moves.
+    if (made.brushes !== null) {
+      const wet = wetSurfaceUnder(light.weather);
+      made.brushes.wet(wet.albedoScale, wet.roughnessScale);
+    }
     // Everywhere but under the water of the high tier's own path, the water above darkens what stands in it. The
     // terrain's cap is none; every other material's is its own, and the rest of the look is this record's.
     const wetLine = wetLineFor(wetBodies, pose.x, pose.z);
@@ -1238,7 +1418,7 @@ export function createLiteRenderer(canvas: HTMLCanvasElement, level: Level, fore
     frameValues.exposure = shownExposure();
     if (made.chain === null) {
       // No chain: the frame is graded in its materials, by the weather's curves, the chase's cast and the vignette.
-      const record = gradeRecordUnder(light.weather, light.hour, light.sky?.night ?? 0, unsettle, (clock() - madeAt) / 1000, stareLens, chaseCast);
+      const record = gradeRecordUnder(light.weather, light.hour, light.sky?.night ?? 0, unsettle, (clock() - madeAt) / 1000, shownStare, chaseCast);
       frameValues.grade = materialGradeUniforms(light.weather, record, canvas.width, canvas.height, gradeValues);
     }
     // The projection as Lite makes it for the hike's own pass, at the canvas's shape.
@@ -1270,6 +1450,13 @@ export function createLiteRenderer(canvas: HTMLCanvasElement, level: Level, fore
     scenery: sceneryHost,
     engine: handle as EngineHandle,
     engineName: "webgpu",
+    ownWatch: engineWatch.watch,
+    gpuTime,
+    onShaderCompiled: (fn) => makes.onMade(fn),
+    keepShaders() {
+      // Nothing to keep: every shader module and pipeline is the device's, which goes with this renderer (`retire`
+      // hands no engine on), and the next hike's renderer makes its own on a new one.
+    },
     forestReady,
     firstSynced,
     skyReady() {
@@ -1335,9 +1522,18 @@ export function createLiteRenderer(canvas: HTMLCanvasElement, level: Level, fore
       }
       setFoliageWind(wind, windPlayers);
 
+      // The render scale under the paint is fed the page's frame, as the game feeds it: a step is fitted by the next frame drawn.
+      frameFit.frame(frame.dt);
       othersSeen = Math.max(othersSeen, state.players.size - (state.players.has(localId) ? 1 : 0));
+      // Where every body stands this frame, before the frame's scene is stepped, which reads where the others are
+      // drawn. Who the scene then shows or hides is taken up below, in this same frame.
+      let bodies: EntityFrame | null = standing !== null && standing.entities !== null ? poses.step(state, localId, alpha, frame.dt, standing.entities.models) : null;
+      // The death's dark as the last frame posed it: the passes read it a frame late.
+      const darkWas = play.close;
+      playNow = null;
       // The headlamp's state under the weather; lit below while the local player's is and the camera is the eye.
-      lensLamp.state = lampUnder(weather, seconds);
+      const lampState = lampUnder(weather, seconds);
+      lensLamp.state = lampState;
       lensLamp.on = false;
       // The world follows the camera in freecam, the player otherwise.
       let centre: { x: number; z: number } | null = null;
@@ -1358,8 +1554,6 @@ export function createLiteRenderer(canvas: HTMLCanvasElement, level: Level, fore
       } else {
         const local = state.players.get(localId);
         if (local !== undefined) {
-          centre = local.pos;
-          coverAt = local.pos;
           lensLamp.on = local.lamp.on;
           const offset = bob.update(
             {
@@ -1381,10 +1575,61 @@ export function createLiteRenderer(canvas: HTMLCanvasElement, level: Level, fore
           pose.yaw = eye.yaw;
           pose.pitch = eye.pitch;
           pose.roll = offset.roll;
-          fov = GAME_FOV;
+          // The scenes and the endings, from the eye just placed (`scenePlay.ts`): the summit's scene or the cap's,
+          // the end scene with its car, the death's fall; each takes the camera from the one before, with its lens.
+          const now = play.step(seconds, pose, local, state.players, (id) => poses.drawnAt(id));
+          playNow = now;
+          fov = now.fov ?? GAME_FOV;
+          // The local body stands in the summit's shots and runs in the end scene's; the others at the car's door are
+          // in it. Where the scene has just changed who is shown, the frame's bodies are posed under it at once
+          // (`shotBodies.ts`): a shot holds its body from its first frame, and a frame whose camera is the hiker's own
+          // eye again draws no body round it.
+          bodies = bodiesInShot(poses, bodies, now, state, localId, alpha, standing?.entities?.models ?? null);
+          // What the world is built round: the player, but in an end scene shown on another's run (who reached the
+          // car while this screen's player was far up the mountain), that runner.
+          const shownId = play.runnerId();
+          centre = (shownId === undefined ? undefined : state.players.get(shownId))?.pos ?? local.pos;
+          // The end scene's camera goes down the road from the player: the rain's cover goes with it.
+          coverAt = now.endRun ? pose : local.pos;
         }
       }
       cameraAxes(pose.yaw, pose.pitch, pose.roll, axes);
+      // The lamp: on the lens, at the eye and along the view; or where the frame's scene has it.
+      lampAt.x = pose.x;
+      lampAt.y = pose.y;
+      lampAt.z = pose.z;
+      lampAt.dx = axes.fx;
+      lampAt.dy = axes.fy;
+      lampAt.dz = axes.fz;
+      lampAt.angle = LAMP_ANGLE;
+      lampAt.range = LAMP_RANGE;
+      if (playNow !== null) {
+        if (playNow.lamp === "car") {
+          const at = playNow.carLamp;
+          lampAt.x = at.x;
+          lampAt.y = at.y;
+          lampAt.z = at.z;
+          lampAt.dx = at.dx;
+          lampAt.dy = at.dy;
+          lampAt.dz = at.dz;
+          lampAt.angle = HEADLAMP_CONE;
+          lampAt.range = HEADLAMP_RANGE;
+          lensLamp.state = carLamp;
+          lensLamp.on = true;
+        } else if (playNow.lamp === "body") {
+          // Worn at the eye of the body as this frame stands it, from the shot's first frame: off only while no body is drawn for it.
+          const worn = bodies?.players.find((body) => body.local && body.hidden === null);
+          lensLamp.on = worn !== undefined;
+          if (worn !== undefined) {
+            lampAt.x = worn.eyeX;
+            lampAt.y = worn.eyeY;
+            lampAt.z = worn.eyeZ;
+            lampAt.dx = worn.aimX;
+            lampAt.dy = worn.aimY;
+            lampAt.dz = worn.aimZ;
+          }
+        } else if (playNow.lensDark) lensLamp.on = false;
+      }
       drawnWith.eye = pose;
       drawnWith.wetness = weather.wetness;
       drawnWith.rain = weather.rain;
@@ -1439,13 +1684,14 @@ export function createLiteRenderer(canvas: HTMLCanvasElement, level: Level, fore
         }
         coverDrawn = false;
         if (coverAt !== null && rainFrame !== null && splashFrame !== null) {
-          // The headlamp as the rain reads it: the frame's, at the eye and along the view.
-          rainLamp.x = pose.x;
-          rainLamp.y = pose.y;
-          rainLamp.z = pose.z;
-          rainLamp.dx = axes.fx;
-          rainLamp.dy = axes.fy;
-          rainLamp.dz = axes.fz;
+          // The headlamp as the rain reads it: the frame's, where it stands and as it points.
+          rainLamp.x = lampAt.x;
+          rainLamp.y = lampAt.y;
+          rainLamp.z = lampAt.z;
+          rainLamp.dx = lampAt.dx;
+          rainLamp.dy = lampAt.dy;
+          rainLamp.dz = lampAt.dz;
+          rainLamp.angle = lampAt.angle;
           rainLamp.intensity = lensLamp.on ? lensLamp.state.intensity : 0;
           rainLamp.r = lensLamp.state.colour.r;
           rainLamp.g = lensLamp.state.colour.g;
@@ -1465,9 +1711,9 @@ export function createLiteRenderer(canvas: HTMLCanvasElement, level: Level, fore
         // The hikers' bodies, the Hollows' eyes and the lamps the other hikers wear, from the frame's poses: the
         // fades and the paces step by the page's frame, the clips by the renderer's clock.
         standing.skinClock.step(dt);
-        if (standing.entities !== null) {
-          standing.entities.update(poses.step(state, localId, alpha, frame.dt, standing.entities.models), dt);
-          standing.wornLamps.update(standing.entities.lamps(), lensLamp.state);
+        if (standing.entities !== null && bodies !== null) {
+          standing.entities.update(bodies, dt);
+          standing.wornLamps.update(standing.entities.lamps(), lampState);
         }
         // The mask the figures were just written into: drawn from the frame's own camera, on the smoke's clock, and
         // read by the grade while a figure is in it.
@@ -1519,6 +1765,18 @@ export function createLiteRenderer(canvas: HTMLCanvasElement, level: Level, fore
           setWetSwash(edge.table.data);
           fillSurfSound(surf, pose, edge.tracker, edge.table, edge.cove, waterLevel, standing.sea.hs, canopyRead?.value ?? 0, frame.dt);
           surfStepped = true;
+          // The spray: this frame's plunges near the world's centre throw their bursts, then every burst is aged, and
+          // the sprites drawn while one is alive, the foam's white under the sun and the fill.
+          if (standing.spray !== null) {
+            standing.spray.thrown(standing.sea.curl, standing.sea.travel, centre.x, centre.z, sharedNow, standing.spray.drawn.burst);
+            const lights = light.lights;
+            sprayLights.length = 0;
+            if (lights !== null) {
+              sprayLights.push({ r: lights.sun.colour.r, g: lights.sun.colour.g, b: lights.sun.colour.b, intensity: lights.sun.intensity });
+              sprayLights.push({ r: lights.fill.colour.r, g: lights.fill.colour.g, b: lights.fill.colour.b, intensity: lights.fill.intensity });
+            }
+            standing.spray.drawn.update(sharedNow, wind, sprayLights);
+          }
         }
         // The lakes' water: each lake's calm and numbers, and each shown while the view holds it. What every lake
         // reads alike goes to the frame's block below.
@@ -1625,9 +1883,12 @@ export function createLiteRenderer(canvas: HTMLCanvasElement, level: Level, fore
         lensStrength = lensSmooth(lensStrength, lensStrengthUnder(weather.rain, pose.pitch), dt);
         // The chain's grade for the frame: before the sky's first slices there is no night factor, and the day's 0
         // stands in, for frames no one sees.
-        standing.chain?.update(weather, light.hour, sky?.night ?? 0, unsettle, stareLens, lensStrength, chaseCast);
+        // The death's closing dark rides the stare's shade, driven to full: the grade's on a tier with a chain, the
+        // veil's and the exposure's on a tier with none.
+        shownStare = stareWithDark(stareLens, darkWas);
+        standing.chain?.update(weather, light.hour, sky?.night ?? 0, unsettle, shownStare, lensStrength, chaseCast);
         // With no chain the veil lays the mask and the stare's darkness over the frame, while there is either.
-        standing.veil?.update(standing.mask?.texture ?? null, standing.mask?.any ?? false, stareShadeUnder(stareLens, seconds), canvas.width, canvas.height);
+        standing.veil?.update(standing.mask?.texture ?? null, standing.mask?.any ?? false, stareShadeUnder(shownStare, seconds), canvas.width, canvas.height);
         draw(standing, weather.wetness);
       }
       // This frame's share of the rebuilds the updates above began, once every shell has seen the view.
@@ -1647,21 +1908,27 @@ export function createLiteRenderer(canvas: HTMLCanvasElement, level: Level, fore
       return projectToCanvas(pose, axes, fov, lens.near, canvas.clientWidth, canvas.clientHeight, pos.x, pos.y, pos.z);
     },
     resize() {
-      // Fitted again whatever the size last seen: the device's pixel ratio may be what moved.
-      fittedWidth = -1;
-      if (standing !== null) fit(standing);
+      // Read again whatever was last seen.
+      frameFit.refit();
+      if (standing !== null) frameFit.fit();
     },
     drawFrame() {
-      if (standing === null) return;
+      if (standing === null || engineWatch.failed("lost")) return;
       // While the scene is built again for a new hiker's lamp, nothing of it is drawn (`wornLamps.ts`).
       if (standing.wornLamps.rebuilding) return;
-      fit(standing);
+      // The frame sized again where the canvas's box, the display's ratio or the render scale has moved.
+      frameFit.fit();
       // The hike's own surface alone: a billboard's bake has another, drawn when the bake is (`impostorBake.ts`).
       renderFrame(standing.engine, 1000 / 60, [standing.engine]);
       // The cover map is drawn with the frame that asked for it, and no other.
       standing.rainMap?.frameDrawn();
       // And a sector of the shore's panorama with the frame that drew it.
       standing.panorama?.frameDrawn();
+      // And the wind sea's cascades with the frame that asked for them.
+      standing.sea?.frameDrawn();
+      // A frame that asked the device for a shader module or a pipeline is told of, and the measurement mode's line written.
+      makes.frameEnd();
+      gpuTime?.frameEnd();
     },
     runLoop(frame) {
       if (disposed) return;
@@ -1690,6 +1957,18 @@ export function createLiteRenderer(canvas: HTMLCanvasElement, level: Level, fore
     },
     setFreecam(view) {
       freecam = view;
+    },
+    setScene(kind, at, more, fromS = 0) {
+      play.setScene(kind, at, more, fromS, clock() / 1000);
+    },
+    clearEnding(liftS = 0) {
+      play.clearEnding(liftS, clock() / 1000);
+    },
+    setEnding(kind: EndingKind, scene?: EndSceneSetup) {
+      play.setEnding(kind, scene, clock() / 1000);
+    },
+    endScene() {
+      return play.endScene();
     },
     setHour(hour) {
       light.setHour(hour);

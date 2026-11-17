@@ -563,6 +563,10 @@ describe("layer boundaries", () => {
       join(SRC, "game", "dragonflyShapes.ts"),
       join(SRC, "game", "oceanFrame.ts"),
       join(SRC, "game", "seaEdge.ts"),
+      join(SRC, "game", "oceanFftPasses.ts"),
+      join(SRC, "game", "windSeaField.ts"),
+      join(SRC, "game", "lipStrip.ts"),
+      join(SRC, "game", "sprayField.ts"),
       join(SRC, "game", "seaLattice.ts"),
       join(SRC, "game", "seaUniforms.ts"),
       join(SRC, "game", "postFrame.ts"),
@@ -571,6 +575,11 @@ describe("layer boundaries", () => {
       join(SRC, "game", "signParts.ts"),
       join(SRC, "game", "sceneryParts.ts"),
       join(SRC, "game", "boardDraw.ts"),
+      join(SRC, "game", "scenePlay.ts"),
+      join(SRC, "game", "cutscene.ts"),
+      join(SRC, "game", "ending.ts"),
+      join(SRC, "game", "endScene.ts"),
+      join(SRC, "game", "carParts.ts"),
     ];
 
     // Guards against the guard: a rename or deletion of one of these files
@@ -762,8 +771,9 @@ describe("layer boundaries", () => {
   /**
    * What the sea is drawn with, for a renderer that is not Babylon.js to
    * draw it by: the swell and the wind sea as numbers, the sea following its
-   * wind, the wind sea's loop asked of its worker, its edge on the cove with the swash's table and the breaker's
-   * tracker, the rings as one lattice, their samples and the box each has
+   * wind, the wind sea's loop asked of its worker, which field draws the wind sea and the passes of the one that
+   * is computed each frame, its edge on the cove with the swash's table and the breaker's
+   * tracker, the strips of the plunging lip's curl and the spray's bursts, the rings as one lattice, their samples and the box each has
    * water in, the sea's uniforms by name, and the surf as heard. The shell
    * that draws it on Babylon.js takes its values from these.
    */
@@ -771,6 +781,7 @@ describe("layer boundaries", () => {
     const ENGINE_FREE = [
       "oceanFrame.ts", "oceanWindSea.ts", "oceanLoopStart.ts", "oceanLoopBake.ts", "oceanWaves.ts", "oceanTables.ts", "oceanSwell.ts", "seaEdge.ts", "swashTable.ts",
       "oceanBreaker.ts", "seaLattice.ts", "seaUniforms.ts", "surfSound.ts", "water.ts", "waterSurface.ts",
+      "oceanFftPasses.ts", "windSeaField.ts", "lipStrip.ts", "sprayField.ts",
     ];
     const loaded = (file: string): string[] =>
       [...readFileSync(file, "utf8").matchAll(/^\s*(?:import|export)\s+(?!type\s)(?:[^"'();]*?\s+from\s+)?["']([^"']+)["']/gm)].map((m) => m[1] as string);
@@ -791,8 +802,92 @@ describe("layer boundaries", () => {
     expect(bad).toEqual([]);
     // And the shells on Babylon.js read them: the sea's numbers, its wind's lag and its edge are made in one place.
     expect(readFileSync(join(SRC, "game/oceanRender.ts"), "utf8")).toContain("createOceanFrame(seed, tier, made)");
-    expect(readFileSync(join(SRC, "game/oceanWindSource.ts"), "utf8")).toContain("createSeaWindLag()");
+    expect(readFileSync(join(SRC, "game/windSeaField.ts"), "utf8")).toContain("createSeaWindLag()");
+    expect(readFileSync(join(SRC, "game/oceanWindSource.ts"), "utf8")).toContain("createWindSeaField<BaseTexture>(seed, tier, {");
     expect(readFileSync(join(SRC, "game/renderer.ts"), "utf8")).toContain("createSeaEdgeStep(seed, ocean.field)");
+    // The FFT's passes, the curl's strips and the spray's bursts likewise.
+    expect(readFileSync(join(SRC, "game/oceanGpuFft.ts"), "utf8")).toContain('from "./oceanFftPasses.js";');
+    expect(readFileSync(join(SRC, "game/oceanLip.ts"), "utf8")).toContain("lipReach(cove, level)");
+    expect(readFileSync(join(SRC, "game/surfSpray.ts"), "utf8")).toContain("createSprayBursts(plugin.bursts)");
+    expect(readFileSync(join(SRC, "game/renderer.ts"), "utf8")).toContain("createSprayThrow(tracker, cove, waterLevel)");
+  });
+
+  /**
+   * What a scene and an ending are played with, for a renderer that is not
+   * Babylon.js to play them by: the summit's shots and the cap's, the death's
+   * fall and its closing dark, the end scene's four shots, its car along the
+   * road and its lamps, and the state that runs between them from frame to
+   * frame (whose camera the frame has, the local body in a shot, who is in
+   * the car, where the one lamp is worn). The renderer on Babylon.js steps
+   * the same play.
+   */
+  it("what the scenes and the endings are played with is computed without loading Babylon, whatever it imports", () => {
+    const ENGINE_FREE = ["scenePlay.ts", "shotBodies.ts", "cutscene.ts", "ending.ts", "endScene.ts", "carAudio.ts", "carParts.ts", "scene/roadPath.ts", "scene/timeline.ts", "scene/shots.ts"];
+    const loaded = (file: string): string[] =>
+      [...readFileSync(file, "utf8").matchAll(/^\s*(?:import|export)\s+(?!type\s)(?:[^"'();]*?\s+from\s+)?["']([^"']+)["']/gm)].map((m) => m[1] as string);
+    const seen = new Set<string>();
+    const stack = ENGINE_FREE.map((name) => join(SRC, "game", name));
+    for (const file of stack) expect(existsSync(file), file).toBe(true);
+    const bad: string[] = [];
+    while (stack.length > 0) {
+      const file = stack.pop() as string;
+      if (seen.has(file)) continue;
+      seen.add(file);
+      for (const spec of loaded(file)) {
+        if (spec.startsWith("@babylonjs")) bad.push(`${relative(SRC, file)} imports ${spec}`);
+        if (spec.startsWith(".") && spec.endsWith(".js")) stack.push(join(file, "..", spec.replace(/\.js$/, ".ts")));
+      }
+    }
+    expect(seen.size).toBeGreaterThan(ENGINE_FREE.length);
+    expect(bad).toEqual([]);
+    // And the shells on Babylon.js read them: the scenes' state is kept in one place, and the car's parts are turned by one rule.
+    expect(readFileSync(join(SRC, "game/renderer.ts"), "utf8")).toContain("const play = createScenePlay({");
+    // On Lite the frame's bodies take up who the scene shows in the frame that says so.
+    expect(readFileSync(join(SRC, "game/lite/renderer.ts"), "utf8")).toContain("bodies = bodiesInShot(poses, bodies, now, state, localId, alpha, standing?.entities?.models ?? null);");
+    expect(readFileSync(join(SRC, "game/scene/sceneStage.ts"), "utf8")).toContain("wheel.node.rotation.z = wheelSpinTurn(pose);");
+  });
+
+  /**
+   * What stands between a renderer and the page it draws on is the game's
+   * own arithmetic too: the frame's size from the canvas's box, the tier's
+   * scaling and the render scale under the paint, the watch a renderer
+   * keeps on an engine it made for itself, the count of what a device is
+   * asked to make of shaders, and the measurement mode's report. Both
+   * renderers read the rule that says where the render scale runs.
+   */
+  it("what a renderer is sized and started by is computed without loading Babylon, whatever it imports", () => {
+    const ENGINE_FREE = ["frameSize.ts", "renderScale.ts", "quality.ts", "engineWatch.ts", "deviceMakes.ts", "gpuTimeTasks.ts", "gpuTimeReport.ts"];
+    const loaded = (file: string): string[] =>
+      [...readFileSync(file, "utf8").matchAll(/^\s*(?:import|export)\s+(?!type\s)(?:[^"'();]*?\s+from\s+)?["']([^"']+)["']/gm)].map((m) => m[1] as string);
+    const seen = new Set<string>();
+    const stack = ENGINE_FREE.map((name) => join(SRC, "game", name));
+    for (const file of stack) expect(existsSync(file), file).toBe(true);
+    const bad: string[] = [];
+    while (stack.length > 0) {
+      const file = stack.pop() as string;
+      if (seen.has(file)) continue;
+      seen.add(file);
+      for (const spec of loaded(file)) {
+        if (spec.startsWith("@babylonjs")) bad.push(`${relative(SRC, file)} imports ${spec}`);
+        if (spec.startsWith(".") && spec.endsWith(".js")) stack.push(join(file, "..", spec.replace(/\.js$/, ".ts")));
+      }
+    }
+    expect(seen.size).toBeGreaterThan(ENGINE_FREE.length);
+    expect(bad).toEqual([]);
+    expect(readFileSync(join(SRC, "game/renderer.ts"), "utf8")).toContain("renderScaleRuns(postFeatures.paint, options.gpuTime === true)");
+    const lite = readFileSync(join(SRC, "game/lite/renderer.ts"), "utf8");
+    expect(lite).toContain("createFrameFit(tier, renderScaleRuns(postFeatures.paint, options.gpuTime === true), {");
+    // The surface is sized by the game's rule alone: Lite's own fit to the display's ratio is not called.
+    expect(lite).not.toContain("resizeEngine");
+    // A lost device is told to the hike, which builds the renderer again: Lite's recovery in place is not used.
+    expect(lite).toContain('engineWatch.fail("lost");');
+    expect(lite).toContain("ownWatch: engineWatch.watch,");
+    expect(lite).not.toContain("enableDeviceLostSceneRecovery");
+    // What the engine tells on Babylon.js is told from the device's own calls, and timed by Lite's own timers.
+    expect(lite).toContain("onShaderCompiled: (fn) => makes.onMade(fn),");
+    expect(readFileSync(join(SRC, "game/lite/gpuTimeReadout.ts"), "utf8")).toContain("taskTimeReport({");
+    // The renderer on Babylon.js is watched by whoever made its engine.
+    expect(readFileSync(join(SRC, "game/renderer.ts"), "utf8")).toContain("ownWatch: null,");
   });
 
   /**
@@ -824,9 +919,9 @@ describe("layer boundaries", () => {
     expect(bad).toEqual([]);
     // Lite itself is loaded only by the modules that draw: the plugins, the pose and the light name its types alone.
     expect(lite.sort()).toEqual([
-      "game/lite/bladeMeshes.ts", "game/lite/capMesh.ts", "game/lite/cliffMeshes.ts", "game/lite/clutterMeshes.ts", "game/lite/dragonflyMeshes.ts", "game/lite/duffMeshes.ts", "game/lite/entityMeshes.ts", "game/lite/forestMeshes.ts", "game/lite/forestModels.ts", "game/lite/groundTextures.ts", "game/lite/impostorBake.ts",
-      "game/lite/lakeMeshes.ts", "game/lite/lakePanorama.ts", "game/lite/listMeshes.ts", "game/lite/midgeMeshes.ts", "game/lite/mistMeshes.ts", "game/lite/motes.ts", "game/lite/postChain.ts", "game/lite/propMeshes.ts", "game/lite/rain.ts", "game/lite/rainMap.ts", "game/lite/rainSplash.ts", "game/lite/renderer.ts", "game/lite/sceneryMeshes.ts", "game/lite/sceneryModels.ts", "game/lite/sceneryPaint.ts", "game/lite/seaMeshes.ts", "game/lite/shadeMask.ts", "game/lite/shadeVeil.ts", "game/lite/shaderUniforms.ts",
-      "game/lite/skinnedModels.ts", "game/lite/skyCapture.ts", "game/lite/skyDome.ts", "game/lite/terrainMeshes.ts", "game/lite/waterBed.ts", "game/lite/waterPlantMeshes.ts", "game/lite/wildlifeMeshes.ts", "game/lite/wornLamps.ts",
+      "game/lite/bladeMeshes.ts", "game/lite/brushMeshes.ts", "game/lite/capMesh.ts", "game/lite/cliffMeshes.ts", "game/lite/clutterMeshes.ts", "game/lite/dragonflyMeshes.ts", "game/lite/duffMeshes.ts", "game/lite/entityMeshes.ts", "game/lite/forestMeshes.ts", "game/lite/forestModels.ts", "game/lite/gpuTimeReadout.ts", "game/lite/groundTextures.ts", "game/lite/impostorBake.ts",
+      "game/lite/lakeMeshes.ts", "game/lite/lakePanorama.ts", "game/lite/lipMeshes.ts", "game/lite/listMeshes.ts", "game/lite/midgeMeshes.ts", "game/lite/mistMeshes.ts", "game/lite/motes.ts", "game/lite/postChain.ts", "game/lite/propMeshes.ts", "game/lite/rain.ts", "game/lite/rainMap.ts", "game/lite/rainSplash.ts", "game/lite/renderer.ts", "game/lite/sceneryMeshes.ts", "game/lite/sceneryModels.ts", "game/lite/sceneryPaint.ts", "game/lite/seaFft.ts", "game/lite/seaMeshes.ts", "game/lite/shadeMask.ts", "game/lite/shadeVeil.ts", "game/lite/shaderUniforms.ts",
+      "game/lite/skinnedModels.ts", "game/lite/skyCapture.ts", "game/lite/skyDome.ts", "game/lite/surfSpray.ts", "game/lite/terrainMeshes.ts", "game/lite/waterBed.ts", "game/lite/waterPlantMeshes.ts", "game/lite/wildlifeMeshes.ts", "game/lite/wornLamps.ts",
     ]);
     // And the hike is handed that renderer, which reaches the Babylon.js one's module for its types alone.
     const renderer = readFileSync(join(SRC, "game/renderer.ts"), "utf8");

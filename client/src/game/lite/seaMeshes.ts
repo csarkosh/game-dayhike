@@ -29,11 +29,18 @@
  *   whole of its tables).
  * - **The edge is stepped every frame, shown or not**: the wet ground reads
  *   the swash's table, and the surf is heard by it.
- * - **The wind sea's field is the loop** on the tiers that draw one, baked
- *   in the game's worker (`oceanLoopStart.ts`) and sent once when it lands,
- *   64 frames of 128 texels a side; until then the sea is the swell alone.
- *   A tier whose own field is the FFT draws the loop, as the game does
- *   where the FFT is not to be had.
+ * - **The wind sea's field is the tier's** (`windSeaField.ts`, which the
+ *   shell on Babylon.js reads too). The loop on the tier that bakes one,
+ *   in the game's worker (`oceanLoopStart.ts`), sent once when it lands, 64
+ *   frames of 128 texels a side; until then the sea is the swell alone. On
+ *   the tier that computes its field each frame, the three cascades of
+ *   `seaFft.ts`, stepped only on a frame whose view holds the sea, their
+ *   spectrum sent again when the sea's wind has moved by a step; and where
+ *   that field fails, the loop, baked then and bound in the cascades' place.
+ * - **The plunging lip's swept curl is drawn with the cascades**
+ *   (`lipMeshes.ts`), made where they are: while they are the field drawn,
+ *   a crest is in mid-plunge and the view holds the cove's face. In every
+ *   other mode the sea's fragment lip draws, and the two never together.
  * - **In the rain's cover map it is open water, at rest**: the same mesh
  *   through the map's material and a plugin that places the lattice at the
  *   level, drawn there by the map's own word while the map's square
@@ -43,16 +50,15 @@
  */
 import {
   addToScene, createMeshFromData, createPbrMaterial, createRenderTexture2D, createTexture2DArray, createTexture2DFromPixels, disposeMeshGpu,
-  markMaterialUboDirty, removeFromScene, setMeshDrawRange, setMeshVisible, updateTextureRegion,
+  markMaterialUboDirty, rebuildMaterial, removeFromScene, setMeshDrawRange, setMeshVisible, updateTextureRegion,
   type EngineContext, type MaterialPlugin, type Mesh, type PluginUniformBlock, type SceneContext, type Texture2D, type Texture2DArray,
 } from "@babylonjs/lite";
 import { boxInPlanes, cornersPastBox, type ViewPlane } from "../lakeSeen.js";
-import { createOceanFrame, type WindSeaDrawn } from "../oceanFrame.js";
+import { createOceanFrame } from "../oceanFrame.js";
 import { OCEAN_ATLAS_ROWS, OCEAN_ROW_COAST, OCEAN_TABLE_SAMPLES } from "../oceanTables.js";
 import type { OceanField } from "../oceanWaves.js";
 import { startLoopWorker, type LoopStarter } from "../oceanLoopStart.js";
 import { LOOP_FRAMES, LOOP_N } from "../oceanSpectrum.js";
-import { createSeaWindLag, loopTimeAfter } from "../oceanWindSea.js";
 import type { QualityTier } from "../quality.js";
 import { createSeaEdgeStep, type SeaEdgeStep } from "../seaEdge.js";
 import { SEA_SIDE, seaBedDepths, seaLattice, seaRingRecords, seaWetBounds, seaWetRun } from "../seaLattice.js";
@@ -64,14 +70,21 @@ import { WATER_BUMP_SIZE, waterBumpData } from "../waterBump.js";
 import { WATER_ROWS, roughnessFor, waterSkinOffset } from "../waterShading.js";
 import { advanceWater, createBumpDrift, createWaterSurface, setWaterCove, setWaterWind } from "../waterSurface.js";
 import type { WindRecord } from "../windParams.js";
+import { createWindSeaField, type WindSeaMode } from "../windSeaField.js";
 import { SEE_THROUGH_ORDER } from "./drawOrder.js";
 import type { FrameUploads } from "./frameUploads.js";
-import { seaPlugin, seaRestPlugin } from "./seaPlugin.js";
+import { createLiteLip, type LiteLip } from "./lipMeshes.js";
+import type { LiteSeaFft } from "./seaFft.js";
+import { seaPlugin, seaRestPlugin, type SeaTextures } from "./seaPlugin.js";
 import type { SeaLook } from "./seaWgsl.js";
 import type { LiteWaterBed } from "./waterBed.js";
 
-/** What a tier's sea is drawn with beside its swell: the ripple bump for the wind sea on low, the baked loop above it. */
+/**
+ * What a tier's sea is drawn with beside its swell: the ripple bump for the wind sea on low, a field of it above:
+ * the baked loop, and on the tier that computes its field each frame the three cascades before it.
+ */
 export function seaLookFor(tier: QualityTier): SeaLook {
+  if (tier === "high") return { bump: false, loop: true, fft: true };
   return { bump: tier === "low", loop: tier !== "low" };
 }
 
@@ -95,6 +108,8 @@ export type SeaOptions = {
   cover?: { add(mesh: Mesh, place: MaterialPlugin): void; remove(mesh: Mesh): void; show?(mesh: Mesh, shown: boolean): void };
   /** How the wind sea's loop is baked: the game's worker unless said. */
   startLoop?: LoopStarter;
+  /** The wind sea's cascades, on the tier that computes them (`seaFft.ts`); with none the sea draws the loop. */
+  fft?: LiteSeaFft | null;
   uploads?: FrameUploads;
 };
 
@@ -137,8 +152,18 @@ export type LiteSea = {
   readonly swashUploads: number;
   readonly coastUploads: number;
   readonly marks: number;
-  /** How the wind sea is drawn: 0 with no field, 1 the loop once it has landed. */
-  readonly windMode: 0 | 1;
+  /** How the wind sea is drawn: 0 with no field, 1 the loop once it has landed, 2 the cascades once they run. */
+  readonly windMode: WindSeaMode;
+  /** Whether the last `update` asked for a frame of the wind sea's cascades: only where the view holds the sea. */
+  readonly fftStepped: boolean;
+  /** The plunging lip's swept curl, on the tier that draws one; null elsewhere. */
+  readonly lip: LiteLip | null;
+  /** Whether the curl is the lip drawn: it is made, and the cascades are the field drawn. */
+  readonly curl: boolean;
+  /** The way the swell travels (x, z), a unit vector. */
+  readonly travel: readonly [number, number];
+  /** The frame the last `update` was for has been drawn. */
+  frameDrawn(): void;
   dispose(): void;
 };
 
@@ -147,24 +172,19 @@ function floatTable(engine: EngineContext, width: number, height: number): Textu
   return createRenderTexture2D(engine, width, height, { format: "rgba32float", minFilter: "nearest", magFilter: "nearest" });
 }
 
-/** No wind sea's field is drawn: its statistics are nothing. */
-const NO_WIND_STATS: readonly [number, number, number, number] = [0, 0, 0, 0];
-
 /**
  * The sea of world `seed` on `tier`, made after the scene is registered. A
  * world with no sea level makes none and is not handed here.
  */
 export function createLiteSea(engine: EngineContext, scene: SceneContext, seed: number, tier: QualityTier, options: SeaOptions): LiteSea {
   const { uploads, bed, waterLevel } = options;
-  const look = seaLookFor(tier);
+  const fft = options.fft ?? null;
+  // The tier's look, with the cascades only where they were made.
+  const tierLook = seaLookFor(tier);
+  const look: SeaLook = tierLook.fft === true && fft === null ? { bump: tierLook.bump, loop: tierLook.loop } : tierLook;
 
   // The swell and the wind sea, the edge on the cove, and the surface's numbers.
   const ocean = createOceanFrame(seed, tier, options.ocean);
-  const lag = createSeaWindLag();
-  // What is drawn of the wind sea: no field here, and the sea's own state from the first frame's wind on.
-  const windSea: WindSeaDrawn = {
-    sea: { u10: 0, dir: [1, 0], hs: 0, tp: 0, onshore: 1, onshoreWeight: 1, coverage: 0, loopScale: 0, loopRate: 0 }, mode: 0, loopTime: 0, stats: NO_WIND_STATS,
-  };
   const edge = createSeaEdgeStep(seed, ocean.field);
   const surface = createWaterSurface(WATER_ROWS.sea);
   // The sea's skin stays off; its offset seeds the white water's lace and whitecaps, so two worlds' foam differs.
@@ -207,26 +227,42 @@ export function createLiteSea(engine: EngineContext, scene: SceneContext, seed: 
     // One alpha blends it over what lies under it; seen from either side, as the game leaves it unculled.
     alphaBlend: true, doubleSided: true, usePhysicalLightFalloff: true,
   });
-  // The wind sea's loop: its frames' table made now and filled when the worker answers; the sea is the swell alone
-  // until then. Without a worker, or if the bake fails, it never arrives.
-  let loop: Texture2DArray | null = null;
-  let loopMade: { heightStd: number; slopeVar: number } | null = null;
-  let loopTime = 0;
-  const loopStats: [number, number, number, number] = [0, 0, 0, 0];
-  const abort = new AbortController();
-  if (look.loop) {
-    const frames = createTexture2DArray(engine, LOOP_N, LOOP_N, LOOP_FRAMES, {
-      format: "rgba16float", mipMaps: false, addressModeU: "repeat", addressModeV: "repeat", minFilter: "linear", magFilter: "linear",
-    });
-    loop = frames;
-    (options.startLoop ?? startLoopWorker)(seed, abort.signal).then((reply) => {
-      if (disposed || reply.n !== LOOP_N || reply.frames !== LOOP_FRAMES) return;
+  // The wind sea's pictures. Where the field is the loop, its frames' table is made now and filled when the worker
+  // answers. Where it is the cascades, theirs are bound, and the loop's frames are made only if that field fails,
+  // and then bound in the displacement's place.
+  const loopFrames = (): Texture2DArray => createTexture2DArray(engine, LOOP_N, LOOP_N, LOOP_FRAMES, {
+    format: "rgba16float", mipMaps: false, addressModeU: "repeat", addressModeV: "repeat", minFilter: "linear", magFilter: "linear",
+  });
+  const textures: SeaTextures = {
+    atlas, swash, ringBeds, bed: bed.texture, bump,
+    windDisp: !look.loop ? null : fft !== null ? fft.disp : loopFrames(),
+    windSlope: fft !== null ? fft.slope : null,
+  };
+  // Which field is drawn, and when: the game's rule (`windSeaField.ts`). Without a worker, or if the bake fails, the
+  // loop never arrives and the sea keeps its swell.
+  const field = createWindSeaField<Texture2DArray>(seed, tier, {
+    loop: (signal) => (options.startLoop ?? startLoopWorker)(seed, signal).then((reply) => {
+      if (signal.aborted || reply.n !== LOOP_N || reply.frames !== LOOP_FRAMES) throw new Error("the wind sea's loop is not the one the sea reads");
+      const bound = textures.windDisp !== null && textures.windDisp !== fft?.disp;
+      const frames = bound ? (textures.windDisp as Texture2DArray) : loopFrames();
       updateTextureRegion(engine, frames, reply.data, { width: LOOP_N, height: LOOP_N, layerCount: LOOP_FRAMES, bytesPerRow: LOOP_N * 8, rowsPerImage: LOOP_N });
       uploads?.count("textures", reply.data.byteLength);
-      loopMade = { heightStd: reply.heightStd, slopeVar: reply.slopeVar };
-    }).catch(() => undefined);
-  }
-  material.plugins = [seaPlugin(own, { atlas, swash, ringBeds, bed: bed.texture, bump, loop }, options.shared, look), options.air()];
+      if (!bound) {
+        // The cascades' field has gone: the loop's frames take the displacement's place in the material's bindings.
+        textures.windDisp = frames;
+        void rebuildMaterial(scene, material);
+      }
+      return { texture: frames, heightStd: reply.heightStd, slopeVar: reply.slopeVar };
+    }),
+    fft: () => Promise.resolve(fft),
+    // A loop's frames go with the engine.
+    dropLoop: () => undefined,
+  });
+  material.plugins = [seaPlugin(own, textures, options.shared, look), options.air()];
+  // The swept curl of the plunging lip, where the cascades are: it draws only while they do.
+  const lip = fft === null ? null : createLiteLip(engine, scene, {
+    cove: edge.cove, waterLevel, tracker: edge.tracker, uniforms: own, textures, look, shared: options.shared, air: options.air, uploads,
+  });
 
   // The lattice, made once: the rings outermost first.
   const lattice = seaLattice();
@@ -255,6 +291,7 @@ export function createLiteSea(engine: EngineContext, scene: SceneContext, seed: 
   let coastUploads = 0;
   let marks = 0;
   let shown = false;
+  let fftStepped = false;
   let stale = true;
   let bedSeen = -1;
   let disposed = false;
@@ -325,7 +362,20 @@ export function createLiteSea(engine: EngineContext, scene: SceneContext, seed: 
       return marks;
     },
     get windMode() {
-      return windSea.mode === 0 ? 0 : 1;
+      return ocean.numbers.coast[3] as WindSeaMode;
+    },
+    lip,
+    get curl() {
+      return lip !== null && ocean.numbers.coast[3] === 2;
+    },
+    get travel() {
+      return ocean.field.travel;
+    },
+    get fftStepped() {
+      return fftStepped;
+    },
+    frameDrawn() {
+      fft?.frameDrawn();
     },
     update(f) {
       if (disposed) return;
@@ -338,20 +388,27 @@ export function createLiteSea(engine: EngineContext, scene: SceneContext, seed: 
       const windDir: [number, number] = [f.wind.dirX, f.wind.dirZ];
       setWaterWind(surface, f.wind.speed, windDir);
       advanceWater(surface, f.seconds, true);
+      // Whether the view holds the sea, before its waves are stepped: the wind sea's cascades are computed only for
+      // a frame that draws them, and the frame's own pass draws the sea only then. The cover map has its own word,
+      // said on each frame that draws it: whether its square reaches a ring's water.
+      let held = false;
+      let covered = false;
+      for (const box of boxes) {
+        if (box === null) continue;
+        covered ||= f.cover !== null
+          && box.min[0] < f.cover.x + f.cover.half && box.max[0] > f.cover.x - f.cover.half && box.min[2] < f.cover.z + f.cover.half && box.max[2] > f.cover.z - f.cover.half;
+        // A ring's box is kilometres across: the planes alone keep one that lies wholly beside the view.
+        held ||= boxInPlanes(box.min[0], box.min[1], box.min[2], box.max[0], box.max[1], box.max[2], f.planes)
+          && !cornersPastBox(box.min[0], box.min[1], box.min[2], box.max[0], box.max[1], box.max[2], f.corners);
+      }
+      if (f.cover !== null) options.cover?.show?.(mesh, covered);
       // The swell's phases and the wind sea's state, the sea following its wind a minute behind.
+      const stepsBefore = fft?.steps ?? 0;
       const rowWritten = ocean.update(f.centreZ, f.seconds, f.wind.speed, windDir, f.hour, (blowing) => {
-        windSea.sea = lag.step(blowing, f.seconds);
-        if (loopMade !== null) {
-          // The loop's own clock, run at the sea's rate, and what the shaders normalise the loop by at this wind.
-          loopTime = loopTimeAfter(loopTime, lag.dt, windSea.sea);
-          loopStats[0] = loopMade.heightStd * windSea.sea.loopScale;
-          loopStats[1] = loopMade.slopeVar;
-          windSea.mode = 1;
-          windSea.loopTime = loopTime;
-          windSea.stats = loopStats;
-        }
-        return windSea;
+        const sea = field.update(blowing, f.seconds, held);
+        return { sea, mode: field.mode, loopTime: field.loopTime, stats: field.stats };
       });
+      fftStepped = (fft?.steps ?? 0) !== stepsBefore;
       if (rowWritten) {
         updateTextureRegion(engine, atlas, tables.data, coastRow);
         uploads?.stream("textures", coastRow.bytesPerRow);
@@ -362,22 +419,14 @@ export function createLiteSea(engine: EngineContext, scene: SceneContext, seed: 
       // The low tier's bump slides at a fixed rate.
       drift.step(f.dt, f.wind.speed, windDir, look.bump, false);
       seaFrameUniforms(ocean.numbers, surface, drift, frameValues);
-      if (seaUniforms(surface, waterLevel, ocean.numbers, own)) stale = true;
-      // The frame's own pass draws the sea while the view holds a ring's water; the cover map has its own word, said on
-      // each frame that draws it: whether its square reaches a ring's water.
-      let seen = false;
-      let covered = false;
-      for (const box of boxes) {
-        if (box === null) continue;
-        covered ||= f.cover !== null
-          && box.min[0] < f.cover.x + f.cover.half && box.max[0] > f.cover.x - f.cover.half && box.min[2] < f.cover.z + f.cover.half && box.max[2] > f.cover.z - f.cover.half;
-        // A ring's box is kilometres across: the planes alone keep one that lies wholly beside the view.
-        seen ||= boxInPlanes(box.min[0], box.min[1], box.min[2], box.max[0], box.max[1], box.max[2], f.planes)
-          && !cornersPastBox(box.min[0], box.min[1], box.min[2], box.max[0], box.max[1], box.max[2], f.corners);
+      if (seaUniforms(surface, waterLevel, ocean.numbers, own)) {
+        stale = true;
+        lip?.moved();
       }
-      if (f.cover !== null) options.cover?.show?.(mesh, covered);
-      if (seen !== shown) {
-        shown = seen;
+      // The curl, after the tracker's step: only with the cascades, a crest in mid-plunge and the face in view.
+      lip?.update(ocean.numbers.coast[3] === 2, f.centreX, f.centreZ, f.planes, f.corners);
+      if (held !== shown) {
+        shown = held;
         setMeshVisible(mesh, shown);
       }
       if (!shown) return;
@@ -395,7 +444,8 @@ export function createLiteSea(engine: EngineContext, scene: SceneContext, seed: 
     dispose() {
       if (disposed) return;
       disposed = true;
-      abort.abort();
+      field.dispose();
+      lip?.dispose();
       options.cover?.remove(mesh);
       removeFromScene(scene, mesh);
       disposeMeshGpu(mesh);

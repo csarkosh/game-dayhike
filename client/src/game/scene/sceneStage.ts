@@ -12,6 +12,7 @@ import type { Node } from "@babylonjs/core/node.js";
 import type { CharacterInstance } from "../characterModel.js";
 import type { FreecamView } from "../renderer.js";
 import type { PlacedModel } from "../staticModel.js";
+import { DOOR_NAME, STEERING_COLUMN as STEERING_COLUMN_AXIS, STEERING_NAME, WHEEL_NAMES, doorTurn, frontWheel, wheelSpinTurn, wheelSteerTurn } from "../carParts.js";
 import { CAB_SKY } from "../sceneryParts.js";
 import type { CaptionPanel } from "./captions.js";
 import { coiledCord } from "./cord.js";
@@ -45,12 +46,9 @@ export type StageDeps = {
   warn(line: string): void;
 };
 
-const WHEEL_NAMES = ["wheel_fl", "wheel_fr", "wheel_rl", "wheel_rr"];
-const DOOR_NAME = "door_driver";
-/** How far the driver's door swings when fully open (rad), outward. */
-const DOOR_SWING = Math.PI / 1.5;
+// The parts a pose turns, by name, and how far, are the car's own (`carParts.ts`), which a renderer with no node to turn reads too.
 /** The steering wheel's column in the part's own frame: the wheel's thinnest direction, measured on the model. */
-const STEERING_COLUMN = new Vector3(0.871, -0.491, 0).normalize();
+const STEERING_COLUMN = new Vector3(STEERING_COLUMN_AXIS[0], STEERING_COLUMN_AXIS[1], STEERING_COLUMN_AXIS[2]).normalize();
 /** The handset in the hand: its offset (m) and turn in the hand joint's own frame, the fingers
  * along +y and the palm toward +z, measured on the talk clip's fist: the microphone's middle in
  * the fist and 0.025 m toward the index finger, so its grille end stands clear of it, and turned a
@@ -76,11 +74,11 @@ export function carModelOf(placed: PlacedModel, warn: (line: string) => void): C
     }
     return node;
   };
-  const wheels = WHEEL_NAMES.map((name) => ({ node: byName(name), front: name.startsWith("wheel_f") }))
+  const wheels = WHEEL_NAMES.map((name) => ({ node: byName(name), front: frontWheel(name) }))
     .filter((w): w is { node: TransformNode; front: boolean } => w.node !== null);
   const handset = byName("handset");
   const handsetRest = handset === null ? null : { position: handset.position.clone(), rotation: turns.get(handset)!, scaling: handset.scaling.clone() };
-  return { root: placed.node, wheels, door: byName(DOOR_NAME), steering: byName("wheel_steering"), handset, cradle: byName("cradle"), handsetRest };
+  return { root: placed.node, wheels, door: byName(DOOR_NAME), steering: byName(STEERING_NAME), handset, cradle: byName("cradle"), handsetRest };
 }
 
 // How much of the sky the cab's plain parts take is the scenery's own number (`sceneryParts.ts`); named from here too.
@@ -171,15 +169,15 @@ export function stageCar(pose: CarPose, car: CarModel): void {
   car.root.position.set(pose.x, pose.y, pose.z);
   car.root.rotation.y = pose.yaw;
   for (const wheel of car.wheels) {
-    wheel.node.rotation.z = -pose.wheelSpin;
+    wheel.node.rotation.z = wheelSpinTurn(pose);
     // The part's own frame, under the loader's mirrored root, reverses a turn about y.
-    wheel.node.rotation.y = wheel.front ? -pose.wheelTurn : 0;
+    wheel.node.rotation.y = wheelSteerTurn(pose, wheel.front);
   }
   if (car.steering !== null) {
     car.steering.rotationQuaternion ??= new Quaternion();
     Quaternion.RotationAxisToRef(STEERING_COLUMN, pose.steer, car.steering.rotationQuaternion);
   }
-  if (car.door !== null) car.door.rotation.y = -pose.doorOpen * DOOR_SWING;
+  if (car.door !== null) car.door.rotation.y = doorTurn(pose);
 }
 
 export function stageFrame(frame: Frame, deps: StageDeps): void {

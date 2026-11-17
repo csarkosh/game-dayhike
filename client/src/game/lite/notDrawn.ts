@@ -27,48 +27,43 @@
  * shore's panorama under it, the reeds and the lilies that grow in it,
  * and its midges and dragonflies, with its frogs to hear; and the sea
  * where a tier blends it: its swell, its wind sea (the ripple bump on low,
- * the baked loop above it) and its white water, the swash up the cove's
- * face, and its surf to hear; and the scenery a hike places once: the
- * fingerposts at the junctions with their lettering, the trailhead's car,
- * the film's car in its place and the patch under it, the board with its
- * painted face, and the body at the crest. Every other part of the world is absent, and the
+ * the baked loop above it, and the cascades computed each frame on the tier
+ * that computes them, with the swept curl of its plunging lip and the surf's
+ * spray) and its white water, the swash up the cove's face, and its surf to
+ * hear; and the scenery a hike places once: the fingerposts at the junctions
+ * with their lettering, the trailhead's car, the film's car in its place and
+ * the patch under it, the board with its painted face, and the body at the
+ * crest; and the scenes and the endings: a scene's camera (the summit's five
+ * shots, the cap's turn) through its own lens, the local hiker's own body in
+ * a shot with the lamp it wears there, a death's fall and its closing dark,
+ * and the end scene with the car it drives, its headlamp and its tail lamps;
+ * and, in a world with no forest, a hand-authored level's brushes. Every
+ * other part of the world is absent, and the
  * members of `Renderer` that belong to an absent part are answered here as
- * nothing: a setter keeps what it was told (`held`), for the day its part is
- * drawn; a read-out returns nothing heard, nothing seen or nothing pending;
- * a promise is already resolved. `NOT_DRAWN` names each part with the members that
+ * nothing: each is a setter, which keeps what it was told (`held`), for the
+ * day its part is drawn. `NOT_DRAWN` names each part with the members that
  * stand in for it, and the two are held to each other by the tests.
  */
-import type { EndSceneSetup, Renderer } from "../renderer.js";
+import type { Renderer } from "../renderer.js";
 
 /** A part of the world not drawn yet, and the members of `Renderer` answered as nothing for it. */
 export type NotDrawn = { readonly what: string; readonly members: readonly (keyof Renderer)[] };
 
 export const NOT_DRAWN: readonly NotDrawn[] = [
-  { what: "the sea's wind waves by the FFT on the tier that runs one (the baked loop is drawn there meanwhile), the swept curl of its plunging lip and the surf's spray", members: [] },
   { what: "the mirror a lake reflects its shore in on the tier that draws one, and the water, a lake's and the sea's, on the tier that reads what lies under it through the surface", members: [] },
   { what: "the skin's shading (`skin.ts`): no model the game ships has a surface that shows it", members: ["setSkinShading"] },
   { what: "the sun's cast shadows on a tier given a shadow map: no tier has one (`quality.ts`), so the game casts none either", members: [] },
-  { what: "the scenes and the endings: their cameras, their stage, the local hiker's own body in them and the end scene's car", members: ["setEnding", "endScene", "setScene", "clearEnding"] },
-  { what: "the hand-authored levels' brushes, and the wireframe view", members: ["setWireframe"] },
-  { what: "the shaders' compiles told as they happen, kept shaders, and the GPU's timings", members: ["onShaderCompiled", "keepShaders", "gpuTime"] },
+  { what: "the wireframe view: Lite draws a material's triangles alone, and has no way to draw a mesh's edges through its own material", members: ["setWireframe"] },
 ];
 
 /** What the setters of the absent parts were last told. */
 export type NotDrawnHeld = {
   wireframe: boolean;
   skinShading: boolean;
-  ending: "died" | "won" | null;
-  endScene: EndSceneSetup | null;
-  scene: { kind: "summit" | "cap"; at: { x: number; y: number; z: number } } | null;
 };
 
 /** The members answered as nothing: every member `NOT_DRAWN` names. */
-export type NotDrawnMembers = Pick<
-  Renderer,
-  | "setSkinShading"
-  | "setEnding" | "endScene" | "setScene" | "clearEnding"
-  | "setWireframe" | "onShaderCompiled" | "keepShaders" | "gpuTime"
->;
+export type NotDrawnMembers = Pick<Renderer, "setSkinShading" | "setWireframe">;
 
 /**
  * The members answered as nothing, and what their setters hold. One of each
@@ -76,30 +71,15 @@ export type NotDrawnMembers = Pick<
  */
 export function notDrawnMembers(): { members: NotDrawnMembers; held: NotDrawnHeld } {
   const held: NotDrawnHeld = {
-    wireframe: false, skinShading: true, ending: null, endScene: null, scene: null,
+    wireframe: false, skinShading: true,
   };
   const members: NotDrawnMembers = {
     setSkinShading(on) {
       held.skinShading = on;
     },
-    setEnding(kind: "died" | "won", scene?: EndSceneSetup) {
-      if (held.ending !== null) return;
-      held.ending = kind;
-      held.endScene = scene ?? null;
-    },
-    endScene: () => null,
-    setScene(kind, at) {
-      held.scene = { kind, at: { x: at.x, y: at.y, z: at.z } };
-    },
-    clearEnding() {
-      if (held.ending === "died") held.ending = null;
-    },
     setWireframe(on) {
       held.wireframe = on;
     },
-    onShaderCompiled: () => () => undefined,
-    keepShaders: () => undefined,
-    gpuTime: null,
   };
   return { members, held };
 }

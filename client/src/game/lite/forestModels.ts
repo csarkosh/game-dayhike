@@ -43,6 +43,10 @@ export type ModelPart = {
   factor: readonly [number, number, number];
   /** The loader's own material of the primitive, for a mesh drawn with the file's material as it is. */
   material: PbrMaterialProps;
+  /** The names of the nodes the primitive hangs under, the model's root first. */
+  nodes: readonly string[];
+  /** The primitive's own frame in the model's: the matrix its geometry was stood by. */
+  local: Float32Array;
 };
 
 /** A model's LODs by the name of their node. */
@@ -99,9 +103,11 @@ export async function loadModelFile(engine: EngineContext, url: string, lods: re
         if (geometry === null) throw new Error(`${url} ${lod}: a mesh with no geometry kept`);
         if (geometry.positions.length !== fact.vertices * 3) throw new Error(`${url} ${lod}: ${geometry.positions.length / 3} vertices loaded for ${fact.vertices}`);
         const baked = { positions: geometry.positions, normals: geometry.normals, tangents: fact.tangents, indices: geometry.indices };
-        bakeGeometry(chainMatrix(nodes as unknown as PlacedNode[]), baked);
+        const local = chainMatrix(nodes as unknown as PlacedNode[]);
+        bakeGeometry(local, baked);
         const material = mesh.material as PbrMaterialProps;
         return {
+          nodes: nodes.map((node) => node.name ?? ""), local,
           facts: fact, ...boundsOf(baked.positions),
           positions: baked.positions, normals: baked.normals, uvs: geometry.uvs ?? new Float32Array(fact.vertices * 2), tangents: baked.tangents,
           indices: baked.indices, colour: material.baseColorTexture, normal: material.normalTexture,

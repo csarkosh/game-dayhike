@@ -52,43 +52,21 @@ import "@babylonjs/core/Meshes/thinInstanceMesh.js";
 
 import vertexDefs from "./shaders/surfSpray.vertex.fx?raw";
 import fragmentDefs from "./shaders/surfSpray.fragment.fx?raw";
-import { WIND_SEA_U_PER_WIND } from "./oceanWindSea.js";
-import { OCEAN_FOAM_ALBEDO } from "./waterShading.js";
+import {
+  SURF_SPRAY_BURSTS, SURF_SPRAY_PER_BURST, SURF_SPRAY_SEED, SURF_SPRAY_SLOT_FLOATS, createSprayBursts, sprayColour, spraySeeds, spraySlots, sprayWind,
+  type SprayLight,
+} from "./sprayField.js";
 import type { WindRecord } from "./windParams.js";
 
-/** Sprites a burst. */
-export const SURF_SPRAY_PER_BURST = 60;
-/** Burst slots: at most this many bursts live at once. */
-export const SURF_SPRAY_BURSTS = 6;
-/** A sprite's life (s), from the first to the second by its seed. */
-export const SURF_SPRAY_LIFE_S: readonly [number, number] = [1, 2];
-/** Linear drag toward the wind's velocity (1/s). */
-export const SURF_SPRAY_DRAG = 1.5;
-/** A sprite's full width (m), at the end of its life; half that at its start. */
-export const SURF_SPRAY_SIZE_M = 0.6;
-/** Gravity (m/s²). */
-export const SURF_SPRAY_G = 9.81;
-/** The stretch (m) across the throw a burst's sprites start along: a plunge's (`LIP_STRETCH_M`). */
-export const SURF_SPRAY_STRETCH_M = 20;
-/** The throw's elevation above level (rad), from the first to the second by a sprite's seed. */
-export const SURF_SPRAY_ELEVATION: readonly [number, number] = [0.35, 1.2];
-/** The least share of a burst's speed a sprite is thrown at; the most is all of it. */
-export const SURF_SPRAY_SPEED_MIN = 0.5;
-/** A sprite's cover at its centre while fresh. */
-export const SURF_SPRAY_OPACITY = 0.5;
-/** Plunges farther than this (m) from the eye throw no spray. */
-export const SURF_SPRAY_RANGE_M = 300;
+// The sprites' seeds, the slots and their ages, a sprite's path and the spray's colour are kept with no engine
+// (`sprayField.ts`), and handed on under their names.
+export {
+  SURF_SPRAY_BURSTS, SURF_SPRAY_DRAG, SURF_SPRAY_ELEVATION, SURF_SPRAY_G, SURF_SPRAY_LIFE_S, SURF_SPRAY_OPACITY, SURF_SPRAY_PER_BURST, SURF_SPRAY_RANGE_M,
+  SURF_SPRAY_SIZE_M, SURF_SPRAY_SPEED_MIN, SURF_SPRAY_STRETCH_M, sprayPointAt, spraySeeds, type SprayBurst, type SprayPoint,
+} from "./sprayField.js";
 
-/** The seed buffer's hash seed: the sprites' layout is the same on every load. */
-const SPRAY_SEED = 0x53707279;
-/** The age written into a slot never started: past every life. */
-const NEVER_AGE = SURF_SPRAY_LIFE_S[1] + 1;
-/** Floats a slot: (x, y, z, age), (dirX, dirZ, speed, 0). */
-const SLOT_FLOATS = 8;
 /** The lights the spray takes its colour from, as the lighting names them (`lighting.ts`). */
 const LIGHTS: readonly string[] = ["sun", "fill"];
-
-const finite = (v: number): boolean => Number.isFinite(v);
 
 const SPRAY_VERTEX_POSITION = `
 #ifdef SPRAY
@@ -107,70 +85,9 @@ color.a *= sprayCover();
 #endif
 `;
 
-/**
- * `count` seeds of four hashes in [0, 1) each, from an integer hash of the
- * index and `seed` (Wang's 32-bit mix, integer arithmetic only, as
- * `rainSeeds`): the same on every load.
- */
-export function spraySeeds(count: number, seed: number): Float32Array {
-  const out = new Float32Array(count * 4);
-  const mix = (v: number): number => {
-    let x = v >>> 0;
-    x = (x ^ 61) ^ (x >>> 16);
-    x = Math.imul(x, 9) >>> 0;
-    x = x ^ (x >>> 4);
-    x = Math.imul(x, 0x27d4eb2d) >>> 0;
-    x = x ^ (x >>> 15);
-    return x >>> 0;
-  };
-  let h = mix(seed >>> 0);
-  for (let i = 0; i < count * 4; i++) {
-    h = mix(h + 0x9e3779b9);
-    out[i] = (h >>> 8) / 16777216;
-  }
-  return out;
-}
-
-/** A burst slot as the vertex stage reads it. */
-export type SprayBurst = { x: number; y: number; z: number; age: number; dirX: number; dirZ: number; speed: number };
-/** A sprite's centre, its alpha and its width (m). */
-export type SprayPoint = { x: number; y: number; z: number; alpha: number; size: number };
-
-/**
- * The vertex stage's `sprayPlace` at the quad's centre, in TypeScript: the
- * sprite of `seed` (four hashes) in `burst`, under a wind of (`windX`,
- * `windZ`) m/s, into `out`.
- */
-export function sprayPointAt(
-  burst: SprayBurst, seed: ArrayLike<number>, windX: number, windZ: number, out: SprayPoint,
-): SprayPoint {
-  const h0 = seed[0] as number;
-  const h1 = seed[1] as number;
-  const h2 = seed[2] as number;
-  const h3 = seed[3] as number;
-  const life = SURF_SPRAY_LIFE_S[0] + (SURF_SPRAY_LIFE_S[1] - SURF_SPRAY_LIFE_S[0]) * h3;
-  const alive = burst.age >= 0 && burst.age < life ? 1 : 0;
-  const t = Math.min(Math.max(burst.age, 0), life);
-  const along = (h0 - 0.5) * SURF_SPRAY_STRETCH_M;
-  const elevation = SURF_SPRAY_ELEVATION[0] + (SURF_SPRAY_ELEVATION[1] - SURF_SPRAY_ELEVATION[0]) * h1;
-  const speed = burst.speed * (SURF_SPRAY_SPEED_MIN + (1 - SURF_SPRAY_SPEED_MIN) * h2);
-  const vx = burst.dirX * Math.cos(elevation) * speed;
-  const vy = Math.sin(elevation) * speed;
-  const vz = burst.dirZ * Math.cos(elevation) * speed;
-  const fall = -SURF_SPRAY_G / SURF_SPRAY_DRAG;
-  const k = (1 - Math.exp(-SURF_SPRAY_DRAG * t)) / SURF_SPRAY_DRAG;
-  out.x = burst.x - burst.dirZ * along + windX * t + (vx - windX) * k;
-  out.y = burst.y + fall * t + (vy - fall) * k;
-  out.z = burst.z + burst.dirX * along + windZ * t + (vz - windZ) * k;
-  const lived = t / life;
-  out.alpha = (1 - lived) * alive;
-  out.size = SURF_SPRAY_SIZE_M * (0.5 + 0.5 * lived) * alive;
-  return out;
-}
-
 export class SprayPlugin extends MaterialPluginBase {
-  /** The slots, SLOT_FLOATS floats each: (x, y, z, age), (dirX, dirZ, speed, 0). Written in place. */
-  readonly bursts = new Float32Array(SURF_SPRAY_BURSTS * SLOT_FLOATS);
+  /** The slots, SURF_SPRAY_SLOT_FLOATS floats each: (x, y, z, age), (dirX, dirZ, speed, 0). Written in place. */
+  readonly bursts = new Float32Array(SURF_SPRAY_BURSTS * SURF_SPRAY_SLOT_FLOATS);
   /** The eye. */
   camX = 0;
   camY = 0;
@@ -274,50 +191,31 @@ export function createSurfSpray(scene: Scene, group: number): SurfSpray {
   // unsynced, so a sort by distance would mean nothing.
   mesh.alphaIndex = Number.POSITIVE_INFINITY;
   const matrices = new Float32Array(count * 16);
-  const slots = new Float32Array(count);
   for (let i = 0; i < count; i++) {
     matrices[i * 16] = 1;
     matrices[i * 16 + 5] = 1;
     matrices[i * 16 + 10] = 1;
     matrices[i * 16 + 15] = 1;
-    slots[i] = Math.floor(i / SURF_SPRAY_PER_BURST);
   }
   mesh.thinInstanceSetBuffer("matrix", matrices, 16, true);
-  mesh.thinInstanceSetBuffer("spraySeed", spraySeeds(count, SPRAY_SEED), 4, true);
-  mesh.thinInstanceSetBuffer("sprayBurst", slots, 1, true);
+  mesh.thinInstanceSetBuffer("spraySeed", spraySeeds(count, SURF_SPRAY_SEED), 4, true);
+  mesh.thinInstanceSetBuffer("sprayBurst", spraySlots(count), 1, true);
   mesh.setEnabled(false);
 
-  const bursts = plugin.bursts;
-  const starts = new Float64Array(SURF_SPRAY_BURSTS).fill(Number.NEGATIVE_INFINITY);
-  for (let s = 0; s < SURF_SPRAY_BURSTS; s++) bursts[s * SLOT_FLOATS + 3] = NEVER_AGE;
+  // The slots are kept and aged with no engine (`sprayField.ts`), in the plugin's own array.
+  const bursts = createSprayBursts(plugin.bursts);
+  const windNow: [number, number] = [0, 0];
+  const colour: [number, number, number] = [0, 0, 0];
+  const lit: SprayLight[] = [];
 
   return {
     mesh,
     plugin,
     burst(x, y, z, dirX, dirZ, speed, seconds) {
-      if (!finite(x) || !finite(y) || !finite(z) || !finite(dirX) || !finite(dirZ) || !finite(speed) || !finite(seconds)) return;
-      let slot = 0;
-      for (let s = 1; s < SURF_SPRAY_BURSTS; s++) if ((starts[s] as number) < (starts[slot] as number)) slot = s;
-      const len = Math.hypot(dirX, dirZ);
-      const at = slot * SLOT_FLOATS;
-      starts[slot] = seconds;
-      bursts[at] = x;
-      bursts[at + 1] = y;
-      bursts[at + 2] = z;
-      bursts[at + 3] = 0;
-      bursts[at + 4] = len > 0 ? dirX / len : 1;
-      bursts[at + 5] = len > 0 ? dirZ / len : 0;
-      bursts[at + 6] = Math.max(0, speed);
-      bursts[at + 7] = 0;
+      bursts.burst(x, y, z, dirX, dirZ, speed, seconds);
     },
     update(seconds, wind) {
-      let alive = false;
-      for (let s = 0; s < SURF_SPRAY_BURSTS; s++) {
-        const start = starts[s] as number;
-        const age = Number.isFinite(start) && Number.isFinite(seconds) ? seconds - start : NEVER_AGE;
-        bursts[s * SLOT_FLOATS + 3] = age;
-        if (age >= 0 && age < SURF_SPRAY_LIFE_S[1]) alive = true;
-      }
+      const alive = bursts.age(seconds);
       mesh.setEnabled(alive);
       if (!alive) return;
       // The eye as the camera last stood: a sprite faces it a frame late at most.
@@ -327,20 +225,16 @@ export function createSurfSpray(scene: Scene, group: number): SurfSpray {
         plugin.camY = eye.y;
         plugin.camZ = eye.z;
       }
-      const speed = Number.isFinite(wind.speed) ? Math.min(Math.max(wind.speed, 0), 1) * WIND_SEA_U_PER_WIND : 0;
-      plugin.windX = Number.isFinite(wind.dirX) ? wind.dirX * speed : 0;
-      plugin.windZ = Number.isFinite(wind.dirZ) ? wind.dirZ * speed : 0;
-      let r = 0;
-      let g = 0;
-      let b = 0;
+      sprayWind(wind, windNow);
+      plugin.windX = windNow[0];
+      plugin.windZ = windNow[1];
+      lit.length = 0;
       for (let i = 0; i < LIGHTS.length; i++) {
         const light = scene.getLightByName(LIGHTS[i] as string);
-        if (light === null) continue;
-        r += light.diffuse.r * light.intensity;
-        g += light.diffuse.g * light.intensity;
-        b += light.diffuse.b * light.intensity;
+        if (light !== null) lit.push({ r: light.diffuse.r, g: light.diffuse.g, b: light.diffuse.b, intensity: light.intensity });
       }
-      mat.emissiveColor.set(OCEAN_FOAM_ALBEDO * r, OCEAN_FOAM_ALBEDO * g, OCEAN_FOAM_ALBEDO * b);
+      sprayColour(lit, colour);
+      mat.emissiveColor.set(colour[0], colour[1], colour[2]);
     },
     dispose() {
       mesh.dispose();

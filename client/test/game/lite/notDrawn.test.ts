@@ -12,15 +12,9 @@ describe("what the renderer on Babylon Lite does not draw yet", () => {
 
   it("names every part of the world it leaves out", () => {
     const all = NOT_DRAWN.map((part) => part.what).join("; ");
-    for (const word of [ "sea", "lake", "skin's shading", "shadows", "scenes", "endings"]) {
+    for (const word of [ "sea", "lake", "skin's shading", "shadows", "wireframe"]) {
       expect(all, word).toContain(word);
     }
-  });
-
-  it("reads out nothing: no scene", () => {
-    const { members } = notDrawnMembers();
-    expect(members.endScene()).toBeNull();
-    expect(members.gpuTime).toBeNull();
   });
 
   it("keeps what its setters are told", () => {
@@ -57,8 +51,8 @@ describe("what the renderer on Babylon Lite does not draw yet", () => {
   it("leaves the scenery a hike places once to the renderer: the posts, the trailhead's car and board and the body are drawn", () => {
     const all = NOT_DRAWN.map((part) => part.what).join("; ");
     expect(all).not.toMatch(/posts|board|body at the crest|trailhead/);
-    // The car the end scene drives is the scenes' own, with their cameras and their stage.
-    expect(NOT_DRAWN.filter((part) => /\bcar\b/.test(part.what)).map((part) => part.members)).toEqual([["setEnding", "endScene", "setScene", "clearEnding"]]);
+    // The car the end scene drives is drawn too: no part names a car.
+    expect(NOT_DRAWN.filter((part) => /\bcar\b/.test(part.what))).toEqual([]);
   });
 
   it("names the sun's cast shadows as what no tier draws: the game casts none either", () => {
@@ -88,39 +82,36 @@ describe("what the renderer on Babylon Lite does not draw yet", () => {
     expect(lakes[0]?.what).not.toMatch(/calm/);
   });
 
-  it("leaves the sea's swell, its wind sea, its white water, its swash and its surf to the renderer: what is left of the sea is the FFT, the curl and the spray", () => {
+  it("leaves the sea's swell, its wind waves by the loop or the FFT, its white water, its swash, its lip's curl, its spray and its surf to the renderer: what is left of the sea is the tier that reads through its surface", () => {
     const { members } = notDrawnMembers();
     for (const name of ["hasSea", "surfSound"]) expect(name in members, name).toBe(false);
     const sea = NOT_DRAWN.filter((part) => /\bsea\b/.test(part.what));
-    expect(sea.map((part) => part.members)).toEqual([[], []]);
-    expect(sea[0]?.what).toMatch(/FFT/);
-    // The loop is named as what is drawn in the FFT's place.
-    expect(sea[0]?.what).toMatch(/loop is drawn/);
-    expect(sea[0]?.what).toMatch(/curl/);
-    expect(sea[0]?.what).toMatch(/spray/);
-    expect(sea[0]?.what).not.toMatch(/swash|surf's sound|swell/);
-    // The tier that reads through the surface is the lakes' and the sea's alike.
-    expect(sea[1]?.what).toMatch(/through the surface/);
+    expect(sea.map((part) => part.members)).toEqual([[]]);
+    // The tier that reads through the surface is the lakes' and the sea's alike; nothing else of the sea is left.
+    expect(sea[0]?.what).toMatch(/through the surface/);
+    expect(NOT_DRAWN.map((part) => part.what).join("; ")).not.toMatch(/FFT|curl|spray|swash|surf's sound|swell|loop/);
   });
 
-  it("keeps the first ending it is told and lets a death be undone, and keeps the last scene", () => {
+  it("leaves the scenes and the endings to the renderer: their cameras, the local hiker's own body, the death's dark and the end scene's car are played", () => {
     const { members, held } = notDrawnMembers();
-    members.setEnding("died");
-    members.setEnding("died");
-    expect(held.ending).toBe("died");
-    members.clearEnding();
-    expect(held.ending).toBeNull();
-    members.setScene("cap", { x: 1, y: 2, z: 3 });
-    expect(held.scene).toEqual({ kind: "cap", at: { x: 1, y: 2, z: 3 } });
+    for (const name of ["setScene", "setEnding", "endScene", "clearEnding"]) expect(name in members, name).toBe(false);
+    for (const name of ["scene", "ending", "endScene"]) expect(name in held, name).toBe(false);
+    const all = NOT_DRAWN.map((part) => part.what).join("; ");
+    expect(all).not.toMatch(/cameras|summit|\bcap\b|endings?|own body|scenes?\b/);
   });
 
-  it("tells no compile and keeps no shader: the stop it hands back does nothing", () => {
+  it("leaves a hand-authored level's brushes to the renderer: what is left of the debugging views is the wireframe, held", () => {
+    const { members, held } = notDrawnMembers();
+    expect(NOT_DRAWN.filter((part) => /brush/.test(part.what))).toEqual([]);
+    expect(NOT_DRAWN.filter((part) => /wireframe/.test(part.what)).map((part) => part.members)).toEqual([["setWireframe"]]);
+    members.setWireframe(true);
+    expect(held.wireframe).toBe(true);
+  });
+
+  it("leaves the engine's read-outs to the renderer: a shader's compile, kept shaders and the GPU's time are its own", () => {
     const { members } = notDrawnMembers();
-    let told = 0;
-    const stop = members.onShaderCompiled(() => told++);
-    members.keepShaders();
-    stop();
-    expect(told).toBe(0);
+    for (const name of ["onShaderCompiled", "keepShaders", "gpuTime"]) expect(name in members, name).toBe(false);
+    expect(NOT_DRAWN.map((part) => part.what).join("; ")).not.toMatch(/compile|kept shaders|timings/);
   });
 
   it("holds each renderer's own", () => {

@@ -76,7 +76,9 @@ describe("the cover map's texel on Babylon Lite", () => {
     expect(lakes).toContain("        if (f.cover !== null) {\n          options.cover?.show?.(lake.mesh, Math.abs(source.shape.cx - f.cover.x) < lake.half + f.cover.half && Math.abs(source.shape.cz - f.cover.z) < lake.half + f.cover.half);");
     expect(lakes).toContain("        const shown = seen;");
     const sea = read("seaMeshes.ts");
-    expect(sea).toContain("      if (f.cover !== null) options.cover?.show?.(mesh, covered);\n      if (seen !== shown) {");
+    expect(sea).toContain("      if (f.cover !== null) options.cover?.show?.(mesh, covered);");
+    // The frame's own pass shows the sea by the view alone (`held`), which is also what steps its wind waves.
+    expect(sea).toContain("      if (held !== shown) {\n        shown = held;");
     expect(sea).not.toContain("covered || held");
     // The renderer hands both the map's word.
     expect(read("renderer.ts").split("show: (mesh, shown) => rainMap.show(mesh, shown)").length).toBe(3);
