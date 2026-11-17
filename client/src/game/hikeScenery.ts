@@ -22,7 +22,7 @@ import { trailheadPlaces } from "../sim/trailhead.js";
 import type { Vec3 } from "../sim/types.js";
 import type { World } from "../sim/world.js";
 import { BOARD_IMAGE_URLS } from "./boardImages.js";
-import { boardDrawingOf } from "./boardPaint.js";
+import { boardDrawingOf } from "./boardDraw.js";
 import { createBodyMesh } from "./bodyMesh.js";
 import { loadUntilAborted } from "./modelLoad.js";
 import { POSTER_LAST_SEEN } from "./posterPanel.js";

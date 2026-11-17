@@ -30,7 +30,7 @@ import { afterNextPaint } from "./paint.js";
 import { showProbeScreen, timeIdleCadence } from "./probeScreen.js";
 import type { EngineHandle } from "./engineHandle.js";
 import { containerPixels, type ProbeReading, type QualityTier, type VerdictEngine } from "./quality.js";
-import { sunAltitudeDeg } from "./lighting.js";
+import { sunAltitudeDeg } from "./skyWait.js";
 import { createRenderer, type SceneRenderer } from "./renderer.js";
 import { seedFromToken } from "./seed.js";
 import { startSkySource, type SkySource } from "./skyWorker.js";
