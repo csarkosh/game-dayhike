@@ -3,17 +3,18 @@
  * fingerposts at the junctions, the trailhead's car and board, the film's
  * car that takes the parked car's place for the end scene, and the body at
  * the crest. All of it from the session's world and the seed the sim used,
- * built in the scene of the renderer it is given: the one being built, which
- * during a live change of tier is not yet the one running. The hike holds
- * what is built here by what it can ask of it and no more, and disposes it
- * while its scene lives (`SwapBindings.extras`).
+ * asked of the renderer it is given: the one being built, which during a
+ * live change of tier is not yet the one running. The hike holds what it is
+ * handed here by what it can ask of it and no more, and lets go of it while
+ * that renderer stands (`SwapBindings.extras`).
  *
- * On Babylon.js it is built into the renderer's scene. The hike's own
- * renderer on Babylon Lite has no such scene (`sceneRendererOf` null): it is
- * asked for the same pieces at the same places (`liteSceneryOf`) and draws
- * them itself, the film's car in the parked car's place among them, which
- * it hands back for the end scene to drive. A renderer that is neither gets
- * no signs, no film car and a body that is nothing.
+ * The hike's renderer draws its own scenery (`liteSceneryOf`,
+ * `lite/sceneryMeshes.ts`): it is asked for each piece at its place and
+ * draws it itself, the film's car in the parked car's place among them,
+ * which it hands back for the end scene to drive. A renderer with no
+ * scenery to ask gets no signs, no film car and a body that is nothing.
+ * Nothing here loads an engine: the renderer is held by its type, and its
+ * scenery by what the hike asks of it.
  */
 import { activeTerrainVariant, elevationAt } from "../sim/terrain.js";
 import { signSites } from "../sim/placeNames.js";
@@ -23,42 +24,35 @@ import type { Vec3 } from "../sim/types.js";
 import type { World } from "../sim/world.js";
 import { BOARD_IMAGE_URLS } from "./boardImages.js";
 import { boardDrawingOf } from "./boardDraw.js";
-import { createBodyMesh } from "./bodyMesh.js";
-import { loadUntilAborted } from "./modelLoad.js";
 import { POSTER_LAST_SEEN } from "./posterPanel.js";
 import { liteSceneryOf, type LiteTrailhead } from "./lite/sceneryMeshes.js";
-import { sceneRendererOf, terrainMaterialFor, type Renderer } from "./renderer.js";
-import { createSignMeshes, type SignMeshes } from "./signMeshes.js";
-import { defaultModelLoader, placeStaticModel } from "./staticModel.js";
-import { FILM_CAR_NAME, FILM_CAR_OUTPUT, createTrailheadMeshes, type CarHandle, type TrailheadMeshes } from "./trailheadMeshes.js";
+import type { Renderer } from "./rendererTypes.js";
+import type { CarHandle } from "./scenePlay.js";
 
 /** The junction posts and the trailhead's car and board, as the hike holds them. */
 export type HikeSigns = {
   /** The trailhead's car as it stands, for the end scene to drive
-   * (`EndSceneSetup.car`, `TrailheadMeshes.car`); null while only its box
+   * (`EndSceneSetup.car`, `LiteTrailhead.car`); null while only its box
    * stands, or with no car at all. */
   car(): CarHandle | null;
   /** Whether the film's car stands in the parked car's place, with its parts. */
   filmCarIn(): boolean;
-  /** Whether the film's car is still in its first frames (`TrailheadMeshes.warm`). */
+  /** Whether the film's car is still in its first frames (`LiteTrailhead.warm`). */
   warm(): boolean;
   dispose(): void;
 };
 
-/** The trailhead each set of signs was built with, for the film's car to be placed in. */
-const trailheads = new WeakMap<HikeSigns, TrailheadMeshes>();
-/** The same on the hike's own renderer on Babylon Lite. */
-const liteTrailheads = new WeakMap<HikeSigns, LiteTrailhead>();
+/** The trailhead each set of signs was asked for with, for the film's car to be stood in. */
+const trailheads = new WeakMap<HikeSigns, LiteTrailhead>();
 
 /**
  * Junction posts, and the trailhead's car and board, from the same seed the
- * sim used, in `renderer`'s scene. Null for a world with no one to search
- * for, no trail or no road, and for a renderer with no Babylon scene.
+ * sim used, asked of `renderer`'s scenery. Null for a world with no one to
+ * search for, no trail or no road, and for a renderer with no scenery to ask.
  */
 export function createHikeSigns(renderer: Renderer, world: World, seed: number): HikeSigns | null {
-  const built = sceneRendererOf(renderer);
-  const lite = built === null ? liteSceneryOf(renderer) : null;
-  if (built === null && lite === null) return null;
+  const host = liteSceneryOf(renderer);
+  if (host === null) return null;
   const search = world.search;
   const variant = activeTerrainVariant();
   const graph = variant.trailGraph?.(seed);
@@ -82,45 +76,13 @@ export function createHikeSigns(renderer: Renderer, world: World, seed: number):
     roadCenterX,
     urls: BOARD_IMAGE_URLS,
   });
-  if (built === null) {
-    // The hike's own renderer on Babylon Lite draws the same scenery from the same places (`lite/sceneryMeshes.ts`),
-    // and hands out the car as it stands there for the end scene to drive.
-    const host = lite as NonNullable<typeof lite>;
-    const litePosts = host.signs(signPosts(graph, sites), groundH);
-    const liteTrailhead = host.trailhead(trailheadSites, groundH, board);
-    const liteSigns: HikeSigns = {
-      car: () => liteTrailhead.car(),
-      filmCarIn: () => liteTrailhead.filmCarIn(),
-      warm: () => liteTrailhead.warm(),
-      dispose() {
-        litePosts.dispose();
-        liteTrailhead.dispose();
-      },
-    };
-    liteTrailheads.set(liteSigns, liteTrailhead);
-    return liteSigns;
-  }
-  const { scene, shadows, cover } = built;
-  const posts: SignMeshes = createSignMeshes(
-    scene,
-    signPosts(graph, sites),
-    groundH,
-    { materialFor: (name) => terrainMaterialFor(scene, name), shadows, cover },
-  );
-  const trailhead = createTrailheadMeshes(
-    scene,
-    trailheadSites,
-    groundH,
-    {
-      materialFor: (name) => terrainMaterialFor(scene, name),
-      board,
-      shadows,
-      cover,
-    },
-  );
+  // The renderer draws the scenery from these places (`lite/sceneryMeshes.ts`), and hands out the car as it stands
+  // there for the end scene to drive.
+  const posts = host.signs(signPosts(graph, sites), groundH);
+  const trailhead = host.trailhead(trailheadSites, groundH, board);
   const signs: HikeSigns = {
     car: () => trailhead.car(),
-    filmCarIn: () => (trailhead.car()?.model ?? null) !== null,
+    filmCarIn: () => trailhead.filmCarIn(),
     warm: () => trailhead.warm(),
     dispose() {
       posts.dispose();
@@ -132,47 +94,17 @@ export function createHikeSigns(renderer: Renderer, world: World, seed: number):
 }
 
 /**
- * Fetches the film's car (`trailheadMeshes.ts` `swapCar`), the parked car's
- * double with wheels and a door, into `renderer`'s scene and puts it in the
- * parked car's place at `signs`' trailhead. Ends quietly when `signal`
- * aborts, the car that arrives after it disposed; a fetch or a placing that
- * fails says so once and leaves the parked car.
+ * Asks for the film's car, the parked car's double with wheels and a door,
+ * to stand in the parked car's place at `signs`' trailhead. `renderer` is
+ * the one the signs were asked of: its trailhead is found by the signs it
+ * handed out. Ends quietly when `signal` aborts; a fetch or a placing that
+ * fails is said once by the trailhead and leaves the parked car.
  */
 export function loadFilmCar(renderer: Renderer, signs: HikeSigns, signal: AbortSignal): void {
-  const liteTrailhead = liteTrailheads.get(signs);
-  if (liteTrailhead !== undefined) {
-    void liteTrailhead.filmCar(signal);
-    return;
-  }
-  const trailhead = trailheads.get(signs);
-  if (trailhead === undefined) return;
-  const built = sceneRendererOf(renderer);
-  if (built === null) return;
-  const { scene } = built;
-  loadUntilAborted(() => defaultModelLoader(scene)(FILM_CAR_OUTPUT), signal).then(
-    (container) => {
-      if (signal.aborted) {
-        container.dispose();
-        return;
-      }
-      try {
-        trailhead.swapCar(placeStaticModel(container, FILM_CAR_NAME, 0, 0, 0, 0));
-      } catch (error) {
-        console.warn(`end: the film's car could not be placed (${error instanceof Error ? error.message : String(error)}); the parked car stays`);
-      }
-    },
-    (error: unknown) => {
-      if (!signal.aborted) console.warn(`end: the film's car did not load (${error instanceof Error ? error.message : String(error)}); the parked car stays`);
-    },
-  );
+  void trailheads.get(signs)?.filmCar(signal);
 }
 
-/**
- * The crucified hiker at the crest (`bodyMesh.ts`), in `renderer`'s scene,
- * shadowed with the rest of the scenery placed once.
- */
+/** The crucified hiker at the crest, asked of `renderer`'s scenery; nothing for a renderer with none. */
 export function createHikeBody(renderer: Renderer, body: { pos: Vec3; yaw: number }): { dispose(): void } {
-  const built = sceneRendererOf(renderer);
-  if (built === null) return liteSceneryOf(renderer)?.body(body) ?? { dispose: () => undefined };
-  return createBodyMesh(built.scene, body, { shadows: built.shadows });
+  return liteSceneryOf(renderer)?.body(body) ?? { dispose: () => undefined };
 }

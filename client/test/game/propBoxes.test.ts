@@ -1,8 +1,4 @@
 import { describe, expect, it } from "vitest";
-import { NullEngine } from "@babylonjs/core/Engines/nullEngine.js";
-import { VertexBuffer } from "@babylonjs/core/Buffers/buffer.js";
-import { MeshBuilder } from "@babylonjs/core/Meshes/meshBuilder.js";
-import { Scene } from "@babylonjs/core/scene.js";
 import type { ChunkGrid } from "../../src/sim/chunkGrid.js";
 import { CHUNK_SIZE } from "../../src/sim/forestConstants.js";
 import {
@@ -11,6 +7,7 @@ import {
 } from "../../src/game/propBoxes.js";
 import { parseLevel } from "../../src/sim/level.js";
 import sandbox01 from "../../levels/sandbox01.json" with { type: "json" };
+import { babylonValues } from "../helpers/babylonFixture.js";
 
 /** A grid of one chunk's props, wherever it is asked. */
 const gridOf = (props: { material: string; box: { min: { x: number; y: number; z: number }; max: { x: number; y: number; z: number } } }[]): ChunkGrid =>
@@ -83,16 +80,12 @@ describe("the chunk props as boxes", () => {
       const out = ((positions[i] as number) - 11) * (normals[i] as number) + ((positions[i + 1] as number) - 0.5) * (normals[i + 1] as number) + ((positions[i + 2] as number) - 11.5) * (normals[i + 2] as number);
       expect(out).toBeGreaterThan(0);
     }
-    const engine = new NullEngine();
-    const scene = new Scene(engine);
-    try {
-      const built = MeshBuilder.CreateBox("b", { width: 2, height: 1, depth: 3 }, scene);
-      const theirs = turns(built.getVerticesData(VertexBuffer.PositionKind) ?? [], built.getVerticesData(VertexBuffer.NormalKind) ?? [], built.getIndices() ?? []);
-      expect(new Set(theirs)).toEqual(new Set(mine));
-    } finally {
-      scene.dispose();
-      engine.dispose();
-    }
+    // The box Babylon.js builds of that width, height and depth (`MeshBuilder.CreateBox`), recorded.
+    const built = babylonValues<{ positions: number[]; normals: number[]; indices: number[] }>("numbers/box.json");
+    expect([built.positions.length, built.normals.length, built.indices.length]).toEqual([72, 72, 36]);
+    const theirs = turns(built.positions, built.normals, built.indices);
+    expect(theirs).toHaveLength(12);
+    expect(new Set(theirs)).toEqual(new Set(mine));
   });
 });
 

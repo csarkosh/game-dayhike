@@ -1,0 +1,4 @@
+{"from":"Babylon.js 9.18.0: new RenderTargetTexture(\"mask\", { ratio }, scene).getSize() under a NullEngine of each render width and height",
+"ratio":0.5,
+"sizes":[{"width":1470,"height":956,"target":{"width":512,"height":512}},{"width":1920,"height":1080,"target":{"width":1024,"height":512}},{"width":2560,"height":1440,"target":{"width":1024,"height":512}},{"width":1280,"height":720,"target":{"width":512,"height":512}},{"width":975,"height":776,"target":{"width":512,"height":512}},{"width":640,"height":360,"target":{"width":256,"height":256}},{"width":390,"height":844,"target":{"width":256,"height":512}},{"width":300,"height":150,"target":{"width":256,"height":128}},{"width":3840,"height":2160,"target":{"width":2048,"height":1024}}]
+}

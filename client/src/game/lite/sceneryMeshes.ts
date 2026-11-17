@@ -34,23 +34,27 @@
  * - **The see-through parts stand at the world's origin** with their
  *   vertices in the world's own coordinates, at their places among the
  *   see-through draws (`SEE_THROUGH_ORDER`): the patch under the car, the
- *   planks' lettering, the board's face and the car's glass.
+ *   planks' lettering and the board's face. A car's glass rides the car's
+ *   own place and turn as its opaque parts do, and is ordered from the
+ *   world's origin with the rest (`Mesh.sortOrigin`).
  * - **A car's glass is one draw, its panes listed farthest first.**
  *   Babylon.js draws a mesh a pane and orders them by how far each is, so a
  *   pane seen through another is laid under it. Here the one mesh's
- *   triangles are listed pane by pane in that order, and written again on
- *   the frame the order changes: when the eye crosses between two panes.
+ *   triangles are listed pane by pane in that order, judged in the car's
+ *   own frame, and written again on the frame the order changes: when the
+ *   eye crosses between two panes.
  *
  * - **The end scene drives the car as it stands, one mesh a material**
- *   (`LiteCar.stage`). Its opaque meshes are moved by their own place and
- *   turn; its glass, the patch under it and its tail lamps, which stand in
- *   the world's own coordinates, are laid again where it goes; and the
+ *   (`LiteCar.stage`). Its meshes, the glass among them, are moved by
+ *   their own place and turn, which writes no vertex; the patch under it
+ *   and its tail lamps, which stand in the world's own coordinates, are
+ *   laid again where it goes; and the
  *   parts a pose turns (the four wheels, the steering wheel, the driver's
  *   door) are runs of its meshes' vertices, carried from their rest by the
  *   part's turn in its own frame (`carParts.ts`) and sent as the runs the
  *   pose has moved alone: a door that swings on a car that stands sends no
- *   wheel, and the door's window, a pane of the glass, is turned and laid
- *   again with it. A pose the car already stands at writes nothing, so a
+ *   wheel, and the door's window, a pane of the glass, is turned with
+ *   it in the car's frame. A pose the car already stands at writes nothing, so a
  *   parked car costs a hike and the scene's first seconds nothing; the game
  *   on Babylon.js keeps a node a part for it through the whole hike. The
  *   tail lamps are one mesh, shown from the catch.
@@ -91,7 +95,7 @@ import { CAR_SHADOW_BIAS, CAR_SHADOW_HALF, carShadowGrid } from "../carShadow.js
 import { TAIL_LAMP_COLOUR } from "../endScene.js";
 import { quatFromEuler, type Quat } from "../instancePose.js";
 import { PROP_ROUGHNESS, propBoxGeometry, propColour, type PropBox } from "../propBoxes.js";
-import type { Renderer } from "../renderer.js";
+import type { Renderer } from "../rendererTypes.js";
 import type { CarHandle } from "../scenePlay.js";
 import { invertAffine } from "../scene/actorPose.js";
 import { coiledCord } from "../scene/cord.js";
@@ -114,7 +118,7 @@ import type { FrameUploads } from "./frameUploads.js";
 import type { CoverRegistry } from "./rainMap.js";
 import { loadSceneActor, type SceneActor } from "./sceneActor.js";
 import {
-  dress, farthestFirst, listPanes, loadSceneryModel, partBytes, partMesh, placeMatrix, placed, type SceneryModel, type SceneryPart,
+  dress, farthestFirst, listPanes, loadSceneryModel, partBytes, partMesh, placeMatrix, type SceneryModel, type SceneryPart,
 } from "./sceneryModels.js";
 import {
   TAIL_LAMP_INDICES, airPatchMaterial, faceGeometry, faceMesh, labelAtlas, labelGeometry, paintCanvas, paintLabelAtlas, paintMaterial, paintTexture, patchGeometry,
@@ -148,6 +152,14 @@ export const FILM_CAR_WARM_FRAMES = 2;
 
 /** The parts of the film's car a pose turns (`carParts.ts`), by their nodes' names in its file. */
 const TURNED_PARTS: readonly string[] = [...WHEEL_NAMES, STEERING_NAME, DOOR_NAME];
+/** The point every see-through mesh of the hike is ordered from (`Mesh.sortOrigin`): the world's origin, where the rest of them stand. */
+const WORLD_ORIGIN: readonly [number, number, number] = [0, 0, 0];
+
+/** The world carried into the frame of a model stood at (x, y, z) turned by `yaw`, into `out`. */
+function modelFrame(x: number, y: number, z: number, yaw: number, out: Float64Array): Float64Array {
+  invertAffine(placeMatrix(x, y, z, yaw), 0, out, 0);
+  return out;
+}
 /** The handset and its cradle, by their nodes' names in the film car's file. */
 const HANDSET_NODE = "handset";
 const CRADLE_NODE = "cradle";
@@ -410,18 +422,12 @@ function merged(parts: readonly { positions: Float32Array; normals: Float32Array
   return out;
 }
 
-/** A see-through part as it stands in the world: its mesh, its geometry there, and the order its panes are listed in. */
+/** A see-through part as it stands: its mesh, which rides the model's place and turn, and the order its panes are listed in. */
 type Glass = {
   mesh: Mesh;
   part: SceneryPart;
-  positions: Float32Array;
-  normals: Float32Array;
-  tangents: Float32Array | null;
-  /** The triangles as the file lists them, and as the mesh now draws them. */
-  indices: Uint32Array;
+  /** The triangles as the mesh now draws them; the part's own are the file's. */
   drawn: Uint32Array;
-  /** The middle of each pane's box in the world, xyz a pane. */
-  centres: Float32Array;
   order: number[];
   /** The panes a pose turns (a door's window), by their nodes' names: each pane's run of vertices and its own frame in the model's. */
   runs: { name: string; first: number; count: number; local: Float32Array; pane: number }[];
@@ -478,6 +484,8 @@ type Stood = {
   max: { x: number; y: number; z: number };
   box: SightBox;
   at: { x: number; y: number; z: number; yaw: number };
+  /** The world carried into the model's own frame where it stands: what a pane's distance from the eye is judged in. */
+  toModel: Float64Array;
   turned: Turned[];
   turn: { wheelSpin: number; wheelTurn: number; steer: number; doorOpen: number };
   handset: Handset | null;
@@ -549,23 +557,19 @@ export function createLiteScenery(engine: EngineContext, scene: SceneContext, op
   }
 
   /**
-   * A model's meshes stood at (x, y, z) turned by `yaw`: an opaque part by
-   * its mesh's own place, a see-through one with its vertices carried there,
-   * at the glass's place among the see-through draws.
+   * A model's meshes stood at (x, y, z) turned by `yaw`, each by its
+   * mesh's own place and turn: a see-through one at the glass's place among
+   * the see-through draws, ordered from the world's origin as they all are.
    */
   function standModel(name: string, model: SceneryModel, x: number, y: number, z: number, yaw: number, cover: boolean): Stood {
     const turn = quatFromEuler(0, yaw, 0, { x: 0, y: 0, z: 0, w: 1 });
     const glass: Glass[] = [];
     const meshes = model.parts.map((part: SceneryPart, n) => {
-      const at = placeMatrix(x, y, z, yaw);
-      const mesh = part.blended ? partMesh(engine, `${name}_${n}`, part, at) : partMesh(engine, `${name}_${n}`, part);
+      const mesh = partMesh(engine, `${name}_${n}`, part);
       if (part.blended) {
-        // Its panes are ordered by the eye, and a car that drives lays it again where it goes: the geometry is kept as it stands in the world.
-        const world = placed(part, at);
-        const centres = new Float32Array(part.panes.length * 3);
-        for (const [i, pane] of part.panes.entries()) {
-          for (let row = 0; row < 3; row++) centres[i * 3 + row] = (at[row] as number) * pane.x + (at[4 + row] as number) * pane.y + (at[8 + row] as number) * pane.z + (at[12 + row] as number);
-        }
+        // Lite orders a blended mesh by its origin's depth unless it is given another point: the world's origin, where
+        // every other see-through mesh of the hike stands, so the glass keeps its place among them wherever the car is.
+        mesh.sortOrigin = WORLD_ORIGIN;
         const paneAt = new Float32Array(part.panes.length * 3);
         const runs: Glass["runs"] = [];
         for (const [i, pane] of part.panes.entries()) {
@@ -575,20 +579,15 @@ export function createLiteScenery(engine: EngineContext, scene: SceneContext, op
           const turned = TURNED_PARTS.find((node) => pane.nodes.includes(node));
           if (turned !== undefined) runs.push({ name: turned, first: pane.vertexFirst, count: pane.vertexCount, local: pane.local, pane: i });
         }
-        glass.push({
-          mesh, part, positions: world.positions, normals: world.normals, tangents: world.tangents, indices: world.indices, drawn: world.indices.slice(), centres,
-          order: part.panes.map((_, i) => i), runs, model: null, paneAt,
-        });
+        glass.push({ mesh, part, drawn: part.indices.slice(), order: part.panes.map((_, i) => i), runs, model: null, paneAt });
       }
-      if (!part.blended) {
-        mesh.position.x = x;
-        mesh.position.y = y;
-        mesh.position.z = z;
-        mesh.rotationQuaternion.x = turn.x;
-        mesh.rotationQuaternion.y = turn.y;
-        mesh.rotationQuaternion.z = turn.z;
-        mesh.rotationQuaternion.w = turn.w;
-      }
+      mesh.position.x = x;
+      mesh.position.y = y;
+      mesh.position.z = z;
+      mesh.rotationQuaternion.x = turn.x;
+      mesh.rotationQuaternion.y = turn.y;
+      mesh.rotationQuaternion.z = turn.z;
+      mesh.rotationQuaternion.w = turn.w;
       stand(mesh, partBytes(part), part.blended ? SEE_THROUGH_ORDER.glass : undefined);
       if (cover) options.cover?.add(mesh);
       return mesh;
@@ -607,7 +606,8 @@ export function createLiteScenery(engine: EngineContext, scene: SceneContext, op
       }
     }
     return {
-      model, meshes, glass, min, max, box: sightBox(x, y, z, yaw, min, max), at: { x, y, z, yaw }, turned: [], turn: { wheelSpin: 0, wheelTurn: 0, steer: 0, doorOpen: 0 },
+      model, meshes, glass, min, max, box: sightBox(x, y, z, yaw, min, max), at: { x, y, z, yaw }, toModel: modelFrame(x, y, z, yaw, new Float64Array(16)), turned: [],
+      turn: { wheelSpin: 0, wheelTurn: 0, steer: 0, doorOpen: 0 },
       handset: null, cord: null,
     };
   }
@@ -681,7 +681,7 @@ export function createLiteScenery(engine: EngineContext, scene: SceneContext, op
       uploads?.count("geometry", count * (posed.tangents !== null ? 40 : 24), posed.tangents !== null ? 3 : 2);
     }
     // The see-through panes a pose turns: the door's window swings with the door. Each is turned in the model's
-    // frame and laid again where the car stands, its run alone, and its middle moved for the panes' order.
+    // frame, where the glass's mesh holds it, its run alone sent, and its middle moved for the panes' order.
     for (const glass of stood.glass) {
       let first = Infinity;
       let end = -Infinity;
@@ -700,20 +700,13 @@ export function createLiteScenery(engine: EngineContext, scene: SceneContext, op
         first = Math.min(first, run.first);
         end = Math.max(end, run.first + run.count);
       }
-      if (glass.model === null || end <= first) continue;
+      const posed = glass.model;
+      if (posed === null || end <= first) continue;
       const count = end - first;
-      const at = placeMatrix(stood.at.x, stood.at.y, stood.at.z, stood.at.yaw);
-      poseVertices(at, glass.model, glass, first, count);
-      for (const run of glass.runs) {
-        const p = run.pane * 3;
-        for (let row = 0; row < 3; row++) {
-          glass.centres[p + row] = (at[row] as number) * (glass.paneAt[p] as number) + (at[4 + row] as number) * (glass.paneAt[p + 1] as number) + (at[8 + row] as number) * (glass.paneAt[p + 2] as number) + (at[12 + row] as number);
-        }
-      }
-      updateMeshPositions(engine, glass.mesh, glass.positions, first, count, first);
-      updateMeshNormals(engine, glass.mesh, glass.normals, first, count, first);
-      if (glass.tangents !== null) updateMeshTangents(engine, glass.mesh, glass.tangents, first, count, first);
-      uploads?.count("geometry", count * (glass.tangents !== null ? 40 : 24), glass.tangents !== null ? 3 : 2);
+      updateMeshPositions(engine, glass.mesh, posed.positions, first, count, first);
+      updateMeshNormals(engine, glass.mesh, posed.normals, first, count, first);
+      if (posed.tangents !== null) updateMeshTangents(engine, glass.mesh, posed.tangents, first, count, first);
+      uploads?.count("geometry", count * (posed.tangents !== null ? 40 : 24), posed.tangents !== null ? 3 : 2);
     }
   }
 
@@ -855,9 +848,9 @@ export function createLiteScenery(engine: EngineContext, scene: SceneContext, op
   }
 
   /**
-   * Stands `stood` at (x, y, z) turned by `yaw`: its opaque meshes by their
-   * own place and turn, its see-through ones laid again in the world; true
-   * where it moved.
+   * Stands `stood` at (x, y, z) turned by `yaw`, each mesh by its own place
+   * and turn, the glass as the rest: no vertex is written; true where it
+   * moved.
    */
   function moveModel(stood: Stood, x: number, y: number, z: number, yaw: number): boolean {
     const was = stood.at;
@@ -878,9 +871,7 @@ export function createLiteScenery(engine: EngineContext, scene: SceneContext, op
       mesh.rotationQuaternion.z = turn.z;
       mesh.rotationQuaternion.w = turn.w;
     }
-    for (const [n, part] of stood.model.parts.entries()) {
-      if (part.blended) continue;
-      const mesh = stood.meshes[n] as Mesh;
+    for (const mesh of stood.meshes) {
       mesh.position.x = x;
       mesh.position.y = y;
       mesh.position.z = z;
@@ -889,37 +880,34 @@ export function createLiteScenery(engine: EngineContext, scene: SceneContext, op
       mesh.rotationQuaternion.z = turn.z;
       mesh.rotationQuaternion.w = turn.w;
     }
-    const at = placeMatrix(x, y, z, yaw);
-    for (const glass of stood.glass) {
-      const { part } = glass;
-      // From the model's frame as a pose has turned its panes: a door's window stays with its door.
-      poseVertices(at, glass.model ?? part, glass, 0, part.positions.length / 3);
-      for (let i = 0; i < part.panes.length; i++) {
-        const p = i * 3;
-        for (let row = 0; row < 3; row++) {
-          glass.centres[p + row] = (at[row] as number) * (glass.paneAt[p] as number) + (at[4 + row] as number) * (glass.paneAt[p + 1] as number) + (at[8 + row] as number) * (glass.paneAt[p + 2] as number) + (at[12 + row] as number);
-        }
-      }
-      updateMeshPositions(engine, glass.mesh, glass.positions);
-      updateMeshNormals(engine, glass.mesh, glass.normals);
-      if (glass.tangents !== null) updateMeshTangents(engine, glass.mesh, glass.tangents);
-      uploads?.count("geometry", (part.positions.length / 3) * (glass.tangents !== null ? 40 : 24), glass.tangents !== null ? 3 : 2);
-    }
+    modelFrame(x, y, z, yaw, stood.toModel);
     stood.box = sightBox(x, y, z, yaw, stood.min, stood.max);
     return true;
   }
 
-  /** Lists each glass's panes farthest first from `eye`, where that is not the order its mesh draws them in. */
+  /**
+   * Lists each glass's panes farthest first from `eye`, where that is not
+   * the order its mesh draws them in. The eye is carried into the model's own
+   * frame, where the panes' middles are kept: a distance is the same in
+   * either.
+   */
   const nextOrder: number[] = [];
+  const modelEye = { x: 0, y: 0, z: 0 };
   function orderGlass(stood: Stood, eye: SceneryView["eye"]): void {
+    if (stood.glass.length === 0) return;
+    const m = stood.toModel;
+    modelEye.x = (m[0] as number) * eye.x + (m[4] as number) * eye.y + (m[8] as number) * eye.z + (m[12] as number);
+    modelEye.y = (m[1] as number) * eye.x + (m[5] as number) * eye.y + (m[9] as number) * eye.z + (m[13] as number);
+    modelEye.z = (m[2] as number) * eye.x + (m[6] as number) * eye.y + (m[10] as number) * eye.z + (m[14] as number);
     for (const glass of stood.glass) {
       if (glass.part.panes.length < 2) continue;
-      farthestFirst(glass.centres, eye, nextOrder);
+      farthestFirst(glass.paneAt, modelEye, nextOrder);
       if (nextOrder.every((pane, i) => pane === glass.order[i])) continue;
       for (const [i, pane] of nextOrder.entries()) glass.order[i] = pane;
-      listPanes(glass.indices, glass.part.panes, glass.order, glass.drawn);
+      const held = glass.model ?? glass.part;
+      listPanes(glass.part.indices, glass.part.panes, glass.order, glass.drawn);
       updateMeshGeometryCapacity(
-        engine, glass.mesh, glass.positions, glass.normals, glass.drawn, glass.part.uvs, undefined, glass.tangents ?? undefined, undefined, 1,
+        engine, glass.mesh, held.positions, held.normals, glass.drawn, glass.part.uvs, undefined, held.tangents ?? undefined, undefined, 1,
         { vertices: [], indices: [{ offset: 0, count: glass.drawn.length }] },
       );
       uploads?.count("geometry", glass.drawn.byteLength);

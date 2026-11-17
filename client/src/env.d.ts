@@ -9,6 +9,11 @@
  * (`shaderLookup.ts`), so the page never hashes 2.6 MB. */
 declare const __WGSL_TRANSLATORS__: string;
 
+/** The version of Babylon Lite the page is built with, as `client/package.json`
+ * pins it: the fork's tag (`v1.39.3-dayhike.7`), read by the build
+ * (`vite.config.ts`, `tools/vite/liteVersion.mjs`). Telemetry's `lite`. */
+declare const __LITE_VERSION__: string;
+
 /** The URLs of the WGSL maps the build ships, one a quality tier
  * (`tools/wgsl/lib/mapPlugin.mjs`): content-hashed assets of the WebGPU
  * chunk; on the dev server, the maps it makes as it starts; each empty under

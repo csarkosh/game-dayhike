@@ -3,7 +3,7 @@ import "../../src/sim/passes/index.js";
 import type { BoardDrawing } from "../../src/game/boardDraw.js";
 import { createHikeBody, createHikeSigns, loadFilmCar } from "../../src/game/hikeScenery.js";
 import type { SceneryHost } from "../../src/game/lite/sceneryMeshes.js";
-import type { Renderer } from "../../src/game/renderer.js";
+import type { Renderer } from "../../src/game/rendererTypes.js";
 import type { TrailheadSites } from "../../src/game/sceneryParts.js";
 import { signSites } from "../../src/sim/placeNames.js";
 import { buildSearch } from "../../src/sim/search.js";

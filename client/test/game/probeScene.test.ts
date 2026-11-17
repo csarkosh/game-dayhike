@@ -144,7 +144,10 @@ describe("the probe's sky", () => {
   it("is handed to each step's scene by the step", () => {
     const src = readFileSync(new URL("../../src/game/probeScene.ts", import.meta.url), "utf8");
     expect(src).toContain("probe = buildProbeScene(canvas, tier, given, opts.sky);");
-    expect(src).toContain("measure: (step, on, by) => runProbeStep(container, step, { cancelled: stopped, signal: aborts.signal, on, readyBy: by, sky: table }),");
+    expect(src).toContain("measure: (measured, on, by) => runProbeStep(container, measured, { cancelled: step.stopped, signal: step.signal, on, readyBy: by, sky: step.sky }),");
+    // The step is handed the probe's sky by the page's half of the probe, which keeps the one source.
+    const page = readFileSync(new URL("../../src/game/probePage.ts", import.meta.url), "utf8");
+    expect(page).toContain("const reading = await measure(tier, { stopped, signal: aborts.signal, readyBy, sky: sky.table });");
   });
 });
 
@@ -251,8 +254,12 @@ describe("a probe step's frames that are no measure of its tier", () => {
   it("are not listened for on WebGL2, which has none, nor where the page gives no watcher", () => {
     const src = readFileSync(new URL("../../src/game/probeScene.ts", import.meta.url), "utf8");
     expect(src).toContain('given !== null && opts.on?.unmeasured != null ? opts.on.unmeasured(given, () => meter.compiled(performance.now())) : (): void => undefined;');
+    // The page hands no step an engine of this renderer's: its steps are measured on the hike's own renderer, which
+    // tells of such frames itself (`Renderer.onShaderCompiled`).
     const main = readFileSync(new URL("../../src/main.ts", import.meta.url), "utf8");
-    expect(main).toContain("return { canvas, engine, watch: watchers?.failures ?? null, unmeasured: watchers?.pipelines ?? null };");
+    expect(main).not.toContain("unmeasured");
+    expect(main).not.toContain("watchers?.pipelines");
+    expect(readFileSync(new URL("../../src/game/lite/probeScene.ts", import.meta.url), "utf8")).toContain("const uncompiled = renderer.onShaderCompiled(() => meter.compiled(now()));");
   });
 });
 

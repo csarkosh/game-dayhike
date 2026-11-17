@@ -149,8 +149,14 @@ export function detectTier(
  * moves enough, or when `CLASS_TIERS` moves a class's start or ceiling. A
  * classifier change that moves a GPU to another class needs no bump, since
  * the record carries the class its verdict was made for (`verdictFor`).
+ *
+ * 2: a hike is drawn by its own renderer on Babylon Lite and the probe
+ * measures on it (`lite/probeScene.ts`). Every record of version 1 was made
+ * on the renderer on Babylon.js, a probe's on WebGL2 at that, which no hike
+ * draws with: none says what the hike's own renderer holds, and a WebGL2
+ * verdict would be read as a floor for WebGPU (`verdictRead`).
  */
-export const DETECT_VERSION = 1;
+export const DETECT_VERSION = 2;
 /** How long a probe's or a build verdict holds, in days. */
 export const VERDICT_DAYS = 30;
 /** How long a governor's verdict holds, in days: slowness from load outside

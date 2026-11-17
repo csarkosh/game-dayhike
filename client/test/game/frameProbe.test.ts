@@ -18,6 +18,8 @@ import {
   probeStepCanSettle,
   probeStepEngine,
   WEBGPU_PROBE_STEPS_SETTLE,
+  LITE_PROBE_STEPS_SETTLE,
+  liteProbeSteps,
   probePose,
   probeReadingLine,
   readEarlyMiss,
@@ -33,7 +35,7 @@ import {
 import type { GpuSignals } from "../../src/game/gpuSignals.js";
 import { WEBGPU_TIERS } from "../../src/game/engineChoice.js";
 import { landingModel } from "../../src/game/landingModel.js";
-import { autoTier, withGovernorDrop, type ProbeReading, type QualityTier, type VerdictEngine } from "../../src/game/quality.js";
+import { DETECT_VERSION, autoTier, withGovernorDrop, type ProbeReading, type QualityTier, type VerdictEngine } from "../../src/game/quality.js";
 import { readAutoRecord, writeAutoRecord } from "../../src/game/tierChoice.js";
 
 const f = (n: number, ms: number): number[] => Array.from({ length: n }, () => ms);
@@ -220,7 +222,7 @@ describe("runProbe and the Auto record", () => {
     const s = memoryStorage();
     const deps = { storage: s, runStep: () => new Promise<ProbeReading | null>(() => undefined), pixels: () => 2_073_600, now: () => 1_790_000_000_000 };
     void runProbe("high", "medium", null, KEY, deps);
-    expect(readAutoRecord(s)).toEqual({ v: 1, gpu: "Apple GPU", cls: "apple-unknown", browser: 26, attempts: 1, verdict: null });
+    expect(readAutoRecord(s)).toEqual({ v: DETECT_VERSION, gpu: "Apple GPU", cls: "apple-unknown", browser: 26, attempts: 1, verdict: null });
   });
 
   it("never probes a window with no area, and writes nothing for one", async () => {
@@ -245,7 +247,7 @@ describe("runProbe and the Auto record", () => {
     for (const runStep of [async () => null, async () => { throw new Error("context lost"); }]) {
       const s = memoryStorage();
       expect(await runProbe("high", "medium", null, KEY, { storage: s, runStep, pixels: () => 2_073_600, now: () => 1_790_000_000_000 })).toBe("medium");
-      expect(readAutoRecord(s)).toEqual({ v: 1, gpu: "Apple GPU", cls: "apple-unknown", browser: 26, attempts: 1, verdict: null });
+      expect(readAutoRecord(s)).toEqual({ v: DETECT_VERSION, gpu: "Apple GPU", cls: "apple-unknown", browser: 26, attempts: 1, verdict: null });
     }
   });
 
@@ -260,7 +262,7 @@ describe("runProbe and the Auto record", () => {
       const s = memoryStorage();
       expect(await runProbe("high", "medium", null, KEY, { storage: s, runStep, pixels: () => 2_073_600, now: () => 1_790_000_000_000 })).toBe("medium");
       // The verdict of a probe cut short keeps the attempt it spent.
-      expect(readAutoRecord(s)).toEqual({ v: 1, gpu: "Apple GPU", cls: "apple-unknown", browser: 26, attempts: 1,
+      expect(readAutoRecord(s)).toEqual({ v: DETECT_VERSION, gpu: "Apple GPU", cls: "apple-unknown", browser: 26, attempts: 1,
         verdict: { tier: "medium", source: "probe", pixels: 2_073_600, at: 1_790_000_000_000, readings: [reading("high", 34.3)] } });
     }
     // A class that starts at low keeps low, not the medium below the miss.
@@ -272,7 +274,7 @@ describe("runProbe and the Auto record", () => {
 
   it("counts a second attempt on the record of the first", async () => {
     const s = memoryStorage();
-    const first = { v: 1, gpu: "Apple GPU", cls: "apple-unknown" as const, browser: 26, attempts: 1, verdict: null };
+    const first = { v: DETECT_VERSION, gpu: "Apple GPU", cls: "apple-unknown" as const, browser: 26, attempts: 1, verdict: null };
     await runProbe("high", "medium", first, KEY, { storage: s, runStep: async () => null, pixels: () => 2_073_600, now: () => 1_790_000_000_000 });
     expect(readAutoRecord(s)!.attempts).toBe(2);
   });
@@ -411,7 +413,7 @@ describe("startupTier", () => {
     });
     expect(await startupTier(SAFARI, page(), t.deps)).toEqual({ tier: "medium", source: "auto", cls: "apple-unknown" });
     expect(t.open()).toBe(0);
-    expect(readAutoRecord(t.storage)).toEqual({ v: 1, gpu: "Apple GPU", cls: "apple-unknown", browser: 26, attempts: 1, verdict: null });
+    expect(readAutoRecord(t.storage)).toEqual({ v: DETECT_VERSION, gpu: "Apple GPU", cls: "apple-unknown", browser: 26, attempts: 1, verdict: null });
     expect(t.lines[0]).toBe("quality probe: no verdict; starting at medium (apple-unknown)");
     expect(PROBE_MAX_MS).toBe(30_000);
   });
@@ -426,7 +428,7 @@ describe("startupTier", () => {
     expect(t.steps).toEqual(["high", "medium"]);
     expect(t.open()).toBe(0);
     expect(t.lines[0]).toBe("quality probe: cut short after high missed, verdict medium; starting at medium (apple-unknown)");
-    expect(readAutoRecord(t.storage)).toEqual({ v: 1, gpu: "Apple GPU", cls: "apple-unknown", browser: 26, attempts: 1,
+    expect(readAutoRecord(t.storage)).toEqual({ v: DETECT_VERSION, gpu: "Apple GPU", cls: "apple-unknown", browser: 26, attempts: 1,
       verdict: { tier: "medium", source: "probe", pixels: 2_073_600, at: 1_790_000_000_000, readings: [reading("high", 34.3)] } });
     const next = fakes((tier) => reading(tier, 34.3), t.storage);
     expect(await startupTier(SAFARI, page(), next.deps)).toEqual({ tier: "medium", source: "auto", cls: "apple-unknown" });
@@ -523,7 +525,7 @@ describe("startupTier", () => {
 
   it("skips the probe where shaders compile on the page's thread: no screen, no wait, nothing written", async () => {
     const earlier = memoryStorage();
-    writeAutoRecord(earlier, { v: 1, gpu: "Apple M1, or similar", cls: "apple-unknown", browser: 156, attempts: 2, verdict: null });
+    writeAutoRecord(earlier, { v: DETECT_VERSION, gpu: "Apple M1, or similar", cls: "apple-unknown", browser: 156, attempts: 2, verdict: null });
     for (const storage of [memoryStorage(), earlier]) {
       const before = contents(storage);
       const t = fakes((tier) => reading(tier, 16.7), storage);
@@ -538,6 +540,54 @@ describe("startupTier", () => {
       ]);
     }
     expect(readAutoRecord(earlier)!.attempts).toBe(2);
+  });
+
+  it("takes the page's own word for its steps where it measures them on the hike's own renderer: measured wherever the browser offers WebGPU, whatever WebGL2 would link on the page's thread", async () => {
+    expect(LITE_PROBE_STEPS_SETTLE).toBe(true);
+    expect(liteProbeSteps(true)).toEqual({ settle: true, whyNot: "a step on the hike's renderer is not taken to settle" });
+    // Firefox links WebGL2's programs on the page's thread; a step on the hike's renderer links none.
+    const storage = memoryStorage();
+    const gpu = (tier: QualityTier): ProbeReading => ({ ...reading(tier, 16.7), engine: "webgpu" });
+    const t = fakes(gpu, storage);
+    expect(await startupTier(FIREFOX, { ...page(), engine: "webgpu", steps: liteProbeSteps(true) }, t.deps)).toEqual({ tier: "high", source: "auto", cls: "apple-unknown" });
+    expect(t.screens()).toBe(1);
+    expect(t.steps).toEqual(["high"]);
+    expect(t.lines).toEqual(["quality probe: verdict high (apple-unknown)"]);
+    // The verdict is WebGPU's, read under the one engine a hike is drawn with: no second probe.
+    expect(readAutoRecord(storage)!.verdict).toMatchObject({ tier: "high", source: "probe", engine: "webgpu" });
+    expect(readAutoRecord(storage)!.attempts).toBe(0);
+    const again = fakes(gpu, storage);
+    expect(await startupTier(FIREFOX, { ...page(), engine: "webgpu", steps: liteProbeSteps(true) }, again.deps)).toEqual({ tier: "high", source: "auto", cls: "apple-unknown" });
+    expect(again.screens()).toBe(0);
+    // And Settings says a probe is pending exactly there.
+    expect(autoPick(FIREFOX, { record: null, pixels: 2_073_600, now: 1_790_000_000_000, engine: "webgpu", stepSettles: true }).probeFrom).toBe("high");
+    expect(autoPick(FIREFOX, { record: null, pixels: 2_073_600, now: 1_790_000_000_000, engine: "webgpu" }).probeFrom).toBeNull();
+  });
+
+  it("runs no probe where the browser offers no WebGPU to measure with, or where the page's steps are not taken to settle: no screen, nothing written, the reason said", async () => {
+    expect(liteProbeSteps(false)).toEqual({ settle: false, whyNot: "this browser offers no WebGPU to measure with" });
+    expect(liteProbeSteps(false, true).settle).toBe(false);
+    expect(liteProbeSteps(true, false).settle).toBe(false);
+    for (const [steps, why] of [
+      [liteProbeSteps(false), "this browser offers no WebGPU to measure with"],
+      [liteProbeSteps(true, false), "a step on the hike's renderer is not taken to settle"],
+    ] as const) {
+      const storage = memoryStorage();
+      const before = contents(storage);
+      const t = fakes((tier) => reading(tier, 16.7), storage);
+      // Safari links in parallel: asked of WebGL2 it would be probed.
+      expect(await startupTier(SAFARI, { ...page(), engine: "webgpu", steps }, t.deps)).toEqual({ tier: "medium", source: "auto", cls: "apple-unknown" });
+      expect(t.screens()).toBe(0);
+      expect(t.steps).toEqual([]);
+      expect(contents(storage)).toBe(before);
+      expect(t.lines).toEqual([`quality probe: skipped, ${why}; starting at medium (apple-unknown)`]);
+      expect(autoPick(SAFARI, { record: null, pixels: 2_073_600, now: 1_790_000_000_000, engine: "webgpu", stepSettles: steps.settle })).toMatchObject({ probeFrom: null, probeSkipped: true });
+      // `?probe=` still forces one: its step is the page's to end where it cannot be measured.
+      const forced = fakes(() => null, storage);
+      expect(await startupTier(SAFARI, { ...page("?probe=high"), engine: "webgpu", steps }, forced.deps)).toEqual({ tier: "medium", source: "auto", cls: "apple-unknown" });
+      expect(forced.screens()).toBe(1);
+      expect(forced.steps).toEqual(["high"]);
+    }
   });
 
   it("probes tiers that draw on WebGPU on WebGL2, and the verdict holds for WebGPU", async () => {
@@ -570,7 +620,7 @@ describe("startupTier", () => {
       const storage = memoryStorage();
       if (name === "WebGPU, a WebGL2 verdict holding") {
         writeAutoRecord(storage, {
-          v: 1, gpu: "Apple GPU", cls: "apple-unknown", browser: 26, attempts: 0,
+          v: DETECT_VERSION, gpu: "Apple GPU", cls: "apple-unknown", browser: 26, attempts: 0,
           verdict: { tier: "high", source: "probe", pixels: 2_073_600, at: 1_790_000_000_000 - 86_400_000 },
         });
       }
@@ -607,7 +657,7 @@ describe("startupTier", () => {
   it("still honours a holding verdict where shaders compile on the page's thread", async () => {
     const s = memoryStorage();
     writeAutoRecord(s, {
-      v: 1, gpu: "Apple M1, or similar", cls: "apple-unknown", browser: 156, attempts: 0,
+      v: DETECT_VERSION, gpu: "Apple M1, or similar", cls: "apple-unknown", browser: 156, attempts: 0,
       verdict: { tier: "high", source: "probe", pixels: 2_073_600, at: 1_790_000_000_000 - 86_400_000 },
     });
     const t = fakes((tier) => reading(tier, 16.7), s);
@@ -643,7 +693,7 @@ describe("startupTier", () => {
 
   it("stops probing after three attempts without a verdict", async () => {
     const s = memoryStorage();
-    writeAutoRecord(s, { v: 1, gpu: "Apple GPU", cls: "apple-unknown", browser: 26, attempts: 3, verdict: null });
+    writeAutoRecord(s, { v: DETECT_VERSION, gpu: "Apple GPU", cls: "apple-unknown", browser: 26, attempts: 3, verdict: null });
     const t = fakes(() => reading("high", 16.7), s);
     expect(await startupTier(SAFARI, page(), t.deps)).toEqual({ tier: "medium", source: "auto", cls: "apple-unknown" });
     expect(t.steps).toEqual([]);
@@ -1007,7 +1057,7 @@ describe("autoPick's recommendation", () => {
   it("is what the frame measured once a verdict holds, else the class's ceiling", () => {
     expect(at(null).ceiling).toBe("high");
     const measured = {
-      v: 1, gpu: "Apple GPU", cls: "apple-unknown" as const, browser: 26, attempts: 0,
+      v: DETECT_VERSION, gpu: "Apple GPU", cls: "apple-unknown" as const, browser: 26, attempts: 0,
       verdict: { tier: "medium" as const, source: "probe" as const, pixels: 2_073_600, at: 1_790_000_000_000 - 86_400_000 },
     };
     expect(at(measured)).toEqual({ cls: "apple-unknown", gpu: "Apple GPU", tier: "medium", probeFrom: null, probeSkipped: false, ceiling: "medium" });
@@ -1041,7 +1091,7 @@ describe("a drop remembered from an earlier hike, read at launch", () => {
   it("starts the hike one tier down, for Auto only", async () => {
     const s = memoryStorage();
     writeAutoRecord(s, {
-      v: 1, gpu: RTX, cls: "discrete-modern", browser: 153, attempts: 0,
+      v: DETECT_VERSION, gpu: RTX, cls: "discrete-modern", browser: 153, attempts: 0,
       verdict: { tier: "medium", source: "governor", pixels: 500_000, at: 1_790_000_000_000 - 1 },
     });
     expect(await startupTier(signals, { search: "", choice: "auto", cancelled: () => false }, deps(s, 1_790_000_000_000)))
@@ -1076,7 +1126,7 @@ describe("the engine a probe's verdict was measured with", () => {
   });
 
   it("reads a verdict only for the engine the probed tiers would draw with now", () => {
-    const record = { v: 1, gpu: "Apple GPU", cls: "apple-unknown" as const, browser: 26, attempts: 0,
+    const record = { v: DETECT_VERSION, gpu: "Apple GPU", cls: "apple-unknown" as const, browser: 26, attempts: 0,
       verdict: { tier: "high" as const, source: "probe" as const, pixels: 2_073_600, at: 1_790_000_000_000 - 1 } };
     const at = { record, pixels: 2_073_600, now: 1_790_000_000_000 };
     expect(autoPick(SAFARI, at)).toMatchObject({ tier: "high", probeFrom: null });

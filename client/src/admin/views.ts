@@ -96,10 +96,24 @@ export function liveView(live: Live): HTMLElement {
 }
 
 /**
+ * The line under the funnel's title: the sessions and the builds, and, of
+ * the sessions that landed, how many the load check turned away (a browser
+ * or a GPU that cannot play: `turned_away`), who could never press Play and
+ * so stand between the first stage and the second. A query from before the
+ * count (no such column) says nothing of them.
+ */
+export function funnelLine(all: Row, builds: number): string {
+  const turned = num(all.turned_away);
+  const away = all.turned_away === undefined || all.turned_away === null ? "" : `; ${turned} of those that landed could not play here and were turned away`;
+  return `${num(all.sessions)} sessions on ${builds} build${builds === 1 ? "" : "s"}, each stage of the one before${away}; every build in the table`;
+}
+
+/**
  * The funnel's headline is the query's `all` row, every build together; the
  * builds are the breakdown in the table. The stages nest per session (a
  * session counts at a stage only where it counted at the one before), so the
- * shares read as shares.
+ * shares read as shares. The sessions the load check turned away are a count
+ * beside the stages, not one of them: they landed and could go no further.
  */
 export function funnelView(rows: Row[]): HTMLElement {
   const all = rows.find((r) => r.build === "all");
@@ -114,6 +128,7 @@ export function funnelView(rows: Row[]): HTMLElement {
     { key: "build", label: "Build", render: (v) => el("span", { class: "mono" }, str(v)) },
     { key: "sessions", label: "Sessions", num: true },
     { key: "landed", label: "Landed", num: true },
+    { key: "turned_away", label: "Turned away", num: true },
     { key: "pressed_play", label: "Pressed Play", num: true },
     { key: "started", label: "Started", num: true },
     { key: "finished", label: "Reached an end", num: true },
@@ -121,7 +136,7 @@ export function funnelView(rows: Row[]): HTMLElement {
   ];
   return card(
     "From landing to the end",
-    all === undefined ? "Sessions by what they reached" : `${num(all.sessions)} sessions on ${builds.length} build${builds.length === 1 ? "" : "s"}, each stage of the one before; every build in the table`,
+    all === undefined ? "Sessions by what they reached" : funnelLine(all, builds.length),
     "",
     all === undefined || num(all.landed) === 0 ? el("div", { class: "empty" }, "No sessions in this range.") : funnel(stages),
     tableView(cols, builds),

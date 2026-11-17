@@ -20,12 +20,25 @@
  * on drawing while a model is still to land or the renderer's scenery says
  * the world streamed in the last frame, until a run of frames has streamed
  * nothing, and then draws the frame.
+ *
+ * **And no frame counts before the renderer's world is in.** The intro is
+ * ready once its ranger and its car have loaded, which may be before the
+ * renderer's own world stands (`Renderer.whenReady`: its models landed, its
+ * first lists drawn, every far tree's bake settled). The far trees are the
+ * last of it: every tree past the near radius is a billboard, the
+ * billboards join the scene together once the last of their bakes has
+ * settled, and until then they are neither a model to land nor a hand-over
+ * of the streamed world. So a recorder's frame asked for before the world
+ * is in is drawn in the same way, cut or no cut: frames, a turn of the page
+ * after each, until the world is in and a run of them has streamed nothing.
+ * A camera moved less far than a cut (`JUMP_M`) but further than a shell's
+ * cell is built for at once by every shell, in the frame that moved it.
  */
 import catalog from "../../../assets/catalog.json" with { type: "json" };
 import type { WorldState } from "../../sim/types.js";
 import { resolveCharacterAssets } from "../characterAssets.js";
 import type { QualityTier } from "../quality.js";
-import type { FreecamView, Renderer } from "../renderer.js";
+import type { FreecamView, Renderer } from "../rendererTypes.js";
 import { SETTLE_MAX_MS, WARM_FRAMES, cameraJumped } from "../scene/cameraJump.js";
 import { createCaptionPanel } from "../scene/captions.js";
 import { INTRO_RANGER } from "../scene/intro.js";
@@ -88,7 +101,12 @@ export function startLiteSceneRoute(deps: LiteSceneRouteDeps, search: { t: numbe
   const rangerUrl = title ? undefined : resolveCharacterAssets(catalog).find((asset) => asset.id === INTRO_RANGER)?.url;
   const ranger: LiteActor | null = rangerUrl === undefined ? null : (host?.actor(rangerUrl) ?? null);
   const carLoaded = title || trailhead === null ? Promise.resolve() : trailhead.filmCar(loads.signal, { darkness: FILM_PATCH_DARKNESS });
-  const loaded = title ? renderer.whenReady(READY_MAX_MS) : Promise.all([ranger?.settled, carLoaded]).then(() => undefined);
+  /** Whether the renderer's world is in (its models landed, its first lists drawn, every far tree's bake settled), or its bound has passed. */
+  let worldStands = false;
+  const stands = renderer.whenReady(READY_MAX_MS).then(() => {
+    worldStands = true;
+  });
+  const loaded = title ? stands : Promise.all([ranger?.settled, carLoaded]).then(() => undefined);
   const ready = Promise.all([renderer.skyReady(), loaded]).then(() => undefined);
   /** Whether the scene's actor stands in the scene, or never will: the scene is built again as it joins, and no frame is drawn of it meanwhile. */
   let cast = ranger === null;
@@ -146,18 +164,24 @@ export function startLiteSceneRoute(deps: LiteSceneRouteDeps, search: { t: numbe
   const nextFrame = (): Promise<void> => new Promise<void>((resolve) => raf(() => resolve()));
   /**
    * Draws the world in round the camera: frames drawn until `SETTLE_FRAMES`
-   * running have streamed nothing with no model still to land, or `maxMs`.
+   * running have streamed nothing with the renderer's world in and no model
+   * still to land, or `maxMs` once the world is in (the wait for the world
+   * has the renderer's own bound).
    */
   const worldIn = async (maxMs: number): Promise<void> => {
-    const by = now() + maxMs;
+    let by = now() + maxMs;
     let quiet = 0;
     let stretch = 0;
     while (!disposed && now() < by) {
       drawOneFrame();
-      quiet = renderer.waitingItems() > 0 || host?.streaming() === true ? 0 : quiet + 1;
+      // The settling's bound begins once the world is in.
+      if (!worldStands) by = now() + maxMs;
+      // What lands (a model, a bake) lands between two of the page's tasks: a turn after each frame meanwhile.
+      const landing = !worldStands || renderer.waitingItems() > 0;
+      quiet = landing || host?.streaming() === true ? 0 : quiet + 1;
       if (quiet >= SETTLE_FRAMES) return;
       stretch += 1;
-      if (stretch >= SETTLE_STRETCH || renderer.waitingItems() > 0) {
+      if (stretch >= SETTLE_STRETCH || landing) {
         stretch = 0;
         await nextFrame();
       }
@@ -175,14 +199,15 @@ export function startLiteSceneRoute(deps: LiteSceneRouteDeps, search: { t: numbe
       clock.hold();
     },
     // Drawn now, and resolved on the animation frame after, when the
-    // picture has been presented and a screenshot reads it. After a cut the
-    // world is drawn in first.
+    // picture has been presented and a screenshot reads it. After a cut, and
+    // while the renderer's world is not in yet, the world is drawn in first.
     frame: async () => {
       looping = false;
       const before = drawnView;
       drawOneFrame();
-      if (lastView !== null && cameraJumped(before, lastView)) {
-        for (let i = 0; i < WARM_FRAMES; i += 1) drawOneFrame();
+      const cut = lastView !== null && cameraJumped(before, lastView);
+      if (cut) for (let i = 0; i < WARM_FRAMES; i += 1) drawOneFrame();
+      if (cut || !worldStands) {
         await worldIn(SETTLE_MAX_MS);
         drawOneFrame();
       }

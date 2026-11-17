@@ -15,7 +15,7 @@
  * across rebuilds so a camera move re-samples only the cells newly inside
  * some class's disc. Pure and Babylon-free, like `forestField.ts`.
  */
-import type { FadeBands } from "./distanceFadePlugin.js";
+import type { FadeBands } from "./distanceFade.js";
 import {
   clutterInCell, clutterCell, CLUTTER_CLASS_COUNT, CLUTTER_GRASS_CELL, CLUTTER_MEADOW, type ClutterInstance, CLUTTER_GRASS, CLUTTER_BUSH, CLUTTER_FLOWER, CLUTTER_LITTER, CLUTTER_FERN, CLUTTER_SHRUB, CLUTTER_WETPLANT, CLUTTER_HIGHPLANT,
 } from "../sim/clutter.js";

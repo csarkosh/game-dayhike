@@ -1,7 +1,10 @@
 import { describe, expect, it } from "vitest";
 import { RAIN_MAP_CAMERA, RAIN_MAP_CLEAR, createRainMapPlace, rainMapTexel } from "../../src/game/rainCover.js";
-import { RAIN_HEIGHT_FRAGMENT } from "../../src/game/rainMap.js";
 import { RAIN_MAP } from "../../src/game/rainParams.js";
+import { babylonText } from "../helpers/babylonFixture.js";
+
+/** The height shader's fragment stage on Babylon.js (`rainMap.ts`), recorded. */
+const RAIN_HEIGHT_FRAGMENT = babylonText("stages/rainHeight.fragment.glsl");
 
 describe("the cover map with no engine", () => {
   it("clears to a height far below the world, open to the rain, so an unwritten texel never covers", () => {

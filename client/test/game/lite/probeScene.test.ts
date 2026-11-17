@@ -1,18 +1,23 @@
 import { describe, expect, it, vi } from "vitest";
 import "../../../src/sim/passes/index.js";
 import { PROBE_FRAMES, PROBE_HOUR, PROBE_QUIET_MS, PROBE_WARMUP_FRAMES, probePose } from "../../../src/game/frameProbe.js";
-import { buildLiteProbeScene, liteProbeReady, runLiteProbeStep, type ProbeRendererMaker } from "../../../src/game/lite/probeScene.js";
-import type { FreecamView, Renderer } from "../../../src/game/renderer.js";
+import { LET_GO_MAX_MS, buildLiteProbeScene, liteProbeDeps, liteProbeReady, runLiteProbeStep, type ProbeRendererMaker } from "../../../src/game/lite/probeScene.js";
+import type { FreecamView, Renderer } from "../../../src/game/rendererTypes.js";
 import { createSkyTable } from "../../../src/game/skyTable.js";
+import type { SkySource } from "../../../src/game/skyWorker.js";
 import { WEATHER_PRESETS } from "../../../src/game/weather.js";
 import { skyFixture } from "../helpers/skyFixture.js";
 import { asHtml, installStandInDom } from "../helpers/standInDom.js";
 import { timeLimit } from "../../helpers/timeLimit.js";
 
 /** A renderer that draws nothing, runs its loop when told, and says what it was asked. */
-function fake(over: { failOn?: string } = {}) {
+function fake(over: { failOn?: string; made?: Promise<boolean>; watched?: boolean } = {}) {
   const log: string[] = [];
-  const state = { waiting: 0, view: null as FreecamView | null, loops: new Set<() => void>(), compiled: new Set<() => void>(), disposed: 0, options: null as unknown };
+  const state = {
+    waiting: 0, view: null as FreecamView | null, loops: new Set<() => void>(), compiled: new Set<() => void>(), disposed: 0, options: null as unknown,
+    /** Who watches the renderer's device, and how many have stopped. */
+    watchers: new Set<(reason: "pipeline" | "lost") => void>(), unwatched: 0,
+  };
   let skyIn: () => void = () => undefined;
   const sky = new Promise<void>((resolve) => { skyIn = resolve; });
   const renderer = {
@@ -30,6 +35,13 @@ function fake(over: { failOn?: string } = {}) {
     runLoop: (fn: () => void) => void state.loops.add(fn),
     stopLoop: (fn?: () => void) => { if (fn === undefined) state.loops.clear(); else state.loops.delete(fn); },
     dispose: () => { state.disposed += 1; },
+    // A renderer that makes its own engine says whether it came to stand, and keeps the watch on its device.
+    ...(over.made === undefined ? {} : { whenMade: over.made }),
+    engine: { isDisposed: false, dispose: () => undefined },
+    ownWatch: over.watched !== true ? null : (_engine: unknown, onFailure: (reason: "pipeline" | "lost") => void) => {
+      state.watchers.add(onFailure);
+      return () => { state.watchers.delete(onFailure); state.unwatched += 1; };
+    },
   };
   const make: ProbeRendererMaker = (_canvas, _level, _forest, options) => {
     state.options = options;
@@ -149,6 +161,102 @@ describe("a probe step on the hike's own renderer", () => {
     vi.unstubAllGlobals();
   }, timeLimit(60_000));
 
+  it("reads nothing, at once, where the renderer could not be made: it stays empty, its sky comes in and nothing is left to land, and its frames draw nothing", async () => {
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => undefined);
+    const f = fake({ made: Promise.resolve(false) });
+    const { container, clock, reading } = step(f);
+    // Everything a standing renderer's step waits for, as an empty renderer answers it.
+    f.skyIn();
+    clock.ms += PROBE_QUIET_MS;
+    expect(await reading).toBeNull();
+    expect(warn).toHaveBeenCalledWith("quality probe: the renderer could not be made.");
+    expect(f.state.disposed).toBe(1);
+    expect(f.state.loops.size).toBe(0);
+    expect(container.querySelector("canvas")).toBeNull();
+    // A renderer that came to stand is measured as ever.
+    const stood = fake({ made: Promise.resolve(true) });
+    const s = step(stood);
+    stood.skyIn();
+    await Promise.resolve();
+    s.clock.ms += PROBE_QUIET_MS;
+    for (let i = 0; i < PROBE_WARMUP_FRAMES + PROBE_FRAMES + 8 && stood.state.loops.size > 0; i++) { s.clock.ms += 16; stood.tick(); }
+    expect((await s.reading)?.frames).toBe(PROBE_FRAMES);
+    expect(warn).toHaveBeenCalledTimes(1);
+    warn.mockRestore();
+    vi.unstubAllGlobals();
+  }, timeLimit(60_000));
+
+  it("hands back the answer of a step ended while its renderer was still being made only once that making has ended, when the renderer's device has gone", async () => {
+    let made: (stood: boolean) => void = () => undefined;
+    const f = fake({ made: new Promise<boolean>((resolve) => { made = resolve; }) });
+    let late = false;
+    const s = step(f, { cancelled: () => late });
+    let answered = false;
+    void s.reading.then(() => { answered = true; });
+    // The probe's time runs out while the renderer is being made: it is let go at once, with its canvas.
+    late = true;
+    f.tick();
+    expect(f.state.disposed).toBe(1);
+    expect(s.container.querySelector("canvas")).toBeNull();
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(answered).toBe(false);
+    // Its making ends, letting go of what it made: the step is over.
+    made(false);
+    expect(await s.reading).toBeNull();
+    // A making that never ends holds the answer no longer than its bound.
+    vi.useFakeTimers();
+    try {
+      const never = fake({ made: new Promise<boolean>(() => undefined) });
+      const n = step(never, { cancelled: () => true });
+      expect(never.state.options).toBeNull();
+      expect(await n.reading).toBeNull();
+      const stuck = fake({ made: new Promise<boolean>(() => undefined) });
+      let gone = false;
+      const k = step(stuck, { cancelled: () => gone });
+      let told = false;
+      void k.reading.then(() => { told = true; });
+      gone = true;
+      stuck.tick();
+      await vi.advanceTimersByTimeAsync(LET_GO_MAX_MS - 1);
+      expect(told).toBe(false);
+      await vi.advanceTimersByTimeAsync(1);
+      expect(told).toBe(true);
+    } finally {
+      vi.useRealTimers();
+    }
+    vi.unstubAllGlobals();
+  }, timeLimit(60_000));
+
+  it("keeps the renderer's own watch on its device, and reads nothing once the device fails under the step", async () => {
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => undefined);
+    const f = fake({ watched: true });
+    const { container, clock, reading } = step(f);
+    expect(f.state.watchers.size).toBe(1);
+    f.skyIn();
+    await Promise.resolve();
+    clock.ms += PROBE_QUIET_MS;
+    for (let i = 0; i < PROBE_WARMUP_FRAMES + 20; i++) { clock.ms += 16; f.tick(); }
+    // The device is lost: the renderer draws no more, and the frames after would read as a tier that holds.
+    for (const lost of [...f.state.watchers]) lost("lost");
+    expect(await reading).toBeNull();
+    expect(warn).toHaveBeenCalledWith("quality probe: the renderer's device failed (lost).");
+    expect(f.state.disposed).toBe(1);
+    expect(f.state.unwatched).toBe(1);
+    expect(container.querySelector("canvas")).toBeNull();
+    // A step that ends with a reading lets the watch go before it lets go of the renderer.
+    const whole = fake({ watched: true });
+    const w = step(whole);
+    whole.skyIn();
+    await Promise.resolve();
+    w.clock.ms += PROBE_QUIET_MS;
+    for (let i = 0; i < PROBE_WARMUP_FRAMES + PROBE_FRAMES + 8 && whole.state.loops.size > 0; i++) { w.clock.ms += 16; whole.tick(); }
+    expect(await w.reading).not.toBeNull();
+    expect(whole.state.unwatched).toBe(1);
+    expect(whole.state.watchers.size).toBe(0);
+    warn.mockRestore();
+    vi.unstubAllGlobals();
+  }, timeLimit(60_000));
+
   it("ends quietly on a renderer that cannot be built or a frame that throws", async () => {
     const warn = vi.spyOn(console, "warn").mockImplementation(() => undefined);
     const unbuilt = fake({ failOn: "weather" });
@@ -163,6 +271,59 @@ describe("a probe step on the hike's own renderer", () => {
     expect(thrown.state.disposed).toBe(1);
     expect(warn).toHaveBeenCalledTimes(2);
     warn.mockRestore();
+    vi.unstubAllGlobals();
+  }, timeLimit(60_000));
+});
+
+describe("the page's probe on the hike's own renderer", () => {
+  it("measures each step on a renderer and a canvas of the step's own in the container, every step reading the probe's one sky, and stops at once when the page moves on", async () => {
+    const doc = installStandInDom();
+    // A frame, then the timer `afterNextPaint` waits for.
+    vi.stubGlobal("requestAnimationFrame", (paint: () => void) => setTimeout(paint, 0));
+    const container = doc.createElement("div");
+    Object.assign(container, { clientWidth: 1470, clientHeight: 956 });
+    const table = createSkyTable();
+    const started: number[] = [];
+    let stopped = 0;
+    const startSky = (startDeg: number): SkySource => {
+      started.push(startDeg);
+      return { table, dispose: () => void (stopped += 1) };
+    };
+    const first = fake();
+    const second = fake();
+    const fakes = [first, second];
+    const make: ProbeRendererMaker = (...args) => (fakes.shift() as typeof first).make(...args);
+    const probe = liteProbeDeps(asHtml(container), startSky, make);
+    expect(probe.pixels()).toBe(1470 * 956);
+    const painted = (): Promise<void> => new Promise((resolve) => setTimeout(resolve, 20));
+    // A step the probe's own time ends: its renderer and its canvas are gone before its reading is handed back.
+    let late = false;
+    const one = probe.runStep("high", () => late, 10_000);
+    await painted();
+    expect(first.state.options).toEqual({ tier: "high", skyTable: table });
+    expect(container.querySelectorAll("canvas")).toHaveLength(1);
+    late = true;
+    first.tick();
+    expect(await one).toBeNull();
+    expect(first.state.disposed).toBe(1);
+    expect(container.querySelectorAll("canvas")).toHaveLength(0);
+    // The next step: a renderer and a canvas of its own, the same sky.
+    late = false;
+    const two = probe.runStep("medium", () => late, 10_000);
+    await painted();
+    expect(second.state.options).toEqual({ tier: "medium", skyTable: table });
+    expect(container.querySelectorAll("canvas")).toHaveLength(1);
+    expect(started).toHaveLength(1);
+    // The page moves on: the step's renderer goes as the abort reaches it, then the sky.
+    probe.abort();
+    expect(second.state.disposed).toBe(1);
+    expect(container.querySelectorAll("canvas")).toHaveLength(0);
+    expect(stopped).toBe(1);
+    expect(await two).toBeNull();
+    // Nothing is built for a step asked for after.
+    expect(await probe.runStep("medium", () => false, 10_000)).toBeNull();
+    expect(fakes).toHaveLength(0);
+    expect(container.querySelectorAll("canvas")).toHaveLength(0);
     vi.unstubAllGlobals();
   }, timeLimit(60_000));
 });

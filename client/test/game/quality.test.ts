@@ -1,5 +1,6 @@
 import { describe, it, expect } from "vitest";
 import {
+  DETECT_VERSION,
   QUALITY,
   autoTier,
   detectTier,
@@ -125,7 +126,7 @@ const SAFARI = "Apple GPU";
 
 function rec(verdict: Partial<AutoVerdict> | null, over: Partial<AutoRecord> = {}): AutoRecord {
   return {
-    v: 1,
+    v: DETECT_VERSION,
     gpu: SAFARI,
     cls: "apple-unknown",
     browser: 26,
@@ -150,6 +151,12 @@ describe("autoTier and the verdict", () => {
     expect(auto(rec({}, { gpu: "Apple M1, or similar" }))).toEqual({ tier: "medium", probeFrom: "high" });
     expect(auto(rec({}, { browser: 27 }))).toEqual({ tier: "medium", probeFrom: "high" });
     expect(auto(rec({}, { v: 0 }))).toEqual({ tier: "medium", probeFrom: "high" });
+    // Every record of the version before was made on the renderer on Babylon.js: none says what the hike's own holds,
+    // be it a probe's verdict, a drop for a low frame rate, or a count of probes spent.
+    expect(DETECT_VERSION).toBe(2);
+    expect(auto(rec({}, { v: 1 }))).toEqual({ tier: "medium", probeFrom: "high" });
+    expect(auto(rec({ source: "governor", tier: "low" }, { v: 1 }))).toEqual({ tier: "medium", probeFrom: "high" });
+    expect(auto(rec(null, { v: 1, attempts: 3 }))).toEqual({ tier: "medium", probeFrom: "high" });
     expect(auto(rec({ at: NOW - 30 * DAY }))).toEqual({ tier: "medium", probeFrom: "high" });
     expect(auto(rec({ at: NOW - 30 * DAY + 1 }))).toEqual({ tier: "high", probeFrom: null });
   });
@@ -179,7 +186,7 @@ describe("autoTier and the verdict", () => {
       const got = autoTier({ cls, cores: 8, memoryGb: 16, record, gpu, browser: 153, pixels: 2_073_600, now: NOW });
       probed.push(got.probeFrom !== null);
       if (got.probeFrom !== null) {
-        record = { v: 1, gpu, cls, browser: 153, attempts: (record?.attempts ?? 0) + 1, verdict: record?.verdict ?? null };
+        record = { v: DETECT_VERSION, gpu, cls, browser: 153, attempts: (record?.attempts ?? 0) + 1, verdict: record?.verdict ?? null };
       }
     }
     expect(probed).toEqual([true, true, true, false, false, false, false, false]);
@@ -246,12 +253,12 @@ describe("autoTier and the verdict", () => {
 describe("the record through a probe", () => {
   it("counts a started probe and clears the count with a verdict", () => {
     const started = withProbeStarted(null, "Apple GPU", 26, "apple-unknown");
-    expect(started).toEqual({ v: 1, gpu: "Apple GPU", cls: "apple-unknown", browser: 26, attempts: 1, verdict: null });
+    expect(started).toEqual({ v: DETECT_VERSION, gpu: "Apple GPU", cls: "apple-unknown", browser: 26, attempts: 1, verdict: null });
     expect(withProbeStarted(started, "Apple GPU", 26, "apple-unknown").attempts).toBe(2);
     expect(withProbeStarted(started, "Apple GPU", 27, "apple-unknown").attempts).toBe(1);
     expect(withProbeStarted(started, "Apple GPU", 26, "apple-base").attempts).toBe(2);
     const verdict: AutoVerdict = { tier: "medium", source: "probe", pixels: 2_073_600, at: 1_790_000_000_000 };
-    expect(withVerdict(started, "Apple GPU", 26, "apple-unknown", verdict)).toEqual({ v: 1, gpu: "Apple GPU", cls: "apple-unknown", browser: 26, attempts: 0, verdict });
+    expect(withVerdict(started, "Apple GPU", 26, "apple-unknown", verdict)).toEqual({ v: DETECT_VERSION, gpu: "Apple GPU", cls: "apple-unknown", browser: 26, attempts: 0, verdict });
   });
 
   it("keeps a record's class and verdict while its probe runs", () => {
@@ -262,7 +269,7 @@ describe("the record through a probe", () => {
   it("carries the count past a verdict that replaces another class's", () => {
     const verdict: AutoVerdict = { tier: "high", source: "probe", pixels: 2_073_600, at: NOW };
     const other = rec({ tier: "medium" }, { cls: "apple-base", attempts: 2 });
-    expect(withVerdict(other, SAFARI, 26, "apple-unknown", verdict)).toEqual({ v: 1, gpu: SAFARI, cls: "apple-unknown", browser: 26, attempts: 2, verdict });
+    expect(withVerdict(other, SAFARI, 26, "apple-unknown", verdict)).toEqual({ v: DETECT_VERSION, gpu: SAFARI, cls: "apple-unknown", browser: 26, attempts: 2, verdict });
     const same = rec({ tier: "medium" }, { attempts: 2 });
     expect(withVerdict(same, SAFARI, 26, "apple-unknown", verdict)!.attempts).toBe(0);
     const empty = rec(null, { cls: "apple-base", attempts: 2 });
@@ -274,7 +281,7 @@ describe("the record through a probe", () => {
     const spent = rec(null, { attempts: 3 });
     for (const source of ["governor", "build"] as const) {
       const verdict: AutoVerdict = { tier: "low", source, pixels: 2_073_600, at: NOW };
-      expect(withVerdict(spent, SAFARI, 26, "apple-unknown", verdict)).toEqual({ v: 1, gpu: SAFARI, cls: "apple-unknown", browser: 26, attempts: 3, verdict });
+      expect(withVerdict(spent, SAFARI, 26, "apple-unknown", verdict)).toEqual({ v: DETECT_VERSION, gpu: SAFARI, cls: "apple-unknown", browser: 26, attempts: 3, verdict });
       // Another GPU's or browser's record counts nothing.
       expect(withVerdict(spent, SAFARI, 27, "apple-unknown", verdict)!.attempts).toBe(0);
       expect(withVerdict(null, SAFARI, 26, "apple-unknown", verdict)!.attempts).toBe(0);
@@ -342,7 +349,7 @@ describe("a build-failure verdict", () => {
 
   it("is kept whatever the window's area, which it does not certify", () => {
     const verdict: AutoVerdict = { tier: "low", source: "build", pixels: 0, at: NOW };
-    expect(withVerdict(null, RTX, 153, "discrete-modern", verdict)).toEqual({ v: 1, gpu: RTX, cls: "discrete-modern", browser: 153, attempts: 0, verdict });
+    expect(withVerdict(null, RTX, 153, "discrete-modern", verdict)).toEqual({ v: DETECT_VERSION, gpu: RTX, cls: "discrete-modern", browser: 153, attempts: 0, verdict });
   });
 });
 
@@ -350,7 +357,7 @@ describe("the record after a governor drop", () => {
   it("drops the running tier one step, for this class, at any window, and has nothing below low", () => {
     const got = withGovernorDrop(null, "Apple GPU", 26, "apple-unknown", "high", 2_073_600, 1_790_000_000_000);
     expect(got).toEqual({
-      v: 1, gpu: "Apple GPU", cls: "apple-unknown", browser: 26, attempts: 0,
+      v: DETECT_VERSION, gpu: "Apple GPU", cls: "apple-unknown", browser: 26, attempts: 0,
       verdict: { tier: "medium", source: "governor", pixels: 2_073_600, at: 1_790_000_000_000 },
     });
     expect(withGovernorDrop(null, "Apple GPU", 26, "apple-unknown", "medium", 2_073_600, 1_790_000_000_000)!.verdict!.tier).toBe("low");
@@ -402,15 +409,20 @@ describe("the engine a verdict was measured with", () => {
     expect([verdictRead("webgl2", gl), verdictRead("webgpu", gl), verdictRead("webgpu", gpu), verdictRead("webgl2", gpu)]).toEqual([true, true, true, false]);
   });
 
-  it("reads a record tier detection's release wrote, its WebGL2 verdict holding for a WebGPU start", () => {
-    // As that release writes it: no engine on the verdict, WebGL2 readings.
+  it("reads a record tier detection's release wrote and takes nothing from it: its verdict was measured on the renderer on Babylon.js, which no hike draws with", () => {
+    // As that release writes it: version 1, no engine on the verdict, WebGL2 readings.
     const text =
       '{"v":1,"gpu":"Apple GPU","cls":"apple-unknown","browser":26,"attempts":0,"verdict":{"tier":"high","source":"probe","pixels":2073600,"at":1789913600000,' +
       '"readings":[{"tier":"high","frames":120,"meanMs":16.7,"p95Ms":17.4,"pixels":2073600,"engine":"webgl2"}]}}';
     const written = readAutoRecord({ getItem: (key: string) => (key === AUTO_KEY ? text : null) } as Storage);
     expect(written?.verdict?.tier).toBe("high");
-    expect(onWebGpu(written)).toEqual({ tier: "high", probeFrom: null });
-    expect(auto(written)).toEqual({ tier: "high", probeFrom: null });
+    // Under either lookup the record is another version's: the machine is measured again, on the hike's own renderer.
+    expect(onWebGpu(written)).toEqual({ tier: "medium", probeFrom: "high" });
+    expect(auto(written)).toEqual({ tier: "medium", probeFrom: "high" });
+    // The same verdict in a record of this version holds as a WebGL2 verdict does, for a WebGPU start too.
+    const current = written === null ? null : { ...written, v: DETECT_VERSION };
+    expect(onWebGpu(current)).toEqual({ tier: "high", probeFrom: null });
+    expect(auto(current)).toEqual({ tier: "high", probeFrom: null });
   });
 
   it("resets the attempts for a WebGL2 probe's verdict looked up under WebGPU, which reads it", () => {

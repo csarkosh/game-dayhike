@@ -5,7 +5,7 @@ import { fileURLToPath } from "node:url";
 import { chooseEngine, engineForTier, WEBGPU_ENABLED, WEBGPU_PHONE_TIERS, WEBGPU_TIERS, type EngineInput } from "../../src/game/engineChoice.js";
 import { autoPick, qualityLine, runProbe } from "../../src/game/frameProbe.js";
 import type { GpuSignals } from "../../src/game/gpuSignals.js";
-import type { AutoRecord, ProbeReading, QualityTier } from "../../src/game/quality.js";
+import { DETECT_VERSION, type AutoRecord, type ProbeReading, type QualityTier } from "../../src/game/quality.js";
 import { readAutoRecord } from "../../src/game/tierChoice.js";
 
 /**
@@ -107,8 +107,9 @@ describe("the start where the rule gives WebGL2", () => {
   });
 
   it("keys Auto's verdicts on WebGL2 where the rule gives the high tier WebGL2, so its tier decision and its records are the tier detection branch's", async () => {
-    // The engine `main.ts` keys the verdicts on (`verdictEngineNow`): the high
-    // tier's, here Safari's.
+    // The engine a page that draws by the rule keys the verdicts on: the high
+    // tier's, here Safari's. (The page itself keys them on WebGPU alone, the
+    // one engine the hike's own renderer draws with: `verdictEngineNow`.)
     expect(chooseEngine({ tier: WEBGPU_TIERS[0] as QualityTier, override: null, remembered: false, on: WEBGPU_ENABLED, fits: true, chromeOrEdge: false, os: "mac", mobile: false })).toBe("webgl2");
     const signals: GpuSignals = {
       renderer: "Apple GPU", adapter: null, limits: null, features: null, adapterStatus: "none", parallelCompile: true, cores: 8, memoryGb: null, mobile: false, browser: 26,
@@ -116,8 +117,8 @@ describe("the start where the rule gives WebGL2", () => {
     const verdict = { tier: "high" as const, source: "probe" as const, pixels: 2_073_600, at: 1_790_000_000_000 - 1 };
     const records: (AutoRecord | null)[] = [
       null,
-      { v: 1, gpu: "Apple GPU", cls: "apple-unknown", browser: 26, attempts: 1, verdict: null },
-      { v: 1, gpu: "Apple GPU", cls: "apple-unknown", browser: 26, attempts: 0, verdict },
+      { v: DETECT_VERSION, gpu: "Apple GPU", cls: "apple-unknown", browser: 26, attempts: 1, verdict: null },
+      { v: DETECT_VERSION, gpu: "Apple GPU", cls: "apple-unknown", browser: 26, attempts: 0, verdict },
     ];
     for (const record of records) {
       const at = { record, pixels: 2_073_600, now: 1_790_000_000_000 };
@@ -148,22 +149,16 @@ describe("the start where the rule gives WebGL2", () => {
     expect(qualityLine("medium", "auto", "apple-unknown", "webgl2")).toBe("quality: medium (auto, apple-unknown), engine webgl2");
   });
 
-  it("reaches the WebGPU path only through the rule: `makeWebGpu` called once, from behind `engineForTier`", () => {
-    const main = readFileSync(fileURLToPath(new URL("../../src/main.ts", import.meta.url)), "utf8");
-    // Its definition, and the one call the rule gates.
-    expect(main.match(/\bmakeWebGpu\(/g)).toEqual(["makeWebGpu(", "makeWebGpu("]);
-    expect(main).toContain("function makeWebGpu(");
-    expect(main).toContain("engineForTier(input, () => makeWebGpu(canvas, input, read, current, wanted))");
-    // The translators are started in one place, inside it.
-    expect(main.match(/\bloadTranslators\(/g)).toEqual(["loadTranslators("]);
-    const inside = main.slice(main.indexOf("function makeWebGpu("), main.indexOf("\n}\n", main.indexOf("function makeWebGpu(")));
-    expect(inside).toContain("translators = await gpu.loadTranslators();");
-    // The rule is handed the browser, the platform and the device as the GPU's
-    // signals read them (`engineInput`), for every renderer the page builds.
-    const input = main.slice(main.indexOf("function engineInput("), main.indexOf("\n}\n", main.indexOf("function engineInput(")));
-    expect(input).toContain("chromeOrEdge: isChromeOrEdge(nav),");
-    expect(input).toContain("os: hostOs(nav),");
-    expect(input).toContain("mobile: read.mobile,");
+  it("reaches the WebGPU path of Babylon.js from no page: the page makes no engine, by the rule or without it", () => {
+    const main = readFileSync(fileURLToPath(new URL("../../src/main.ts", import.meta.url)), "utf8").replace(/\/\*[\s\S]*?\*\/|\/\/.*$/gm, "");
+    // The rule's gate (`engineForTier`, shown above) and what stood behind it are called by no page: a hike, a staged
+    // scene and the tier check are drawn by the hike's own renderer, which makes its engine for itself.
+    expect(main.match(/\bmakeWebGpu\b/g)).toBeNull();
+    expect(main.match(/\bengineForTier\b/g)).toBeNull();
+    expect(main.match(/\bchooseEngine\b/g)).toBeNull();
+    // Nor are the translators started, or the rule handed anything, there.
+    expect(main.match(/\bloadTranslators\b/g)).toBeNull();
+    expect(main.match(/\bengineInput\b/g)).toBeNull();
   });
 
   it("names the translators' files in the WebGPU module alone, so nothing else can fetch them", () => {
@@ -220,10 +215,10 @@ describe("the start where the rule gives WebGL2", () => {
     expect(fromMain.length).toBeGreaterThan(20);
     expect(fromMain.filter((file) => /asyncPipelines/.test(file))).toEqual([]);
     expect([...reachedFrom(join(src, "game/gpuEngine.ts"))].map((file) => relative(src, file))).toContain("game/asyncPipelines.ts");
-    // The engine is made with the page's switch, by its module, which hands
-    // the game the patch and the reveal beside it.
+    // The engine is made by its module, which hands the game the patch and
+    // the reveal beside it; the page asks it for none.
     const main = readFileSync(fileURLToPath(new URL("../../src/main.ts", import.meta.url)), "utf8");
-    expect(main).toContain("create: (ms, features) => gpu.startWebGpu(canvas, { ms, features, translators, tier: input.tier, lookup, pipelines, timing: input.timing }),");
+    expect(main).not.toContain("startWebGpu");
     const gpu = readFileSync(join(src, "game/gpuEngine.ts"), "utf8");
     expect(gpu).toContain("  return { engine: await createWebGpuEngine(canvas, options), watchers: WATCHERS };");
     expect(gpu).toContain("  asyncPipelines: (engine) => asyncPipelinesOf(engineOf(engine)),");
@@ -250,12 +245,9 @@ describe("the start where the rule gives WebGL2", () => {
     expect(app).toContain("engine !== null && watchers !== null ? (watchers.asyncPipelines(engine) ?? undefined) : undefined");
   });
 
-  it("imports the WebGPU module in one place, on the path the rule sends to WebGPU", () => {
+  it("imports the WebGPU module of Babylon.js nowhere in the page: not at run time, not for its type", () => {
     const main = readFileSync(fileURLToPath(new URL("../../src/main.ts", import.meta.url)), "utf8");
-    // The one runtime import (the other names the module's type only).
-    expect(main.match(/(?<!typeof )import\("\.\/game\/gpuEngine\.js"\)/g)).toEqual(['import("./game/gpuEngine.js")']);
-    // `engineFor` asks the rule first; only an answer other than WebGL2 goes on
-    // to `makeWebGpu`, whose `load` is that import.
-    expect(main).toContain("  return engineForTier(input, () => makeWebGpu(canvas, input, read, current, wanted)).then(");
+    expect(main.match(/import\("\.\/game\/gpuEngine\.js"\)/g)).toBeNull();
+    expect(main).not.toContain("gpuEngine");
   });
 });

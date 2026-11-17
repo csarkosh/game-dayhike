@@ -1,7 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { readFileSync } from "node:fs";
-import { ShaderStore } from "@babylonjs/core/Engines/shaderStore.js";
-import "@babylonjs/core/Shaders/default.fragment.js";
+import { babylonText } from "../../helpers/babylonFixture.js";
 import { CAR_SHADOW_BIAS, CAR_SHADOW_HALF, CAR_SHADOW_LIFT, carShadowGrid } from "../../../src/game/carShadow.js";
 import { ATMOSPHERE_PRIORITY } from "../../../src/game/lite/atmospherePlugin.js";
 import { stageOwn, stageReads } from "../../../src/game/lite/frameBlock.js";
@@ -14,7 +13,8 @@ import { TAIL_LAMP_APART, TAIL_LAMP_BACK, TAIL_LAMP_H, TAIL_LAMP_UP, TAIL_LAMP_W
 import { LABEL_TEXTURE, signPlaces } from "../../../src/game/signParts.js";
 import { inOrder, tight } from "./wgslText.js";
 
-const STANDARD = tight(ShaderStore.ShadersStore["defaultPixelShader"] as string);
+/** The Standard material's fragment stage, as Babylon.js installs it (recorded). */
+const STANDARD = tight(babylonText("shaders/defaultPixelShader.glsl"));
 
 describe("the planks' lettering as one picture", () => {
   it("gives every name a row as tall as the game's one texture a name, down a column", () => {

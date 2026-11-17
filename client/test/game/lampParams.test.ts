@@ -3,7 +3,7 @@ import { WEATHER_PRESETS } from "../../src/game/weather.js";
 import {
   lampUnder, lampFlicker, lampPlace, DARK_LAMP_PLACE, LAMP_DREAD_DIM, LAMP_DREAD_TINT, LAMP_FLICKER_DEPTH, LAMP_COLOUR, LAMP_INTENSITY, LAMP_ANGLE, LAMP_EXPONENT, LAMP_RANGE,
 } from "../../src/game/lampParams.js";
-import * as headlamp from "../../src/game/headlamp.js";
+import { babylonValues } from "../helpers/babylonFixture.js";
 
 const CLEAR = WEATHER_PRESETS.clear;
 const EERIE = WEATHER_PRESETS.eerie;
@@ -47,7 +47,9 @@ describe("the lamp misbehaves", () => {
 describe("the lamp's cone", () => {
   it("is a 1.5 rad spot reaching 25 m, named once and handed on by the Babylon shell as it is", () => {
     expect([LAMP_ANGLE, LAMP_RANGE, LAMP_EXPONENT]).toEqual([1.5, 25, 8]);
-    expect([headlamp.LAMP_ANGLE, headlamp.LAMP_RANGE, headlamp.LAMP_EXPONENT, headlamp.LAMP_INTENSITY, headlamp.LAMP_COLOUR]).toEqual([
+    // What the shell on Babylon.js handed on (`headlamp.ts`), recorded.
+    const headlamp = babylonValues<{ lamp: { angle: number; range: number; exponent: number; intensity: number; colour: number[] } }>("stages/declared.json").lamp;
+    expect([headlamp.angle, headlamp.range, headlamp.exponent, headlamp.intensity, headlamp.colour]).toEqual([
       LAMP_ANGLE, LAMP_RANGE, LAMP_EXPONENT, LAMP_INTENSITY, LAMP_COLOUR,
     ]);
   });

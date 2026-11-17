@@ -1,4 +1,4 @@
-import type { FadeBands } from "../../src/game/distanceFadePlugin.js";
+import type { FadeBands } from "../../src/game/distanceFade.js";
 import { describe, expect, it } from "vitest";
 import "../../src/sim/olympic.js";
 import {

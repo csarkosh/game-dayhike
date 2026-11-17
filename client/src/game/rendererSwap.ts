@@ -49,7 +49,7 @@ import type { Scene } from "@babylonjs/core/scene.js";
 import type { AsyncPipelines } from "./asyncPipelines.js";
 import type { EngineHandle } from "./engineHandle.js";
 import type { QualityTier } from "./quality.js";
-import type { Renderer } from "./renderer.js";
+import type { Renderer } from "./rendererTypes.js";
 import type { TierChoice } from "./tierChoice.js";
 import { effectsWaitingOn } from "./effectTurns.js";
 

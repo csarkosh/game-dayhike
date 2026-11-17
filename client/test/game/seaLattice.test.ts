@@ -12,6 +12,7 @@ import {
   WATER_RING_CELLS, WATER_RING_COUNT, createWaterRingSamples, seaFaceZ, updateWaterRingSamples, waterHoleCellsFor, waterRingGeometry, wetBounds,
   type WaterRingSamples,
 } from "../../src/game/water.js";
+import { timeLimit } from "../helpers/timeLimit.js";
 
 setActiveTerrainVariant("olympic");
 const SEED = seedFromToken("atmo");
@@ -113,7 +114,7 @@ describe("the sea's rings as one lattice", () => {
     }
     // More than one place of the hole was drawn.
     expect(holes.size).toBeGreaterThan(1);
-  });
+  }, timeLimit(60_000));
 
   it("boxes a ring's water as wetBounds boxes its geometry's, with the swash's lift along the cove, and finds none in a dry ring", () => {
     const faceZ = seaFaceZ(SEED);

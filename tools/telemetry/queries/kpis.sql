@@ -10,7 +10,8 @@
 -- A session counts where it has a `page` row; a match is a distinct `game`
 -- with a host's `match_start`, in the period that row fell in; clean where
 -- the session's `end` row said `trouble` 0, of the sessions that have one;
--- erred where any row of it is an error or a failed start; a visitor is a
+-- erred where any row of it is an error, a failed start, a lost device or a
+-- GPU error whose picture broke; a visitor is a
 -- distinct `vid`, and returning where that browser was seen on more than one
 -- day in the last ninety. The range is twelve weeks, the trend's length.
 -- The rows that are real play, the same text in every query (`README.md`):
@@ -45,6 +46,7 @@ events AS (
     JSON_VALUE(json_payload.role) AS role,
     JSON_VALUE(json_payload.game) AS game,
     CAST(JSON_VALUE(json_payload.trouble) AS INT64) AS trouble,
+    JSON_VALUE(json_payload.picture) AS picture,
     timestamp
   FROM real
   WHERE JSON_VALUE(json_payload.svc) = 'telemetry'
@@ -68,7 +70,7 @@ per_session AS (
     LOGICAL_OR(n = 'page') AS landed,
     LOGICAL_OR(n = 'end') AS said_goodbye,
     MAX(IF(n = 'end', trouble, NULL)) AS trouble,
-    LOGICAL_OR(n IN ('error', 'start_fail', 'connect_fail', 'engine_failed', 'webgpu_start_failed')) AS erred
+    LOGICAL_OR(n IN ('error', 'start_fail', 'connect_fail', 'engine_failed', 'webgpu_start_failed', 'device_lost') OR (n = 'gpu_window' AND IFNULL(picture, '') = 'broke')) AS erred
   FROM events
   GROUP BY sid
 ),

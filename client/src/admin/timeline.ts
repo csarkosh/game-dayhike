@@ -122,7 +122,7 @@ export const isTrace = (n: string): boolean => TRACE.has(n);
 
 /** The envelope's keys, which every row carries and the default text leaves out. */
 const ENVELOPE = new Set([
-  "at", "dh", "message", "sbuild", "svc", "sid", "vid", "build", "proto", "gen", "desktop", "shell", "os", "browser", "touch", "gpu", "adapter", "cores", "mem", "mobile", "t", "severity",
+  "at", "dh", "message", "sbuild", "svc", "sid", "vid", "build", "lite", "proto", "gen", "desktop", "shell", "os", "browser", "touch", "gpu", "adapter", "cores", "mem", "mobile", "t", "severity",
   "world", "seed", "game", "lobby", "n", "ref", "path", "lang", "tz", "vw", "vh", "ua", "wd", "tester", "timestamp", "room", "stack",
 ]);
 
@@ -142,6 +142,14 @@ export function payloadOf(row: Row): Payload {
   return row as Payload;
 }
 
+/** Why the load check turned a visitor away (`game/loadCheck.ts`, `TurnedAwayReason`), in words. */
+const TURNED_AWAY: Readonly<Record<string, string>> = {
+  "no-webgpu": "the browser has no WebGPU",
+  "no-adapter": "the browser gave no adapter",
+  software: "a software adapter",
+  short: "the adapter is short of what the game needs",
+};
+
 const has = (v: unknown): boolean => v !== null && v !== undefined && v !== "";
 const str = (v: unknown): string => (has(v) ? String(v) : "");
 const num = (v: unknown): number | null => (has(v) && Number.isFinite(Number(v)) ? Number(v) : null);
@@ -155,6 +163,38 @@ const ms = (v: unknown): string => {
   return n === null ? "" : `${Math.round(n)} ms`;
 };
 const join = (...parts: string[]): string => parts.filter((p) => p !== "").join(", ");
+const yes = (v: unknown): boolean => v === true || v === "true";
+
+/**
+ * What a hike's renderer and the hike said was happening when a row about
+ * the GPU was made (`game/gpuFaults.ts`): the tier and which of the hike's
+ * renderers, whether it stood and for how long, then only what was out of
+ * the ordinary: the world not yet in, a switch or a rebuild under way, the
+ * intro's film over the hike, the page hidden or just shown again, a scene
+ * or an ending with the frame, rain, the night, water in view.
+ */
+function happening(p: Payload): string {
+  const stood = num(p.stoodMs);
+  const shown = num(p.shownMs);
+  const frames = num(p.frames);
+  const state = str(p.state);
+  return join(
+    [str(p.tier), has(p.r) ? `renderer ${str(p.r)}` : ""].filter((s) => s !== "").join(" "),
+    state === "standing" ? (stood === null ? "" : `stood ${duration(stood)}`) : state === "" ? "" : `the renderer ${state}`,
+    frames === null ? "" : `${frames} frames`,
+    has(p.ready) && !yes(p.ready) ? "the world still loading" : "",
+    has(p.busy) ? `a ${str(p.busy)} under way` : "",
+    yes(p.film) ? "under the intro's film" : "",
+    yes(p.hidden) ? "the page hidden" : shown !== null && shown < 10_000 ? `the page shown ${duration(shown)} before` : "",
+    yes(p.scene) ? "a scene playing" : "",
+    yes(p.ending) ? "an ending playing" : "",
+    (num(p.rain) ?? 0) > 0.05 ? "rain" : "",
+    (num(p.night) ?? 0) > 0.5 ? "night" : "",
+    (num(p.lakes) ?? 0) > 0 ? "a lake in view" : "",
+    yes(p.sea) ? "the sea in view" : "",
+    climb(p.p),
+  );
+}
 
 /**
  * One line of text for an event's payload, by its name: the few fields a
@@ -219,12 +259,60 @@ export function describe(n: string, p: Payload): string {
     case "engine_failed":
     case "webgpu_start_failed":
       return str(p.reason);
+    case "turned_away":
+      return join(TURNED_AWAY[str(p.reason)] ?? str(p.reason), has(p.short) ? `short of ${str(p.short)}` : "", has(p.adapter) ? `adapter ${str(p.adapter)}` : "");
+    case "gpu_error":
+      return join([str(p.kind), p.src === "scope" ? "(caught by a scope)" : ""].filter((s) => s !== "").join(" "), str(p.msg).trim(), has(p.labels) ? `names ${str(p.labels)}` : "", happening(p));
+    case "gpu_window": {
+      const length = num(p.ms);
+      const luma = num(p.luma);
+      const black = num(p.black);
+      return join(
+        `picture ${str(p.picture) || "unknown"}`,
+        has(p.unread) ? `not read: ${str(p.unread)}` : "",
+        luma === null ? "" : `luminance ${luma} of 255`,
+        black === null ? "" : `${Math.round(black * 100)}% black`,
+        has(p.spread) ? `spread ${str(p.spread)}` : "",
+        has(p.frames) ? `${str(p.frames)} frames drawn${length === null ? "" : ` in ${duration(length)}`}` : "",
+        has(p.errors) ? `${str(p.errors)} errors, ${str(p.distinct)} distinct` : "",
+        has(p.total) && str(p.total) !== str(p.errors) ? `${str(p.total)} this hike` : "",
+        yes(p.scene) ? "a scene playing" : "",
+        yes(p.ending) ? "an ending playing" : "",
+        yes(p.hidden) ? "the page hidden" : "",
+        has(p.state) && str(p.state) !== "standing" ? `the renderer ${str(p.state)}` : "",
+      );
+    }
+    case "device_lost": {
+      const since = num(p.sinceMs);
+      return join(
+        [str(p.reason) || "no reason given", str(p.msg).trim()].filter((s) => s !== "").join(": "),
+        has(p.losses) ? `loss ${str(p.losses)} of this page, ${str(p.recent)} within the bound` : "",
+        since === null ? "" : `${duration(since)} after the last`,
+        p.verdict === "end" ? "the hike ends" : has(p.verdict) ? "rebuilt" : "",
+        happening(p),
+        has(p.bufs) ? `held ${str(p.bufs)} buffers (${str(p.bufMB)} MB) and ${str(p.texs)} textures (${str(p.texMB)} MB)` : "",
+        has(p.heapMB) ? `heap ${str(p.heapMB)} MB` : "",
+        (num(p.errors) ?? 0) > 0 ? `${str(p.errors)} GPU errors before it` : "",
+      );
+    }
+    case "engine_rebuilt": {
+      const took = num(p.ms);
+      const stood = p.ok === false || p.ok === "false" ? `did not stand${has(p.state) ? ` (${str(p.state)})` : ""}` : p.state === "making" ? "still being made as the cover lifted" : "stood again";
+      return join(
+        [stood, has(p.reason) ? `after ${str(p.reason)}` : ""].filter((s) => s !== "").join(" "),
+        [str(p.tier), has(p.engine) ? `on ${str(p.engine)}` : "", has(p.r) ? `renderer ${str(p.r)}` : ""].filter((s) => s !== "").join(" "),
+        has(p.frames) ? `${str(p.frames)} frames under the cover` : "",
+        took === null ? "" : `in ${duration(took)}`,
+        str(p.why),
+      );
+    }
     case "governor_drop":
       return has(p.running) ? `running ${str(p.running)}` : "";
     case "error":
     case "warn":
       return join([str(p.kind), has(p.where) ? `at ${str(p.where)}` : ""].filter((s) => s !== "").join(" "), str(p.msg));
     case "session_end":
+      return join(str(p.msg), p.why === "device_lost" ? `ended by lost devices: ${str(p.losses)} this page, ${str(p.recent)} within the bound` : str(p.why), climb(p.p));
     case "connect_fail":
       return str(p.msg);
     case "host_session_end":
@@ -276,10 +364,22 @@ export function describe(n: string, p: Payload): string {
   }
 }
 
-/** The mark beside an event: the page's status classes. */
+/**
+ * The mark beside an event: the page's status classes. Of what the GPU did
+ * under a hike: a lost device, a rebuild that did not stand and a hike
+ * ended by its lost devices are errors; a window of GPU errors is an error
+ * where the picture broke and a warning where it held or could not be
+ * judged; a GPU error by itself is a warning, which `trailOf` makes an
+ * error where the window it fell in says the picture broke. A visitor the
+ * load check turned away is a warning: nothing failed, and a visitor could
+ * not play.
+ */
 export function toneOf(n: string, p: Payload): "" | "error" | "warn" | "won" | "lost" {
-  if (n === "error" || n === "start_fail" || n === "connect_fail" || n === "engine_failed" || n === "webgpu_start_failed" || n === "lobby_error") return "error";
-  if (n === "warn" || n === "tier_fallback" || n === "governor_drop" || n === "room_refused") return "warn";
+  if (n === "error" || n === "start_fail" || n === "connect_fail" || n === "engine_failed" || n === "webgpu_start_failed" || n === "lobby_error" || n === "device_lost") return "error";
+  if (n === "warn" || n === "tier_fallback" || n === "governor_drop" || n === "room_refused" || n === "gpu_error" || n === "turned_away") return "warn";
+  if (n === "gpu_window") return p.picture === "broke" ? "error" : "warn";
+  if (n === "engine_rebuilt") return p.ok === false || p.ok === "false" ? "error" : "";
+  if (n === "session_end") return p.why === "device_lost" ? "error" : "";
   if (n === "outcome") return p.result === "won" ? "won" : p.result === "lost" ? "lost" : "";
   if (n === "death") return "lost";
   if (n === "end") return (num(p.trouble) ?? 0) > 0 ? "warn" : "";
@@ -328,6 +428,9 @@ export function trailOf(rows: Row[]): Trail {
   let startedAt = Infinity;
   let endedAt = -Infinity;
   let trace = 0;
+  /** The windows that found the picture broken, each by its match and its number in the hike, and each GPU error's step by the window it fell in. */
+  const broke = new Set<string>();
+  const gpuErrors: { step: Step; window: string }[] = [];
   for (const row of rows) {
     const n = str(row.n);
     const p = payloadOf(row);
@@ -350,8 +453,13 @@ export function trailOf(rows: Row[]): Trail {
     }
     const isTraceRow = !signaling && isTrace(n);
     if (isTraceRow) trace += 1;
-    steps.push({ row, at, n, signaling, opens: open, text: describe(n, p), tone: toneOf(n, p), trace: isTraceRow, stack: str(row.stack) || str(p.stack) });
+    const step: Step = { row, at, n, signaling, opens: open, text: describe(n, p), tone: toneOf(n, p), trace: isTraceRow, stack: str(row.stack) || str(p.stack) };
+    steps.push(step);
+    if (n === "gpu_window" && p.picture === "broke") broke.add(`${str(p.game)}/${str(p.w)}`);
+    if (n === "gpu_error" && has(p.w)) gpuErrors.push({ step, window: `${str(p.game)}/${str(p.w)}` });
   }
+  // A GPU error reads by how its picture came out: an error where the window it fell in (`w`) says it broke.
+  for (const { step, window } of gpuErrors) if (broke.has(window)) step.tone = "error";
   return { steps, first, sid, vid, build, game, lobby, startedAt: Number.isFinite(startedAt) ? startedAt : NaN, endedAt: Number.isFinite(endedAt) ? endedAt : NaN, trace };
 }
 
@@ -414,7 +522,7 @@ export function sessionsOf(rows: Row[]): SessionLine[] {
     }
     const n = str(row.n);
     if (n === "match_start") line.role = str(p.role) || line.role;
-    if (n === "error" || n === "start_fail" || n === "connect_fail") line.errors += 1;
+    if (n === "error" || n === "start_fail" || n === "connect_fail" || n === "device_lost" || (n === "gpu_window" && p.picture === "broke")) line.errors += 1;
     if (n === "outcome") {
       line.end = str(p.result);
       line.tone = p.result === "won" ? "won" : "lost";

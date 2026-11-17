@@ -16,6 +16,7 @@ import {
   startOnEngine,
   type FailureDeps,
 } from "../../src/game/engineFailure.js";
+import { LOSS_BOUND_WINDOW_MS, createLossRecord, type LossNote } from "../../src/game/lossBound.js";
 import type { EngineOnCanvas } from "../../src/game/rendererSwap.js";
 
 const ENV = { browser: 153, babylon: "9.18.0" };
@@ -304,6 +305,91 @@ describe("a failure of the running WebGPU engine: a live rebuild, never a reload
     h.end();
     await h.answer(h.engine(), "pipeline");
     expect(h.log).toEqual(["unwatch gpu0", "abandon gpu0"]);
+  });
+});
+
+describe("a lost device that is one too many: the hike ends, with no rebuild", () => {
+  /** A hike whose losses are counted against a bound (`lossBound.ts`), as the page counts them. */
+  function bounded() {
+    const h = hike();
+    const record = createLossRecord();
+    let last: LossNote | null = null;
+    const said: string[] = [];
+    const deps: FailureDeps = {
+      ...h.deps,
+      log: (line) => void said.push(line),
+      ends: (reason) => reason === "lost" && last?.end === true,
+      end: () => void h.log.push("end"),
+      rebuilt: (reason, failure) => void h.log.push(`rebuilt ${reason}: ${failure ?? "stands"}`),
+    };
+    const answer = answerFailures(deps);
+    /** The device of the running engine is lost at `at` ms: noted as the renderer tells of it, then answered. */
+    const lose = (at: number): Promise<void> => {
+      last = record.note(at);
+      return answer(h.engine(), "lost");
+    };
+    return { h, lose, answer, said };
+  }
+
+  it("answers two losses by a rebuild each and ends at the third inside ten minutes: remembered, no cover, no rebuild, no line", async () => {
+    const { h, lose, said } = bounded();
+    await lose(0);
+    await lose(60_000);
+    expect(h.log.filter((line) => line.startsWith("rebuild from"))).toEqual(["rebuild from gpu0", "rebuild from gpu1"]);
+    const before = h.log.length;
+    await lose(120_000);
+    expect(h.log.slice(before)).toEqual(["unwatch gl2", "abandon gl2", `record lost: ${NOTICE_SWITCHED}`, "end"]);
+    expect(said.at(-1)).toBe("WebGPU: the device was lost once too often; ending the hike.");
+    expect(h.serial.idle).toBe(true);
+  });
+
+  it("goes on rebuilding where the losses are spread wider than the window, by the clock handed in", async () => {
+    const { h, lose } = bounded();
+    for (let i = 0; i < 5; i++) await lose(i * (LOSS_BOUND_WINDOW_MS / 2 + 1));
+    expect(h.log.filter((line) => line.startsWith("rebuild from"))).toHaveLength(5);
+    expect(h.log).not.toContain("end");
+  });
+
+  it("is a lost device's alone: a GPU error on the same hike is still answered by a rebuild", async () => {
+    const { h, lose, answer } = bounded();
+    await lose(0);
+    await lose(1);
+    await lose(2);
+    expect(h.log.at(-1)).toBe("end");
+    // The page would be on its way to the landing by now; a hike that went on answers a pipeline error as ever.
+    h.setEngine({ name: "gpu9", webgpu: true });
+    await answer(h.engine(), "pipeline");
+    expect(h.log.slice(-5)).toEqual(["rebuild from gpu9", "on gl3 (c3)", "lift", "rebuilt pipeline: stands", `flash ${NOTICE_SWITCHED}`]);
+  });
+
+  it("does not end a hike that is already gone", async () => {
+    const { h, lose } = bounded();
+    await lose(0);
+    await lose(1);
+    h.end();
+    await lose(2);
+    expect(h.log).not.toContain("end");
+  });
+});
+
+describe("how a rebuild came out", () => {
+  it("is told once the rebuild has run to its end, before the line, and with the throw where no tier builds", async () => {
+    const h = hike();
+    const answer = answerFailures({ ...h.deps, rebuilt: (reason, failure) => void h.log.push(`rebuilt ${reason}: ${failure ?? "stands"}`) });
+    await answer(h.engine(), "lost");
+    expect(h.log.slice(-4)).toEqual(["on gpu1 (c1)", "lift", "rebuilt lost: stands", `flash ${NOTICE_RESTARTED}`]);
+    h.failRebuild();
+    await answer(h.engine(), "lost");
+    expect(h.log.slice(-3)).toEqual(["rebuild from gpu1", "rebuilt lost: Error: no tier builds", "lift"]);
+  });
+
+  it("is told of nothing where the failure was not answered", async () => {
+    const h = hike();
+    const told: string[] = [];
+    const answer = answerFailures({ ...h.deps, rebuilt: (reason) => void told.push(reason) });
+    h.end();
+    await answer(h.engine(), "lost");
+    expect(told).toEqual([]);
   });
 });
 
