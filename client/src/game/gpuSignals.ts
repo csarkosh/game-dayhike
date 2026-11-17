@@ -220,6 +220,20 @@ export function browserMajor(userAgent: string): number {
   return 0;
 }
 
+/**
+ * Whether the browser offers WebGPU at all: a `navigator.gpu` that can be
+ * asked for an adapter. Known at once, with no request made, and what tells
+ * a browser with no WebGPU from one that has it and gives no adapter, which
+ * `adapterStatus` calls `"none"` alike (`loadCheck.ts` reads both).
+ */
+export function offersWebGpu(nav: NavigatorLike | undefined): boolean {
+  try {
+    return typeof nav?.gpu?.requestAdapter === "function";
+  } catch {
+    return false;
+  }
+}
+
 /** The adapter as the WebGPU engine rule reads it: its limits, whether it is a
  * fallback (software) adapter, and its optional features. */
 export type AdapterReading = { limits: Readonly<Record<string, number>>; isFallbackAdapter: boolean; features: readonly string[] };
@@ -310,7 +324,7 @@ function requestAdapter(nav: NavigatorLike | undefined): { whole: Promise<Adapte
   let timer: ReturnType<typeof setTimeout> | undefined;
   try {
     const gpu = nav?.gpu;
-    if (typeof gpu?.requestAdapter !== "function") {
+    if (gpu === undefined || !offersWebGpu(nav)) {
       const none = Promise.resolve<AdapterAnswer>({ status: "none", adapter: null });
       return { whole: none, bounded: none };
     }
