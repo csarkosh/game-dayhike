@@ -255,16 +255,25 @@ const webgpuOffered = offersWebGpu(navigator as NavigatorLike);
 let verdict: LoadVerdict | null = loadVerdict(webgpuOffered, null);
 /** The page for those turned away, once it is up: it stays for the page's life. */
 let turnedAway: TurnedAwayHandle | null = null;
+/** Whether the visitor's `turned_away` row has been sent: one a page. */
+let turnedAwayTold = false;
 
 /**
- * The verdict is in. Where it is "cannot": a lobby joined or being joined
- * meanwhile is left, so no host waits on a hiker who cannot play, and the
- * page for those turned away takes the place of whatever is shown, a hike
- * that had started on an adapter request still unanswered among it.
+ * The verdict is in. Where it is "cannot": the visitor's one row says why
+ * (`turned_away`: the reason, and what the adapter is short of where the
+ * check named it), sent once the GPU's signals are in, so that it carries
+ * what every row says of the GPU; a lobby joined or being joined meanwhile
+ * is left, so no host waits on a hiker who cannot play; and the page for
+ * those turned away takes the place of whatever is shown, a hike that had
+ * started on an adapter request still unanswered among it.
  */
 function settleVerdict(next: LoadVerdict): void {
   verdict = next;
   if (next.play) return;
+  if (!turnedAwayTold) {
+    turnedAwayTold = true;
+    telemetry.event("turned_away", next.short === null ? { reason: next.reason } : { reason: next.reason, short: next.short });
+  }
   if (joining) abandonAttempt();
   if (lobby !== null) {
     lobby.leave();

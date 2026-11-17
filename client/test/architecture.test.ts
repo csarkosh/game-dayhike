@@ -383,6 +383,9 @@ describe("layer boundaries", () => {
     expect([...main.matchAll(/\benterLobby\(route\.lobbyId\)/g)].length).toBe(1);
     expect(main).toContain("    void signalsReady.then(() => {\n      if (verdict === null || verdict.play) void enterLobby(route.lobbyId);\n    });");
     expect(main).toContain("  if (joining) abandonAttempt();\n  if (lobby !== null) {\n    lobby.leave();\n    detach();\n  }");
+    // The visitor's one row, said in one place.
+    expect([...main.matchAll(/"turned_away"/g)].length).toBe(1);
+    expect(main).toContain('    telemetry.event("turned_away", next.short === null ? { reason: next.reason } : { reason: next.reason, short: next.short });');
   });
 
   it("bounds the cover over every switch by what its caller passes: no path picks its own bound", () => {

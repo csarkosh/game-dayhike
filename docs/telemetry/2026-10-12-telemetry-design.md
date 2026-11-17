@@ -122,6 +122,7 @@ The events, in the order a session makes them:
 | `lobby_end` | `reason`, `members` | `host_gone` or `left` |
 | `load` | `decideMs`, `introMs`, `engineMs`, `filmMs`, `worldMs`, `sceneMs`, `buildMs`, `tier`, `source`, `engine`, `prep`, `prepMs`, `scene` | the start chain finished (`startHike`); `worldMs` is what the start still waited for the world's worker once the film had its top-up, `prep` how that worker ended (`done`, `cached`, `no-worker`, `failed`, `timeout`) and `prepMs` how long it ran; `sceneMs` is what the start then still waited for the worker's first scene, and `scene` whether the worker sent one (`made`) or none came (`none`); a renderer made at a fallback tier or again on WebGL2 samples the ground itself either way |
 | `start_fail` | the laps so far, `msg` | it did not |
+| `turned_away` | `reason`: `no-webgpu`, `no-adapter`, `software`, `short`; `short`, what the adapter is short of, for that reason | the load check's verdict is that this browser and GPU cannot play (`game/loadCheck.ts`): once a page, sent once the GPU's signals are in, so the row carries `gpu` and `adapter`; the visitor sees the page for those turned away and no hike is started. A warning |
 | `ready` | `ms` | the world ready to be looked at, from the launch |
 | `match_start` | `role`, `party`, `lobby` | the host session, or a follower's once connected |
 | `act` | `act`: wet, dusk, mist; `p`; `tick` | the climb's ratchet passed the mark (`sim/acts.ts`) |
