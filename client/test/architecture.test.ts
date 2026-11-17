@@ -822,7 +822,7 @@ describe("layer boundaries", () => {
    * the same play.
    */
   it("what the scenes and the endings are played with is computed without loading Babylon, whatever it imports", () => {
-    const ENGINE_FREE = ["scenePlay.ts", "cutscene.ts", "ending.ts", "endScene.ts", "carAudio.ts", "carParts.ts", "scene/roadPath.ts", "scene/timeline.ts", "scene/shots.ts"];
+    const ENGINE_FREE = ["scenePlay.ts", "shotBodies.ts", "cutscene.ts", "ending.ts", "endScene.ts", "carAudio.ts", "carParts.ts", "scene/roadPath.ts", "scene/timeline.ts", "scene/shots.ts"];
     const loaded = (file: string): string[] =>
       [...readFileSync(file, "utf8").matchAll(/^\s*(?:import|export)\s+(?!type\s)(?:[^"'();]*?\s+from\s+)?["']([^"']+)["']/gm)].map((m) => m[1] as string);
     const seen = new Set<string>();
@@ -842,6 +842,8 @@ describe("layer boundaries", () => {
     expect(bad).toEqual([]);
     // And the shells on Babylon.js read them: the scenes' state is kept in one place, and the car's parts are turned by one rule.
     expect(readFileSync(join(SRC, "game/renderer.ts"), "utf8")).toContain("const play = createScenePlay({");
+    // On Lite the frame's bodies take up who the scene shows in the frame that says so.
+    expect(readFileSync(join(SRC, "game/lite/renderer.ts"), "utf8")).toContain("bodies = bodiesInShot(poses, bodies, now, state, localId, alpha, standing?.entities?.models ?? null);");
     expect(readFileSync(join(SRC, "game/scene/sceneStage.ts"), "utf8")).toContain("wheel.node.rotation.z = wheelSpinTurn(pose);");
   });
 

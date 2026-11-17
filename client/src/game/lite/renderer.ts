@@ -148,7 +148,8 @@
  * nothing draws nothing and writes nothing: no other hiker, no ranger
  * fetched and no light made; no bird of a model in the air, its mesh
  * hidden. The local hiker's own body is drawn only in a scene's shot,
- * where the camera stands elsewhere: in a hike the camera is its eyes.
+ * where the camera stands elsewhere, from the shot's first frame to its
+ * last (`shotBodies.ts`): in a hike the camera is its eyes.
  *
  * **A lamp's light is made for a hiker, not for a seat** (`wornLamps.ts`):
  * the scene holds the lens's lamp, the sun, the fill and a spot light for
@@ -349,6 +350,7 @@ import { writeListenerPose } from "../listenerPose.js";
 import { sharedSeconds } from "../oceanWindSea.js";
 import type { PostView } from "../postFrame.js";
 import { shadeSmokeSeconds } from "../shadeMaskParams.js";
+import { bodiesInShot } from "../shotBodies.js";
 import { postFeaturesFor } from "../postParams.js";
 import { fittingBed, fittingFeatureTable, fittingLake, fittingOcean, fittingRings, fittingWaterBump, fittingWaterRings } from "../preparedScene.js";
 import { QUALITY, detectTier } from "../quality.js";
@@ -1495,9 +1497,9 @@ export function createLiteRenderer(canvas: HTMLCanvasElement, level: Level, fore
       // The render scale under the paint is fed the page's frame, as the game feeds it: a step is fitted by the next frame drawn.
       frameFit.frame(frame.dt);
       othersSeen = Math.max(othersSeen, state.players.size - (state.players.has(localId) ? 1 : 0));
-      // Where every body stands this frame, before the frame's scene is stepped: a body a scene shows or hides is
-      // shown or hidden from the frame after the scene says so, as the game on Babylon.js has it.
-      const bodies: EntityFrame | null = standing !== null && standing.entities !== null ? poses.step(state, localId, alpha, frame.dt, standing.entities.models) : null;
+      // Where every body stands this frame, before the frame's scene is stepped, which reads where the others are
+      // drawn. Who the scene then shows or hides is taken up below, in this same frame.
+      let bodies: EntityFrame | null = standing !== null && standing.entities !== null ? poses.step(state, localId, alpha, frame.dt, standing.entities.models) : null;
       // The death's dark as the last frame posed it: the passes read it a frame late.
       const darkWas = play.close;
       playNow = null;
@@ -1550,9 +1552,11 @@ export function createLiteRenderer(canvas: HTMLCanvasElement, level: Level, fore
           const now = play.step(seconds, pose, local, state.players, (id) => poses.drawnAt(id));
           playNow = now;
           fov = now.fov ?? GAME_FOV;
-          // The local body stands in the summit's shots and runs in the end scene's; the others at the car's door are in it.
-          poses.showLocal = now.showLocal;
-          poses.hideNear = now.hideNear;
+          // The local body stands in the summit's shots and runs in the end scene's; the others at the car's door are
+          // in it. Where the scene has just changed who is shown, the frame's bodies are posed under it at once
+          // (`shotBodies.ts`): a shot holds its body from its first frame, and a frame whose camera is the hiker's own
+          // eye again draws no body round it.
+          bodies = bodiesInShot(poses, bodies, now, state, localId, alpha, standing?.entities?.models ?? null);
           // What the world is built round: the player, but in an end scene shown on another's run (who reached the
           // car while this screen's player was far up the mountain), that runner.
           const shownId = play.runnerId();
@@ -1585,7 +1589,7 @@ export function createLiteRenderer(canvas: HTMLCanvasElement, level: Level, fore
           lensLamp.state = carLamp;
           lensLamp.on = true;
         } else if (playNow.lamp === "body") {
-          // Worn at the eye of the body as this frame stood it: off in the frame a scene first shows the body, which is not drawn yet.
+          // Worn at the eye of the body as this frame stands it, from the shot's first frame: off only while no body is drawn for it.
           const worn = bodies?.players.find((body) => body.local && body.hidden === null);
           lensLamp.on = worn !== undefined;
           if (worn !== undefined) {
