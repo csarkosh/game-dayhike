@@ -65,7 +65,8 @@ const STYLE = `
   .turned-away details { max-width: 34rem; font-size: 0.8rem; color: rgba(255, 255, 255, 0.5); text-align: center; }
   .turned-away summary { cursor: pointer; letter-spacing: 0.1em; text-transform: uppercase; }
   .turned-away summary:focus-visible { outline: 2px solid var(--edge-lit); outline-offset: 3px; }
-  .turned-away details ul { margin-top: 0.5rem; font-size: 0.8rem; line-height: 1.6; color: rgba(255, 255, 255, 0.72); }
+  /* A work's name can be one long word (a file's): it breaks rather than widen the page past a narrow phone. */
+  .turned-away details ul { margin-top: 0.5rem; font-size: 0.8rem; line-height: 1.6; color: rgba(255, 255, 255, 0.72); overflow-wrap: anywhere; }
   .turned-away details a { color: rgba(255, 255, 255, 0.9); text-decoration: underline; text-underline-offset: 0.2em; }
   .turned-away details a:focus-visible { outline: 2px solid var(--edge-lit); outline-offset: 2px; }
   @media (prefers-reduced-motion: reduce) {
