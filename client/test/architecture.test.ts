@@ -1106,6 +1106,84 @@ describe("layer boundaries", () => {
   });
 
   /**
+   * The line Babylon.js stands behind. The renderer on it, its shells and
+   * what only they import are named here, file by file: nothing else in
+   * `src/` imports a module of Babylon.js or one of these files, for a
+   * value or for a type, so the list is what goes when that renderer does.
+   * What still crosses the line is named too, each a type's import and no
+   * more: the swap's wait on a scene of Babylon.js, and the pipelines and
+   * the kept engine that a renderer on Babylon.js's engines was handed and
+   * the hike's own renderer never is.
+   */
+  it("keeps Babylon.js behind one line: the renderer on it, its shells and what only they import, named file by file", () => {
+    const BABYLON_SIDE = [
+      "game/asyncPipelines.ts", "game/atmosphere.ts", "game/barkShadePlugin.ts", "game/bladeMeshes.ts", "game/boardPaint.ts", "game/bodyMesh.ts",
+      "game/cascadeFrustum.ts", "game/characterModel.ts", "game/cliffMeshes.ts", "game/cliffTintPlugin.ts", "game/clutterMeshes.ts",
+      "game/creatureModel.ts", "game/deadwoodPlugin.ts", "game/distanceFadePlugin.ts", "game/dragonflies.ts", "game/droppedItem.ts",
+      "game/duffMeshes.ts", "game/engineLog.ts", "game/engineOf.ts", "game/enginePipelines.ts", "game/engineVersion.ts", "game/entityViews.ts",
+      "game/facePatchMeshes.ts", "game/featurePaint.ts", "game/foliageLightPlugin.ts", "game/foliagePlugin.ts", "game/forestMeshes.ts",
+      "game/gpuEngine.ts", "game/gpuTime.ts", "game/groundConformPlugin.ts", "game/groundMaps.ts", "game/headlamp.ts", "game/impostorBakePlugin.ts",
+      "game/keptEngine.ts", "game/ktx2.ts", "game/lakeMirror.ts", "game/lakePanorama.ts", "game/lakeView.ts", "game/lighting.ts",
+      "game/midgeSwarms.ts", "game/mistMeshes.ts", "game/modelLoad.ts", "game/mossPlugin.ts", "game/motes.ts", "game/oceanGpuFft.ts",
+      "game/oceanLip.ts", "game/oceanRender.ts", "game/oceanWindSource.ts", "game/pluginNumbers.ts", "game/post.ts", "game/probeScene.ts",
+      "game/propMeshes.ts", "game/rain.ts", "game/rainMap.ts", "game/rainPlugin.ts", "game/rainSplash.ts", "game/renderer.ts",
+      "game/scene/cordTube.ts", "game/scene/sceneRoute.ts", "game/scene/sceneStage.ts", "game/sha256.ts", "game/shadeSilhouette.ts",
+      "game/shadeSmoke.ts", "game/shadeVeil.ts", "game/shaderLookup.ts", "game/signMeshes.ts", "game/skin.ts", "game/skyDome.ts",
+      "game/softShadowInclude.ts", "game/staticModel.ts", "game/surfSpray.ts", "game/swashTexture.ts", "game/terrainTexture.ts",
+      "game/trailheadMeshes.ts", "game/waterFrame.ts", "game/waterLife.ts", "game/waterPlants.ts", "game/waterPlugin.ts", "game/webgl2Shaders.ts",
+      "game/webgpuDrawCache.ts", "game/webgpuVertexBuffer.ts", "game/wetPlugin.ts", "game/wgslFormat.ts", "game/wgslMap.ts", "game/wgslStore.ts",
+      "game/wildlifeMeshes.ts", "game/wingPlugin.ts",
+    ];
+    const everyImport = (file: string): string[] => {
+      const asked = [...stripComments(readFileSync(file, "utf8")).matchAll(/\bimport\(\s*["']([^"']+)["']\s*\)/g)].map((m) => m[1] as string);
+      return [...new Set([...importsOf(file), ...asked])];
+    };
+    const ofBabylon = (spec: string): boolean => spec.startsWith("@babylonjs/") && spec !== "@babylonjs/lite";
+    const side = new Set(BABYLON_SIDE.map((name) => join(SRC, name)));
+    expect(side.size).toBe(BABYLON_SIDE.length);
+    for (const file of side) expect(existsSync(file), relative(SRC, file)).toBe(true);
+    const crossing: string[] = [];
+    const importedBy = new Map<string, string[]>();
+    for (const file of sourceFiles(SRC)) {
+      for (const spec of everyImport(file)) {
+        if (ofBabylon(spec)) {
+          if (!side.has(file)) crossing.push(`${relative(SRC, file)} names ${spec}`);
+          continue;
+        }
+        const path = spec.split("?")[0] as string;
+        if (!path.startsWith(".") || !path.endsWith(".js")) continue;
+        const target = join(file, "..", `${path.slice(0, -3)}.ts`);
+        importedBy.set(target, [...(importedBy.get(target) ?? []), file]);
+        if (side.has(target) && !side.has(file)) crossing.push(`${relative(SRC, file)} imports ${relative(SRC, target)}`);
+      }
+    }
+    // Guards against the guard: the walk reads the whole of src/ and finds the library where it is named.
+    expect(importedBy.size).toBeGreaterThan(400);
+    expect([...side].filter((file) => everyImport(file).some(ofBabylon)).length).toBeGreaterThan(75);
+    // What crosses the line.
+    expect(crossing.sort()).toEqual([
+      "app.ts imports game/asyncPipelines.ts",
+      "app.ts imports game/keptEngine.ts",
+      "game/rendererSwap.ts imports game/asyncPipelines.ts",
+      "game/rendererSwap.ts names @babylonjs/core/scene.js",
+      "game/rendererTypes.ts imports game/asyncPipelines.ts",
+    ]);
+    // Each of them is a type's import: none loads a module.
+    const loaded = (file: string): string[] =>
+      [...readFileSync(file, "utf8").matchAll(/^\s*(?:import|export)\s+(?!type\s)(?:[^"'();]*?\s+from\s+)?["']([^"']+)["']/gm)].map((m) => m[1] as string);
+    expect(loaded(join(SRC, "app.ts")).filter((spec) => /asyncPipelines|keptEngine/.test(spec))).toEqual([]);
+    expect(loaded(join(SRC, "game/rendererSwap.ts")).filter((spec) => /asyncPipelines|@babylonjs/.test(spec))).toEqual([]);
+    expect(loaded(join(SRC, "game/rendererTypes.ts"))).toEqual([]);
+    // The list is no longer than it need be: a file on it names Babylon.js, or is imported by files on it alone.
+    for (const file of side) {
+      if (everyImport(file).some(ofBabylon)) continue;
+      const importers = importedBy.get(file) ?? [];
+      expect(importers.length, relative(SRC, file)).toBeGreaterThan(0);
+      expect(importers.filter((from) => !side.has(from)).map((from) => relative(SRC, from)), relative(SRC, file)).toEqual([]);
+    }
+  });
+
+  /**
    * Babylon Lite names what a pass of the hike's own is drawn with
    * (`getGpuDevice`, `getFrameEncoder`, `getRenderTargetAttachments`,
    * `createCustomTask`), so nothing under `game/lite/` reaches into an
