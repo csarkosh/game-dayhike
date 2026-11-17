@@ -5,8 +5,15 @@
  * come in as dependencies, as the governor's `actOnDrop` takes them, so
  * every sequence is tested with plain objects (`engineFailure.test.ts`).
  */
-import { NOTICE_RESTARTED, NOTICE_SWITCHED } from "./engineChoice.js";
 import { GOVERNOR_SWAP_READY_MAX_MS } from "./rendererSwap.js";
+
+/** How long the HUD shows the line after a swap that answered a failure. */
+export const FALLBACK_NOTICE_MS = 6_000;
+
+/** The HUD's line once a rebuild has answered a failure, by the engine the
+ * rebuild ended on. */
+export const NOTICE_SWITCHED = "Graphics switched to WebGL2 after a GPU error.";
+export const NOTICE_RESTARTED = "Graphics restarted after a GPU error.";
 
 /** The work under way on a hike's renderer (a switch of tier, the
  * governor's drop, a rebuild after a failure): one at a time. */

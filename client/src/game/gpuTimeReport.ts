@@ -65,6 +65,12 @@ export function gpuTimeReport(raw: RawGpuTime): GpuTimeReport {
   };
 }
 
+/** `?gpuTime`, with any value: the measurement mode, which asks the device
+ * for timestamp queries and times the frame from creation. */
+export function parseGpuTime(search: string): boolean {
+  return new URLSearchParams(search).has("gpuTime");
+}
+
 /** The corner's line: the frame and the main pass, or that there is no
  * timing here. A frame with no reading (Chrome's, `gpuTime.ts`) is `n/a`. */
 export function gpuTimeLine(report: GpuTimeReport): string {

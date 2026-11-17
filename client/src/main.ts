@@ -83,7 +83,7 @@ import {
   type TierChoice,
   type TierSource,
 } from "./game/tierChoice.js";
-import { NOTICE_RESTARTED } from "./game/engineChoice.js";
+import { NOTICE_RESTARTED } from "./game/engineFailure.js";
 import { createVeil, VEIL_CUT_COVER_MS, VEIL_CUT_LIFT_MS } from "./game/veil.js";
 
 const found = document.querySelector<HTMLDivElement>("#app");

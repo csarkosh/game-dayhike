@@ -171,7 +171,7 @@ export const PROBE_ATTEMPTS = 3;
 const DAY_MS = 86_400_000;
 const RANK: Readonly<Record<QualityTier, number>> = { low: 0, medium: 1, high: 2 };
 
-/** The engine a tier is drawn with (`engineChoice.ts`'s `EngineName`). */
+/** The engine a tier is drawn with (`engineHandle.ts`'s `EngineName`). */
 export type VerdictEngine = "webgl2" | "webgpu";
 
 /** One tier measured by the startup probe; `early` when its step ended as a

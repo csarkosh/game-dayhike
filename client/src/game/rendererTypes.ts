@@ -4,7 +4,7 @@
  * (the hike, the ladders that swap one for another, the staged scenes, the
  * tests) names it here and loads no engine by doing so. What is named of an
  * engine is named as the page holds it: a handle that can be let go of
- * (`engineHandle.ts`), which engine it is (`engineChoice.ts`), the watch a
+ * and which engine it is (`engineHandle.ts`), the watch a
  * renderer keeps on one it made (`engineWatch.ts`) and the measurement
  * mode's report (`gpuTimeReport.ts`). No renderer is handed an engine here:
  * the hike's makes its own (`hikeRenderer.ts`), and what the renderer on
@@ -13,8 +13,7 @@
  */
 import type { Vec3, WorldState } from "../sim/types.js";
 import type { ListenerPose } from "./ambientAudio.js";
-import type { EngineName } from "./engineChoice.js";
-import type { EngineHandle } from "./engineHandle.js";
+import type { EngineHandle, EngineName } from "./engineHandle.js";
 import type { WatchEngine } from "./engineWatch.js";
 import type { EyePose } from "./eyeBlend.js";
 import type { FirstBuilds } from "./firstBuilds.js";
@@ -313,7 +312,7 @@ export type RendererOptions = {
    * tier makes none of them again. Absent, the renderer starts a source of
    * its own (`startSkySource`) and stops it on dispose. */
   skyTable?: SkyTable;
-  /** The measurement mode (`?gpuTime`, `parseGpuTime`): the GPU's timings
+  /** The measurement mode (`?gpuTime`, `parseGpuTime`, `gpuTimeReport.ts`): the GPU's timings
    * read out as `window.__gpuTime()` and a corner line (`gpuTime.ts`), and
    * the render scale held at full. */
   gpuTime?: boolean;

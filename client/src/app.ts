@@ -3,7 +3,7 @@ import { createForest } from "./sim/forest.js";
 import { createHikeRenderer } from "./game/hikeRenderer.js";
 import type { FreecamView, Renderer } from "./game/rendererTypes.js";
 import type { EndSceneSetup } from "./game/scenePlay.js";
-import { FALLBACK_NOTICE_MS, parseGpuTime } from "./game/engineChoice.js";
+import { parseGpuTime } from "./game/gpuTimeReport.js";
 import { createInputSampler } from "./game/input.js";
 import { createTouchModel, createTouchLayer } from "./game/touchControls.js";
 import { FixedStepAccumulator } from "./game/loop.js";
@@ -101,7 +101,7 @@ import {
   type EngineWatchers,
   type SwapBindings,
 } from "./game/rendererSwap.js";
-import { answerFailures, coverWith, createSerial } from "./game/engineFailure.js";
+import { FALLBACK_NOTICE_MS, answerFailures, coverWith, createSerial } from "./game/engineFailure.js";
 import { createGpuFaults } from "./game/gpuFaults.js";
 import { LOSS_ENDED_LINE, type LossNote } from "./game/lossBound.js";
 import { GOVERNOR_IDLE_MAX_MS, actOnDrop, governHike, governorDecision, steadyFrame } from "./game/governor.js";

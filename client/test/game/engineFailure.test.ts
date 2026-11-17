@@ -1,13 +1,14 @@
 import { describe, it, expect } from "vitest";
+import { chooseEngine, fallbackHolds, readFallback, recordEngineFailure } from "../../src/game/engineChoice.js";
 import {
+  FALLBACK_NOTICE_MS,
   NOTICE_RESTARTED,
   NOTICE_SWITCHED,
-  chooseEngine,
-  fallbackHolds,
-  readFallback,
-  recordEngineFailure,
-} from "../../src/game/engineChoice.js";
-import { answerFailures, coverWith, createSerial, type FailureDeps } from "../../src/game/engineFailure.js";
+  answerFailures,
+  coverWith,
+  createSerial,
+  type FailureDeps,
+} from "../../src/game/engineFailure.js";
 import { LOSS_BOUND_WINDOW_MS, createLossRecord, type LossNote } from "../../src/game/lossBound.js";
 
 const ENV = { browser: 153, babylon: "9.18.0" };
@@ -112,6 +113,12 @@ function hike(first: Engine = { name: "gpu0", webgpu: true }) {
 }
 
 describe("a failure of the running WebGPU engine: a live rebuild, never a reload", () => {
+  it("says one of two lines on the HUD once the rebuild is done, for six seconds", () => {
+    expect(NOTICE_SWITCHED).toBe("Graphics switched to WebGL2 after a GPU error.");
+    expect(NOTICE_RESTARTED).toBe("Graphics restarted after a GPU error.");
+    expect(FALLBACK_NOTICE_MS).toBe(6_000);
+  });
+
   it("swaps a pipeline error onto WebGL2 at once: the watcher off first, the renderer's work on the engine ended, the cover lifted, the line", async () => {
     const h = hike();
     await h.answer(h.engine(), "pipeline");

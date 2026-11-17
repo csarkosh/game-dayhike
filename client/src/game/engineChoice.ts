@@ -23,11 +23,14 @@
  * and the fallback still apply to it
  * (`docs/rendering/2026-09-26-webgpu-high-tier-verification.md`, §8).
  *
- * Decided for each renderer
- * the page builds (`main.ts`'s `engineFor`: the probe's steps, the hike's
- * start, every switch of tier and every rebuild after a failure), from the
- * tier it is for, and remembered when WebGPU fails, so a failing engine is
- * tried again only after the browser or Babylon moves on.
+ * Decided for each renderer on Babylon.js a page built (the probe's steps,
+ * the hike's start, every switch of tier and every rebuild after a failure),
+ * from the tier it was for, and remembered when WebGPU failed, so a failing
+ * engine was tried again only after the browser or Babylon moved on. No page
+ * asks the rule now: a hike is drawn by a renderer that makes its own engine
+ * and draws with WebGPU alone, and nothing a hike or the page loads imports
+ * this module. It stands with its record of a failure and its second start
+ * (below) and with their tests.
  *
  * Pure on purpose, like `quality.ts`: the parts that touch `navigator.gpu`
  * live in `gpuEngine.ts`, which only the WebGPU path loads, and everything
@@ -35,10 +38,10 @@
  * Storage is read and written through the `Storage` it is handed, every
  * access wrapped as `playerName.ts` wraps its own.
  */
+import { NOTICE_RESTARTED, NOTICE_SWITCHED } from "./engineFailure.js";
+import type { EngineName } from "./engineHandle.js";
 import type { GpuSignals, HostOs } from "./gpuSignals.js";
 import type { QualityTier } from "./quality.js";
-
-export type EngineName = "webgl2" | "webgpu";
 
 /** WebGPU as the default on the tiers below, on the browsers and platforms
  * the rule names (`chooseEngine`). False, only `?engine=webgpu` reaches it. */
@@ -168,12 +171,6 @@ export const WEBGPU_FETCH_MS = 10_000;
  * as a `timeout`, which holds only from the second (`fallbackHolds`). */
 export const WEBGPU_START_MS = 10_000;
 
-/** How long the HUD shows the line after a swap that answered a failure. */
-export const FALLBACK_NOTICE_MS = 6_000;
-
-export const NOTICE_SWITCHED = "Graphics switched to WebGL2 after a GPU error.";
-export const NOTICE_RESTARTED = "Graphics restarted after a GPU error.";
-
 const DAY_MS = 86_400_000;
 
 /** `?engine=webgl2|webgpu`, on any tier; anything else is no override. */
@@ -213,12 +210,6 @@ export function parsePipelines(search: string): PipelineMode {
   if (value === "sync") return "sync";
   if (value !== null && /^[1-9]\d?$/.test(value) && Number(value) <= 16) return Number(value);
   return "async";
-}
-
-/** `?gpuTime`, with any value: the measurement mode, which asks the device
- * for timestamp queries and times the frame from creation. */
-export function parseGpuTime(search: string): boolean {
-  return new URLSearchParams(search).has("gpuTime");
 }
 
 /** What the rule reads of the high-performance adapter (`adapterFromSignals`). */

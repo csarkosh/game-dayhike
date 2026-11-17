@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { gpuTimeLine, gpuTimeReport } from "../../src/game/gpuTimeReport.js";
+import { gpuTimeLine, gpuTimeReport, parseGpuTime } from "../../src/game/gpuTimeReport.js";
 
 const raw = {
   supported: true, build: "abc1234", frameId: 100, renderWidth: 1470, renderHeight: 956,
@@ -37,5 +37,14 @@ describe("gpuTimeReport", () => {
   });
   it("writes n/a for a frame the browser does not time", () => {
     expect(gpuTimeLine(gpuTimeReport({ ...raw, frameNs: null }))).toBe("gpu n/a · main 8.100 ms");
+  });
+});
+
+describe("parseGpuTime", () => {
+  it("is on when the flag is present with any value, off otherwise", () => {
+    expect(parseGpuTime("?gpuTime")).toBe(true);
+    expect(parseGpuTime("?tier=high&gpuTime=1")).toBe(true);
+    expect(parseGpuTime("?tier=high")).toBe(false);
+    expect(parseGpuTime("")).toBe(false);
   });
 });

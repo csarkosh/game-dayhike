@@ -335,16 +335,26 @@ describe("layer boundaries", () => {
     expect([...seen.keys()].map((file) => relative(SRC, file))).toContain("game/lite/renderer.ts");
     expect(bad).toEqual([]);
     // What served the engines of Babylon.js is named by the page no more: an engine let go or kept between
-    // hikes, the library's version and its log, the record of an engine that failed and the start made again
-    // on another engine. The modules stand, with their tests, until the renderer on Babylon.js goes.
-    for (const gone of ["renderer", "keptEngine", "engineVersion", "engineLog", "engineFailure", "gpuEngine"]) {
+    // hikes, the library's version and its log, and the rule that chose between two engines, with its record
+    // of an engine that failed and its start made again on another (`engineChoice.ts`). The modules stand,
+    // with their tests, until the renderer on Babylon.js goes.
+    for (const gone of ["renderer", "keptEngine", "engineVersion", "engineLog", "engineChoice", "gpuEngine"]) {
       expect(own, gone).not.toContain(`./game/${gone}.js`);
     }
-    expect(code(main)).not.toMatch(/\b(?:releaseEngine|adoptEngine|dropEngine|keepEngine|engineVersion|hearEngineLog)\b/);
-    // The engine's rule is read for one thing, the line of a renderer built again; the address's `?engine=` for nothing.
-    expect([...code(main).matchAll(/from "\.\/game\/engineChoice\.js"/g)].length).toBe(1);
-    expect(code(main)).toContain('import { NOTICE_RESTARTED } from "./game/engineChoice.js";');
-    expect(existsSync(join(SRC, "game", "engineChoice.ts"))).toBe(true);
+    expect(code(main)).not.toMatch(/\b(?:releaseEngine|adoptEngine|dropEngine|keepEngine|engineVersion|hearEngineLog|tellEngineLog)\b/);
+    // The engine's rule is read for nothing, and the address's `?engine=` by nothing: the line of a renderer
+    // built again is the failure answer's own (`engineFailure.ts`), which holds no rule and no record.
+    expect(code(main)).not.toContain("engineChoice");
+    expect([...code(main).matchAll(/from "\.\/game\/engineFailure\.js"/g)].length).toBe(1);
+    expect(code(main)).toContain('import { NOTICE_RESTARTED } from "./game/engineFailure.js";');
+    // Nor does the hike read it: how long the line shows is the answer's too, and the measurement mode's flag
+    // is the measurement's (`gpuTimeReport.ts`).
+    const hike = importsOf(join(SRC, "app.ts"));
+    expect(hike).not.toContain("./game/engineChoice.js");
+    expect(hike).toContain("./game/engineFailure.js");
+    expect(hike).toContain("./game/gpuTimeReport.js");
+    expect(importsOf(join(SRC, "game/engineFailure.ts"))).toEqual(["./rendererSwap.js"]);
+    expect(importsOf(join(SRC, "game/rendererTypes.ts"))).not.toContain("./engineChoice.js");
   });
 
   it("decides once whether the browser can play, with no engine and no request of its own, and starts nothing of a hike where it cannot", () => {
@@ -1443,7 +1453,7 @@ describe("the renderer on Babylon.js: where it reads the game's own arithmetic, 
 
   it("loads no Babylon.js with the page: nothing main.ts imports for itself reaches it, by an import or a dynamic one", () => {
     // The modules stand, with their tests, until the renderer on Babylon.js goes.
-    for (const gone of ["renderer", "keptEngine", "engineVersion", "engineLog", "engineFailure", "gpuEngine"]) {
+    for (const gone of ["renderer", "keptEngine", "engineVersion", "engineLog", "engineChoice", "gpuEngine"]) {
       expect(existsSync(join(SRC, "game", `${gone}.ts`)), gone).toBe(true);
     }
   });

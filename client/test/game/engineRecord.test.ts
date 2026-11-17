@@ -1,6 +1,5 @@
 import { describe, it, expect } from "vitest";
 import {
-  NOTICE_SWITCHED,
   fallbackHolds,
   pinsAfterFailure,
   readFallback,
@@ -9,6 +8,7 @@ import {
   startOnEngine,
   type StartCanvas as EngineOnCanvas,
 } from "../../src/game/engineChoice.js";
+import { NOTICE_SWITCHED } from "../../src/game/engineFailure.js";
 
 /**
  * The engine rule's record of a failure and its second start on another

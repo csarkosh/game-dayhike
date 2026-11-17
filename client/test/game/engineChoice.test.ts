@@ -1,11 +1,11 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   adapterFits, adapterFromSignals, chooseEngine, signalsFit, failureSwap, fallbackHolds, featuresToRequest,
-  parseEngineOverride, parseGpuTime, readFallback, recordFailure, resolveWebGpu,
+  parseEngineOverride, readFallback, recordFailure, resolveWebGpu,
   withEngine, writeFallback, WEBGPU_TEXTURE_FEATURES,
   type AdapterReport, type WebGpuSteps,
-  FALLBACK_DAYS, FALLBACK_KEY, FALLBACK_NOTICE_MS, LOSS_WINDOW_MS, NOTICE_RESTARTED,
-  NOTICE_SWITCHED, TIMEOUT_HOLD_DAYS, TIMEOUT_WINDOW_MS, WEBGPU_ENABLED, WEBGPU_FETCH_MS, WEBGPU_REQUIRED_LIMITS,
+  FALLBACK_DAYS, FALLBACK_KEY, LOSS_WINDOW_MS,
+  TIMEOUT_HOLD_DAYS, TIMEOUT_WINDOW_MS, WEBGPU_ENABLED, WEBGPU_FETCH_MS, WEBGPU_REQUIRED_LIMITS,
   WEBGPU_PHONE_TIERS, WEBGPU_START_MS, WEBGPU_TIERS, WebGpuStartTimeout,
 } from "../../src/game/engineChoice.js";
 
@@ -342,16 +342,10 @@ describe("the remembered fallback", () => {
     expect(TIMEOUT_HOLD_DAYS).toBe(1);
     expect(WEBGPU_FETCH_MS).toBe(10_000);
     expect(WEBGPU_START_MS).toBe(10_000);
-    expect(FALLBACK_NOTICE_MS).toBe(6_000);
   });
 });
 
 describe("what a failure of the running WebGPU engine does: a live swap, never a reload", () => {
-  it("says one of two lines on the HUD once the swap is done", () => {
-    expect(NOTICE_SWITCHED).toBe("Graphics switched to WebGL2 after a GPU error.");
-    expect(NOTICE_RESTARTED).toBe("Graphics restarted after a GPU error.");
-  });
-
   it("swaps a pipeline error or an uncaptured one onto WebGL2 at once, whenever it comes", () => {
     expect(failureSwap({ stored: true, holds: true, reason: "pipeline", override: null }))
       .toEqual({ engine: "webgl2", pin: false, notice: "Graphics switched to WebGL2 after a GPU error." });
@@ -450,15 +444,6 @@ describe("the texture compression the device asks for", () => {
     expect(featuresToRequest(["texture-compression-bc", "timestamp-query"], true)).toEqual(["texture-compression-bc", "timestamp-query"]);
     expect(featuresToRequest(["texture-compression-bc"], true)).toEqual(["texture-compression-bc"]);
     expect(featuresToRequest(["timestamp-query"])).toEqual([]);
-  });
-});
-
-describe("parseGpuTime", () => {
-  it("is on when the flag is present with any value, off otherwise", () => {
-    expect(parseGpuTime("?gpuTime")).toBe(true);
-    expect(parseGpuTime("?tier=high&gpuTime=1")).toBe(true);
-    expect(parseGpuTime("?tier=high")).toBe(false);
-    expect(parseGpuTime("")).toBe(false);
   });
 });
 
