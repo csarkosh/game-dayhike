@@ -72,7 +72,7 @@
  */
 import {
   addToScene, createMeshFromData, disposeMeshGpu, markPluginVertexData, removeFromScene, resizeMeshGeometry, setMeshVisible, updateMeshGeometry,
-  updateMeshGeometryCapacity, updateMeshNormals, updateMeshPositions,
+  enableMeshDrawArgs, updateMeshGeometryCapacity, updateMeshNormals, updateMeshPositions,
   type EngineContext, type Material, type Mesh, type SceneContext,
 } from "@babylonjs/lite";
 import type { TrailGraph } from "../../sim/trail.js";
@@ -118,6 +118,8 @@ const WIDE_SLICE_MS = 0.5;
  * room to spare.
  */
 export const PATCH_POOL_VERTICES: Readonly<Record<QualityTier, number>> = { low: 44_000, medium: 80_000, high: 144_000 };
+/** Bytes of the five words the patches' draw reads its count from (`enableMeshDrawArgs`). */
+const PATCH_DRAW_WORDS_BYTES = 20;
 
 /** How much room a pool that has run out is given: half again what it had. */
 const PATCH_POOL_GROWTH = 1.5;
@@ -285,6 +287,9 @@ export function createTerrainMeshes(
     nextTriangles = new Uint32Array(triangles.length);
     // Every index the first vertex: triangles of no size, which draw nothing.
     const made = createMeshFromData(engine, "facePatches", patchPositions, patchNormals, triangles);
+    // The mesh draws the list it holds and no more, its count read from five words Lite writes with the list: the
+    // room past the list is not drawn in any pass, and is not cleared.
+    enableMeshDrawArgs(engine, made);
     made.pluginVertexData = patchPlugin;
     made.material = materials.patches;
     made.renderOrder = DRAW_ORDER.patches;
@@ -371,15 +376,16 @@ export function createTerrainMeshes(
     for (const entry of shown.values()) if (entry.slot !== null) drawnPatches.push({ slot: entry.slot, place: entry.place });
     const count = writePatchTriangles(drawnPatches, patterns, nextTriangles);
     const from = firstDifference(triangles, nextTriangles, Math.min(count, drawnIndices));
-    // What the buffer held past the new list is cleared by Lite: the whole of it the first time, the old list's end after.
-    const cleared = Math.max(0, (listWritten ? drawnIndices : triangles.length) - count);
-    if (from < count || cleared > 0) {
+    // What the buffer holds past the new list is never drawn, so nothing is cleared: a list that differs is sent from
+    // its first index that does, and one that has only another length sends the draw's five words alone.
+    const resized = !listWritten || count !== drawnIndices;
+    if (from < count || resized) {
       updateMeshGeometryCapacity(
         engine, mesh, patchPositions, patchNormals, nextTriangles.subarray(0, count), undefined, undefined, undefined, undefined, 1,
         { vertices: [], indices: [{ offset: from, count: count - from }] },
       );
       listWritten = true;
-      uploads?.stream("geometry", (count - from + cleared) * 4, (from < count ? 1 : 0) + (cleared > 0 ? 1 : 0));
+      uploads?.stream("geometry", (count - from) * 4 + (resized ? PATCH_DRAW_WORDS_BYTES : 0), (from < count ? 1 : 0) + (resized ? 1 : 0));
     }
     const held = triangles;
     triangles = nextTriangles;
