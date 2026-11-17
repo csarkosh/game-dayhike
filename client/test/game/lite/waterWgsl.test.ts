@@ -4,8 +4,8 @@ import { describe, expect, it } from "vitest";
 import { SKYLINE_TEXELS } from "../../../src/game/lakeSkyline.js";
 import { PANORAMA_EYE_UP, PANORAMA_HEIGHT_M } from "../../../src/game/panoramaTurn.js";
 import {
-  LAKE_COMPOSE_WGSL, LAKE_LIGHTS_WGSL, LAKE_PANORAMA_WGSL, LAKE_RIPPLES_WGSL, LAKE_SHORE_WGSL, WATER_BUMP_WGSL, WATER_DEFS_WGSL, WATER_SPLIT_WGSL, WATER_VERTEX_WGSL,
-  lakeComposeWgsl,
+  LAKE_COMPOSE_WGSL, LAKE_LENS_WGSL, LAKE_LIGHTS_WGSL, LAKE_PANORAMA_WGSL, LAKE_RIPPLES_WGSL, LAKE_SHORE_WGSL, WATER_BUMP_WGSL, WATER_DEFS_WGSL, WATER_SPLIT_WGSL,
+  WATER_THROUGH_DEFS_WGSL, WATER_THROUGH_FINAL_WGSL, WATER_VERTEX_WGSL, lakeComposeWgsl, lakeLightsWgsl, waterThroughWgsl,
 } from "../../../src/game/lite/waterWgsl.js";
 import { WATER_F0 } from "../../../src/game/waterShading.js";
 import { inOrder, tight } from "./wgslText.js";
@@ -247,5 +247,105 @@ describe("the lakes' water in WGSL, against the game's GLSL", () => {
     expect(tight(fx("waterWorldPos.vertex.fx"))).toContain("vBedDepth=bedDepth;");
     expect(tight(fx("waterWorldPos.vertex.fx"))).toContain("vWaterViewDepth=(view*worldPos).z;");
     expect(WATER_VERTEX_WGSL).toBe("out.vBedDepth=bedDepth;out.vWaterViewDepth=out.clipPos.w;");
+  });
+});
+
+describe("the water read through its surface in WGSL, against the game's GLSL", () => {
+  const lights = code("waterLights.fragment.fx");
+  /** The GLSL's branch of the tier that reads through, a statement a line. */
+  const glsl = [
+    "vec3 wTransmit = vec3(0.0);",
+    "vec2 wUv = gl_FragCoord.xy * waterScreen;",
+    "float wRaw = texture2D(waterDepth, wUv).r;",
+    "float wSceneDepth = waterNearFar.x * waterNearFar.y / (waterNearFar.y - wRaw * (waterNearFar.y - waterNearFar.x));",
+    "float wRayOn = wSceneDepth / max(vWaterViewDepth, 1.0e-3) - 1.0;",
+    "float wBehind = max(0.0, min(wDepth, (vEyePosition.y - vPositionW.y) * wRayOn));",
+    "vec2 wOff = normalW.xz * WATER_REFRACT * min(max(wBehind, WATER_REFRACT_MIN), WATER_REFRACT_DEPTH) * smoothstep(0.0, 0.02, wBehind);",
+    "vec3 wBed = texture2D(waterScene, wUv + wOff).rgb;",
+    "float wLens = lakeLens(wRippleXz);",
+    "float wShallow = 1.0 - smoothstep(0.0, CAUSTIC_DEPTH_M, wBehind);",
+    "wBed *= 1.0 + clamp(CAUSTIC_GAIN * wOctave * wShallow * waterSun * wLens, -CAUSTIC_MAX, CAUSTIC_MAX);",
+    "vec3 wT = exp(-2.0 * waterKd * wBehind);",
+    "surfaceAlbedo *= 1.0 - wT;",
+    "wTransmit = wBed * wT * (1.0 - wF);",
+    "alpha = 1.0;",
+  ];
+
+  it("reads the frame behind a lake by the GLSL's statements in the GLSL's order", () => {
+    expect(inOrder(tight(lights), glsl.map(tight))).toBe(true);
+    const wgsl = tight(waterThroughWgsl(true));
+    expect(inOrder(wgsl, [
+      "varwTransmit=vec3<f32>(0.0);",
+      // The depth at the fragment's own texel, as stored, turned into a distance along the view by the projection's two terms.
+      "letwRaw=textureLoad(waterKeptDepth,vec2<i32>(input.clipPos.xy),0).r;",
+      "letwSceneDepth=material.frameProjection[3].z/(wRaw-material.frameProjection[2].z);",
+      ...glsl.slice(4, 7).map(asWgsl),
+      // The fragment's place in the kept frame by the frame's own size; the ripples' move down the picture the other way.
+      "letwUv=input.clipPos.xy/vec2<f32>(textureDimensions(waterKept));",
+      "varwBed=textureSampleLevel(waterKept,waterKeptSampler,wUv+vec2<f32>(wOff.x,-wOff.y),0.0).rgb;",
+      ...glsl.slice(8, 12).map(asWgsl),
+      "surfaceAlbedo*=1.0-wT;",
+      "wTransmit=wBed*wT*(1.0-wF);",
+      "alpha=1.0;",
+    ])).toBe(true);
+    expect(wgsl).not.toContain("waterHigh");
+    expect(wgsl).not.toContain("waterScreen");
+  });
+
+  it("turns a stored depth that runs from 1 to 0 back into the distance along the view", () => {
+    const near = 0.1, far = 1200;
+    const p10 = -near / (far - near), p14 = (near * far) / (far - near);
+    for (const z of [0.1, 3, 250, 1200]) {
+      const stored = (p10 * z + p14) / z;
+      expect(p14 / (stored - p10)).toBeCloseTo(z, 6);
+    }
+    // Nothing drawn is the far plane, which the GLSL reads at a depth of 1.
+    expect(p14 / (0 - p10)).toBeCloseTo(far, 6);
+    expect((near * far) / (far - 1 * (far - near))).toBeCloseTo(far, 6);
+  });
+
+  it("leaves the lens to the lake: the sea's branch is the same statements without it", () => {
+    const sea = tight(waterThroughWgsl(false));
+    expect(sea).not.toMatch(/lakeLens|CAUSTIC|wShallow|waterSun/);
+    expect(tight(waterThroughWgsl(true)).replace(/letwLens=.*?CAUSTIC_MAX\);/, "")).toBe(sea);
+  });
+
+  it("holds the read's and the lens's constants at the GLSL's values, and the lens at its statements", () => {
+    const sources = code("water.fragment.fx") + code("lakeRipples.fragment.fx");
+    const wgsl = tight(WATER_THROUGH_DEFS_WGSL + LAKE_LENS_WGSL);
+    for (const name of ["WATER_REFRACT", "WATER_REFRACT_DEPTH", "WATER_REFRACT_MIN", "LENS_STEP_M", "CAUSTIC_GAIN", "CAUSTIC_MAX", "CAUSTIC_DEPTH_M"]) {
+      const value = new RegExp(`const float ${name} = ([-0-9.e]+);`).exec(sources)?.[1];
+      expect(value, name).toBeDefined();
+      const held = new RegExp(`const${name}:f32=([-0-9.e]+);`).exec(wgsl)?.[1];
+      expect(Number(held), name).toBe(Number(value));
+    }
+    const lens = body(code("lakeRipples.fragment.fx"), "lakeLens").filter((line) => !line.startsWith("#") && line !== "return 0.0;");
+    expect(lens).toHaveLength(8);
+    expect(inOrder(tight(LAKE_LENS_WGSL), [
+      "letuv=xz/WATER_OCTAVE2_TILE-material.waterWindTime*WATER_OCTAVE2_DRIFT;",
+      "letdx=vec2<f32>(LENS_STEP_M/WATER_OCTAVE2_TILE,0.0);",
+      "letdz=vec2<f32>(0.0,LENS_STEP_M/WATER_OCTAVE2_TILE);",
+      "letsxE=(textureSample(waterBump,waterBumpSampler,uv+dx).x*2.0-1.0)*WATER_OCTAVE2_WEIGHT;",
+      "letsxW=(textureSample(waterBump,waterBumpSampler,uv-dx).x*2.0-1.0)*WATER_OCTAVE2_WEIGHT;",
+      "letszN=(textureSample(waterBump,waterBumpSampler,uv+dz).y*2.0-1.0)*WATER_OCTAVE2_WEIGHT;",
+      "letszS=(textureSample(waterBump,waterBumpSampler,uv-dz).y*2.0-1.0)*WATER_OCTAVE2_WEIGHT;",
+      "return(sxE-sxW+szN-szS)/(2.0*LENS_STEP_M);",
+    ])).toBe(true);
+    expect(tight(lens.join(""))).toContain("return(sxE-sxW+szN-szS)/(2.0*LENS_STEP_M);");
+  });
+
+  it("puts the read in the place of the one alpha, takes the skin off it, and adds it after the fog", () => {
+    const blended = tight(lakeLightsWgsl(false));
+    const through = tight(lakeLightsWgsl(true));
+    expect(lakeLightsWgsl(false)).toBe(LAKE_LIGHTS_WGSL);
+    expect(blended).toContain("alpha=1.0-(1.0-wF)*exp(-2.0*wKdMean*wDepth);");
+    expect(blended).not.toMatch(/wTransmit|waterKept/);
+    expect(through).not.toContain("alpha=1.0-(1.0-wF)*exp(-2.0*wKdMean*wDepth);");
+    // The same statements either side of the branch.
+    expect(through.replace(tight(waterThroughWgsl(true)), "alpha=1.0-(1.0-wF)*exp(-2.0*wKdMean*wDepth);").replace("wTransmit*=1.0-wSkin;", "")).toBe(blended);
+    expect(inOrder(tight(lights), ["floatwSkin=waterSkinMask(vPositionW.xz,wDepth);", "wTransmit*=1.0-wSkin;", "alpha=mix(alpha,1.0,wSkin);"])).toBe(true);
+    expect(inOrder(through, ["letwSkin=waterSkinMask(input.worldPos.xz,wDepth);", "wTransmit*=1.0-wSkin;", "alpha=mix(alpha,1.0,wSkin);"])).toBe(true);
+    expect(tight(code("waterFinal.fragment.fx"))).toBe("finalColor.rgb+=wTransmit;");
+    expect(WATER_THROUGH_FINAL_WGSL).toBe("color+=wTransmit;");
   });
 });

@@ -21,7 +21,9 @@
  *   game sends them every frame the cascades are drawn); the cross-section
  *   once. Hidden, the strip costs no draw and no write.
  * - **It stands after the sea among the see-through draws** (`drawOrder.ts`),
- *   over the surface its feet lie on.
+ *   over the surface its feet lie on; and where the sea is read through
+ *   (`look.through`) it is opaque as the sea is, drawn after the pass's
+ *   break and tested against the sea's depth, as the game draws the two.
  */
 import {
   addToScene, createMeshFromData, createPbrMaterial, createRenderTexture2D, disposeMeshGpu, markMaterialUboDirty, removeFromScene, setMeshVisible,
@@ -87,8 +89,8 @@ export function createLiteLip(engine: EngineContext, scene: SceneContext, option
   const material = createPbrMaterial({
     baseColorFactor: [WATER_ROWS.sea.lInf[0], WATER_ROWS.sea.lInf[1], WATER_ROWS.sea.lInf[2], 1], metallicFactor: 0,
     roughnessFactor: roughnessFor(0, WATER_ROWS.sea.shelter),
-    // As the sea's: one alpha blends it, seen from either side.
-    alphaBlend: true, doubleSided: true, usePhysicalLightFalloff: true,
+    // As the sea's: one alpha blends it, or, read through, it is opaque; seen from either side.
+    alphaBlend: options.look.through !== true, doubleSided: true, usePhysicalLightFalloff: true,
   });
   material.plugins = [seaPlugin(options.uniforms, options.textures, options.shared, options.look, { state, profile }), options.air()];
 
@@ -100,6 +102,7 @@ export function createLiteLip(engine: EngineContext, scene: SceneContext, option
     const mesh = createMeshFromData(engine, name, geometry.positions, normals, indices);
     mesh.material = material;
     mesh.renderOrder = SEE_THROUGH_ORDER.lip;
+    if (options.look.through === true) mesh.afterBreak = true;
     uploads?.count("geometry", geometry.positions.byteLength + normals.byteLength + indices.byteLength, 3);
     uploads?.made();
     setMeshVisible(mesh, false);

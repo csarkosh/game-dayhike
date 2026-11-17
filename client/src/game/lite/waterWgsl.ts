@@ -32,16 +32,30 @@
  * - **`mod`** is written out as `x - y * floor(x / y)`: WGSL's `%`
  *   truncates.
  *
+ * - **The frame behind the surface**, on the tier that draws its water
+ *   opaque over it (`waterThroughWgsl`), is the frame as the opaque draws
+ *   left it (`waterBehind.ts`): its colour read through a filtering sampler
+ *   at the fragment's own place moved by the ripples, which the GLSL finds
+ *   by `waterScreen` and this by the picture's own size; its depth read at
+ *   the fragment's own texel, as stored, and turned into a distance along
+ *   the view by the two terms of the frame's projection (Lite's depth runs
+ *   from 1 at the near plane to 0), where the GLSL linearises Babylon.js's
+ *   by the camera's near and far. A picture is laid top row first here and
+ *   bottom row first there, so the ripples' move down the picture is taken
+ *   the other way. `waterHigh` is no uniform: a tier's material is the one
+ *   or the other, and carries only its own branch.
+ *
  * Left out, as nothing here reads them: the cat's-paws' mask (`lakePaw`,
- * `lakePawThreshold`), which the GLSL keeps and no longer calls; the lens
- * of the second octave and the read of the frame behind the surface, which
- * belong to the tier that draws its water opaque; the mirror's read. The
- * shore's panorama is read only by a material that is handed one
- * (`LAKE_PANORAMA_WGSL`, `lakeComposeWgsl`): the tier that draws none
- * carries neither the read nor its picture.
+ * `lakePawThreshold`), which the GLSL keeps and no longer calls. The lens
+ * of the second octave and the read of the frame behind the surface are a
+ * material's only on the tier that draws its water opaque, and the shore's
+ * panorama only where it is handed one (`LAKE_PANORAMA_WGSL`,
+ * `lakeComposeWgsl`): a tier carries neither the read nor the picture of
+ * what it does not draw.
  *
  * Loads nothing.
  */
+import { CAUSTIC_DEPTH_M, CAUSTIC_GAIN, CAUSTIC_MAX, LENS_STEP_M } from "../lakeRipples.js";
 import { SKYLINE_TEXELS } from "../lakeSkyline.js";
 import { PANORAMA_EYE_UP, PANORAMA_HEIGHT_M } from "../panoramaTurn.js";
 import { WATER_F0 } from "../waterShading.js";
@@ -122,6 +136,62 @@ fn waterSkinColour(xz:vec2<f32>,viewDepth:f32)->vec3<f32>{
   let algae=vec3<f32>(0.30,0.32,0.10);
   return mix(duckweed,algae,0.5*smoothstep(0.4,0.6,waterSkinNoise(p/1.6)));
 }`;
+
+/** `water.fragment.fx`'s numbers of the read through the surface: how far a ripple bends the read, over what depth of water. */
+export const WATER_THROUGH_DEFS_WGSL = /* wgsl */ `
+const WATER_REFRACT:f32=0.02;
+const WATER_REFRACT_DEPTH:f32=1.0;
+const WATER_REFRACT_MIN:f32=0.3;`;
+
+/** `lakeRipples.fragment.fx`'s lens: the second octave's tilt's divergence a metre, which lights the bed under a lake that is read through. */
+export const LAKE_LENS_WGSL = /* wgsl */ `
+const LENS_STEP_M:f32=${LENS_STEP_M.toFixed(4)};
+const CAUSTIC_GAIN:f32=${CAUSTIC_GAIN.toFixed(2)};
+const CAUSTIC_MAX:f32=${CAUSTIC_MAX.toFixed(1)};
+const CAUSTIC_DEPTH_M:f32=${CAUSTIC_DEPTH_M.toFixed(1)};
+fn lakeLens(xz:vec2<f32>)->f32{
+  let uv=xz/WATER_OCTAVE2_TILE-material.waterWindTime*WATER_OCTAVE2_DRIFT;
+  let dx=vec2<f32>(LENS_STEP_M/WATER_OCTAVE2_TILE,0.0);
+  let dz=vec2<f32>(0.0,LENS_STEP_M/WATER_OCTAVE2_TILE);
+  let sxE=(textureSample(waterBump,waterBumpSampler,uv+dx).x*2.0-1.0)*WATER_OCTAVE2_WEIGHT;
+  let sxW=(textureSample(waterBump,waterBumpSampler,uv-dx).x*2.0-1.0)*WATER_OCTAVE2_WEIGHT;
+  let szN=(textureSample(waterBump,waterBumpSampler,uv+dz).y*2.0-1.0)*WATER_OCTAVE2_WEIGHT;
+  let szS=(textureSample(waterBump,waterBumpSampler,uv-dz).y*2.0-1.0)*WATER_OCTAVE2_WEIGHT;
+  return (sxE-sxW+szN-szS)/(2.0*LENS_STEP_M);
+}`;
+
+/**
+ * `waterLights.fragment.fx`'s branch of the tier that reads through its
+ * surface, in the place of the one alpha: the bed's light through the water,
+ * read from the frame kept behind it and bent by the ripples, dimmed by the
+ * metres of water it comes through; the water's own colour only where the
+ * bed is not seen; and the surface written whole. On a `lake` the bed is lit
+ * by the second octave's lens. `wTransmit` is added after the fog
+ * (`WATER_THROUGH_FINAL_WGSL`).
+ */
+export function waterThroughWgsl(lake: boolean): string {
+  return /* wgsl */ `
+var wTransmit=vec3<f32>(0.0);
+{
+  let wRaw=textureLoad(waterKeptDepth,vec2<i32>(input.clipPos.xy),0).r;
+  let wSceneDepth=material.frameProjection[3].z/(wRaw-material.frameProjection[2].z);
+  let wRayOn=wSceneDepth/max(input.vWaterViewDepth,1.0e-3)-1.0;
+  let wBehind=max(0.0,min(wDepth,(scene.vEyePosition.y-input.worldPos.y)*wRayOn));
+  let wOff=N.xz*WATER_REFRACT*min(max(wBehind,WATER_REFRACT_MIN),WATER_REFRACT_DEPTH)*smoothstep(0.0,0.02,wBehind);
+  let wUv=input.clipPos.xy/vec2<f32>(textureDimensions(waterKept));
+  var wBed=textureSampleLevel(waterKept,waterKeptSampler,wUv+vec2<f32>(wOff.x,-wOff.y),0.0).rgb;${lake ? `
+  let wLens=lakeLens(wRippleXz);
+  let wShallow=1.0-smoothstep(0.0,CAUSTIC_DEPTH_M,wBehind);
+  wBed*=1.0+clamp(CAUSTIC_GAIN*wOctave*wShallow*material.waterSun*wLens,-CAUSTIC_MAX,CAUSTIC_MAX);` : ""}
+  let wT=exp(-2.0*material.waterKd*wBehind);
+  surfaceAlbedo*=1.0-wT;
+  wTransmit=wBed*wT*(1.0-wF);
+  alpha=1.0;
+}`;
+}
+
+/** `waterFinal.fragment.fx`: the bed's light, added past the surface's own haze, since the frame it is read from is hazed already. */
+export const WATER_THROUGH_FINAL_WGSL = "color+=wTransmit;";
 
 /** `lakeRipples.fragment.fx`: the breeze's field, the octaves' amplitude, the rain's rings and the second octave. */
 export const LAKE_RIPPLES_WGSL = /* wgsl */ `
@@ -304,8 +374,13 @@ surfaceAlbedo=baseColor;
   N=normalize(vec3<f32>(-wMap.x,wMap.z,-wMap.y));
 }`;
 
-/** `waterLights.fragment.fx` on a lake whose water is blended: its depth, its ripples, its alpha and its skin. */
-export const LAKE_LIGHTS_WGSL = /* wgsl */ `
+/**
+ * `waterLights.fragment.fx` on a lake: its depth, its ripples and its skin, and
+ * either the one alpha its water is blended by or, `through`, the read of
+ * the frame behind it.
+ */
+export function lakeLightsWgsl(through: boolean): string {
+  return /* wgsl */ `
 let wDepth=waterBedDepth(input.worldPos.xz,input.vBedDepth);
 if(wDepth<=0.0){discard;}
 let wKdMean=(material.waterKd.r+material.waterKd.g+material.waterKd.b)/3.0;
@@ -325,14 +400,19 @@ if(material.waterRain>0.0){
 }
 N=waterHorizonNormal(N,V);
 let wNdV=clamp(dot(N,V),0.0,1.0);
-let wF=WATER_F0+(1.0-WATER_F0)*pow(1.0-wNdV,5.0);
-alpha=1.0-(1.0-wF)*exp(-2.0*wKdMean*wDepth);
+let wF=WATER_F0+(1.0-WATER_F0)*pow(1.0-wNdV,5.0);${through ? waterThroughWgsl(true) : `
+alpha=1.0-(1.0-wF)*exp(-2.0*wKdMean*wDepth);`}
 let wSkin=waterSkinMask(input.worldPos.xz,wDepth);
 if(material.waterSkin.x>0.0){
-  surfaceAlbedo=mix(surfaceAlbedo,waterSkinColour(input.worldPos.xz,input.vWaterViewDepth),wSkin);
+  surfaceAlbedo=mix(surfaceAlbedo,waterSkinColour(input.worldPos.xz,input.vWaterViewDepth),wSkin);${through ? `
+  wTransmit*=1.0-wSkin;` : ""}
   alpha=mix(alpha,1.0,wSkin);
   N=normalize(mix(N,vec3<f32>(0.0,1.0,0.0),wSkin));
 }`;
+}
+
+/** A lake's lights where its water is blended over what lies under it. */
+export const LAKE_LIGHTS_WGSL = lakeLightsWgsl(false);
 
 /**
  * What Babylon.js's own PBR does after the plugin's point and Lite's did

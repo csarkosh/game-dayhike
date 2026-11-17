@@ -9,7 +9,12 @@
  * (`lakeCalmFrame.ts`), its skyline (`lakeSkyline.ts`) and whether a view
  * holds it (`lakeSeen.ts`). The shading is `lakePlugin.ts`'s.
  *
- * - **A lake is one blended draw, and none out of view.** Lite culls no
+ * - **A lake is one draw, and none out of view.** Blended over what lies
+ *   under it on the tiers that blend their water; on the tier that reads
+ *   through it (`behind`), opaque over the frame the opaque draws left,
+ *   after the scene's pass is broken for it, which Lite does only on a
+ *   frame that shows a mesh so marked: the view's word, never the cover
+ *   map's, so a lake out of view breaks no pass. Lite culls no
  *   mesh, so each surface is shown only while the view holds its lake
  *   (`lakeDrawnFrom`: its square in the view's planes, and then its shore,
  *   or the eye beside it). The rain's cover map has its own word on it:
@@ -25,7 +30,8 @@
  *   which the renderer steps once a frame before the lakes read where it
  *   stands.
  * - **Among the see-through draws it stands where the game's does**: after
- *   the rain (`drawOrder.ts`). Its vertices are laid in the world's own
+ *   the rain (`drawOrder.ts`); read through, it is drawn before every one
+ *   of them, as the game draws its water's group. Its vertices are laid in the world's own
  *   coordinates, so the mesh stands at the origin as the others do and its
  *   place alone orders it.
  *
@@ -60,6 +66,7 @@ import { SEE_THROUGH_ORDER } from "./drawOrder.js";
 import type { FrameUploads } from "./frameUploads.js";
 import { lakePlugin } from "./lakePlugin.js";
 import type { CoverRegistry } from "./rainMap.js";
+import type { WaterBehind } from "./waterBehind.js";
 import type { LiteWaterBed } from "./waterBed.js";
 
 /** How far over its lake's level a surface stands, metres. */
@@ -86,6 +93,8 @@ export type LakeOptions = {
   bump?: Uint8Array | null;
   /** The shore's panorama, on the tier that draws one (`lakePanorama.ts`): every lake's material carries its read, and the lake it is of reads it. */
   panorama?: Texture2D;
+  /** The frame behind the water, on the tier that reads through it: every surface is then opaque, drawn after the scene's pass is broken. */
+  behind?: WaterBehind;
   uploads?: FrameUploads;
 };
 
@@ -198,10 +207,11 @@ export function createLiteLakes(
     uploads?.count("textures", elevations.byteLength);
     const material = createPbrMaterial({
       baseColorFactor: [row.lInf[0], row.lInf[1], row.lInf[2], 1], metallicFactor: 0, roughnessFactor: roughnessFor(0, row.shelter),
-      // One alpha blends it over what lies under it; seen from either side, as the game leaves it unculled.
-      alphaBlend: true, doubleSided: true, usePhysicalLightFalloff: true,
+      // One alpha blends it over what lies under it, or, read through, it is opaque over the kept frame; seen from
+      // either side, as the game leaves it unculled.
+      alphaBlend: options.behind === undefined, doubleSided: true, usePhysicalLightFalloff: true,
     });
-    material.plugins = [lakePlugin(uniforms, { bump, bed: bed.texture, skyline, panorama: options.panorama }, options.shared), options.air()];
+    material.plugins = [lakePlugin(uniforms, { bump, bed: bed.texture, skyline, panorama: options.panorama, behind: options.behind }, options.shared), options.air()];
     // The surface's grid about the lake's centre, laid in the world's coordinates: the mesh stands at the origin.
     const grid = ahead?.surface ?? lakeSurfaceGrid(source.shape);
     const depths = ahead?.surface?.depths ?? lakeSurfaceDepths(seed, source, grid.positions);
@@ -215,6 +225,8 @@ export function createLiteLakes(
     mesh.material = material;
     mesh.pluginVertexData = depths;
     mesh.renderOrder = SEE_THROUGH_ORDER.water;
+    // Read through, it is drawn after the pass's break, which is made only on a frame that shows it.
+    if (options.behind !== undefined) mesh.afterBreak = true;
     uploads?.count("geometry", positions.byteLength + grid.normals.byteLength + grid.uvs.byteLength + grid.indices.byteLength, 4);
     uploads?.count("pluginVertices", depths.byteLength);
     uploads?.made();

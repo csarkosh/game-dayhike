@@ -17,6 +17,12 @@
  *   tier with a shore panorama (`lakePanorama.ts`) it is a fourth, read
  *   round the turn through a sampler of its own, and the material carries
  *   the read of it; on the others it carries neither.
+ * - **On the tier that reads through its water** it carries two more, the
+ *   frame kept behind it and that frame's depth (`waterBehind.ts`), and the
+ *   read of them in the place of the alpha; its material is then opaque and
+ *   its mesh drawn after the scene's pass is broken (`lakeMeshes.ts`). They
+ *   are the pass's, not the material's: handed on as they stand whenever the
+ *   bindings are made, and never counted among the material's own.
  * - **Its vertex data** is one float a vertex: the depth of the bed under
  *   it, which stands in outside the bed's square.
  */
@@ -24,8 +30,10 @@ import type { MaterialPlugin, PluginUniformBlock, Texture2D } from "@babylonjs/l
 import type { LakeUniforms } from "../waterSurface.js";
 import { frameReads } from "./frameBlock.js";
 import { uniformFields, writeUniforms } from "./pluginUniforms.js";
+import type { WaterBehind } from "./waterBehind.js";
 import {
-  LAKE_LIGHTS_WGSL, LAKE_PANORAMA_WGSL, LAKE_RIPPLES_WGSL, LAKE_SHORE_WGSL, WATER_BUMP_WGSL, WATER_DEFS_WGSL, WATER_SPLIT_WGSL, WATER_VERTEX_WGSL, lakeComposeWgsl,
+  LAKE_LENS_WGSL, LAKE_PANORAMA_WGSL, LAKE_RIPPLES_WGSL, LAKE_SHORE_WGSL, WATER_BUMP_WGSL, WATER_DEFS_WGSL, WATER_SPLIT_WGSL, WATER_THROUGH_DEFS_WGSL,
+  WATER_THROUGH_FINAL_WGSL, WATER_VERTEX_WGSL, lakeComposeWgsl, lakeLightsWgsl,
 } from "./waterWgsl.js";
 
 /** The plugin's place among a material's: before the air's, which is laid over what it shades. */
@@ -41,6 +49,8 @@ export type LakeTextures = {
   skyline: Texture2D;
   /** The shore's panorama, on the tier that draws one: half floats, repeating round the turn. */
   panorama?: Texture2D;
+  /** The frame behind the surface, on the tier that reads through it. */
+  behind?: WaterBehind;
 };
 
 /**
@@ -49,7 +59,8 @@ export type LakeTextures = {
  * and by the frame's block `shared`, from `textures`.
  */
 export function lakePlugin(uniforms: LakeUniforms, textures: LakeTextures, shared: PluginUniformBlock): MaterialPlugin {
-  const { panorama } = textures;
+  const { panorama, behind } = textures;
+  const through = behind !== undefined;
   return {
     name: "LakeWater",
     priority: WATER_PRIORITY,
@@ -57,9 +68,13 @@ export function lakePlugin(uniforms: LakeUniforms, textures: LakeTextures, share
     getCustomCode: (stage) =>
       stage === "fragment"
         ? {
-          CUSTOM_FRAGMENT_DEFINITIONS: frameReads(WATER_DEFS_WGSL + LAKE_RIPPLES_WGSL + LAKE_SHORE_WGSL + (panorama === undefined ? "" : LAKE_PANORAMA_WGSL)),
-          CUSTOM_FRAGMENT_BEFORE_LIGHTS: frameReads(WATER_BUMP_WGSL + LAKE_LIGHTS_WGSL + WATER_SPLIT_WGSL),
+          CUSTOM_FRAGMENT_DEFINITIONS: frameReads(
+            WATER_DEFS_WGSL + LAKE_RIPPLES_WGSL + LAKE_SHORE_WGSL + (panorama === undefined ? "" : LAKE_PANORAMA_WGSL) + (through ? WATER_THROUGH_DEFS_WGSL + LAKE_LENS_WGSL : ""),
+          ),
+          CUSTOM_FRAGMENT_BEFORE_LIGHTS: frameReads(WATER_BUMP_WGSL + lakeLightsWgsl(through) + WATER_SPLIT_WGSL),
           CUSTOM_FRAGMENT_BEFORE_FINALCOLORCOMPOSITION: frameReads(lakeComposeWgsl(panorama !== undefined)),
+          // After the air's fog, which is laid at the point before: nothing follows it on a tier with a post chain.
+          ...(through ? { CUSTOM_FRAGMENT_BEFORE_FRAGCOLOR: WATER_THROUGH_FINAL_WGSL } : {}),
         }
         : { CUSTOM_VERTEX_MAIN_END: WATER_VERTEX_WGSL },
     getVertexAttributes: () => [{ name: "bedDepth", type: "f32", format: "float32", stride: 4, offset: 0 }],
@@ -71,6 +86,7 @@ export function lakePlugin(uniforms: LakeUniforms, textures: LakeTextures, share
       { texture: "waterBedHeight", sampleType: "unfilterable-float" as const },
       { texture: "waterSkyline", sampleType: "unfilterable-float" as const },
       ...(panorama === undefined ? [] : [{ texture: "waterPanorama", sampler: "waterPanoramaSampler" }]),
+      ...(through ? [{ texture: "waterKept", sampler: "waterKeptSampler" }, { texture: "waterKeptDepth", sampleType: "unfilterable-float" as const }] : []),
     ],
     writeUbo(data, offsets) {
       writeUniforms(data, offsets, uniforms);
@@ -78,6 +94,7 @@ export function lakePlugin(uniforms: LakeUniforms, textures: LakeTextures, share
     bindTextures(out) {
       out.push({ texture: textures.bump }, { texture: textures.bed, sampler: false }, { texture: textures.skyline, sampler: false });
       if (panorama !== undefined) out.push({ texture: panorama });
+      if (behind !== undefined) out.push({ texture: behind.colour() }, { texture: behind.depth(), sampler: false });
     },
     getActiveTextures(out) {
       out.push(textures.bump, textures.bed, textures.skyline);

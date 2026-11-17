@@ -59,6 +59,12 @@ export const DRAW_ORDER = { rings: 80, patches: 90, forest: 100, clutter: 110, b
  * the curl, each tested against the other's depth. Then the surf's spray,
  * which the game puts after the sea and every other blended mesh.
  *
+ * On the tier that reads through its water the sea, the lip's curl and the
+ * lakes are opaque, each marked for the break of the scene's pass: Lite
+ * draws them first of the pass's second half, in these places' order, each
+ * writing depth, and every see-through draw after them, as the game draws
+ * its water's group ahead of the effects it moves into that group.
+ *
  * Then the see-through parts of the scenery a hike places once
  * (`sceneryMeshes.ts`), which the game leaves at Babylon.js's default place
  * too and that renderer orders by how far each is: they stand near, with

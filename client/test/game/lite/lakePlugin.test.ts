@@ -98,6 +98,41 @@ describe("a lake's water as a plugin on Babylon Lite", () => {
     expect(plugin.getUniforms?.().ubo).toEqual(without.getUniforms?.().ubo);
   });
 
+  it("carries the frame behind it only on the tier that reads through: two pictures of the pass's own, the read in the alpha's place, and the bed's light after the fog", () => {
+    const code = (plugin: ReturnType<typeof lakePlugin>): string => Object.values(plugin.getCustomCode?.("fragment") ?? {}).join("\n");
+    const without = lakePlugin(emptyLakeUniforms(), TEXTURES, SHARED);
+    expect(code(without)).not.toMatch(/waterKept|wTransmit|lakeLens/);
+    const colour = standInTexture("kept");
+    const depth = standInTexture("keptDepth");
+    let asked = 0;
+    const behind = { colour: () => (asked++, colour), depth: () => depth, breaks: 0 };
+    const plugin = lakePlugin(emptyLakeUniforms(), { ...TEXTURES, behind }, SHARED);
+    expect(plugin.getSamplers?.().slice(-2)).toEqual([{ texture: "waterKept", sampler: "waterKeptSampler" }, { texture: "waterKeptDepth", sampleType: "unfilterable-float" }]);
+    // Handed on as they stand each time the bindings are made, and never counted among the material's own.
+    for (let i = 0; i < 2; i++) {
+      const bound: { texture: unknown; sampler?: boolean }[] = [];
+      plugin.bindTextures?.(bound as never);
+      expect(bound.slice(-2)).toEqual([{ texture: colour }, { texture: depth, sampler: false }]);
+    }
+    expect(asked).toBe(2);
+    const active: unknown[] = [];
+    plugin.getActiveTextures?.(active as never);
+    expect(active).toEqual([TEXTURES.bump, TEXTURES.bed, TEXTURES.skyline]);
+    const points = plugin.getCustomCode?.("fragment") ?? {};
+    expect(Object.keys(points)).toEqual([
+      "CUSTOM_FRAGMENT_DEFINITIONS", "CUSTOM_FRAGMENT_BEFORE_LIGHTS", "CUSTOM_FRAGMENT_BEFORE_FINALCOLORCOMPOSITION", "CUSTOM_FRAGMENT_BEFORE_FRAGCOLOR",
+    ]);
+    expect(points.CUSTOM_FRAGMENT_BEFORE_FRAGCOLOR).toBe("color+=wTransmit;");
+    expect(code(plugin)).toContain("fn lakeLens(");
+    expect(code(plugin)).not.toContain("alpha=1.0-(1.0-wF)*exp(");
+    // The projection's terms and the sun's share are the frame's, read from the block.
+    expect(code(plugin)).toContain(`${FRAME_BLOCK}.frameProjection[3].z`);
+    expect(code(plugin)).toContain(`${FRAME_BLOCK}.waterSun`);
+    expect(code(plugin)).not.toContain("material.frameProjection");
+    // The uniforms are the same record either way.
+    expect(plugin.getUniforms?.().ubo).toEqual(without.getUniforms?.().ubo);
+  });
+
   it("shades before the air is laid over it, at the three points the game's plugin uses", () => {
     const plugin = lakePlugin(emptyLakeUniforms(), TEXTURES, SHARED);
     expect(WATER_PRIORITY).toBeLessThan(ATMOSPHERE_PRIORITY);

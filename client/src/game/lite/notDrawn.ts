@@ -21,12 +21,13 @@
  * the weather, by the local player's headlamp and by the lamps the other
  * hikers wear, from the player's eye or the free camera; and in it the other
  * hikers' bodies, the Hollows' eyes, the dropped cap and the animals, on the
- * ground and in the air; and the lakes' water where a tier blends it over
- * what lies under it, calm by the hour and the weather's name, with the
+ * ground and in the air; and the lakes' water, blended over what lies
+ * under it or, on the tier that keeps the frame behind it, read through its
+ * surface, calm by the hour and the weather's name, with the
  * skyline's shade for its shore and, on the tier that draws one, the
  * shore's panorama under it, the reeds and the lilies that grow in it,
- * and its midges and dragonflies, with its frogs to hear; and the sea
- * where a tier blends it: its swell, its wind sea (the ripple bump on low,
+ * and its midges and dragonflies, with its frogs to hear; and the sea,
+ * blended or read through as the lakes are: its swell, its wind sea (the ripple bump on low,
  * the baked loop above it, and the cascades computed each frame on the tier
  * that computes them, with the swept curl of its plunging lip and the surf's
  * spray) and its white water, the swash up the cove's face, and its surf to
@@ -52,7 +53,7 @@ import type { Renderer } from "../renderer.js";
 export type NotDrawn = { readonly what: string; readonly members: readonly (keyof Renderer)[] };
 
 export const NOT_DRAWN: readonly NotDrawn[] = [
-  { what: "the mirror a lake reflects its shore in on the tier that draws one, and the water, a lake's and the sea's, on the tier that reads what lies under it through the surface", members: [] },
+  { what: "the mirror a lake reflects its shore in on the tier that draws one", members: [] },
   { what: "the skin's shading (`skin.ts`): no model the game ships has a surface that shows it", members: ["setSkinShading"] },
   { what: "the sun's cast shadows on a tier given a shadow map: no tier has one (`quality.ts`), so the game casts none either", members: [] },
   { what: "the wireframe view: Lite draws a material's triangles alone, and has no way to draw a mesh's edges through its own material", members: ["setWireframe"] },

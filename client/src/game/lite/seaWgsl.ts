@@ -55,13 +55,15 @@
  * - **`mod`** is written out as `x - y * floor(x / y)`: WGSL's `%`
  *   truncates.
  *
- * Left out, as nothing here reads it: the read of the frame behind the
- * surface.
+ * - **The read of the frame behind the surface**, on the tier that draws
+ *   its sea opaque over it, is `waterWgsl.ts`'s (`waterThroughWgsl`), in the
+ *   place of the one alpha, in a look that reads `through`.
  *
  * Loads nothing.
  */
 import { HOLE_CELLS } from "../clipmap.js";
 import { WATER_RING_CELLS, WATER_RING_COUNT, WATER_UV_SCALE } from "../water.js";
+import { waterThroughWgsl } from "./waterWgsl.js";
 
 /** What a tier's sea is drawn with beside its swell. */
 export type SeaLook = {
@@ -71,6 +73,8 @@ export type SeaLook = {
   fft?: boolean;
   /** The ripple bump draws the wind sea (the tier with no field of it). */
   bump: boolean;
+  /** The surface is opaque and reads the frame behind it (the tier that keeps that frame), in the place of the one alpha. */
+  through?: boolean;
 };
 
 const mod = (x: string, y: string): string => `(${x}-${y}*floor((${x})/${y}))`;
@@ -761,7 +765,7 @@ surfaceAlbedo=baseColor;
 /** Where no bump is read: the albedo taken back to the base colour alone. */
 export const SEA_ALBEDO_WGSL = "surfaceAlbedo=baseColor;";
 
-/** The sea's half of `waterLights.fragment.fx` where its water is blended, then the roughness of the slope variance its normal leaves undrawn. */
+/** The sea's half of `waterLights.fragment.fx`, its water blended or read through as the look says, then the roughness of the slope variance its normal leaves undrawn. */
 export function seaLightsWgsl(look: SeaLook): string {
   const wind = look.loop
     ? `let wWind=oceanWindDisplace(input.vOceanXZ);
@@ -818,8 +822,8 @@ if(material.waterRain>0.0){
 }
 N=waterHorizonNormal(N,V);
 let wNdV=clamp(dot(N,V),0.0,1.0);
-let wF=WATER_F0+(1.0-WATER_F0)*pow(1.0-wNdV,5.0);
-alpha=1.0-(1.0-wF)*exp(-2.0*wKdMean*wDepth);
+let wF=WATER_F0+(1.0-WATER_F0)*pow(1.0-wNdV,5.0);${look.through === true ? waterThroughWgsl(false) : `
+alpha=1.0-(1.0-wF)*exp(-2.0*wKdMean*wDepth);`}
 let wOceanPixel=max(length(wOceanDx),length(wOceanDy));
 let wFoamAge=oceanFoamLookAge(wOceanFoam.z);
 let wOceanLace=oceanFoamCover(input.vOceanXZ,wOceanFoam.x,wOceanFoam.y,wOceanPixel);
@@ -829,7 +833,8 @@ wOceanCap*=1.0-wOceanFoam.y;
 var wFoam=max(wOceanLace,wOceanCap);
 wFoam=oceanLipFoam(wFoam,wOceanLip,wOceanFoam.z);
 let wFoamWhite=select(OCEAN_FOAM_ALBEDO,oceanFoamWhite(wFoamAge),wOceanLace>=wOceanCap);
-surfaceAlbedo=mix(surfaceAlbedo,vec3<f32>(wFoamWhite),wFoam);
+surfaceAlbedo=mix(surfaceAlbedo,vec3<f32>(wFoamWhite),wFoam);${look.through === true ? `
+wTransmit*=1.0-wFoam;` : ""}
 alpha=mix(alpha,1.0,wFoam);
 N=normalize(mix(N,vec3<f32>(0.0,1.0,0.0),wFoam));
 roughness=min(sqrt(sqrt(2.0*wOceanVar)),1.0);`;

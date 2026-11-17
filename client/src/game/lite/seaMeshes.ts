@@ -8,7 +8,11 @@
  * surface's numbers (`waterSurface.ts`) and its uniforms by name
  * (`seaUniforms.ts`). The shading is `seaPlugin.ts`'s.
  *
- * - **The sea is one blended draw, and none out of view.** The seven rings
+ * - **The sea is one draw, and none out of view.** Blended over what lies
+ *   under it on the tiers that blend their water; on the tier that reads
+ *   through it (`behind`), opaque over the frame the opaque draws left,
+ *   after the scene's pass is broken for it, as a lake's surface is
+ *   (`lakeMeshes.ts`), and the lip's curl with it. The seven rings
  *   are one mesh made once, a vertex its place in its ring's lattice, placed
  *   by the vertex stage; on Babylon.js they are seven meshes, each made
  *   again as it moves. The draw is held to the run of rings that hold
@@ -78,6 +82,7 @@ import type { LiteSeaFft } from "./seaFft.js";
 import { seaPlugin, seaRestPlugin, type SeaTextures } from "./seaPlugin.js";
 import type { SeaLook } from "./seaWgsl.js";
 import type { LiteWaterBed } from "./waterBed.js";
+import type { WaterBehind } from "./waterBehind.js";
 
 /**
  * What a tier's sea is drawn with beside its swell: the ripple bump for the wind sea on low, a field of it above:
@@ -110,6 +115,8 @@ export type SeaOptions = {
   startLoop?: LoopStarter;
   /** The wind sea's cascades, on the tier that computes them (`seaFft.ts`); with none the sea draws the loop. */
   fft?: LiteSeaFft | null;
+  /** The frame behind the water, on the tier that reads through it: the sea and its lip's curl are then opaque, drawn after the scene's pass is broken. */
+  behind?: WaterBehind;
   uploads?: FrameUploads;
 };
 
@@ -181,7 +188,9 @@ export function createLiteSea(engine: EngineContext, scene: SceneContext, seed: 
   const fft = options.fft ?? null;
   // The tier's look, with the cascades only where they were made.
   const tierLook = seaLookFor(tier);
-  const look: SeaLook = tierLook.fft === true && fft === null ? { bump: tierLook.bump, loop: tierLook.loop } : tierLook;
+  const windLook: SeaLook = tierLook.fft === true && fft === null ? { bump: tierLook.bump, loop: tierLook.loop } : tierLook;
+  const behind = options.behind ?? null;
+  const look: SeaLook = behind === null ? windLook : { ...windLook, through: true };
 
   // The swell and the wind sea, the edge on the cove, and the surface's numbers.
   const ocean = createOceanFrame(seed, tier, options.ocean);
@@ -224,8 +233,9 @@ export function createLiteSea(engine: EngineContext, scene: SceneContext, seed: 
   const material = createPbrMaterial({
     baseColorFactor: [WATER_ROWS.sea.lInf[0], WATER_ROWS.sea.lInf[1], WATER_ROWS.sea.lInf[2], 1], metallicFactor: 0,
     roughnessFactor: roughnessFor(0, WATER_ROWS.sea.shelter),
-    // One alpha blends it over what lies under it; seen from either side, as the game leaves it unculled.
-    alphaBlend: true, doubleSided: true, usePhysicalLightFalloff: true,
+    // One alpha blends it over what lies under it, or, read through, it is opaque over the kept frame; seen from
+    // either side, as the game leaves it unculled.
+    alphaBlend: behind === null, doubleSided: true, usePhysicalLightFalloff: true,
   });
   // The wind sea's pictures. Where the field is the loop, its frames' table is made now and filled when the worker
   // answers. Where it is the cascades, theirs are bound, and the loop's frames are made only if that field fails,
@@ -237,6 +247,7 @@ export function createLiteSea(engine: EngineContext, scene: SceneContext, seed: 
     atlas, swash, ringBeds, bed: bed.texture, bump,
     windDisp: !look.loop ? null : fft !== null ? fft.disp : loopFrames(),
     windSlope: fft !== null ? fft.slope : null,
+    behind,
   };
   // Which field is drawn, and when: the game's rule (`windSeaField.ts`). Without a worker, or if the bake fails, the
   // loop never arrives and the sea keeps its swell.
@@ -269,6 +280,8 @@ export function createLiteSea(engine: EngineContext, scene: SceneContext, seed: 
   const mesh = createMeshFromData(engine, "sea", lattice.positions, lattice.normals, lattice.indices, lattice.uvs);
   mesh.material = material;
   mesh.renderOrder = SEE_THROUGH_ORDER.sea;
+  // Read through, it is drawn after the pass's break, which is made only on a frame that shows it.
+  if (behind !== null) mesh.afterBreak = true;
   uploads?.count("geometry", lattice.positions.byteLength + lattice.normals.byteLength + lattice.uvs.byteLength + lattice.indices.byteLength, 4);
   uploads?.made();
   // Hidden until a view holds water.

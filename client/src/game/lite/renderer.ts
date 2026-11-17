@@ -182,8 +182,7 @@
  * each new sky state and when something it draws lands late, as the game
  * asks, and runs only on frames whose view holds the lake's glass: with
  * no lake in view there is no pass and no write. The mirror a
- * lake reflects its shore in on the tier that draws one, and the tier that
- * reads through the surface, are not drawn yet.
+ * lake reflects its shore in on the tier that draws one is not drawn yet.
  *
  * **A lake's life is the game's, stepped for the lakes within the camera's
  * reach** (`waterLifeMeshes.ts`, over `waterLifeScene.ts`): the midges one
@@ -227,9 +226,18 @@
  * and sent its crests only while a crest is in mid-plunge and the view
  * holds the face. And the plunges throw the surf's spray
  * (`surfSpray.ts`): one instanced draw after the water, hidden while no
- * burst is alive. The water's surface on that tier is blended, as on the
- * tier below: the read of what lies under it through the surface is not
- * drawn yet.
+ * burst is alive.
+ *
+ * **On the tier that reads through its water the surface is opaque over the
+ * frame the opaque draws left** (`waterBehind.ts`): the scene's pass is
+ * broken before the sea, its lip's curl and the lakes' surfaces
+ * (`postChain.ts`), only on a frame whose view holds one of them, and each
+ * reads the bed's light from the kept frame at its own pixel moved by the
+ * ripples, dimmed by the metres of water over it, adds it after the fog and
+ * writes its own depth. The see-through draws follow the water, and the
+ * chain's passes read its surface where there is water. The wet look leaves
+ * what stands under that water to the water. A frame with no water in view
+ * is one pass, as on the tier below.
  *
  * **Colour is the tier's own path** (`postFeaturesFor`). With no post chain
  * it is the material path: Lite's display curve as Babylon's image
@@ -418,6 +426,7 @@ import { createLiteSkyDome, type LiteSkyDome } from "./skyDome.js";
 import { createLiteSurfSpray, type LiteSurfSpray } from "./surfSpray.js";
 import { createTerrainMeshes, type TerrainMeshes } from "./terrainMeshes.js";
 import { createLiteWaterBed, type LiteWaterBed } from "./waterBed.js";
+import { createWaterBehind } from "./waterBehind.js";
 import { createLiteWaterLife, type LiteWaterLife } from "./waterLifeMeshes.js";
 import { createLiteWaterPlants, type LiteWaterPlants } from "./waterPlantMeshes.js";
 import { createLiteWildlifeMeshes, type LiteWildlifeMeshes } from "./wildlifeMeshes.js";
@@ -686,6 +695,8 @@ export function createLiteRenderer(canvas: HTMLCanvasElement, level: Level, fore
   const coverSquare = { x: 0, z: 0, half: RAIN_MAP.extent / 2 };
   /** Whether this frame draws the rain's cover map. */
   let coverDrawn = false;
+  /** Whether the water is read through its surface: the tier that keeps the frame behind it. The wet look then leaves what stands under water to the water. */
+  let waterThrough = false;
   /** The frame's block as its buffer holds it (`movedWords`): the block these are of, its data as words, and the words sent. */
   let blockOf: PluginUniformBlock | null = null;
   let blockBits: Uint32Array = new Uint32Array(0);
@@ -989,7 +1000,10 @@ export function createLiteRenderer(canvas: HTMLCanvasElement, level: Level, fore
     const mask = forest !== null ? createLiteShadeMask(engine, scene, { shared, linear: chained, near: lens.near, far: lens.far, fov: lens.fov }) : null;
     const veil = mask !== null && !chained ? createLiteShadeVeil(engine, scene, createTexture2DFromPixels(engine, new Uint8Array([0, 0, 0, 255]), 1, 1)) : null;
     // The chain: the scene's pass into its first target and its own passes after, before the scene is registered.
-    const chain = chained && cloudMap !== null ? createLitePostChain(engine, scene, { features: postFeatures, camera, cloudMap, now: clock, uploads }) : null;
+    const chain = chained && cloudMap !== null ? createLitePostChain(engine, scene, { features: postFeatures, camera, cloudMap, now: clock, keep: tier === "high", uploads }) : null;
+    // The frame behind the water, where the scene's pass is broken for it: the sea's, the lip's and every lake's surface read it.
+    const behind = chain === null || chain.kept === null ? undefined : createWaterBehind(engine, chain.kept);
+    waterThrough = behind !== undefined;
     if (forest !== null && cloudMap !== null) {
       const arrays = await loadGroundArrays(engine, disposal.signal, () => {
         loading--;
@@ -1157,7 +1171,7 @@ export function createLiteRenderer(canvas: HTMLCanvasElement, level: Level, fore
       sea = createLiteSea(engine, scene, forest.seed, tier, {
         start, waterLevel, bed, air, shared,
         rings: fittingWaterRings(prepared, forest.seed, start.x, start.z), ocean: fittingOcean(prepared, forest.seed, tier),
-        bump: fittingWaterBump(prepared, forest.seed), uploads, fft: seaFft,
+        bump: fittingWaterBump(prepared, forest.seed), uploads, fft: seaFft, behind,
         cover: rainMap === null ? undefined : { add: (mesh, place) => rainMap.register(mesh, "water", place), remove: (mesh) => rainMap.unregister(mesh), show: (mesh, shown) => rainMap.show(mesh, shown) },
       });
       // The spray of the plunges, on the tier whose sea is the cascades': thrown along the swell's travel while the
@@ -1173,7 +1187,7 @@ export function createLiteRenderer(canvas: HTMLCanvasElement, level: Level, fore
         bed, calm: calmFade, air, shared,
         made: pieces,
         bump: fittingWaterBump(prepared, forest.seed),
-        uploads, cover: coverAs("water"), panorama: panorama?.texture,
+        uploads, cover: coverAs("water"), panorama: panorama?.texture, behind,
       });
       // A murky lake's reeds, cattails and lilies: placed by the simulation, drawn once.
       waterPlants = createLiteWaterPlants(engine, scene, forest.seed, lakes, {
@@ -1373,10 +1387,11 @@ export function createLiteRenderer(canvas: HTMLCanvasElement, level: Level, fore
       const wet = wetSurfaceUnder(light.weather);
       made.brushes.wet(wet.albedoScale, wet.roughnessScale);
     }
-    // Everywhere but under the water of the high tier's own path, the water above darkens what stands in it. The
-    // terrain's cap is none; every other material's is its own, and the rest of the look is this record's.
+    // Everywhere but under water that is read through its surface, the water above darkens what stands in it: read
+    // through, the water dims it by its own depth. The terrain's cap is none; every other material's is its own, and
+    // the rest of the look is this record's.
     const wetLine = wetLineFor(wetBodies, pose.x, pose.z);
-    wetUniforms({ ...wetLine, attenuate: true, cap: 0 }, wetValues);
+    wetUniforms({ ...wetLine, attenuate: !waterThrough, cap: 0 }, wetValues);
     // The ground cloud is marched in the tier's steps while it has density: by the chain where there is one, and
     // then by no material.
     atmosphereUniforms(light.air, cloud, made.chain === null ? cloudMarchSteps(cloud) : 0, airValues);
