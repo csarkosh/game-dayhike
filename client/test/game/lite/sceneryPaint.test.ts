@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { readFileSync } from "node:fs";
 import { ShaderStore } from "@babylonjs/core/Engines/shaderStore.js";
 import "@babylonjs/core/Shaders/default.fragment.js";
 import { CAR_SHADOW_BIAS, CAR_SHADOW_HALF, CAR_SHADOW_LIFT, carShadowGrid } from "../../../src/game/carShadow.js";
@@ -6,7 +7,7 @@ import { ATMOSPHERE_PRIORITY } from "../../../src/game/lite/atmospherePlugin.js"
 import { stageOwn, stageReads } from "../../../src/game/lite/frameBlock.js";
 import { MIST_WGSL } from "../../../src/game/lite/mistMeshes.js";
 import {
-  ATLAS_ROWS, PATCH_FRAME_READS, PATCH_WGSL, TAIL_FRAME_READS, TAIL_LAMP_INDICES, TAIL_WGSL, faceGeometry, labelAtlas, labelGeometry, paintAlphaPlugin, patchGeometry,
+  ATLAS_ROWS, PATCH_FRAME_READS, PATCH_WGSL, TAIL_FRAME_READS, TAIL_LAMP_INDICES, TAIL_WGSL, faceGeometry, labelAtlas, labelGeometry, paintAlphaPlugin, patchGeometry, unlitBlackPlugin,
   tailLampCorners,
 } from "../../../src/game/lite/sceneryPaint.js";
 import { TAIL_LAMP_APART, TAIL_LAMP_BACK, TAIL_LAMP_H, TAIL_LAMP_UP, TAIL_LAMP_W } from "../../../src/game/endScene.js";
@@ -76,6 +77,26 @@ describe("a painted material on Babylon Lite", () => {
     expect(plugin.getCustomCode?.("fragment")).toEqual({ CUSTOM_FRAGMENT_BEFORE_FRAGCOLOR: "return vec4<f32>(color,alpha*material.materialAlpha);" });
     expect(plugin.getCustomCode?.("vertex")).toBeNull();
     expect(plugin.priority).toBeGreaterThan(ATMOSPHERE_PRIORITY);
+  });
+});
+
+describe("the patch under a staged scene's own car on Babylon Lite", () => {
+  it("is black whatever lights it, put out just before the air is laid over it, and blended by its paint's alpha after", () => {
+    const black = unlitBlackPlugin();
+    expect(black.getCustomCode?.("fragment")).toEqual({ CUSTOM_FRAGMENT_BEFORE_FINALCOLORCOMPOSITION: "color=vec3<f32>(0.0);" });
+    expect(black.getCustomCode?.("vertex")).toBeNull();
+    // The air's fog and the tier's curve follow it at the same point; the paint's alpha is taken after both.
+    expect(black.priority).toBeLessThan(ATMOSPHERE_PRIORITY);
+    expect(paintAlphaPlugin().priority).toBeGreaterThan(ATMOSPHERE_PRIORITY);
+    // The material is the game's there: unlit and black under the air, where the hike's patch is the Standard material under the scene's own fog.
+    const source = readFileSync(new URL("../../../src/game/lite/sceneryPaint.ts", import.meta.url), "utf8");
+    expect(source).toContain("baseColorTexture: picture, baseColorFactor: [0, 0, 0, darkness], metallicFactor: 0, roughnessFactor: 1, doubleSided: true, alphaBlend: true,");
+    expect(source).toContain("material.plugins = [unlitBlackPlugin(), air(), ahead, paintAlphaPlugin()];");
+    const shell = readFileSync(new URL("../../../src/game/trailheadMeshes.ts", import.meta.url), "utf8");
+    expect(shell).toContain("pbr.unlit = true;");
+    expect(shell).toContain("pbr.albedoColor = new Color3(0, 0, 0);");
+    expect(shell).toContain("material.alpha = darkness;");
+    expect(shell).toContain("material.backFaceCulling = false;");
   });
 });
 

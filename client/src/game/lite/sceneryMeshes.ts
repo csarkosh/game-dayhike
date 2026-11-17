@@ -45,24 +45,39 @@
  *   (`LiteCar.stage`). Its opaque meshes are moved by their own place and
  *   turn; its glass, the patch under it and its tail lamps, which stand in
  *   the world's own coordinates, are laid again where it goes; and the
- *   parts a pose turns (the four wheels, the steering wheel) are runs of
- *   two of its meshes' vertices, carried from their rest by the part's turn
- *   in its own frame (`carParts.ts`) and sent as those runs alone. A pose
- *   the car already stands at writes nothing, so a parked car costs a hike
- *   and the scene's first seconds nothing; the game on Babylon.js keeps a
- *   node a part for it through the whole hike. The tail lamps are one mesh,
- *   shown from the catch.
+ *   parts a pose turns (the four wheels, the steering wheel, the driver's
+ *   door) are runs of its meshes' vertices, carried from their rest by the
+ *   part's turn in its own frame (`carParts.ts`) and sent as the runs the
+ *   pose has moved alone: a door that swings on a car that stands sends no
+ *   wheel, and the door's window, a pane of the glass, is turned and laid
+ *   again with it. A pose the car already stands at writes nothing, so a
+ *   parked car costs a hike and the scene's first seconds nothing; the game
+ *   on Babylon.js keeps a node a part for it through the whole hike. The
+ *   tail lamps are one mesh, shown from the catch.
  * - **The film's car is drawn in its first frames wherever it stands**, its
  *   patch and its tail lamps with it (the lamps dark, in its middle), so
  *   the pipelines its draws need are made as the hike starts and not in the
  *   end scene's first frame (`warm`).
+ *
+ * - **A staged scene's own car stands with no parked car before it**
+ *   (`filmCar` with `alone`), on a patch the air fogs as it fogs the road.
+ *   Its handset is a run of one mesh's vertices, as a wheel is: carried from
+ *   its cradle into the hand a pose gives it (`scene/stageParts.ts`), sent
+ *   as that run alone on a frame that moves it, and never while it rests.
+ *   Its cord is one mesh the car carries: the tube the stage on Babylon.js
+ *   lays (`scene/cordTubeGeometry.ts`), laid in the car's own frame, so a
+ *   cord that hangs still is written nothing however far the car drives,
+ *   and one that swings is written its positions and normals whole.
+ * - **A scene's actor is one skinned body** (`sceneActor.ts`), posed from
+ *   its file with no engine and judged by the view as a sphere about it.
  *
  * The board's face is painted once, when its model and its two pictures
  * have each arrived or failed: the game paints it at once with stand-ins and
  * again with the pictures, over a board no frame has yet shown.
  */
 import {
-  addToScene, createCapsuleData, createMeshFromData, createPbrMaterial, disposeMeshGpu, flushThinInstances, releaseTexture, removeFromScene, setMeshVisible,
+  addToScene, createCapsuleData, createMeshFromData, createPbrMaterial, disposeMeshGpu, flushThinInstances, rebuildSceneRenderables, releaseTexture, removeFromScene,
+  setMeshVisible,
   setThinInstanceCount, setThinInstances, updateMeshGeometryCapacity, updateMeshNormals, updateMeshPositions, updateMeshTangents,
   type EngineContext, type MaterialPlugin, type Mesh, type PbrMaterialProps, type PluginUniformBlock, type SceneContext, type ShaderMaterial, type Texture2D,
 } from "@babylonjs/lite";
@@ -72,13 +87,17 @@ import { BOARD_BOXES, BOARD_BOX_HALF, BOARD_BOX_STEP, CAR_HALF, CAR_MATERIAL, KI
 import { BOARD_TEXTURE } from "../boardFace.js";
 import { BOARD_FACE_BIAS, BOARD_FACE_ROUGHNESS, drawBoard, loadBoardImage, type BoardDrawing } from "../boardDraw.js";
 import { DOOR_NAME, STEERING_NAME, WHEEL_NAMES, carPartTurn, frontWheel, partMatrix, poseVertices, type VertexRun } from "../carParts.js";
-import { CAR_SHADOW_HALF, carShadowGrid } from "../carShadow.js";
+import { CAR_SHADOW_BIAS, CAR_SHADOW_HALF, carShadowGrid } from "../carShadow.js";
 import { TAIL_LAMP_COLOUR } from "../endScene.js";
 import { quatFromEuler, type Quat } from "../instancePose.js";
 import { PROP_ROUGHNESS, propBoxGeometry, propColour, type PropBox } from "../propBoxes.js";
 import type { Renderer } from "../renderer.js";
 import type { CarHandle } from "../scenePlay.js";
-import type { CarPose } from "../scene/timeline.js";
+import { invertAffine } from "../scene/actorPose.js";
+import { coiledCord } from "../scene/cord.js";
+import { CORD_TUBE_RADIUS, createTubeGeometry, layTube, type TubeGeometry } from "../scene/cordTubeGeometry.js";
+import { CORD, composeInto as composePlaced, cordEnds, decomposeInto, handsetCarry, handsetInCradle, multiplyInto, type Placed } from "../scene/stageParts.js";
+import type { ActorPose, CarPose } from "../scene/timeline.js";
 import {
   BODY_OUTPUT, BODY_STAND_IN, CAB_PARTS, CAB_SKY, FILM_CAR_OUTPUT, TRAILHEAD_CAR_OUTPUT, TRAILHEAD_KIOSK_OUTPUT, boardFaceCorners, boardYaw, carYaw,
   type TrailheadSites,
@@ -86,19 +105,20 @@ import {
 import {
   ARM_LENGTH, LABEL_ROUGHNESS, SIGN_ARM_OUTPUT, SIGN_POST_OUTPUT, signPlaces, squareEnd, type SignPlaces,
 } from "../signParts.js";
-import type { WetUniforms } from "../wetSurface.js";
+import { emptyWetUniforms, type WetUniforms } from "../wetSurface.js";
 import { sphereInView } from "./capMesh.js";
 import type { ViewFrustumPlane } from "./cameraPose.js";
 import { DRAW_ORDER, SEE_THROUGH_ORDER, createDrawOrders } from "./drawOrder.js";
 import { baseColourPlugin, surfaceWetPlugin } from "./forestPlugins.js";
 import type { FrameUploads } from "./frameUploads.js";
 import type { CoverRegistry } from "./rainMap.js";
+import { loadSceneActor, type SceneActor } from "./sceneActor.js";
 import {
   dress, farthestFirst, listPanes, loadSceneryModel, partBytes, partMesh, placeMatrix, placed, type SceneryModel, type SceneryPart,
 } from "./sceneryModels.js";
 import {
-  TAIL_LAMP_INDICES, faceGeometry, faceMesh, labelAtlas, labelGeometry, paintCanvas, paintLabelAtlas, paintMaterial, paintTexture, patchGeometry, patchMaterial,
-  tailLampCorners, tailLampMaterial,
+  TAIL_LAMP_INDICES, airPatchMaterial, faceGeometry, faceMesh, labelAtlas, labelGeometry, paintCanvas, paintLabelAtlas, paintMaterial, paintTexture, patchGeometry,
+  patchMaterial, tailLampCorners, tailLampMaterial,
 } from "./sceneryPaint.js";
 
 /**
@@ -116,7 +136,7 @@ const POST_SPHERE_M = 0.5 + ARM_LENGTH;
 const PATCH_RISE_M = 0.5;
 
 /** The scenery's places among the opaque draws, from `DRAW_ORDER.scenery`: a run a kind, a place a material in its file's order. */
-const PLACES = { boxes: 0, posts: 8, planks: 16, board: 24, parked: 32, film: 48, tailLamps: 63, body: 64, standIn: 72 } as const;
+const PLACES = { boxes: 0, posts: 8, planks: 16, board: 24, parked: 32, film: 48, cord: 62, tailLamps: 63, body: 64, standIn: 72, actor: 80 } as const;
 
 /**
  * The frames the film's car is drawn for wherever it stands, from the frame
@@ -128,6 +148,15 @@ export const FILM_CAR_WARM_FRAMES = 2;
 
 /** The parts of the film's car a pose turns (`carParts.ts`), by their nodes' names in its file. */
 const TURNED_PARTS: readonly string[] = [...WHEEL_NAMES, STEERING_NAME, DOOR_NAME];
+/** The handset and its cradle, by their nodes' names in the film car's file. */
+const HANDSET_NODE = "handset";
+const CRADLE_NODE = "cradle";
+/** The cord: thin dark rubber, #1c1d1f in linear light. */
+export const CORD_COLOUR: readonly [number, number, number] = [0.0116, 0.0122, 0.0137];
+export const CORD_ROUGHNESS = 0.7;
+/** The sphere (m) a scene's actor is tested against the view by, about a point this far over its root. */
+const ACTOR_SPHERE_M = 2;
+const ACTOR_SPHERE_UP_M = 1;
 
 /** What the scenery is drawn with. */
 export type SceneryOptions = {
@@ -154,13 +183,40 @@ export type SceneryView = {
   cover: { readonly x: number; readonly z: number; readonly half: number } | null;
 };
 
-/** The car the end scene drives (`CarHandle`), with the pose it is stood at each frame: the whole of it, and its parts where it has them. */
-export type LiteCar = CarHandle & { stage(pose: CarPose): void };
+/**
+ * The car a scene drives (`CarHandle`), with the pose it is stood at each
+ * frame: the whole of it, and its parts where it has them. `hand` is the
+ * matrix in the world of the hand a staged scene's handset rides in while
+ * the pose says so; absent or null, the handset is in its cradle.
+ */
+export type LiteCar = CarHandle & { stage(pose: CarPose, hand?: ArrayLike<number> | null): void };
+
+/** A staged scene's actor as the scene holds it. */
+export type LiteActor = {
+  /**
+   * Resolved once the actor's model has landed and the scene is built with
+   * it, or it could not land. Whoever draws the scene draws no frame between
+   * asking for the actor and this: the scene is built again as the actor
+   * joins, and a frame drawn meanwhile reads what that takes down.
+   */
+  readonly settled: Promise<void>;
+  /** Stands the actor as `pose` has it; a pose given before the model lands is the one it lands in. */
+  stage(pose: ActorPose): void;
+  /** The matrix in the world of the node named `name` as last staged, into `out`; null before the model lands and for a name it lacks. */
+  joint(name: string, out: Float64Array): Float64Array | null;
+  dispose(): void;
+};
 
 /** The trailhead as the hike holds it on Lite. */
 export type LiteTrailhead = {
-  /** Fetches the film's car and stands it in the parked car's place; quietly nothing once `signal` aborts. */
-  filmCar(signal: AbortSignal): void;
+  /**
+   * Fetches the film's car and stands it in the parked car's place; quietly
+   * nothing once `signal` aborts. With `alone`, at a trailhead with no parked
+   * car: a staged scene's own car, stood at the world's origin until its
+   * first pose, with its handset and cord, on a patch of that darkness that
+   * the air fogs. Resolved once the car has landed, or could not.
+   */
+  filmCar(signal: AbortSignal, alone?: { darkness: number }): Promise<void>;
   /** Whether the film's car stands in the parked car's place. */
   filmCarIn(): boolean;
   /** The car as it stands, for the end scene to drive: the film's car once it has landed, else the parked model; null while only its box stands, or with no car at all. The same object each call. */
@@ -178,6 +234,16 @@ export type SceneryHost = {
   trailhead(sites: TrailheadSites, groundH: (x: number, z: number) => number, board: BoardDrawing): LiteTrailhead;
   /** The body at the crest. */
   body(body: { pos: { x: number; y: number; z: number }; yaw: number }): { dispose(): void };
+  /** A staged scene's actor: the skinned model at `url`, hidden until a pose shows it. */
+  actor(url: string): LiteActor;
+  /**
+   * Whether the world was still streaming in at the frame last synced: a
+   * rebuild handed something of the streamed world to the GPU in it, or held
+   * a hand-over back for a frame with room (`frameUploads.ts`). A job a
+   * crossing began hands over within a few frames of it, so a run of frames
+   * with none is a world that is in. False before the renderer stands.
+   */
+  streaming(): boolean;
 };
 
 /** The scenery as it stands in a scene. */
@@ -220,21 +286,58 @@ export function deferredScenery(ready: Promise<void>, scenery: () => LiteScenery
     };
   }
   return {
+    streaming: () => scenery()?.streaming() ?? false,
     signs: (posts, groundH) => later((host) => host.signs(posts, groundH)),
     body: (body) => later((host) => host.body(body)),
-    trailhead(sites, groundH, board) {
-      /** The film's car asked for before the trailhead stood. */
-      let asked: AbortSignal | null = null;
+    actor(url) {
+      /** The pose asked for before the actor stood. */
+      let pose: ActorPose | null = null;
+      let settle: () => void = () => undefined;
+      const settled = new Promise<void>((resolve) => {
+        settle = resolve;
+      });
       const piece = later((host) => {
-        const made = host.trailhead(sites, groundH, board);
-        if (asked !== null) made.filmCar(asked);
+        const made = host.actor(url);
+        if (pose !== null) made.stage(pose);
+        void made.settled.then(settle);
         return made;
       });
+      // A scenery that never stands has no actor to wait for.
+      void ready.then(() => {
+        if (piece.made() === null) settle();
+      });
       return {
-        filmCar(signal) {
+        settled,
+        stage(next) {
+          pose = next;
+          piece.made()?.stage(next);
+        },
+        joint: (name, out) => piece.made()?.joint(name, out) ?? null,
+        dispose: () => piece.dispose(),
+      };
+    },
+    trailhead(sites, groundH, board) {
+      /** The film's car asked for before the trailhead stood, and who waits on it. */
+      let asked: { signal: AbortSignal; alone?: { darkness: number } } | null = null;
+      const waiting: (() => void)[] = [];
+      const landed = (): void => {
+        for (const resolve of waiting.splice(0)) resolve();
+      };
+      const piece = later((host) => {
+        const made = host.trailhead(sites, groundH, board);
+        if (asked !== null) void made.filmCar(asked.signal, asked.alone).then(landed);
+        return made;
+      });
+      // A scenery that never stands has no car to wait for.
+      void ready.then(() => {
+        if (piece.made() === null) landed();
+      });
+      return {
+        filmCar(signal, alone) {
           const made = piece.made();
-          if (made !== null) made.filmCar(signal);
-          else asked = signal;
+          if (made !== null) return made.filmCar(signal, alone);
+          asked = alone === undefined ? { signal } : { signal, alone };
+          return new Promise<void>((resolve) => void waiting.push(resolve));
         },
         filmCarIn: () => piece.made()?.filmCarIn() ?? false,
         car: () => piece.made()?.car() ?? null,
@@ -320,6 +423,12 @@ type Glass = {
   /** The middle of each pane's box in the world, xyz a pane. */
   centres: Float32Array;
   order: number[];
+  /** The panes a pose turns (a door's window), by their nodes' names: each pane's run of vertices and its own frame in the model's. */
+  runs: { name: string; first: number; count: number; local: Float32Array; pane: number }[];
+  /** The part's vertices in the model's frame as a pose has turned them; null until one has, and the part's own then stand. */
+  model: VertexRun | null;
+  /** The middle of each pane's box in the model's frame, as a pose has turned it: xyz a pane. */
+  paneAt: Float32Array;
 };
 
 /** The vertices of one of a model's meshes that a pose turns: each named part's runs, the span that holds them all, and the mesh's vertices as they are sent (none until a pose first turns one). */
@@ -333,10 +442,33 @@ type Turned = {
 };
 
 /**
+ * A staged scene's handset: the runs of one mesh's vertices under its node,
+ * the span that holds them, that mesh's vertices as they are sent, the
+ * cradle's frame and the handset's own resting frame in the car's, the
+ * handset's rest in its cradle, where it was last carried, and whether its
+ * vertices now stand anywhere but at rest.
+ */
+type Handset = {
+  holder: { mesh: Mesh; rest: VertexRun; posed: VertexRun | null };
+  runs: { first: number; count: number }[];
+  first: number;
+  count: number;
+  cradle: Float64Array;
+  rest: Float64Array;
+  restPlaced: Placed;
+  held: Placed;
+  carry: Float64Array;
+  carried: boolean;
+};
+
+/** A staged scene's cord: its mesh, its tube in the car's own frame, and the two ends it was last laid between. */
+type Cord = { mesh: Mesh; tube: TubeGeometry; ends: Float64Array };
+
+/**
  * A model as it stands: its meshes, a mesh a part; of them the see-through
  * ones, laid in the world; the box of its geometry in its own frame and in
  * the world; where it stands; and, for a car, the parts a pose turns and the
- * turn they were last sent at.
+ * turn they were last sent at, and a staged scene's handset and cord.
  */
 type Stood = {
   model: SceneryModel;
@@ -348,6 +480,8 @@ type Stood = {
   at: { x: number; y: number; z: number; yaw: number };
   turned: Turned[];
   turn: { wheelSpin: number; wheelTurn: number; steer: number; doorOpen: number };
+  handset: Handset | null;
+  cord: Cord | null;
 };
 
 /** A piece of the scenery as the frame's view is handed to it. */
@@ -432,9 +566,18 @@ export function createLiteScenery(engine: EngineContext, scene: SceneContext, op
         for (const [i, pane] of part.panes.entries()) {
           for (let row = 0; row < 3; row++) centres[i * 3 + row] = (at[row] as number) * pane.x + (at[4 + row] as number) * pane.y + (at[8 + row] as number) * pane.z + (at[12 + row] as number);
         }
+        const paneAt = new Float32Array(part.panes.length * 3);
+        const runs: Glass["runs"] = [];
+        for (const [i, pane] of part.panes.entries()) {
+          paneAt[i * 3] = pane.x;
+          paneAt[i * 3 + 1] = pane.y;
+          paneAt[i * 3 + 2] = pane.z;
+          const turned = TURNED_PARTS.find((node) => pane.nodes.includes(node));
+          if (turned !== undefined) runs.push({ name: turned, first: pane.vertexFirst, count: pane.vertexCount, local: pane.local, pane: i });
+        }
         glass.push({
           mesh, part, positions: world.positions, normals: world.normals, tangents: world.tangents, indices: world.indices, drawn: world.indices.slice(), centres,
-          order: part.panes.map((_, i) => i),
+          order: part.panes.map((_, i) => i), runs, model: null, paneAt,
         });
       }
       if (!part.blended) {
@@ -463,13 +606,17 @@ export function createLiteScenery(engine: EngineContext, scene: SceneContext, op
         max.z = Math.max(max.z, part.positions[i + 2] as number);
       }
     }
-    return { model, meshes, glass, min, max, box: sightBox(x, y, z, yaw, min, max), at: { x, y, z, yaw }, turned: [], turn: { wheelSpin: 0, wheelTurn: 0, steer: 0, doorOpen: 0 } };
+    return {
+      model, meshes, glass, min, max, box: sightBox(x, y, z, yaw, min, max), at: { x, y, z, yaw }, turned: [], turn: { wheelSpin: 0, wheelTurn: 0, steer: 0, doorOpen: 0 },
+      handset: null, cord: null,
+    };
   }
 
   /**
    * The parts of `stood` a pose turns: of each opaque mesh, the runs of its
-   * vertices under a node of that name. A see-through part of such a node is
-   * left where its model has it: the film's car has none.
+   * vertices under a node of that name. A see-through pane of such a node
+   * (the door's window) is turned with it where it lies in the world
+   * (`Glass.runs`).
    */
   function turnedOf(stood: Stood): Turned[] {
     const out: Turned[] = [];
@@ -533,6 +680,178 @@ export function createLiteScenery(engine: EngineContext, scene: SceneContext, op
       if (posed.tangents !== null) updateMeshTangents(engine, turned.mesh, posed.tangents, first, count, first);
       uploads?.count("geometry", count * (posed.tangents !== null ? 40 : 24), posed.tangents !== null ? 3 : 2);
     }
+    // The see-through panes a pose turns: the door's window swings with the door. Each is turned in the model's
+    // frame and laid again where the car stands, its run alone, and its middle moved for the panes' order.
+    for (const glass of stood.glass) {
+      let first = Infinity;
+      let end = -Infinity;
+      const { part } = glass;
+      for (const run of glass.runs) {
+        if (!moved(run.name)) continue;
+        const turn = carPartTurn(run.name, pose, turnScratch);
+        if (turn === null) continue;
+        glass.model ??= { positions: part.positions.slice(), normals: part.normals.slice(), tangents: part.tangents?.slice() ?? null };
+        const carry = partMatrix(run.local, turn, partScratch);
+        poseVertices(carry, part, glass.model, run.first, run.count);
+        const pane = part.panes[run.pane] as (typeof part.panes)[number];
+        for (let row = 0; row < 3; row++) {
+          glass.paneAt[run.pane * 3 + row] = (carry[row] as number) * pane.x + (carry[4 + row] as number) * pane.y + (carry[8 + row] as number) * pane.z + (carry[12 + row] as number);
+        }
+        first = Math.min(first, run.first);
+        end = Math.max(end, run.first + run.count);
+      }
+      if (glass.model === null || end <= first) continue;
+      const count = end - first;
+      const at = placeMatrix(stood.at.x, stood.at.y, stood.at.z, stood.at.yaw);
+      poseVertices(at, glass.model, glass, first, count);
+      for (const run of glass.runs) {
+        const p = run.pane * 3;
+        for (let row = 0; row < 3; row++) {
+          glass.centres[p + row] = (at[row] as number) * (glass.paneAt[p] as number) + (at[4 + row] as number) * (glass.paneAt[p + 1] as number) + (at[8 + row] as number) * (glass.paneAt[p + 2] as number) + (at[12 + row] as number);
+        }
+      }
+      updateMeshPositions(engine, glass.mesh, glass.positions, first, count, first);
+      updateMeshNormals(engine, glass.mesh, glass.normals, first, count, first);
+      if (glass.tangents !== null) updateMeshTangents(engine, glass.mesh, glass.tangents, first, count, first);
+      uploads?.count("geometry", count * (glass.tangents !== null ? 40 : 24), glass.tangents !== null ? 3 : 2);
+    }
+  }
+
+  /**
+   * The handset of `stood`, a staged scene's car: the runs of the opaque mesh
+   * that holds its node's primitives, with the cradle's frame from a
+   * primitive of the cradle's own. Null for a model with no such parts.
+   */
+  function handsetOf(stood: Stood): Handset | null {
+    let cradle: Float32Array | null = null;
+    let found: { n: number; part: SceneryPart; runs: { first: number; count: number }[]; local: Float32Array } | null = null;
+    for (const [n, part] of stood.model.parts.entries()) {
+      for (const pane of part.panes) {
+        // A primitive hangs under its node, and the handset's node under the cradle's.
+        const held = pane.nodes.includes(HANDSET_NODE);
+        if (!held && pane.nodes.includes(CRADLE_NODE)) cradle ??= pane.local;
+        if (!held || part.blended) continue;
+        // One mesh holds the handset: the file gives its primitives one material.
+        if (found === null) found = { n, part, runs: [], local: pane.local };
+        if (found.n === n) found.runs.push({ first: pane.vertexFirst, count: pane.vertexCount });
+      }
+    }
+    if (cradle === null || found === null) return null;
+    const mesh = stood.meshes[found.n] as Mesh;
+    const holder = stood.turned.find((turned) => turned.mesh === mesh) ?? { mesh, rest: found.part, posed: null };
+    const first = Math.min(...found.runs.map((run) => run.first));
+    const end = Math.max(...found.runs.map((run) => run.first + run.count));
+    // The handset at rest in its cradle's own frame: the cradle's frame undone, then the handset's.
+    const inverse = new Float64Array(16);
+    invertAffine(cradle, 0, inverse, 0);
+    const restPlaced = decomposeInto(multiplyInto(inverse, found.local, new Float64Array(16)), { position: [0, 0, 0], rotation: [0, 0, 0, 1], scaling: [1, 1, 1] });
+    return {
+      holder, runs: found.runs, first, count: end - first, cradle: Float64Array.from(cradle), rest: Float64Array.from(found.local), restPlaced,
+      held: { position: [...restPlaced.position], rotation: [...restPlaced.rotation], scaling: [...restPlaced.scaling] },
+      carry: new Float64Array(16).fill(Number.NaN), carried: false,
+    };
+  }
+
+  const carPlaceInverse = new Float64Array(16);
+  const handInCar = new Float64Array(16);
+  const carryScratch = new Float64Array(16);
+
+  /**
+   * Carries `stood`'s handset where `pose` has it: into the grip of `hand`
+   * (its matrix in the world) while the pose says the hand holds it, eased
+   * from the cradle by the pose's grip; back to its rest otherwise. Its runs
+   * are sent on a frame that moves them, and nothing while it rests or is
+   * held still in the car.
+   */
+  function carryHandset(stood: Stood, pose: CarPose, hand: ArrayLike<number> | null): void {
+    const handset = stood.handset;
+    if (handset === null) return;
+    const { holder } = handset;
+    const send = (posed: VertexRun): void => {
+      updateMeshPositions(engine, holder.mesh, posed.positions, handset.first, handset.count, handset.first);
+      updateMeshNormals(engine, holder.mesh, posed.normals, handset.first, handset.count, handset.first);
+      if (posed.tangents !== null) updateMeshTangents(engine, holder.mesh, posed.tangents, handset.first, handset.count, handset.first);
+      uploads?.count("geometry", handset.count * (posed.tangents !== null ? 40 : 24), posed.tangents !== null ? 3 : 2);
+    };
+    if (hand === null || pose.handset !== "hand") {
+      handsetInCradle(null, handset.cradle, handset.restPlaced, 0, handset.held);
+      if (!handset.carried) return;
+      // Back in its cradle: its vertices as the file has them.
+      handset.carried = false;
+      handset.carry.fill(Number.NaN);
+      const posed = holder.posed;
+      if (posed === null) return;
+      for (const run of handset.runs) {
+        posed.positions.set(holder.rest.positions.subarray(run.first * 3, (run.first + run.count) * 3), run.first * 3);
+        posed.normals.set(holder.rest.normals.subarray(run.first * 3, (run.first + run.count) * 3), run.first * 3);
+        if (posed.tangents !== null && holder.rest.tangents !== null) posed.tangents.set(holder.rest.tangents.subarray(run.first * 4, (run.first + run.count) * 4), run.first * 4);
+      }
+      send(posed);
+      return;
+    }
+    // The hand in the car's own frame: the car's place undone.
+    const c = Math.cos(pose.yaw), s = Math.sin(pose.yaw);
+    carPlaceInverse[0] = c; carPlaceInverse[1] = 0; carPlaceInverse[2] = s; carPlaceInverse[3] = 0;
+    carPlaceInverse[4] = 0; carPlaceInverse[5] = 1; carPlaceInverse[6] = 0; carPlaceInverse[7] = 0;
+    carPlaceInverse[8] = -s; carPlaceInverse[9] = 0; carPlaceInverse[10] = c; carPlaceInverse[11] = 0;
+    carPlaceInverse[12] = -(c * pose.x - s * pose.z); carPlaceInverse[13] = -pose.y; carPlaceInverse[14] = -(s * pose.x + c * pose.z); carPlaceInverse[15] = 1;
+    multiplyInto(carPlaceInverse, hand, handInCar);
+    handsetInCradle(handInCar, handset.cradle, handset.restPlaced, pose.grip ?? 1, handset.held);
+    handsetCarry(handset.cradle, handset.held, handset.rest, carryScratch);
+    if (handset.carried && carryScratch.every((value, i) => value === handset.carry[i])) return;
+    handset.carry.set(carryScratch);
+    handset.carried = true;
+    const posed = (holder.posed ??= { positions: holder.rest.positions.slice(), normals: holder.rest.normals.slice(), tangents: holder.rest.tangents?.slice() ?? null });
+    for (const run of handset.runs) poseVertices(carryScratch, holder.rest, posed, run.first, run.count);
+    send(posed);
+  }
+
+  /** A staged scene's cord for `stood`: one mesh under a matt dark material that takes the cab's share of the sky, the car's to carry. */
+  function cordOf(stood: Stood, name: string): Cord {
+    const tube = createTubeGeometry(CORD.points);
+    const material = createPbrMaterial({
+      baseColorFactor: [CORD_COLOUR[0], CORD_COLOUR[1], CORD_COLOUR[2], 1], metallicFactor: 0, roughnessFactor: CORD_ROUGHNESS, environmentIntensity: CAB_SKY,
+      usePhysicalLightFalloff: true,
+    });
+    material.plugins = [options.air()];
+    orders.put(material, PLACES.cord);
+    const mesh = createMeshFromData(engine, name, tube.positions, tube.normals, tube.indices);
+    mesh.material = material;
+    mesh.position.x = stood.at.x;
+    mesh.position.y = stood.at.y;
+    mesh.position.z = stood.at.z;
+    const turn = quatFromEuler(0, stood.at.yaw, 0, turnScratch);
+    mesh.rotationQuaternion.x = turn.x;
+    mesh.rotationQuaternion.y = turn.y;
+    mesh.rotationQuaternion.z = turn.z;
+    mesh.rotationQuaternion.w = turn.w;
+    stand(mesh, tube.positions.byteLength * 2 + tube.indices.byteLength);
+    return { mesh, tube, ends: new Float64Array(6).fill(Number.NaN) };
+  }
+
+  const heldMatrix = new Float64Array(16);
+  const handsetInCar = new Float64Array(16);
+  const cordFrom = { x: 0, y: 0, z: 0 };
+  const cordTo = { x: 0, y: 0, z: 0 };
+
+  /**
+   * Lays `stood`'s cord from the radio's socket to the handset's foot, in
+   * the car's own frame: its tube written whole where an end has moved in
+   * the car, and nothing where both stand as they were last laid.
+   */
+  function layCord(stood: Stood): void {
+    const { cord, handset } = stood;
+    if (cord === null || handset === null) return;
+    multiplyInto(handset.cradle, composePlaced(handset.held, heldMatrix), handsetInCar);
+    cordEnds(handset.cradle, handsetInCar, cordFrom, cordTo);
+    const ends = cord.ends;
+    if (ends[0] === cordFrom.x && ends[1] === cordFrom.y && ends[2] === cordFrom.z && ends[3] === cordTo.x && ends[4] === cordTo.y && ends[5] === cordTo.z) return;
+    ends[0] = cordFrom.x; ends[1] = cordFrom.y; ends[2] = cordFrom.z;
+    ends[3] = cordTo.x; ends[4] = cordTo.y; ends[5] = cordTo.z;
+    layTube(coiledCord(cordFrom, cordTo, CORD), CORD_TUBE_RADIUS, cord.tube);
+    updateMeshPositions(engine, cord.mesh, cord.tube.positions);
+    updateMeshNormals(engine, cord.mesh, cord.tube.normals);
+    uploads?.count("geometry", cord.tube.positions.byteLength * 2, 2);
   }
 
   /**
@@ -548,6 +867,17 @@ export function createLiteScenery(engine: EngineContext, scene: SceneContext, op
     was.z = z;
     was.yaw = yaw;
     const turn = quatFromEuler(0, yaw, 0, turnScratch);
+    if (stood.cord !== null) {
+      // The cord rides the car: its tube is laid in the car's own frame.
+      const mesh = stood.cord.mesh;
+      mesh.position.x = x;
+      mesh.position.y = y;
+      mesh.position.z = z;
+      mesh.rotationQuaternion.x = turn.x;
+      mesh.rotationQuaternion.y = turn.y;
+      mesh.rotationQuaternion.z = turn.z;
+      mesh.rotationQuaternion.w = turn.w;
+    }
     for (const [n, part] of stood.model.parts.entries()) {
       if (part.blended) continue;
       const mesh = stood.meshes[n] as Mesh;
@@ -562,9 +892,13 @@ export function createLiteScenery(engine: EngineContext, scene: SceneContext, op
     const at = placeMatrix(x, y, z, yaw);
     for (const glass of stood.glass) {
       const { part } = glass;
-      poseVertices(at, part, glass, 0, part.positions.length / 3);
-      for (const [i, pane] of part.panes.entries()) {
-        for (let row = 0; row < 3; row++) glass.centres[i * 3 + row] = (at[row] as number) * pane.x + (at[4 + row] as number) * pane.y + (at[8 + row] as number) * pane.z + (at[12 + row] as number);
+      // From the model's frame as a pose has turned its panes: a door's window stays with its door.
+      poseVertices(at, glass.model ?? part, glass, 0, part.positions.length / 3);
+      for (let i = 0; i < part.panes.length; i++) {
+        const p = i * 3;
+        for (let row = 0; row < 3; row++) {
+          glass.centres[p + row] = (at[row] as number) * (glass.paneAt[p] as number) + (at[4 + row] as number) * (glass.paneAt[p + 1] as number) + (at[8 + row] as number) * (glass.paneAt[p + 2] as number) + (at[12 + row] as number);
+        }
       }
       updateMeshPositions(engine, glass.mesh, glass.positions);
       updateMeshNormals(engine, glass.mesh, glass.normals);
@@ -592,6 +926,10 @@ export function createLiteScenery(engine: EngineContext, scene: SceneContext, op
     }
   }
 
+  /** The wet look on a body: the weather's gloss at no porosity, as the hike's bodies take it. The cap is all a material keeps of it beside the frame's block. */
+  const bodyWet = emptyWetUniforms();
+  bodyWet.wetCap[0] = 0;
+
   /** Shows or hides `meshes`; how many are shown. */
   function show(meshes: readonly Mesh[], on: boolean): number {
     for (const mesh of meshes) setMeshVisible(mesh, on);
@@ -612,6 +950,7 @@ export function createLiteScenery(engine: EngineContext, scene: SceneContext, op
     get shown() {
       return shown;
     },
+    streaming: () => uploads !== undefined && (uploads.last.streamed > 0 || uploads.last.held > 0),
     update(view) {
       if (disposed) return;
       last = view;
@@ -777,7 +1116,8 @@ export function createLiteScenery(engine: EngineContext, scene: SceneContext, op
       const loads = new AbortController();
       let gone = false;
       const car = sites.car ?? null;
-      const carAt = car === null ? null : { x: car.site.x, y: groundH(car.site.x, car.site.z), z: car.site.z, yaw: carYaw(car.site, car.trailhead) };
+      /** Where the car stands: the parked car's site, or the world's origin for a staged scene's own car until its first pose. */
+      let carAt = car === null ? null : { x: car.site.x, y: groundH(car.site.x, car.site.z), z: car.site.z, yaw: carYaw(car.site, car.trailhead) };
       const boardAt = { x: sites.board.x, y: groundH(sites.board.x, sites.board.z), z: sites.board.z, yaw: boardYaw(sites.board) };
       let carBox: Mesh | null = carAt === null || disposed
         ? null
@@ -799,6 +1139,8 @@ export function createLiteScenery(engine: EngineContext, scene: SceneContext, op
         return stand(mesh, geometry.positions.byteLength * 2 + geometry.uvs.byteLength + geometry.indices.byteLength, SEE_THROUGH_ORDER.carShadow);
       }
       let patch: Mesh | null = car === null || disposed ? null : patchMesh(patchGeometry(carShadowGrid(car.site, groundH)));
+      /** The picture of a staged scene's own patch, which the air fogs: let go with the trailhead. */
+      let fogged: Texture2D | null = null;
       let parked: Stood | null = null;
       let film: Stood | null = null;
       let kiosk: Stood | null = null;
@@ -812,7 +1154,9 @@ export function createLiteScenery(engine: EngineContext, scene: SceneContext, op
       /** The frame the film's car's first frames end at. */
       let warmUntil = 0;
       // What the view is tested against until a model lands: the boxes the sim collides with; and the patch's own.
-      const carBounds = carAt === null ? null : sightBox(carAt.x, carAt.y, carAt.z, carAt.yaw, { x: -CAR_HALF.x, y: 0, z: -CAR_HALF.z }, { x: CAR_HALF.x, y: 2 * CAR_HALF.y, z: CAR_HALF.z });
+      const boxAt = (at: { x: number; y: number; z: number; yaw: number }): SightBox =>
+        sightBox(at.x, at.y, at.z, at.yaw, { x: -CAR_HALF.x, y: 0, z: -CAR_HALF.z }, { x: CAR_HALF.x, y: 2 * CAR_HALF.y, z: CAR_HALF.z });
+      let carBounds = carAt === null ? null : boxAt(carAt);
       const patchBox = (x: number, y: number, z: number, yaw: number): SightBox =>
         sightBox(x, y, z, yaw, { x: -CAR_SHADOW_HALF.x, y: -PATCH_RISE_M, z: -CAR_SHADOW_HALF.z }, { x: CAR_SHADOW_HALF.x, y: PATCH_RISE_M, z: CAR_SHADOW_HALF.z });
       let patchBounds = carAt === null ? null : patchBox(carAt.x, carAt.y, carAt.z, carAt.yaw);
@@ -820,9 +1164,14 @@ export function createLiteScenery(engine: EngineContext, scene: SceneContext, op
       /** The handle the end scene drives `stood` by: the whole car moved, its parts turned; with the film's car, its patch and its tail lamps carried along. */
       function carHandle(stood: Stood, riding: boolean): LiteCar {
         return {
-          stage(pose) {
+          stage(pose, hand = null) {
             if (gone || (stood !== film && stood !== parked)) return;
             turnParts(stood, pose);
+            // A staged scene's handset and its cord: in the car's own frame, so neither is written for the car's moving.
+            if (stood.handset !== null) {
+              carryHandset(stood, pose, hand);
+              layCord(stood);
+            }
             if (!moveModel(stood, pose.x, pose.y, pose.z, pose.yaw) || !riding) return;
             if (patch !== null) {
               const laid = patchGeometry({ ...flatPatch, origin: { x: pose.x, y: pose.y + flatPatch.origin.y, z: pose.z } }, pose.yaw);
@@ -897,6 +1246,7 @@ export function createLiteScenery(engine: EngineContext, scene: SceneContext, op
           if (carBox !== null) drop(carBox, true);
           if (kioskBoxes !== null) drop(kioskBoxes, true);
           if (patch !== null) drop(patch);
+          if (fogged !== null) releaseTexture(fogged);
           if (tails !== null) drop(tails.mesh);
           tails = null;
           if (face !== null) drop(face);
@@ -908,6 +1258,7 @@ export function createLiteScenery(engine: EngineContext, scene: SceneContext, op
       });
 
       if (carAt !== null && !disposed) {
+        const parkedAt = carAt;
         void loadSceneryModel(engine, TRAILHEAD_CAR_OUTPUT, loads.signal).then((model) => {
           // The film's car came first, or the trailhead has gone: nothing will show this one.
           if (gone || film !== null) {
@@ -915,7 +1266,7 @@ export function createLiteScenery(engine: EngineContext, scene: SceneContext, op
             return;
           }
           dressed(model, PLACES.parked, true);
-          parked = standModel("trailhead_car", model, carAt.x, carAt.y, carAt.z, carAt.yaw, true);
+          parked = standModel("trailhead_car", model, parkedAt.x, parkedAt.y, parkedAt.z, parkedAt.yaw, true);
           parkedCar = carHandle(parked, false);
           if (carBox !== null) drop(carBox, true);
           carBox = null;
@@ -970,8 +1321,16 @@ export function createLiteScenery(engine: EngineContext, scene: SceneContext, op
       }
 
       return {
-        filmCar(signal) {
-          if (gone || disposed || carAt === null || car === null || filmAsked) return;
+        filmCar(signal, alone) {
+          if (gone || disposed || filmAsked) return Promise.resolve();
+          if (carAt === null) {
+            // No parked car to take the place of: only a staged scene's own car stands here.
+            if (alone === undefined) return Promise.resolve();
+            carAt = { x: 0, y: 0, z: 0, yaw: 0 };
+            carBounds = boxAt(carAt);
+            patchBounds = patchBox(0, 0, 0, 0);
+          }
+          const at = carAt;
           filmAsked = true;
           // Ended by the hike's own signal or by the trailhead's going, whichever comes first.
           const ended = new AbortController();
@@ -979,18 +1338,29 @@ export function createLiteScenery(engine: EngineContext, scene: SceneContext, op
           signal.addEventListener("abort", end, { once: true });
           loads.signal.addEventListener("abort", end, { once: true });
           if (signal.aborted || loads.signal.aborted) end();
-          void loadSceneryModel(engine, FILM_CAR_OUTPUT, ended.signal, { under: CAB_PARTS }).then((model) => {
+          return loadSceneryModel(engine, FILM_CAR_OUTPUT, ended.signal, { under: CAB_PARTS }).then((model) => {
             if (gone || ended.signal.aborted) {
               model.release();
               return;
             }
-            dressed(model, PLACES.film, true);
+            // The hike's car is wetted by the weather; a staged scene's own is not, as on Babylon.js, whose stage gives
+            // its car's materials no wet look.
+            dressed(model, PLACES.film, alone === undefined);
             // The radio and its handset take a share of the sky's reflected light: the rest of it is roof.
             for (const part of model.parts) {
               if (CAB_PARTS.some((node) => model.under.get(node)?.has(part.name) === true)) part.material.environmentIntensity = CAB_SKY;
             }
-            film = standModel("trailhead_film_car", model, carAt.x, carAt.y, carAt.z, carAt.yaw, true);
+            // Nor is it cover for the rain: its scene has none falling.
+            film = standModel("trailhead_film_car", model, at.x, at.y, at.z, at.yaw, alone === undefined);
             film.turned = turnedOf(film);
+            if (alone !== undefined) {
+              film.handset = handsetOf(film);
+              if (film.handset !== null) {
+                film.cord = cordOf(film, "film_cord");
+                film.meshes.push(film.cord.mesh);
+                layCord(film);
+              }
+            }
             filmCar = carHandle(film, true);
             // The parked car and its box give way, and its patch on the ground to one that lies flat under the new car.
             dropModel(parked);
@@ -999,15 +1369,27 @@ export function createLiteScenery(engine: EngineContext, scene: SceneContext, op
             if (carBox !== null) drop(carBox, true);
             carBox = null;
             if (patch !== null) drop(patch);
-            patch = patchMesh(patchGeometry({ ...flatPatch, origin: { x: carAt.x, y: carAt.y + flatPatch.origin.y, z: carAt.z } }, carAt.yaw));
-            patchBounds = patchBox(carAt.x, carAt.y, carAt.z, carAt.yaw);
-            // Its tail lamps: dark, in its middle, until the end scene lights them at its rear.
-            const lamps = tailLampMaterial(options.shared, options.linear);
-            orders.put(lamps.material, PLACES.tailLamps);
-            const corners = tailLampCorners(carAt.x, carAt.y, carAt.z, carAt.yaw, new Float32Array(24), 0);
-            const lampMesh = createMeshFromData(engine, "trailhead_film_car_tail_lamps", corners, new Float32Array(24), TAIL_LAMP_INDICES);
-            lampMesh.material = lamps.material;
-            tails = { mesh: stand(lampMesh, corners.byteLength * 2 + TAIL_LAMP_INDICES.byteLength), corners, lit: false, colour: lamps.colour };
+            const laid = patchGeometry({ ...flatPatch, origin: { x: at.x, y: at.y + flatPatch.origin.y, z: at.z } }, at.yaw);
+            if (alone === undefined) {
+              patch = patchMesh(laid);
+            } else {
+              // The film's own patch: lighter than the parked car's, and fogged by the air as the road under it is.
+              const made = airPatchMaterial(engine, alone.darkness, options.air, options.ahead(-CAR_SHADOW_BIAS));
+              fogged = made.picture;
+              const mesh = createMeshFromData(engine, "film_car_shadow", laid.positions, laid.normals, laid.indices, laid.uvs);
+              mesh.material = made.material;
+              patch = stand(mesh, laid.positions.byteLength * 2 + laid.uvs.byteLength + laid.indices.byteLength, SEE_THROUGH_ORDER.carShadow);
+            }
+            patchBounds = patchBox(at.x, at.y, at.z, at.yaw);
+            if (alone === undefined) {
+              // Its tail lamps: dark, in its middle, until the end scene lights them at its rear.
+              const lamps = tailLampMaterial(options.shared, options.linear);
+              orders.put(lamps.material, PLACES.tailLamps);
+              const corners = tailLampCorners(at.x, at.y, at.z, at.yaw, new Float32Array(24), 0);
+              const lampMesh = createMeshFromData(engine, "trailhead_film_car_tail_lamps", corners, new Float32Array(24), TAIL_LAMP_INDICES);
+              lampMesh.material = lamps.material;
+              tails = { mesh: stand(lampMesh, corners.byteLength * 2 + TAIL_LAMP_INDICES.byteLength), corners, lit: false, colour: lamps.colour };
+            }
             // Drawn for its first frames wherever it stands, so it is ready when the scene opens.
             warmUntil = frames + FILM_CAR_WARM_FRAMES;
             again(piece);
@@ -1103,6 +1485,77 @@ export function createLiteScenery(engine: EngineContext, scene: SceneContext, op
         });
       }
       return piece;
+    },
+
+    actor(url) {
+      const loads = new AbortController();
+      let gone = false;
+      let made: SceneActor | null = null;
+      /** The pose asked for before the model landed: the one it lands in. */
+      let pending: ActorPose | null = null;
+      /** Clips asked for that the model lacks, each said once. */
+      const lacked = new Set<string>();
+      const stage = (actor: SceneActor, pose: ActorPose): void => {
+        if (actor.stage(pose) || lacked.has(pose.clip)) return;
+        lacked.add(pose.clip);
+        console.warn(`scene: no clip "${pose.clip}" on the actor; holding the pose`);
+      };
+      const piece = join<Piece>({
+        seen(view) {
+          if (made === null) return 0;
+          const { at } = made;
+          return made.inView(inSight(view, at.x, at.y + ACTOR_SPHERE_UP_M, at.z, ACTOR_SPHERE_M, SCENERY_REACH_M, false));
+        },
+        dispose() {
+          if (gone) return;
+          gone = true;
+          loads.abort();
+          pieces.delete(piece);
+          made?.dispose();
+          made = null;
+        },
+      });
+      const settled = disposed
+        ? Promise.resolve()
+        : loadSceneActor(engine, scene, url, {
+          signal: loads.signal,
+          ...(uploads === undefined ? {} : { uploads }),
+          // The game's stack on a body: the base colour's block, the wet look at no porosity and the air.
+          dress(material, mesh, index) {
+            material.usePhysicalLightFalloff = true;
+            material.plugins = [baseColourPlugin(), surfaceWetPlugin(bodyWet, options.shared), options.air()];
+            orders.put(material, PLACES.actor + index);
+            mesh.renderOrder = orders.of(material) ?? DRAW_ORDER.scenery;
+          },
+        }).then(async (actor) => {
+          if (gone) {
+            actor.dispose();
+            return;
+          }
+          // Lite builds a skinned mesh that joins a scene built with none against a layout made before its skin's
+          // bindings were known: its first frames are refused by the GPU, every draw of them with it. So the scene's
+          // renderables are built again once it has joined, as they are for a lamp that joins (`wornLamps.ts`); its
+          // owner draws no frame until `settled`.
+          await rebuildSceneRenderables(scene);
+          if (gone) {
+            actor.dispose();
+            return;
+          }
+          made = actor;
+          if (pending !== null) stage(actor, pending);
+          again(piece);
+        }).catch((error: unknown) => {
+          if (!loads.signal.aborted) console.warn(`scene: the actor did not load (${error instanceof Error ? error.message : String(error)}); not drawn`);
+        });
+      return {
+        settled,
+        stage(pose) {
+          pending = pose;
+          if (made !== null) stage(made, pose);
+        },
+        joint: (name, out) => made?.joint(name, out) ?? null,
+        dispose: () => piece.dispose(),
+      };
     },
 
     dispose() {

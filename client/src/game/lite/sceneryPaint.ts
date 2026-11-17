@@ -243,6 +243,39 @@ export function patchMaterial(engine: EngineContext, frame: PluginUniformBlock, 
 }
 
 /**
+ * The fragment's lit colour put out before the air is laid over it: the
+ * surface is black whatever lights it, as Babylon.js's unlit material is.
+ * Just before the air's plugin, which shares the fragment's point.
+ */
+export function unlitBlackPlugin(): MaterialPlugin {
+  return {
+    name: "UnlitBlack",
+    priority: 890,
+    getCustomCode: (stage) => (stage === "fragment" ? { CUSTOM_FRAGMENT_BEFORE_FINALCOLORCOMPOSITION: "color=vec3<f32>(0.0);" } : null),
+  };
+}
+
+/**
+ * The patch under a staged scene's own car: black and unlit, its darkness
+ * its texture's alpha times `darkness`, fogged by the air as the ground
+ * under it is, where the hike's patch takes the scene's own lighter fog. It
+ * is the game's unlit PBR material there, blended by the texture's alpha
+ * alone, seen from either side, its depth set ahead by `ahead`; a blended
+ * material writes no depth. The picture is the caller's to let go.
+ */
+export function airPatchMaterial(engine: EngineContext, darkness: number, air: () => MaterialPlugin, ahead: MaterialPlugin): { material: PbrMaterialProps; picture: Texture2D } {
+  const picture = createTexture2DFromPixels(engine, carShadowAlphaMap(), CAR_SHADOW_TEX.width, CAR_SHADOW_TEX.height, {
+    addressModeU: "clamp-to-edge", addressModeV: "clamp-to-edge", minFilter: "linear", magFilter: "linear", mipMaps: true,
+  });
+  const material = createPbrMaterial({
+    baseColorTexture: picture, baseColorFactor: [0, 0, 0, darkness], metallicFactor: 0, roughnessFactor: 1, doubleSided: true, alphaBlend: true,
+    usePhysicalLightFalloff: true,
+  });
+  material.plugins = [unlitBlackPlugin(), air(), ahead, paintAlphaPlugin()];
+  return { material, picture };
+}
+
+/**
  * A patch's grid in the world's own coordinates: `grid` (`carShadowGrid`)
  * stood at its origin, scaled to its size and turned by `yaw` about the
  * vertical, as its mesh's transform stands it on Babylon.js.

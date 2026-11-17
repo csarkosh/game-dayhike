@@ -141,7 +141,7 @@ export function createHikeSigns(renderer: Renderer, world: World, seed: number):
 export function loadFilmCar(renderer: Renderer, signs: HikeSigns, signal: AbortSignal): void {
   const liteTrailhead = liteTrailheads.get(signs);
   if (liteTrailhead !== undefined) {
-    liteTrailhead.filmCar(signal);
+    void liteTrailhead.filmCar(signal);
     return;
   }
   const trailhead = trailheads.get(signs);

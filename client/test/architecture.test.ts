@@ -86,6 +86,10 @@ describe("layer boundaries", () => {
     expect(route).toContain("= routeWorld(name);");
     expect(route).toContain("renderer.sync(world.state, -1, 0)");
     expect(route).not.toMatch(/world\.(step|apply|input)/);
+    const lite = readFileSync(join(SRC, "game/lite/sceneRoute.ts"), "utf8");
+    expect(lite).toContain("const route = routeWorld(name);");
+    expect(lite).toContain("renderer.sync(world.state, -1, 0)");
+    expect(lite).not.toMatch(/world\.(step|apply|input)/);
   });
 
   it("sim/ imports nothing but node builtins and itself", () => {
@@ -226,7 +230,10 @@ describe("layer boundaries", () => {
     // A hike's canvas carries no engine: its renderer makes its own from it, at the start and for every switch after.
     expect(main).toContain("    engine: () => hikeCanvas(),");
     expect(main).toContain("launch(container, onCanvas, route.token, decided, () => hikeCanvas(), intro, takeSampled);");
-    expect([...main.matchAll(/\bhikeCanvas\(/g)].length).toBe(3);
+    // The scene route is drawn by the same renderer, on a canvas of the same kind: the one other caller.
+    expect(main).toContain("    void hikeCanvas().then(");
+    expect(main).toContain("runLiteSceneRoute({ canvas, container, tier }, parseSceneSearch(location.search), route.name);");
+    expect([...main.matchAll(/\bhikeCanvas\(/g)].length).toBe(4);
     // Nothing of the start hangs off a promise outside the chain's catch.
     expect(main).not.toMatch(/makeWebGpu\([^)]*\)\.then\(/);
   });
@@ -892,7 +899,7 @@ describe("layer boundaries", () => {
     // Lite itself is loaded only by the modules that draw: the plugins, the pose and the light name its types alone.
     expect(lite.sort()).toEqual([
       "game/lite/bladeMeshes.ts", "game/lite/brushMeshes.ts", "game/lite/capMesh.ts", "game/lite/cliffMeshes.ts", "game/lite/clutterMeshes.ts", "game/lite/dragonflyMeshes.ts", "game/lite/duffMeshes.ts", "game/lite/entityMeshes.ts", "game/lite/forestMeshes.ts", "game/lite/forestModels.ts", "game/lite/groundTextures.ts", "game/lite/impostorBake.ts",
-      "game/lite/lakeMeshes.ts", "game/lite/lakePanorama.ts", "game/lite/lipMeshes.ts", "game/lite/listMeshes.ts", "game/lite/midgeMeshes.ts", "game/lite/mistMeshes.ts", "game/lite/motes.ts", "game/lite/postChain.ts", "game/lite/propMeshes.ts", "game/lite/rain.ts", "game/lite/rainMap.ts", "game/lite/rainSplash.ts", "game/lite/renderer.ts", "game/lite/sceneryMeshes.ts", "game/lite/sceneryModels.ts", "game/lite/sceneryPaint.ts", "game/lite/seaFft.ts", "game/lite/seaMeshes.ts", "game/lite/shadeMask.ts", "game/lite/shadeVeil.ts", "game/lite/shaderUniforms.ts",
+      "game/lite/lakeMeshes.ts", "game/lite/lakePanorama.ts", "game/lite/lipMeshes.ts", "game/lite/listMeshes.ts", "game/lite/midgeMeshes.ts", "game/lite/mistMeshes.ts", "game/lite/motes.ts", "game/lite/postChain.ts", "game/lite/propMeshes.ts", "game/lite/rain.ts", "game/lite/rainMap.ts", "game/lite/rainSplash.ts", "game/lite/renderer.ts", "game/lite/sceneActor.ts", "game/lite/sceneryMeshes.ts", "game/lite/sceneryModels.ts", "game/lite/sceneryPaint.ts", "game/lite/seaFft.ts", "game/lite/seaMeshes.ts", "game/lite/shadeMask.ts", "game/lite/shadeVeil.ts", "game/lite/shaderUniforms.ts",
       "game/lite/skinnedModels.ts", "game/lite/skyCapture.ts", "game/lite/skyDome.ts", "game/lite/surfSpray.ts", "game/lite/terrainMeshes.ts", "game/lite/waterBed.ts", "game/lite/waterPlantMeshes.ts", "game/lite/wildlifeMeshes.ts", "game/lite/wornLamps.ts",
     ]);
     // And the hike is handed that renderer, which reaches the Babylon.js one's module for its types alone.

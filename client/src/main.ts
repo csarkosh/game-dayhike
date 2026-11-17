@@ -29,7 +29,7 @@ import { createFilmHead, fetchFilmHead, filmHeadWanted, onCellular, warmWhenLoad
 import { worldInputs } from "./game/worldInputs.js";
 import { sceneLine, startWorldPrep, worldPrepLine, type WorldPrepOutcome } from "./game/worldPrep.js";
 import type { PreparedScene } from "./game/preparedScene.js";
-import { runSceneRoute } from "./game/scene/sceneRoute.js";
+import { runLiteSceneRoute } from "./game/lite/sceneRoute.js";
 import { landingModel, type LandingInput } from "./game/landingModel.js";
 import { isDesktop, isTouchDevice, hostPlatform, desktopVersion } from "./game/platform.js";
 import { inviteLink, parseJoinLink } from "./game/joinLink.js";
@@ -1066,23 +1066,22 @@ function render(container: HTMLDivElement): void {
   mute.setHike(route.kind === "game");
 
   // The staged intro on its fixed world, a frame at a time for its recording:
-  // the film is made on the high tier, which is what Auto means here, on the
-  // engine a hike on that tier gets (WebGPU where the rule gives it); the
-  // address's `?tier=` and a saved choice are the page's own as everywhere.
+  // the film is made on the high tier, which is what Auto means here, drawn
+  // by the hike's own renderer on a canvas of its own, as a hike is
+  // (`hikeCanvas`); the address's `?tier=` and a saved choice are the page's
+  // own as everywhere.
   if (route.kind === "scene") {
     const choice = parseTierOverride(location.search) ?? currentChoice();
     const tier = choice === "auto" ? "high" : choice;
-    void signalsReady
-      .then((read) => engineFor(tier, read, () => token === renderToken))
-      .then(({ canvas, engine }) => {
-        if (token !== renderToken) {
-          engine?.dispose();
-          return;
-        }
+    void hikeCanvas().then(
+      ({ canvas }) => {
+        if (token !== renderToken) return;
         container.appendChild(canvas);
-        const scene = runSceneRoute({ canvas, container, tier, ...(engine === null ? {} : { engine }) }, parseSceneSearch(location.search), route.name);
+        const scene = runLiteSceneRoute({ canvas, container, tier }, parseSceneSearch(location.search), route.name);
         running = { dispose: () => scene.dispose() };
-      });
+      },
+      (error: unknown) => console.error("The scene could not be drawn.", error),
+    );
     paintRoster();
     return;
   }

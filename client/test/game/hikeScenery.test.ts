@@ -43,7 +43,11 @@ function liteRenderer() {
       asked.sites.push(sites);
       asked.boards.push(board);
       return {
-        filmCar: (signal) => void asked.film.push(signal), filmCarIn: () => asked.film.length > 0, car: () => (asked.film.length > 0 ? car : null), warm: () => asked.warm,
+        filmCar: (signal) => {
+          asked.film.push(signal);
+          return Promise.resolve();
+        },
+        filmCarIn: () => asked.film.length > 0, car: () => (asked.film.length > 0 ? car : null), warm: () => asked.warm,
         dispose: () => void asked.disposed.push("trailhead"),
       };
     },
@@ -51,6 +55,9 @@ function liteRenderer() {
       asked.bodies.push(body);
       return { dispose: () => void asked.disposed.push("body") };
     },
+    streaming: () => false,
+    // A hike asks for no actor: a staged scene's stage does.
+    actor: () => ({ settled: Promise.resolve(), stage: () => undefined, joint: () => null, dispose: () => undefined }),
   };
   return { renderer: { scenery } as unknown as Renderer, asked, car };
 }

@@ -37,7 +37,9 @@
  * shots, the cap's turn) through its own lens, the local hiker's own body in
  * a shot with the lamp it wears there, a death's fall and its closing dark,
  * and the end scene with the car it drives, its headlamp and its tail lamps;
- * and, in a world with no forest, a hand-authored level's brushes. Every
+ * and, in a world with no forest, a hand-authored level's brushes; and for
+ * the scene route (`sceneRoute.ts`) a staged scene's own car with its door,
+ * its handset and the handset's cord, and its actor. Every
  * other part of the world is absent, and the
  * members of `Renderer` that belong to an absent part are answered here as
  * nothing: a setter keeps what it was told (`held`), for the day its part is

@@ -69,13 +69,13 @@ describe("what of the scenery a view holds", () => {
 });
 
 describe("the scenery asked for before its renderer stands", () => {
-  type Made = { kind: string; disposed: boolean; film: AbortSignal[] };
+  type Made = { kind: string; disposed: boolean; film: AbortSignal[]; alone: ({ darkness: number } | undefined)[]; poses: string[] };
   /** The car a trailhead of the fixture hands out once its film's car is asked for, and whether that car is in its first frames. */
   const CAR: LiteCar = { stage: () => undefined, leave: () => undefined, tailLamps: () => undefined };
   let warm = false;
   function fakeScenery(log: Made[]): LiteScenery {
     const piece = (kind: string): Made & { dispose(): void } => {
-      const made = { kind, disposed: false, film: [] as AbortSignal[], dispose() { made.disposed = true; } };
+      const made = { kind, disposed: false, film: [] as AbortSignal[], alone: [] as ({ darkness: number } | undefined)[], poses: [] as string[], dispose() { made.disposed = true; } };
       log.push(made);
       return made;
     };
@@ -85,11 +85,24 @@ describe("the scenery asked for before its renderer stands", () => {
       trailhead: () => {
         const made = piece("trailhead");
         const trailhead: LiteTrailhead = {
-          filmCar: (signal) => void made.film.push(signal), filmCarIn: () => made.film.length > 0, car: () => (made.film.length > 0 ? CAR : null), warm: () => warm,
+          filmCar: (signal, alone) => {
+            made.film.push(signal);
+            made.alone.push(alone);
+            return Promise.resolve();
+          },
+          filmCarIn: () => made.film.length > 0, car: () => (made.film.length > 0 ? CAR : null), warm: () => warm,
           dispose: () => made.dispose(),
         };
         return trailhead;
       },
+      actor: (url) => {
+        const made = piece(`actor ${url}`);
+        return {
+          settled: Promise.resolve(), stage: (pose) => void made.poses.push(`${pose.clip}@${pose.clipTime}`),
+          joint: (name, out) => (name === "hand_r" ? out.fill(7) : null), dispose: () => made.dispose(),
+        };
+      },
+      streaming: () => log.length > 3,
       update: () => undefined,
       shown: 0,
       dispose: () => undefined,
@@ -128,6 +141,71 @@ describe("the scenery asked for before its renderer stands", () => {
     trailhead.dispose();
     expect(log[1]?.disposed).toBe(true);
     expect(log[0]?.disposed).toBe(false);
+  });
+
+  it("stands a staged scene's own car and its actor when the renderer stands: the car alone on its patch, the actor in the last pose asked for", async () => {
+    const log: Made[] = [];
+    let stand: () => void = () => undefined;
+    const ready = new Promise<void>((resolve) => { stand = resolve; });
+    const host = deferredScenery(ready, () => fakeScenery(log));
+    const trailhead = host.trailhead({ board: BOARD }, () => 0, DRAWING);
+    const film = new AbortController();
+    let landed = false;
+    void trailhead.filmCar(film.signal, { darkness: 0.5 }).then(() => { landed = true; });
+    const actor = host.actor("ranger.glb");
+    let settled = false;
+    void actor.settled.then(() => { settled = true; });
+    const pose = (clip: string, clipTime: number) => ({ id: "a", x: 0, y: 0, z: 0, yaw: 0, clip, clipTime, visible: true });
+    actor.stage(pose("drive", 1));
+    actor.stage(pose("drive", 2));
+    // Nothing stands yet: no joint to read, and neither wait is over.
+    expect(actor.joint("hand_r", new Float64Array(16))).toBeNull();
+    await Promise.resolve();
+    expect([landed, settled]).toEqual([false, false]);
+    stand();
+    await ready;
+    for (let i = 0; i < 4; i++) await Promise.resolve();
+    expect(log.map((made) => made.kind)).toEqual(["trailhead", "actor ranger.glb"]);
+    expect(log[0]?.alone).toEqual([{ darkness: 0.5 }]);
+    expect([landed, settled]).toEqual([true, true]);
+    // The actor lands in the last pose asked for, and takes each one after.
+    expect(log[1]?.poses).toEqual(["drive@2"]);
+    actor.stage(pose("talk", 0.5));
+    expect(log[1]?.poses).toEqual(["drive@2", "talk@0.5"]);
+    expect(actor.joint("hand_r", new Float64Array(16))?.[0]).toBe(7);
+    expect(actor.joint("chest", new Float64Array(16))).toBeNull();
+    actor.dispose();
+    expect(log[1]?.disposed).toBe(true);
+  });
+
+  it("ends the waits of a staged scene on a renderer that never has scenery", async () => {
+    const host = deferredScenery(Promise.resolve(), () => null);
+    const trailhead = host.trailhead({ board: BOARD }, () => 0, DRAWING);
+    let landed = false, settled = false;
+    void trailhead.filmCar(new AbortController().signal, { darkness: 0.5 }).then(() => { landed = true; });
+    const actor = host.actor("ranger.glb");
+    void actor.settled.then(() => { settled = true; });
+    for (let i = 0; i < 4; i++) await Promise.resolve();
+    expect([landed, settled]).toEqual([true, true]);
+    actor.stage({ id: "a", x: 0, y: 0, z: 0, yaw: 0, clip: "drive", clipTime: 0, visible: true });
+    expect(actor.joint("hand_r", new Float64Array(16))).toBeNull();
+  });
+
+  it("says the world streams in only once the renderer stands, and then as its scenery says", async () => {
+    const log: Made[] = [];
+    let stand: () => void = () => undefined;
+    const ready = new Promise<void>((resolve) => { stand = resolve; });
+    let stood = false;
+    const scenery = fakeScenery(log);
+    const host = deferredScenery(ready, () => (stood ? scenery : null));
+    expect(host.streaming()).toBe(false);
+    stood = true;
+    stand();
+    await ready;
+    // The fixture's scenery streams once it has been asked for more than three pieces.
+    expect(host.streaming()).toBe(false);
+    for (let i = 0; i < 4; i++) scenery.body({ pos: { x: 0, y: 0, z: 0 }, yaw: 0 });
+    expect(host.streaming()).toBe(true);
   });
 
   it("never makes a piece let go before the renderer stood, and leaves every ask unanswered by a renderer with no scenery", async () => {
