@@ -210,7 +210,8 @@ export function createLitePostChain(engine: EngineContext, scene: SceneContext, 
   const sceneTask: RenderTask = createRenderTask({ name: "scene", rt: samples, rst: resolved, clr: true }, engine, scene);
   addTask(scene, sceneTask);
   // The break, on the tier that reads through its water: made only on a frame that shows a mesh marked for it.
-  const kept = options.keep === true ? enableRenderTaskBreak(sceneTask, engine, { depth: true }) : null;
+  // What the break keeps stands while the frame's size does, as the chain's own targets do.
+  const kept = options.keep === true ? enableRenderTaskBreak(sceneTask, engine, { depth: true, keep: true }) : null;
 
   // The chain's one buffer, a part a pass.
   const records: Sections = sections(features);
