@@ -79,7 +79,8 @@ import {
   type ShaderLookupMode,
 } from "./engineChoice.js";
 import { asyncPipelinesOf, heldOn, installPipelines, leftOutOn, revealWhenWhole } from "./asyncPipelines.js";
-import { engineOf, type EngineHandle } from "./engineHandle.js";
+import type { EngineHandle } from "./engineHandle.js";
+import { engineOf } from "./engineOf.js";
 import { createEffectTurns, spaceEffects } from "./effectTurns.js";
 import { mipmapPipelineAhead, withoutEagerPipelines } from "./enginePipelines.js";
 import { pinPluginNumbers } from "./pluginNumbers.js";

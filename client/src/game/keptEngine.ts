@@ -28,7 +28,8 @@
  */
 import type { Effect } from "@babylonjs/core/Materials/effect.js";
 import type { AbstractEngine } from "@babylonjs/core/Engines/abstractEngine.js";
-import { engineOf, type EngineHandle } from "./engineHandle.js";
+import type { EngineHandle } from "./engineHandle.js";
+import { engineOf } from "./engineOf.js";
 import type { QualityTier } from "./quality.js";
 import type { EngineOnCanvas, EngineWatchers } from "./rendererSwap.js";
 

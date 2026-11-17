@@ -17,7 +17,8 @@ import { RenderTargetTexture } from "@babylonjs/core/Materials/Textures/renderTa
 import type { RenderingManager } from "@babylonjs/core/Rendering/renderingManager.js";
 import type { ObjectRenderer } from "@babylonjs/core/Rendering/objectRenderer.js";
 import type { AsyncPipelines } from "./asyncPipelines.js";
-import { engineOf, type EngineHandle } from "./engineHandle.js";
+import type { EngineHandle } from "./engineHandle.js";
+import { engineOf } from "./engineOf.js";
 import type { FrameView, FreecamView, Renderer, RendererOptions } from "./rendererTypes.js";
 
 import type { Level } from "../sim/level.js";
