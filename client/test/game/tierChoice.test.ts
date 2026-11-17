@@ -13,7 +13,7 @@ import {
   writeAutoRecord,
   writeChoice,
 } from "../../src/game/tierChoice.js";
-import { autoTier, withGovernorDrop, type AutoRecord } from "../../src/game/quality.js";
+import { DETECT_VERSION, autoTier, withGovernorDrop, type AutoRecord } from "../../src/game/quality.js";
 
 function memoryStorage(): Storage {
   const map = new Map<string, string>();
@@ -33,7 +33,7 @@ function throwingStorage(): Storage {
 }
 
 const RECORD: AutoRecord = {
-  v: 1, gpu: "Apple GPU", cls: "apple-unknown", browser: 26, attempts: 1,
+  v: DETECT_VERSION, gpu: "Apple GPU", cls: "apple-unknown", browser: 26, attempts: 1,
   verdict: { tier: "medium", source: "probe", pixels: 2_073_600, at: 1_790_000_000_000,
     readings: [{ tier: "high", frames: 120, meanMs: 23.96, p95Ms: 33.4, pixels: 2_073_600, engine: "webgl2" }] },
 };
@@ -66,13 +66,13 @@ describe("the Auto record's storage", () => {
 
   it("round-trips a record with no verdict, and a governor verdict with no readings", () => {
     const s = memoryStorage();
-    const none: AutoRecord = { v: 1, gpu: "", cls: "unknown", browser: 0, attempts: 3, verdict: null };
+    const none: AutoRecord = { v: DETECT_VERSION, gpu: "", cls: "unknown", browser: 0, attempts: 3, verdict: null };
     expect(writeAutoRecord(s, none)).toBe(true);
-    expect(readAutoRecord(s)).toEqual({ v: 1, gpu: "", cls: "unknown", browser: 0, attempts: 3, verdict: null });
-    const governor: AutoRecord = { v: 1, gpu: "nvidia/ampere", cls: "discrete-modern", browser: 153, attempts: 0,
+    expect(readAutoRecord(s)).toEqual({ v: DETECT_VERSION, gpu: "", cls: "unknown", browser: 0, attempts: 3, verdict: null });
+    const governor: AutoRecord = { v: DETECT_VERSION, gpu: "nvidia/ampere", cls: "discrete-modern", browser: 153, attempts: 0,
       verdict: { tier: "low", source: "governor", pixels: 1_405_320, at: 1_790_000_000_000 } };
     expect(writeAutoRecord(s, governor)).toBe(true);
-    expect(readAutoRecord(s)).toEqual({ v: 1, gpu: "nvidia/ampere", cls: "discrete-modern", browser: 153, attempts: 0,
+    expect(readAutoRecord(s)).toEqual({ v: DETECT_VERSION, gpu: "nvidia/ampere", cls: "discrete-modern", browser: 153, attempts: 0,
       verdict: { tier: "low", source: "governor", pixels: 1_405_320, at: 1_790_000_000_000 } });
   });
 
@@ -94,7 +94,7 @@ describe("the Auto record's storage", () => {
     const s = memoryStorage();
     s.setItem("dayhike.quality.auto", "{not json");
     expect(readAutoRecord(s)).toBe(null);
-    s.setItem("dayhike.quality.auto", JSON.stringify({ v: 1, gpu: "x" }));
+    s.setItem("dayhike.quality.auto", JSON.stringify({ v: DETECT_VERSION, gpu: "x" }));
     expect(readAutoRecord(s)).toBe(null);
     expect(readAutoRecord(null)).toBe(null);
     expect(readAutoRecord(throwingStorage())).toBe(null);
@@ -111,7 +111,7 @@ describe("the Auto record's storage", () => {
       { ...RECORD, attempts: null },
       { ...RECORD, cls: "quantum" },
       { ...RECORD, cls: "constructor" },
-      { v: 1, gpu: "Apple GPU", browser: 26, attempts: 1, verdict: null },
+      { v: DETECT_VERSION, gpu: "Apple GPU", browser: 26, attempts: 1, verdict: null },
       null,
       [],
     ];
@@ -129,13 +129,13 @@ describe("the Auto record's storage", () => {
     ] } };
     expect(writeAutoRecord(s, withInfinity)).toBe(true);
     expect(readAutoRecord(s)).toEqual({
-      v: 1, gpu: "Apple GPU", cls: "apple-unknown", browser: 26, attempts: 1,
+      v: DETECT_VERSION, gpu: "Apple GPU", cls: "apple-unknown", browser: 26, attempts: 1,
       verdict: { tier: "medium", source: "probe", pixels: 2_073_600, at: 1_790_000_000_000,
         readings: [{ tier: "medium", frames: 120, meanMs: 16.7, p95Ms: 17.1, pixels: 2_073_600, engine: "webgl2" }] },
     });
     s.setItem("dayhike.quality.auto", JSON.stringify({ ...RECORD, verdict: { ...RECORD.verdict, readings: "none" } }));
     expect(readAutoRecord(s)).toEqual({
-      v: 1, gpu: "Apple GPU", cls: "apple-unknown", browser: 26, attempts: 1,
+      v: DETECT_VERSION, gpu: "Apple GPU", cls: "apple-unknown", browser: 26, attempts: 1,
       verdict: { tier: "medium", source: "probe", pixels: 2_073_600, at: 1_790_000_000_000 },
     });
   });
@@ -244,7 +244,7 @@ describe("recordFallback", () => {
   it("keeps Auto on the tier that built, with a build verdict", () => {
     expect(recordFallback({ ...base, attempted: "high", built: "medium", source: "auto", choice: "auto" })).toEqual({
       record: {
-        v: 1, gpu: RTX, cls: "discrete-modern", browser: 153, attempts: 0,
+        v: DETECT_VERSION, gpu: RTX, cls: "discrete-modern", browser: 153, attempts: 0,
         verdict: { tier: "medium", source: "build", pixels: 2_073_600, at: 1_790_000_000_000 },
       },
       choice: null,
@@ -277,7 +277,7 @@ describe("recordFallback", () => {
     // Its start ladder builds low when medium will not, a lower finding, which is written.
     const started = recordFallback({ ...base, record: dropped, attempted: "medium", built: "low", source: "auto", choice: "auto", now: 1_790_000_060_000 });
     expect(started.record).toEqual({
-      v: 1, gpu: RTX, cls: "discrete-modern", browser: 153, attempts: 0,
+      v: DETECT_VERSION, gpu: RTX, cls: "discrete-modern", browser: 153, attempts: 0,
       verdict: { tier: "low", source: "build", pixels: 2_073_600, at: 1_790_000_060_000 },
     });
     expect(autoTier({ ...at, record: started.record, now: 1_790_000_120_000 })).toEqual({ tier: "low", probeFrom: null });
@@ -285,7 +285,7 @@ describe("recordFallback", () => {
 
   it("keeps a holding probe verdict at or below the tier that built, and lowers one above it", () => {
     const probed = (tier: "high" | "medium"): AutoRecord => ({
-      v: 1, gpu: RTX, cls: "discrete-unknown", browser: 153, attempts: 0,
+      v: DETECT_VERSION, gpu: RTX, cls: "discrete-unknown", browser: 153, attempts: 0,
       verdict: { tier, source: "probe", pixels: 2_073_600, at: 1_789_999_000_000 },
     });
     // An explicit High over Auto's measured medium fell back to medium: nothing new is known, and the choice goes back to Auto.
@@ -309,7 +309,7 @@ describe("recordFallback", () => {
   it("reads a build verdict back", () => {
     const s = memoryStorage();
     const record: AutoRecord = {
-      v: 1, gpu: RTX, cls: "discrete-modern", browser: 153, attempts: 0,
+      v: DETECT_VERSION, gpu: RTX, cls: "discrete-modern", browser: 153, attempts: 0,
       verdict: { tier: "medium", source: "build", pixels: 2_073_600, at: 1_790_000_000_000 },
     };
     expect(writeAutoRecord(s, record)).toBe(true);
@@ -349,7 +349,7 @@ describe("the engine on a verdict", () => {
 
   it("reads a WebGPU verdict back, and one with no engine as it was written", () => {
     const s = memoryStorage();
-    const gpu: AutoRecord = { v: 1, gpu: RTX, cls: "discrete-modern", browser: 153, attempts: 0, verdict: { ...verdict, engine: "webgpu" } };
+    const gpu: AutoRecord = { v: DETECT_VERSION, gpu: RTX, cls: "discrete-modern", browser: 153, attempts: 0, verdict: { ...verdict, engine: "webgpu" } };
     writeAutoRecord(s, gpu);
     expect(readAutoRecord(s)).toEqual(gpu);
     const gl: AutoRecord = { ...gpu, verdict };
@@ -361,13 +361,13 @@ describe("the engine on a verdict", () => {
 
   it("writes a build verdict for the engine the tier failed on, over a verdict that engine does not read", () => {
     const base = { gpu: RTX, browser: 153, cls: "discrete-modern" as const, pixels: 2_073_600, now: 1_790_000_000_000 };
-    const onGpu: AutoRecord = { v: 1, ...base, attempts: 0, verdict: { ...verdict, tier: "low", at: base.now - 1, engine: "webgpu" } };
+    const onGpu: AutoRecord = { v: DETECT_VERSION, ...base, attempts: 0, verdict: { ...verdict, tier: "low", at: base.now - 1, engine: "webgpu" } };
     // A WebGPU verdict is not read for WebGL2: the WebGL2 build verdict is written over it.
     const out = recordFallback({ ...base, record: onGpu, attempted: "high", built: "medium", source: "auto", choice: "auto" });
     expect(out.record!.verdict).toEqual({ tier: "medium", source: "build", pixels: 2_073_600, at: 1_790_000_000_000 });
     // A lower WebGL2 verdict is read for WebGPU (a floor there), so it is kept,
     // as the lower holding verdict of the same engine is.
-    const onGl: AutoRecord = { v: 1, ...base, attempts: 0, verdict: { ...verdict, tier: "low", at: base.now - 1 } };
+    const onGl: AutoRecord = { v: DETECT_VERSION, ...base, attempts: 0, verdict: { ...verdict, tier: "low", at: base.now - 1 } };
     expect(recordFallback({ ...base, record: onGl, attempted: "high", built: "medium", source: "auto", choice: "auto", engine: "webgpu" }).record).toBe(null);
     expect(recordFallback({ ...base, record: onGl, attempted: "high", built: "medium", source: "auto", choice: "auto" }).record).toBe(null);
   });

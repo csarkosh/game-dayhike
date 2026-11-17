@@ -5,7 +5,7 @@ import { fileURLToPath } from "node:url";
 import { chooseEngine, engineForTier, WEBGPU_ENABLED, WEBGPU_PHONE_TIERS, WEBGPU_TIERS, type EngineInput } from "../../src/game/engineChoice.js";
 import { autoPick, qualityLine, runProbe } from "../../src/game/frameProbe.js";
 import type { GpuSignals } from "../../src/game/gpuSignals.js";
-import type { AutoRecord, ProbeReading, QualityTier } from "../../src/game/quality.js";
+import { DETECT_VERSION, type AutoRecord, type ProbeReading, type QualityTier } from "../../src/game/quality.js";
 import { readAutoRecord } from "../../src/game/tierChoice.js";
 
 /**
@@ -116,8 +116,8 @@ describe("the start where the rule gives WebGL2", () => {
     const verdict = { tier: "high" as const, source: "probe" as const, pixels: 2_073_600, at: 1_790_000_000_000 - 1 };
     const records: (AutoRecord | null)[] = [
       null,
-      { v: 1, gpu: "Apple GPU", cls: "apple-unknown", browser: 26, attempts: 1, verdict: null },
-      { v: 1, gpu: "Apple GPU", cls: "apple-unknown", browser: 26, attempts: 0, verdict },
+      { v: DETECT_VERSION, gpu: "Apple GPU", cls: "apple-unknown", browser: 26, attempts: 1, verdict: null },
+      { v: DETECT_VERSION, gpu: "Apple GPU", cls: "apple-unknown", browser: 26, attempts: 0, verdict },
     ];
     for (const record of records) {
       const at = { record, pixels: 2_073_600, now: 1_790_000_000_000 };
