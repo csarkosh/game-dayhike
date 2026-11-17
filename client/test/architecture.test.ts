@@ -880,7 +880,7 @@ describe("layer boundaries", () => {
    * renderers read the rule that says where the render scale runs.
    */
   it("what a renderer is sized and started by is computed without loading Babylon, whatever it imports", () => {
-    const ENGINE_FREE = ["frameSize.ts", "renderScale.ts", "quality.ts", "engineWatch.ts", "deviceMakes.ts", "gpuTimeTasks.ts", "gpuTimeReport.ts"];
+    const ENGINE_FREE = ["frameSize.ts", "renderScale.ts", "quality.ts", "engineWatch.ts", "deviceMakes.ts", "gpuTimeTasks.ts", "gpuTimeReport.ts", "gpuFaults.ts", "deviceHeld.ts", "lossBound.ts"];
     const loaded = (file: string): string[] =>
       [...readFileSync(file, "utf8").matchAll(/^\s*(?:import|export)\s+(?!type\s)(?:[^"'();]*?\s+from\s+)?["']([^"']+)["']/gm)].map((m) => m[1] as string);
     const seen = new Set<string>();
@@ -912,6 +912,42 @@ describe("layer boundaries", () => {
     expect(readFileSync(join(SRC, "game/lite/gpuTimeReadout.ts"), "utf8")).toContain("taskTimeReport({");
     // The renderer on Babylon.js is watched by whoever made its engine.
     expect(readFileSync(join(SRC, "game/renderer.ts"), "utf8")).toContain("ownWatch: null,");
+  });
+
+  /**
+   * What the GPU says went wrong under a hike is told through the game's
+   * own record (`gpuFaults.ts`, with no engine: the list above): the
+   * renderer tells it of every error its device reports and of a loss it
+   * did not ask for, the hike keeps the record for its life and gives it
+   * each renderer that stands, and the page counts the losses its hikes
+   * have had.
+   */
+  it("tells the hike's record of the device's errors and losses, and counts a page's losses in one record", () => {
+    const lite = readFileSync(join(SRC, "game/lite/renderer.ts"), "utf8");
+    // Every error nobody caught, and every one a scope handed back.
+    expect(lite).toContain('      heard?.error(gpuFaults, error, "uncaptured");');
+    expect(lite).toContain('    stopScopes = hearErrorScopes(getGpuDevice(engine), (error) => heard?.error(gpuFaults, error, "scope"));');
+    // A loss is told before the hike is asked to answer it; the renderer's own letting go is told to no one.
+    const lost = lite.slice(lite.indexOf("    onEngineDeviceLost(engine, (info) => {"), lite.indexOf('      engineWatch.fail("lost");'));
+    expect(lost.indexOf("      if (disposed) return;")).toBeGreaterThan(0);
+    expect(lost.indexOf("      heard?.lost(gpuFaults, info);")).toBeGreaterThan(lost.indexOf("      if (disposed) return;"));
+    expect(lite).toContain("      heard = null;\n      stopScopes();\n      held.stop();");
+    // A frame with no error counts itself and does no more: the picture is read in one place, when the record asks,
+    // and what the device holds is counted only for a hike that sends it on.
+    expect([...lite.matchAll(/\bdrawn\+\+/g)].length).toBe(1);
+    expect([...lite.matchAll(/\breadPictureSmall\(/g)].length).toBe(1);
+    expect(lite).toContain("    if (heard?.counting === true) {\n      holds = true;\n      held.count(getGpuDevice(engine) as unknown as HeldDevice);\n    }");
+    expect(lite).toContain("    gpuFaults,\n    gpuTime,");
+    // The hike gives its record each renderer that stands, as it puts the watch on it.
+    const app = stripComments(readFileSync(join(SRC, "app.ts"), "utf8"));
+    expect([...app.matchAll(/\bcreateGpuFaults\(/g)].length).toBe(1);
+    expect(app).toContain("      faults.attach(r);\n      const engine = r.engine;");
+    expect(app).toContain("    loss: () => options.losses.note(),");
+    // The page's count is one record for every hike of the page.
+    const main = stripComments(readFileSync(join(SRC, "main.ts"), "utf8"));
+    expect([...main.matchAll(/\bcreateLossRecord\(/g)].length).toBe(1);
+    expect(main).toContain("  note: () => lostDevices.note(performance.now()),");
+    expect(main).toContain("        engineFailed: record,\n        losses,");
   });
 
   /**

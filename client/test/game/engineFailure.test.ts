@@ -307,6 +307,27 @@ describe("a failure of the running WebGPU engine: a live rebuild, never a reload
   });
 });
 
+describe("how a rebuild came out", () => {
+  it("is told once the rebuild has run to its end, before the line, and with the throw where no tier builds", async () => {
+    const h = hike();
+    const answer = answerFailures({ ...h.deps, rebuilt: (reason, failure) => void h.log.push(`rebuilt ${reason}: ${failure ?? "stands"}`) });
+    await answer(h.engine(), "lost");
+    expect(h.log.slice(-4)).toEqual(["on gpu1 (c1)", "lift", "rebuilt lost: stands", `flash ${NOTICE_RESTARTED}`]);
+    h.failRebuild();
+    await answer(h.engine(), "lost");
+    expect(h.log.slice(-3)).toEqual(["rebuild from gpu1", "rebuilt lost: Error: no tier builds", "lift"]);
+  });
+
+  it("is told of nothing where the failure was not answered", async () => {
+    const h = hike();
+    const told: string[] = [];
+    const answer = answerFailures({ ...h.deps, rebuilt: (reason) => void told.push(reason) });
+    h.end();
+    await answer(h.engine(), "lost");
+    expect(told).toEqual([]);
+  });
+});
+
 describe("the cover over play", () => {
   it("lifts once, when told or when the session ends, and frees the controls", () => {
     const log: string[] = [];

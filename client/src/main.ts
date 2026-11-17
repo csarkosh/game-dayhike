@@ -50,6 +50,7 @@ import type { EngineOnCanvas, EngineWatchers } from "./game/rendererSwap.js";
 import { releaseEngine } from "./game/renderer.js";
 import { adoptEngine, dropEngine, keepEngine } from "./game/keptEngine.js";
 import { recordEngineFailure, recordStartFailure, startOnEngine } from "./game/engineFailure.js";
+import { createLossRecord } from "./game/lossBound.js";
 import { engineVersion } from "./game/engineVersion.js";
 import { hearEngineLog } from "./game/engineLog.js";
 import { browserEnv, browserMajor, hostOs, isChromeOrEdge, readSignals, type GpuSignals } from "./game/gpuSignals.js";
@@ -938,6 +939,17 @@ function engineFailed(reason: "pipeline" | "lost"): string {
 }
 
 /**
+ * The devices this page's hikes have lost (`lossBound.ts`), by the page's
+ * clock: every hike's, since the machine is the same in the next one. A
+ * hike notes each loss here, for its row to say how many there have been
+ * and how close together.
+ */
+const lostDevices = createLossRecord();
+const losses = {
+  note: () => lostDevices.note(performance.now()),
+};
+
+/**
  * Remembers a WebGPU start that ended on WebGL2 (`init` where it failed,
  * `timeout` where it ran out of time), and pins this tab's URL to
  * `engine=webgl2` where the rule would otherwise give WebGPU again: storage
@@ -1363,6 +1375,7 @@ function launch(
         keepEngine: (kept) => keepEngine(kept, releaseEngine),
         engineFor: engineForGame,
         engineFailed: record,
+        losses,
         tier: decided.tier,
         tierSource: decided.source,
         fallbackTiers: signals === null ? ["low"] : startFallbacks(decided.tier, decided.cls, signals.cores, signals.memoryGb),

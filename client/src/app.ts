@@ -105,6 +105,8 @@ import {
 import type { KeptEngine } from "./game/keptEngine.js";
 import { releaseAtmosphere } from "./game/atmosphere.js";
 import { answerFailures, coverWith, createSerial } from "./game/engineFailure.js";
+import { createGpuFaults } from "./game/gpuFaults.js";
+import type { LossNote } from "./game/lossBound.js";
 import { GOVERNOR_IDLE_MAX_MS, actOnDrop, governHike, governorDecision, steadyFrame } from "./game/governor.js";
 import { OVER_PLAY_Z, showProbeScreen, timeIdleCadence } from "./game/probeScreen.js";
 import { createCoveredDraw } from "./game/coveredDraw.js";
@@ -139,7 +141,7 @@ import { loadBirdBed } from "./game/birdBed.js";
 import { stepWoodsSounds, WOODS_SOUNDS_REST, woodsSoundsFrom, type WoodsSoundsState } from "./game/woodsSounds.js";
 import type { World } from "./sim/world.js";
 import type { Lobby } from "./net/lobby.js";
-import { worldVersionOf, type Telemetry } from "./net/telemetry.js";
+import { worldVersionOf, type Fields, type Telemetry } from "./net/telemetry.js";
 import { DUSK_AT, MIST_AT, WET_AT } from "./sim/acts.js";
 import sandbox01 from "../levels/sandbox01.json" with { type: "json" };
 
@@ -238,6 +240,10 @@ export type GameOptions = {
    * WebGPU rule gives the rebuild its engine. The HUD's line for once the
    * rebuild is done. */
   engineFailed(reason: "pipeline" | "lost"): string;
+  /** The page's record of lost devices (`lossBound.ts`): `note` takes one
+   * down as the hike's renderer loses its device and says how many the page
+   * has had and how close together. */
+  losses: { note(): LossNote };
   /** The tier `main.ts` decided (`startupTier`): `?tier=`, the player's
    * choice, or Auto. The hike starts at it; the pause screen's Settings can
    * change it while the hike runs. */
@@ -409,11 +415,43 @@ function buildGame(
   /** The HUD's line for a renderer that fell back to WebGL2 when its WebGPU
    * engine could not build it, shown once play can see it. */
   let engineNotice: string | null = null;
+  /** When the page was last shown (ms, the page's clock), whether the intro's film is over the hike, whether the
+   * world is in, and whether a rebuild after a failure is under its cover: what a row about the GPU says was happening. */
+  let shownAt = performance.now();
+  let filmOver = false;
+  let worldIn = false;
+  let rebuilding = false;
+  /** When the failure being answered came (ms). */
+  let failedAt = 0;
+  /**
+   * What the GPU says went wrong under this hike (`gpuFaults.ts`): every
+   * renderer the hike builds tells it of its device's errors and of a loss
+   * it did not ask for, and the rows it sends are bounded for the hike. A
+   * loss is noted on the page's record whatever is sent.
+   */
+  const faults = createGpuFaults({
+    enabled: telemetry?.enabled ?? false,
+    send: (name, fields) => telemetry?.event(name, fields),
+    hike: hikeNow,
+    loss: () => options.losses.note(),
+    heapMb: () => {
+      const used = (performance as { memory?: { usedJSHeapSize?: number } }).memory?.usedJSHeapSize;
+      return typeof used === "number" ? used / 1_048_576 : null;
+    },
+    now: () => performance.now(),
+    setTimer: (fn, ms) => {
+      const id = setTimeout(fn, ms);
+      return () => clearTimeout(id);
+    },
+  });
+  made(() => faults.dispose());
   /** The ladders' hooks for the engine: listen to one that stands, take the
    * old one's listener off before it goes, and remember one that failed. */
   const engineBindings: Pick<SwapBindings, "watch" | "unwatch" | "engineFailed"> = {
     watch: (r, detector) => {
       stopWatching();
+      // The renderer that stands is the one the hike's record of GPU faults hears.
+      faults.attach(r);
       const engine = r.engine;
       stopWatching = detector(engine, (reason) => void answerFailure(engine, reason));
     },
@@ -733,6 +771,7 @@ function buildGame(
   // pause menu, not mid-walk. Desktop already gets this from pointer lock.
   const onVisibility = () => {
     if (document.visibilityState === "hidden" && !disposed) input.disengage();
+    else shownAt = performance.now();
   };
   document.addEventListener("visibilitychange", onVisibility);
   made(() => document.removeEventListener("visibilitychange", onVisibility));
@@ -1953,6 +1992,22 @@ function buildGame(
     sessionOver();
   }
 
+  /**
+   * What was happening in the hike, for a row about a GPU error or a lost
+   * device (`gpuFaults.ts`): read when a row is made, and kept by no frame.
+   */
+  function hikeNow(): Fields & { hidden: boolean } {
+    return {
+      ready: worldIn,
+      busy: rebuilding ? "rebuild" : lowering ? "drop" : switching ? "switch" : "",
+      film: filmOver,
+      hidden: document.visibilityState !== "visible",
+      shownMs: Math.round(performance.now() - shownAt),
+      p: progressRounded(),
+      tick: activeWorld?.state.tick ?? 0,
+    };
+  }
+
   /** The session has ended, or the match has: its last seconds are not play,
    * so nothing more for the governor, and a governor's cover lifts at once so
    * the ending is seen; a switch under it finishes, or is abandoned, as it
@@ -2446,6 +2501,7 @@ function buildGame(
   void ready.then(() => {
     if (disposed || broken) return;
     for (const entry of view) if (isLook(entry.name)) applyView(entry.name, entry.args);
+    worldIn = true;
     // The world is in and the URL's looks applied: tools that time or shoot the page wait for this class.
     document.body.classList.add("world-ready");
   });
@@ -2676,8 +2732,18 @@ function buildGame(
     runningOnWebGpu: () => renderer.engineName === "webgpu",
     unwatch: () => engineBindings.unwatch(),
     abandon: () => renderer.abandon(),
-    record: (reason) => options.engineFailed(reason),
-    cover: coverPlay,
+    record: (reason) => {
+      failedAt = performance.now();
+      return options.engineFailed(reason);
+    },
+    cover: () => {
+      const lift = coverPlay();
+      rebuilding = true;
+      return () => {
+        rebuilding = false;
+        lift();
+      };
+    },
     stopLoop: () => renderer.stopLoop(),
     // The answer shows the line for what the rebuild ended on; the swap's
     // own is dropped, so it shows once.
@@ -2686,6 +2752,20 @@ function buildGame(
     }),
     flash: (line) => hud.flash(line, FALLBACK_NOTICE_MS),
     log: (line) => console.error(line),
+    // How the rebuild came out: whether the new renderer stands (or is still being made as the cover lifts), and the
+    // frames it has drawn under the cover. A renderer that could not be made, or lost its device in turn, did not.
+    rebuilt: (reason, failure) => {
+      const now = failure === null ? faults.current() : null;
+      const fields: Fields = { reason, ok: failure === null && (now === null || now.facts.state === "standing" || now.facts.state === "making"), ms: Math.round(performance.now() - failedAt), tier };
+      if (failure !== null) fields.why = failure.slice(0, 300);
+      else fields.engine = renderer.engineName;
+      if (now !== null) {
+        fields.r = now.r;
+        fields.state = now.facts.state;
+        fields.frames = now.facts.frames;
+      }
+      telemetry?.event("engine_rebuilt", fields);
+    },
   });
 
   /** Feeds the governor one frame of play, which acts on its verdict once
@@ -2761,7 +2841,9 @@ function buildGame(
       const release = gate.cover();
       // The intro's film is over the hike: drawn slowly until the cut (`coveredDraw.ts`).
       const lift = filmDraw.cover();
+      filmOver = true;
       return () => {
+        filmOver = false;
         lift();
         // The film is gone: what is left of the first builds runs to its end here, behind the cut's
         // veil, and from now on a build that cannot wait runs whole, as in any play.
