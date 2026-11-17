@@ -27,7 +27,7 @@
 
 import type { AmbientAudio, ListenerPose } from "./ambientAudio.js";
 import { audioUrl } from "./assetUrls.js";
-import { reportLayer } from "./groundMaps.js";
+import { reportLayer } from "./loadReport.js";
 import type { Presence, WildlifeEvent } from "./wildlifeBehaviour.js";
 
 /**

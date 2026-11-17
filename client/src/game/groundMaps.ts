@@ -26,7 +26,7 @@ import { Texture } from "@babylonjs/core/Materials/Textures/texture.js";
 import type { BaseTexture } from "@babylonjs/core/Materials/Textures/baseTexture.js";
 import { Constants } from "@babylonjs/core/Engines/constants.js";
 import type { Scene } from "@babylonjs/core/scene.js";
-import { reportProgress } from "./modelLoad.js";
+import { reportLayer } from "./loadReport.js";
 
 import {
   GROUND_LAYERS, GROUND_LAYER_URLS, GROUND_MAP_SIZE, NEUTRAL_NORMAL, NEUTRAL_RAH, decodeGroundLayer, flipRowsY, interleaveLayers,
@@ -50,21 +50,8 @@ export async function decodeLayer(url: string, size: number, signal?: AbortSigna
   }
 }
 
-/**
- * The ground's downloads for the loading bar: the twelve maps here, the six
- * albedos (`terrainTexture.ts`) and the six wildlife calls
- * (`wildlifeAudio.ts`) are one stage of 24, told by name as each starts and
- * lands. Nothing to report when no bar is up.
- */
-export const GROUND_STAGE_TOTAL = 24;
-
-export function reportLayer(what: "start" | "done", id: string): void {
-  const p = reportProgress();
-  if (p === null) return;
-  p.total("ground", GROUND_STAGE_TOTAL);
-  if (what === "start") p.start("ground", id);
-  else p.done("ground", id);
-}
+// The ground's downloads are one stage of the loading bar, told by name with no engine (`loadReport.ts`); named from here too.
+export { GROUND_STAGE_TOTAL, reportLayer } from "./loadReport.js";
 
 type CreateArray = (data: Uint8Array, size: number, depth: number, name: string) => BaseTexture;
 

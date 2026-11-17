@@ -39,35 +39,11 @@
 import type { AssetContainer } from "@babylonjs/core/assetContainer.js";
 import type { Scene } from "@babylonjs/core/scene.js";
 import { loadAssetContainerAsync } from "@babylonjs/core/Loading/sceneLoader.js";
-import type { LoadProgress } from "./loadProgress.js";
-import { MODEL_COUNT, assetBytes } from "./assetUrls.js";
+import { assetBytes } from "./assetUrls.js";
+import { reportProgress } from "./loadReport.js";
 
-/** The models stage's total: every model a hike loads (the far forest, the
- * clutter, the wildlife, the people and the placed things; not the film's
- * own), so the line can say `n of N` from its first word. */
-export const MODEL_TOTAL = MODEL_COUNT;
-
-let progress: LoadProgress | null = null;
-/** The progress model the loads report to while an intro is up; null otherwise. */
-export function setLoadProgress(p: LoadProgress | null): void {
-  progress = p;
-  p?.total("models", MODEL_TOTAL);
-}
-/** The progress model the loads report to, for the other hooks. */
-export function reportProgress(): LoadProgress | null {
-  return progress;
-}
-
-let compiles = 0;
-/** A shader the WebGL2 engine compiled: one of the bar's shaders, a stage
- * with no total, since nothing says ahead how many the world will ask for. */
-export function reportCompile(): void {
-  const p = progress;
-  if (p === null) return;
-  const id = `c${compiles++}`;
-  p.start("shaders", id);
-  p.done("shaders", id);
-}
+// Where the loads report to is the loading bar's own, with no engine (`loadReport.ts`); named from here too.
+export { MODEL_TOTAL, reportCompile, reportProgress, setLoadProgress } from "./loadReport.js";
 
 /** Babylon's container loader, with the progress option the loads pass. */
 export type ContainerLoader = (
@@ -92,7 +68,7 @@ function outputOf(url: string): string {
  * teardown ends the load the same way whichever shell started it.
  */
 export function loadContainer(url: string, scene: Scene, load: ContainerLoader = loadAssetContainerAsync): Promise<AssetContainer> {
-  const p = progress;
+  const p = reportProgress();
   p?.start("models", url, assetBytes(outputOf(url)));
   const pending = load(url, scene, {
     onProgress: (e) => p?.bytes("models", url, e.loaded, e.total > 0 ? e.total : undefined),

@@ -20,7 +20,7 @@ import { renderLanding, type LandingHandle, type LandingPanel } from "./game/lan
 import { afterNextPaint } from "./game/paint.js";
 import { createIntroOverlay, type CutReason, type IntroOverlay } from "./game/introOverlay.js";
 import { INTRO_CAPTIONS } from "./game/scene/intro.js";
-import { setLoadProgress } from "./game/modelLoad.js";
+import { setLoadProgress } from "./game/loadReport.js";
 import { markedProgress } from "./game/loadProgress.js";
 import { titleStillUrl, titleVideoUrl, videoUrl } from "./game/assetUrls.js";
 import { createRouteAnnouncer } from "./game/routeAnnounce.js";

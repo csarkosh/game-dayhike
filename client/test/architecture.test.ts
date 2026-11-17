@@ -584,6 +584,7 @@ describe("layer boundaries", () => {
       join(SRC, "game", "ending.ts"),
       join(SRC, "game", "endScene.ts"),
       join(SRC, "game", "carParts.ts"),
+      join(SRC, "game", "loadReport.ts"),
       join(SRC, "game", "scene", "routeWorld.ts"),
       join(SRC, "game", "scene", "scenePlayer.ts"),
       join(SRC, "game", "scene", "actorPose.ts"),
