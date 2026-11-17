@@ -841,7 +841,7 @@ describe("layer boundaries", () => {
    */
   it("what the scenes and the endings are played with is computed without loading Babylon, whatever it imports", () => {
     const ENGINE_FREE = [
-      "scenePlay.ts", "cutscene.ts", "ending.ts", "endScene.ts", "carAudio.ts", "carParts.ts", "scene/roadPath.ts", "scene/timeline.ts", "scene/shots.ts",
+      "scenePlay.ts", "shotBodies.ts", "cutscene.ts", "ending.ts", "endScene.ts", "carAudio.ts", "carParts.ts", "scene/roadPath.ts", "scene/timeline.ts", "scene/shots.ts",
       "scene/routeWorld.ts", "scene/scenePlayer.ts", "scene/actorPose.ts", "scene/stageParts.ts", "scene/cordTubeGeometry.ts", "scene/cord.ts",
     ];
     const loaded = (file: string): string[] =>
@@ -863,10 +863,55 @@ describe("layer boundaries", () => {
     expect(bad).toEqual([]);
     // And the shells on Babylon.js read them: the scenes' state is kept in one place, and the car's parts are turned by one rule.
     expect(readFileSync(join(SRC, "game/renderer.ts"), "utf8")).toContain("const play = createScenePlay({");
+    // On Lite the frame's bodies take up who the scene shows in the frame that says so.
+    expect(readFileSync(join(SRC, "game/lite/renderer.ts"), "utf8")).toContain("bodies = bodiesInShot(poses, bodies, now, state, localId, alpha, standing?.entities?.models ?? null);");
     expect(readFileSync(join(SRC, "game/scene/sceneStage.ts"), "utf8")).toContain("wheel.node.rotation.z = wheelSpinTurn(pose);");
     // The handset's grip and the cord's ends, the cord's tube and the route's world likewise.
     expect(readFileSync(join(SRC, "game/scene/sceneStage.ts"), "utf8")).toContain("new Vector3(GRIP_OFFSET[0], GRIP_OFFSET[1], GRIP_OFFSET[2])");
     expect(readFileSync(join(SRC, "game/scene/cordTube.ts"), "utf8")).toContain("radius: CORD_TUBE_RADIUS, tessellation: CORD_TUBE_SIDES");
+  });
+
+  /**
+   * What stands between a renderer and the page it draws on is the game's
+   * own arithmetic too: the frame's size from the canvas's box, the tier's
+   * scaling and the render scale under the paint, the watch a renderer
+   * keeps on an engine it made for itself, the count of what a device is
+   * asked to make of shaders, and the measurement mode's report. Both
+   * renderers read the rule that says where the render scale runs.
+   */
+  it("what a renderer is sized and started by is computed without loading Babylon, whatever it imports", () => {
+    const ENGINE_FREE = ["frameSize.ts", "renderScale.ts", "quality.ts", "engineWatch.ts", "deviceMakes.ts", "gpuTimeTasks.ts", "gpuTimeReport.ts"];
+    const loaded = (file: string): string[] =>
+      [...readFileSync(file, "utf8").matchAll(/^\s*(?:import|export)\s+(?!type\s)(?:[^"'();]*?\s+from\s+)?["']([^"']+)["']/gm)].map((m) => m[1] as string);
+    const seen = new Set<string>();
+    const stack = ENGINE_FREE.map((name) => join(SRC, "game", name));
+    for (const file of stack) expect(existsSync(file), file).toBe(true);
+    const bad: string[] = [];
+    while (stack.length > 0) {
+      const file = stack.pop() as string;
+      if (seen.has(file)) continue;
+      seen.add(file);
+      for (const spec of loaded(file)) {
+        if (spec.startsWith("@babylonjs")) bad.push(`${relative(SRC, file)} imports ${spec}`);
+        if (spec.startsWith(".") && spec.endsWith(".js")) stack.push(join(file, "..", spec.replace(/\.js$/, ".ts")));
+      }
+    }
+    expect(seen.size).toBeGreaterThan(ENGINE_FREE.length);
+    expect(bad).toEqual([]);
+    expect(readFileSync(join(SRC, "game/renderer.ts"), "utf8")).toContain("renderScaleRuns(postFeatures.paint, options.gpuTime === true)");
+    const lite = readFileSync(join(SRC, "game/lite/renderer.ts"), "utf8");
+    expect(lite).toContain("createFrameFit(tier, renderScaleRuns(postFeatures.paint, options.gpuTime === true), {");
+    // The surface is sized by the game's rule alone: Lite's own fit to the display's ratio is not called.
+    expect(lite).not.toContain("resizeEngine");
+    // A lost device is told to the hike, which builds the renderer again: Lite's recovery in place is not used.
+    expect(lite).toContain('engineWatch.fail("lost");');
+    expect(lite).toContain("ownWatch: engineWatch.watch,");
+    expect(lite).not.toContain("enableDeviceLostSceneRecovery");
+    // What the engine tells on Babylon.js is told from the device's own calls, and timed by Lite's own timers.
+    expect(lite).toContain("onShaderCompiled: (fn) => makes.onMade(fn),");
+    expect(readFileSync(join(SRC, "game/lite/gpuTimeReadout.ts"), "utf8")).toContain("taskTimeReport({");
+    // The renderer on Babylon.js is watched by whoever made its engine.
+    expect(readFileSync(join(SRC, "game/renderer.ts"), "utf8")).toContain("ownWatch: null,");
   });
 
   /**
@@ -898,7 +943,7 @@ describe("layer boundaries", () => {
     expect(bad).toEqual([]);
     // Lite itself is loaded only by the modules that draw: the plugins, the pose and the light name its types alone.
     expect(lite.sort()).toEqual([
-      "game/lite/bladeMeshes.ts", "game/lite/brushMeshes.ts", "game/lite/capMesh.ts", "game/lite/cliffMeshes.ts", "game/lite/clutterMeshes.ts", "game/lite/dragonflyMeshes.ts", "game/lite/duffMeshes.ts", "game/lite/entityMeshes.ts", "game/lite/forestMeshes.ts", "game/lite/forestModels.ts", "game/lite/groundTextures.ts", "game/lite/impostorBake.ts",
+      "game/lite/bladeMeshes.ts", "game/lite/brushMeshes.ts", "game/lite/capMesh.ts", "game/lite/cliffMeshes.ts", "game/lite/clutterMeshes.ts", "game/lite/dragonflyMeshes.ts", "game/lite/duffMeshes.ts", "game/lite/entityMeshes.ts", "game/lite/forestMeshes.ts", "game/lite/forestModels.ts", "game/lite/gpuTimeReadout.ts", "game/lite/groundTextures.ts", "game/lite/impostorBake.ts",
       "game/lite/lakeMeshes.ts", "game/lite/lakePanorama.ts", "game/lite/lipMeshes.ts", "game/lite/listMeshes.ts", "game/lite/midgeMeshes.ts", "game/lite/mistMeshes.ts", "game/lite/motes.ts", "game/lite/postChain.ts", "game/lite/propMeshes.ts", "game/lite/rain.ts", "game/lite/rainMap.ts", "game/lite/rainSplash.ts", "game/lite/renderer.ts", "game/lite/sceneActor.ts", "game/lite/sceneryMeshes.ts", "game/lite/sceneryModels.ts", "game/lite/sceneryPaint.ts", "game/lite/seaFft.ts", "game/lite/seaMeshes.ts", "game/lite/shadeMask.ts", "game/lite/shadeVeil.ts", "game/lite/shaderUniforms.ts",
       "game/lite/skinnedModels.ts", "game/lite/skyCapture.ts", "game/lite/skyDome.ts", "game/lite/surfSpray.ts", "game/lite/terrainMeshes.ts", "game/lite/waterBed.ts", "game/lite/waterPlantMeshes.ts", "game/lite/wildlifeMeshes.ts", "game/lite/wornLamps.ts",
     ]);
@@ -906,6 +951,20 @@ describe("layer boundaries", () => {
     const renderer = readFileSync(join(SRC, "game/renderer.ts"), "utf8");
     expect(renderer).toContain("  return createLiteRenderer(canvas, level, forest, options);");
     expect(loaded(join(SRC, "game/lite/renderer.ts")).filter((spec) => spec === "../renderer.js")).toEqual([]);
+  });
+
+  /**
+   * Babylon Lite names what a pass of the hike's own is drawn with
+   * (`getGpuDevice`, `getFrameEncoder`, `getRenderTargetAttachments`,
+   * `createCustomTask`), so nothing under `game/lite/` reaches into an
+   * engine, a render target or a task for a field Lite keeps to itself: such
+   * a read breaks without a word when Lite renames the field.
+   */
+  it("reads none of Babylon Lite's private fields under game/lite/: the device, the frame's encoder, a target's attachments, a task's passes", () => {
+    const PRIVATE = /\b_(?:device|currentEncoder|colorView|colorTexture|depthView|depthTexture|passes|width|height)\b/;
+    const own = sourceFiles(join(SRC, "game", "lite"));
+    expect(own.length).toBeGreaterThan(5);
+    expect(own.filter((file) => PRIVATE.test(readFileSync(file, "utf8"))).map((file) => relative(SRC, file))).toEqual([]);
   });
 
   /**

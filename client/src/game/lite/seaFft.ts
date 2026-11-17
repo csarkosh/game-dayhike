@@ -34,7 +34,7 @@
 import {
   addComputeDispatch, addTaskAtStart, computeStorageBufferBinding, computeStorageTextureViewBinding, computeUniformBufferBinding, createComputeBindingSet,
   createComputeDispatch, createComputeShader, createComputeStorageTexture, createComputeTask, createComputeUniformArena, createStorageBuffer,
-  disposeComputeBindingSet, disposeComputeShader, disposeStorageBuffer, prepareComputeTask, removeTask, submitComputeTasks, updateComputeUniformSlot,
+  disposeComputeBindingSet, disposeComputeShader, disposeStorageBuffer, getGpuDevice, prepareComputeTask, removeTask, submitComputeTasks, updateComputeUniformSlot,
   updateStorageBuffer,
   type ComputeStorageTexture, type EngineContext, type SceneContext, type Texture2DArray,
 } from "@babylonjs/lite";
@@ -78,7 +78,7 @@ const at = (bindings: Record<string, FftBinding>, name: string): FftBinding => {
  * one drawn before it runs (`windSeaField.ts`).
  */
 export async function createLiteSeaFft(engine: EngineContext, scene: SceneContext, uploads?: FrameUploads): Promise<LiteSeaFft> {
-  const device = (engine as unknown as { _device: Pick<GPUDevice, "pushErrorScope" | "popErrorScope"> })._device;
+  const device = getGpuDevice(engine);
   const disp = await cascadePicture(engine, "oceanWindDisp");
   const slope = await cascadePicture(engine, "oceanWindSlope");
   // Neither buffer keeps a copy on the page: the amplitudes are made again when the wind moves, the spectra are the GPU's own.

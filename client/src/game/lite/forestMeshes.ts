@@ -54,9 +54,11 @@
  * the snag stood up, for its model lies down), in the materials the near
  * trees wear less what moves and what the weather does, the two pictures
  * read back and made into a distance field off the page
- * (`impostorFieldWorker.ts`). A billboard stands hidden until its bake has
- * landed, and for good if it fails, which is said: an unbaked card would
- * draw a grey quad a tree. The card lights the baked colour once, live, as
+ * (`impostorFieldWorker.ts`). A billboard stands hidden until every bake
+ * has settled, when the cards of those that landed are made together (a
+ * card that joined as its own bake landed had Lite build the whole scene
+ * again a bake), and for good if its bake fails, which is said: an unbaked
+ * card would draw a grey quad a tree. The card lights the baked colour once, live, as
  * a crown, through the baked normals, and tests the field at its rim.
  * Nothing bakes again while the forest stands: the pictures are unlit, so
  * neither the hour nor the weather is in them.
@@ -287,6 +289,13 @@ export function createForestMeshes(engine: EngineContext, scene: SceneContext, s
   const billboards: (Billboard | null)[] = [];
   /** Every bake still to settle. */
   const bakes: Promise<void>[] = [];
+  /**
+   * The bakes that have landed and whose cards are still to be made, and how many bakes have not settled. Lite builds
+   * every renderable of a scene again, pipelines and all, when a mesh in a new material joins it, so the cards join
+   * together, once the last bake has settled: a card joining as each bake landed built the scene again once a bake.
+   */
+  const landedCards: { board: Billboard; slot: number; albedo: Uint8Array; normal: Uint8Array }[] = [];
+  let baking = 0;
   /** The far lists as the last rebuild split them, and where the camera stood: a bake that lands later fills its billboard from them. */
   let far: { lattice: TreeInstance[][]; fill: TreeInstance[][]; x: number; z: number } | null = null;
   /** The bakes' maps: the forest's own, let go with it. */
@@ -575,13 +584,30 @@ export function createForestMeshes(engine: EngineContext, scene: SceneContext, s
   function billboard(of: string, quad: ImpostorQuad, box: { min: Vec3; max: Vec3 }, pose: Float32Array, meshes: () => BakeMesh[]): Billboard {
     const made: Billboard = { quad, bake: { name: impostorName(of), state: "baking", ms: null }, startedAt: performance.now(), bucket: null };
     const slot = billboards.length;
+    baking++;
     bakes.push(bakeBillboard(made, slot, box, pose, meshes));
     return made;
   }
 
   /**
-   * A billboard's bake, to its end: the two pictures drawn and read back, their distance field made, and the card
-   * dressed in them. It says once that it is still waiting at `IMPOSTOR_BAKE_WARN_MS` and gives up, saying so, at
+   * Every card whose bake has landed, made and filled at once: called when the last bake has settled and the models
+   * are adopted, so the cards join the scene in one step. A forest that has gone, or whose device has, makes none.
+   */
+  function dressLanded(): void {
+    const cards = landedCards.splice(0);
+    if (disposed || abandoned) return;
+    for (const card of cards) {
+      dress(card.board, card.slot, card.albedo, card.normal);
+      card.board.bake.state = "ready";
+    }
+    // A rebuild may have split the far lists while the bakes were drawn: each card takes its own now.
+    for (const card of cards) fillBillboard(card.slot);
+  }
+
+  /**
+   * A billboard's bake, to its end: the two pictures drawn and read back and their distance field made. Its card is
+   * dressed in them with every other bake's, when the last has settled (`dressLanded`), and its record says `ready`
+   * from then. It says once that it is still waiting at `IMPOSTOR_BAKE_WARN_MS` and gives up, saying so, at
    * `IMPOSTOR_BAKE_FAIL_MS`; a bake that fails or gives up leaves its billboard undrawn and its record `failed`. One
    * ended by the forest's leaving or by `abandon` says nothing and stays as it stood.
    */
@@ -622,17 +648,17 @@ export function createForestMeshes(engine: EngineContext, scene: SceneContext, s
         fail();
         return;
       }
-      dress(board, slot, fields.albedo, fields.normal);
-      board.bake.state = "ready";
+      // The bake's own time is to here: its card waits for the other bakes.
       board.bake.ms = performance.now() - board.startedAt;
-      // A rebuild may have split the far lists while the bake was drawn: the card takes its own now.
-      fillBillboard(slot);
+      landedCards.push({ board, slot, albedo: fields.albedo, normal: fields.normal });
     } catch (error) {
       if (!disposed && !abandoned) console.error(`forest impostor bake failed: ${name}`, error);
       fail();
     } finally {
       clearTimeout(warned);
       clearTimeout(bound);
+      baking--;
+      if (baking === 0 && adopted) dressLanded();
     }
   }
 
@@ -921,6 +947,8 @@ export function createForestMeshes(engine: EngineContext, scene: SceneContext, s
     adoptDeadwood((await deadwoodModel).get(deadwoodLod) ?? [], dead.look, dead.maps, mossMap);
     adoptNurse((await fernModel).get(NURSE_FERN_LOD) ?? []);
     adopted = true;
+    // Every bake is asked for by now: cards whose bakes all settled first are made here.
+    if (baking === 0) dressLanded();
     // A camera that arrived while the models loaded is honoured now.
     maybeBuild();
   }

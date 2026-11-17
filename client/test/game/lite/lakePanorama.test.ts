@@ -3,7 +3,7 @@ import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
 import { FRAME_BLOCK, inFrameBlock } from "../../../src/game/lite/frameBlock.js";
-import { PANORAMA_COLUMN_WGSL, PANORAMA_FORMAT, PANORAMA_GROUND_WGSL, panoramaGroundPlugin } from "../../../src/game/lite/lakePanorama.js";
+import { PANORAMA_FORMAT, PANORAMA_GROUND_WGSL, panoramaGroundPlugin } from "../../../src/game/lite/lakePanorama.js";
 import { REFLECTED_RINGS } from "../../../src/game/lite/terrainMeshes.js";
 import { TERRAIN_VERTEX_FLOATS, TERRAIN_VERTEX_LAYOUT } from "../../../src/game/lite/terrainPlugins.js";
 import { MIRROR_CANOPY_SHADE } from "../../../src/game/mirrorGround.js";
@@ -67,20 +67,35 @@ describe("the ground in a lake's shore panorama on Babylon Lite", () => {
     expect(src("renderer.ts")).toContain("for (const mesh of clipmap?.meshes.slice(0, 5) ?? []) {\n    lakeMirror?.register(mesh, mirrorTerrain);\n    lakePanorama?.register(mesh, mirrorTerrain);");
   });
 
-  it("draws a sector only on a frame that reads the picture, into a target of its own that one triangle lays into the sector's column", () => {
+  it("draws a sector only on a frame that reads the picture, straight into the sector's column, which the pass clears alone", () => {
     const text = src("lite/lakePanorama.ts");
     expect(text).toContain("if (sky === null || !read) return false;");
-    expect(text).toContain("pass.setViewport(column * PANORAMA_SECTOR_WIDTH, 0, PANORAMA_SECTOR_WIDTH, PANORAMA_HEIGHT, 0, 1);");
-    expect(text).toContain("pass.setScissorRect(column * PANORAMA_SECTOR_WIDTH, 0, PANORAMA_SECTOR_WIDTH, PANORAMA_HEIGHT);");
-    // A texel is read whole at the column's own texel, and is drawn or not: Babylon.js writes an alpha of 1 for a
-    // material cut out by its alpha, where Lite hands on the alpha it was cut at.
-    const column = tight(PANORAMA_COLUMN_WGSL);
-    expect(column).toContain("lettexel=textureLoad(sectorColour,vec2<i32>(input.uv*size),0);");
-    expect(column).toContain("returnvec4<f32>(texel.rgb,step(1.0e-4,texel.a));");
+    // The column is the camera's viewport, as the game's capture has it on Babylon.js.
+    expect(text).toContain("camera.viewport = { x: (held * PANORAMA_SECTOR_WIDTH) / PANORAMA_WIDTH, y: 0, width: PANORAMA_SECTOR_WIDTH / PANORAMA_WIDTH, height: 1 };");
+    expect(tight(src("lakePanorama.ts"))).toContain("camera.viewport.x=sector/PANORAMA_SECTORS;");
+    // A texel is drawn or not: Babylon.js writes an alpha of 1 for a material cut out by its alpha, where Lite hands
+    // on the alpha it was cut at, so the pass ends by writing an alpha of 1 wherever it drew.
     expect(tight(fx("lakeMirror.fragment.fx"))).toContain("returnmix(fallback,shore.rgb,hit.z*below*shore.a);");
-    expect(text).toContain("clr: true, clrColor: { r: 0, g: 0, b: 0, a: 0 }, autoMirror: false");
+    expect(text).toContain("clr: true, clrColor: { r: 0, g: 0, b: 0, a: 0 }, autoMirror: false, clearViewport: true, alphaWhereDrawn: true,");
+    // Another lake's shore is emptied whole by the first sector of the new one's; every other sector clears its column alone.
+    expect(text).toContain("config.clearViewport = !clearDue;");
+    // No pass of the hike's own copies a sector, and none is made for it.
+    expect(text).not.toContain("createCustomTask");
+    expect(text).not.toContain("beginRenderPass");
     // The pass is the scene's only for the frame that draws a sector.
     expect(text).toContain("task.enabled = false;");
     expect(src("lite/renderer.ts")).toContain("standing.panorama?.frameDrawn();");
+  });
+
+  it("draws a lake's plants by its own word, whatever the frame's view holds of them: a sector's frame shows none for it", () => {
+    // The pass's word on a mesh outranks the mesh's own, which the view sets.
+    expect(src("lite/lakePanorama.ts")).toContain("      if (always === true) setTaskMeshVisible(task, mesh, true);");
+    const renderer = src("lite/renderer.ts");
+    expect(renderer).toContain("for (const mesh of waterPlants.meshes) panorama?.own.add(mesh, true);");
+    // The frame's own pass shows each kind by the view alone.
+    expect(renderer).toContain("standing.waterPlants?.seen(planes);");
+    const plants = src("lite/waterPlantMeshes.ts");
+    expect(plants).toContain("    seen(planes) {");
+    expect(plants).toContain("        let now = false;");
   });
 });

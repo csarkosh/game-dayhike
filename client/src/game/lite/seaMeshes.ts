@@ -11,7 +11,8 @@
  * - **The sea is one blended draw, and none out of view.** The seven rings
  *   are one mesh made once, a vertex its place in its ring's lattice, placed
  *   by the vertex stage; on Babylon.js they are seven meshes, each made
- *   again as it moves. A ring has water where the ground under one of its
+ *   again as it moves. The draw is held to the run of rings that hold
+ *   water, so a dry ring's vertices are not placed at all. A ring has water where the ground under one of its
  *   cells is below the level (or, along the cove, within the swash's climb
  *   of it), and the box of those cells is what a view is tested against, as
  *   the game culls a ring by it: the mesh is shown while the view holds one
@@ -42,14 +43,14 @@
  *   other mode the sea's fragment lip draws, and the two never together.
  * - **In the rain's cover map it is open water, at rest**: the same mesh
  *   through the map's material and a plugin that places the lattice at the
- *   level, shown for the frame that draws the map where the view does not
- *   hold it and the map's square reaches its water.
+ *   level, drawn there by the map's own word while the map's square
+ *   reaches its water, whatever the view holds.
  * - **Among the see-through draws it stands before the lakes**
  *   (`drawOrder.ts`), the rings laid outermost first.
  */
 import {
   addToScene, createMeshFromData, createPbrMaterial, createRenderTexture2D, createTexture2DArray, createTexture2DFromPixels, disposeMeshGpu,
-  markMaterialUboDirty, rebuildMaterial, removeFromScene, setMeshVisible, updateTextureRegion,
+  markMaterialUboDirty, rebuildMaterial, removeFromScene, setMeshDrawRange, setMeshVisible, updateTextureRegion,
   type EngineContext, type MaterialPlugin, type Mesh, type PluginUniformBlock, type SceneContext, type Texture2D, type Texture2DArray,
 } from "@babylonjs/lite";
 import { boxInPlanes, cornersPastBox, type ViewPlane } from "../lakeSeen.js";
@@ -60,7 +61,7 @@ import { startLoopWorker, type LoopStarter } from "../oceanLoopStart.js";
 import { LOOP_FRAMES, LOOP_N } from "../oceanSpectrum.js";
 import type { QualityTier } from "../quality.js";
 import { createSeaEdgeStep, type SeaEdgeStep } from "../seaEdge.js";
-import { SEA_SIDE, seaBedDepths, seaLattice, seaRingRecords, seaWetBounds } from "../seaLattice.js";
+import { SEA_SIDE, seaBedDepths, seaLattice, seaRingRecords, seaWetBounds, seaWetRun } from "../seaLattice.js";
 import { emptySeaFrameUniforms, emptySeaUniforms, seaFrameUniforms, seaUniforms, type SeaFrameUniforms } from "../seaUniforms.js";
 import { SWASH_FACE_LIFT_M } from "../swashRunUp.js";
 import { SWASH_COLUMNS } from "../swashTable.js";
@@ -104,7 +105,7 @@ export type SeaOptions = {
   ocean?: OceanField | null;
   bump?: Uint8Array | null;
   /** The rain's cover map, which the sea stands in as open water, placed by the plugin handed with it. */
-  cover?: { add(mesh: Mesh, place: MaterialPlugin): void; remove(mesh: Mesh): void };
+  cover?: { add(mesh: Mesh, place: MaterialPlugin): void; remove(mesh: Mesh): void; show?(mesh: Mesh, shown: boolean): void };
   /** How the wind sea's loop is baked: the game's worker unless said. */
   startLoop?: LoopStarter;
   /** The wind sea's cascades, on the tier that computes them (`seaFft.ts`); with none the sea draws the loop. */
@@ -127,8 +128,8 @@ export type SeaFrame = {
   hour: number;
   /**
    * The square (its centre and half its side, metres) the rain's cover map is drawn over with this frame; null on a
-   * frame that does not draw it. A sea that reaches into it is shown for the frame whatever the view holds: a hidden
-   * mesh is in no pass, the map's among them.
+   * frame that does not draw it. A sea that reaches into it is drawn in the map whatever the view holds, and one that
+   * does not is left out of it.
    */
   cover: { x: number; z: number; half: number } | null;
 };
@@ -295,7 +296,14 @@ export function createLiteSea(engine: EngineContext, scene: SceneContext, seed: 
   let bedSeen = -1;
   let disposed = false;
 
-  /** The rings that moved, and those round a ring that moved: their depths sent, their boxes found again, the records written. */
+  /** The run of the lattice's triangles the mesh draws (`seaWetRun`), and the run its wet rings now ask for. */
+  const drawn = { first: 0, end: lattice.indices.length };
+  const run = { first: 0, end: 0 };
+
+  /**
+   * The rings that moved, and those round a ring that moved: their depths sent, their boxes found again, the records
+   * written, and the mesh's draw held to the rings that hold water.
+   */
   function placeRings(): void {
     let any = false;
     for (let level = 0; level < WATER_RING_COUNT; level++) {
@@ -317,6 +325,14 @@ export function createLiteSea(engine: EngineContext, scene: SceneContext, seed: 
     seaRingRecords(rings, frameValues.seaRings);
     wetRings = 0;
     for (const box of boxes) if (box !== null) wetRings++;
+    // Only the rings that hold water are drawn: no vertex of a dry ring past them is placed. The mesh's own recorded
+    // draw alone is told of the run. With no wet ring the mesh is hidden, and the run stands as it was.
+    seaWetRun(lattice.rings, (level) => boxes[level] !== null, run);
+    if (run.end > run.first && (run.first !== drawn.first || run.end !== drawn.end)) {
+      drawn.first = run.first;
+      drawn.end = run.end;
+      setMeshDrawRange(engine, mesh, { vertices: { offset: 0, count: lattice.positions.length / 3 }, indices: { offset: run.first, count: run.end - run.first } }, true);
+    }
   }
   placeRings();
 
@@ -373,23 +389,19 @@ export function createLiteSea(engine: EngineContext, scene: SceneContext, seed: 
       setWaterWind(surface, f.wind.speed, windDir);
       advanceWater(surface, f.seconds, true);
       // Whether the view holds the sea, before its waves are stepped: the wind sea's cascades are computed only for
-      // a frame that draws them.
-      let seen = false;
+      // a frame that draws them, and the frame's own pass draws the sea only then. The cover map has its own word,
+      // said on each frame that draws it: whether its square reaches a ring's water.
       let held = false;
+      let covered = false;
       for (const box of boxes) {
         if (box === null) continue;
-        const covered = f.cover !== null
+        covered ||= f.cover !== null
           && box.min[0] < f.cover.x + f.cover.half && box.max[0] > f.cover.x - f.cover.half && box.min[2] < f.cover.z + f.cover.half && box.max[2] > f.cover.z - f.cover.half;
         // A ring's box is kilometres across: the planes alone keep one that lies wholly beside the view.
-        const inView = boxInPlanes(box.min[0], box.min[1], box.min[2], box.max[0], box.max[1], box.max[2], f.planes)
+        held ||= boxInPlanes(box.min[0], box.min[1], box.min[2], box.max[0], box.max[1], box.max[2], f.planes)
           && !cornersPastBox(box.min[0], box.min[1], box.min[2], box.max[0], box.max[1], box.max[2], f.corners);
-        if (covered) seen = true;
-        if (inView) {
-          seen = true;
-          held = true;
-          break;
-        }
       }
+      if (f.cover !== null) options.cover?.show?.(mesh, covered);
       // The swell's phases and the wind sea's state, the sea following its wind a minute behind.
       const stepsBefore = fft?.steps ?? 0;
       const rowWritten = ocean.update(f.centreZ, f.seconds, f.wind.speed, windDir, f.hour, (blowing) => {
@@ -413,8 +425,8 @@ export function createLiteSea(engine: EngineContext, scene: SceneContext, seed: 
       }
       // The curl, after the tracker's step: only with the cascades, a crest in mid-plunge and the face in view.
       lip?.update(ocean.numbers.coast[3] === 2, f.centreX, f.centreZ, f.planes, f.corners);
-      if (seen !== shown) {
-        shown = seen;
+      if (held !== shown) {
+        shown = held;
         setMeshVisible(mesh, shown);
       }
       if (!shown) return;

@@ -5,7 +5,7 @@ import { HOLLOW_FIGURE_M } from "../../../src/game/hollowLook.js";
 import { SHADE_SMOKE_FEET, SHADE_SMOKE_FRAY, SHADE_SMOKE_RISE, SHADE_SMOKE_SCALE, SHADE_SMOKE_SOFT, SHADE_SMOKE_SWELL_M } from "../../../src/game/shadeMaskParams.js";
 import { FRAME_BLOCK, SHADE_SMOKE_TIME_NAME, inFrameBlock } from "../../../src/game/lite/frameBlock.js";
 import {
-  SHADE_LOOK_FLOATS, SHADE_SMOKE_NOISE_WGSL, SHADE_SMOKE_VERTEX_WGSL, createMaskTargets, shadeMaskFragmentWgsl, shadeMaskPlugin, unseenPlugin, writeShadeLook,
+  SHADE_LOOK_FLOATS, SHADE_SMOKE_NOISE_WGSL, SHADE_SMOKE_VERTEX_WGSL, createMaskTargets, shadeMaskFragmentWgsl, shadeMaskPlugin, writeShadeLook,
   type MaskTargets,
 } from "../../../src/game/lite/shadeMask.js";
 import { binder, picture, type FakePicture } from "./textureClaims.js";
@@ -90,11 +90,17 @@ describe("the haunt's figures in their mask on Babylon Lite", () => {
     expect(writeShadeLook(out, 1, { fade: 0.8, presence: 0.25, soft: 0.5, near: 0.5, feetY: 140 })).toBe(true);
   });
 
-  it("puts a body's every vertex at one point outside the view in the frame's own pass", () => {
-    const plugin = unseenPlugin();
-    expect(plugin.getCustomCode?.("vertex")).toEqual({ CUSTOM_VERTEX_MAIN_END: "out.clipPos=vec4<f32>(2.0,2.0,2.0,1.0);" });
-    expect(plugin.getCustomCode?.("fragment")).toBeNull();
-    expect(plugin.priority).toBeGreaterThan(900);
+  it("draws a body in the mask's pass alone: the body stands hidden, and the mask shows it by its own word", () => {
+    const read = (name: string): string => readFileSync(new URL(`../../../src/game/lite/${name}`, import.meta.url), "utf8");
+    // The mask's pass draws what it is handed whatever the mesh's own word.
+    expect(src).toContain("      addMeshToTask(task, mesh, { material });\n      setTaskMeshVisible(task, mesh, true);");
+    // A Hollow's body is the mask's alone, and a model never shows such a primitive: no pass of the frame draws it,
+    // as nothing or otherwise, and its own material wears no plugin for that.
+    expect(read("entityMeshes.ts")).toContain("        if (mask === null) return false;\n        part.elsewhere = true;\n        bodyMeshes.push(part.mesh);");
+    expect(read("skinnedModels.ts")).toContain("for (const part of parts) if (part.drawn && !part.elsewhere) setMeshVisible(part.mesh, next > 0);");
+    expect(read("skinnedModels.ts").split("setMeshVisible(").length).toBe(3);
+    expect(src).not.toContain("Unseen");
+    expect(read("entityMeshes.ts")).not.toContain("unseenPlugin");
   });
 });
 

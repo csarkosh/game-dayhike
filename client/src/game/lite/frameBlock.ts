@@ -55,6 +55,21 @@
  * matrices in a buffer a mesh, written again for each whenever the camera
  * moves. The one matrix the scene's do not hold, the projection alone,
  * which the motes lay their quads out by, rides in the block.
+ *
+ * **A frame sends the run of the block's words that moved** (`movedWords`),
+ * from the first that differs from what the buffer holds to the last, and
+ * nothing when none does. So the block is laid out with what a frame moves
+ * last and together (`FRAME_MOVING_NAMES`): the clocks, the wind, the
+ * lakes' and the sea's records, the eye, and the projection, two floats of
+ * which the anti-aliasing's jitter moves on every frame of a tier with a
+ * post chain. What the hour, the weather or a kilometre walked moves (the
+ * air, the wet line, the terrain's record, the grade) stands before them,
+ * and is sent on the frames that move it. A camera that stands still with
+ * the clocks running sends about 300 bytes of a block of some 5,300 while
+ * the swash's table is at rest. Once the sea's edge has wetted the cove's
+ * face the ages of the table's columns run on every frame, wherever the
+ * camera looks, and the run begins at the first of them: some 4 KB, as
+ * long as the table is packed every frame.
  */
 import { emptyAtmosphereUniforms, type AtmosphereUniforms } from "../atmosphereParams.js";
 import { emptyFadeUniforms } from "../distanceFade.js";
@@ -113,8 +128,13 @@ export const SHADE_SMOKE_TIME_NAME = "shadeSmokeTime";
 /** The rings' records of the sea's lattice, a vec4 a ring. */
 export const SEA_RINGS_NAME = "seaRings";
 
-/** The block's fields, part by part: the air's, the wet look's, the wind's, the fade's, the terrain's, the wings' clock, the lakes', the sea's. */
-export const FRAME_FIELDS: readonly UniformField[] = [
+/**
+ * The block's fields as they are declared, part by part: the air's, the wet
+ * look's, the wind's, the fade's, the terrain's, the wings' clock, the
+ * lakes', the sea's. A field is added here, to its part or after the last;
+ * where it is laid is `FRAME_FIELDS`'s to say.
+ */
+export const FRAME_PARTS: readonly UniformField[] = [
   ...uniformFields(emptyAtmosphereUniforms()),
   ...scalarFields(emptyWetUniforms(), ["wetSwash"]).filter((field) => field.name !== WET_OWN_NAME),
   bits("wetSwash", WET_SWASH_VECS),
@@ -134,6 +154,54 @@ export const FRAME_FIELDS: readonly UniformField[] = [
   bits(SEA_RINGS_NAME, WATER_RING_COUNT),
   { name: SHADE_SMOKE_TIME_NAME, type: "f32" },
   ...uniformFields(emptyMaterialGradeUniforms()),
+];
+
+/**
+ * The fields a frame of a hike moves, in the order they are laid, last in
+ * the block: what moves only on some frames first, what every frame moves
+ * last, so that a frame's run of moved words is as short as what moved.
+ *
+ * - The swash's table and the sea's rings: the table on every frame once
+ *   a wave has wetted the cove's face, since a wetted column's age runs;
+ *   a ring when the camera has crossed a cell of it.
+ * - The players who bend the foliage and the eye: while someone walks.
+ * - The clocks of the hike's own stages: the motes' on the tiers that draw
+ *   them, the rain's and the splashes' while it rains.
+ * - The wind (its direction turns all the time, its strengths with the
+ *   weather), the lakes' record and the sea's but its rings: every field
+ *   of the two records, so one added to either is laid here unasked.
+ * - The clocks that always run: the rain's ripples on the ground, the
+ *   wings', the shades' smoke, the ground cloud's drift.
+ * - The camera's projection, last: the anti-aliasing's jitter moves its
+ *   ninth and tenth floats on every frame of a tier with a post chain.
+ *
+ * A field that is added and moves every frame is named here, at the place
+ * of its kind; one that is not named is laid with what seldom moves.
+ */
+export const FRAME_MOVING_NAMES: readonly string[] = [
+  "wetSwash", SEA_RINGS_NAME,
+  "windPlayers", "windEye", "fadeEye", "terrainEye",
+  ...FRAME_CLOCK_NAMES,
+  ...FRAME_WIND_NAMES.filter((name) => name !== "windEye" && name !== "windPlayers"),
+  ...Object.keys(emptyWaterFrameUniforms()),
+  ...Object.keys(emptySeaFrameUniforms()).filter((name) => name !== SEA_RINGS_NAME),
+  "terrainTime", WING_TIME_NAME, SHADE_SMOKE_TIME_NAME, "atmCloudWind",
+  FRAME_PROJECTION_NAME,
+];
+
+/**
+ * The block's fields as they are laid out: what seldom moves in the order
+ * it is declared, then what a frame moves (`FRAME_MOVING_NAMES`). A field
+ * declared after the last and not named there is the last of what seldom
+ * moves.
+ */
+export const FRAME_FIELDS: readonly UniformField[] = [
+  ...FRAME_PARTS.filter((field) => !FRAME_MOVING_NAMES.includes(field.name)),
+  ...FRAME_MOVING_NAMES.map((name) => {
+    const field = FRAME_PARTS.find((part) => part.name === name);
+    if (field === undefined) throw new Error(`the frame's block declares no ${name} to lay among what a frame moves`);
+    return field;
+  }),
 ];
 
 const FRAME_NAMES: ReadonlySet<string> = new Set(FRAME_FIELDS.map((field) => field.name));
@@ -239,6 +307,29 @@ function offsetOf(offsets: UniformOffsets, name: string): number {
   const at = offsets.get(name);
   if (at === undefined) throw new Error(`no uniform ${name} in the frame's block`);
   return at / 4;
+}
+
+/**
+ * The words of the block that moved since it was last sent: `bits` are the
+ * block's data as 32-bit words and `sent` what its buffer holds, which is
+ * made the same. Fills `range` with the first word that differs and the one
+ * past the last, and says whether any did: a frame on which nothing the
+ * block holds has moved sends nothing, and one on which a clock ran sends
+ * from the first word that moved to the last. The words are compared as
+ * bits, so a value that is not a number, or a table of bits, is told from
+ * what was sent as any other is.
+ */
+export function movedWords(bits: Uint32Array, sent: Uint32Array, range: { from: number; to: number }): boolean {
+  const length = bits.length;
+  let from = 0;
+  while (from < length && bits[from] === sent[from]) from++;
+  if (from === length) return false;
+  let to = length;
+  while (bits[to - 1] === sent[to - 1]) to--;
+  sent.set(bits.subarray(from, to), from);
+  range.from = from;
+  range.to = to;
+  return true;
 }
 
 /**

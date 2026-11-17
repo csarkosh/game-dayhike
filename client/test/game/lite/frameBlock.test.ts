@@ -9,8 +9,8 @@ import { FOLIAGE_PLAYERS, FOLIAGE_PROFILES, emptyFoliageUniforms, foliageLook, f
 import { atmospherePlugin } from "../../../src/game/lite/atmospherePlugin.js";
 import { FADE_FIELDS, FOLIAGE_FIELDS, surfaceWetPlugin, vegetationPlugin, type Vegetation } from "../../../src/game/lite/forestPlugins.js";
 import {
-  FRAME_BLOCK, FRAME_CLOCK_NAMES, FRAME_FIELDS, FRAME_WIND_NAMES, frameReads, inFrameBlock, ownFields, ownValues, stageClocks, stageOwn, stageReads,
-  writeFrameBlock, type FrameValues,
+  FRAME_BLOCK, FRAME_CLOCK_NAMES, FRAME_FIELDS, FRAME_MOVING_NAMES, FRAME_PARTS, FRAME_WIND_NAMES, frameReads, inFrameBlock, movedWords, ownFields, ownValues,
+  stageClocks, stageOwn, stageReads, writeFrameBlock, type FrameValues,
 } from "../../../src/game/lite/frameBlock.js";
 import { TERRAIN_FIELDS, emptyTerrainMaterialUniforms, terrainPlugin, terrainWetPlugin } from "../../../src/game/lite/terrainPlugins.js";
 import { WET_FIELDS } from "../../../src/game/lite/wetWgsl.js";
@@ -122,8 +122,11 @@ describe("the frame's uniform block on Babylon Lite", () => {
     for (const name of FRAME_CLOCK_NAMES) expect(sizeOf(fields.get(name) as string).floats, name).toBe((stages[name] as number[]).length);
     // Of those records nothing else is the frame's: a stage's settings are its own.
     expect(Object.keys(stages).filter(inFrameBlock).sort()).toEqual([...FRAME_CLOCK_NAMES].sort());
-    // What stood in the block keeps its place: the new fields follow the wings' clock and the lakes' values, and the sea's follow them.
-    const order = FRAME_FIELDS.map((field) => field.name);
+    // What stood in the block keeps its place among the parts as they are declared: the new fields follow the wings'
+    // clock and the lakes' values, and the sea's follow them. Where each is laid is another matter (below).
+    expect(new Set(FRAME_PARTS)).toEqual(new Set(FRAME_FIELDS));
+    expect(FRAME_PARTS.length).toBe(FRAME_FIELDS.length);
+    const order = FRAME_PARTS.map((field) => field.name);
     expect(order.slice(order.indexOf("wingTime") + 1)).toEqual([
       ...Object.keys(emptyWaterFrameUniforms()), "frameExposure", "frameContrast", ...FRAME_CLOCK_NAMES, "frameProjection", ...Object.keys(emptySeaFrameUniforms()),
       "shadeSmokeTime", ...Object.keys(emptyMaterialGradeUniforms()),
@@ -189,6 +192,77 @@ describe("the frame's uniform block on Babylon Lite", () => {
     const unwritten = [...made.offsets].flatMap(([name, at]) => [...made.data.subarray(at / 4, at / 4 + floatsOf(name))].map((v, i) => (v === -99 ? `${name}[${i}]` : null))).filter((v) => v !== null);
     expect(unwritten).toEqual(Array.from({ length: FOLIAGE_PLAYERS }, (_, i) => `windPlayers[${i * 4 + 3}]`));
     expect(() => writeFrameBlock(made.data, new Map(), values)).toThrow(/atmOn|in the material's buffer|frame's block/);
+  });
+
+  it("lays what a frame moves last and together, so a frame's run of moved words is short", () => {
+    const laid = FRAME_FIELDS.map((field) => field.name);
+    // The tail of the block is what a frame moves, in its own order; the rest keeps the order it is declared in.
+    expect(laid.slice(laid.length - FRAME_MOVING_NAMES.length)).toEqual([...FRAME_MOVING_NAMES]);
+    expect(new Set(FRAME_MOVING_NAMES).size).toBe(FRAME_MOVING_NAMES.length);
+    expect(laid.slice(0, laid.length - FRAME_MOVING_NAMES.length)).toEqual(FRAME_PARTS.map((field) => field.name).filter((name) => !FRAME_MOVING_NAMES.includes(name)));
+    // Every clock is there: the stages', the wind's, the wings', the smoke's, the ripples', the cloud's drift; the eye
+    // wherever a part holds one; and every field of the lakes' record and of the sea's, so one added to either is
+    // laid there without being named.
+    for (const name of [
+      ...FRAME_CLOCK_NAMES, "windTime", "windDir", "wingTime", "shadeSmokeTime", "terrainTime", "atmCloudWind", "windEye", "fadeEye", "terrainEye", "windPlayers",
+      ...Object.keys(emptyWaterFrameUniforms()), ...Object.keys(emptySeaFrameUniforms()),
+    ]) expect(FRAME_MOVING_NAMES, name).toContain(name);
+    // The projection is the last field: the jitter's two floats close every frame's run on a tier with a post chain.
+    expect(laid.at(-1)).toBe("frameProjection");
+    const { offsets, data } = block();
+    const at = (name: string): number => offsets.get(name) as number;
+    expect(at("frameProjection") + 64).toBe(data.byteLength);
+    const jitterEnd = at("frameProjection") + 10 * 4;
+    // A camera that stands still with the clocks running: from the first stage clock to the jitter's second float.
+    expect(jitterEnd - at("moteClock")).toBeLessThanOrEqual(304);
+    // One that walks moves the eye too, and the players who bend the foliage; a ring of the sea crossed, its record.
+    expect(jitterEnd - at("windEye")).toBeLessThanOrEqual(352);
+    expect(jitterEnd - at("windPlayers")).toBeLessThanOrEqual(432);
+    // The swash's table, the block's largest field by far, stands at the head of the run and not in the midst of it:
+    // a frame that moves none of it sends none of it.
+    expect(at("wetSwash")).toBeLessThan(at("seaRings"));
+    expect(at("seaRings")).toBeLessThan(at("windPlayers"));
+    // What the hour and the weather move stands before all of that: the air (but its cloud's drift), the wet line,
+    // the terrain's record (but its eye and its ripples' clock), the grade.
+    for (const name of ["atmSunDir", "atmFarColour", "wetLine", "wetCove", "terrainTiling", "terrainAlbedo", "fadeRows", "frameExposure", "gradeCurveNeutral", "gradeScreen"]) {
+      expect(at(name), name).toBeLessThan(at("wetSwash"));
+    }
+    // A name that no part declares is a mistake said when the module loads, not a field left out: the list is checked against the parts.
+    expect(FRAME_MOVING_NAMES.filter((name) => !FRAME_PARTS.some((field) => field.name === name))).toEqual([]);
+  });
+
+  it("sends the run of the block's words that moved since it was last sent, and nothing on a frame none did", () => {
+    const made = block();
+    writeFrameBlock(made.data, made.offsets, frame());
+    const bits = new Uint32Array(made.data.buffer, made.data.byteOffset, made.data.length);
+    // A buffer that has been sent nothing holds zeros: the first frame's run is every word that is not one.
+    const sent = new Uint32Array(bits.length);
+    const range = { from: -1, to: -1 };
+    expect(movedWords(bits, sent, range)).toBe(true);
+    expect(range.from).toBe(bits.findIndex((word) => word !== 0));
+    expect(range.to).toBe(bits.length - [...bits].reverse().findIndex((word) => word !== 0));
+    expect([...sent]).toEqual([...bits]);
+    // The same values again: nothing moved, nothing is sent, and the range is left as it was.
+    const before = { ...range };
+    writeFrameBlock(made.data, made.offsets, frame());
+    expect(movedWords(bits, sent, range)).toBe(false);
+    expect(range).toEqual(before);
+    // One clock ran: its one word is the run.
+    const word = (name: string): number => (made.offsets.get(name) as number) / 4;
+    made.data[word("wingTime")] = 124;
+    expect(movedWords(bits, sent, range)).toBe(true);
+    expect(range).toEqual({ from: word("wingTime"), to: word("wingTime") + 1 });
+    // Two words moved: the run is from the first to the last, whatever lies between, and what the buffer holds is then the block.
+    made.data[word("windTime")] = 99;
+    made.data[word("shadeSmokeTime")] = 7;
+    expect(movedWords(bits, sent, range)).toBe(true);
+    expect(range).toEqual({ from: Math.min(word("windTime"), word("shadeSmokeTime")), to: Math.max(word("windTime"), word("shadeSmokeTime")) + 1 });
+    expect([...sent]).toEqual([...bits]);
+    expect(movedWords(bits, sent, range)).toBe(false);
+    // Words are told apart as bits: a value that is not a number moved once, not on every frame after.
+    made.data[word("rainFold")] = Number.NaN;
+    expect(movedWords(bits, sent, range)).toBe(true);
+    expect(movedWords(bits, sent, range)).toBe(false);
   });
 
   it("turns a plugin's reads of the frame's uniforms to the block, and leaves the material's own where they are", () => {

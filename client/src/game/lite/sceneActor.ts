@@ -19,7 +19,7 @@
  * stands in the scene from when it lands, hidden while its frame hides it.
  */
 import {
-  acquireTexture, addToScene, disposeMeshGpu, getContainerMeshes, loadGltf, releaseTexture, removeFromScene, setMeshVisible,
+  acquireTexture, addToScene, disposeMeshGpu, getContainerMeshes, getGpuDevice, loadGltf, releaseTexture, removeFromScene, setMeshVisible,
   type AssetContainer, type EngineContext, type Mesh, type PbrMaterialProps, type SceneContext, type SceneNode, type Texture2D,
 } from "@babylonjs/lite";
 import { quatFromEuler, type Quat } from "../instancePose.js";
@@ -123,7 +123,7 @@ export async function loadSceneActor(engine: EngineContext, scene: SceneContext,
   for (const node of roots) addToScene(scene, node);
   options.uploads?.made(meshes.length);
 
-  const device = (engine as unknown as { _device: GPUDevice })._device;
+  const device = getGpuDevice(engine);
   const sent = new Float32Array(bones.length).fill(Number.NaN);
   const at = { x: 0, y: 0, z: 0, yaw: 0 };
   const turn: Quat = { x: 0, y: 0, z: 0, w: 1 };

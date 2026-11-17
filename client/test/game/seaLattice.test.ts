@@ -4,7 +4,7 @@ import { setActiveTerrainVariant } from "../../src/sim/terrain.js";
 import { HOLE_CELLS } from "../../src/game/clipmap.js";
 import { coastProfilesFor } from "../../src/game/oceanTables.js";
 import {
-  SEA_HOLE_LOW, SEA_RING_FLOATS, SEA_SIDE, seaBedDepths, seaLattice, seaRingRecords, seaVertexAt, seaWetBounds, type SeaVertex,
+  SEA_HOLE_LOW, SEA_RING_FLOATS, SEA_SIDE, seaBedDepths, seaLattice, seaRingRecords, seaVertexAt, seaWetBounds, seaWetRun, type SeaVertex,
 } from "../../src/game/seaLattice.js";
 import { seedFromToken } from "../../src/game/seed.js";
 import { SWASH_FACE_LIFT_M } from "../../src/game/swashRunUp.js";
@@ -134,6 +134,33 @@ describe("the sea's rings as one lattice", () => {
     }
     expect(boxed).toBeGreaterThan(10);
     expect(dry).toBeGreaterThan(2);
+  });
+
+  it("holds a draw to the run of its wet rings: from the first laid to the last, and nothing with none", () => {
+    const run = { first: -1, end: -1 };
+    const of = (...levels: number[]): { first: number; end: number } => ({ ...seaWetRun(lattice.rings, (level) => levels.includes(level), run) });
+    const ring = (level: number) => lattice.rings.find((r) => r.level === level) as (typeof lattice.rings)[number];
+    // Every ring wet: the whole lattice.
+    expect(of(0, 1, 2, 3, 4, 5, 6)).toEqual({ first: 0, end: lattice.indices.length });
+    // The rings are laid outermost first, each one's triangles a run of its own that the next follows.
+    for (let i = 1; i < lattice.rings.length; i++) {
+      const before = lattice.rings[i - 1] as (typeof lattice.rings)[number];
+      expect((lattice.rings[i] as (typeof lattice.rings)[number]).firstIndex).toBe(before.firstIndex + before.indexCount);
+    }
+    // Inland, only the coarse rings reach the water: the run ends where the first dry ring's triangles begin.
+    expect(of(6, 5, 4)).toEqual({ first: 0, end: ring(3).firstIndex });
+    // A dry ring between wet ones is in the run, which is one draw's.
+    expect(of(6, 2)).toEqual({ first: 0, end: ring(2).firstIndex + ring(2).indexCount });
+    // The outermost rings dry: the run begins at the first wet one.
+    expect(of(3, 2, 1, 0)).toEqual({ first: ring(3).firstIndex, end: lattice.indices.length });
+    expect(of(1)).toEqual({ first: ring(1).firstIndex, end: ring(1).firstIndex + ring(1).indexCount });
+    // No water in any ring: an empty run.
+    expect(of()).toEqual({ first: 0, end: 0 });
+    // Every index of a ring's run names a vertex of the lattice: the draw's vertices are the lattice's own, whole.
+    const three = of(4, 3);
+    let most = 0;
+    for (let i = three.first; i < three.end; i++) most = Math.max(most, lattice.indices[i] as number);
+    expect(most).toBeLessThan(lattice.positions.length / 3);
   });
 
   it("keeps the records and the depths right as the rings move", () => {

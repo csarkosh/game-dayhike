@@ -42,9 +42,8 @@
  * its handset and the handset's cord, and its actor. Every
  * other part of the world is absent, and the
  * members of `Renderer` that belong to an absent part are answered here as
- * nothing: a setter keeps what it was told (`held`), for the day its part is
- * drawn; a read-out returns nothing heard, nothing seen or nothing pending;
- * a promise is already resolved. `NOT_DRAWN` names each part with the members that
+ * nothing: each is a setter, which keeps what it was told (`held`), for the
+ * day its part is drawn. `NOT_DRAWN` names each part with the members that
  * stand in for it, and the two are held to each other by the tests.
  */
 import type { Renderer } from "../renderer.js";
@@ -57,7 +56,6 @@ export const NOT_DRAWN: readonly NotDrawn[] = [
   { what: "the skin's shading (`skin.ts`): no model the game ships has a surface that shows it", members: ["setSkinShading"] },
   { what: "the sun's cast shadows on a tier given a shadow map: no tier has one (`quality.ts`), so the game casts none either", members: [] },
   { what: "the wireframe view: Lite draws a material's triangles alone, and has no way to draw a mesh's edges through its own material", members: ["setWireframe"] },
-  { what: "the shaders' compiles told as they happen, kept shaders, and the GPU's timings", members: ["onShaderCompiled", "keepShaders", "gpuTime"] },
 ];
 
 /** What the setters of the absent parts were last told. */
@@ -67,11 +65,7 @@ export type NotDrawnHeld = {
 };
 
 /** The members answered as nothing: every member `NOT_DRAWN` names. */
-export type NotDrawnMembers = Pick<
-  Renderer,
-  | "setSkinShading"
-  | "setWireframe" | "onShaderCompiled" | "keepShaders" | "gpuTime"
->;
+export type NotDrawnMembers = Pick<Renderer, "setSkinShading" | "setWireframe">;
 
 /**
  * The members answered as nothing, and what their setters hold. One of each
@@ -88,9 +82,6 @@ export function notDrawnMembers(): { members: NotDrawnMembers; held: NotDrawnHel
     setWireframe(on) {
       held.wireframe = on;
     },
-    onShaderCompiled: () => () => undefined,
-    keepShaders: () => undefined,
-    gpuTime: null,
   };
   return { members, held };
 }

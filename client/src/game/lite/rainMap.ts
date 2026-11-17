@@ -26,10 +26,11 @@
  *   surface; anything else is hard cover. A mesh whose vertices are placed
  *   by its own material's vertex stage (the sea's lattice) is registered
  *   with the plugin that places them, which the map's material of its kind
- *   then wears for it. A mesh that is hidden is in no
- *   pass of Lite's, this one among them: a surface of water hidden because
- *   the view does not hold it is shown for the frame that draws the map
- *   (`lakeMeshes.ts`).
+ *   then wears for it. A mesh the view does not hold is hidden, which
+ *   leaves it out of this pass too, so the map has its own word on a mesh
+ *   that the two see differently (`show`): a lake's surface or the sea is
+ *   drawn here while it reaches into the map's square, whatever the view
+ *   holds (`lakeMeshes.ts`, `seaMeshes.ts`).
  * - **The picture is laid as the game's**: its columns along the world's x
  *   and its rows along z from the low side, so a reader finds a place's
  *   texel as the game's shaders do. The camera looks straight down with z
@@ -40,7 +41,7 @@
  */
 import {
   addMeshToTask, addTaskAtStart, addToScene, createBankedFreeCamera, createMeshFromData, createPbrMaterial, createRenderTargetTexture, createRenderTask,
-  disposeMeshGpu, enableOrthographicCamera, removeFromScene, removeMeshFromTask, setMeshVisible, setThinInstances, vec3,
+  disposeMeshGpu, enableOrthographicCamera, removeFromScene, removeMeshFromTask, setMeshVisible, setTaskMeshVisible, setThinInstances, vec3,
   type EngineContext, type MaterialPlugin, type Mesh, type PbrMaterialProps, type SceneContext, type Texture2D,
 } from "@babylonjs/lite";
 import type { QualityTier } from "../quality.js";
@@ -81,7 +82,12 @@ export function rainMapPlugin(kind: RainMapKind): MaterialPlugin {
 }
 
 /** The map as a shell that draws cover is handed it: every mesh added is of one kind, and is taken out before it is let go. */
-export type CoverRegistry = { add(mesh: Mesh): void; remove(mesh: Mesh): void };
+export type CoverRegistry = {
+  add(mesh: Mesh): void;
+  remove(mesh: Mesh): void;
+  /** The map's own word on whether it draws `mesh`, whatever the frame's own pass shows of it: for a mesh the two see differently. */
+  show?(mesh: Mesh, shown: boolean): void;
+};
 
 /** The rings of the terrain in the map: the two finest cover its square (the finest alone is 128 m across). */
 export const RAIN_MAP_RINGS = 2;
@@ -95,6 +101,8 @@ export type LiteRainMap = {
   /** `place`: the plugin that places the mesh's vertices, for a mesh whose own material's vertex stage does. */
   register(mesh: Mesh, kind: RainMapKind, place?: MaterialPlugin): void;
   unregister(mesh: Mesh): void;
+  /** Whether the map draws a registered `mesh`, whatever the frame's own pass shows of it. */
+  show(mesh: Mesh, shown: boolean): void;
   /**
    * Moves the map to `player` by the step rule, and draws it with the frame
    * if `read` says the frame reads it and it has moved, or been asked for
@@ -181,6 +189,9 @@ export function createLiteRainMap(engine: EngineContext, scene: SceneContext, ti
     unregister(mesh) {
       if (disposed || !registered.delete(mesh)) return;
       removeMeshFromTask(task, mesh);
+    },
+    show(mesh, shown) {
+      if (!disposed && registered.has(mesh)) setTaskMeshVisible(task, mesh, shown);
     },
     redraw() {
       place.redraw();
