@@ -18,6 +18,8 @@ import {
   probeStepCanSettle,
   probeStepEngine,
   WEBGPU_PROBE_STEPS_SETTLE,
+  LITE_PROBE_STEPS_SETTLE,
+  liteProbeSteps,
   probePose,
   probeReadingLine,
   readEarlyMiss,
@@ -538,6 +540,54 @@ describe("startupTier", () => {
       ]);
     }
     expect(readAutoRecord(earlier)!.attempts).toBe(2);
+  });
+
+  it("takes the page's own word for its steps where it measures them on the hike's own renderer: measured wherever the browser offers WebGPU, whatever WebGL2 would link on the page's thread", async () => {
+    expect(LITE_PROBE_STEPS_SETTLE).toBe(true);
+    expect(liteProbeSteps(true)).toEqual({ settle: true, whyNot: "a step on the hike's renderer is not taken to settle" });
+    // Firefox links WebGL2's programs on the page's thread; a step on the hike's renderer links none.
+    const storage = memoryStorage();
+    const gpu = (tier: QualityTier): ProbeReading => ({ ...reading(tier, 16.7), engine: "webgpu" });
+    const t = fakes(gpu, storage);
+    expect(await startupTier(FIREFOX, { ...page(), engine: "webgpu", steps: liteProbeSteps(true) }, t.deps)).toEqual({ tier: "high", source: "auto", cls: "apple-unknown" });
+    expect(t.screens()).toBe(1);
+    expect(t.steps).toEqual(["high"]);
+    expect(t.lines).toEqual(["quality probe: verdict high (apple-unknown)"]);
+    // The verdict is WebGPU's, read under the one engine a hike is drawn with: no second probe.
+    expect(readAutoRecord(storage)!.verdict).toMatchObject({ tier: "high", source: "probe", engine: "webgpu" });
+    expect(readAutoRecord(storage)!.attempts).toBe(0);
+    const again = fakes(gpu, storage);
+    expect(await startupTier(FIREFOX, { ...page(), engine: "webgpu", steps: liteProbeSteps(true) }, again.deps)).toEqual({ tier: "high", source: "auto", cls: "apple-unknown" });
+    expect(again.screens()).toBe(0);
+    // And Settings says a probe is pending exactly there.
+    expect(autoPick(FIREFOX, { record: null, pixels: 2_073_600, now: 1_790_000_000_000, engine: "webgpu", stepSettles: true }).probeFrom).toBe("high");
+    expect(autoPick(FIREFOX, { record: null, pixels: 2_073_600, now: 1_790_000_000_000, engine: "webgpu" }).probeFrom).toBeNull();
+  });
+
+  it("runs no probe where the browser offers no WebGPU to measure with, or where the page's steps are not taken to settle: no screen, nothing written, the reason said", async () => {
+    expect(liteProbeSteps(false)).toEqual({ settle: false, whyNot: "this browser offers no WebGPU to measure with" });
+    expect(liteProbeSteps(false, true).settle).toBe(false);
+    expect(liteProbeSteps(true, false).settle).toBe(false);
+    for (const [steps, why] of [
+      [liteProbeSteps(false), "this browser offers no WebGPU to measure with"],
+      [liteProbeSteps(true, false), "a step on the hike's renderer is not taken to settle"],
+    ] as const) {
+      const storage = memoryStorage();
+      const before = contents(storage);
+      const t = fakes((tier) => reading(tier, 16.7), storage);
+      // Safari links in parallel: asked of WebGL2 it would be probed.
+      expect(await startupTier(SAFARI, { ...page(), engine: "webgpu", steps }, t.deps)).toEqual({ tier: "medium", source: "auto", cls: "apple-unknown" });
+      expect(t.screens()).toBe(0);
+      expect(t.steps).toEqual([]);
+      expect(contents(storage)).toBe(before);
+      expect(t.lines).toEqual([`quality probe: skipped, ${why}; starting at medium (apple-unknown)`]);
+      expect(autoPick(SAFARI, { record: null, pixels: 2_073_600, now: 1_790_000_000_000, engine: "webgpu", stepSettles: steps.settle })).toMatchObject({ probeFrom: null, probeSkipped: true });
+      // `?probe=` still forces one: its step is the page's to end where it cannot be measured.
+      const forced = fakes(() => null, storage);
+      expect(await startupTier(SAFARI, { ...page("?probe=high"), engine: "webgpu", steps }, forced.deps)).toEqual({ tier: "medium", source: "auto", cls: "apple-unknown" });
+      expect(forced.screens()).toBe(1);
+      expect(forced.steps).toEqual(["high"]);
+    }
   });
 
   it("probes tiers that draw on WebGPU on WebGL2, and the verdict holds for WebGPU", async () => {
