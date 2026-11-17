@@ -11,15 +11,16 @@
  *   with a camera and a list of its own, as the rain's cover map is
  *   (`rainMap.ts`): a registered mesh is the scene's mesh, so its geometry
  *   and its instance list are the buffers the hike's own draw reads.
- * - **A sector is drawn into a target of its own size and laid into its
- *   column of the picture** by one triangle, 64 by 128 texels, where on
- *   Babylon.js it is drawn through a viewport into the column itself: a
- *   task of Lite's has a target and no viewport. The water then reads one
- *   picture with one filtered read round the whole turn, as the game's
- *   does. The triangle writes a texel's colour as it was drawn and its
- *   alpha as 1 where anything was: a material that is cut out by its alpha
- *   hands the alpha it was cut at on here, where Babylon.js writes 1, and
- *   the water weighs the picture by it.
+ * - **A sector is drawn straight into its column of the picture**, 64 by
+ *   128 texels, through its camera's viewport, as on Babylon.js: the pass
+ *   clears that column alone (its colour to nothing drawn, and its depth),
+ *   so the fifteen other columns stand, and it ends by writing an alpha of
+ *   1 wherever the sector drew: a material that is cut out by its alpha
+ *   hands the alpha it was cut at on, where Babylon.js writes 1, and the
+ *   water weighs the picture by it. The water reads one picture with one
+ *   filtered read round the whole turn, as the game's does. A fragment's
+ *   own coordinates are then the picture's, which is where the forest's
+ *   dithered fade lays its screen-door on Babylon.js too.
  * - **A capture runs only while the lake reads the picture** (`update`'s
  *   `read`: its water is in the view and has glass on it). One that is
  *   asked for meanwhile is owed, and runs from the first frame that reads
@@ -40,10 +41,9 @@
  * draws all the same: the pass has its own word on them (`add`'s `always`).
  */
 import {
-  addMeshToTask, addTaskAtStart, addToScene, createBankedFreeCamera, createCustomTask, createMeshFromData, createPbrMaterial, createRenderTargetTexture,
-  createRenderTask, createRenderTexture2D, disposeMeshGpu, getFrameEncoder, getGpuDevice, markMaterialUboDirty, removeFromScene, removeMeshFromTask,
-  setMeshVisible, setTaskMeshVisible, setThinInstances, vec3,
-  type EngineContext, type MaterialPlugin, type Mesh, type PluginUniformBlock, type SceneContext, type Texture2D,
+  addMeshToTask, addTaskAtStart, addToScene, createBankedFreeCamera, createMeshFromData, createPbrMaterial, createRenderTargetTexture, createRenderTask,
+  disposeMeshGpu, getGpuDevice, markMaterialUboDirty, removeFromScene, removeMeshFromTask, setMeshVisible, setTaskMeshVisible, setThinInstances, vec3,
+  type EngineContext, type MaterialPlugin, type Mesh, type PluginUniformBlock, type RenderTaskConfig, type SceneContext, type Texture2D,
 } from "@babylonjs/lite";
 import type { LakeSource } from "../../sim/terrain.js";
 import { MIRROR_CANOPY_SHADE, mirrorGroundColour, type MirrorGroundSky } from "../mirrorGround.js";
@@ -60,7 +60,7 @@ import { TERRAIN_VERTEX_FLOATS, TERRAIN_VERTEX_LAYOUT } from "./terrainPlugins.j
 
 /** The picture's format: half floats, as the game's, for lit colour ahead of the display's curve. */
 export const PANORAMA_FORMAT = "rgba16float";
-/** A sector's own depth buffer. */
+/** The picture's depth buffer: a sector's pass clears and reads its own column of it. */
 export const PANORAMA_DEPTH_FORMAT = "depth24plus";
 /** How far ahead of the capture's eye the point its camera looks at is put, metres. */
 const LOOK_AHEAD = 10;
@@ -115,11 +115,11 @@ export type ReflectionRegistry = {
 export type PanoramaCounts = {
   /** Meshes in its list: each is a draw of a sector's pass while it is shown. */
   meshes: number;
-  /** Sectors drawn since it was made: each a pass of its own and a triangle into its column. */
+  /** Sectors drawn since it was made: each a pass into its column. */
   sectors: number;
   /** Times the picture was cleared for another lake. */
   clears: number;
-  /** Bytes of the picture a sector's triangle writes. */
+  /** Bytes of the picture a sector's pass writes. */
   columnBytes: number;
 };
 
@@ -142,7 +142,7 @@ export type LitePanorama = {
    * asked for again.
    */
   update(sky: MirrorGroundSky | null, weather: WeatherParams, read: boolean): boolean;
-  /** Says the frame is drawn, its sector with it: the sector's pass and its column are not drawn again until an `update` asks. */
+  /** Says the frame is drawn, its sector with it: the sector's pass is not drawn again until an `update` asks. */
   frameDrawn(): void;
   /** Sectors still owed of the capture running. */
   readonly owed: number;
@@ -157,38 +157,19 @@ export type PanoramaOptions = {
   uploads?: FrameUploads;
 };
 
-/**
- * A sector laid into its column: a triangle over the column, each texel of
- * the sector read whole at the column's own texel, its alpha 1 where the
- * sector's pass drew anything (it clears to 0).
- */
-export const PANORAMA_COLUMN_WGSL = /* wgsl */ `
-@group(0) @binding(0) var sectorColour: texture_2d<f32>;
-struct ColumnOut { @builtin(position) position: vec4<f32>, @location(0) uv: vec2<f32> };
-@vertex fn columnVertex(@builtin(vertex_index) index: u32) -> ColumnOut {
-  var corners = array<vec2<f32>, 3>(vec2<f32>(-1.0, -1.0), vec2<f32>(3.0, -1.0), vec2<f32>(-1.0, 3.0));
-  var out: ColumnOut;
-  out.position = vec4<f32>(corners[index], 0.0, 1.0);
-  out.uv = vec2<f32>(corners[index].x * 0.5 + 0.5, 0.5 - corners[index].y * 0.5);
-  return out;
-}
-@fragment fn columnFragment(input: ColumnOut) -> @location(0) vec4<f32> {
-  let size = vec2<f32>(textureDimensions(sectorColour));
-  let texel = textureLoad(sectorColour, vec2<i32>(input.uv * size), 0);
-  return vec4<f32>(texel.rgb, step(1.0e-4, texel.a));
-}`;
-
 /** The panorama of `scene` for `lake`, made before the scene is registered. */
 export function createLitePanorama(engine: EngineContext, scene: SceneContext, lake: LakeSource, options: PanoramaOptions): LitePanorama {
   const { uploads } = options;
-  // The picture, read round the turn: u repeats, so the seam at +z filters across; v clamps.
-  const picture = createRenderTexture2D(engine, PANORAMA_WIDTH, PANORAMA_HEIGHT, {
-    format: PANORAMA_FORMAT, addressModeU: "repeat", addressModeV: "clamp-to-edge", minFilter: "linear", magFilter: "linear",
+  // The picture and its depth, of which a sector's pass draws one column: Lite's own target, made once and claimed by
+  // Lite while it stands. It is read round the turn through a sampler of its own: u repeats, so the seam at +z filters
+  // across; v clamps.
+  const target = createRenderTargetTexture(engine, {
+    lbl: "lake_panorama", format: PANORAMA_FORMAT, dFormat: PANORAMA_DEPTH_FORMAT, samples: 1, size: { width: PANORAMA_WIDTH, height: PANORAMA_HEIGHT },
   });
-  // A sector's own target, cleared whole at each draw: colour to nothing drawn, and a depth buffer no other sector reads.
-  const sector = createRenderTargetTexture(engine, {
-    lbl: "lake_panorama_sector", format: PANORAMA_FORMAT, dFormat: PANORAMA_DEPTH_FORMAT, samples: 1, size: { width: PANORAMA_SECTOR_WIDTH, height: PANORAMA_HEIGHT },
-  });
+  const picture: Texture2D = {
+    ...target.texture,
+    sampler: getGpuDevice(engine).createSampler({ label: "lake_panorama", addressModeU: "repeat", addressModeV: "clamp-to-edge", minFilter: "linear", magFilter: "linear" }),
+  };
 
   // The capture's camera, the pass's own and never the scene's: at the lake's centre over its level, level with the
   // horizon, its projection the sector's frustum whatever the target's shape.
@@ -221,59 +202,29 @@ export function createLitePanorama(engine: EngineContext, scene: SceneContext, l
   setMeshVisible(seed, false);
   addToScene(scene, seed);
 
-  const task = createRenderTask(
-    { name: "lake_panorama", rt: sector.rt, cam: camera, clr: true, clrColor: { r: 0, g: 0, b: 0, a: 0 }, autoMirror: false },
-    engine, scene,
-  );
+  // The pass clears its camera's viewport alone, the sector's column, and ends by writing an alpha of 1 where it drew.
+  // Lite keeps this record and reads it at each frame: `update` says whether the first sector of another lake's shore
+  // clears the whole picture instead.
+  const config: RenderTaskConfig = {
+    name: "lake_panorama", rt: target.rt, cam: camera, clr: true, clrColor: { r: 0, g: 0, b: 0, a: 0 }, autoMirror: false, clearViewport: true, alphaWhereDrawn: true,
+  };
+  const task = createRenderTask(config, engine, scene);
   task.enabled = false;
 
   const turn = createPanoramaTurn();
   const arming = createPanoramaArming<MirrorGroundSky>();
   const registered = new Set<Mesh>();
   const counts: PanoramaCounts = { meshes: 0, sectors: 0, clears: 0, columnBytes: PANORAMA_SECTOR_WIDTH * PANORAMA_HEIGHT * 8 };
-  /** The column this frame's sector is laid into; -1 on a frame that draws none. */
+  /** The column this frame's sector is drawn into; -1 on a frame that draws none. */
   let column = -1;
   /** A sector the turn has given that no frame has drawn yet: it is the next drawn, so none is passed over; -1 with none. */
   let held = -1;
-  /** The picture holds another lake's shore: it is emptied before the next sector lands. */
+  /** The picture holds another lake's shore: the next sector's pass empties it whole. */
   let clearDue = false;
   let at = lake;
   let disposed = false;
 
-  // The sector into its column: one triangle over the column alone, every texel read whole.
-  const device = getGpuDevice(engine);
-  const module = device.createShaderModule({ label: "lake_panorama_column", code: PANORAMA_COLUMN_WGSL });
-  const pipeline = device.createRenderPipeline({
-    label: "lake_panorama_column", layout: "auto",
-    vertex: { module, entryPoint: "columnVertex" }, fragment: { module, entryPoint: "columnFragment", targets: [{ format: PANORAMA_FORMAT }] },
-  });
-  const group = device.createBindGroup({ layout: pipeline.getBindGroupLayout(0), entries: [{ binding: 0, resource: sector.texture.view }] });
-
-  // The column follows the sector's pass and comes before the frame's own, which reads the picture.
-  const lay = createCustomTask(engine, scene, {
-    name: "lake_panorama_column",
-    execute() {
-      const encoder = getFrameEncoder(engine);
-      if (disposed || encoder === undefined || (column < 0 && !clearDue)) return 0;
-      // Another lake's shore is emptied whole as the first sector of this one's lands, or by itself.
-      const pass = encoder.beginRenderPass({
-        colorAttachments: [{ view: picture.view, loadOp: clearDue ? "clear" : "load", storeOp: "store", clearValue: { r: 0, g: 0, b: 0, a: 0 } }],
-      });
-      if (clearDue) counts.clears++;
-      clearDue = false;
-      if (column >= 0) {
-        pass.setViewport(column * PANORAMA_SECTOR_WIDTH, 0, PANORAMA_SECTOR_WIDTH, PANORAMA_HEIGHT, 0, 1);
-        pass.setScissorRect(column * PANORAMA_SECTOR_WIDTH, 0, PANORAMA_SECTOR_WIDTH, PANORAMA_HEIGHT);
-        pass.setPipeline(pipeline);
-        pass.setBindGroup(0, group);
-        pass.draw(3);
-      }
-      pass.end();
-      return column >= 0 ? 1 : 0;
-    },
-  });
-  // Each put first in turn: the sector's pass, then its column, then what the scene held.
-  addTaskAtStart(scene, lay);
+  // Before the frame's own pass, which reads the picture.
   addTaskAtStart(scene, task);
 
   const registry = (ground: boolean): ReflectionRegistry => ({
@@ -341,6 +292,10 @@ export function createLitePanorama(engine: EngineContext, scene: SceneContext, l
         uploads?.marked();
       }
       column = held;
+      // The sector's column of the picture is the pass's viewport, which it clears alone; the first sector of another
+      // lake's shore clears the whole picture.
+      camera.viewport = { x: (held * PANORAMA_SECTOR_WIDTH) / PANORAMA_WIDTH, y: 0, width: PANORAMA_SECTOR_WIDTH / PANORAMA_WIDTH, height: 1 };
+      config.clearViewport = !clearDue;
       task.enabled = true;
       return true;
     },
@@ -348,6 +303,8 @@ export function createLitePanorama(engine: EngineContext, scene: SceneContext, l
       if (column >= 0) {
         held = -1;
         counts.sectors++;
+        if (clearDue) counts.clears++;
+        clearDue = false;
       }
       task.enabled = false;
       column = -1;

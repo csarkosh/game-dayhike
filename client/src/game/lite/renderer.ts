@@ -143,11 +143,11 @@
  * colour, the far forest's billboards, the cliffs' far ring, the props and
  * the lake's plants (by the pass's own word, whatever the frame's view
  * holds of them), seen from the lake's centre in sixteen sectors, one a
- * frame, each a pass of its own drawn before the frame's and copied into
+ * frame, each a pass of its own drawn before the frame's, straight into
  * its column of one picture the water reads. A capture is asked for under
  * each new sky state and when something it draws lands late, as the game
  * asks, and runs only on frames whose view holds the lake's glass: with
- * no lake in view there is no pass, no copy and no write. The mirror a
+ * no lake in view there is no pass and no write. The mirror a
  * lake reflects its shore in on the tier that draws one, and the tier that
  * reads through the surface, are not drawn yet.
  *
