@@ -327,12 +327,18 @@ export const WEBGPU_PROBE_STEPS_SETTLE = false;
  * What keeps a step on Babylon.js from settling is not there: the
  * renderer's shaders are WGSL, handed to the device as they are, so nothing
  * is translated on the page's thread, and its pipelines are made while the
- * scene loads. So true: the probe runs wherever the browser offers WebGPU.
- * What is not known is how long that load holds the slowest machines whose
- * class is probed: a step not ready in time reads nothing, holds the player
- * behind the probe's screen for its bound and spends one of the three
- * attempts, as any step that fails does. False, no probe runs unless
- * `?probe=` forces one, and every probed class keeps its start tier.
+ * scene loads. What a step does wait on is the far trees' bakes: the scene
+ * itself is in soon after its models land, and the device goes on being
+ * asked for pipelines, a bake at a time, until the last has been drawn and
+ * the trees' cards have joined the scene; the step is ready
+ * `PROBE_QUIET_MS` after that, and cards that join after it is ready start
+ * its warm-up again, as any late compile does. So true: the probe runs
+ * wherever the browser has an adapter for WebGPU. What is not known is how
+ * long the load and the bakes hold the slowest machines whose class is
+ * probed: a step not ready in time reads nothing, holds the player behind
+ * the probe's screen for its bound and spends one of the three attempts,
+ * as any step that fails does. False, no probe runs unless `?probe=`
+ * forces one, and every probed class keeps its start tier.
  */
 export const LITE_PROBE_STEPS_SETTLE = true;
 
