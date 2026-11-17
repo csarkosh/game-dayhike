@@ -4,7 +4,6 @@ import { lakeOf } from "../sim/helpers/lakes.js";
 import type { Dragonflies } from "../../src/game/dragonflyBehaviour.js";
 import { MIDGE_TABLE_FLOATS, type MidgeFrame } from "../../src/game/midgeLook.js";
 import { HEAD_ROW0, MIDGE_SWARMS_MAX } from "../../src/game/midgeMotion.js";
-import * as renderer from "../../src/game/renderer.js";
 import { skyStateFor } from "../../src/game/skyState.js";
 import { SILENT_WATER_LIFE, createPlayerSlots, pixelAtOneMetre, skyLumaOf } from "../../src/game/waterLifeInputs.js";
 import { waterLifeLayout } from "../../src/game/waterLifeField.js";
@@ -101,13 +100,6 @@ describe("a lake's life stepped with no engine", { timeout: timeLimit(60_000) },
 });
 
 describe("what the lake's life is handed", () => {
-  it("is what the renderer on Babylon.js hands it", () => {
-    expect(renderer.skyLumaOf).toBe(skyLumaOf);
-    expect(renderer.pixelAtOneMetre).toBe(pixelAtOneMetre);
-    expect(renderer.createPlayerSlots).toBe(createPlayerSlots);
-    expect(renderer.SILENT_WATER_LIFE).toBe(SILENT_WATER_LIFE);
-  });
-
   it("reads no sky as dark, a pixel's size from the lens, and silence as frozen", () => {
     expect(skyLumaOf(null)).toBe(0);
     expect(pixelAtOneMetre(Math.PI / 2, 1000)).toBeCloseTo(0.002, 12);
@@ -124,5 +116,15 @@ describe("what the lake's life is handed", () => {
     expect(slots.fill(new Map([[9, b]])).map((p) => p?.x)).toEqual([undefined, 4]);
     const c = { id: 11, pos: { x: 7, y: 8, z: 9 } };
     expect(slots.fill(new Map([[9, b], [11, c]])).map((p) => p?.x)).toEqual([7, 4]);
+  });
+});
+
+describe("the renderer on Babylon.js: what it hands the lake's life", () => {
+  it("is what the renderer on Babylon.js hands it", { timeout: timeLimit(60_000) }, async () => {
+    const renderer = await import("../../src/game/renderer.js");
+    expect(renderer.skyLumaOf).toBe(skyLumaOf);
+    expect(renderer.pixelAtOneMetre).toBe(pixelAtOneMetre);
+    expect(renderer.createPlayerSlots).toBe(createPlayerSlots);
+    expect(renderer.SILENT_WATER_LIFE).toBe(SILENT_WATER_LIFE);
   });
 });

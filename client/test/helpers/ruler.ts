@@ -1,9 +1,10 @@
 /**
  * The tests' ruler: the plain arithmetic of a vector turned by a
- * quaternion, of a dot product, of a point carried by a matrix and of a
- * matrix undone, for a test that measures what a module made (a rotation,
- * by where it carries a vector; a corner, told in a plank's own frame)
- * rather than comparing numbers with numbers. Each is written in the
+ * quaternion, of a dot product, of a point carried by a matrix, of two
+ * matrices multiplied, of a matrix's determinant and of a matrix undone,
+ * for a test that measures what a module made (a rotation, by where it
+ * carries a vector; a corner, told in a plank's own frame; a projection,
+ * by the depth it gives a point) rather than comparing numbers with numbers. Each is written in the
  * order of operations Babylon.js's `Vector3` and `Matrix` use, and a test
  * that measures with it first holds it, bit for bit, to what Babylon.js
  * gave for that test's own cases (`babylonFixture.ts`).
@@ -39,6 +40,34 @@ export function carried(m: ArrayLike<number>, p: Vec): Vec {
   const rz = p.x * a(2) + p.y * a(6) + p.z * a(10) + a(14);
   const rw = 1 / (p.x * a(3) + p.y * a(7) + p.z * a(11) + a(15));
   return { x: rx * rw, y: ry * rw, z: rz * rw };
+}
+
+/** The matrix that carries a point by `a` and then by `b`, in single floats: row by column, each sum from its first term. */
+export function product(a: ArrayLike<number>, b: ArrayLike<number>): Float32Array {
+  const out = new Float32Array(16);
+  for (let row = 0; row < 4; row++) {
+    const a0 = a[row * 4] as number, a1 = a[row * 4 + 1] as number, a2 = a[row * 4 + 2] as number, a3 = a[row * 4 + 3] as number;
+    for (let col = 0; col < 4; col++) {
+      out[row * 4 + col] = a0 * (b[col] as number) + a1 * (b[4 + col] as number) + a2 * (b[8 + col] as number) + a3 * (b[12 + col] as number);
+    }
+  }
+  return out;
+}
+
+/** The determinant of the matrix in the first sixteen floats of `m`: its first row by that row's cofactors. */
+export function determinant(m: ArrayLike<number>): number {
+  const a = (i: number): number => m[i] as number;
+  const m00 = a(0), m01 = a(1), m02 = a(2), m03 = a(3);
+  const m10 = a(4), m11 = a(5), m12 = a(6), m13 = a(7);
+  const m20 = a(8), m21 = a(9), m22 = a(10), m23 = a(11);
+  const m30 = a(12), m31 = a(13), m32 = a(14), m33 = a(15);
+  const d2233 = m22 * m33 - m32 * m23, d2133 = m21 * m33 - m31 * m23, d2132 = m21 * m32 - m31 * m22;
+  const d2033 = m20 * m33 - m30 * m23, d2032 = m20 * m32 - m22 * m30, d2031 = m20 * m31 - m30 * m21;
+  const c00 = +(m11 * d2233 - m12 * d2133 + m13 * d2132);
+  const c01 = -(m10 * d2233 - m12 * d2033 + m13 * d2032);
+  const c02 = +(m10 * d2133 - m11 * d2033 + m13 * d2031);
+  const c03 = -(m10 * d2132 - m11 * d2032 + m12 * d2031);
+  return m00 * c00 + m01 * c01 + m02 * c02 + m03 * c03;
 }
 
 /**

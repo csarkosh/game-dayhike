@@ -2,10 +2,10 @@ import { describe, expect, it } from "vitest";
 import {
   LAKE_NEAR_SHORE_M, boxInPlanes, cornersPastBox, lakeDrawnFrom, lakeInViewFrom, lakeUnderEye, lakeViewPoints, shoreInPlanes, squareInPlanes, type ViewPlane,
 } from "../../src/game/lakeSeen.js";
-import * as lakeView from "../../src/game/lakeView.js";
 import { cameraAxes, restAxes, restPlanes, viewCorners, viewPlanes } from "../../src/game/lite/cameraPose.js";
 import type { LakeShape } from "../../src/sim/lakeShape.js";
 import { stadiumShape } from "../helpers/lakeShapes.js";
+import { timeLimit } from "../helpers/timeLimit.js";
 
 /** A diagonal lake: its spine from (−30, −30) to (30, 30), 8 m to the shore either side, at level 0. */
 const DIAGONAL: LakeShape = { ...stadiumShape({ cx: 0, cz: 0, halfLen: 42, w: 8, level: 0 }), px: [-30, 30], pz: [-30, 30] };
@@ -27,10 +27,6 @@ function drawn(x: number, y: number, z: number, tx: number, ty: number, tz: numb
 }
 
 describe("a lake's water in a view, read with no engine", () => {
-  it("is the shore the camera's own test reads", () => {
-    expect(lakeView.lakeViewPoints).toBe(lakeViewPoints);
-  });
-
   it("answers at once for an eye over the water, and for a centre ray that meets the level over water", () => {
     expect(lakeUnderEye(DIAGONAL, 0, 2, 0, 0, 0, 1)).toBe(true);
     // From the bank, 20 m off the spine, looking down at the middle of the lake.
@@ -135,5 +131,12 @@ describe("a box far larger than the view", () => {
       }
     }
     expect(cornersPastBox(0.5, 0.5, 0.5, 2, 2, 2, unit)).toBe(false);
+  });
+});
+
+describe("the renderer on Babylon.js: a lake's water in its camera's view", () => {
+  it("is the shore the camera's own test reads", { timeout: timeLimit(60_000) }, async () => {
+    const lakeView = await import("../../src/game/lakeView.js");
+    expect(lakeView.lakeViewPoints).toBe(lakeViewPoints);
   });
 });

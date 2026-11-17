@@ -1,5 +1,4 @@
 import { describe, expect, it } from "vitest";
-import * as renderer from "../../src/game/renderer.js";
 import { WATER_ROWS, lakeWaterRow, roughnessFor } from "../../src/game/waterShading.js";
 import {
   LAKE_BUMP_DRIFT, WATER_ROUGHNESS_STEP, WATER_UV_SCROLL, advanceWater, createBumpDrift, createWaterSurface, emptyLakeUniforms, emptyWaterFrameUniforms,
@@ -9,6 +8,7 @@ import {
 import { MIRROR_OFFSET_K } from "../../src/game/mirrorView.js";
 import { emptyLakeMirrorUniforms, lakeMirrorUniforms } from "../../src/game/waterSurface.js";
 import { WIND_TIME_WRAP } from "../../src/game/windParams.js";
+import { timeLimit } from "../helpers/timeLimit.js";
 
 describe("a water surface's numbers, kept with no engine", () => {
   it("starts at rest: no wind, no rain, a lake rough all over, an identity for its mirror", () => {
@@ -103,7 +103,6 @@ describe("a water surface's numbers, kept with no engine", () => {
   });
 
   it("drifts the sea's bump at a fixed rate and the lakes' upwind at the wind's speed", () => {
-    expect(renderer.WATER_UV_SCROLL).toBe(WATER_UV_SCROLL);
     expect(LAKE_BUMP_DRIFT).toBe(Math.hypot(0.015, 0.011));
     const drift = createBumpDrift();
     drift.step(2, 0.5, [0.6, 0.8], true, true);
@@ -149,5 +148,12 @@ describe("a water surface's numbers, kept with no engine", () => {
     expect(lakeMirrorUniforms(surface, true, out)).toBe(false);
     expect(lakeMirrorUniforms(surface, false, out)).toBe(true);
     expect(out.waterMirrorOn[0]).toBe(0);
+  });
+});
+
+describe("the renderer on Babylon.js: the sea's bump", () => {
+  it("drifts the sea's bump at a fixed rate and the lakes' upwind at the wind's speed", { timeout: timeLimit(60_000) }, async () => {
+    const renderer = await import("../../src/game/renderer.js");
+    expect(renderer.WATER_UV_SCROLL).toBe(WATER_UV_SCROLL);
   });
 });
