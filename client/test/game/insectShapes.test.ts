@@ -1,12 +1,11 @@
 import { describe, expect, it } from "vitest";
 import type { Dragonflies } from "../../src/game/dragonflyBehaviour.js";
-import * as dragonflies from "../../src/game/dragonflies.js";
 import {
   DRAGONFLY_COLOURS, DRAGONFLY_DRAWN_SCALE, DRAGONFLY_WING_AMP, dragonflyGeometry, dragonflyHalfSpan, emptyDragonflyList, fillDragonflyList,
 } from "../../src/game/dragonflyShapes.js";
-import { MIDGE_FRAME_FLOATS, MIDGE_HEAD_FLOATS, MIDGE_TABLE_FLOATS, midgeSlots, packMidgeFrame, type MidgeFrame } from "../../src/game/midgeLook.js";
+import { MIDGE_DARK, MIDGE_FRAME_FLOATS, MIDGE_HEAD_FLOATS, MIDGE_TABLE_FLOATS, midgeSlots, packMidgeFrame, type MidgeFrame } from "../../src/game/midgeLook.js";
 import { MIDGE_SWARMS_MAX, SWARM_ROW_FLOATS } from "../../src/game/midgeMotion.js";
-import * as midgeSwarms from "../../src/game/midgeSwarms.js";
+import { timeLimit } from "../helpers/timeLimit.js";
 
 const SEED = 388817;
 
@@ -30,6 +29,10 @@ describe("the midges' one draw's inputs", () => {
     expect([...out.subarray(0, MIDGE_HEAD_FLOATS)]).toEqual([1, 2, 3, 4, 5, 6, 7, 14, 8, 9, 10, 15, 11, 12, 13, 16, 17, 1, 18, 0]);
     expect([...out.subarray(MIDGE_HEAD_FLOATS)]).toEqual([...table]);
     expect(packMidgeFrame(frame, 17, false, 18, out)[17]).toBe(0);
+  });
+
+  it("hides nine tenths of the background behind a speck against the brightest sky", () => {
+    expect(MIDGE_DARK).toBe(0.9);
   });
 });
 
@@ -81,8 +84,10 @@ describe("the dragonflies as lists", () => {
   });
 });
 
-describe("the shells on Babylon.js", () => {
-  it("draw from these shapes and this look", () => {
+describe("the renderer on Babylon.js: the shells of the lake's insects", () => {
+  it("draw from these shapes and this look", { timeout: timeLimit(60_000) }, async () => {
+    const dragonflies = await import("../../src/game/dragonflies.js");
+    const midgeSwarms = await import("../../src/game/midgeSwarms.js");
     expect(dragonflies.dragonflyGeometry).toBe(dragonflyGeometry);
     expect(dragonflies.DRAGONFLY_COLOURS).toBe(DRAGONFLY_COLOURS);
     expect(midgeSwarms.MIDGE_DARK).toBe(0.9);
