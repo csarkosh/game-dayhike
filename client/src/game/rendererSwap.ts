@@ -48,6 +48,7 @@
 import type { Scene } from "@babylonjs/core/scene.js";
 import type { AsyncPipelines } from "./asyncPipelines.js";
 import type { EngineHandle } from "./engineHandle.js";
+import type { WatchEngine } from "./engineWatch.js";
 import type { QualityTier } from "./quality.js";
 import type { Renderer } from "./rendererTypes.js";
 import type { TierChoice } from "./tierChoice.js";
@@ -81,10 +82,6 @@ export const GOVERNOR_SWAP_READY_MAX_MS = 10_000;
  * holds it: the hike's, or the game's own with its scene, which a swap hands
  * back as it was built. */
 export type Swappable<R extends Renderer = Renderer> = { renderer: R; canvas: HTMLCanvasElement };
-
-/** Listens to a WebGPU engine for the failures the game answers
- * (`watchWebGpu`, `gpuEngine.ts`); the function returned stops listening. */
-export type WatchEngine = (engine: EngineHandle, onFailure: (reason: "pipeline" | "lost") => void) => () => void;
 
 /** The WebGPU module's watchers (`gpuEngine.ts`): its failures
  * (`watchWebGpu`); the frames that made a render pipeline, or left a draw out

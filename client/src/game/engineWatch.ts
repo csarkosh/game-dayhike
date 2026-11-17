@@ -16,10 +16,14 @@
  *
  * No engine: the renderer calls `fail` from its engine's own events.
  */
-import type { WatchEngine } from "./rendererSwap.js";
+import type { EngineHandle } from "./engineHandle.js";
 
-/** Why an engine failed under a renderer, as the hike answers it (`failureSwap`). */
+/** Why an engine failed under a renderer, as the hike answers it (`answerFailures`). */
 export type EngineFailure = "pipeline" | "lost";
+
+/** Listens to an engine for the failures the game answers; the function
+ * returned stops listening. */
+export type WatchEngine = (engine: EngineHandle, onFailure: (reason: EngineFailure) => void) => () => void;
 
 export type EngineWatch = {
   /** Whether the engine has failed for `reason`. */

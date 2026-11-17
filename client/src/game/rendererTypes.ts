@@ -5,7 +5,7 @@
  * tests) names it here and loads no engine by doing so. What is named of an
  * engine is named as the page holds it: a handle that can be let go of
  * (`engineHandle.ts`), which engine it is (`engineChoice.ts`), the watch a
- * renderer keeps on one it made (`rendererSwap.ts`), the pipelines a WebGPU
+ * renderer keeps on one it made (`engineWatch.ts`), the pipelines a WebGPU
  * engine on Babylon.js makes asynchronously (`asyncPipelines.ts`, read by
  * the renderer on Babylon.js alone) and the measurement mode's report
  * (`gpuTimeReport.ts`). The hike's renderer is made in `hikeRenderer.ts`.
@@ -15,6 +15,7 @@ import type { ListenerPose } from "./ambientAudio.js";
 import type { AsyncPipelines } from "./asyncPipelines.js";
 import type { EngineName } from "./engineChoice.js";
 import type { EngineHandle } from "./engineHandle.js";
+import type { WatchEngine } from "./engineWatch.js";
 import type { EyePose } from "./eyeBlend.js";
 import type { FirstBuilds } from "./firstBuilds.js";
 import type { GpuTimeReport } from "./gpuTimeReport.js";
@@ -22,7 +23,6 @@ import type { PaintPaletteName } from "./gradeParams.js";
 import type { ImpostorBake } from "./impostorBake.js";
 import type { PreparedScene } from "./preparedScene.js";
 import type { QualityTier } from "./quality.js";
-import type { WatchEngine } from "./rendererSwap.js";
 import type { EndSceneNow, EndSceneSetup } from "./scenePlay.js";
 import type { SkyTable } from "./skyTable.js";
 import type { StareLens } from "./stareLens.js";
