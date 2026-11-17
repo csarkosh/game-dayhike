@@ -848,11 +848,12 @@ describe("layer boundaries", () => {
   /**
    * What stands between a renderer and the page it draws on is the game's
    * own arithmetic too: the frame's size from the canvas's box, the tier's
-   * scaling and the render scale under the paint. Both renderers read the
-   * rule that says where the render scale runs.
+   * scaling and the render scale under the paint, and the watch a renderer
+   * keeps on an engine it made for itself. Both renderers read the rule that
+   * says where the render scale runs.
    */
   it("what a renderer is sized and started by is computed without loading Babylon, whatever it imports", () => {
-    const ENGINE_FREE = ["frameSize.ts", "renderScale.ts", "quality.ts"];
+    const ENGINE_FREE = ["frameSize.ts", "renderScale.ts", "quality.ts", "engineWatch.ts"];
     const loaded = (file: string): string[] =>
       [...readFileSync(file, "utf8").matchAll(/^\s*(?:import|export)\s+(?!type\s)(?:[^"'();]*?\s+from\s+)?["']([^"']+)["']/gm)].map((m) => m[1] as string);
     const seen = new Set<string>();
@@ -875,6 +876,12 @@ describe("layer boundaries", () => {
     expect(lite).toContain("createFrameFit(tier, renderScaleRuns(postFeatures.paint, options.gpuTime === true), {");
     // The surface is sized by the game's rule alone: Lite's own fit to the display's ratio is not called.
     expect(lite).not.toContain("resizeEngine");
+    // A lost device is told to the hike, which builds the renderer again: Lite's recovery in place is not used.
+    expect(lite).toContain('engineWatch.fail("lost");');
+    expect(lite).toContain("ownWatch: engineWatch.watch,");
+    expect(lite).not.toContain("enableDeviceLostSceneRecovery");
+    // The renderer on Babylon.js is watched by whoever made its engine.
+    expect(readFileSync(join(SRC, "game/renderer.ts"), "utf8")).toContain("ownWatch: null,");
   });
 
   /**

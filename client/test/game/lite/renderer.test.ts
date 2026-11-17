@@ -40,6 +40,17 @@ describe("the hike's renderer on Babylon Lite, before its engine stands", () => 
     expect(r.engine.isDisposed).toBe(false);
   });
 
+  it("offers a watch of its own on the engine it makes, which the hike is told a lost device through", () => {
+    const r = make();
+    expect(r.ownWatch).not.toBeNull();
+    const heard: string[] = [];
+    const off = r.ownWatch?.(r.engine, (reason) => heard.push(reason));
+    expect(typeof off).toBe("function");
+    off?.();
+    // No device was ever made under Node: nothing is told.
+    expect(heard).toEqual([]);
+  });
+
   it("refuses an engine handed to it", () => {
     const engine = { isDisposed: false, dispose: () => undefined };
     expect(() => createHikeRenderer(canvas(), EMPTY_LEVEL, null, { tier: "low", skyTable: skyFixture(), engine })).toThrow(/makes its own engine/);

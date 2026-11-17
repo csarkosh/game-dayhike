@@ -322,6 +322,62 @@ describe("a rung taken down after its loop was promised", () => {
   });
 });
 
+describe("a renderer that made its engine for itself", () => {
+  /** A renderer with a watch of its own, as the hike's is. */
+  const selfWatched = (log: string[], failing: ReadonlySet<QualityTier> = new Set()): SwapBindings => {
+    const b = stubBindings(log, failing);
+    return {
+      ...b,
+      build: (canvas, tier, engine) => Object.assign(b.build(canvas, tier, engine), { ownWatch: () => () => undefined }),
+      watch: (r, detector) => log.push(`watch ${idOf(r)} ${detector === (r as { ownWatch?: unknown }).ownWatch ? "by its own watch" : "by another"}`),
+    };
+  };
+
+  it("is listened to through its own watch once its rung stands, at the hike's start and after a swap", async () => {
+    const first: string[] = [];
+    const got = buildFirstRenderer(stubCanvas("c0", first), ["high", "low"], selfWatched(first));
+    expect([got.tier, got.fellBack, got.engineFellBack]).toEqual(["high", false, false]);
+    expect(first).toEqual(["build c0 high webgl2", "watch high@c0 by its own watch"]);
+    const log: string[] = [];
+    const swapped = swapRenderer({ renderer: stubRenderer("low@c0", log), canvas: stubCanvas("c0", log) }, { tier: "high", engine: null, fallbackTier: "low" }, selfWatched(log));
+    await flush();
+    expect(swapped.tier).toBe("high");
+    expect(log.slice(-3)).toEqual(["rebind c1", "watch high@c1 by its own watch", "run high@c1"]);
+    // The old one's watch came off before anything of it went.
+    expect(log.indexOf("unwatch")).toBeLessThan(log.indexOf("dispose low@c0"));
+  });
+
+  it("is not listened to where its rung failed: the rung that stands is", async () => {
+    const log: string[] = [];
+    const quiet = vi.spyOn(console, "error").mockImplementation(() => undefined);
+    try {
+      const got = swapRenderer(
+        { renderer: stubRenderer("medium@c0", log), canvas: stubCanvas("c0", log) },
+        { tier: "high", engine: null, fallbackTier: "medium" },
+        selfWatched(log, new Set<QualityTier>(["high"])),
+      );
+      await flush();
+      expect([got.tier, got.fellBack]).toEqual(["medium", true]);
+      expect(log.filter((line) => line.startsWith("watch"))).toEqual(["watch medium@c2 by its own watch"]);
+    } finally {
+      quiet.mockRestore();
+    }
+  });
+
+  it("is listened to by the detector that came with an engine made for it, where one was", () => {
+    const log: string[] = [];
+    const given = { dispose: () => log.push("dispose given engine") } as unknown as AbstractEngine;
+    buildFirstRenderer(stubCanvas("c0", log), ["high"], selfWatched(log), { engine: given, watch: () => () => undefined });
+    expect(log).toEqual(["build c0 high given", "watch high@c0 by another"]);
+  });
+
+  it("is listened to by nothing where it offers no watch and was given no engine", () => {
+    const log: string[] = [];
+    buildFirstRenderer(stubCanvas("c0", log), ["low"], stubBindings(log));
+    expect(log).toEqual(["build c0 low webgl2"]);
+  });
+});
+
 describe("a swap onto a given engine", () => {
   const engine = (log: string[]) => ({ dispose: () => log.push("dispose given engine") }) as unknown as AbstractEngine;
   const detector = () => () => undefined;

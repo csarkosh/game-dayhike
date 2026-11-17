@@ -46,6 +46,14 @@
  * renderer that cannot be made (no WebGPU device, a shader refused) says so
  * in the console and stays empty.
  *
+ * **A lost device is the hike's to answer** (`engineWatch.ts`): the renderer
+ * says the loss, tells whoever watches it (`ownWatch`, which the hike's
+ * ladders put on once a renderer stands) and draws nothing more; the hike
+ * covers play and builds a new renderer on a new engine and a fresh canvas,
+ * as it does for any engine that fails under it (`answerFailures`). Lite's
+ * own recovery in place is not used. A GPU error nobody caught is said in
+ * the console, the first few of them, and is not answered by a rebuild.
+ *
  * **The frame is sized by the game's rule, not by the display**
  * (`frameSize.ts`): the canvas's box in CSS pixels over the tier's scaling,
  * the display's pixel ratio unread, as the game sizes it on Babylon.js, and
@@ -303,6 +311,7 @@ import { BASE_SPACING_BY_TIER } from "../clipmap.js";
 import { clutterReachFor } from "../clutterField.js";
 import { cloudDensityNow, cloudFor, cloudGroundDue, cloudGroundMap, cloudMarchSteps, cloudOn, cloudStepsFor, cloudUniforms, emptyCloudUniforms, noCloud } from "../cloudParams.js";
 import type { EngineHandle } from "../engineHandle.js";
+import { createEngineWatch } from "../engineWatch.js";
 import { HEADLAMP_CONE, HEADLAMP_INTENSITY, HEADLAMP_RANGE } from "../endScene.js";
 import { createEntityPoses, type EntityFrame } from "../entityPoses.js";
 import { blendedEye, type EyePose } from "../eyeBlend.js";
@@ -774,6 +783,8 @@ export function createLiteRenderer(canvas: HTMLCanvasElement, level: Level, fore
   /** Ground images still being fetched or decoded. */
   let loading = forest === null ? 0 : GROUND_IMAGES;
   let gpuErrors = 0;
+  /** The watch on the renderer's own engine (`engineWatch.ts`): the hike is told when the device is lost under it. */
+  const engineWatch = createEngineWatch();
   const disposal = new AbortController();
 
   let markSynced: () => void = () => undefined;
@@ -831,8 +842,11 @@ export function createLiteRenderer(canvas: HTMLCanvasElement, level: Level, fore
       if (gpuErrors++ < GPU_ERRORS_SAID) console.error(`the hike's renderer: ${error.message}`);
     });
     onEngineDeviceLost(engine, (info) => {
-      // Its own letting go destroys the device too: only a loss it did not ask for is said.
-      if (!disposed) console.error(`the hike's renderer lost its device (${info.reason === undefined ? "no reason given" : info.reason}): ${info.message}`);
+      // Its own letting go destroys the device too: only a loss it did not ask for is said, and told to the hike,
+      // which builds the renderer again on a new engine. Nothing is drawn with a lost device meanwhile.
+      if (disposed) return;
+      console.error(`the hike's renderer lost its device (${info.reason === undefined ? "no reason given" : info.reason}): ${info.message}`);
+      engineWatch.fail("lost");
     });
     // The frame's block, before any material: every material's plugins name it.
     const shared = createPluginUniformBlock(engine, FRAME_BLOCK, [...FRAME_FIELDS], "vertex-fragment");
@@ -1165,6 +1179,7 @@ export function createLiteRenderer(canvas: HTMLCanvasElement, level: Level, fore
       if (handle.isDisposed) return;
       handle.isDisposed = true;
       disposed = true;
+      engineWatch.close();
       stopLoop();
       disposal.abort();
       light.dispose();
@@ -1379,6 +1394,7 @@ export function createLiteRenderer(canvas: HTMLCanvasElement, level: Level, fore
     scenery: sceneryHost,
     engine: handle as EngineHandle,
     engineName: "webgpu",
+    ownWatch: engineWatch.watch,
     forestReady,
     firstSynced,
     skyReady() {
@@ -1834,7 +1850,7 @@ export function createLiteRenderer(canvas: HTMLCanvasElement, level: Level, fore
       if (standing !== null) frameFit.fit();
     },
     drawFrame() {
-      if (standing === null) return;
+      if (standing === null || engineWatch.failed("lost")) return;
       // While the scene is built again for a new hiker's lamp, nothing of it is drawn (`wornLamps.ts`).
       if (standing.wornLamps.rebuilding) return;
       // The frame sized again where the canvas's box, the display's ratio or the render scale has moved.

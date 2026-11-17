@@ -151,7 +151,7 @@ import { SILENT_WATER_LIFE, createPlayerSlots, pixelAtOneMetre, skyLumaOf } from
 import type { WaterLifeSound } from "./waterLifeAudio.js";
 import { PROP_ROUGHNESS, brushBoxes, propColour } from "./propBoxes.js";
 import { createPropMeshes, type MeshRegistry, type PropShadows } from "./propMeshes.js";
-import { buildOrUndo, whenSceneReady } from "./rendererSwap.js";
+import { buildOrUndo, whenSceneReady, type WatchEngine } from "./rendererSwap.js";
 import { createCalmFade, lakeCalmUnder, type LakeCalmFrame } from "./lakeCalmFrame.js";
 import { lakeSunShare } from "./lakeRipples.js";
 import { SUN_PEAK } from "./sky.js";
@@ -1376,6 +1376,14 @@ export type Renderer = {
   /** Which engine the renderer draws with, for its life: WebGPU where it
    * was given one (`RendererOptions.engine`, `engineChoice.ts`), else WebGL2. */
   readonly engineName: EngineName;
+  /**
+   * The renderer's own watch on the engine it made for itself
+   * (`engineWatch.ts`): the hike's ladders put it on once the renderer stands
+   * and answer what it tells (a lost device) by building the renderer again.
+   * Null for a renderer drawing with an engine it was handed, which is
+   * watched by the module that made it (`EngineWatchers.failures`).
+   */
+  readonly ownWatch: WatchEngine | null;
   /** The measurement mode's readout (`?gpuTime`, `gpuTime.ts`); null without it. */
   gpuTime: { read(): GpuTimeReport } | null;
   /** Resolves once the forest's first fill, billboards included, is drawn
@@ -2864,6 +2872,8 @@ function buildRenderer(
     waitingItems() {
       return scene.getWaitingItemsCount();
     },
+    // The engine was handed in, or is WebGL2's: whoever made it watches it.
+    ownWatch: null,
     gpuTime,
     sync(state, localId, alpha, frame = { dt: 0, sprinting: false }) {
       if (renderScale !== null && renderScale.frame(frame.dt)) engine.setHardwareScalingLevel(baseScaling / renderScale.scale);
