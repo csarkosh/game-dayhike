@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { readFileSync } from "node:fs";
 import type { Renderer } from "../../../src/game/renderer.js";
 import { cameraAxes, restAxes, restPlanes, viewPlanes, type CameraPose } from "../../../src/game/lite/cameraPose.js";
 import {
@@ -223,5 +224,17 @@ describe("a model placed once on Babylon Lite", () => {
     expect([...world.indices]).toEqual([0, 1, 2]);
     // The part's own geometry is left as it was.
     expect([...glass.positions]).toEqual([0, 0, 0, 1, 0, 0, 0, 1, 0]);
+  });
+});
+
+describe("the parts of a car a pose turns, on Babylon Lite", () => {
+  it("sends only the runs the pose has moved: a door that swings on a car that stands sends no wheel", () => {
+    const source = readFileSync(new URL("../../../src/game/lite/sceneryMeshes.ts", import.meta.url), "utf8");
+    // A wheel by its spin, a front one by its turn too, the steering wheel and the door each by its own.
+    expect(source).toContain("name === DOOR_NAME ? swung : name === STEERING_NAME ? wheeled : spun || (steered && frontWheel(name));");
+    expect(source).toContain("if (!moved(run.name)) continue;");
+    // And of a mesh only the span that holds the moved runs, not the span of every run it has.
+    expect(source).toContain("updateMeshPositions(engine, turned.mesh, posed.positions, first, count, first);");
+    expect(source).not.toContain("turned.posed.positions, turned.first, turned.count, turned.first");
   });
 });

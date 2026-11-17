@@ -71,7 +71,7 @@ import { SIGN_POST_HALF } from "../../sim/signs.js";
 import { BOARD_BOXES, BOARD_BOX_HALF, BOARD_BOX_STEP, CAR_HALF, CAR_MATERIAL, KIOSK_MATERIAL, boardBoxes } from "../../sim/trailhead.js";
 import { BOARD_TEXTURE } from "../boardFace.js";
 import { BOARD_FACE_BIAS, BOARD_FACE_ROUGHNESS, drawBoard, loadBoardImage, type BoardDrawing } from "../boardDraw.js";
-import { DOOR_NAME, STEERING_NAME, WHEEL_NAMES, carPartTurn, partMatrix, poseVertices, type VertexRun } from "../carParts.js";
+import { DOOR_NAME, STEERING_NAME, WHEEL_NAMES, carPartTurn, frontWheel, partMatrix, poseVertices, type VertexRun } from "../carParts.js";
 import { CAR_SHADOW_HALF, carShadowGrid } from "../carShadow.js";
 import { TAIL_LAMP_COLOUR } from "../endScene.js";
 import { quatFromEuler, type Quat } from "../instancePose.js";
@@ -499,22 +499,39 @@ export function createLiteScenery(engine: EngineContext, scene: SceneContext, op
    */
   function turnParts(stood: Stood, pose: CarPose): void {
     const was = stood.turn;
-    if (was.wheelSpin === pose.wheelSpin && was.wheelTurn === pose.wheelTurn && was.steer === pose.steer && was.doorOpen === pose.doorOpen) return;
+    const spun = was.wheelSpin !== pose.wheelSpin;
+    const steered = was.wheelTurn !== pose.wheelTurn;
+    const wheeled = was.steer !== pose.steer;
+    const swung = was.doorOpen !== pose.doorOpen;
+    if (!spun && !steered && !wheeled && !swung) return;
     was.wheelSpin = pose.wheelSpin;
     was.wheelTurn = pose.wheelTurn;
     was.steer = pose.steer;
     was.doorOpen = pose.doorOpen;
+    /** Whether the pose has moved the part named `name`: a wheel by its spin, a front one by its turn too, the steering wheel and the door each by its own. */
+    const moved = (name: string): boolean =>
+      name === DOOR_NAME ? swung : name === STEERING_NAME ? wheeled : spun || (steered && frontWheel(name));
     for (const turned of stood.turned) {
-      turned.posed ??= { positions: turned.rest.positions.slice(), normals: turned.rest.normals.slice(), tangents: turned.rest.tangents?.slice() ?? null };
+      // Only the runs the pose has moved are carried, and of the mesh only the span that holds them is sent: a door
+      // that swings on a car that stands sends no wheel.
+      let first = Infinity;
+      let end = -Infinity;
       for (const run of turned.runs) {
+        if (!moved(run.name)) continue;
         const turn = carPartTurn(run.name, pose, turnScratch);
         if (turn === null) continue;
+        turned.posed ??= { positions: turned.rest.positions.slice(), normals: turned.rest.normals.slice(), tangents: turned.rest.tangents?.slice() ?? null };
         poseVertices(partMatrix(run.local, turn, partScratch), turned.rest, turned.posed, run.first, run.count);
+        first = Math.min(first, run.first);
+        end = Math.max(end, run.first + run.count);
       }
-      updateMeshPositions(engine, turned.mesh, turned.posed.positions, turned.first, turned.count, turned.first);
-      updateMeshNormals(engine, turned.mesh, turned.posed.normals, turned.first, turned.count, turned.first);
-      if (turned.posed.tangents !== null) updateMeshTangents(engine, turned.mesh, turned.posed.tangents, turned.first, turned.count, turned.first);
-      uploads?.count("geometry", turned.count * (turned.posed.tangents !== null ? 40 : 24), turned.posed.tangents !== null ? 3 : 2);
+      const posed = turned.posed;
+      if (posed === null || end <= first) continue;
+      const count = end - first;
+      updateMeshPositions(engine, turned.mesh, posed.positions, first, count, first);
+      updateMeshNormals(engine, turned.mesh, posed.normals, first, count, first);
+      if (posed.tangents !== null) updateMeshTangents(engine, turned.mesh, posed.tangents, first, count, first);
+      uploads?.count("geometry", count * (posed.tangents !== null ? 40 : 24), posed.tangents !== null ? 3 : 2);
     }
   }
 
