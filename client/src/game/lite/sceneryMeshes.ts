@@ -50,14 +50,18 @@
  *   and its tail lamps, which stand in the world's own coordinates, are
  *   laid again where it goes; and the
  *   parts a pose turns (the four wheels, the steering wheel, the driver's
- *   door) are runs of its meshes' vertices, carried from their rest by the
- *   part's turn in its own frame (`carParts.ts`) and sent as the runs the
- *   pose has moved alone: a door that swings on a car that stands sends no
- *   wheel, and the door's window, a pane of the glass, is turned with
- *   it in the car's frame. A pose the car already stands at writes nothing, so a
- *   parked car costs a hike and the scene's first seconds nothing; the game
- *   on Babylon.js keeps a node a part for it through the whole hike. The
- *   tail lamps are one mesh, shown from the catch.
+ *   door) are runs of its meshes' vertices, turned in the vertex stage: a
+ *   vertex names its turn, a float sent once with the mesh, and the turns
+ *   are the car's own small block (`carParts.ts`, `carTurnsPlugin`), each
+ *   the part's turn in its own frame as three rows. A pose sends the rows
+ *   of the parts it has moved, in one write, and no vertex: a door that
+ *   swings on a car that stands sends no wheel's, and the door's window, a
+ *   pane of the glass, is turned by the door's rows, its middle carried
+ *   with it for the panes' order. A pose the car already stands at writes
+ *   nothing, so a parked car costs a hike and the scene's first seconds
+ *   nothing; the game on Babylon.js keeps a node a part for it through the
+ *   whole hike. The rain's cover map draws those meshes under the same
+ *   turns. The tail lamps are one mesh, shown from the catch.
  * - **The film's car is drawn in its first frames wherever it stands**, its
  *   patch and its tail lamps with it (the lamps dark, in its middle), so
  *   the pipelines its draws need are made as the hike starts and not in the
@@ -65,9 +69,9 @@
  *
  * - **A staged scene's own car stands with no parked car before it**
  *   (`filmCar` with `alone`), on a patch the air fogs as it fogs the road.
- *   Its handset is a run of one mesh's vertices, as a wheel is: carried from
- *   its cradle into the hand a pose gives it (`scene/stageParts.ts`), sent
- *   as that run alone on a frame that moves it, and never while it rests.
+ *   Its handset is a run of one mesh's vertices, carried on the processor
+ *   from its cradle into the hand a pose gives it (`scene/stageParts.ts`),
+ *   sent as that run alone on a frame that moves it, and never while it rests.
  *   Its cord is one mesh the car carries: the tube the stage on Babylon.js
  *   lays (`scene/cordTubeGeometry.ts`), laid in the car's own frame, so a
  *   cord that hangs still is written nothing however far the car drives,
@@ -80,9 +84,9 @@
  * again with the pictures, over a board no frame has yet shown.
  */
 import {
-  addToScene, createCapsuleData, createMeshFromData, createPbrMaterial, disposeMeshGpu, flushThinInstances, rebuildSceneRenderables, releaseTexture, removeFromScene,
-  setMeshVisible,
-  setThinInstanceCount, setThinInstances, updateMeshGeometryCapacity, updateMeshNormals, updateMeshPositions, updateMeshTangents,
+  addToScene, createCapsuleData, createMeshFromData, createPbrMaterial, createPluginUniformBlock, disposeMeshGpu, flushThinInstances, rebuildSceneRenderables, releaseTexture,
+  removeFromScene, setMeshVisible,
+  setThinInstanceCount, setThinInstances, updateMeshGeometryCapacity, updateMeshNormals, updateMeshPositions, updateMeshTangents, writePluginUniformBlock,
   type EngineContext, type MaterialPlugin, type Mesh, type PbrMaterialProps, type PluginUniformBlock, type SceneContext, type ShaderMaterial, type Texture2D,
 } from "@babylonjs/lite";
 import type { SignPost } from "../../sim/signs.js";
@@ -90,7 +94,7 @@ import { SIGN_POST_HALF } from "../../sim/signs.js";
 import { BOARD_BOXES, BOARD_BOX_HALF, BOARD_BOX_STEP, CAR_HALF, CAR_MATERIAL, KIOSK_MATERIAL, boardBoxes } from "../../sim/trailhead.js";
 import { BOARD_TEXTURE } from "../boardFace.js";
 import { BOARD_FACE_BIAS, BOARD_FACE_ROUGHNESS, drawBoard, loadBoardImage, type BoardDrawing } from "../boardDraw.js";
-import { DOOR_NAME, STEERING_NAME, WHEEL_NAMES, carPartTurn, frontWheel, partMatrix, poseVertices, type VertexRun } from "../carParts.js";
+import { TURNED_PART_NAMES, TURN_ROW_FLOATS, partNumbers, poseVertices, restTurns, turnPoint, turnSlots, writeTurns, type PartsPose, type TurnSlot, type VertexRun } from "../carParts.js";
 import { CAR_SHADOW_BIAS, CAR_SHADOW_HALF, carShadowGrid } from "../carShadow.js";
 import { TAIL_LAMP_COLOUR } from "../endScene.js";
 import { quatFromEuler, type Quat } from "../instancePose.js";
@@ -115,10 +119,10 @@ import type { ViewFrustumPlane } from "./cameraPose.js";
 import { DRAW_ORDER, SEE_THROUGH_ORDER, createDrawOrders } from "./drawOrder.js";
 import { baseColourPlugin, surfaceWetPlugin } from "./forestPlugins.js";
 import type { FrameUploads } from "./frameUploads.js";
-import type { CoverRegistry } from "./rainMap.js";
 import { loadSceneActor, type SceneActor } from "./sceneActor.js";
 import {
-  dress, farthestFirst, listPanes, loadSceneryModel, partBytes, partMesh, placeMatrix, type SceneryModel, type SceneryPart,
+  CAR_TURNS_BLOCK, CAR_TURNS_ROWS, carTurnsFields, carTurnsPlugin, dress, farthestFirst, listPanes, loadSceneryModel, partBytes, partMesh, placeMatrix, readsTangents,
+  type SceneryModel, type SceneryPart,
 } from "./sceneryModels.js";
 import {
   TAIL_LAMP_INDICES, airPatchMaterial, faceGeometry, faceMesh, labelAtlas, labelGeometry, paintCanvas, paintLabelAtlas, paintMaterial, paintTexture, patchGeometry,
@@ -150,8 +154,6 @@ const PLACES = { boxes: 0, posts: 8, planks: 16, board: 24, parked: 32, film: 48
  */
 export const FILM_CAR_WARM_FRAMES = 2;
 
-/** The parts of the film's car a pose turns (`carParts.ts`), by their nodes' names in its file. */
-const TURNED_PARTS: readonly string[] = [...WHEEL_NAMES, STEERING_NAME, DOOR_NAME];
 /** The point every see-through mesh of the hike is ordered from (`Mesh.sortOrigin`): the world's origin, where the rest of them stand. */
 const WORLD_ORIGIN: readonly [number, number, number] = [0, 0, 0];
 
@@ -183,8 +185,12 @@ export type SceneryOptions = {
   /** A post chain grades the frame: the hike's own stages hand their linear colour on. */
   linear: boolean;
   uploads?: FrameUploads;
-  /** The rain's cover map: the posts, the car and the board are hard cover. */
-  cover?: CoverRegistry;
+  /**
+   * The rain's cover map: the posts, the car and the board are hard cover.
+   * `place`: the plugin that places the mesh's vertices, for a mesh whose
+   * own material's vertex stage does (a car's turned parts).
+   */
+  cover?: { add(mesh: Mesh, place?: MaterialPlugin): void; remove(mesh: Mesh): void };
 };
 
 /** The view a frame is drawn from, as the scenery is judged by it. */
@@ -429,22 +435,25 @@ type Glass = {
   /** The triangles as the mesh now draws them; the part's own are the file's. */
   drawn: Uint32Array;
   order: number[];
-  /** The panes a pose turns (a door's window), by their nodes' names: each pane's run of vertices and its own frame in the model's. */
-  runs: { name: string; first: number; count: number; local: Float32Array; pane: number }[];
-  /** The part's vertices in the model's frame as a pose has turned them; null until one has, and the part's own then stand. */
-  model: VertexRun | null;
+  /** The panes a pose turns (a door's window): each pane's number, and its turn's place among the car's. */
+  runs: { pane: number; slot: number }[];
   /** The middle of each pane's box in the model's frame, as a pose has turned it: xyz a pane. */
   paneAt: Float32Array;
 };
 
-/** The vertices of one of a model's meshes that a pose turns: each named part's runs, the span that holds them all, and the mesh's vertices as they are sent (none until a pose first turns one). */
-type Turned = {
-  mesh: Mesh;
-  rest: VertexRun;
-  posed: VertexRun | null;
-  runs: { name: string; first: number; count: number; local: Float32Array }[];
-  first: number;
-  count: number;
+/**
+ * A car's turns as its vertex stage reads them: the block of their rows, a
+ * turn for each frame a part is turned in (`turnSlots`), the block's floats
+ * that are the rows, and, by the model's parts, which turn each vertex of a
+ * part's mesh takes (null for a part no pose turns) and where each turned
+ * pane of it lies.
+ */
+type CarTurns = {
+  block: PluginUniformBlock;
+  slots: TurnSlot[];
+  rows: Float32Array;
+  numbers: (Float32Array | null)[];
+  panes: { pane: number; slot: number }[][];
 };
 
 /**
@@ -473,8 +482,9 @@ type Cord = { mesh: Mesh; tube: TubeGeometry; ends: Float64Array };
 /**
  * A model as it stands: its meshes, a mesh a part; of them the see-through
  * ones, laid in the world; the box of its geometry in its own frame and in
- * the world; where it stands; and, for a car, the parts a pose turns and the
- * turn they were last sent at, and a staged scene's handset and cord.
+ * the world; where it stands; and, for a car, the turns of the parts a pose
+ * turns and the pose they were last written for, and a staged scene's
+ * handset and cord.
  */
 type Stood = {
   model: SceneryModel;
@@ -486,8 +496,8 @@ type Stood = {
   at: { x: number; y: number; z: number; yaw: number };
   /** The world carried into the model's own frame where it stands: what a pane's distance from the eye is judged in. */
   toModel: Float64Array;
-  turned: Turned[];
-  turn: { wheelSpin: number; wheelTurn: number; steer: number; doorOpen: number };
+  turns: CarTurns | null;
+  turn: PartsPose;
   handset: Handset | null;
   cord: Cord | null;
 };
@@ -548,38 +558,77 @@ export function createLiteScenery(engine: EngineContext, scene: SceneContext, op
     return mesh;
   }
 
-  /** A model's parts dressed and given their places from `first`; the weather soaks it where `wet`. */
-  function dressed(model: SceneryModel, first: number, wet: boolean): void {
+  /**
+   * A model's parts dressed and given their places from `first`; the weather
+   * soaks it where `wet`. Given a car's `turns`, a part that holds a turned
+   * run wears the plugin that turns it.
+   */
+  function dressed(model: SceneryModel, first: number, wet: boolean, turns: CarTurns | null = null): void {
     for (const [n, part] of model.parts.entries()) {
       dress(part, { wet: wet ? options.wet : null, air: options.air, shared: options.shared });
+      if (turns !== null && turns.numbers[n] !== null) part.material.plugins = [...(part.material.plugins ?? []), carTurnsPlugin(turns.block, readsTangents(part))];
       orders.put(part.material, first + n);
     }
+  }
+
+  /**
+   * The turns of `model`, a car: a turn for each frame one of its primitives
+   * hangs in under a part a pose turns, opaque or see-through, in a block of
+   * the car's own that stands at rest. Null for a model with no such part.
+   */
+  function carTurnsOf(model: SceneryModel): CarTurns | null {
+    const runs: { part: number; pane: number; name: string; local: Float32Array; first: number; count: number }[] = [];
+    for (const [n, part] of model.parts.entries()) {
+      for (const [i, pane] of part.panes.entries()) {
+        const name = TURNED_PART_NAMES.find((node) => pane.nodes.includes(node));
+        if (name !== undefined) runs.push({ part: n, pane: i, name, local: pane.local, first: pane.vertexFirst, count: pane.vertexCount });
+      }
+    }
+    if (runs.length === 0) return null;
+    const { slots, of } = turnSlots(runs);
+    const block = createPluginUniformBlock(engine, CAR_TURNS_BLOCK, carTurnsFields(slots.length), "vertex");
+    const at = (block.offsets.get(CAR_TURNS_ROWS) ?? 0) / 4;
+    const rows = block.data.subarray(at, at + slots.length * TURN_ROW_FLOATS);
+    rows.set(restTurns(slots.length));
+    writePluginUniformBlock(engine, block);
+    uploads?.count("uniforms", block.data.byteLength);
+    const mine = model.parts.map((_, n) => runs.map((run, r) => ({ ...run, slot: of[r] as number })).filter((run) => run.part === n));
+    return {
+      block, slots, rows,
+      numbers: model.parts.map((part, n) => ((mine[n] as (typeof mine)[number]).length === 0 ? null : partNumbers(part.positions.length / 3, mine[n] as (typeof mine)[number]))),
+      panes: mine.map((list) => list.map(({ pane, slot }) => ({ pane, slot }))),
+    };
   }
 
   /**
    * A model's meshes stood at (x, y, z) turned by `yaw`, each by its
    * mesh's own place and turn: a see-through one at the glass's place among
    * the see-through draws, ordered from the world's origin as they all are.
+   * Given a car's `turns`, each vertex of a mesh that holds a turned run
+   * names its turn, and the cover map draws that mesh under the same turns.
    */
-  function standModel(name: string, model: SceneryModel, x: number, y: number, z: number, yaw: number, cover: boolean): Stood {
+  function standModel(name: string, model: SceneryModel, x: number, y: number, z: number, yaw: number, cover: boolean, turns: CarTurns | null = null): Stood {
     const turn = quatFromEuler(0, yaw, 0, { x: 0, y: 0, z: 0, w: 1 });
     const glass: Glass[] = [];
     const meshes = model.parts.map((part: SceneryPart, n) => {
       const mesh = partMesh(engine, `${name}_${n}`, part);
+      const numbers = turns?.numbers[n] ?? null;
+      if (numbers !== null) {
+        // After the material: Lite reads a mesh's plugin vertex data by the material it wears. Sent once, with the mesh.
+        mesh.pluginVertexData = numbers;
+        uploads?.count("pluginVertices", numbers.byteLength);
+      }
       if (part.blended) {
         // Lite orders a blended mesh by its origin's depth unless it is given another point: the world's origin, where
         // every other see-through mesh of the hike stands, so the glass keeps its place among them wherever the car is.
         mesh.sortOrigin = WORLD_ORIGIN;
         const paneAt = new Float32Array(part.panes.length * 3);
-        const runs: Glass["runs"] = [];
         for (const [i, pane] of part.panes.entries()) {
           paneAt[i * 3] = pane.x;
           paneAt[i * 3 + 1] = pane.y;
           paneAt[i * 3 + 2] = pane.z;
-          const turned = TURNED_PARTS.find((node) => pane.nodes.includes(node));
-          if (turned !== undefined) runs.push({ name: turned, first: pane.vertexFirst, count: pane.vertexCount, local: pane.local, pane: i });
         }
-        glass.push({ mesh, part, drawn: part.indices.slice(), order: part.panes.map((_, i) => i), runs, model: null, paneAt });
+        glass.push({ mesh, part, drawn: part.indices.slice(), order: part.panes.map((_, i) => i), runs: turns?.panes[n] ?? [], paneAt });
       }
       mesh.position.x = x;
       mesh.position.y = y;
@@ -589,7 +638,8 @@ export function createLiteScenery(engine: EngineContext, scene: SceneContext, op
       mesh.rotationQuaternion.z = turn.z;
       mesh.rotationQuaternion.w = turn.w;
       stand(mesh, partBytes(part), part.blended ? SEE_THROUGH_ORDER.glass : undefined);
-      if (cover) options.cover?.add(mesh);
+      // The map's own material reads no map of normals, so no tangent.
+      if (cover) options.cover?.add(mesh, numbers === null || turns === null ? undefined : carTurnsPlugin(turns.block, false));
       return mesh;
     });
     // The box of the model's own geometry, where it stands.
@@ -606,107 +656,34 @@ export function createLiteScenery(engine: EngineContext, scene: SceneContext, op
       }
     }
     return {
-      model, meshes, glass, min, max, box: sightBox(x, y, z, yaw, min, max), at: { x, y, z, yaw }, toModel: modelFrame(x, y, z, yaw, new Float64Array(16)), turned: [],
+      model, meshes, glass, min, max, box: sightBox(x, y, z, yaw, min, max), at: { x, y, z, yaw }, toModel: modelFrame(x, y, z, yaw, new Float64Array(16)), turns,
       turn: { wheelSpin: 0, wheelTurn: 0, steer: 0, doorOpen: 0 },
       handset: null, cord: null,
     };
   }
 
-  /**
-   * The parts of `stood` a pose turns: of each opaque mesh, the runs of its
-   * vertices under a node of that name. A see-through pane of such a node
-   * (the door's window) is turned with it where it lies in the world
-   * (`Glass.runs`).
-   */
-  function turnedOf(stood: Stood): Turned[] {
-    const out: Turned[] = [];
-    for (const [n, part] of stood.model.parts.entries()) {
-      if (part.blended) continue;
-      const runs: Turned["runs"] = [];
-      for (const pane of part.panes) {
-        const name = TURNED_PARTS.find((turned) => pane.nodes.includes(turned));
-        if (name !== undefined) runs.push({ name, first: pane.vertexFirst, count: pane.vertexCount, local: pane.local });
-      }
-      if (runs.length === 0) continue;
-      const first = Math.min(...runs.map((run) => run.first));
-      const end = Math.max(...runs.map((run) => run.first + run.count));
-      out.push({ mesh: stood.meshes[n] as Mesh, rest: part, posed: null, runs, first, count: end - first });
-    }
-    return out;
-  }
-
   const turnScratch: Quat = { x: 0, y: 0, z: 0, w: 1 };
-  const partScratch = new Float32Array(16);
+  const turnsMoved = { from: 0, to: 0 };
 
   /**
-   * Turns `stood`'s parts to `pose`: each run of vertices carried from its
-   * rest by its part's turn, and each mesh's span sent, its positions, its
-   * normals and its tangents. Nothing where the pose turns them as they were
-   * last sent.
+   * Turns `stood`'s parts to `pose`: the rows of each turn the pose has
+   * moved written to the car's block and sent as one run of it, and the
+   * middle of each see-through pane a turn carries (the door's window) moved
+   * with it, for the panes' order. No vertex is sent. Nothing where the pose
+   * turns the parts as they were last written.
    */
   function turnParts(stood: Stood, pose: CarPose): void {
-    const was = stood.turn;
-    const spun = was.wheelSpin !== pose.wheelSpin;
-    const steered = was.wheelTurn !== pose.wheelTurn;
-    const wheeled = was.steer !== pose.steer;
-    const swung = was.doorOpen !== pose.doorOpen;
-    if (!spun && !steered && !wheeled && !swung) return;
-    was.wheelSpin = pose.wheelSpin;
-    was.wheelTurn = pose.wheelTurn;
-    was.steer = pose.steer;
-    was.doorOpen = pose.doorOpen;
-    /** Whether the pose has moved the part named `name`: a wheel by its spin, a front one by its turn too, the steering wheel and the door each by its own. */
-    const moved = (name: string): boolean =>
-      name === DOOR_NAME ? swung : name === STEERING_NAME ? wheeled : spun || (steered && frontWheel(name));
-    for (const turned of stood.turned) {
-      // Only the runs the pose has moved are carried, and of the mesh only the span that holds them is sent: a door
-      // that swings on a car that stands sends no wheel.
-      let first = Infinity;
-      let end = -Infinity;
-      for (const run of turned.runs) {
-        if (!moved(run.name)) continue;
-        const turn = carPartTurn(run.name, pose, turnScratch);
-        if (turn === null) continue;
-        turned.posed ??= { positions: turned.rest.positions.slice(), normals: turned.rest.normals.slice(), tangents: turned.rest.tangents?.slice() ?? null };
-        poseVertices(partMatrix(run.local, turn, partScratch), turned.rest, turned.posed, run.first, run.count);
-        first = Math.min(first, run.first);
-        end = Math.max(end, run.first + run.count);
-      }
-      const posed = turned.posed;
-      if (posed === null || end <= first) continue;
-      const count = end - first;
-      updateMeshPositions(engine, turned.mesh, posed.positions, first, count, first);
-      updateMeshNormals(engine, turned.mesh, posed.normals, first, count, first);
-      if (posed.tangents !== null) updateMeshTangents(engine, turned.mesh, posed.tangents, first, count, first);
-      uploads?.count("geometry", count * (posed.tangents !== null ? 40 : 24), posed.tangents !== null ? 3 : 2);
-    }
-    // The see-through panes a pose turns: the door's window swings with the door. Each is turned in the model's
-    // frame, where the glass's mesh holds it, its run alone sent, and its middle moved for the panes' order.
+    const turns = stood.turns;
+    if (turns === null) return;
+    if (!writeTurns(turns.slots, stood.turn, pose, turns.rows, turnsMoved)) return;
+    const first = turns.rows.byteOffset - turns.block.data.byteOffset;
+    writePluginUniformBlock(engine, turns.block, first + turnsMoved.from * 4, first + turnsMoved.to * 4);
+    uploads?.count("uniforms", (turnsMoved.to - turnsMoved.from) * 4);
     for (const glass of stood.glass) {
-      let first = Infinity;
-      let end = -Infinity;
-      const { part } = glass;
       for (const run of glass.runs) {
-        if (!moved(run.name)) continue;
-        const turn = carPartTurn(run.name, pose, turnScratch);
-        if (turn === null) continue;
-        glass.model ??= { positions: part.positions.slice(), normals: part.normals.slice(), tangents: part.tangents?.slice() ?? null };
-        const carry = partMatrix(run.local, turn, partScratch);
-        poseVertices(carry, part, glass.model, run.first, run.count);
-        const pane = part.panes[run.pane] as (typeof part.panes)[number];
-        for (let row = 0; row < 3; row++) {
-          glass.paneAt[run.pane * 3 + row] = (carry[row] as number) * pane.x + (carry[4 + row] as number) * pane.y + (carry[8 + row] as number) * pane.z + (carry[12 + row] as number);
-        }
-        first = Math.min(first, run.first);
-        end = Math.max(end, run.first + run.count);
+        const pane = glass.part.panes[run.pane] as (typeof glass.part.panes)[number];
+        turnPoint(turns.rows, run.slot, pane.x, pane.y, pane.z, glass.paneAt, run.pane * 3);
       }
-      const posed = glass.model;
-      if (posed === null || end <= first) continue;
-      const count = end - first;
-      updateMeshPositions(engine, glass.mesh, posed.positions, first, count, first);
-      updateMeshNormals(engine, glass.mesh, posed.normals, first, count, first);
-      if (posed.tangents !== null) updateMeshTangents(engine, glass.mesh, posed.tangents, first, count, first);
-      uploads?.count("geometry", count * (posed.tangents !== null ? 40 : 24), posed.tangents !== null ? 3 : 2);
     }
   }
 
@@ -731,7 +708,7 @@ export function createLiteScenery(engine: EngineContext, scene: SceneContext, op
     }
     if (cradle === null || found === null) return null;
     const mesh = stood.meshes[found.n] as Mesh;
-    const holder = stood.turned.find((turned) => turned.mesh === mesh) ?? { mesh, rest: found.part, posed: null };
+    const holder = { mesh, rest: found.part, posed: null };
     const first = Math.min(...found.runs.map((run) => run.first));
     const end = Math.max(...found.runs.map((run) => run.first + run.count));
     // The handset at rest in its cradle's own frame: the cradle's frame undone, then the handset's.
@@ -904,7 +881,7 @@ export function createLiteScenery(engine: EngineContext, scene: SceneContext, op
       farthestFirst(glass.paneAt, modelEye, nextOrder);
       if (nextOrder.every((pane, i) => pane === glass.order[i])) continue;
       for (const [i, pane] of nextOrder.entries()) glass.order[i] = pane;
-      const held = glass.model ?? glass.part;
+      const held = glass.part;
       listPanes(glass.part.indices, glass.part.panes, glass.order, glass.drawn);
       updateMeshGeometryCapacity(
         engine, glass.mesh, held.positions, held.normals, glass.drawn, glass.part.uvs, undefined, held.tangents ?? undefined, undefined, 1,
@@ -1333,14 +1310,14 @@ export function createLiteScenery(engine: EngineContext, scene: SceneContext, op
             }
             // The hike's car is wetted by the weather; a staged scene's own is not, as on Babylon.js, whose stage gives
             // its car's materials no wet look.
-            dressed(model, PLACES.film, alone === undefined);
+            const turns = carTurnsOf(model);
+            dressed(model, PLACES.film, alone === undefined, turns);
             // The radio and its handset take a share of the sky's reflected light: the rest of it is roof.
             for (const part of model.parts) {
               if (CAB_PARTS.some((node) => model.under.get(node)?.has(part.name) === true)) part.material.environmentIntensity = CAB_SKY;
             }
             // Nor is it cover for the rain: its scene has none falling.
-            film = standModel("trailhead_film_car", model, at.x, at.y, at.z, at.yaw, alone === undefined);
-            film.turned = turnedOf(film);
+            film = standModel("trailhead_film_car", model, at.x, at.y, at.z, at.yaw, alone === undefined, turns);
             if (alone !== undefined) {
               film.handset = handsetOf(film);
               if (film.handset !== null) {

@@ -32,11 +32,20 @@
  *   metalness the file never gave. Such a material's map is made again here:
  *   the occlusion in its red, the file's two factors in its green and blue
  *   (`loneOcclusionMap`); and every occlusion map takes the file's strength.
+ * - **A car's parts are turned in the vertex stage** (`carTurnsPlugin`). A
+ *   wheel, the steering wheel and the driver's door are runs of a material's
+ *   one mesh, with no node to turn. Each vertex of such a mesh carries the
+ *   number of the turn it takes (a float a vertex, sent once), and the turns
+ *   are a small block of the car's own (`carParts.ts`: three rows a turn),
+ *   which the stage carries the vertex and its normal by before the mesh's
+ *   own place does. A pose that turns a part sends that part's rows, and no
+ *   vertex.
  */
 import {
   acquireTexture, createMeshFromData, createTexture2DFromExternalImage, getMaterialTextures, releaseTexture,
   type EngineContext, type MaterialPlugin, type Mesh, type PbrMaterialProps, type PluginUniformBlock, type Texture2D,
 } from "@babylonjs/lite";
+import { TURN_ROW_FLOATS } from "../carParts.js";
 import { modelUrl } from "../assetUrls.js";
 import { glbOcclusion, glbParts, type GlbOcclusion } from "../glbParts.js";
 import { composeInto, quatFromEuler } from "../instancePose.js";
@@ -241,6 +250,60 @@ export type SceneryDress = {
 export function dress(part: SceneryPart, by: SceneryDress): void {
   part.material.usePhysicalLightFalloff = true;
   part.material.plugins = by.wet === null ? [by.air()] : [baseColourPlugin(), surfaceWetPlugin(by.wet, by.shared), by.air()];
+}
+
+/** The block of a car's turns in WGSL, and its one field: the turns' rows. */
+export const CAR_TURNS_BLOCK = "carTurns";
+export const CAR_TURNS_ROWS = "rows";
+/** The vertex attribute that names a vertex's turn: 0 for none, else one more than the turn's place in the block. */
+export const CAR_PART_ATTRIBUTE = "carPart";
+
+/** The block's fields for a car of `turns` turns: their rows, a vec4 a row, laid out as Lite lays a table out (bits, which the stage casts back). */
+export function carTurnsFields(turns: number): { name: string; type: string }[] {
+  return [{ name: CAR_TURNS_ROWS, type: `array<vec4<u32>,${turns * (TURN_ROW_FLOATS / 4)}>` }];
+}
+
+/** A vector against a turn's three rows, each coordinate summed in the order the processor's carrying sums it (`poseVertices`); `move` adds each row's fourth float. */
+const byRows = (v: string, move: boolean): string =>
+  `vec3<f32>(${["ctX", "ctY", "ctZ"].map((row) => `${v}.x*${row}.x+${v}.y*${row}.y+${v}.z*${row}.z${move ? `+${row}.w` : ""}`).join(",")})`;
+
+/**
+ * The vertex stage's carrying of a turned part, at the stage's end: a vertex
+ * that names a turn is carried by the turn's rows, its normal (and its
+ * tangent, where the material reads a map of normals through the mesh's
+ * tangents) turned by them, and what the stage hands on is made again from
+ * those in Lite's own statements, so a turned vertex goes through the
+ * arithmetic a vertex sent already turned went through. A vertex that names
+ * none keeps what the stage made of it.
+ */
+export function carTurnsWgsl(tangents: boolean): string {
+  const frame = !tangents ? "" : `let ctTangent=${byRows("tangent", false)};let ctNl=normalize(ctNormal);let ctTl=normalize(ctTangent);let ctBl=cross(ctNl,ctTl)*tangent.w;out.worldTangent=(finalWorld*vec4<f32>(ctTl,0.0)).xyz;out.worldBitangent=(finalWorld*vec4<f32>(ctBl,0.0)).xyz;`;
+  return `{let ctN=u32(${CAR_PART_ATTRIBUTE});if(ctN>0u){let ctAt=(ctN-1u)*3u;let ctX=bitcast<vec4<f32>>(${CAR_TURNS_BLOCK}.${CAR_TURNS_ROWS}[ctAt]);let ctY=bitcast<vec4<f32>>(${CAR_TURNS_BLOCK}.${CAR_TURNS_ROWS}[ctAt+1u]);let ctZ=bitcast<vec4<f32>>(${CAR_TURNS_BLOCK}.${CAR_TURNS_ROWS}[ctAt+2u]);let ctPosition=${byRows("position", true)};let ctNormal=${byRows("normal", false)};let ctWorld4=finalWorld*vec4<f32>(ctPosition,1.0);out.worldPos=ctWorld4.xyz;out.clipPos=scene.viewProjection*ctWorld4;out.worldNormal=(finalWorld*vec4<f32>(normalize(ctNormal),0.0)).xyz;${frame}}}`;
+}
+
+/**
+ * The plugin that turns a car's parts in the vertex stage, for a material
+ * whose mesh holds a part a pose turns: every vertex of the mesh names its
+ * turn (`CAR_PART_ATTRIBUTE`, the mesh's plugin vertex data, a float a
+ * vertex) and the turns are read from `block` (`carTurnsFields`).
+ * `tangents`: the material reads its map of normals through the mesh's
+ * tangents, which are then turned too. It writes nothing of the material's
+ * own.
+ */
+export function carTurnsPlugin(block: PluginUniformBlock, tangents: boolean): MaterialPlugin {
+  return {
+    name: "CarTurns",
+    priority: 210,
+    defines: { tangents },
+    getCustomCode: (stage) => (stage === "vertex" ? { CUSTOM_VERTEX_MAIN_END: carTurnsWgsl(tangents) } : null),
+    getVertexAttributes: () => [{ name: CAR_PART_ATTRIBUTE, type: "f32", format: "float32" as const, stride: 4, offset: 0 }],
+    getUniformBlocks: () => [block],
+  };
+}
+
+/** Whether a part's material reads its map of normals through the part's own tangents: Lite's rule for the tangent's attribute. */
+export function readsTangents(part: SceneryPart): boolean {
+  return part.tangents !== null && part.material.normalTexture !== undefined && part.material.normalTexture !== null;
 }
 
 /** The matrix of a place on the ground turned by `yaw` about the vertical (the sim's: 0 faces +z, a quarter turn +x). */

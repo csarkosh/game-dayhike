@@ -1256,7 +1256,11 @@ export function createLiteRenderer(canvas: HTMLCanvasElement, level: Level, fore
     // The scenery a hike places once, which the hike asks for when its world is in (`hikeScenery.ts`): nothing until then.
     const scenery = forest === null || cloudMap === null || disposed
       ? null
-      : createLiteScenery(engine, scene, { wet: wetAt(WET_CAP.prop), air, ahead: depthAheadPlugin, shared, linear: chained, uploads, cover: coverAs("hard") });
+      : createLiteScenery(engine, scene, {
+        wet: wetAt(WET_CAP.prop), air, ahead: depthAheadPlugin, shared, linear: chained, uploads,
+        // Hard cover; a car's turned parts stand in the map under the plugin that turns them.
+        cover: rainMap === null ? undefined : { add: (mesh, place) => rainMap.register(mesh, "hard", place), remove: (mesh) => rainMap.unregister(mesh) },
+      });
     // The animals, which land as their models do; low scales every species' disc to 60%, as the game does.
     const wildlife = !hasWildlife || forest === null || cloudMap === null || disposed
       ? null
