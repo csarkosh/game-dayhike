@@ -1114,9 +1114,9 @@ describe("layer boundaries", () => {
    * what only they import are named here, file by file: nothing else in
    * `src/` imports a module of Babylon.js or one of these files, for a
    * value or for a type, so the list is what goes when that renderer does.
-   * What still crosses the line is named too, each a type's import and no
-   * more: the pipelines and the kept engine that a renderer on Babylon.js's
-   * engines was handed and the hike's own renderer never is.
+   * What still crosses the line is named too, a type's import and no more:
+   * the pipelines among the watchers of an engine of Babylon.js, which the
+   * swap still names.
    */
   it("keeps Babylon.js behind one line: the renderer on it, its shells and what only they import, named file by file", () => {
     const BABYLON_SIDE = [
@@ -1165,10 +1165,7 @@ describe("layer boundaries", () => {
     expect([...side].filter((file) => everyImport(file).some(ofBabylon)).length).toBeGreaterThan(75);
     // What crosses the line.
     expect(crossing.sort()).toEqual([
-      "app.ts imports game/asyncPipelines.ts",
-      "app.ts imports game/keptEngine.ts",
       "game/rendererSwap.ts imports game/asyncPipelines.ts",
-      "game/rendererTypes.ts imports game/asyncPipelines.ts",
     ]);
     // Each of them is a type's import: none loads a module.
     const loaded = (file: string): string[] =>

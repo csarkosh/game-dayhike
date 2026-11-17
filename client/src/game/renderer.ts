@@ -1358,7 +1358,7 @@ export type { FrameView, FreecamView, Renderer, RendererOptions };
  * scene, reads its camera or drives its engine. `createRenderer` makes one;
  * a module handed a `Renderer` gets it through `sceneRendererOf`.
  */
-export type SceneRenderer = Omit<Renderer, "engine" | "retire"> & {
+export type SceneRenderer = Omit<Renderer, "engine"> & {
   scene: Scene;
   engine: AbstractEngine;
   camera: UniversalCamera;
@@ -1368,8 +1368,38 @@ export type SceneRenderer = Omit<Renderer, "engine" | "retire"> & {
   /** The rain's cover map, for the same scenery: a mesh added is hard cover
    * (`rainMap.ts`); nothing on the tiers without a map. */
   cover: MeshRegistry;
-  /** `Renderer.retire`, the engine handed back as the engine it is. */
+  /** Holds each shader compiled so far that is ready and clean, so it
+   * outlives this renderer's scene on an engine kept for another renderer
+   * (`pinShaders`, `keptEngine.ts`); the compile's own leavings stay until
+   * `retire`. */
+  keepShaders(): void;
+  /**
+   * Everything `dispose` does but let the engine go: the scene alone goes,
+   * once its BRDF texture is settled (`releaseScene`), and the engine,
+   * its render loop stopped, is handed back to be built on again
+   * (`keptEngine.ts`), with the shaders it compiled (`pinShaders`).
+   */
   retire(): AbstractEngine;
+};
+
+/**
+ * What the renderer on Babylon.js is made with: what any renderer is
+ * (`RendererOptions`), and an engine made for its canvas with the pipelines
+ * that engine makes asynchronously, which the hike's own renderer is never
+ * handed.
+ */
+export type SceneRendererOptions = RendererOptions & {
+  /** An engine already made for `canvas`: WebGPU on the tiers where it fits
+   * (`engineChoice.ts`, `gpuEngine.ts`). Absent, the WebGL2 engine left on
+   * `canvas` (`adoptEngine`), else one made here. Either way the renderer
+   * owns it, and disposes it or retires it. */
+  engine?: EngineHandle;
+  /** The pipelines that WebGPU engine makes asynchronously
+   * (`asyncPipelines.ts`): its scene's rendering groups are their scope
+   * (`scopeRenderingGroups`), its impostor bakes keep only a render that left
+   * nothing out, and the renderer takes the patch off before its engine goes.
+   * Absent on WebGL2, where nothing of it happens. */
+  pipelines?: AsyncPipelines;
 };
 
 /** `renderer` with its Babylon scene, where it is one `createRenderer` made;
@@ -1587,7 +1617,7 @@ export function createRenderer(
   canvas: HTMLCanvasElement,
   level: Level,
   forest: Forest | null = null,
-  options: RendererOptions = {},
+  options: SceneRendererOptions = {},
 ): SceneRenderer {
   // The context is lost when the engine is disposed, so a renderer that is
   // replaced (a live tier change, the landing's backdrop giving way to the
@@ -1618,7 +1648,7 @@ function buildRenderer(
   engine: AbstractEngine,
   level: Level,
   forest: Forest | null,
-  options: RendererOptions,
+  options: SceneRendererOptions,
   made: (undo: () => void) => void,
 ): SceneRenderer {
   const scene = new Scene(engine);

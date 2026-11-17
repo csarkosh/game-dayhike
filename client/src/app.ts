@@ -3,8 +3,6 @@ import { createForest } from "./sim/forest.js";
 import { createHikeRenderer } from "./game/hikeRenderer.js";
 import type { FreecamView, Renderer } from "./game/rendererTypes.js";
 import type { EndSceneSetup } from "./game/scenePlay.js";
-import type { AsyncPipelines } from "./game/asyncPipelines.js";
-import type { EngineHandle } from "./game/engineHandle.js";
 import { FALLBACK_NOTICE_MS, parseGpuTime } from "./game/engineChoice.js";
 import { createInputSampler } from "./game/input.js";
 import { createTouchModel, createTouchLayer } from "./game/touchControls.js";
@@ -103,7 +101,6 @@ import {
   type EngineWatchers,
   type SwapBindings,
 } from "./game/rendererSwap.js";
-import type { KeptEngine } from "./game/keptEngine.js";
 import { answerFailures, coverWith, createSerial } from "./game/engineFailure.js";
 import { createGpuFaults } from "./game/gpuFaults.js";
 import { LOSS_ENDED_LINE, type LossNote } from "./game/lossBound.js";
@@ -222,15 +219,8 @@ export type GameOptions = {
    * every renderer made after the first. Absent, or with none to give, the
    * renderer samples the ground itself, as always. */
   takePrepared?: () => PreparedScene | null;
-  /** An engine already made for the canvas (WebGPU, where `main.ts` chose
-   * it) for the first renderer at `tier`; absent, the renderer makes the
-   * WebGL2 one. */
-  engine?: EngineHandle;
   /** The WebGPU module's watchers, given with a WebGPU engine. */
   watchers?: EngineWatchers;
-  /** At the hike's end, the engine standing, its scene gone, for the next
-   * hike on the page (`keptEngine.ts`); absent, the engine is disposed. */
-  keepEngine?(kept: KeptEngine): void;
   /** The engine the WebGPU rule gives `tier` now, made on a fresh canvas
    * (`main.ts`'s `engineFor`): what a switch of tier, and a rebuild after a
    * failure, builds on. */
@@ -322,10 +312,6 @@ function buildGame(
   // The renderer and its canvas are replaced when the tier changes mid-hike
   // (`applyTier`); everything reads them through these bindings when it runs.
   let canvas = firstCanvas;
-  // The WebGPU engine made for this hike belongs to no renderer until the
-  // first one is built: a start that throws before then disposes it here.
-  let unowned: EngineHandle | undefined = options.engine;
-  made(() => unowned?.dispose());
   // The sim registry is the source of truth for variant names; the command
   // layer only validates against them. This MUST run before `parseScript`
   // below: `parseScript` validates every entry as it parses, so a `terrain`
@@ -466,17 +452,10 @@ function buildGame(
       engineNotice = options.engineFailed("pipeline");
     },
   };
-  /** The pipelines a WebGPU engine made here makes asynchronously
-   * (`asyncPipelines.ts`), for the renderer built on it; none on WebGL2. */
-  const pipelinesFor = (engine: EngineHandle | null): AsyncPipelines | undefined =>
-    engine !== null && watchers !== null ? (watchers.asyncPipelines(engine) ?? undefined) : undefined;
   // The tier asked for, and should it fail to build, the class's start tier
   // and then low, each on a fresh canvas: only the renderer is retried, not
-  // the world, which is built once. A WebGPU engine that cannot build the
-  // tier is its own fault: that tier is built again on WebGL2 first.
-  // From here the ladder's renderers own it: `createRenderer` releases the
-  // engine it was given if its build throws, and the renderer disposes it.
-  unowned = undefined;
+  // the world, which is built once. Each renderer makes its own engine from
+  // its canvas and lets it go with itself: the hike is handed none.
   // A start under the intro's film steps its first builds rather than running each whole
   // (`firstBuilds.ts`): the film's captions and bar keep moving while the forest, the ground cover
   // and the props fill. With no film there is nothing to keep moving, and they build as always.
@@ -484,18 +463,17 @@ function buildGame(
   made(() => firstBuilds?.dispose());
   // The scene the world's worker sampled goes to the first renderer made, the ladder's first
   // attempt at the tier it was sampled for, which takes it as it is built: a renderer made after
-  // it (a lower tier, WebGL2 after WebGPU, a switch from Settings) finds none and samples the
+  // it (a lower tier, a switch from Settings) finds none and samples the
   // ground for itself.
   const first = buildFirstRenderer(
     canvas,
     [options.tier, ...options.fallbackTiers],
     {
-      build: (next, at, engine) =>
-        createHikeRenderer(next, level, forest, { tier: at, engine: engine ?? undefined, pipelines: pipelinesFor(engine), deferClipmap: options.deferClipmap, start, prepared: options.takePrepared?.() ?? null, firstBuilds, skyTable: skySource.table, gpuTime: parseGpuTime(location.search) }),
+      build: (next, at) =>
+        createHikeRenderer(next, level, forest, { tier: at, deferClipmap: options.deferClipmap, start, prepared: options.takePrepared?.() ?? null, firstBuilds, skyTable: skySource.table, gpuTime: parseGpuTime(location.search) }),
       freshCanvas: () => document.createElement("canvas"),
       ...engineBindings,
     },
-    options.engine === undefined ? null : { engine: options.engine, watch: watchers?.failures ?? null },
   );
   let renderer: Renderer = first.renderer;
   /** Told once at the next swap of the renderer (`switchTo`), then let go. */
@@ -559,21 +537,6 @@ function buildGame(
   }
   tellCompiles(renderer);
   made(() => untellCompiles?.());
-  /** Holds each shader as it compiles, on an engine that will outlive the
-   * hike (`keepEngine`): a material let go mid-hike (a billboard bake's
-   * clone, say) would otherwise take its program with it, and the next hike
-   * would compile it again. Swept at each compile, which both engines
-   * tell; `keepShaders` takes only what is ready and clean, so an
-   * effect still compiling is picked up by a later sweep or at the retire. */
-  let unpinCompiles: (() => void) | null = null;
-  function pinCompiles(r: Renderer): void {
-    unpinCompiles?.();
-    unpinCompiles = null;
-    if (options.keepEngine === undefined) return;
-    unpinCompiles = r.onShaderCompiled(() => r.keepShaders());
-  }
-  pinCompiles(renderer);
-  made(() => unpinCompiles?.());
   if (first.fellBack) options.onTierFallback({ attempted: options.tier, built: tier, source: options.tierSource });
   /** What the last switch of tier said, until the next choice: a fallback's line. */
   let swapError: string | null = null;
@@ -2082,12 +2045,10 @@ function buildGame(
       // A car that never lands: the scene on the parked one after ESCAPE_WAIT_S.
       if (!carIn && now - escapeFrom < ESCAPE_WAIT_S * 1000) return;
       if (carIn) {
-        // Past its first frames, then its pipelines in flight landed (or, with none counted,
-        // ESCAPE_SETTLE_S), at most ESCAPE_WAIT_S after those frames.
+        // Past its first frames, then ESCAPE_SETTLE_S on, at most ESCAPE_WAIT_S after those frames.
         if (signs?.warm() ?? false) return;
         escapeWarmed ??= now;
-        const pipelines = pipelinesFor(renderer.engine);
-        const settled = pipelines !== undefined ? pipelines.pending() === 0 : now - escapeWarmed >= ESCAPE_SETTLE_S * 1000;
+        const settled = now - escapeWarmed >= ESCAPE_SETTLE_S * 1000;
         if (!settled && now - escapeWarmed < ESCAPE_WAIT_S * 1000) return;
       }
       escapeFrom = null;
@@ -2534,14 +2495,13 @@ function buildGame(
     cameraOnPlayer = false;
     watchCompiles(r);
     tellCompiles(r);
-    pinCompiles(r);
   }
 
   const swapBindings: SwapBindings = {
-    // The target's engine is made before the swap by the WebGPU rule
-    // (`options.engineFor`), on the canvas `freshCanvas` hands out first;
-    // null, the renderer makes WebGL2's.
-    build: (next, target, engine) => createHikeRenderer(next, level, forest, { tier: target, engine: engine ?? undefined, pipelines: pipelinesFor(engine), skyTable: skySource.table, gpuTime: parseGpuTime(location.search) }),
+    // The renderer makes its own engine from the canvas it is built on: the
+    // one made for the switch (`options.engineFor`), which `freshCanvas`
+    // hands out first.
+    build: (next, target) => createHikeRenderer(next, level, forest, { tier: target, skyTable: skySource.table, gpuTime: parseGpuTime(location.search) }),
     freshCanvas: () => document.createElement("canvas"),
     extras: { dispose: disposeExtras, build: buildExtras },
     rebind: (next) => {
@@ -2914,12 +2874,10 @@ function buildGame(
       prompt.dispose();
       input.dispose();
       if (!broken) {
-        // Off an engine that may outlive the hike.
         unwatchCompiles?.();
         untellCompiles?.();
-        unpinCompiles?.();
-        if (options.keepEngine === undefined) renderer.dispose();
-        else options.keepEngine({ canvas, engine: renderer.retire(), watchers, tier });
+        // The renderer goes with its engine: none is kept for the next hike.
+        renderer.dispose();
       }
       skySource.dispose();
       wildlifeAudio?.dispose();

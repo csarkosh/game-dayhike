@@ -5,14 +5,14 @@
  * tests) names it here and loads no engine by doing so. What is named of an
  * engine is named as the page holds it: a handle that can be let go of
  * (`engineHandle.ts`), which engine it is (`engineChoice.ts`), the watch a
- * renderer keeps on one it made (`engineWatch.ts`), the pipelines a WebGPU
- * engine on Babylon.js makes asynchronously (`asyncPipelines.ts`, read by
- * the renderer on Babylon.js alone) and the measurement mode's report
- * (`gpuTimeReport.ts`). The hike's renderer is made in `hikeRenderer.ts`.
+ * renderer keeps on one it made (`engineWatch.ts`) and the measurement
+ * mode's report (`gpuTimeReport.ts`). No renderer is handed an engine here:
+ * the hike's makes its own (`hikeRenderer.ts`), and what the renderer on
+ * Babylon.js is handed, keeps and gives back of an engine is its own to name
+ * (`renderer.ts`).
  */
 import type { Vec3, WorldState } from "../sim/types.js";
 import type { ListenerPose } from "./ambientAudio.js";
-import type { AsyncPipelines } from "./asyncPipelines.js";
 import type { EngineName } from "./engineChoice.js";
 import type { EngineHandle } from "./engineHandle.js";
 import type { WatchEngine } from "./engineWatch.js";
@@ -52,18 +52,17 @@ export type FrameView = { dt: number; sprinting: boolean; before?: EyePose | nul
  */
 export type Renderer = {
   /** The engine the renderer draws with, as the page holds one
-   * (`engineHandle.ts`): what a failure is reported against, what the WebGPU
-   * module's watchers are asked about, and what a hike's end keeps. */
+   * (`engineHandle.ts`): what a failure is reported against. */
   readonly engine: EngineHandle;
-  /** Which engine the renderer draws with, for its life: WebGPU where it
-   * was given one (`RendererOptions.engine`, `engineChoice.ts`), else WebGL2. */
+  /** Which engine the renderer draws with, for its life: WebGPU for the
+   * hike's renderer, which draws with nothing else. */
   readonly engineName: EngineName;
   /**
    * The renderer's own watch on the engine it made for itself
    * (`engineWatch.ts`): the hike's ladders put it on once the renderer stands
    * and answer what it tells (a lost device) by building the renderer again.
    * Null for a renderer drawing with an engine it was handed, which is
-   * watched by the module that made it (`EngineWatchers.failures`).
+   * watched by the module that made it (the renderer on Babylon.js).
    */
   readonly ownWatch: WatchEngine | null;
   /**
@@ -210,28 +209,16 @@ export type Renderer = {
   /** Calls `fn` each time a shader has compiled, on either engine; the
    * function returned stops it. */
   onShaderCompiled(fn: () => void): () => void;
-  /** Holds each shader compiled so far that is ready and clean, so it
-   * outlives this renderer's scene on an engine kept for the next hike
-   * (`pinShaders`, `keptEngine.ts`); the compile's own leavings stay until
-   * `retire`. */
-  keepShaders(): void;
   /**
    * The engine has failed (`answerFailures`): the asynchronous work still
    * under way on it, which would otherwise poll a dead engine until the
    * rebuild disposes this renderer and report failures of its own, ends at
-   * once and quietly: the forest's billboard bakes (`ForestMeshes.abandon`)
-   * and the render pipelines being made (`AsyncPipelines.abandon`). The
-   * renderer stands until `dispose`.
+   * once and quietly: the forest's billboard bakes (`ForestMeshes.abandon`).
+   * The renderer stands until `dispose`.
    */
   abandon(): void;
+  /** Lets the renderer go, and its engine with it: none is kept. */
   dispose(): void;
-  /**
-   * Everything `dispose` does but let the engine go: the scene alone goes,
-   * once its BRDF texture is settled (`releaseScene`), and the engine,
-   * its render loop stopped, is handed back for the next hike on the page
-   * (`keptEngine.ts`), with the shaders it compiled (`pinShaders`).
-   */
-  retire(): EngineHandle;
   setFreecam(view: FreecamView | null): void;
   setWireframe(on: boolean): void;
   setSkinShading(on: boolean): void;
@@ -292,17 +279,6 @@ export type Renderer = {
 
 export type RendererOptions = {
   tier?: QualityTier;
-  /** An engine already made for `canvas`: WebGPU on the tiers where it fits
-   * (`engineChoice.ts`, `gpuEngine.ts`). Absent, the WebGL2 engine a past
-   * hike left on `canvas` (`adoptEngine`), else one made here. Either way the
-   * renderer owns it, and disposes it or retires it. */
-  engine?: EngineHandle;
-  /** The pipelines that WebGPU engine makes asynchronously
-   * (`asyncPipelines.ts`): its scene's rendering groups are their scope
-   * (`scopeRenderingGroups`), its impostor bakes keep only a render that left
-   * nothing out, and the renderer takes the patch off before its engine goes.
-   * Absent on WebGL2, where nothing of it happens. */
-  pipelines?: AsyncPipelines;
   /** The clock (ms) the wind, the post effects and everything that moves
    * with time read; `performance.now` absent. A scene stepped a frame at a
    * time hands in its own, so the grass and the water move in step with it. */

@@ -73,8 +73,8 @@
  * synchronous way holds the frame that asked. So `onShaderCompiled` tells
  * of each frame that asked the device for a shader module or a pipeline
  * (`deviceMakes.ts`, counted at the device's own calls), which is what the
- * hike voids when it judges the frame rate. `keepShaders` keeps nothing:
- * the device goes with the renderer. In the measurement mode `gpuTime`
+ * hike voids when it judges the frame rate. Nothing of a shader is kept
+ * past the renderer: the device goes with it. In the measurement mode `gpuTime`
  * reads the GPU's own time for the frame and for each of its tasks from
  * Lite's timers (`gpuTimeReadout.ts`), as `window.__gpuTime()` and the
  * corner's line; outside it no timestamp is written.
@@ -602,11 +602,10 @@ type Standing = {
  * clock, the start, the prepared scene's rings and feature table, whether
  * the rings' first build is deferred, the loader of first builds, the
  * measurement mode and the sky's table; the rest belong to parts not drawn
- * yet. It makes its own engine: one handed in is refused.
+ * yet. It makes its own engine from its canvas: its options have no place
+ * for one.
  */
 export function createLiteRenderer(canvas: HTMLCanvasElement, level: Level, forest: Forest | null, options: RendererOptions = {}): Renderer {
-  if (options.engine !== undefined) throw new Error("the hike's renderer makes its own engine from its canvas: none is handed to it");
-
   const tier = options.tier ?? detectTier(globalThis.navigator);
   const clock = options.clock ?? (() => performance.now());
   /** When the renderer was made, on its clock (ms): the shades' smoke rises from then. */
@@ -1592,10 +1591,6 @@ export function createLiteRenderer(canvas: HTMLCanvasElement, level: Level, fore
     gpuFaults,
     gpuTime,
     onShaderCompiled: (fn) => makes.onMade(fn),
-    keepShaders() {
-      // Nothing to keep: every shader module and pipeline is the device's, which goes with this renderer (`retire`
-      // hands no engine on), and the next hike's renderer makes its own on a new one.
-    },
     forestReady,
     firstSynced,
     whenMade: made.then(() => standing !== null),
@@ -2095,12 +2090,8 @@ export function createLiteRenderer(canvas: HTMLCanvasElement, level: Level, fore
       standing?.forest?.abandon();
     },
     dispose() {
+      // Every shader module and pipeline is the device's, which goes with this renderer: the next hike's makes its own.
       handle.dispose();
-    },
-    retire() {
-      // Nothing of a Lite engine is kept for the next hike yet: it goes with its renderer.
-      handle.dispose();
-      return handle;
     },
     setFreecam(view) {
       freecam = view;

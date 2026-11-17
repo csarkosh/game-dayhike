@@ -55,14 +55,16 @@ describe("the hike's renderer on Babylon Lite, before its engine stands", () => 
     expect(page.__gpuTime).toBeUndefined();
   });
 
-  it("tells a shader's compile to no one while no device has been asked for one, and keeps no shader", () => {
+  it("tells a shader's compile to no one while no device has been asked for one, and has no shader to keep for another renderer", () => {
     const r = make();
     let told = 0;
     const stop = r.onShaderCompiled(() => told++);
-    r.keepShaders();
     r.drawFrame();
     stop();
     expect(told).toBe(0);
+    // Every shader is its device's, which goes with it: it answers neither a keeping of shaders nor a retiring.
+    expect("keepShaders" in r).toBe(false);
+    expect("retire" in r).toBe(false);
   });
 
   it("offers a watch of its own on the engine it makes, which the hike is told a lost device through", () => {
@@ -76,9 +78,17 @@ describe("the hike's renderer on Babylon Lite, before its engine stands", () => 
     expect(heard).toEqual([]);
   });
 
-  it("refuses an engine handed to it", () => {
-    const engine = { isDisposed: false, dispose: () => undefined };
-    expect(() => createHikeRenderer(canvas(), EMPTY_LEVEL, null, { tier: "low", skyTable: skyFixture(), engine })).toThrow(/makes its own engine/);
+  it("is handed no engine: its options have no place for one, and it makes its own", () => {
+    let letGo = 0;
+    const engine = { isDisposed: false, dispose: () => void letGo++ };
+    // @ts-expect-error a renderer's options name no engine: the hike's renderer makes its own from its canvas.
+    const withEngine: Parameters<typeof createHikeRenderer>[3] = { tier: "low", skyTable: skyFixture(), engine };
+    const r = createHikeRenderer(canvas(), EMPTY_LEVEL, null, withEngine);
+    // What was slipped in is neither drawn with nor let go of: the renderer's engine is its own.
+    expect(r.engine).not.toBe(engine);
+    r.dispose();
+    expect(r.engine.isDisposed).toBe(true);
+    expect(letGo).toBe(0);
   });
 
   it("says once that it could not be made, is ready all the same, and draws nothing", async () => {
@@ -361,9 +371,10 @@ describe("the hike's renderer on Babylon Lite, before its engine stands", () => 
     expect(r.impostorBakes()).toEqual([]);
   });
 
-  it("lets its engine go once, by dispose or by retire, and resolves what waited on its first frame", async () => {
+  it("lets its engine go once, by dispose, and resolves what waited on its first frame", async () => {
     const r = make();
-    const handle = r.retire();
+    const handle = r.engine;
+    r.dispose();
     expect(handle).toBe(r.engine);
     expect(handle.isDisposed).toBe(true);
     await expect(r.firstSynced).resolves.toBeUndefined();

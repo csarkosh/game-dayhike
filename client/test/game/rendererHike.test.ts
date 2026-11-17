@@ -110,8 +110,8 @@ describe("the renderer on Babylon.js as the hike holds a renderer", () => {
     cache["test.clean"] = clean as unknown as Effect;
     cache["test.compiling"] = compiling as unknown as Effect;
     try {
-      renderer.keepShaders();
-      renderer.keepShaders();
+      withScene(renderer).keepShaders();
+      withScene(renderer).keepShaders();
       expect(clean._refCount).toBe(2);
       expect(clean._processCodeAfterIncludes).toBe(hook);
       expect(compiling._refCount).toBe(1);

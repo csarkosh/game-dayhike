@@ -222,7 +222,10 @@ describe("the start where the rule gives WebGL2", () => {
     const dispose = app.slice(app.lastIndexOf("    dispose() {\n      disposed = true;"));
     expect(dispose.indexOf("endRevealHold();")).toBeGreaterThan(0);
     expect(dispose.indexOf("endRevealHold();")).toBeLessThan(dispose.indexOf("renderer.dispose();"));
-    expect(app).toContain("engine !== null && watchers !== null ? (watchers.asyncPipelines(engine) ?? undefined) : undefined");
+    // No renderer of the hike's is handed an engine, and so none the patch: the hike asks for neither.
+    const code = app.replace(/\/\*[\s\S]*?\*\/|\/\/.*$/gm, "");
+    expect(code).not.toMatch(/\b(?:pipelinesFor|asyncPipelines|AsyncPipelines)\b/);
+    expect(code).not.toMatch(/engine: engine \?\? undefined|pipelines:/);
   });
 
   it("imports the WebGPU module of Babylon.js nowhere in the page: not at run time, not for its type", () => {
