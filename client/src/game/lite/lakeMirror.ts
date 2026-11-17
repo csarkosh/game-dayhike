@@ -34,16 +34,12 @@
  * - **The ground is the reflections' stand-in** (`panoramaGroundPlugin`):
  *   the rings and the patches in one flat lit colour under the scene's
  *   distance fog from the pass's eye. Everything else is drawn in its own
- *   material: the forest's billboards, the cliffs' far ring, the props and
- *   the lake's plants, the plants by the pass's own word whatever the
- *   frame's view holds of them.
- * - **Left out of it, which the game's mirror draws**: the near forest's
- *   coarsest level of full geometry, the cliffs' second ring, the lake's
- *   insects and the animals. The first cannot join a second pass yet: Lite
- *   builds such a mesh's bindings against a layout that orders the sky's
- *   two pictures the other way, and the device refuses the frame. So a
- *   tree within the near field's reach of the eye is not in the
- *   reflection; one beyond it is, as its billboard.
+ *   material: the forest's billboards and the buckets of its trees'
+ *   coarsest level, the cliffs' far ring, the props and the lake's plants,
+ *   the plants by the pass's own word whatever the frame's view holds of
+ *   them.
+ * - **Left out of it, which the game's mirror draws**: the cliffs' second
+ *   ring, the lake's insects and the animals.
  */
 import {
   addMeshToTask, addTaskAtStart, addToScene, createBankedFreeCamera, createMeshFromData, createPbrMaterial, createRenderTarget, createRenderTask,

@@ -53,7 +53,7 @@ import type { LakeSource } from "../../sim/terrain.js";
 import { LAKE_SURFACE_REACH } from "../bedHeight.js";
 import { lakeCalmUnder, type CalmFade, type LakeCalmFrame } from "../lakeCalmFrame.js";
 import { lakeSunShare } from "../lakeRipples.js";
-import { lakeDrawnFrom, lakeViewPoints, type ViewPlane } from "../lakeSeen.js";
+import { lakeDrawnFrom, lakeInViewFrom, lakeViewPoints, type ViewPlane } from "../lakeSeen.js";
 import { MIRROR_MOTION_SMEAR, mirrorMotion } from "../mirrorPass.js";
 import { SKYLINE_SHADE, SKYLINE_TEXELS, skylineElevations, skylineTexels, skylineTrees } from "../lakeSkyline.js";
 import { LAKE_SURFACE_SPACING, lakeSurfaceDepths, lakeSurfaceGrid } from "../lakeSurfaceGrid.js";
@@ -339,7 +339,12 @@ export function createLiteLakes(
             m.frameHeight = f.frameHeight;
             m.sky = f.sky;
             m.weather = f.weather;
-            armed = mirror.update(seen, c.share, m);
+            // Armed by the water in the view, as the game arms it: not by the bank alone, where the surface is drawn
+            // for the strip of water that may cross a corner of the view.
+            const inView = seen && lakeInViewFrom(
+              source.shape, source.level, lake.half, lake.points, f.planes, f.eye.x, f.eye.y, f.eye.z, f.forward.fx, f.forward.fy, f.forward.fz,
+            );
+            armed = mirror.update(inView, c.share, m);
             surface.mirrorViewProjection.set(mirror.viewProjection);
             // The held frames' lag as the eye's travel over them, smoothed: none while the eye is still.
             const step = eyeSeen ? Math.hypot(f.eye.x - lastEye.x, f.eye.y - lastEye.y, f.eye.z - lastEye.z) : 0;

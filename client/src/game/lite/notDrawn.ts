@@ -26,8 +26,8 @@
  * surface, calm by the hour and the weather's name, with the
  * skyline's shade for its shore, on the tier that draws one the shore's
  * panorama under it, and on the tier above that the shore in a mirror
- * (less the near forest's full geometry, the cliffs' second ring, the
- * insects and the animals), the reeds and the lilies that grow in it,
+ * (less the cliffs' second ring, the insects and the
+ * animals), the reeds and the lilies that grow in it,
  * and its midges and dragonflies, with its frogs to hear; and the sea,
  * blended or read through as the lakes are: its swell, its wind sea (the ripple bump on low,
  * the baked loop above it, and the cascades computed each frame on the tier

@@ -192,8 +192,9 @@
  * within reach. The lake reads the picture by the view it was last drawn
  * through, smeared by the eye's travel over the frames it is held, and
  * shows the sky's sheen alone while the mirror is not armed. The ground,
- * the far forest's billboards, the cliffs' far ring, the props and the
- * lake's plants stand in it; the near forest's full geometry does not yet.
+ * the forest's billboards and the buckets of its trees' coarsest level
+ * (from when its bakes have settled), the cliffs' far ring, the props and
+ * the lake's plants stand in it.
  *
  * **A lake's life is the game's, stepped for the lakes within the camera's
  * reach** (`waterLifeMeshes.ts`, over `waterLifeScene.ts`): the midges one
@@ -332,7 +333,7 @@ import {
   getGpuDevice, getProjectionMatrix,
   markLightDirty, markMaterialUboDirty, onEngineDeviceLost, onEngineGpuError, registerScene, renderFrame, setSurfaceSize, vec3,
   writePluginUniformBlock,
-  type BankedFreeCamera, type DirectionalLight, type EngineContext, type HemisphericLight, type MaterialPlugin, type PbrMaterialProps,
+  type BankedFreeCamera, type DirectionalLight, type EngineContext, type HemisphericLight, type MaterialPlugin, type Mesh, type PbrMaterialProps,
   type PluginUniformBlock, type SceneContext, type SpotLight,
 } from "@babylonjs/lite";
 import { MAX_PLAYERS, PLAYER_EYE_OFFSET } from "../../sim/constants.js";
@@ -709,6 +710,16 @@ export function createLiteRenderer(canvas: HTMLCanvasElement, level: Level, fore
   const coverSquare = { x: 0, z: 0, half: RAIN_MAP.extent / 2 };
   /** Whether this frame draws the rain's cover map. */
   let coverDrawn = false;
+  /**
+   * The near forest's coarsest buckets owed to the lake's mirror, and whether the forest's billboards have joined the
+   * scene (their bakes settled), with the frames drawn since. The buckets are handed to the mirror's pass only then: a
+   * bucket handed over as it is made, while the bakes are in flight, is built by Lite with bindings the device
+   * refuses on every frame after; the billboards join when the bakes have settled, Lite builds the scene's draws
+   * again for them, and what joins a pass from the frame after that is built whole.
+   */
+  const mirrorOwed: Mesh[] = [];
+  let forestSettled = false;
+  let framesSettled = 0;
   /** Whether the water is read through its surface: the tier that keeps the frame behind it. The wet look then leaves what stands under water to the water. */
   let waterThrough = false;
   /** The frame's block as its buffer holds it (`movedWords`): the block these are of, its data as words, and the words sent. */
@@ -985,7 +996,8 @@ export function createLiteRenderer(canvas: HTMLCanvasElement, level: Level, fore
     const firstLake = lakes[0];
     const panorama = forest !== null && firstLake !== undefined && tier === "medium" && chained ? createLitePanorama(engine, scene, firstLake, { shared, uploads }) : null;
     // The mirror a lake's glass reflects its shore in, on the tier that draws one: a pass of its own too, drawn only on
-    // a frame whose view holds the served lake's glass, which the same parts stand in.
+    // a frame whose view holds the served lake's glass, which the same parts stand in and the near forest's coarsest
+    // buckets besides.
     const mirror = forest !== null && firstLake !== undefined && tier === "high" && chained ? createLiteLakeMirror(engine, scene, firstLake, { player: camera, shared, uploads }) : null;
     /** What stands in a lake's reflections in its own material: `late` for what lands after the first frames, which the panorama's picture is taken again for. */
     const reflectedAs = (late: boolean): ReflectionRegistry | undefined =>
@@ -1093,9 +1105,23 @@ export function createLiteRenderer(canvas: HTMLCanvasElement, level: Level, fore
         firstBuilds: options.firstBuilds,
         uploads,
         reflections: reflectedAs(true),
+        mirrored: mirror === null
+          ? undefined
+          : {
+            add: (mesh) => void mirrorOwed.push(mesh),
+            remove: (mesh) => {
+              const owed = mirrorOwed.indexOf(mesh);
+              if (owed >= 0) mirrorOwed.splice(owed, 1);
+              mirror.own.remove(mesh);
+            },
+          },
       });
       // Settled either way: what landed is what the panorama can draw.
       if (panorama !== null) void trees.ready.then(panorama.landed, panorama.landed);
+      const settled = (): void => {
+        forestSettled = true;
+      };
+      if (mirror !== null) void trees.ready.then(settled, settled);
       if (abandoned) trees.abandon();
       // The near field of blade grass, on the tiers that can afford it.
       if (tier !== "low") {
@@ -1838,6 +1864,10 @@ export function createLiteRenderer(canvas: HTMLCanvasElement, level: Level, fore
             f.cover = coverSquare;
           }
           // The lake the shore's panorama is of: the nearest past its bound, held until another is nearer by a lead.
+          // The near forest's coarsest buckets are the mirror's to draw from two frames after the billboards joined.
+          if (standing.mirror !== null && forestSettled && framesSettled >= 2) {
+            while (mirrorOwed.length > 0) standing.mirror.own.add(mirrorOwed.shift() as Mesh);
+          }
           const served = standing.panorama === null && standing.mirror === null ? null : lakeChoice.choose(pose.x, pose.z);
           f.served = served?.index ?? -1;
           if (served !== null) {
@@ -1960,6 +1990,7 @@ export function createLiteRenderer(canvas: HTMLCanvasElement, level: Level, fore
       frameFit.fit();
       // The hike's own surface alone: a billboard's bake has another, drawn when the bake is (`impostorBake.ts`).
       renderFrame(standing.engine, 1000 / 60, [standing.engine]);
+      if (forestSettled) framesSettled++;
       // The cover map is drawn with the frame that asked for it, and no other.
       standing.rainMap?.frameDrawn();
       // And a sector of the shore's panorama with the frame that drew it.
