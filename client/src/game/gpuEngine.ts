@@ -78,14 +78,14 @@ import {
   type PipelineMode,
   type ShaderLookupMode,
 } from "./engineChoice.js";
-import { asyncPipelinesOf, heldOn, installPipelines, leftOutOn, revealWhenWhole } from "./asyncPipelines.js";
+import { asyncPipelinesOf, heldOn, installPipelines, leftOutOn, revealWhenWhole, type AsyncPipelines } from "./asyncPipelines.js";
 import type { EngineHandle } from "./engineHandle.js";
+import type { WatchEngine } from "./engineWatch.js";
 import { engineOf } from "./engineOf.js";
 import { createEffectTurns, spaceEffects } from "./effectTurns.js";
 import { mipmapPipelineAhead, withoutEagerPipelines } from "./enginePipelines.js";
 import { pinPluginNumbers } from "./pluginNumbers.js";
 import type { QualityTier } from "./quality.js";
-import type { EngineWatchers } from "./rendererSwap.js";
 import { defaultSources, effectNamedIn, labelShaderModules, lookUpShaders, releaseShaderLookup, type WgslSource } from "./shaderLookup.js";
 
 // The game reaches the patch on an engine made here, and the start's reveal,
@@ -632,10 +632,23 @@ export function watchPipelines(engine: AbstractEngine, onCreated: () => void): (
   return () => engine.onEndFrameObservable.remove(observer);
 }
 
+/** The watchers that go with an engine made here: its failures
+ * (`watchWebGpu`); the frames that made a render pipeline, or left a draw out
+ * while one was made (`watchPipelines`); the pipelines an engine makes
+ * asynchronously, for the renderer built on it (`asyncPipelinesOf`, null where
+ * it makes them as Babylon does); and the start's reveal, held until a frame
+ * leaves nothing out (`revealWhenWhole`). */
+export type EngineWatchers = {
+  failures: WatchEngine;
+  pipelines(engine: EngineHandle, onCreated: () => void): () => void;
+  asyncPipelines(engine: EngineHandle): AsyncPipelines | null;
+  reveal(engine: EngineHandle, lift: () => void): () => void;
+};
+
 /**
- * This module's watchers, as the game holds them beside an engine made here
- * (`EngineWatchers`): its failures (`watchWebGpu`), its frames that are no
- * measure of a whole one (`watchPipelines`), the pipelines it makes
+ * This module's watchers, as whoever holds an engine made here holds them
+ * beside it (`EngineWatchers`): its failures (`watchWebGpu`), its frames that
+ * are no measure of a whole one (`watchPipelines`), the pipelines it makes
  * asynchronously (`asyncPipelinesOf`) and the start's reveal
  * (`revealWhenWhole`).
  */

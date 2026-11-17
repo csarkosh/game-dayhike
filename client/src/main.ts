@@ -929,7 +929,7 @@ function probeSteps(read: GpuSignals): ProbeSteps {
  */
 function hikeCanvas(): Promise<EngineOnCanvas> {
   if (verdict !== null && !verdict.play) return Promise.reject(new Error(`this browser cannot draw a hike (${verdict.reason})`));
-  return Promise.resolve({ canvas: document.createElement("canvas"), engine: null, watchers: null });
+  return Promise.resolve({ canvas: document.createElement("canvas") });
 }
 
 /**

@@ -1127,10 +1127,8 @@ describe("layer boundaries", () => {
    * The line Babylon.js stands behind. The renderer on it, its shells and
    * what only they import are named here, file by file: nothing else in
    * `src/` imports a module of Babylon.js or one of these files, for a
-   * value or for a type, so the list is what goes when that renderer does.
-   * What still crosses the line is named too, a type's import and no more:
-   * the pipelines among the watchers of an engine of Babylon.js, which the
-   * swap still names.
+   * value or for a type, and nothing crosses the line, so the list is what
+   * goes when that renderer does.
    */
   it("keeps Babylon.js behind one line: the renderer on it, its shells and what only they import, named file by file", () => {
     const BABYLON_SIDE = [
@@ -1177,15 +1175,14 @@ describe("layer boundaries", () => {
     // Guards against the guard: the walk reads the whole of src/ and finds the library where it is named.
     expect(importedBy.size).toBeGreaterThan(400);
     expect([...side].filter((file) => everyImport(file).some(ofBabylon)).length).toBeGreaterThan(75);
-    // What crosses the line.
-    expect(crossing.sort()).toEqual([
-      "game/rendererSwap.ts imports game/asyncPipelines.ts",
-    ]);
-    // Each of them is a type's import: none loads a module.
+    // Nothing crosses the line, for a value or for a type: not the hike, not the swap, not the renderer's types.
+    expect(crossing.sort()).toEqual([]);
     const loaded = (file: string): string[] =>
       [...readFileSync(file, "utf8").matchAll(/^\s*(?:import|export)\s+(?!type\s)(?:[^"'();]*?\s+from\s+)?["']([^"']+)["']/gm)].map((m) => m[1] as string);
-    expect(loaded(join(SRC, "app.ts")).filter((spec) => /asyncPipelines|keptEngine/.test(spec))).toEqual([]);
-    expect(loaded(join(SRC, "game/rendererSwap.ts")).filter((spec) => /asyncPipelines|@babylonjs/.test(spec))).toEqual([]);
+    for (const shared of ["app.ts", "game/rendererSwap.ts", "game/rendererTypes.ts"]) {
+      expect(importsOf(join(SRC, shared)).filter((spec) => /asyncPipelines|keptEngine|gpuEngine|sceneReady|effectTurns|@babylonjs\/(?!lite$)/.test(spec)), shared).toEqual([]);
+    }
+    expect(loaded(join(SRC, "game/rendererSwap.ts"))).toEqual([]);
     expect(loaded(join(SRC, "game/rendererTypes.ts"))).toEqual([]);
     // The list is no longer than it need be: a file on it names Babylon.js, or is imported by files on it alone.
     for (const file of side) {

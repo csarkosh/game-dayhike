@@ -1,8 +1,8 @@
 /**
  * A renderer's own watch on the engine it made for itself.
  *
- * The page watches an engine it made and handed to a renderer with that
- * engine's own module (`EngineWatchers.failures`, `gpuEngine.ts`). A renderer
+ * A renderer handed an engine is watched by the module that made the engine
+ * (the renderer on Babylon.js, by `gpuEngine.ts`). A renderer
  * that makes its engine from its canvas is the only one that can hear it
  * fail, so it keeps one of these and offers its `watch` as
  * `Renderer.ownWatch`: the hike's ladders put it on once the renderer stands

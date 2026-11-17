@@ -30,8 +30,13 @@ import type { Effect } from "@babylonjs/core/Materials/effect.js";
 import type { AbstractEngine } from "@babylonjs/core/Engines/abstractEngine.js";
 import type { EngineHandle } from "./engineHandle.js";
 import { engineOf } from "./engineOf.js";
+import type { EngineWatchers } from "./gpuEngine.js";
 import type { QualityTier } from "./quality.js";
-import type { EngineOnCanvas, EngineWatchers } from "./rendererSwap.js";
+
+/** A canvas and the engine made for it: WebGPU with its module's watchers, or
+ * WebGL2 (`engine` and `watchers` null), which the renderer makes itself or
+ * takes up from the canvas (`adoptEngine`). */
+export type EngineOnCanvas = { canvas: HTMLCanvasElement; engine: EngineHandle | null; watchers: EngineWatchers | null };
 
 /** An engine kept between hikes: its canvas, the WebGPU module's watchers
  * (null on WebGL2) and the tier it was last drawing. */

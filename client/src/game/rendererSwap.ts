@@ -45,7 +45,6 @@
  * renderer that made its engine for itself is listened to through its own
  * watch (`Renderer.ownWatch`), on the same terms.
  */
-import type { AsyncPipelines } from "./asyncPipelines.js";
 import type { EngineHandle } from "./engineHandle.js";
 import type { WatchEngine } from "./engineWatch.js";
 import type { QualityTier } from "./quality.js";
@@ -81,23 +80,9 @@ export const GOVERNOR_SWAP_READY_MAX_MS = 10_000;
  * back as it was built. */
 export type Swappable<R extends Renderer = Renderer> = { renderer: R; canvas: HTMLCanvasElement };
 
-/** The WebGPU module's watchers (`gpuEngine.ts`): its failures
- * (`watchWebGpu`); the frames that made a render pipeline, or left a draw out
- * while one was made (`watchPipelines`); the pipelines an engine makes
- * asynchronously, for the renderer built on it (`asyncPipelinesOf`, null where
- * it makes them as Babylon does); and the start's reveal, held until a frame
- * leaves nothing out (`revealWhenWhole`). */
-export type EngineWatchers = {
-  failures: WatchEngine;
-  pipelines(engine: EngineHandle, onCreated: () => void): () => void;
-  asyncPipelines(engine: EngineHandle): AsyncPipelines | null;
-  reveal(engine: EngineHandle, lift: () => void): () => void;
-};
-
-/** A renderer's canvas and the engine made for it: WebGPU with its module's
- * watchers, or WebGL2 (`engine` and `watchers` null), which the renderer
- * makes itself. */
-export type EngineOnCanvas = { canvas: HTMLCanvasElement; engine: EngineHandle | null; watchers: EngineWatchers | null };
+/** A canvas a hike's renderer is built on, as the page hands one over. It
+ * carries no engine: the renderer makes its own from it. */
+export type EngineOnCanvas = { canvas: HTMLCanvasElement };
 
 /**
  * The least a switch's new scene waits under the cover for its models, ground
@@ -107,18 +92,16 @@ export type EngineOnCanvas = { canvas: HTMLCanvasElement; engine: EngineHandle |
 export const SWAP_SCENE_MIN_MS = 5_000;
 
 /**
- * The engine a switch builds on, made within its cover's bound, and what is
+ * The canvas a switch builds on, made within its cover's bound, and what is
  * left of the bound for the new scene's wait (`Renderer.whenReady`), never less
  * than `SWAP_SCENE_MIN_MS`, so the cover stays up no longer than the bound its
- * caller names, plus that floor where the engine ate into it, plus the build
- * itself. A
- * switch into WebGPU can otherwise wait up to 10 s for the engine, and 10 s
- * more for the translators, before the bound starts. `make` is told, through
- * `wanted`, whether its engine is still wanted. One not made within `boundMs`
- * is let go of when it arrives; the switch takes WebGL2 at its tier on a fresh
- * canvas (`late`), with nothing of it remembered against the engine, which was
- * slow rather than broken: `wanted` reads false from then on, so a failure the
- * late start meets records nothing, and the next switch or load tries it again.
+ * caller names, plus that floor where the making ate into it, plus the build
+ * itself. `make` is told, through `wanted`, whether what it makes is still
+ * wanted. A canvas not made within `boundMs` is left when it arrives (it
+ * carries no engine to let go of); the switch takes a fresh canvas at its
+ * tier (`deps.webgl2`, `late`), with nothing remembered against what was slow
+ * rather than broken: `wanted` reads false from then on, so a failure the late
+ * making meets records nothing, and the next switch or load tries it again.
  */
 export async function engineWithinBound(
   make: (wanted: () => boolean) => Promise<EngineOnCanvas>,
@@ -135,10 +118,8 @@ export async function engineWithinBound(
   const first = await Promise.race([making, late]).finally(() => clear());
   if (first === null) {
     wanted = false;
-    void making.then(
-      (made) => made.engine?.dispose(),
-      () => undefined,
-    );
+    // A making that fails later fails for no one.
+    void making.catch(() => undefined);
     return { onCanvas: deps.webgl2(), leftMs: SWAP_SCENE_MIN_MS, late: true };
   }
   return { onCanvas: first, leftMs: Math.max(SWAP_SCENE_MIN_MS, boundMs - (deps.now() - from)), late: false };

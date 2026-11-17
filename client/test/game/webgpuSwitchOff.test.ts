@@ -203,27 +203,24 @@ describe("the start where the rule gives WebGL2", () => {
     // the reveal beside it; the page asks it for none.
     const main = readFileSync(fileURLToPath(new URL("../../src/main.ts", import.meta.url)), "utf8");
     expect(main).not.toContain("startWebGpu");
-    // The game holds its first frames only on a WebGPU engine, and gives the
-    // patch only to a renderer on one.
+    // The game is handed no engine of Babylon.js, so it holds no first frame for one's pipelines: what held
+    // them (`revealHold.ts`, with `revealHold.test.ts`) is called by nothing in the page, and the module that
+    // made such an engine handed its watchers to no hike.
     const app = readFileSync(fileURLToPath(new URL("../../src/app.ts", import.meta.url)), "utf8");
-    expect(app.match(/\bholdReveal\(/g)).toEqual(["holdReveal("]);
-    expect(app).toContain('if (renderer.engineName === "webgpu" && watchers !== null) {');
-    // The hold gives way to a switch's own cover and to the game's end
-    // (`revealHold.test.ts` shows what lifting it does; the app itself needs a
-    // page to run).
-    const switchNow = app.slice(app.indexOf("  async function switchNow("), app.indexOf("\n  }\n", app.indexOf("  async function switchNow(")));
-    expect(switchNow.indexOf("endRevealHold();")).toBeGreaterThan(0);
-    expect(switchNow.indexOf("swapRenderer(")).toBeGreaterThan(switchNow.indexOf("endRevealHold();"));
-    // The switch's cover also waits for a frame that left nothing out, on
-    // what is left of its bound, after the scene is ready.
-    const ready = switchNow.indexOf("await renderer.whenReady(made.leftMs);");
-    expect(ready).toBeGreaterThan(0);
-    expect(switchNow.indexOf("await whenFrameWhole(")).toBeGreaterThan(ready);
-    const dispose = app.slice(app.lastIndexOf("    dispose() {\n      disposed = true;"));
-    expect(dispose.indexOf("endRevealHold();")).toBeGreaterThan(0);
-    expect(dispose.indexOf("endRevealHold();")).toBeLessThan(dispose.indexOf("renderer.dispose();"));
-    // No renderer of the hike's is handed an engine, and so none the patch: the hike asks for neither.
     const code = app.replace(/\/\*[\s\S]*?\*\/|\/\/.*$/gm, "");
+    expect(code).not.toMatch(/\b(?:holdReveal|whenFrameWhole|endRevealHold|firstWholeFrame|revealWhenWhole|revealHold)\b/);
+    expect(code).not.toMatch(/\bwatchers\b|EngineWatchers/);
+    // A switch waits under its own cover for the new renderer's world, on what is left of its bound, and for
+    // nothing after it.
+    const switchNow = code.slice(code.indexOf("  async function switchNow("), code.indexOf("\n  }\n", code.indexOf("  async function switchNow(")));
+    const ready = switchNow.indexOf("await renderer.whenReady(made.leftMs);");
+    expect(ready).toBeGreaterThan(switchNow.indexOf("swapRenderer("));
+    expect(switchNow.slice(ready)).toMatch(/^await renderer\.whenReady\(made\.leftMs\);\s+return tier;\s+\} finally \{/);
+    // The game's end lets its renderer go, engine and all.
+    const dispose = code.slice(code.lastIndexOf("    dispose() {\n      disposed = true;"));
+    expect(dispose.indexOf("renderer.dispose();")).toBeGreaterThan(0);
+    expect(dispose).not.toMatch(/\b(?:retire|keepEngine)\b/);
+    // No renderer of the hike's is handed an engine, and so none the patch: the hike asks for neither.
     expect(code).not.toMatch(/\b(?:pipelinesFor|asyncPipelines|AsyncPipelines)\b/);
     expect(code).not.toMatch(/engine: engine \?\? undefined|pipelines:/);
   });
