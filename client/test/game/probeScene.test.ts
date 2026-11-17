@@ -144,7 +144,10 @@ describe("the probe's sky", () => {
   it("is handed to each step's scene by the step", () => {
     const src = readFileSync(new URL("../../src/game/probeScene.ts", import.meta.url), "utf8");
     expect(src).toContain("probe = buildProbeScene(canvas, tier, given, opts.sky);");
-    expect(src).toContain("measure: (step, on, by) => runProbeStep(container, step, { cancelled: stopped, signal: aborts.signal, on, readyBy: by, sky: table }),");
+    expect(src).toContain("measure: (measured, on, by) => runProbeStep(container, measured, { cancelled: step.stopped, signal: step.signal, on, readyBy: by, sky: step.sky }),");
+    // The step is handed the probe's sky by the page's half of the probe, which keeps the one source.
+    const page = readFileSync(new URL("../../src/game/probePage.ts", import.meta.url), "utf8");
+    expect(page).toContain("const reading = await measure(tier, { stopped, signal: aborts.signal, readyBy, sky: sky.table });");
   });
 });
 

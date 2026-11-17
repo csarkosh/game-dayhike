@@ -1,5 +1,6 @@
 /**
- * The startup probe's scene, its measured steps, and the page's `StartupDeps`.
+ * The startup probe's scene on the renderer on Babylon.js, its measured
+ * steps, and a page's `StartupDeps` that measure so.
  *
  * Each step builds the canopy pose (`probePose`) on a fresh canvas filling the
  * game's container, at the tier being measured, the way the landing backdrop
@@ -9,8 +10,9 @@
  * intervals between render-loop callbacks, and disposes the renderer and
  * removes the canvas whatever happened, so no probe renderer outlives its
  * step. The steps of one probe read one sky, started at its first step and
- * stopped when the probe ends (`probeDeps`), so no step makes the slices
- * again.
+ * stopped when the probe ends, so no step makes the slices again: that, and
+ * the rest of what the page's start asks of a probe but its measuring, is
+ * made with no engine (`probePage.ts`).
  */
 import type { Scene } from "@babylonjs/core/scene.js";
 import { createForest } from "../sim/forest.js";
@@ -23,19 +25,14 @@ import {
   PROBE_SEED_TOKEN,
   createProbeMeter,
   probePose,
-  probeReadingLine,
-  type StartupDeps,
 } from "./frameProbe.js";
-import { afterNextPaint } from "./paint.js";
-import { showProbeScreen, timeIdleCadence } from "./probeScreen.js";
+import { pageProbe, type PageProbe } from "./probePage.js";
 import type { EngineHandle } from "./engineHandle.js";
 import { containerPixels, type ProbeReading, type QualityTier, type VerdictEngine } from "./quality.js";
-import { sunAltitudeDeg } from "./skyWait.js";
 import { createRenderer, type SceneRenderer } from "./renderer.js";
 import { seedFromToken } from "./seed.js";
 import { startSkySource, type SkySource } from "./skyWorker.js";
 import type { SkyTable } from "./skyTable.js";
-import { pageStorage } from "./tierChoice.js";
 import { WEATHER_PRESETS } from "./weather.js";
 import sandbox01 from "../../levels/sandbox01.json" with { type: "json" };
 
@@ -267,9 +264,7 @@ export async function measureOnRuleEngine(
   return again === ENGINE_FAILED ? null : again;
 }
 
-/** The page's `StartupDeps` for `container`, with `abort()` to stop a probe at
- * once when the page moves on (the render that replaces it calls it first). */
-export type PageProbe = StartupDeps & { abort(): void };
+export type { PageProbe };
 
 /** WebGL2 on a fresh canvas: a probe step's engine where the page gives none. */
 function webgl2Step(): StepEngine {
@@ -277,13 +272,14 @@ function webgl2Step(): StepEngine {
 }
 
 /**
- * The page's `StartupDeps` for `container`. `engines` gives each step the
- * engine the WebGPU rule gives its tier, hears of a WebGPU step that failed,
- * and says whether a step can settle on the engine it got
- * (`measureOnRuleEngine`); without it every step is WebGL2. The probe's sky
- * is one source (`startSky`, at the probe's hour) started at its first step,
- * read by every step after, and stopped when the probe ends (`endProbe`) or
- * the page moves on (`abort`).
+ * A page's `StartupDeps` for `container`, every step measured on the renderer
+ * on Babylon.js. `engines` gives each step the engine the WebGPU rule gives
+ * its tier, hears of a WebGPU step that failed, and says whether a step can
+ * settle on the engine it got (`measureOnRuleEngine`); without it every step
+ * is WebGL2. The probe's sky is one source (`startSky`, at the probe's hour)
+ * started at its first step, read by every step after, and stopped when the
+ * probe ends (`endProbe`) or the page moves on (`abort`): the page's half,
+ * made with no engine (`pageProbe`).
  */
 export function probeDeps(
   container: HTMLElement,
@@ -295,68 +291,19 @@ export function probeDeps(
   },
   startSky: (startDeg: number) => SkySource = startSkySource,
 ): PageProbe {
-  const aborts = new AbortController();
-  /** The probe's sky, from its first step until it ends. */
-  let sky: SkySource | null = null;
-  const endSky = (): void => {
-    sky?.dispose();
-    sky = null;
-  };
-  return {
-    storage: pageStorage(),
-    pixels: () => containerPixels(container),
-    now: () => Date.now(),
-    async runStep(tier, cancelled, readyMaxMs) {
-      const readyBy = performance.now() + readyMaxMs;
-      // The scene's build blocks the page; the screen paints first.
-      await new Promise<void>((resolve) => afterNextPaint(resolve));
-      const stopped = (): boolean => aborts.signal.aborted || cancelled();
-      if (stopped()) return null;
-      sky ??= startSky(sunAltitudeDeg(PROBE_HOUR));
-      const table = sky.table;
-      const reading = await measureOnRuleEngine(
+  return pageProbe(
+    container,
+    (tier, step) =>
+      measureOnRuleEngine(
         tier,
-        stopped,
+        step.stopped,
         {
           ...engines,
-          measure: (step, on, by) => runProbeStep(container, step, { cancelled: stopped, signal: aborts.signal, on, readyBy: by, sky: table }),
+          measure: (measured, on, by) => runProbeStep(container, measured, { cancelled: step.stopped, signal: step.signal, on, readyBy: by, sky: step.sky }),
           webgl2: webgl2Step,
         },
-        readyBy,
-      );
-      if (reading !== null) console.info(probeReadingLine(reading, container.clientWidth, container.clientHeight));
-      return reading;
-    },
-    showScreen: () => showProbeScreen(container),
-    setTimer: (fn, ms) => {
-      const id = setTimeout(fn, ms);
-      return () => clearTimeout(id);
-    },
-    whenVisible: () =>
-      new Promise<boolean>((resolve) => {
-        if (aborts.signal.aborted) return resolve(false);
-        if (document.visibilityState === "visible") return resolve(true);
-        const settle = (seen: boolean): void => {
-          document.removeEventListener("visibilitychange", onChange);
-          aborts.signal.removeEventListener("abort", onAbort);
-          resolve(seen);
-        };
-        const onChange = (): void => {
-          if (document.visibilityState === "visible") settle(true);
-        };
-        const onAbort = (): void => settle(false);
-        document.addEventListener("visibilitychange", onChange);
-        aborts.signal.addEventListener("abort", onAbort);
-      }),
-    // The screen's own frames, timed before any scene is built: the page's
-    // cadence with nothing to draw.
-    idleCadence: () => timeIdleCadence(aborts.signal),
-    log: (line) => console.info(line),
-    endProbe: endSky,
-    abort: () => {
-      // The step's renderer goes first, as the abort reaches it.
-      aborts.abort();
-      endSky();
-    },
-  };
+        step.readyBy,
+      ),
+    startSky,
+  );
 }
