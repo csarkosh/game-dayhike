@@ -209,8 +209,8 @@ describe("layer boundaries", () => {
     expect(app).toContain('    runningOnWebGpu: () => renderer.engineName === "webgpu",');
     // The game records every failure of its engine through the page's one recorder, handed to its start as it
     // is: the start is given no engine that could fail apart from the hike's renderer, so there is no start's
-    // fault to tell from the hike's, and no second start on another engine (`startOnEngine`, which
-    // `engineFailure.ts` keeps with its tests, is called by no page).
+    // fault to tell from the hike's, and no second start on another engine (`startOnEngine`, which the
+    // engine's rule keeps with its tests in `engineChoice.ts`, is called by no page).
     const main = stripComments(readFileSync(join(SRC, "main.ts"), "utf8"));
     expect(main).toContain("  const handle = startGame(onCanvas.canvas, worldToken, {");
     expect([...main.matchAll(/^ {4}engineFailed,$/gm)].length).toBe(1);
@@ -219,6 +219,10 @@ describe("layer boundaries", () => {
     // for a later hike and pins nothing in the address.
     expect(main).toContain('function engineFailed(reason: "pipeline" | "lost"): string {\n  telemetry.event("engine_failed", { reason });\n  return NOTICE_RESTARTED;\n}');
     expect(main).not.toMatch(/\b(?:recordEngineFailure|parseEngineOverride|withEngine|engineEnv|replaceState)\b/);
+    // The answer's own module holds the answer and no more: what remembered a failure against an engine, and
+    // started a hike again on another, is the rule's, and the hike names neither.
+    expect(stripComments(readFileSync(join(SRC, "game/engineFailure.ts"), "utf8"))).not.toMatch(/\b(?:recordEngineFailure|recordStartFailure|startOnEngine|failureSwap|writeFallback)\b/);
+    expect(app).not.toMatch(/\b(?:recordEngineFailure|recordStartFailure|startOnEngine)\b/);
   });
 
   it("decides the tier at launch only: with the governor off the hike makes none, feeds none, times no idle frames and acts on no drop", () => {
@@ -286,7 +290,7 @@ describe("layer boundaries", () => {
   it("starts no engine, so the page has no failed start to record: a step of the tier check that fails is the step's own to end", () => {
     const main = stripComments(readFileSync(join(SRC, "main.ts"), "utf8"));
     // A WebGPU start that failed (the first load's, a switch's, a retry's, a probe step's) was remembered through
-    // `recordStartFailure`, which `engineFailure.ts` keeps with its tests: no page has such a start now.
+    // `recordStartFailure`, which the engine's rule keeps with its tests (`engineChoice.ts`): no page has such a start now.
     expect(main).not.toMatch(/\b(?:rememberFailure|recordStartFailure)\b/);
     expect(main).not.toContain("webgpu_start_failed");
     // A step that fails ends with no reading (`lite/probeScene.ts`): nothing of it is recorded against the engine.
