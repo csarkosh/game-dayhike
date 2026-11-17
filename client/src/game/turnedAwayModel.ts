@@ -17,6 +17,7 @@ import {
   TURNED_AWAY_APP_INTRO,
   TURNED_AWAY_BROWSERS,
   TURNED_AWAY_BROWSERS_INTRO,
+  TURNED_AWAY_CREDITS,
   TURNED_AWAY_DETAIL,
   TURNED_AWAY_DETAIL_APP,
   TURNED_AWAY_HEADLINE,
@@ -68,6 +69,8 @@ export type TurnedAwayView = {
   app: { intro: string; card: DownloadCard } | null;
   /** The small technical line at the foot. */
   detail: string;
+  /** What the credits open under: the page shows the title's still, so the credit its works are owed is here too. */
+  credits: string;
 };
 
 /** A GPU's name that is not Apple's own: a Mac it names is not one with Apple silicon. */
@@ -102,6 +105,7 @@ export function turnedAwayModel(input: TurnedAwayInput): TurnedAwayView {
       browsers: null,
       app: null,
       detail: withShort(TURNED_AWAY_DETAIL_APP[input.reason], input),
+      credits: TURNED_AWAY_CREDITS,
     };
   }
   const card = appWouldRun(input) && input.latest !== null && input.host !== "other" ? downloadCard(input.latest, input.host) : null;
@@ -113,6 +117,7 @@ export function turnedAwayModel(input: TurnedAwayInput): TurnedAwayView {
     browsers: { intro: TURNED_AWAY_BROWSERS_INTRO, lines: TURNED_AWAY_BROWSERS[input.device] },
     app: card === null ? null : { intro: TURNED_AWAY_APP_INTRO, card },
     detail: withShort(TURNED_AWAY_DETAIL[input.reason], input),
+    credits: TURNED_AWAY_CREDITS,
   };
 }
 

@@ -50,6 +50,7 @@ import type { EngineOnCanvas } from "./game/rendererSwap.js";
 import { LOSS_ENDED_LINE, createLossRecord } from "./game/lossBound.js";
 import { browserEnv, browserMajor, hostOs, isMobile, offersWebGpu, readSignals, type GpuSignals, type NavigatorLike } from "./game/gpuSignals.js";
 import { adapterVerdict, loadVerdict, type LoadVerdict } from "./game/loadCheck.js";
+import { creditsEntries } from "./game/credits.js";
 import { renderTurnedAway, type TurnedAwayHandle } from "./game/turnedAway.js";
 import { turnedAwayModel, visitorDevice, type TurnedAwayView } from "./game/turnedAwayModel.js";
 import {
@@ -1001,6 +1002,8 @@ function showTurnedAway(container: HTMLDivElement, route: Route, why: Exclude<Lo
   }
   const handle = renderTurnedAway(container, turnedAwayView(why), {
     still: titleStillUrl(),
+    // The credit the still's works are owed, within reach here as from the landing page.
+    credits: creditsEntries(),
     onDownload: (platform) => telemetry.event("download", { platform }),
   });
   turnedAway = handle;

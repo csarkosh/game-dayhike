@@ -10,13 +10,17 @@
  * measure; the text is real text in a `main` landmark under the page's one
  * heading, so a screen reader reads it top to bottom, and focus is put on
  * the heading as the page takes over, so that reading starts there when it
- * replaces a page already shown. The only control is the download's link,
- * where there is one, which Tab reaches and shows.
+ * replaces a page already shown. Its controls are the download's link,
+ * where there is one, and the credits at the foot, closed until asked for:
+ * the still is a picture of the game, and the credit its works are owed has
+ * to be within reach wherever it is shown, as it is from the landing page
+ * (`credits.ts`). Tab reaches both and shows where it stands.
  *
  * Built with DOM APIs, never markup: a release's version and a GPU's
  * shortfall are text from outside the page.
  */
 import type { Platform } from "../net/desktopRelease.js";
+import { creditItem, type CreditEntry } from "./credits.js";
 import type { TurnedAwayView } from "./turnedAwayModel.js";
 
 /** Shares the landing page's visual language: the same ground, type and cold cast. */
@@ -58,6 +62,12 @@ const STYLE = `
   .turned-away .caption { font-size: 0.8rem; color: rgba(255, 255, 255, 0.5); }
   .turned-away .note { max-width: 22rem; }
   .turned-away .detail { margin-top: 1rem; font-size: 0.8rem; color: rgba(255, 255, 255, 0.5); overflow-wrap: anywhere; }
+  .turned-away details { max-width: 34rem; font-size: 0.8rem; color: rgba(255, 255, 255, 0.5); text-align: center; }
+  .turned-away summary { cursor: pointer; letter-spacing: 0.1em; text-transform: uppercase; }
+  .turned-away summary:focus-visible { outline: 2px solid var(--edge-lit); outline-offset: 3px; }
+  .turned-away details ul { margin-top: 0.5rem; font-size: 0.8rem; line-height: 1.6; color: rgba(255, 255, 255, 0.72); }
+  .turned-away details a { color: rgba(255, 255, 255, 0.9); text-decoration: underline; text-underline-offset: 0.2em; }
+  .turned-away details a:focus-visible { outline: 2px solid var(--edge-lit); outline-offset: 2px; }
   @media (prefers-reduced-motion: reduce) {
     .turned-away-bg.ready { transition: none; }
   }
@@ -66,7 +76,7 @@ const STYLE = `
     .turned-away h1 { font-size: 1.4rem; letter-spacing: 0.1em; }
     .turned-away p, .turned-away ul { font-size: 0.85rem; max-width: 100%; }
     .turned-away .headline { font-size: 0.95rem; }
-    .turned-away .caption, .turned-away .detail { font-size: 0.75rem; }
+    .turned-away .caption, .turned-away .detail, .turned-away details, .turned-away details ul { font-size: 0.75rem; }
   }
 `;
 
@@ -78,12 +88,13 @@ export type TurnedAwayHandle = {
 
 /**
  * Puts the page in `container`, over `still` where there is one, and gives
- * the heading the focus. `onDownload` hears the download's link followed.
+ * the heading the focus. `credits` are the works credited at the foot
+ * (`creditsEntries`); `onDownload` hears the download's link followed.
  */
 export function renderTurnedAway(
   container: HTMLElement,
   view: TurnedAwayView,
-  options: { still: string | null; onDownload?(platform: Platform): void },
+  options: { still: string | null; credits: readonly CreditEntry[]; onDownload?(platform: Platform): void },
 ): TurnedAwayHandle {
   const style = document.createElement("style");
   style.textContent = STYLE;
@@ -105,7 +116,14 @@ export function renderTurnedAway(
   root.setAttribute("aria-labelledby", title.id);
   const body = document.createElement("div");
   body.style.display = "contents";
+  // The credits, made once and closed: a repaint of what is above them leaves them as the visitor has them.
+  const credits = document.createElement("details");
+  const creditsWord = document.createElement("summary");
+  const creditsList = document.createElement("ul");
+  for (const e of options.credits) creditsList.append(creditItem(e));
+  credits.append(creditsWord, creditsList);
   root.append(title, body);
+  if (options.credits.length > 0) root.append(credits);
 
   const line = (className: string, text: string): HTMLParagraphElement => {
     const p = document.createElement("p");
@@ -116,6 +134,7 @@ export function renderTurnedAway(
 
   function paint(v: TurnedAwayView): void {
     title.textContent = v.title;
+    creditsWord.textContent = v.credits;
     const parts: Node[] = [line("headline", v.headline), ...v.advice.map((text) => line("", text))];
     if (v.browsers !== null) {
       const browsers = document.createElement("div");

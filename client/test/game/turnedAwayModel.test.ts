@@ -123,6 +123,22 @@ describe("the page for those turned away, as data", () => {
     }
   });
 
+  it("keeps the credits within reach, in a browser and in the app, under the landing page's own word", () => {
+    expect(words.TURNED_AWAY_CREDITS).toBe("Credits");
+    for (const reason of TURNED_AWAY_REASONS) {
+      expect(turnedAwayModel(input({ reason })).credits, reason).toBe("Credits");
+      expect(turnedAwayModel(input({ reason, desktop: true, userAgent: SHELL_WIN })).credits, reason).toBe("Credits");
+    }
+    // The page takes the works themselves from the credits' own list, each written by the Credits screen's own hand.
+    const page = readFileSync(fileURLToPath(new URL("../../src/game/turnedAway.ts", import.meta.url)), "utf8");
+    expect(page).toContain("options: { still: string | null; credits: readonly CreditEntry[]; onDownload?(platform: Platform): void },");
+    expect(page).toContain("  for (const e of options.credits) creditsList.append(creditItem(e));");
+    const screen = readFileSync(fileURLToPath(new URL("../../src/game/credits.ts", import.meta.url)), "utf8");
+    expect(screen).toContain("  for (const e of entries) list.append(creditItem(e));");
+    const main = readFileSync(fileURLToPath(new URL("../../src/main.ts", import.meta.url)), "utf8");
+    expect(main).toContain("    credits: creditsEntries(),");
+  });
+
   it("ends with the one technical line, with what the graphics card is short of where the check named it", () => {
     expect(turnedAwayModel(input()).detail).toBe(words.TURNED_AWAY_DETAIL["no-webgpu"]);
     expect(turnedAwayModel(input({ reason: "short", short: "maxTextureDimension2D 4096 < 8192" })).detail).toBe(`${words.TURNED_AWAY_DETAIL.short} (maxTextureDimension2D 4096 < 8192).`);

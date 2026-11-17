@@ -97,6 +97,9 @@ export const TURNED_AWAY_DETAIL: Readonly<Record<TurnedAwayReason, string>> = {
   short: "Day Hike is drawn with WebGPU, and this graphics card offers less of it than the game needs",
 };
 
+/** The word the credits open under, at the foot: the landing page's own. */
+export const TURNED_AWAY_CREDITS = "Credits";
+
 /** The same line in the desktop app, where there is no browser to name. */
 export const TURNED_AWAY_DETAIL_APP: Readonly<Record<TurnedAwayReason, string>> = {
   "no-webgpu": "Day Hike is drawn with WebGPU, which is not available on this computer.",
