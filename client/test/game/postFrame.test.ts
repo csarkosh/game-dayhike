@@ -68,7 +68,6 @@ describe("what the post chain's passes are drawn with", () => {
     // that size while the paint applies. A texel is two of the target's own, and the radius a frame's half as tall.
     expect(paintUniformsDrawn(PAINT_RADIUS_MEDIUM, 1470, 956)).toEqual(paintUniforms(PAINT_RADIUS_MEDIUM, 735, 478));
     expect(paintUniformsDrawn(PAINT_RADIUS_MEDIUM, 1470, 956)).toEqual({ texel: [1 / 367, 1 / 239], radius: [1] });
-    expect(src("post.ts")).toContain("const u = paintUniforms(strokes, engine.getRenderWidth(), engine.getRenderHeight());");
     expect(PAINT_SCALE).toBe(0.5);
   });
 
@@ -145,6 +144,16 @@ describe("what the post chain's passes are drawn with", () => {
     expect([0, 0.1, 0.34, 0.67, 1].map(endBlurKernel)).toEqual([0, 28 / 3, (28 / 3) * 2, 28, 28]);
   });
 
+  it("names nothing of Babylon.js", () => {
+    expect(src("postFrame.ts")).not.toMatch(/@babylonjs/);
+  });
+});
+
+describe("the renderer on Babylon.js: the chain's passes", () => {
+  it("gives the sharpen, the paint and its compose their texels and their strengths", () => {
+    expect(src("post.ts")).toContain("const u = paintUniforms(strokes, engine.getRenderWidth(), engine.getRenderHeight());");
+  });
+
   it("is what the shell on Babylon.js binds: every pass's values are read from it there", () => {
     const post = src("post.ts");
     for (const name of [
@@ -155,6 +164,5 @@ describe("what the post chain's passes are drawn with", () => {
     }
     // The numbers the shell hands on are this module's own, under the names its importers knew them by.
     expect(post).toMatch(/export \{\s*END_BLUR_KERNEL, END_BLUR_STEPS, FAR_CLOUD_UNIFORMS, FAR_SOFT_BAND, FAR_SOFT_RADIUS, SHADE_BLUR, SHADE_DARK, SHADE_MONSTER_DARK, endBlurKernel,\s*\} from "\.\/postFrame\.js";/);
-    expect(src("postFrame.ts")).not.toMatch(/@babylonjs/);
   });
 });

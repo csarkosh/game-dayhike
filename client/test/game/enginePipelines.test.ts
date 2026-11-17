@@ -311,7 +311,7 @@ describe("the Babylon the engine's start relies on", () => {
   });
 });
 
-describe("the WebGPU engine's start", () => {
+describe("the renderer on Babylon.js: the WebGPU engine's start", () => {
   it("starts with neither pipeline made, then asks for the mipmap one without waiting for it", () => {
     const source = readFileSync(new URL("../../src/game/gpuEngine.ts", import.meta.url), "utf8");
     expect(source).toMatch(

@@ -82,10 +82,6 @@ describe("layer boundaries", () => {
     const world = readFileSync(join(dir, "routeWorld.ts"), "utf8");
     expect(world).toContain("createWorld(level, seed, false)");
     expect(world).not.toMatch(/world\.(step|apply|input)/);
-    const route = readFileSync(join(dir, "sceneRoute.ts"), "utf8");
-    expect(route).toContain("= routeWorld(name);");
-    expect(route).toContain("renderer.sync(world.state, -1, 0)");
-    expect(route).not.toMatch(/world\.(step|apply|input)/);
     const lite = readFileSync(join(SRC, "game/lite/sceneRoute.ts"), "utf8");
     expect(lite).toContain("const route = routeWorld(name);");
     expect(lite).toContain("renderer.sync(world.state, -1, 0)");
@@ -143,41 +139,6 @@ describe("layer boundaries", () => {
     }
     expect(seen.size).toBeGreaterThan(20);
     expect(bad).toEqual([]);
-  });
-
-  it("loads the WebGPU engine's extensions with the engine, and only there", () => {
-    // The dynamic texture the fingerposts paint, the compute and multi-render
-    // paths: the WebGPU engine's own versions, which no WebGL2 import reaches.
-    // In `gpuEngine.ts`, so the dynamic chunk carries them; the static-graph
-    // test above keeps them out of the page's first load.
-    expect(readFileSync(join(SRC, "game/gpuEngine.ts"), "utf8")).toContain(
-      'import "@babylonjs/core/Engines/WebGPU/Extensions/index.js";',
-    );
-  });
-
-  it("never turns WebGPU's uniformity analysis off for every shader", () => {
-    // The terrain's material turns it off for itself (`TERRAIN_UNIFORMITY_OFF`); replacing
-    // the engine's stage-descriptor method would hide every other shader's
-    // uniformity fault too. The shader lookup calls it, with WGSL already
-    // translated (each stage's switch read as Babylon reads it), and nothing
-    // replaces it.
-    const found = sourceFiles(SRC).filter((f) => readFileSync(f, "utf8").includes("_createPipelineStageDescriptor"));
-    expect(found.map((f) => relative(SRC, f))).toEqual(["game/shaderLookup.ts"]);
-    const lookup = readFileSync(join(SRC, "game/shaderLookup.ts"), "utf8");
-    expect(lookup).not.toMatch(/_createPipelineStageDescriptor\s*=[^=]/);
-    expect([...lookup.matchAll(/own\._createPipelineStageDescriptor\(([^)]*)\)/g)].map((m) => m[1])).toEqual([
-      "vertexStage.wgsl, fragmentStage.wgsl, WGSL, false, false",
-    ]);
-  });
-
-  it("keeps `forgetTranslators` for tests: nothing in src/ but its definition names it", () => {
-    // A page keeps its started translators for its life (`loadTranslators`);
-    // dropping them is only for tests, which start them afresh each time.
-    const named = sourceFiles(SRC).flatMap((file) =>
-      [...stripComments(readFileSync(file, "utf8")).matchAll(/\bforgetTranslators\b/g)].map(() => relative(SRC, file)),
-    );
-    expect(named).toEqual(["game/gpuEngine.ts"]);
-    expect(readFileSync(join(SRC, "game/gpuEngine.ts"), "utf8")).toContain("export function forgetTranslators(): void {");
   });
 
   it("keeps the engine choice out of sim/ and net/", () => {
@@ -374,7 +335,6 @@ describe("layer boundaries", () => {
     // on another engine. The modules stand, with their tests, until the renderer on Babylon.js goes.
     for (const gone of ["renderer", "keptEngine", "engineVersion", "engineLog", "engineFailure", "gpuEngine"]) {
       expect(own, gone).not.toContain(`./game/${gone}.js`);
-      expect(existsSync(join(SRC, "game", `${gone}.ts`)), gone).toBe(true);
     }
     expect(code(main)).not.toMatch(/\b(?:releaseEngine|adoptEngine|dropEngine|keepEngine|engineVersion|hearEngineLog)\b/);
     // The engine's rule is read for one thing, the line of a renderer built again; the address's `?engine=` for nothing.
@@ -459,18 +419,10 @@ describe("layer boundaries", () => {
     // is left of it (`engineWithinBound`).
     expect(app).toContain("const made = await engineWithinBound((wanted) => options.engineFor(target, wanted), readyMaxMs, ");
     expect([...app.matchAll(/\bwhenReady\([^;]*;/g)].map((m) => m[0])).toEqual(["whenReady(made.leftMs);"]);
-    // The renderer's wait is its scene's and its forest's layers', bounded by what it is passed alone.
-    expect(stripComments(readFileSync(join(SRC, "game/renderer.ts"), "utf8"))).toContain(
-      "    whenReady(maxMs) {\n      return whenSceneReady(scene, maxMs, renderer.forestReady);\n    },",
-    );
     expect(app).not.toMatch(/SWAP_READY_MAX_MS/);
   });
 
-  it("loads nothing with the WebGPU engine that registers what the WebGL2 path does not, but the engine's own", () => {
-    // A module that registers something on load (a getter on a texture, a
-    // fallback image, an audio engine) changes what every engine of the page
-    // does once the WebGPU chunk has loaded. The spherical harmonics registered
-    // by the non-pure PBR module lit WebGPU's frame 1.23 times brighter.
+  it("loads no module of Babylon.js with the page, the hike under it included, followed into whatever a library's module loads in turn", () => {
     const NODE_MODULES = fileURLToPath(new URL("../../node_modules", import.meta.url));
     const runtimeImports = (file: string): string[] =>
       [...readFileSync(file, "utf8").matchAll(/^\s*(?:import|export)\s+(?!type\s)(?:[^"'();]*?\s+from\s+)?["']([^"'?]+)["']/gm)].map((m) => m[1] as string);
@@ -497,67 +449,8 @@ describe("layer boundaries", () => {
       }
       return seen;
     };
-    // The page loads no module of Babylon.js any more, with the hike under it or without: the WebGL2 path
-    // is what the renderer on Babylon.js loads, and the two engines now meet only where that renderer is built.
+    // The page loads no module of Babylon.js, with the hike under it or without.
     expect([...graph(join(SRC, "main.ts"))].filter((f) => f.includes("@babylonjs"))).toEqual([]);
-    const webgl2 = graph(join(SRC, "game/renderer.ts"));
-    const webgpu = [...graph(join(SRC, "game/gpuEngine.ts"))].filter((f) => f.includes("@babylonjs") && !webgl2.has(f));
-    // What registers on load, at the top level of a module: a call such as
-    // `RegisterTools();`, a bare import, a class registered by name, a
-    // prototype assigned to, or a property defined.
-    const REGISTRATIONS = [
-      /^[A-Z][A-Za-z]*\(\);$/m,
-      /^import\s+["'][^"']+["'];$/m,
-      /^RegisterClass\(/m,
-      /^[A-Za-z_$][\w$.]*\.prototype\.[\w$]+\s*=[^=]/m,
-      /^Object\.defineProperty\(/m,
-    ];
-    const registers = (text: string): boolean => REGISTRATIONS.some((pattern) => pattern.test(text));
-    // The shapes a later Babylon might write a registration in, each caught.
-    expect(
-      [
-        "RegisterTools();",
-        'import "./engine.alpha.js";',
-        'RegisterClass("BABYLON.PBRMaterial", PBRMaterial);',
-        "ThinEngine.prototype.createDynamicTexture = function () {};",
-        'Object.defineProperty(BaseTexture.prototype, "sphericalPolynomial", {',
-        "    Engine.prototype.inside = function () {};",
-        'import { Engine } from "./engine.js";',
-      ].map(registers),
-    ).toEqual([true, true, true, true, true, false, false]);
-    const registering = webgpu
-      .filter((f) => registers(readFileSync(f, "utf8")))
-      .map((f) => f.slice(f.indexOf("@babylonjs/core/") + "@babylonjs/core/".length))
-      .sort();
-    expect(registering).toEqual([
-      // A vertex buffer's realignment, which only an engine asking for
-      // 4-byte-aligned strides and offsets (WebGPU's) calls.
-      "Buffers/buffer.align.js",
-      // The WebGPU engine's own extensions: methods on its prototype, which no
-      // WebGL2 engine has.
-      "Engines/WebGPU/Extensions/engine.alpha.js",
-      "Engines/WebGPU/Extensions/engine.computeShader.js",
-      "Engines/WebGPU/Extensions/engine.cubeTexture.js",
-      "Engines/WebGPU/Extensions/engine.debugging.js",
-      "Engines/WebGPU/Extensions/engine.dynamicTexture.js",
-      "Engines/WebGPU/Extensions/engine.multiRender.js",
-      "Engines/WebGPU/Extensions/engine.query.js",
-      "Engines/WebGPU/Extensions/engine.rawTexture.js",
-      "Engines/WebGPU/Extensions/engine.readTexture.js",
-      "Engines/WebGPU/Extensions/engine.renderTarget.js",
-      "Engines/WebGPU/Extensions/engine.renderTargetCube.js",
-      "Engines/WebGPU/Extensions/engine.renderTargetTexture.js",
-      "Engines/WebGPU/Extensions/engine.videoTexture.js",
-      "Engines/WebGPU/Extensions/index.js",
-    ]);
-    // And the game's own WebGPU module takes every Babylon class it names from
-    // the pure form of its module, where there is one (a bare import is a
-    // registration, held by the list above).
-    const own = [...readFileSync(join(SRC, "game/gpuEngine.ts"), "utf8").matchAll(/^import\s+(?!type\s)[^"';]+\s+from\s+["']([^"'?]+)["']/gm)]
-      .map((m) => m[1] as string)
-      .filter((spec) => spec.startsWith("@babylonjs/"));
-    const impure = own.filter((spec) => spec.endsWith(".js") && !spec.endsWith(".pure.js") && existsSync(join(NODE_MODULES, spec.replace(/\.js$/, ".pure.js"))));
-    expect(impure).toEqual([]);
   });
 
   it("keeps the quality modules out of sim/ and net/", () => {
@@ -961,16 +854,8 @@ describe("layer boundaries", () => {
     }
     expect(seen.size).toBeGreaterThan(ENGINE_FREE.length);
     expect(bad).toEqual([]);
-    // And the shells on Babylon.js read them: the sea's numbers, its wind's lag and its edge are made in one place.
-    expect(readFileSync(join(SRC, "game/oceanRender.ts"), "utf8")).toContain("createOceanFrame(seed, tier, made)");
+    // The wind's lag is made in one place.
     expect(readFileSync(join(SRC, "game/windSeaField.ts"), "utf8")).toContain("createSeaWindLag()");
-    expect(readFileSync(join(SRC, "game/oceanWindSource.ts"), "utf8")).toContain("createWindSeaField<BaseTexture>(seed, tier, {");
-    expect(readFileSync(join(SRC, "game/renderer.ts"), "utf8")).toContain("createSeaEdgeStep(seed, ocean.field)");
-    // The FFT's passes, the curl's strips and the spray's bursts likewise.
-    expect(readFileSync(join(SRC, "game/oceanGpuFft.ts"), "utf8")).toContain('from "./oceanFftPasses.js";');
-    expect(readFileSync(join(SRC, "game/oceanLip.ts"), "utf8")).toContain("lipReach(cove, level)");
-    expect(readFileSync(join(SRC, "game/surfSpray.ts"), "utf8")).toContain("createSprayBursts(plugin.bursts)");
-    expect(readFileSync(join(SRC, "game/renderer.ts"), "utf8")).toContain("createSprayThrow(tracker, cove, waterLevel)");
   });
 
   /**
@@ -1004,14 +889,8 @@ describe("layer boundaries", () => {
     }
     expect(seen.size).toBeGreaterThan(ENGINE_FREE.length);
     expect(bad).toEqual([]);
-    // And the shells on Babylon.js read them: the scenes' state is kept in one place, and the car's parts are turned by one rule.
-    expect(readFileSync(join(SRC, "game/renderer.ts"), "utf8")).toContain("const play = createScenePlay({");
     // On Lite the frame's bodies take up who the scene shows in the frame that says so.
     expect(readFileSync(join(SRC, "game/lite/renderer.ts"), "utf8")).toContain("bodies = bodiesInShot(poses, bodies, now, state, localId, alpha, standing?.entities?.models ?? null);");
-    expect(readFileSync(join(SRC, "game/scene/sceneStage.ts"), "utf8")).toContain("wheel.node.rotation.z = wheelSpinTurn(pose);");
-    // The handset's grip and the cord's ends, the cord's tube and the route's world likewise.
-    expect(readFileSync(join(SRC, "game/scene/sceneStage.ts"), "utf8")).toContain("new Vector3(GRIP_OFFSET[0], GRIP_OFFSET[1], GRIP_OFFSET[2])");
-    expect(readFileSync(join(SRC, "game/scene/cordTube.ts"), "utf8")).toContain("radius: CORD_TUBE_RADIUS, tessellation: CORD_TUBE_SIDES");
   });
 
   /**
@@ -1042,7 +921,6 @@ describe("layer boundaries", () => {
     }
     expect(seen.size).toBeGreaterThan(ENGINE_FREE.length);
     expect(bad).toEqual([]);
-    expect(readFileSync(join(SRC, "game/renderer.ts"), "utf8")).toContain("renderScaleRuns(postFeatures.paint, options.gpuTime === true)");
     const lite = readFileSync(join(SRC, "game/lite/renderer.ts"), "utf8");
     expect(lite).toContain("createFrameFit(tier, renderScaleRuns(postFeatures.paint, options.gpuTime === true), {");
     // The surface is sized by the game's rule alone: Lite's own fit to the display's ratio is not called.
@@ -1054,8 +932,6 @@ describe("layer boundaries", () => {
     // What the engine tells on Babylon.js is told from the device's own calls, and timed by Lite's own timers.
     expect(lite).toContain("onShaderCompiled: (fn) => makes.onMade(fn),");
     expect(readFileSync(join(SRC, "game/lite/gpuTimeReadout.ts"), "utf8")).toContain("taskTimeReport({");
-    // The renderer on Babylon.js is watched by whoever made its engine.
-    expect(readFileSync(join(SRC, "game/renderer.ts"), "utf8")).toContain("ownWatch: null,");
   });
 
   /**
@@ -1167,15 +1043,10 @@ describe("layer boundaries", () => {
     );
     expect(defined).toEqual(["game/rendererTypes.ts", "game/rendererTypes.ts", "game/rendererTypes.ts", "game/rendererTypes.ts"]);
     // Who holds a renderer takes the types from there.
-    for (const holder of ["app.ts", "game/hikeRenderer.ts", "game/rendererSwap.ts", "game/scene/sceneStage.ts", "game/lite/renderer.ts", "game/lite/notDrawn.ts", "game/lite/probeScene.ts", "game/lite/sceneRoute.ts", "game/lite/sceneStage.ts", "game/lite/sceneryMeshes.ts"]) {
+    for (const holder of ["app.ts", "game/hikeRenderer.ts", "game/rendererSwap.ts", "game/lite/renderer.ts", "game/lite/notDrawn.ts", "game/lite/probeScene.ts", "game/lite/sceneRoute.ts", "game/lite/sceneStage.ts", "game/lite/sceneryMeshes.ts"]) {
       const specs = importsOf(join(SRC, holder));
       expect(specs.some((spec) => spec.endsWith("/rendererTypes.js")), holder).toBe(true);
     }
-    // The renderer on Babylon.js takes them from there and names them on for what builds on it; it loads no renderer but itself.
-    const babylon = readFileSync(join(SRC, "game/renderer.ts"), "utf8");
-    expect(babylon).toContain('import type { FrameView, FreecamView, Renderer, RendererOptions } from "./rendererTypes.js";');
-    expect(babylon).toContain("export type { FrameView, FreecamView, Renderer, RendererOptions };");
-    expect(importsOf(join(SRC, "game/renderer.ts"))).not.toContain("./lite/renderer.js");
   });
 
   /**
@@ -1222,12 +1093,9 @@ describe("layer boundaries", () => {
       return { seen: from.size, babylon, lite: [...new Set(lite)] };
     };
     const hike = reach(join(SRC, "app.ts"));
-    // Guards against the guard: the walk goes through the whole hike, finds the engine it does load, and finds
-    // Babylon.js where it is loaded (the renderer on Babylon.js, which no hike reaches).
+    // Guards against the guard: the walk goes through the whole hike and finds the engine it does load.
     expect(hike.seen).toBeGreaterThan(300);
     expect(hike.lite).toContain("game/lite/renderer.ts");
-    expect(reach(join(SRC, "game/renderer.ts")).babylon.length).toBeGreaterThan(50);
-    expect(reach(join(SRC, "game/webgl2Shaders.ts")).babylon.length).toBeGreaterThan(10);
     expect(hike.babylon).toEqual([]);
     // What the hike is told by is taken where it is computed, and its scenery is asked of its renderer alone.
     const app = importsOf(join(SRC, "app.ts"));
@@ -1474,5 +1342,242 @@ describe("wall-clock tests", () => {
     expect(named).toEqual(holding);
     expect(script).toMatch(/--maxWorkers=1\b/);
     expect(script).toMatch(/--tags-filter=wall-clock\b/);
+  });
+});
+
+/**
+ * What these rules hold of the renderer on Babylon.js itself: where its
+ * shells read what is computed with no engine, what its engines load, and
+ * that its modules stand. Each reads its file inside the test. It goes,
+ * whole, with that renderer.
+ */
+describe("the renderer on Babylon.js: where it reads the game's own arithmetic, and what its engines load", () => {
+  it("keeps the scene player pure of Babylon but its stage, and out of the sim's writes", () => {
+    const dir = join(SRC, "game/scene");
+    const route = readFileSync(join(dir, "sceneRoute.ts"), "utf8");
+    expect(route).toContain("= routeWorld(name);");
+    expect(route).toContain("renderer.sync(world.state, -1, 0)");
+    expect(route).not.toMatch(/world\.(step|apply|input)/);
+  });
+
+  it("loads no Babylon.js with the page: nothing main.ts imports for itself reaches it, by an import or a dynamic one", () => {
+    // The modules stand, with their tests, until the renderer on Babylon.js goes.
+    for (const gone of ["renderer", "keptEngine", "engineVersion", "engineLog", "engineFailure", "gpuEngine"]) {
+      expect(existsSync(join(SRC, "game", `${gone}.ts`)), gone).toBe(true);
+    }
+  });
+
+  it("bounds the cover over every switch by what its caller passes: no path picks its own bound", () => {
+    // The renderer's wait is its scene's and its forest's layers', bounded by what it is passed alone.
+    expect(stripComments(readFileSync(join(SRC, "game/renderer.ts"), "utf8"))).toContain(
+      "    whenReady(maxMs) {\n      return whenSceneReady(scene, maxMs, renderer.forestReady);\n    },",
+    );
+  });
+
+  it("what the sea is drawn with is computed without loading Babylon, whatever it imports", () => {
+    // And the shells on Babylon.js read them: the sea's numbers, its wind's lag and its edge are made in one place.
+    expect(readFileSync(join(SRC, "game/oceanRender.ts"), "utf8")).toContain("createOceanFrame(seed, tier, made)");
+    expect(readFileSync(join(SRC, "game/oceanWindSource.ts"), "utf8")).toContain("createWindSeaField<BaseTexture>(seed, tier, {");
+    expect(readFileSync(join(SRC, "game/renderer.ts"), "utf8")).toContain("createSeaEdgeStep(seed, ocean.field)");
+    // The FFT's passes, the curl's strips and the spray's bursts likewise.
+    expect(readFileSync(join(SRC, "game/oceanGpuFft.ts"), "utf8")).toContain('from "./oceanFftPasses.js";');
+    expect(readFileSync(join(SRC, "game/oceanLip.ts"), "utf8")).toContain("lipReach(cove, level)");
+    expect(readFileSync(join(SRC, "game/surfSpray.ts"), "utf8")).toContain("createSprayBursts(plugin.bursts)");
+    expect(readFileSync(join(SRC, "game/renderer.ts"), "utf8")).toContain("createSprayThrow(tracker, cove, waterLevel)");
+  });
+
+  it("what the scenes and the endings are played with is computed without loading Babylon, whatever it imports", () => {
+    // And the shells on Babylon.js read them: the scenes' state is kept in one place, and the car's parts are turned by one rule.
+    expect(readFileSync(join(SRC, "game/renderer.ts"), "utf8")).toContain("const play = createScenePlay({");
+    expect(readFileSync(join(SRC, "game/scene/sceneStage.ts"), "utf8")).toContain("wheel.node.rotation.z = wheelSpinTurn(pose);");
+    // The handset's grip and the cord's ends, the cord's tube and the route's world likewise.
+    expect(readFileSync(join(SRC, "game/scene/sceneStage.ts"), "utf8")).toContain("new Vector3(GRIP_OFFSET[0], GRIP_OFFSET[1], GRIP_OFFSET[2])");
+    expect(readFileSync(join(SRC, "game/scene/cordTube.ts"), "utf8")).toContain("radius: CORD_TUBE_RADIUS, tessellation: CORD_TUBE_SIDES");
+  });
+
+  it("what a renderer is sized and started by is computed without loading Babylon, whatever it imports", () => {
+    expect(readFileSync(join(SRC, "game/renderer.ts"), "utf8")).toContain("renderScaleRuns(postFeatures.paint, options.gpuTime === true)");
+    // The renderer on Babylon.js is watched by whoever made its engine.
+    expect(readFileSync(join(SRC, "game/renderer.ts"), "utf8")).toContain("ownWatch: null,");
+  });
+
+  it("holds a renderer by types that load nothing: the hike's, the swap's, the staged scenes' and both renderers' name them in one module", () => {
+    // Who holds a renderer takes the types from there: the staged scenes' stage on Babylon.js.
+    for (const holder of ["game/scene/sceneStage.ts"]) {
+      const specs = importsOf(join(SRC, holder));
+      expect(specs.some((spec) => spec.endsWith("/rendererTypes.js")), holder).toBe(true);
+    }
+    // The renderer on Babylon.js takes them from there and names them on for what builds on it; it loads no renderer but itself.
+    const babylon = readFileSync(join(SRC, "game/renderer.ts"), "utf8");
+    expect(babylon).toContain('import type { FrameView, FreecamView, Renderer, RendererOptions } from "./rendererTypes.js";');
+    expect(babylon).toContain("export type { FrameView, FreecamView, Renderer, RendererOptions };");
+    expect(importsOf(join(SRC, "game/renderer.ts"))).not.toContain("./lite/renderer.js");
+  });
+
+  it("loads no Babylon.js under a hike: nothing app.ts imports, by an import or a dynamic one, reaches a module that loads it", () => {
+    const loads = (file: string): string[] => {
+      const text = readFileSync(file, "utf8");
+      const imported = [...text.matchAll(/^\s*(?:import|export)\s+(?!type\s)(?:[^"'();]*?\s+from\s+)?["']([^"']+)["']/gm)].map((m) => m[1] as string);
+      const asked = [...stripComments(text).matchAll(/\bimport\(\s*["']([^"']+)["']\s*\)/g)].map((m) => m[1] as string);
+      return [...imported, ...asked];
+    };
+    /** Every module `entry` loads, with the Babylon.js each loads (and the chain it is reached by) and the modules that load Babylon Lite. */
+    const reach = (entry: string): { seen: number; babylon: string[]; lite: string[] } => {
+      const from = new Map<string, string | null>([[entry, null]]);
+      const queue = [entry];
+      const babylon: string[] = [];
+      const lite: string[] = [];
+      for (let at = 0; at < queue.length; at++) {
+        const file = queue[at] as string;
+        if (!existsSync(file)) continue;
+        for (const spec of loads(file)) {
+          if (spec === "@babylonjs/lite") lite.push(relative(SRC, file));
+          else if (spec.startsWith("@babylonjs")) {
+            const chain: string[] = [];
+            for (let f: string | null = file; f !== null; f = from.get(f) ?? null) chain.unshift(relative(SRC, f));
+            babylon.push(`${chain.join(" > ")} loads ${spec}`);
+          }
+          if (!spec.startsWith(".") || !spec.endsWith(".js")) continue;
+          const next = join(file, "..", spec.replace(/\.js$/, ".ts"));
+          if (!from.has(next)) {
+            from.set(next, file);
+            queue.push(next);
+          }
+        }
+      }
+      return { seen: from.size, babylon, lite: [...new Set(lite)] };
+    };
+    // Guards against the guard: the walk finds Babylon.js where it is loaded (the renderer on Babylon.js, which no hike reaches).
+    expect(reach(join(SRC, "game/renderer.ts")).babylon.length).toBeGreaterThan(50);
+    expect(reach(join(SRC, "game/webgl2Shaders.ts")).babylon.length).toBeGreaterThan(10);
+  });
+
+  it("loads the WebGPU engine's extensions with the engine, and only there", () => {
+    // The dynamic texture the fingerposts paint, the compute and multi-render
+    // paths: the WebGPU engine's own versions, which no WebGL2 import reaches.
+    // In `gpuEngine.ts`, so the dynamic chunk carries them; the static-graph
+    // test above keeps them out of the page's first load.
+    expect(readFileSync(join(SRC, "game/gpuEngine.ts"), "utf8")).toContain(
+      'import "@babylonjs/core/Engines/WebGPU/Extensions/index.js";',
+    );
+  });
+
+  it("never turns WebGPU's uniformity analysis off for every shader", () => {
+    // The terrain's material turns it off for itself (`TERRAIN_UNIFORMITY_OFF`); replacing
+    // the engine's stage-descriptor method would hide every other shader's
+    // uniformity fault too. The shader lookup calls it, with WGSL already
+    // translated (each stage's switch read as Babylon reads it), and nothing
+    // replaces it.
+    const found = sourceFiles(SRC).filter((f) => readFileSync(f, "utf8").includes("_createPipelineStageDescriptor"));
+    expect(found.map((f) => relative(SRC, f))).toEqual(["game/shaderLookup.ts"]);
+    const lookup = readFileSync(join(SRC, "game/shaderLookup.ts"), "utf8");
+    expect(lookup).not.toMatch(/_createPipelineStageDescriptor\s*=[^=]/);
+    expect([...lookup.matchAll(/own\._createPipelineStageDescriptor\(([^)]*)\)/g)].map((m) => m[1])).toEqual([
+      "vertexStage.wgsl, fragmentStage.wgsl, WGSL, false, false",
+    ]);
+  });
+
+  it("keeps `forgetTranslators` for tests: nothing in src/ but its definition names it", () => {
+    // A page keeps its started translators for its life (`loadTranslators`);
+    // dropping them is only for tests, which start them afresh each time.
+    const named = sourceFiles(SRC).flatMap((file) =>
+      [...stripComments(readFileSync(file, "utf8")).matchAll(/\bforgetTranslators\b/g)].map(() => relative(SRC, file)),
+    );
+    expect(named).toEqual(["game/gpuEngine.ts"]);
+    expect(readFileSync(join(SRC, "game/gpuEngine.ts"), "utf8")).toContain("export function forgetTranslators(): void {");
+  });
+
+  it("loads nothing with the WebGPU engine that registers what the WebGL2 path does not, but the engine's own", () => {
+    // A module that registers something on load (a getter on a texture, a
+    // fallback image, an audio engine) changes what every engine of the page
+    // does once the WebGPU chunk has loaded. The spherical harmonics registered
+    // by the non-pure PBR module lit WebGPU's frame 1.23 times brighter.
+    const NODE_MODULES = fileURLToPath(new URL("../../node_modules", import.meta.url));
+    const runtimeImports = (file: string): string[] =>
+      [...readFileSync(file, "utf8").matchAll(/^\s*(?:import|export)\s+(?!type\s)(?:[^"'();]*?\s+from\s+)?["']([^"'?]+)["']/gm)].map((m) => m[1] as string);
+    const resolveIn = (from: string, spec: string): string | null => {
+      // Babylon Lite is a library of its own, imported whole by its package's name: it holds no
+      // module of Babylon.js and registers nothing on Babylon.js's classes.
+      if (spec === "@babylonjs/lite") return null;
+      if (spec.startsWith("@babylonjs/")) return join(NODE_MODULES, spec);
+      if (!spec.startsWith(".")) return null;
+      const path = join(from, "..", spec);
+      return from.includes("node_modules") ? path : path.replace(/\.js$/, ".ts");
+    };
+    const graph = (entry: string): Set<string> => {
+      const seen = new Set<string>();
+      const stack = [entry];
+      while (stack.length > 0) {
+        const file = stack.pop() as string;
+        if (seen.has(file) || !existsSync(file)) continue;
+        seen.add(file);
+        for (const spec of runtimeImports(file)) {
+          const next = resolveIn(file, spec);
+          if (next !== null) stack.push(next);
+        }
+      }
+      return seen;
+    };
+    // The page loads no module of Babylon.js any more, with the hike under it or without: the WebGL2 path
+    // is what the renderer on Babylon.js loads, and the two engines now meet only where that renderer is built.
+    expect([...graph(join(SRC, "main.ts"))].filter((f) => f.includes("@babylonjs"))).toEqual([]);
+    const webgl2 = graph(join(SRC, "game/renderer.ts"));
+    const webgpu = [...graph(join(SRC, "game/gpuEngine.ts"))].filter((f) => f.includes("@babylonjs") && !webgl2.has(f));
+    // What registers on load, at the top level of a module: a call such as
+    // `RegisterTools();`, a bare import, a class registered by name, a
+    // prototype assigned to, or a property defined.
+    const REGISTRATIONS = [
+      /^[A-Z][A-Za-z]*\(\);$/m,
+      /^import\s+["'][^"']+["'];$/m,
+      /^RegisterClass\(/m,
+      /^[A-Za-z_$][\w$.]*\.prototype\.[\w$]+\s*=[^=]/m,
+      /^Object\.defineProperty\(/m,
+    ];
+    const registers = (text: string): boolean => REGISTRATIONS.some((pattern) => pattern.test(text));
+    // The shapes a later Babylon might write a registration in, each caught.
+    expect(
+      [
+        "RegisterTools();",
+        'import "./engine.alpha.js";',
+        'RegisterClass("BABYLON.PBRMaterial", PBRMaterial);',
+        "ThinEngine.prototype.createDynamicTexture = function () {};",
+        'Object.defineProperty(BaseTexture.prototype, "sphericalPolynomial", {',
+        "    Engine.prototype.inside = function () {};",
+        'import { Engine } from "./engine.js";',
+      ].map(registers),
+    ).toEqual([true, true, true, true, true, false, false]);
+    const registering = webgpu
+      .filter((f) => registers(readFileSync(f, "utf8")))
+      .map((f) => f.slice(f.indexOf("@babylonjs/core/") + "@babylonjs/core/".length))
+      .sort();
+    expect(registering).toEqual([
+      // A vertex buffer's realignment, which only an engine asking for
+      // 4-byte-aligned strides and offsets (WebGPU's) calls.
+      "Buffers/buffer.align.js",
+      // The WebGPU engine's own extensions: methods on its prototype, which no
+      // WebGL2 engine has.
+      "Engines/WebGPU/Extensions/engine.alpha.js",
+      "Engines/WebGPU/Extensions/engine.computeShader.js",
+      "Engines/WebGPU/Extensions/engine.cubeTexture.js",
+      "Engines/WebGPU/Extensions/engine.debugging.js",
+      "Engines/WebGPU/Extensions/engine.dynamicTexture.js",
+      "Engines/WebGPU/Extensions/engine.multiRender.js",
+      "Engines/WebGPU/Extensions/engine.query.js",
+      "Engines/WebGPU/Extensions/engine.rawTexture.js",
+      "Engines/WebGPU/Extensions/engine.readTexture.js",
+      "Engines/WebGPU/Extensions/engine.renderTarget.js",
+      "Engines/WebGPU/Extensions/engine.renderTargetCube.js",
+      "Engines/WebGPU/Extensions/engine.renderTargetTexture.js",
+      "Engines/WebGPU/Extensions/engine.videoTexture.js",
+      "Engines/WebGPU/Extensions/index.js",
+    ]);
+    // And the game's own WebGPU module takes every Babylon class it names from
+    // the pure form of its module, where there is one (a bare import is a
+    // registration, held by the list above).
+    const own = [...readFileSync(join(SRC, "game/gpuEngine.ts"), "utf8").matchAll(/^import\s+(?!type\s)[^"';]+\s+from\s+["']([^"'?]+)["']/gm)]
+      .map((m) => m[1] as string)
+      .filter((spec) => spec.startsWith("@babylonjs/"));
+    const impure = own.filter((spec) => spec.endsWith(".js") && !spec.endsWith(".pure.js") && existsSync(join(NODE_MODULES, spec.replace(/\.js$/, ".pure.js"))));
+    expect(impure).toEqual([]);
   });
 });

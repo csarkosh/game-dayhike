@@ -315,7 +315,7 @@ describe("the end scene", () => {
   });
 });
 
-describe("the two renderers", () => {
+describe("the renderer on Babylon.js: the two renderers", () => {
   it("both step the one play and set its camera, its lens and its body", () => {
     const babylon = readFileSync(new URL("../../src/game/renderer.ts", import.meta.url), "utf8");
     for (const piece of [

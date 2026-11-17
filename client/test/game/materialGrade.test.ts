@@ -79,12 +79,6 @@ describe("the grade on the material colour path", () => {
     const chased = curveSettingsUnder(weather, 1);
     expect(chased.shadows.hue).toBeCloseTo(CHASE_SHADOW_HUE, 12);
     expect(chased.shadows.density).toBe(g.shadowsDensity + CHASE_SHADOW_DENSITY);
-    // The shell on Babylon.js writes these settings onto its own curves.
-    const post = src("post.ts");
-    expect(post).toContain("const set = curveSettingsUnder(weather, record.chase);");
-    for (const line of ["curves.globalSaturation = set.globalSaturation;", "curves.shadowsHue = set.shadows.hue;", "curves.shadowsDensity = set.shadows.density;", "curves.highlightsSaturation = set.highlights.saturation;"]) {
-      expect(post, line).toContain(line);
-    }
   });
 
   it("shapes the vignette and the dither as Babylon.js's image processing binds them", () => {
@@ -114,5 +108,16 @@ describe("the grade on the material colour path", () => {
     expect(u.gradeVignette2[3]).toBe(-4);
     expect(u.gradeScreen.slice(0, 2)).toEqual([1 / 1280, 1 / 720]);
     expect(src("materialGrade.ts")).not.toMatch(/@babylonjs/);
+  });
+});
+
+describe("the renderer on Babylon.js: the grade's curves", () => {
+  it("sets the curves by the weather's grade, and turns the shadows toward burgundy and deepens them by the chase's cast", () => {
+    // The shell on Babylon.js writes these settings onto its own curves.
+    const post = src("post.ts");
+    expect(post).toContain("const set = curveSettingsUnder(weather, record.chase);");
+    for (const line of ["curves.globalSaturation = set.globalSaturation;", "curves.shadowsHue = set.shadows.hue;", "curves.shadowsDensity = set.shadows.density;", "curves.highlightsSaturation = set.highlights.saturation;"]) {
+      expect(post, line).toContain(line);
+    }
   });
 });

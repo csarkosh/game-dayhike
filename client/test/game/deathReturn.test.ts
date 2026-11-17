@@ -45,20 +45,15 @@ describe("a screen's death and return", () => {
 });
 
 describe("the renderer, for a return", () => {
-  const renderer = readFileSync(new URL("../../src/game/renderer.ts", import.meta.url), "utf8");
   // The scenes' and the endings' state from frame to frame, which the renderer steps (`scenePlay.ts`).
   const play = readFileSync(new URL("../../src/game/scenePlay.ts", import.meta.url), "utf8");
 
   it("begins a scene part-way: the threshold alone, from its seventeenth second", () => {
-    expect(renderer).toContain("setScene(kind, at, more, fromS = 0) {");
-    expect(renderer).toContain("play.setScene(kind, at, more, fromS, clock() / 1000);");
     expect(play).toContain("summitScene = { kind, since: seconds - fromS, base: null,");
   });
 
   it("undoes a death's ending, so a scene's camera runs again, and leaves the won scene alone", () => {
-    expect(renderer).toContain("clearEnding(liftS = 0) {");
     // The dark and the blur go over the seconds given, from what they were (ending.ts `liftShare`), not in one frame.
-    expect(renderer).toContain("play.clearEnding(liftS, clock() / 1000);");
     expect(play).toMatch(/const share = liftShare\(seconds - lift\.since, lift\.forS\);\s*endClose = lift\.close \* share;\s*endBlur = lift\.blur \* share;/);
   });
 });
@@ -88,5 +83,20 @@ describe("the hike's page, for a return", () => {
   it("gives the voice the cause on the frame of the return, and reports the death's real cause", () => {
     expect(app).toContain("returned: returnedNow,");
     expect(app).not.toContain('cause: "hollow",');
+  });
+});
+
+describe("the renderer on Babylon.js: for a return", () => {
+  it("begins a scene part-way: the threshold alone, from its seventeenth second", () => {
+    const renderer = readFileSync(new URL("../../src/game/renderer.ts", import.meta.url), "utf8");
+    expect(renderer).toContain("setScene(kind, at, more, fromS = 0) {");
+    expect(renderer).toContain("play.setScene(kind, at, more, fromS, clock() / 1000);");
+  });
+
+  it("undoes a death's ending, so a scene's camera runs again, and leaves the won scene alone", () => {
+    const renderer = readFileSync(new URL("../../src/game/renderer.ts", import.meta.url), "utf8");
+    expect(renderer).toContain("clearEnding(liftS = 0) {");
+    // The dark and the blur go over the seconds given, from what they were (ending.ts `liftShare`), not in one frame.
+    expect(renderer).toContain("play.clearEnding(liftS, clock() / 1000);");
   });
 });
