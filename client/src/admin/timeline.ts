@@ -122,7 +122,7 @@ export const isTrace = (n: string): boolean => TRACE.has(n);
 
 /** The envelope's keys, which every row carries and the default text leaves out. */
 const ENVELOPE = new Set([
-  "at", "dh", "message", "sbuild", "svc", "sid", "vid", "build", "proto", "gen", "desktop", "shell", "os", "browser", "touch", "gpu", "adapter", "cores", "mem", "mobile", "t", "severity",
+  "at", "dh", "message", "sbuild", "svc", "sid", "vid", "build", "lite", "proto", "gen", "desktop", "shell", "os", "browser", "touch", "gpu", "adapter", "cores", "mem", "mobile", "t", "severity",
   "world", "seed", "game", "lobby", "n", "ref", "path", "lang", "tz", "vw", "vh", "ua", "wd", "tester", "timestamp", "room", "stack",
 ]);
 

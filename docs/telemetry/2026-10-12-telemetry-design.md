@@ -80,6 +80,7 @@ Every row carries the envelope the page sent:
 | `sid` | The session: one a page load. |
 | `vid` | The visitor: one a browser, kept in localStorage, so a returning player counts once. Empty where storage refuses. |
 | `build` | The client's git short sha, `-dirty` where the tree was, baked in by the deploy's build (`VITE_BUILD_SHA`); `dev` in development. |
+| `lite` | The version of Babylon Lite the hike is drawn with, as the client's package pins it: the tag of its repository, which names its patches (`v1.39.3-dayhike.7`), read from `client/package.json` as the page is built (`tools/vite/liteVersion.mjs`). The installed package's own version says only the release the tag stands on. |
 | `proto`, `gen` | `PROTOCOL_VERSION` and `GEN_VERSION`, the two constants that decide whether two pages can play together. |
 | `desktop`, `shell`, `os`, `browser`, `touch` | The platform, from `game/platform.ts`. |
 | `ref` | The referrer's origin and path, 200 characters at most; "" for none (`referrerOf`). |

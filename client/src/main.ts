@@ -157,8 +157,9 @@ const latestReady: Promise<void> = latestUrl
 
 // ---- telemetry -----------------------------------------------------------------
 // What this page tells of itself (net/telemetry.ts): a session id for the
-// visit, a visitor id for the browser, the build and the versions that decide
-// whether two pages can play together, the platform, and the page's own facts
+// visit, a visitor id for the browser, the build, the version of the library
+// its hikes are drawn with and the versions that decide whether two pages
+// can play together, the platform, and the page's own facts
 // (where it came from, which path, the language, the zone, the viewport, the
 // user agent, whether a robot drives it, whether a tester's browser). Made
 // before anything else runs, so the start's own failures are heard; off
@@ -170,6 +171,8 @@ const telemetry: Telemetry = createTelemetry(
     sid: createLobbyId(),
     vid: visitorId(pageStorage(), createLobbyId) ?? "",
     build: import.meta.env.VITE_BUILD_SHA || "dev",
+    // The tag of Babylon Lite the build pins, which the hike is drawn with.
+    lite: __LITE_VERSION__,
     proto: PROTOCOL_VERSION,
     gen: GEN_VERSION,
     desktop,
