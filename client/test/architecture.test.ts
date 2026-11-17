@@ -1060,6 +1060,65 @@ describe("layer boundaries", () => {
   });
 
   /**
+   * A hike loads no Babylon.js: not `app.ts` by an import of its own (the
+   * test above) and not anything it imports, by an import or by a dynamic
+   * one, however deep. What it loads of an engine is Babylon Lite, through
+   * the renderer it is handed (`hikeRenderer.ts`). So what it is told by
+   * comes from the modules that compute it with no engine (`skyWait.ts`,
+   * `droppedCap.ts`, `loadReport.ts`), never from the shell on Babylon.js
+   * that names them on, and the scenery it places once is asked of its
+   * renderer (`hikeScenery.ts`), which builds into no Babylon scene.
+   */
+  it("loads no Babylon.js under a hike: nothing app.ts imports, by an import or a dynamic one, reaches a module that loads it", () => {
+    const loads = (file: string): string[] => {
+      const text = readFileSync(file, "utf8");
+      const imported = [...text.matchAll(/^\s*(?:import|export)\s+(?!type\s)(?:[^"'();]*?\s+from\s+)?["']([^"']+)["']/gm)].map((m) => m[1] as string);
+      const asked = [...stripComments(text).matchAll(/\bimport\(\s*["']([^"']+)["']\s*\)/g)].map((m) => m[1] as string);
+      return [...imported, ...asked];
+    };
+    /** Every module `entry` loads, with the Babylon.js each loads (and the chain it is reached by) and the modules that load Babylon Lite. */
+    const reach = (entry: string): { seen: number; babylon: string[]; lite: string[] } => {
+      const from = new Map<string, string | null>([[entry, null]]);
+      const queue = [entry];
+      const babylon: string[] = [];
+      const lite: string[] = [];
+      for (let at = 0; at < queue.length; at++) {
+        const file = queue[at] as string;
+        if (!existsSync(file)) continue;
+        for (const spec of loads(file)) {
+          if (spec === "@babylonjs/lite") lite.push(relative(SRC, file));
+          else if (spec.startsWith("@babylonjs")) {
+            const chain: string[] = [];
+            for (let f: string | null = file; f !== null; f = from.get(f) ?? null) chain.unshift(relative(SRC, f));
+            babylon.push(`${chain.join(" > ")} loads ${spec}`);
+          }
+          if (!spec.startsWith(".") || !spec.endsWith(".js")) continue;
+          const next = join(file, "..", spec.replace(/\.js$/, ".ts"));
+          if (!from.has(next)) {
+            from.set(next, file);
+            queue.push(next);
+          }
+        }
+      }
+      return { seen: from.size, babylon, lite: [...new Set(lite)] };
+    };
+    const hike = reach(join(SRC, "app.ts"));
+    // Guards against the guard: the walk goes through the whole hike, finds the engine it does load, and finds
+    // Babylon.js where it is loaded (the renderer on Babylon.js, which no hike reaches).
+    expect(hike.seen).toBeGreaterThan(300);
+    expect(hike.lite).toContain("game/lite/renderer.ts");
+    expect(reach(join(SRC, "game/renderer.ts")).babylon.length).toBeGreaterThan(50);
+    expect(reach(join(SRC, "game/webgl2Shaders.ts")).babylon.length).toBeGreaterThan(10);
+    expect(hike.babylon).toEqual([]);
+    // What the hike is told by is taken where it is computed, and its scenery is asked of its renderer alone.
+    const app = importsOf(join(SRC, "app.ts"));
+    for (const home of ["./game/skyWait.js", "./game/droppedCap.js", "./game/loadReport.js", "./game/hikeRenderer.js", "./game/hikeScenery.js"]) expect(app, home).toContain(home);
+    for (const shell of ["./game/renderer.js", "./game/lighting.js", "./game/droppedItem.js", "./game/modelLoad.js", "./game/atmosphere.js", "./game/webgl2Shaders.js"]) expect(app, shell).not.toContain(shell);
+    expect(loads(join(SRC, "game/hikeScenery.ts")).filter((spec) => spec.startsWith("./"))).toEqual(["./boardImages.js", "./boardDraw.js", "./posterPanel.js", "./lite/sceneryMeshes.js"]);
+    expect(importsOf(join(SRC, "game/clutterField.ts"))).not.toContain("./distanceFadePlugin.js");
+  });
+
+  /**
    * Babylon Lite names what a pass of the hike's own is drawn with
    * (`getGpuDevice`, `getFrameEncoder`, `getRenderTargetAttachments`,
    * `createCustomTask`), so nothing under `game/lite/` reaches into an

@@ -14,14 +14,13 @@ import { createHud } from "./game/hud.js";
 import { LOADING_LINE } from "./game/frameProbe.js";
 import { holdReveal, whenFrameWhole } from "./game/revealHold.js";
 import { RING_COUNT } from "./game/clipmap.js";
-import { reportCompile, reportProgress } from "./game/modelLoad.js";
+import { reportCompile, reportProgress } from "./game/loadReport.js";
 import {
   endSceneRunner,
   END_FADE_AT_S, END_LANDING_AT_S, END_ROAD_AT_S, ESCAPE_FROM_M, ESCAPE_SETTLE_S, ESCAPE_WAIT_S, MASTER_FADE_S, PULL_AWAY_AT_S, RUN_MAX_S, TITLE_AT_S, WORLD_FADE_S, carHeard,
   endMistShare,
 } from "./game/endScene.js";
 import { READY_MAX_MS, startReady } from "./game/startReady.js";
-import { loadWebGl2Shaders, pageIdle, prefetchWebGl2Shaders } from "./game/webgl2Shaders.js";
 import { ENGAGE_MAX_MS, whenEngaged } from "./game/engageWait.js";
 import { createNetgraph, RateCounter } from "./game/netgraph.js";
 import { navigateToLanding } from "./game/router.js";
@@ -43,7 +42,7 @@ import {
   type ScriptEntry,
 } from "./game/script.js";
 import { aimAt, stepFreecam, type FreecamState } from "./game/freecam.js";
-import { DEFAULT_HOUR, sunAltitudeDeg } from "./game/lighting.js";
+import { DEFAULT_HOUR, sunAltitudeDeg } from "./game/skyWait.js";
 import { startSkySource } from "./game/skyWorker.js";
 import { worldInputs } from "./game/worldInputs.js";
 import { createAmbientAudio } from "./game/ambientAudio.js";
@@ -105,7 +104,6 @@ import {
   type SwapBindings,
 } from "./game/rendererSwap.js";
 import type { KeptEngine } from "./game/keptEngine.js";
-import { releaseAtmosphere } from "./game/atmosphere.js";
 import { answerFailures, coverWith, createSerial } from "./game/engineFailure.js";
 import { createGpuFaults } from "./game/gpuFaults.js";
 import { LOSS_ENDED_LINE, type LossNote } from "./game/lossBound.js";
@@ -123,7 +121,7 @@ import { isHollowState, playerSees } from "./sim/hollow.js";
 import { trailDistance } from "./sim/trail.js";
 import { AiState } from "./sim/types.js";
 import { stepInnerVoice, voiceRest, VOICE_LINE_MS, type VoiceState, type VoiceScene } from "./game/innerVoice.js";
-import { CAP_NEAR_M, droppedCapAt, type DroppedCap } from "./game/droppedItem.js";
+import { CAP_NEAR_M, droppedCapAt, type DroppedCap } from "./game/droppedCap.js";
 import { createVoiceClips } from "./game/voiceClips.js";
 import { CAP_SCENE_S, SHOTS, SUMMIT_SCENE_S, THRESHOLD_AT_S, thresholdAt } from "./game/cutscene.js";
 import { DIED_CLOSE_FROM_S } from "./game/ending.js";
@@ -2490,16 +2488,6 @@ function buildGame(
       firstBuilds: firstBuilds === undefined ? null : () => built.firstSynced.then(() => firstBuilds.drained()),
     }),
   );
-  // On a WebGPU engine, the GLSL shaders the WebGL2 renderer loads lazily are
-  // fetched ahead once the world is in, at idle, so a rebuild on WebGL2 after
-  // a failure of the engine (`answerFailure`) needs no network
-  // (`webgl2Shaders.ts`: on 2026-10-19 the network was down when one ran).
-  /** Stops the fetch ahead where the hike ends first. */
-  let stopPrefetch = (): void => undefined;
-  void ready.then(() => {
-    if (disposed || broken || renderer.engineName !== "webgpu") return;
-    stopPrefetch = prefetchWebGl2Shaders({ idle: pageIdle, load: () => loadWebGl2Shaders(), log: (line) => console.info(line) });
-  });
   // A look named in the URL (`?cmd=seed hollow;time 22;escape`) is called once the world is in,
   // so a link opens on its scene; on a client it says whose it is to call, as the typed one does.
   void ready.then(() => {
@@ -2662,9 +2650,9 @@ function buildGame(
         );
       } catch (error) {
         broken = true;
-        // Each failed rung has taken itself down; this is for a throw from the
-        // old renderer's own dispose, which would leave its registration behind.
-        releaseAtmosphere();
+        // Each failed rung has taken itself down, and the hike's renderer
+        // registers nothing outside itself: a throw from the old one's own
+        // dispose leaves nothing to take back.
         console.error("quality: the renderer could not be rebuilt at any tier.", error);
         swapError = "The graphics could not be restarted; returning to the title screen.";
         options.onTierFallback({ attempted: target, built: null, source });
@@ -2905,7 +2893,6 @@ function buildGame(
       netgraph.dispose();
       if (landingTimer !== null) clearTimeout(landingTimer);
       endRevealHold();
-      stopPrefetch();
       // Before anything of the engine goes: a disposed engine is not a
       // failing one.
       engineBindings.unwatch();
