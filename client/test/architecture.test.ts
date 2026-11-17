@@ -900,10 +900,11 @@ describe("layer boundaries", () => {
    * keeps on an engine it made for itself, the count of what a device is
    * asked to make of shaders, and the measurement mode's report. Both
    * renderers read the rule that says where the render scale runs, and both
-   * answer the one type a renderer is held by (`rendererTypes.ts`).
+   * answer the one type a renderer is held by (`rendererTypes.ts`). The
+   * hike's renderer's wait for its world is of the same kind (`worldWait.ts`).
    */
   it("what a renderer is sized and started by is computed without loading Babylon, whatever it imports", () => {
-    const ENGINE_FREE = ["frameSize.ts", "renderScale.ts", "quality.ts", "engineWatch.ts", "deviceMakes.ts", "gpuTimeTasks.ts", "gpuTimeReport.ts", "gpuFaults.ts", "deviceHeld.ts", "lossBound.ts", "rendererTypes.ts"];
+    const ENGINE_FREE = ["frameSize.ts", "renderScale.ts", "quality.ts", "engineWatch.ts", "deviceMakes.ts", "gpuTimeTasks.ts", "gpuTimeReport.ts", "gpuFaults.ts", "deviceHeld.ts", "lossBound.ts", "rendererTypes.ts", "worldWait.ts"];
     const loaded = (file: string): string[] =>
       [...readFileSync(file, "utf8").matchAll(/^\s*(?:import|export)\s+(?!type\s)(?:[^"'();]*?\s+from\s+)?["']([^"']+)["']/gm)].map((m) => m[1] as string);
     const seen = new Set<string>();
@@ -931,6 +932,9 @@ describe("layer boundaries", () => {
     expect(lite).not.toContain("enableDeviceLostSceneRecovery");
     // What the engine tells on Babylon.js is told from the device's own calls, and timed by Lite's own timers.
     expect(lite).toContain("onShaderCompiled: (fn) => makes.onMade(fn),");
+    // Its world is waited for by the bound of whoever asks, with no scene of Babylon.js to walk: the swap's module names none.
+    expect(lite).toContain("    whenReady(maxMs) {\n      return whenWorldIn(sceneryReady, maxMs);\n    },");
+    expect(readFileSync(join(SRC, "game/rendererSwap.ts"), "utf8")).not.toMatch(/whenSceneReady|walkSceneReady|@babylonjs/);
     expect(readFileSync(join(SRC, "game/lite/gpuTimeReadout.ts"), "utf8")).toContain("taskTimeReport({");
   });
 
@@ -1111,23 +1115,22 @@ describe("layer boundaries", () => {
    * `src/` imports a module of Babylon.js or one of these files, for a
    * value or for a type, so the list is what goes when that renderer does.
    * What still crosses the line is named too, each a type's import and no
-   * more: the swap's wait on a scene of Babylon.js, and the pipelines and
-   * the kept engine that a renderer on Babylon.js's engines was handed and
-   * the hike's own renderer never is.
+   * more: the pipelines and the kept engine that a renderer on Babylon.js's
+   * engines was handed and the hike's own renderer never is.
    */
   it("keeps Babylon.js behind one line: the renderer on it, its shells and what only they import, named file by file", () => {
     const BABYLON_SIDE = [
       "game/asyncPipelines.ts", "game/atmosphere.ts", "game/barkShadePlugin.ts", "game/bladeMeshes.ts", "game/boardPaint.ts", "game/bodyMesh.ts",
       "game/cascadeFrustum.ts", "game/characterModel.ts", "game/cliffMeshes.ts", "game/cliffTintPlugin.ts", "game/clutterMeshes.ts",
       "game/creatureModel.ts", "game/deadwoodPlugin.ts", "game/distanceFadePlugin.ts", "game/dragonflies.ts", "game/droppedItem.ts",
-      "game/duffMeshes.ts", "game/engineLog.ts", "game/engineOf.ts", "game/enginePipelines.ts", "game/engineVersion.ts", "game/entityViews.ts",
+      "game/duffMeshes.ts", "game/effectTurns.ts", "game/engineLog.ts", "game/engineOf.ts", "game/enginePipelines.ts", "game/engineVersion.ts", "game/entityViews.ts",
       "game/facePatchMeshes.ts", "game/featurePaint.ts", "game/foliageLightPlugin.ts", "game/foliagePlugin.ts", "game/forestMeshes.ts",
       "game/gpuEngine.ts", "game/gpuTime.ts", "game/groundConformPlugin.ts", "game/groundMaps.ts", "game/headlamp.ts", "game/impostorBakePlugin.ts",
       "game/keptEngine.ts", "game/ktx2.ts", "game/lakeMirror.ts", "game/lakePanorama.ts", "game/lakeView.ts", "game/lighting.ts",
       "game/midgeSwarms.ts", "game/mistMeshes.ts", "game/modelLoad.ts", "game/mossPlugin.ts", "game/motes.ts", "game/oceanGpuFft.ts",
       "game/oceanLip.ts", "game/oceanRender.ts", "game/oceanWindSource.ts", "game/pluginNumbers.ts", "game/post.ts", "game/probeScene.ts",
       "game/propMeshes.ts", "game/rain.ts", "game/rainMap.ts", "game/rainPlugin.ts", "game/rainSplash.ts", "game/renderer.ts",
-      "game/scene/cordTube.ts", "game/scene/sceneRoute.ts", "game/scene/sceneStage.ts", "game/sha256.ts", "game/shadeSilhouette.ts",
+      "game/scene/cordTube.ts", "game/scene/sceneRoute.ts", "game/scene/sceneStage.ts", "game/sceneReady.ts", "game/sha256.ts", "game/shadeSilhouette.ts",
       "game/shadeSmoke.ts", "game/shadeVeil.ts", "game/shaderLookup.ts", "game/signMeshes.ts", "game/skin.ts", "game/skyDome.ts",
       "game/softShadowInclude.ts", "game/staticModel.ts", "game/surfSpray.ts", "game/swashTexture.ts", "game/terrainTexture.ts",
       "game/trailheadMeshes.ts", "game/waterFrame.ts", "game/waterLife.ts", "game/waterPlants.ts", "game/waterPlugin.ts", "game/webgl2Shaders.ts",
@@ -1165,7 +1168,6 @@ describe("layer boundaries", () => {
       "app.ts imports game/asyncPipelines.ts",
       "app.ts imports game/keptEngine.ts",
       "game/rendererSwap.ts imports game/asyncPipelines.ts",
-      "game/rendererSwap.ts names @babylonjs/core/scene.js",
       "game/rendererTypes.ts imports game/asyncPipelines.ts",
     ]);
     // Each of them is a type's import: none loads a module.

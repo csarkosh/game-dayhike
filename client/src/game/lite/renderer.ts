@@ -396,6 +396,7 @@ import type { RainLamp } from "../rainField.js";
 import { RAIN_MAP } from "../rainParams.js";
 import { renderScaleRuns } from "../renderScale.js";
 import type { FreecamView, Renderer, RendererOptions } from "../rendererTypes.js";
+import { whenWorldIn } from "../worldWait.js";
 import { createScenePlay, stareWithDark, type EndSceneSetup, type PlayNow } from "../scenePlay.js";
 import type { EndingKind } from "../ending.js";
 import { emptySeaFrameUniforms } from "../seaUniforms.js";
@@ -1621,13 +1622,7 @@ export function createLiteRenderer(canvas: HTMLCanvasElement, level: Level, fore
       return heardLife !== null && waterLifeStepped ? heardLife.sound() : SILENT_WATER_LIFE;
     },
     whenReady(maxMs) {
-      return new Promise<void>((resolve) => {
-        const bound = setTimeout(resolve, Math.max(0, maxMs));
-        void sceneryReady.then(() => {
-          clearTimeout(bound);
-          resolve();
-        });
-      });
+      return whenWorldIn(sceneryReady, maxMs);
     },
     waitingItems() {
       return loading + (standing?.forest?.waiting() ?? 0) + (standing?.clutter?.waiting() ?? 0) + (standing?.cliffs?.waiting() ?? 0) + (standing?.entities?.waiting() ?? 0);

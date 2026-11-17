@@ -21,7 +21,7 @@ import { createCarShadowPatch, createTrailheadMeshes, type CarShadowPatch } from
 import { createSignMeshes } from "../signMeshes.js";
 import type { BoardPainter } from "../boardPaint.js";
 import { terrainMaterialFor, type FreecamView } from "../renderer.js";
-import { whenSceneReady } from "../rendererSwap.js";
+import { whenSceneReady } from "../sceneReady.js";
 import { READY_MAX_MS } from "../startReady.js";
 import { SETTLE_MAX_MS, WARM_FRAMES, cameraJumped } from "./cameraJump.js";
 import { createCaptionPanel } from "./captions.js";

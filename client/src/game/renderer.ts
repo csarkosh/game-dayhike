@@ -148,7 +148,8 @@ import { createWaterLife, type WaterLife, type WaterLifeFrame } from "./waterLif
 import { SILENT_WATER_LIFE, createPlayerSlots, pixelAtOneMetre, skyLumaOf } from "./waterLifeInputs.js";
 import { PROP_ROUGHNESS, brushBoxes, propColour } from "./propBoxes.js";
 import { createPropMeshes, type MeshRegistry, type PropShadows } from "./propMeshes.js";
-import { buildOrUndo, whenSceneReady } from "./rendererSwap.js";
+import { buildOrUndo } from "./rendererSwap.js";
+import { whenSceneReady } from "./sceneReady.js";
 import { createCalmFade, lakeCalmUnder, type LakeCalmFrame } from "./lakeCalmFrame.js";
 import { lakeSunShare } from "./lakeRipples.js";
 import { SUN_PEAK } from "./sky.js";

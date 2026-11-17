@@ -1,13 +1,12 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import type { Scene } from "@babylonjs/core/scene.js";
 import {
   APPLY_SWAP_READY_MAX_MS,
   GOVERNOR_SWAP_READY_MAX_MS,
   SWAP_SCENE_MIN_MS,
   engineWithinBound,
-  whenSceneReady,
   type EngineOnCanvas,
 } from "../../src/game/rendererSwap.js";
+import { whenWorldIn } from "../../src/game/worldWait.js";
 
 /**
  * A switch into WebGPU makes its engine under the cover. `engineWithinBound`
@@ -101,39 +100,33 @@ describe("the engine a switch makes, within its cover's bound", () => {
     expect(await result).toEqual({ onCanvas: t.made, leftMs: 5_000, late: false });
   });
 
-  /** A scene that is ready `readyAt` ms after it is asked, or never (null). */
-  function sceneReadyAfter(readyAt: number | null): Scene {
-    const from = clock.t;
-    return {
-      isDisposed: false,
-      meshes: [],
-      isReady: () => readyAt !== null && clock.t - from >= readyAt,
-      getWaitingItemsCount: () => 0,
-    } as unknown as Scene;
+  /** A world that is in `inAt` ms after it is asked, or never (null): what the renderer built on the canvas waits on (`Renderer.whenReady`). */
+  function worldInAfter(inAt: number | null): Promise<void> {
+    return inAt === null ? new Promise(() => undefined) : new Promise((resolve) => setTimeout(resolve, inAt));
   }
 
-  it("after an engine at 12 s of a 10 s bound, lifts the cover when the WebGL2 scene is ready, 3 s after its build", async () => {
+  it("after an engine at 12 s of a 10 s bound, lifts the cover when the new renderer's world is in, 3 s after its build", async () => {
     const t = slowEngine(12_000);
     const made = engineWithinBound(t.make, GOVERNOR_SWAP_READY_MAX_MS, t.deps);
     await advance(10_000);
     const got = await made;
     expect(got.late).toBe(true);
-    // The build, then the wait for its scene.
+    // The build, then the wait for its world.
     let lifted = false;
-    void whenSceneReady(sceneReadyAfter(3_000), got.leftMs).then(() => (lifted = true));
+    void whenWorldIn(worldInAfter(3_000), got.leftMs).then(() => (lifted = true));
     await advance(2_900);
     expect(lifted).toBe(false);
     await advance(100);
     expect(lifted).toBe(true);
   });
 
-  it("after an engine at 12 s of a 10 s bound, lifts the cover 5 s after the build where the scene is never ready", async () => {
+  it("after an engine at 12 s of a 10 s bound, lifts the cover 5 s after the build where the world never comes in", async () => {
     const t = slowEngine(12_000);
     const made = engineWithinBound(t.make, GOVERNOR_SWAP_READY_MAX_MS, t.deps);
     await advance(10_000);
     const got = await made;
     let lifted = false;
-    void whenSceneReady(sceneReadyAfter(null), got.leftMs).then(() => (lifted = true));
+    void whenWorldIn(worldInAfter(null), got.leftMs).then(() => (lifted = true));
     await advance(4_999);
     expect(lifted).toBe(false);
     await advance(1);

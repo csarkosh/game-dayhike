@@ -1,14 +1,10 @@
 import { describe, it, expect, vi } from "vitest";
-import type { Scene } from "@babylonjs/core/scene.js";
 import {
   GOVERNOR_IDLE_MAX_MS, GOVERNOR_LIMIT_MS, GOVERNOR_LINE_MS, GOVERNOR_START_MS, GOVERNOR_STALL_MS, GOVERNOR_WINDOW_MS, GOVERNOR_WINDOWS,
   GOVERNOR_ENABLED, actOnDrop, createGovernor, governHike, governorDecision, governorLine, steadyFrame, type DropDeps, type Governor,
 } from "../../src/game/governor.js";
 import type { QualityTier } from "../../src/game/quality.js";
-import { whenSceneReady } from "../../src/game/rendererSwap.js";
-
-/** A scene that is ready, with nothing waiting to load. */
-const readyScene = { isDisposed: false, meshes: [], isReady: () => true, getWaitingItemsCount: () => 0 } as unknown as Scene;
+import { whenWorldIn } from "../../src/game/worldWait.js";
 
 /** Frames of `ms` each, from `from` until the clock reaches `until`; returns the clock. */
 function feed(g: Governor, from: number, until: number, ms: number, steady = true): number {
@@ -279,11 +275,11 @@ describe("acting on a drop", () => {
     try {
       const { deps, did } = page(16.7);
       const bounds: number[] = [];
-      // The switch's wait as `switchTo` runs it: the bound it is handed, on a
-      // ready scene whose forest never settles.
+      // The switch's wait as `switchTo` runs it (`Renderer.whenReady`): the
+      // bound it is handed, for a world that never comes in.
       deps.switchTo = async (next, readyMaxMs) => {
         bounds.push(readyMaxMs);
-        await whenSceneReady(readyScene, readyMaxMs, new Promise(() => undefined));
+        await whenWorldIn(new Promise(() => undefined), readyMaxMs);
         return next;
       };
       let outcome: string | null = null;

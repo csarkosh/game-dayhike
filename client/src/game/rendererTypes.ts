@@ -93,7 +93,7 @@ export type Renderer = {
   skyReady(): Promise<void>;
   /** Resolves once the world is in: the scene ready with nothing still
    * loading, and the forest's first fill drawn (`forestReady`), or after
-   * `maxMs`, the bound of whoever waits (`whenSceneReady`). */
+   * `maxMs`, the bound of whoever waits (`worldWait.ts`). */
   whenReady(maxMs: number): Promise<void>;
   /** How many of the scene's loads (models, textures) are still in flight. */
   waitingItems(): number;
