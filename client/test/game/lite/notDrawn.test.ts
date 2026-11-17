@@ -12,7 +12,7 @@ describe("what the renderer on Babylon Lite does not draw yet", () => {
 
   it("names every part of the world it leaves out", () => {
     const all = NOT_DRAWN.map((part) => part.what).join("; ");
-    for (const word of [ "sea", "lake", "skin's shading", "shadows", "wireframe"]) {
+    for (const word of ["skin's shading", "shadows", "wireframe"]) {
       expect(all, word).toContain(word);
     }
   });
@@ -70,25 +70,19 @@ describe("what the renderer on Babylon Lite does not draw yet", () => {
     expect(NOT_DRAWN.filter((part) => /rain|splash|drip|canopy|lens/.test(part.what))).toEqual([]);
   });
 
-  it("leaves the lakes' water, its calm, its plants, its life and its shore's panorama to the renderer: what is left of a lake is its mirror and the tier that reads through it", () => {
+  it("leaves the lakes' water, its calm, its plants, its life, its shore's panorama and its mirror to the renderer: nothing of a lake is left", () => {
     const { members } = notDrawnMembers();
     for (const name of ["setWeatherName", "hasWaterLife", "waterLifeSound"]) expect(name in members, name).toBe(false);
-    const lakes = NOT_DRAWN.filter((part) => /lake/.test(part.what));
-    expect(lakes.map((part) => part.members)).toEqual([[]]);
-    expect(NOT_DRAWN.map((part) => part.what).join("; ")).not.toMatch(/insects|frogs|midges|dragonfl/);
-    expect(lakes[0]?.what).not.toMatch(/plants|reeds|lil/);
-    expect(lakes[0]?.what).not.toMatch(/panorama/);
-    expect(lakes[0]?.what).toMatch(/mirror/);
-    expect(lakes[0]?.what).not.toMatch(/calm/);
+    expect(NOT_DRAWN.filter((part) => /lake/.test(part.what))).toEqual([]);
+    expect(NOT_DRAWN.map((part) => part.what).join("; ")).not.toMatch(/insects|frogs|midges|dragonfl|plants|reeds|lil|panorama|mirror|calm/);
   });
 
-  it("leaves the sea's swell, its wind waves by the loop or the FFT, its white water, its swash, its lip's curl, its spray and its surf to the renderer: what is left of the sea is the tier that reads through its surface", () => {
+  it("leaves the sea's swell, its wind waves by the loop or the FFT, its white water, its swash, its lip's curl, its spray, its surf and its water read through its surface to the renderer: nothing of the sea is left", () => {
     const { members } = notDrawnMembers();
     for (const name of ["hasSea", "surfSound"]) expect(name in members, name).toBe(false);
     const sea = NOT_DRAWN.filter((part) => /\bsea\b/.test(part.what));
-    expect(sea.map((part) => part.members)).toEqual([[]]);
-    // The tier that reads through the surface is the lakes' and the sea's alike; nothing else of the sea is left.
-    expect(sea[0]?.what).toMatch(/through the surface/);
+    expect(sea).toEqual([]);
+    expect(NOT_DRAWN.map((part) => part.what).join("; ")).not.toMatch(/through the surface|reads what lies under/);
     expect(NOT_DRAWN.map((part) => part.what).join("; ")).not.toMatch(/FFT|curl|spray|swash|surf's sound|swell|loop/);
   });
 

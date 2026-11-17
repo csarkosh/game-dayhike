@@ -41,9 +41,9 @@ const day = (ms: number): string => calendarDate(ms);
 
 function funnel(): Row[] {
   return [
-    { build: "all", landed: 181, pressed_play: 78, started: 69, finished: 40, sessions: 191, first_seen: iso(NOW - 5 * DAY), last_seen: iso(NOW - 600_000) },
-    { build: "9557492d", landed: 143, pressed_play: 61, started: 54, finished: 31, sessions: 151, first_seen: iso(NOW - 2 * DAY), last_seen: iso(NOW - 600_000) },
-    { build: "5759b340", landed: 38, pressed_play: 17, started: 15, finished: 9, sessions: 40, first_seen: iso(NOW - 5 * DAY), last_seen: iso(NOW - 2 * DAY) },
+    { build: "all", landed: 181, turned_away: 6, pressed_play: 78, started: 69, finished: 40, sessions: 191, first_seen: iso(NOW - 5 * DAY), last_seen: iso(NOW - 600_000) },
+    { build: "9557492d", landed: 143, turned_away: 6, pressed_play: 61, started: 54, finished: 31, sessions: 151, first_seen: iso(NOW - 2 * DAY), last_seen: iso(NOW - 600_000) },
+    { build: "5759b340", landed: 38, turned_away: 0, pressed_play: 17, started: 15, finished: 9, sessions: 40, first_seen: iso(NOW - 5 * DAY), last_seen: iso(NOW - 2 * DAY) },
   ];
 }
 
@@ -146,7 +146,7 @@ function progress(): Row[] {
 
 function errors(): Row[] {
   // The totals are distinct over the range and the same on every row.
-  const totals = { sessions_with_errors: 7, sessions_with_warnings: 8 };
+  const totals = { sessions_with_errors: 7, sessions_with_warnings: 14 };
   return [
     { whose: "players", level: "error", n: "error", kind: "console", at_page: "game", msg: "WebGPU: the renderer could not be built on it; building it on WebGL2.", build: "9557492d", times: 4, sessions: 3, a_session: "s3f8a", a_machine: "win32-x64 141 ANGLE (NVIDIA, NVIDIA GeForce RTX 3060)", last_seen: iso(NOW - 2_400_000), ...totals },
     { whose: "players", level: "error", n: "connect_fail", kind: null, at_page: "game", msg: "ice_failed", build: "9557492d", times: 2, sessions: 2, a_machine: "win32-x64 141 ANGLE (Intel, Intel(R) Iris(R) Xe)", last_seen: iso(NOW - 7_200_000), ...totals },
@@ -158,6 +158,9 @@ function errors(): Row[] {
     { whose: "players", level: "warning", n: "gpu_error", kind: "validation", at_page: null, msg: "Vertex range (first: 0, count: 2616) requires a larger buffer (62784) than the bound buffer size (3139", build: "9557492d", times: 3, sessions: 2, a_session: "s3f8a", a_machine: "darwin-arm64 155 Apple M2", last_seen: iso(NOW - 1_700_000), ...totals },
     { whose: "players", level: "warning", n: "warn", kind: "console", at_page: "game", msg: "forest impostor: bake retried once for clutter.fungus_b", build: "9557492d", times: 9, sessions: 6, a_machine: "darwin-arm64 26 Apple M2", last_seen: iso(NOW - 900_000), ...totals },
     { whose: "players", level: "warning", n: "tier_fallback", kind: null, at_page: "start", msg: null, build: "9557492d", times: 2, sessions: 2, a_session: "s41b2", a_machine: "darwin-arm64 26 Apple M1", last_seen: iso(NOW - 5_000_000), ...totals },
+    // Visitors the load check turned away, by the reason: the browser has no WebGPU, or the GPU behind it cannot play.
+    { whose: "players", level: "warning", n: "turned_away", kind: "no-webgpu", at_page: null, msg: null, build: "9557492d", times: 4, sessions: 4, a_machine: "darwin-arm64 18 Apple GPU", last_seen: iso(NOW - 4_000_000), ...totals },
+    { whose: "players", level: "warning", n: "turned_away", kind: "software", at_page: null, msg: null, build: "9557492d", times: 2, sessions: 2, a_machine: "win32-x64 141 ANGLE (Microsoft, Microsoft Basic Render Driver Direct3D11 vs_5_0 ps_5_0, D3D11)", last_seen: iso(NOW - 6_000_000), ...totals },
   ];
 }
 

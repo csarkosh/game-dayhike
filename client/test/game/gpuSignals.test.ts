@@ -7,6 +7,7 @@ import {
   isChromeOrEdge,
   readSignals,
   isMobile,
+  offersWebGpu,
   readRenderer,
   type NavigatorLike,
   type WebGLLike,
@@ -382,6 +383,28 @@ describe("gatherSignals", () => {
     const small = await gatherSignals({ navigator: { userAgent: "", hardwareConcurrency: 2, deviceMemory: 0.25 }, webgl: () => null });
     expect(small.cores).toBe(2);
     expect(small.memoryGb).toBe(0.25);
+  });
+});
+
+describe("offersWebGpu", () => {
+  it("is whether navigator.gpu can be asked for an adapter, known with no request made", () => {
+    let asked = 0;
+    expect(offersWebGpu({ userAgent: "", gpu: { requestAdapter: async () => (asked++, null) } })).toBe(true);
+    expect(asked).toBe(0);
+    expect(offersWebGpu({ userAgent: "" })).toBe(false);
+    expect(offersWebGpu(undefined)).toBe(false);
+    expect(offersWebGpu({ gpu: {} } as unknown as NavigatorLike)).toBe(false);
+  });
+
+  it("never throws, and tells a browser with no WebGPU from one that gives no adapter", async () => {
+    const throwing = Object.defineProperty({}, "gpu", { get() { throw new Error("denied"); } }) as NavigatorLike;
+    expect(offersWebGpu(throwing)).toBe(false);
+    // The signals call both "none"; this is what tells them apart.
+    const without: NavigatorLike = { userAgent: "" };
+    const empty: NavigatorLike = { userAgent: "", gpu: { requestAdapter: async () => null } };
+    expect((await gatherSignals({ navigator: without, webgl: () => null })).adapterStatus).toBe("none");
+    expect((await gatherSignals({ navigator: empty, webgl: () => null })).adapterStatus).toBe("none");
+    expect([offersWebGpu(without), offersWebGpu(empty)]).toEqual([false, true]);
   });
 });
 

@@ -7,6 +7,7 @@ import {
   seaShadeWgsl, seaSurfaceWgsl,
 } from "../../../src/game/lite/seaWgsl.js";
 import { WATER_RING_CELLS, WATER_RING_COUNT, WATER_UV_SCALE } from "../../../src/game/water.js";
+import { waterThroughWgsl } from "../../../src/game/lite/waterWgsl.js";
 import { inOrder, tight } from "./wgslText.js";
 
 const fx = (name: string): string => readFileSync(fileURLToPath(new URL(`../../../src/game/shaders/${name}`, import.meta.url)), "utf8");
@@ -346,5 +347,22 @@ describe("the sea's waves and shading in WGSL, against the game's GLSL", () => {
     expect(rest).toContain("out.worldPos=vec3<f32>(seaAt.x,0.0000,seaAt.y);out.clipPos=scene.viewProjection*vec4<f32>(out.worldPos,1.0);");
     // The map's rings are not stitched: its material draws the game's rings where their vertices stand.
     expect(rest).not.toMatch(/oceanMorph|oceanDisplace/);
+  });
+
+  it("puts the read of the frame behind the sea in the place of the one alpha, by the water's own statements, and takes the white water off it", () => {
+    const lights = tight(code("waterLights.fragment.fx"));
+    expect(inOrder(lights, ["wTransmit=wBed*wT*(1.0-wF);", "surfaceAlbedo=mix(surfaceAlbedo,vec3(wFoamWhite),wFoam);", "wTransmit*=1.0-wFoam;", "alpha=mix(alpha,1.0,wFoam);"])).toBe(true);
+    for (const look of [LOOP, { loop: true, bump: false, fft: true }]) {
+      const blended = tight(seaLightsWgsl(look));
+      const through = tight(seaLightsWgsl({ ...look, through: true }));
+      expect(blended).toContain("alpha=1.0-(1.0-wF)*exp(-2.0*wKdMean*wDepth);");
+      expect(blended).not.toMatch(/wTransmit|waterKept/);
+      expect(inOrder(through, [
+        "letwF=WATER_F0+(1.0-WATER_F0)*pow(1.0-wNdV,5.0);", tight(waterThroughWgsl(false)), "surfaceAlbedo=mix(surfaceAlbedo,vec3<f32>(wFoamWhite),wFoam);", "wTransmit*=1.0-wFoam;",
+        "alpha=mix(alpha,1.0,wFoam);",
+      ])).toBe(true);
+      // The same statements either side of the branch.
+      expect(through.replace(tight(waterThroughWgsl(false)), "alpha=1.0-(1.0-wF)*exp(-2.0*wKdMean*wDepth);").replace("wTransmit*=1.0-wFoam;", "")).toBe(blended);
+    }
   });
 });

@@ -194,6 +194,8 @@ export type ForestMeshOptions = {
   uploads?: FrameUploads;
   /** What a lake's shore panorama draws of the forest: each billboard's card, from when its bake lands (`lakePanorama.ts`). */
   reflections?: ReflectionRegistry;
+  /** What a lake's mirror draws of the forest beside its billboards: the buckets of its trees' coarsest level, on their own materials (`lakeMirror.ts`). */
+  mirrored?: ReflectionRegistry;
 };
 
 /** One bucket: the meshes of a LOD (a tree's bark and crown are two), one instance list for all of them. */
@@ -501,7 +503,10 @@ export function createForestMeshes(engine: EngineContext, scene: SceneContext, s
           layouts.push(vegetationInstanceLayout({ foliage: null, fade: isCrown, conform: true, deadwood: null }));
           if (!isCrown) releaseFileMaps(part);
         });
-        return bucket(meshes, layouts, fades.lods[lod] as FadeBands);
+        const made = bucket(meshes, layouts, fades.lods[lod] as FadeBands);
+        // The coarsest level's buckets stand in a lake's mirror too.
+        if (lod === 2) for (const mesh of meshes) options.mirrored?.add(mesh);
+        return made;
       }) as [Bucket, Bucket, Bucket];
     });
   }
@@ -1012,6 +1017,7 @@ export function createForestMeshes(engine: EngineContext, scene: SceneContext, s
       for (const made of buckets) {
         for (const mesh of made.meshes) {
           options.reflections?.remove(mesh);
+          options.mirrored?.remove(mesh);
           removeFromScene(scene, mesh);
           disposeMeshGpu(mesh);
         }

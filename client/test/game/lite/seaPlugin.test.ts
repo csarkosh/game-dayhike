@@ -129,6 +129,38 @@ describe("the sea's water as a plugin on Babylon Lite", () => {
     expect(() => seaPlugin(emptySeaUniforms(), LOOP, SHARED, { bump: false, loop: true, fft: true })).toThrow(/disagree/);
   });
 
+  it("reads the frame behind it only in a look that reads through, the sea and its lip's strip alike", () => {
+    const colour = standInTexture("kept");
+    const depth = standInTexture("keptDepth");
+    const behind = { colour: () => colour, depth: () => depth, breaks: 0 };
+    const look = { ...seaLookFor("high"), through: true };
+    const plain = seaPlugin(emptySeaUniforms(), FFT, SHARED, seaLookFor("high"));
+    expect(codeOf(plain)).not.toMatch(/waterKept|wTransmit/);
+    expect(Object.keys(plain.getCustomCode?.("fragment") ?? {})).not.toContain("CUSTOM_FRAGMENT_BEFORE_FRAGCOLOR");
+    const tables = { state: standInTexture("lipState"), profile: standInTexture("lipProfile") };
+    for (const plugin of [seaPlugin(emptySeaUniforms(), { ...FFT, behind }, SHARED, look), seaPlugin(emptySeaUniforms(), { ...FFT, behind }, SHARED, look, tables)]) {
+      expect(plugin.defines).toMatchObject({ through: true });
+      expect(plugin.getSamplers?.().slice(-2)).toEqual([{ texture: "waterKept", sampler: "waterKeptSampler" }, { texture: "waterKeptDepth", sampleType: "unfilterable-float" }]);
+      const bound: PluginTextureBinding[] = [];
+      plugin.bindTextures?.(bound);
+      expect(bound.slice(-2)).toEqual([{ texture: colour }, { texture: depth, sampler: false }]);
+      const active: Texture2D[] = [];
+      plugin.getActiveTextures?.(active as never);
+      expect(active).not.toContain(colour);
+      expect(active).not.toContain(depth);
+      const points = plugin.getCustomCode?.("fragment") ?? {};
+      expect(points.CUSTOM_FRAGMENT_BEFORE_FRAGCOLOR).toBe("color+=wTransmit;");
+      expect(points.CUSTOM_FRAGMENT_BEFORE_LIGHTS).toContain(`${FRAME_BLOCK}.frameProjection[3].z`);
+      expect(points.CUSTOM_FRAGMENT_BEFORE_LIGHTS).not.toContain("alpha=1.0-(1.0-wF)*exp(");
+      expect(points.CUSTOM_FRAGMENT_BEFORE_LIGHTS).toContain("wTransmit*=1.0-wFoam;");
+      expect(codeOf(plugin)).not.toMatch(/lakeLens|CAUSTIC/);
+      expect(plugin.getUniforms?.().ubo).toEqual(plain.getUniforms?.().ubo);
+    }
+    // The look and the frame are handed together or not at all.
+    expect(() => seaPlugin(emptySeaUniforms(), FFT, SHARED, look)).toThrow(/disagree/);
+    expect(() => seaPlugin(emptySeaUniforms(), { ...FFT, behind }, SHARED, seaLookFor("high"))).toThrow(/disagree/);
+  });
+
   it("is the plunging lip's strip's with the strip's two tables: another vertex stage, the crests and the cross-section in the rings' depths' place, the same shading", () => {
     const tables = { state: standInTexture("lipState"), profile: standInTexture("lipProfile") };
     const sea = seaPlugin(emptySeaUniforms(), FFT, SHARED, seaLookFor("high"));

@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
-  LAKE_NEAR_SHORE_M, boxInPlanes, cornersPastBox, lakeDrawnFrom, lakeUnderEye, lakeViewPoints, shoreInPlanes, squareInPlanes, type ViewPlane,
+  LAKE_NEAR_SHORE_M, boxInPlanes, cornersPastBox, lakeDrawnFrom, lakeInViewFrom, lakeUnderEye, lakeViewPoints, shoreInPlanes, squareInPlanes, type ViewPlane,
 } from "../../src/game/lakeSeen.js";
 import * as lakeView from "../../src/game/lakeView.js";
 import { cameraAxes, restAxes, restPlanes, viewCorners, viewPlanes } from "../../src/game/lite/cameraPose.js";
@@ -67,6 +67,22 @@ describe("a lake's water in a view, read with no engine", () => {
     const off = (8 + 3) * Math.SQRT1_2;
     expect(3).toBeLessThan(LAKE_NEAR_SHORE_M);
     expect(drawn(off, 2, -off, off + 30, 2, -off - 30)).toBe(true);
+  });
+
+  it("says the water is in the view only by its shore: not from the bank with the back turned, where the surface is still drawn", () => {
+    const inView = (x: number, y: number, z: number, tx: number, ty: number, tz: number): boolean => {
+      const { planes, f } = view(x, y, z, tx, ty, tz);
+      return lakeInViewFrom(DIAGONAL, 0, HALF, POINTS, planes, x, y, z, f[0], f[1], f[2]);
+    };
+    const off = (8 + 3) * Math.SQRT1_2;
+    // 3 m outside the shore, back turned: drawn, and not in the view; turned to the water: both.
+    expect(drawn(off, 2, -off, off + 30, 2, -off - 30)).toBe(true);
+    expect(inView(off, 2, -off, off + 30, 2, -off - 30)).toBe(false);
+    expect(inView(off, 2, -off, 0, 0, 0)).toBe(true);
+    // From farther off the two say the same.
+    expect(inView(30, 2, -30, 0, 0, 0)).toBe(true);
+    expect(inView(30, 2, -30, 60, 0, -60)).toBe(false);
+    expect(inView(300, 2, 300, 600, 2, 600)).toBe(false);
   });
 
   it("does not draw a lake whose square the view does not hold", () => {
