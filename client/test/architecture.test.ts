@@ -290,21 +290,41 @@ describe("layer boundaries", () => {
     expect(app).toContain("    rebuild: (readyMaxMs) => switchNow(tier, tierSource, null, readyMaxMs).then(() => {\n      engineNotice = null;\n    }),");
   });
 
-  it("measures the probe's steps on WebGL2 where the rule draws their tiers on WebGPU and a WebGPU step cannot settle", () => {
+  it("measures every step of the tier check on the hike's own renderer: the page makes no engine, for a step or for anything", () => {
     const main = stripComments(readFileSync(join(SRC, "main.ts"), "utf8"));
-    expect(main).toContain(
-      '      if (probeStepEngine(read, verdictEngineNow(read)) === "webgl2") return { canvas: document.createElement("canvas"), engine: null, watch: null };',
-    );
+    // The page's deps are the probe's on the hike's own renderer, which makes each step's renderer, canvas and engine
+    // and lets them go with the step.
+    expect(main).toContain("  const probe = liteProbeDeps(container);");
+    expect([...main.matchAll(/\bliteProbeDeps\(/g)].length).toBe(1);
+    expect(importsOf(join(SRC, "main.ts"))).toContain("./game/lite/probeScene.js");
+    expect(importsOf(join(SRC, "main.ts"))).not.toContain("./game/probeScene.js");
+    // No step is handed an engine, and none is measured on WebGL2 in WebGPU's place.
+    expect(main).not.toMatch(/\b(?:probeDeps|probeStepEngine|probeStepCanSettle|measureOnRuleEngine)\b/);
+    // Nor does the page make an engine any other way: no rule is asked which, and the only canvases it makes are a
+    // hike's (`hikeCanvas`) and the one a hike's start takes when it is made again.
+    expect(main).not.toMatch(/\b(?:makeWebGpu|engineForTier|resolveWebGpu|chooseEngine|startWebGpu|loadTranslators)\b/);
+    expect(main).not.toMatch(/\bengineFor\(/);
+    expect(main).not.toContain("gpuEngine");
+    expect([...main.matchAll(/document\.createElement\("canvas"\)/g)].length).toBe(2);
+    // A verdict is kept for, and looked up under, the one engine a hike is drawn with, at the start and in Settings;
+    // and the page says for itself whether a step can be measured: not where the browser offers no WebGPU, or no
+    // adapter, which the GPU's signals say of both (`AdapterStatus`).
+    expect(main).toContain('function verdictEngineNow(): VerdictEngine {\n  return "webgpu";\n}');
+    expect([...main.matchAll(/\bverdictEngineNow\(\)/g)].length).toBe(5);
+    expect(main).toContain('  return liteProbeSteps(read.adapterStatus !== "none");');
+    expect(main).toContain("engine: verdictEngineNow(), steps: probeSteps(read) }, {");
+    expect(main).toContain("engine: verdictEngineNow(), stepSettles: probeSteps(signals).settle });");
   });
 
-  it("records every failed WebGPU start through the one pin rule: the first load's, a switch's, a retry's, a probe step's", () => {
+  it("starts no engine, so the page has no failed start to record: a step of the tier check that fails is the step's own to end", () => {
     const main = stripComments(readFileSync(join(SRC, "main.ts"), "utf8"));
-    expect(main).toContain("  return recordStartFailure(reason, {");
-    expect(main).toContain("    remember: (reason) => {\n      if (wanted()) void rememberFailure(reason, current());\n    },");
-    // A probe step's engine that failed in its build or frames did not run
-    // out of time: its start's timeout is the rule's (`remember`).
-    expect(main).toContain('    failed: () => void rememberFailure("init", !cancelled()),');
-    expect([...main.matchAll(/\brememberFailure\(/g)].length).toBe(3);
+    // A WebGPU start that failed (the first load's, a switch's, a retry's, a probe step's) was remembered through
+    // `recordStartFailure`, which `engineFailure.ts` keeps with its tests: no page has such a start now.
+    expect(main).not.toMatch(/\b(?:rememberFailure|recordStartFailure)\b/);
+    expect(main).not.toContain("webgpu_start_failed");
+    // A step that fails ends with no reading (`lite/probeScene.ts`): nothing of it is recorded against the engine.
+    const step = stripComments(readFileSync(join(SRC, "game/lite/probeScene.ts"), "utf8"));
+    expect(step).not.toMatch(/\b(?:recordFailure|recordStartFailure|recordEngineFailure|writeFallback)\b/);
     expect(main).not.toMatch(/\b(recordFailure|writeFallback)\(/);
   });
 
