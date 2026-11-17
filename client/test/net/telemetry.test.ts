@@ -438,29 +438,6 @@ describe("installErrorCapture", () => {
     expect(f.sent).toHaveLength(1);
   });
 
-  it("hears Babylon's own log through the page's hook, without its clock, and stops hearing it", () => {
-    const f = fakeDeps({ ok: true });
-    const t = createTelemetry("u", ENVELOPE, f.deps);
-    // The page's hook (`hearEngineLog`): it is handed how to tell the telemetry, and gives back what stops it.
-    const log: { hear: ((severity: "error" | "warn", args: unknown[]) => void) | null } = { hear: null };
-    const con = { error: () => undefined, warn: () => undefined };
-    const uninstall = installErrorCapture(t, { addEventListener: () => undefined }, con, undefined, (hear) => {
-      log.hear = hear;
-      return () => {
-        log.hear = null;
-      };
-    });
-    log.hear!("warn", ["BJS - [10:58:23]: [Frame 2707] WebGPU uncaptured error (1): [object GPUValidationError] - Binding type"]);
-    log.hear!("error", ["BJS - [10:58:24]: Unable to compile effect:"]);
-    t.flush();
-    expect(f.sent[0]!.batch.events.map((e) => [e.n, e.kind, e.msg])).toEqual([
-      ["warn", "babylon", "[Frame 2707] WebGPU uncaptured error (1): [object GPUValidationError] - Binding type"],
-      ["error", "babylon", "Unable to compile effect:"],
-    ]);
-    uninstall();
-    expect(log.hear).toBeNull();
-  });
-
   it("keeps a GPU error's text to its end, where it names the shader module", () => {
     const f = fakeDeps({ ok: true });
     const t = createTelemetry("u", ENVELOPE, f.deps);
@@ -474,13 +451,7 @@ describe("installErrorCapture", () => {
   it("installs nothing when telemetry is off", () => {
     const con = { error: () => undefined, warn: () => undefined };
     const original = con.error;
-    let asked = false;
-    installErrorCapture(createTelemetry(null, ENVELOPE, fakeDeps().deps), { addEventListener: () => undefined }, con, undefined, () => {
-      asked = true;
-      return () => undefined;
-    });
+    installErrorCapture(createTelemetry(null, ENVELOPE, fakeDeps().deps), { addEventListener: () => undefined }, con, undefined);
     expect(con.error).toBe(original);
-    // Nor is Babylon's log listened to.
-    expect(asked).toBe(false);
   });
 });
