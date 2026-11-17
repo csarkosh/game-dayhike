@@ -40,9 +40,8 @@
  * and, in a world with no forest, a hand-authored level's brushes. Every
  * other part of the world is absent, and the
  * members of `Renderer` that belong to an absent part are answered here as
- * nothing: a setter keeps what it was told (`held`), for the day its part is
- * drawn; a read-out returns nothing heard, nothing seen or nothing pending;
- * a promise is already resolved. `NOT_DRAWN` names each part with the members that
+ * nothing: each is a setter, which keeps what it was told (`held`), for the
+ * day its part is drawn. `NOT_DRAWN` names each part with the members that
  * stand in for it, and the two are held to each other by the tests.
  */
 import type { Renderer } from "../renderer.js";
