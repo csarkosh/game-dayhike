@@ -328,6 +328,63 @@ describe("layer boundaries", () => {
     expect(main).not.toMatch(/\b(recordFailure|writeFallback)\(/);
   });
 
+  it("decides once whether the browser can play, with no engine and no request of its own, and starts nothing of a hike where it cannot", () => {
+    // The check and the page for those turned away are made with no engine, whatever they import.
+    const loaded = (file: string): string[] =>
+      [...readFileSync(file, "utf8").matchAll(/^\s*(?:import|export)\s+(?!type\s)(?:[^"'();]*?\s+from\s+)?["']([^"']+)["']/gm)].map((m) => m[1] as string);
+    const ENGINE_FREE = ["loadCheck.ts", "turnedAway.ts", "turnedAwayModel.ts", "turnedAwayWords.ts", "gpuSignals.ts"];
+    const seen = new Set<string>();
+    const stack = ENGINE_FREE.map((name) => join(SRC, "game", name));
+    for (const file of stack) expect(existsSync(file), file).toBe(true);
+    const bad: string[] = [];
+    while (stack.length > 0) {
+      const file = stack.pop() as string;
+      if (seen.has(file)) continue;
+      seen.add(file);
+      for (const spec of loaded(file)) {
+        if (spec.startsWith("@babylonjs")) bad.push(`${relative(SRC, file)} imports ${spec}`);
+        if (spec.startsWith(".") && spec.endsWith(".js")) stack.push(join(file, "..", spec.replace(/\.js$/, ".ts")));
+      }
+    }
+    expect(seen.size).toBeGreaterThan(ENGINE_FREE.length);
+    expect(bad).toEqual([]);
+    // The verdict reads the answer to the page's one adapter request (the test above holds that there is one):
+    // the check itself asks the browser nothing.
+    const check = stripComments(readFileSync(join(SRC, "game/loadCheck.ts"), "utf8"));
+    expect(check).not.toMatch(/\bnavigator\b|requestAdapter|requestDevice|document\b|window\b/);
+    expect(loaded(join(SRC, "game/loadCheck.ts"))).toEqual([]);
+
+    const main = stripComments(readFileSync(join(SRC, "main.ts"), "utf8"));
+    // One verdict a page: known at once where the browser offers no WebGPU, else settled from the signals, or
+    // from the same request's later answer where the signals went on without it; set in that one place after.
+    expect(main).toContain("const webgpuOffered = offersWebGpu(navigator as NavigatorLike);\nlet verdict: LoadVerdict | null = loadVerdict(webgpuOffered, null);");
+    expect(main).toContain("  const known = loadVerdict(webgpuOffered, read);\n  if (known !== null) settleVerdict(known);");
+    expect(main).toContain("  else void signalsRead.adapter.then((later) => settleVerdict(adapterVerdict(later)));");
+    expect([...main.matchAll(/\bverdict = /g)].length).toBe(1);
+    expect(main).toContain("function settleVerdict(next: LoadVerdict): void {\n  verdict = next;\n  if (next.play) return;");
+    // Every route is refused in one place, before anything of it is looked at: the page for those turned away.
+    expect(main).toContain(
+      "function render(container: HTMLDivElement): void {\n  const route = parseRoute(location.pathname);\n  if (verdict !== null && !verdict.play) {\n    showTurnedAway(container, route, verdict);\n    return;\n  }",
+    );
+    expect([...main.matchAll(/\brenderTurnedAway\(/g)].length).toBe(1);
+    // A hike or a staged scene asked for before the signals are in waits for them, and that wait stands before
+    // everything either starts with: the world's worker, the tier check, a follower's film, a canvas.
+    const body = main.slice(main.indexOf("function render(container: HTMLDivElement): void {"), main.indexOf("\nfunction launch("));
+    const wait = body.indexOf("  if (!isLandingRoute(route) && signals === null) {");
+    expect(wait).toBeGreaterThan(0);
+    for (const start of ["void hikeCanvas().then(", "runLiteSceneRoute(", "startIntro(src, true)", "startWorldPrep(", "liteProbeDeps(container)", "void startHike<EngineOnCanvas>("]) {
+      expect(body.indexOf(start), start).toBeGreaterThan(wait);
+      expect(body.lastIndexOf(start), start).toBe(body.indexOf(start));
+    }
+    // No canvas is made under a verdict of "cannot", for a route or for a hike that was running when it came.
+    expect(main).toContain("  if (verdict !== null && !verdict.play) return Promise.reject(");
+    // An invitation is joined once the signals are in, and not by a visitor turned away; one who is leaves a
+    // lobby joined meanwhile, by the lobby's own leaving.
+    expect([...main.matchAll(/\benterLobby\(route\.lobbyId\)/g)].length).toBe(1);
+    expect(main).toContain("    void signalsReady.then(() => {\n      if (verdict === null || verdict.play) void enterLobby(route.lobbyId);\n    });");
+    expect(main).toContain("  if (joining) abandonAttempt();\n  if (lobby !== null) {\n    lobby.leave();\n    detach();\n  }");
+  });
+
   it("bounds the cover over every switch by what its caller passes: no path picks its own bound", () => {
     // The Settings Apply passes `APPLY_SWAP_READY_MAX_MS` (`pauseMenu.ts`),
     // the governor and a failure's rebuild `GOVERNOR_SWAP_READY_MAX_MS`
