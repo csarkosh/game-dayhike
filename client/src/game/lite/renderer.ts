@@ -46,6 +46,17 @@
  * renderer that cannot be made (no WebGPU device, a shader refused) says so
  * in the console and stays empty.
  *
+ * **The frame is sized by the game's rule, not by the display**
+ * (`frameSize.ts`): the canvas's box in CSS pixels over the tier's scaling,
+ * the display's pixel ratio unread, as the game sizes it on Babylon.js, and
+ * kept through a zoom made while the hike runs. Where a paint pass draws,
+ * the render scale steps the frame down while the page's frames are slow
+ * and back up when they have room (`renderScale.ts`), never in the
+ * measurement mode. The surface is sized before anything is made for it,
+ * and again by the frame drawn after the box, the ratio or the scale has
+ * moved: Lite then makes the frame's own targets again at the new size,
+ * and nothing else.
+ *
  * **The world changes under the game's scheduler** (`syncJobs.ts`), by the
  * rules the renderer on Babylon.js gives it: a rebuild a crossing starts
  * (the rings, the patches, the forest's lists, the ground cover's) is a job
@@ -276,7 +287,7 @@ import {
   NeutralToneMapping, addToScene, createBankedFreeCamera, createTexture2DFromPixels, createDirectionalLight, createEngine, createHemisphericLight, createPbrMaterial, createSpotLight,
   createPluginUniformBlock, createSceneContext, disposeEngine, disposeScene, enableMaterialPlugins, enablePbrLinearOutput, enablePbrMaterialPluginVertexData,
   getProjectionMatrix,
-  markLightDirty, markMaterialUboDirty, onEngineDeviceLost, onEngineGpuError, registerScene, renderFrame, resizeEngine, vec3,
+  markLightDirty, markMaterialUboDirty, onEngineDeviceLost, onEngineGpuError, registerScene, renderFrame, setSurfaceSize, vec3,
   writePluginUniformBlock,
   type BankedFreeCamera, type DirectionalLight, type EngineContext, type HemisphericLight, type MaterialPlugin, type PbrMaterialProps,
   type PluginUniformBlock, type SceneContext, type SpotLight,
@@ -298,6 +309,7 @@ import { blendedEye, type EyePose } from "../eyeBlend.js";
 import { FACE_PATCH_Z_OFFSET, FACE_PATCH_Z_UNITS } from "../facePatches.js";
 import { featureTableFor } from "../featureTable.js";
 import { FOLIAGE_PLAYERS, FOLIAGE_PLAYER_PARKED, setFoliageWind } from "../foliageUniforms.js";
+import { createFrameFit } from "../frameSize.js";
 import { nearRadiusFor } from "../forestField.js";
 import { GAME_FOV, lensProjection } from "../gameLens.js";
 import { PAINT_PALETTES, gradeRecordUnder, sightUnder, type PaintPaletteName } from "../gradeParams.js";
@@ -320,6 +332,7 @@ import { fittingBed, fittingFeatureTable, fittingLake, fittingOcean, fittingRing
 import { QUALITY, detectTier } from "../quality.js";
 import type { RainLamp } from "../rainField.js";
 import { RAIN_MAP } from "../rainParams.js";
+import { renderScaleRuns } from "../renderScale.js";
 import type { FreecamView, Renderer, RendererOptions } from "../renderer.js";
 import { createScenePlay, stareWithDark, type EndSceneSetup, type PlayNow } from "../scenePlay.js";
 import type { EndingKind } from "../ending.js";
@@ -744,9 +757,20 @@ export function createLiteRenderer(canvas: HTMLCanvasElement, level: Level, fore
   let playNow: PlayNow | null = null;
   /** The most hikers other than the local one the state has held at once: a lamp's light is made for each. */
   let othersSeen = 0;
-  /** The canvas's size the engine was last fitted to, CSS pixels. */
-  let fittedWidth = -1;
-  let fittedHeight = -1;
+  /**
+   * The frame's size (`frameSize.ts`): the canvas's box over the tier's scaling, whatever the display's pixel ratio,
+   * as the game sizes it on Babylon.js, and under the render scale where a paint pass hides its steps. The surface
+   * is the engine's own, once it stands.
+   */
+  let surface: EngineContext | null = null;
+  const frameFit = createFrameFit(tier, renderScaleRuns(postFeatures.paint, options.gpuTime === true), {
+    clientWidth: () => canvas.clientWidth,
+    clientHeight: () => canvas.clientHeight,
+    ratio: () => globalThis.devicePixelRatio ?? 1,
+    set: (width, height) => {
+      if (surface !== null) setSurfaceSize(surface, width, height);
+    },
+  });
   /** Ground images still being fetched or decoded. */
   let loading = forest === null ? 0 : GROUND_IMAGES;
   let gpuErrors = 0;
@@ -800,6 +824,9 @@ export function createLiteRenderer(canvas: HTMLCanvasElement, level: Level, fore
       disposeEngine(engine);
       return;
     }
+    // The frame at the game's own size before anything is made for it.
+    surface = engine;
+    frameFit.fit();
     onEngineGpuError(engine, (error) => {
       if (gpuErrors++ < GPU_ERRORS_SAID) console.error(`the hike's renderer: ${error.message}`);
     });
@@ -1145,6 +1172,7 @@ export function createLiteRenderer(canvas: HTMLCanvasElement, level: Level, fore
       markSynced();
       if (standing !== null) release(standing);
       standing = null;
+      surface = null;
       if (options.gpuTime === true) {
         if (measured.__syncJobs !== undefined) delete measured.__syncJobs;
         if (measured.__frameUploads !== undefined) delete measured.__frameUploads;
@@ -1168,14 +1196,6 @@ export function createLiteRenderer(canvas: HTMLCanvasElement, level: Level, fore
       cancelAnimationFrame(scheduled);
       scheduled = null;
     }
-  }
-
-  /** The engine's surface fitted to the canvas, when the canvas's size has moved. */
-  function fit(made: Standing): void {
-    if (canvas.clientWidth === fittedWidth && canvas.clientHeight === fittedHeight) return;
-    fittedWidth = canvas.clientWidth;
-    fittedHeight = canvas.clientHeight;
-    resizeEngine(made.engine);
   }
 
   /** The lights and the cleared frame, written again when the hour's or the weather's light has moved. */
@@ -1424,6 +1444,8 @@ export function createLiteRenderer(canvas: HTMLCanvasElement, level: Level, fore
       }
       setFoliageWind(wind, windPlayers);
 
+      // The render scale under the paint is fed the page's frame, as the game feeds it: a step is fitted by the next frame drawn.
+      frameFit.frame(frame.dt);
       othersSeen = Math.max(othersSeen, state.players.size - (state.players.has(localId) ? 1 : 0));
       // Where every body stands this frame, before the frame's scene is stepped: a body a scene shows or hides is
       // shown or hidden from the frame after the scene says so, as the game on Babylon.js has it.
@@ -1807,15 +1829,16 @@ export function createLiteRenderer(canvas: HTMLCanvasElement, level: Level, fore
       return projectToCanvas(pose, axes, fov, lens.near, canvas.clientWidth, canvas.clientHeight, pos.x, pos.y, pos.z);
     },
     resize() {
-      // Fitted again whatever the size last seen: the device's pixel ratio may be what moved.
-      fittedWidth = -1;
-      if (standing !== null) fit(standing);
+      // Read again whatever was last seen.
+      frameFit.refit();
+      if (standing !== null) frameFit.fit();
     },
     drawFrame() {
       if (standing === null) return;
       // While the scene is built again for a new hiker's lamp, nothing of it is drawn (`wornLamps.ts`).
       if (standing.wornLamps.rebuilding) return;
-      fit(standing);
+      // The frame sized again where the canvas's box, the display's ratio or the render scale has moved.
+      frameFit.fit();
       // The hike's own surface alone: a billboard's bake has another, drawn when the bake is (`impostorBake.ts`).
       renderFrame(standing.engine, 1000 / 60, [standing.engine]);
       // The cover map is drawn with the frame that asked for it, and no other.

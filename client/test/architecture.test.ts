@@ -846,6 +846,38 @@ describe("layer boundaries", () => {
   });
 
   /**
+   * What stands between a renderer and the page it draws on is the game's
+   * own arithmetic too: the frame's size from the canvas's box, the tier's
+   * scaling and the render scale under the paint. Both renderers read the
+   * rule that says where the render scale runs.
+   */
+  it("what a renderer is sized and started by is computed without loading Babylon, whatever it imports", () => {
+    const ENGINE_FREE = ["frameSize.ts", "renderScale.ts", "quality.ts"];
+    const loaded = (file: string): string[] =>
+      [...readFileSync(file, "utf8").matchAll(/^\s*(?:import|export)\s+(?!type\s)(?:[^"'();]*?\s+from\s+)?["']([^"']+)["']/gm)].map((m) => m[1] as string);
+    const seen = new Set<string>();
+    const stack = ENGINE_FREE.map((name) => join(SRC, "game", name));
+    for (const file of stack) expect(existsSync(file), file).toBe(true);
+    const bad: string[] = [];
+    while (stack.length > 0) {
+      const file = stack.pop() as string;
+      if (seen.has(file)) continue;
+      seen.add(file);
+      for (const spec of loaded(file)) {
+        if (spec.startsWith("@babylonjs")) bad.push(`${relative(SRC, file)} imports ${spec}`);
+        if (spec.startsWith(".") && spec.endsWith(".js")) stack.push(join(file, "..", spec.replace(/\.js$/, ".ts")));
+      }
+    }
+    expect(seen.size).toBeGreaterThan(ENGINE_FREE.length);
+    expect(bad).toEqual([]);
+    expect(readFileSync(join(SRC, "game/renderer.ts"), "utf8")).toContain("renderScaleRuns(postFeatures.paint, options.gpuTime === true)");
+    const lite = readFileSync(join(SRC, "game/lite/renderer.ts"), "utf8");
+    expect(lite).toContain("createFrameFit(tier, renderScaleRuns(postFeatures.paint, options.gpuTime === true), {");
+    // The surface is sized by the game's rule alone: Lite's own fit to the display's ratio is not called.
+    expect(lite).not.toContain("resizeEngine");
+  });
+
+  /**
    * The hike's renderer is drawn with Babylon Lite, and nothing of it is
    * Babylon.js: not a module under `game/lite/`, and not anything one of
    * them loads. What it shares with the renderer on Babylon.js is the game's

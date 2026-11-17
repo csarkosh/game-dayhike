@@ -78,7 +78,7 @@ import { buildAtOnce, type FirstBuilds } from "./firstBuilds.js";
 import { createPost, fxSupportedBy } from "./post.js";
 import { lensSmooth, lensStrengthUnder } from "./lensParams.js";
 import { postFeaturesFor } from "./postParams.js";
-import { createRenderScale } from "./renderScale.js";
+import { createRenderScale, renderScaleRuns } from "./renderScale.js";
 import { installGpuTimeReadout } from "./gpuTime.js";
 import type { GpuTimeReport } from "./gpuTimeReport.js";
 import { createSkinShading } from "./skin.js";
@@ -2028,7 +2028,7 @@ function buildRenderer(
   // scaling (`QUALITY`, set by the lighting) is the scale's full. The
   // measurement mode holds it at full for the page's life, so a timing is
   // always of the same pixels.
-  const renderScale = postFeatures.paint > 0 && options.gpuTime !== true ? createRenderScale() : null;
+  const renderScale = renderScaleRuns(postFeatures.paint, options.gpuTime === true) ? createRenderScale() : null;
   const baseScaling = QUALITY[tier].hardwareScaling;
   partOf(lighting);
   /** Aborted on dispose, or as a build that throws is undone: a wait for the

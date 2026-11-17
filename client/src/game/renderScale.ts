@@ -44,6 +44,16 @@ export const RENDER_SCALE_RISE_WINDOWS = 3;
 /** A frame longer than this is not play: its window does not count. */
 export const RENDER_SCALE_STALL_S = 0.25;
 
+/**
+ * Whether the render scale runs for a renderer: only where the paint pass
+ * draws (`paint`, its stroke's radius, 0 for none), whose strokes hide the
+ * difference, and never in the measurement mode (`measured`), which holds
+ * the frame at the window's pixels so a timing is always of the same ones.
+ */
+export function renderScaleRuns(paint: number, measured: boolean): boolean {
+  return paint > 0 && !measured;
+}
+
 export type RenderScale = {
   /** The scale now: one of `RENDER_SCALE_STEPS`. */
   readonly scale: number;
