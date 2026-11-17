@@ -139,6 +139,40 @@ export function obliqueProjection(
 }
 
 /**
+ * Lengyel's oblique near plane where depth runs the other way, from 1 at the
+ * near plane to 0 at the far one (a renderer whose depth is reversed):
+ * `projection` such a perspective projection in the same layout, `plane` as
+ * `obliqueProjection` takes it. The clip-z coefficients are replaced by
+ * z' = M4 - lambda * C with lambda = (M4 . Q) / (C . Q), where Q is the
+ * camera-space point the projection takes to (sgn a, sgn b, 0, 1), the far
+ * plane's corner on the plane's side: a point on the plane has depth 1, the
+ * kept half-space falls from there to 0 at that corner, and points across
+ * the plane lie over 1 and are clipped. Every other entry is `projection`'s.
+ * Writes `out` (which may be `projection` itself) and returns it; a singular
+ * projection, or a plane the far corner lies on or behind, leaves `out` a
+ * copy of `projection`.
+ */
+export function obliqueProjectionReversed(projection: Float32Array, plane: ArrayLike<number>, out: Float32Array): Float32Array {
+  if (out !== projection) out.set(projection);
+  if (!invert4(projection, scratchInverse)) return out;
+  const qx = Math.sign(plane[0]!);
+  const qy = Math.sign(plane[1]!);
+  // Q = q . P^-1 for the row vector q = (sgn a, sgn b, 0, 1).
+  for (let i = 0; i < 4; i++) scratchQ[i] = qx * scratchInverse[i]! + qy * scratchInverse[4 + i]! + scratchInverse[12 + i]!;
+  const cDotQ = plane[0]! * scratchQ[0]! + plane[1]! * scratchQ[1]! + plane[2]! * scratchQ[2]! + plane[3]! * scratchQ[3]!;
+  if (cDotQ <= 0 || !Number.isFinite(cDotQ)) return out;
+  const wQ = scratchQ[0]! * projection[3]! + scratchQ[1]! * projection[7]! + scratchQ[2]! * projection[11]! + scratchQ[3]! * projection[15]!;
+  const lambda = wQ / cDotQ;
+  // The w's own coefficients, read before any is written: `out` may be `projection`.
+  const w0 = projection[3]!, w1 = projection[7]!, w2 = projection[11]!, w3 = projection[15]!;
+  out[2] = w0 - lambda * plane[0]!;
+  out[6] = w1 - lambda * plane[1]!;
+  out[10] = w2 - lambda * plane[2]!;
+  out[14] = w3 - lambda * plane[3]!;
+  return out;
+}
+
+/**
  * The world plane y = `level` (normal +y: the water's upper side is kept) in
  * the space of the camera whose view is `view` (Babylon layout): for the
  * mirrored camera pass its view, `reflection · view`. With the view's

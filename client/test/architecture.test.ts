@@ -450,6 +450,7 @@ describe("layer boundaries", () => {
       join(SRC, "game", "waterGround.ts"),
       join(SRC, "game", "panoramaTurn.ts"),
       join(SRC, "game", "mirrorGround.ts"),
+      join(SRC, "game", "mirrorPass.ts"),
       join(SRC, "game", "firstBuilds.ts"),
       join(SRC, "game", "filmHead.ts"),
       join(SRC, "game", "atmosphereParams.ts"),
