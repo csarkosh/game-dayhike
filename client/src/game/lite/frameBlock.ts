@@ -65,8 +65,11 @@
  * post chain. What the hour, the weather or a kilometre walked moves (the
  * air, the wet line, the terrain's record, the grade) stands before them,
  * and is sent on the frames that move it. A camera that stands still with
- * the clocks running sends about 300 bytes of a block of some 5,300, where
- * a clock at its head and another at its foot had it sent nearly whole.
+ * the clocks running sends about 300 bytes of a block of some 5,300 while
+ * the swash's table is at rest. Once the sea's edge has wetted the cove's
+ * face the ages of the table's columns run on every frame, wherever the
+ * camera looks, and the run begins at the first of them: some 4 KB, as
+ * long as the table is packed every frame.
  */
 import { emptyAtmosphereUniforms, type AtmosphereUniforms } from "../atmosphereParams.js";
 import { emptyFadeUniforms } from "../distanceFade.js";
@@ -158,8 +161,9 @@ export const FRAME_PARTS: readonly UniformField[] = [
  * the block: what moves only on some frames first, what every frame moves
  * last, so that a frame's run of moved words is as short as what moved.
  *
- * - The swash's table and the sea's rings: the table while a wave runs up
- *   the cove's face, a ring when the camera has crossed a cell of it.
+ * - The swash's table and the sea's rings: the table on every frame once
+ *   a wave has wetted the cove's face, since a wetted column's age runs;
+ *   a ring when the camera has crossed a cell of it.
  * - The players who bend the foliage and the eye: while someone walks.
  * - The clocks of the hike's own stages: the motes' on the tiers that draw
  *   them, the rain's and the splashes' while it rains.
