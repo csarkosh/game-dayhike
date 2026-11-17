@@ -92,7 +92,8 @@ describe("the patch under a staged scene's own car on Babylon Lite", () => {
     const source = readFileSync(new URL("../../../src/game/lite/sceneryPaint.ts", import.meta.url), "utf8");
     expect(source).toContain("baseColorTexture: picture, baseColorFactor: [0, 0, 0, darkness], metallicFactor: 0, roughnessFactor: 1, doubleSided: true, alphaBlend: true,");
     expect(source).toContain("material.plugins = [unlitBlackPlugin(), air(), ahead, paintAlphaPlugin()];");
-    const shell = readFileSync(new URL("../../../src/game/trailheadMeshes.ts", import.meta.url), "utf8");
+    // The patch's material as the trailhead's shell on Babylon.js made it, its lines recorded.
+    const shell = babylonText("stages/carShadowPatch.material.txt");
     expect(shell).toContain("pbr.unlit = true;");
     expect(shell).toContain("pbr.albedoColor = new Color3(0, 0, 0);");
     expect(shell).toContain("material.alpha = darkness;");

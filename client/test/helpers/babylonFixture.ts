@@ -1,8 +1,10 @@
 /**
  * What Babylon.js gave, recorded once: the text of its own shaders, the
- * numbers its own arithmetic and mesh builders made, and what the game's
- * shells on it declared, each read from Babylon.js as the tests ran it and
- * written under `test/fixtures/babylon/`. A test holds the game's own
+ * numbers its own arithmetic, mesh builders and loader made, and what the
+ * game's shells on it declared and placed, each read from Babylon.js as
+ * the tests ran it; and the text of the game's own stages on it (a `.fx`
+ * file whole, a run of a shell's lines) as it stood in its file. All of it
+ * is written under `test/fixtures/babylon/`. A test holds the game's own
  * module to the record at the tolerance it held it to Babylon.js itself,
  * and loads no Babylon.js to do so.
  *
