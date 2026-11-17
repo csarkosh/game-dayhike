@@ -13,7 +13,7 @@ import {
   setFoliageWind,
 } from "../../../src/game/foliageUniforms.js";
 import { conformUniforms } from "../../../src/game/groundConform.js";
-import { IMPOSTOR_BAKE_FRAGMENT, IMPOSTOR_BAKE_UNIFORM } from "../../../src/game/impostorBakePlugin.js";
+import { babylonText, babylonValues } from "../../helpers/babylonFixture.js";
 import type { ImpostorBakeMode } from "../../../src/game/impostorBake.js";
 import { ATMOSPHERE_PRIORITY } from "../../../src/game/lite/atmospherePlugin.js";
 import {
@@ -28,6 +28,10 @@ import { MOSS_ROUGHNESS, MOSS_TILE } from "../../../src/game/mossParams.js";
 import { WET_CAP, WET_SWASH_VECS, emptyWetUniforms, wetUniforms } from "../../../src/game/wetSurface.js";
 import { WIND_K1, WIND_OMEGA_FLUTTER, type WindRecord } from "../../../src/game/windParams.js";
 import { laidOut, readUniform, standInTexture } from "./pluginFixture.js";
+
+/** The bake's fragment code and its one uniform's name on Babylon.js (`impostorBakePlugin.ts`), recorded. */
+const IMPOSTOR_BAKE_FRAGMENT = babylonText("stages/impostorBake.fragment.glsl");
+const IMPOSTOR_BAKE_UNIFORM = babylonValues<{ impostorBakeUniform: string }>("stages/declared.json").impostorBakeUniform;
 
 const EYE = { x: 7, y: 8, z: 9 };
 const FRAME = { height: 637 };

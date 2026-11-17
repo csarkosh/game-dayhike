@@ -1,20 +1,20 @@
 import { describe, expect, it } from "vitest";
-import { ShaderStore } from "@babylonjs/core/Engines/shaderStore.js";
-import "@babylonjs/core/Shaders/default.fragment.js";
-import "@babylonjs/core/Shaders/ShadersInclude/fogVertex.js";
+import { babylonText } from "../../helpers/babylonFixture.js";
 import { FRAME_BLOCK, stageClocks, stageOwn, stageReads } from "../../../src/game/lite/frameBlock.js";
 import { RAIN_FRAME_READS, RAIN_WGSL } from "../../../src/game/lite/rain.js";
 import { emptyRainStageUniforms } from "../../../src/game/rainField.js";
-import { RainPlugin } from "../../../src/game/rainPlugin.js";
 import { inOrder, tight } from "./wgslText.js";
 
-/** The streak plugin's own code at its points, and the Standard material's fragment stage with its fog, as installed. */
-const code = (stage: "vertex" | "fragment"): Record<string, string> => RainPlugin.prototype.getCustomCode.call({}, stage) as Record<string, string>;
-const PLUGIN_VERTEX = code("vertex")["CUSTOM_VERTEX_UPDATE_POSITION"] as string;
-const PLUGIN_FRAGMENT = tight(code("fragment")["CUSTOM_FRAGMENT_BEFORE_FRAGCOLOR"] as string);
-const STANDARD = tight(ShaderStore.ShadersStore["defaultPixelShader"] as string);
-const FOG_DECLARATION = tight(ShaderStore.IncludesShadersStore["fogFragmentDeclaration"] as string);
-const FOG_VERTEX = tight(ShaderStore.IncludesShadersStore["fogVertex"] as string);
+/**
+ * The streak plugin's own code at its points on Babylon.js (`rainPlugin.ts`: where it updates the position, and
+ * before the fragment's colour), and the Standard material's fragment stage with its fog, as Babylon.js installs
+ * them (all recorded).
+ */
+const PLUGIN_VERTEX = babylonText("stages/rain.vertexUpdatePosition.glsl");
+const PLUGIN_FRAGMENT = tight(babylonText("stages/rain.fragmentBeforeFragColor.glsl"));
+const STANDARD = tight(babylonText("shaders/defaultPixelShader.glsl"));
+const FOG_DECLARATION = tight(babylonText("shaders/fogFragmentDeclaration.glsl"));
+const FOG_VERTEX = tight(babylonText("shaders/fogVertex.glsl"));
 const OPEN = tight(RAIN_WGSL.vertex);
 const COVERED = tight(RAIN_WGSL.vertexCovered);
 const FRAGMENT = tight(RAIN_WGSL.fragment);

@@ -1,13 +1,14 @@
 import { describe, expect, it } from "vitest";
-import { WING_GLSL } from "../../../src/game/wingPlugin.js";
 import { WING_AMP_AT, WING_COLOURWAY_AT, WING_PHASE_AT, WING_WGSL, wingPlugin } from "../../../src/game/lite/wingPlugin.js";
 import { FRAME_BLOCK, inFrameBlock } from "../../../src/game/lite/frameBlock.js";
+import { babylonText } from "../../helpers/babylonFixture.js";
 import { inOrder, tight } from "./wgslText.js";
 import type { PluginUniformBlock } from "@babylonjs/lite";
 
 const SHARED = { name: FRAME_BLOCK } as unknown as PluginUniformBlock;
 const WGSL = tight(WING_WGSL);
-const GLSL = tight(WING_GLSL);
+/** The game's stage on Babylon.js (`wingPlugin.ts`), recorded. */
+const GLSL = tight(babylonText("stages/wing.glsl"));
 
 describe("a wing's beat on Babylon Lite", () => {
   it("is the game's stage statement for statement: the span's share, the angle, the turn of y and of x", () => {

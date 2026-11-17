@@ -1,17 +1,15 @@
 import { describe, expect, it } from "vitest";
-import { ShaderStore } from "@babylonjs/core/Engines/shaderStore.js";
-import "@babylonjs/core/Shaders/default.fragment.js";
-import "@babylonjs/core/Shaders/ShadersInclude/fogVertex.js";
+import { babylonText } from "../../helpers/babylonFixture.js";
 import { FRAME_BLOCK, stageOwn, stageReads } from "../../../src/game/lite/frameBlock.js";
 import { MIST_FRAME_READS, MIST_INSTANCE_BYTES, MIST_WGSL } from "../../../src/game/lite/mistMeshes.js";
 import { emptyMistUniforms } from "../../../src/game/mistBanks.js";
 import { inOrder, tight } from "./wgslText.js";
 
-/** The Standard material's fragment stage and the fog it includes, as installed. */
-const STANDARD = tight(ShaderStore.ShadersStore["defaultPixelShader"] as string);
-const FOG_DECLARATION = tight(ShaderStore.IncludesShadersStore["fogFragmentDeclaration"] as string);
-const FOG = tight(ShaderStore.IncludesShadersStore["fogFragment"] as string);
-const FOG_VERTEX = tight(ShaderStore.IncludesShadersStore["fogVertex"] as string);
+/** The Standard material's fragment stage and the fog it includes, as Babylon.js installs them (recorded). */
+const STANDARD = tight(babylonText("shaders/defaultPixelShader.glsl"));
+const FOG_DECLARATION = tight(babylonText("shaders/fogFragmentDeclaration.glsl"));
+const FOG = tight(babylonText("shaders/fogFragment.glsl"));
+const FOG_VERTEX = tight(babylonText("shaders/fogVertex.glsl"));
 const VERTEX = tight(MIST_WGSL.vertex);
 const FRAGMENT = tight(MIST_WGSL.fragment);
 

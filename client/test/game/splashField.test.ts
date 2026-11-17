@@ -2,12 +2,12 @@ import { describe, expect, it } from "vitest";
 import type { AtmosphereRecord } from "../../src/game/atmosphereParams.js";
 import type { RainLamp } from "../../src/game/rainField.js";
 import { RAIN_MAP, SPLASH_FOLD_S, SPLASH_TIERS, rainSeeds } from "../../src/game/rainParams.js";
-import { SplashPlugin } from "../../src/game/rainSplash.js";
 import {
   SPLASH_INSTANCE_FLOATS, SPLASH_SEED, SUN_UP, emptySplashStageUniforms, emptySplashUniforms, splashInstances, splashStageUniforms, splashUniforms,
   splashesDrawn,
 } from "../../src/game/splashField.js";
 import { WEATHER_PRESETS } from "../../src/game/weather.js";
+import { babylonValues } from "../helpers/babylonFixture.js";
 
 const CAM = { x: 10, y: 5, z: -20 };
 const LAMP_OFF: RainLamp = { x: 10, y: 5, z: -20, dx: 0, dy: 0, dz: 1, intensity: 0, angle: 1.5, r: 1, g: 0.9, b: 0.8 };
@@ -19,7 +19,9 @@ const AIR = { baseDensity: 0.004, farColour: { r: 0.3, g: 0.4, b: 0.5 } } as Atm
 
 describe("the splashes with no engine", () => {
   it("names the splash plugin's uniforms, name for name and component for component", () => {
-    const declared = SplashPlugin.prototype.getUniforms.call({}).ubo;
+    // The plugin's own list on Babylon.js (`rainSplash.ts`), recorded.
+    const declared = babylonValues<{ splashUniforms: { name: string; size: number }[] }>("stages/declared.json").splashUniforms;
+    expect(declared.length).toBeGreaterThan(5);
     const record = emptySplashUniforms();
     expect(Object.keys(record)).toEqual(declared.map((u) => u.name));
     for (const u of declared) expect((record as Record<string, number[]>)[u.name], u.name).toHaveLength(u.size);
