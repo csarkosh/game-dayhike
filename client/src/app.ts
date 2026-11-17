@@ -106,7 +106,7 @@ import type { KeptEngine } from "./game/keptEngine.js";
 import { releaseAtmosphere } from "./game/atmosphere.js";
 import { answerFailures, coverWith, createSerial } from "./game/engineFailure.js";
 import { createGpuFaults } from "./game/gpuFaults.js";
-import type { LossNote } from "./game/lossBound.js";
+import { LOSS_ENDED_LINE, type LossNote } from "./game/lossBound.js";
 import { GOVERNOR_IDLE_MAX_MS, actOnDrop, governHike, governorDecision, steadyFrame } from "./game/governor.js";
 import { OVER_PLAY_Z, showProbeScreen, timeIdleCadence } from "./game/probeScreen.js";
 import { createCoveredDraw } from "./game/coveredDraw.js";
@@ -241,9 +241,10 @@ export type GameOptions = {
    * rebuild is done. */
   engineFailed(reason: "pipeline" | "lost"): string;
   /** The page's record of lost devices (`lossBound.ts`): `note` takes one
-   * down as the hike's renderer loses its device and says how many the page
-   * has had and how close together. */
-  losses: { note(): LossNote };
+   * down as the hike's renderer loses its device and says what the bound on
+   * rebuilds makes of it; `ended` is called as the hike ends by that bound,
+   * for the landing page's line. */
+  losses: { note(): LossNote; ended(): void };
   /** The tier `main.ts` decided (`startupTier`): `?tier=`, the player's
    * choice, or Auto. The hike starts at it; the pause screen's Settings can
    * change it while the hike runs. */
@@ -427,7 +428,8 @@ function buildGame(
    * What the GPU says went wrong under this hike (`gpuFaults.ts`): every
    * renderer the hike builds tells it of its device's errors and of a loss
    * it did not ask for, and the rows it sends are bounded for the hike. A
-   * loss is noted on the page's record whatever is sent.
+   * loss is noted on the page's record whatever is sent: the bound on
+   * rebuilds reads it (`answerFailure`).
    */
   const faults = createGpuFaults({
     enabled: telemetry?.enabled ?? false,
@@ -1978,11 +1980,11 @@ function buildGame(
   // the player is doing by then, which for a follower is the host's next game.
   let landingTimer: ReturnType<typeof setTimeout> | null = null;
 
-  function endSession(message: string): void {
+  function endSession(message: string, why: Fields = {}): void {
     // A disposed game has no HUD to write to and no business steering the
     // page: whoever disposed it decided where the player goes next.
     if (disposed) return;
-    telemetry?.event("session_end", { msg: message, p: progressRounded() });
+    telemetry?.event("session_end", { msg: message, p: progressRounded(), ...why });
     hud.setStatus(message);
     // One timer, not one per call: two ends in the same session (a session-end
     // event and a lost transport, say) would otherwise push two history
@@ -2735,6 +2737,14 @@ function buildGame(
     record: (reason) => {
       failedAt = performance.now();
       return options.engineFailed(reason);
+    },
+    // The loss that is one too many in too short a time is not answered by another renderer (`lossBound.ts`): the
+    // hike ends as one whose graphics could not be restarted does, with its line here and on the landing page.
+    ends: (reason) => reason === "lost" && faults.lastLoss?.end === true,
+    end: () => {
+      const loss = faults.lastLoss;
+      options.losses.ended();
+      endSession(LOSS_ENDED_LINE, { why: "device_lost", losses: loss?.losses ?? 0, recent: loss?.recent ?? 0 });
     },
     cover: () => {
       const lift = coverPlay();

@@ -50,7 +50,7 @@ import type { EngineOnCanvas, EngineWatchers } from "./game/rendererSwap.js";
 import { releaseEngine } from "./game/renderer.js";
 import { adoptEngine, dropEngine, keepEngine } from "./game/keptEngine.js";
 import { recordEngineFailure, recordStartFailure, startOnEngine } from "./game/engineFailure.js";
-import { createLossRecord } from "./game/lossBound.js";
+import { LOSS_ENDED_LINE, createLossRecord } from "./game/lossBound.js";
 import { engineVersion } from "./game/engineVersion.js";
 import { hearEngineLog } from "./game/engineLog.js";
 import { browserEnv, browserMajor, hostOs, isChromeOrEdge, readSignals, type GpuSignals } from "./game/gpuSignals.js";
@@ -941,12 +941,14 @@ function engineFailed(reason: "pipeline" | "lost"): string {
 /**
  * The devices this page's hikes have lost (`lossBound.ts`), by the page's
  * clock: every hike's, since the machine is the same in the next one. A
- * hike notes each loss here, for its row to say how many there have been
- * and how close together.
+ * hike notes each loss here and reads what the bound on rebuilds makes of
+ * it; one that ends by the bound leaves the landing page its line, as a
+ * hike whose graphics could not be restarted does (`onTierFallback`).
  */
 const lostDevices = createLossRecord();
 const losses = {
   note: () => lostDevices.note(performance.now()),
+  ended: () => void leaveNotice(pageSessionStorage(), LOSS_ENDED_LINE, Date.now()),
 };
 
 /**

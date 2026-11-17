@@ -920,9 +920,10 @@ describe("layer boundaries", () => {
    * renderer tells it of every error its device reports and of a loss it
    * did not ask for, the hike keeps the record for its life and gives it
    * each renderer that stands, and the page counts the losses its hikes
-   * have had.
+   * have had, so the loss that is one too many ends the hike by the way a
+   * hike already ends when its graphics cannot be restarted.
    */
-  it("tells the hike's record of the device's errors and losses, and counts a page's losses in one record", () => {
+  it("tells the hike's record of the device's errors and losses, and ends a hike by the page's count of losses, through its one line", () => {
     const lite = readFileSync(join(SRC, "game/lite/renderer.ts"), "utf8");
     // Every error nobody caught, and every one a scope handed back.
     expect(lite).toContain('      heard?.error(gpuFaults, error, "uncaptured");');
@@ -943,11 +944,20 @@ describe("layer boundaries", () => {
     expect([...app.matchAll(/\bcreateGpuFaults\(/g)].length).toBe(1);
     expect(app).toContain("      faults.attach(r);\n      const engine = r.engine;");
     expect(app).toContain("    loss: () => options.losses.note(),");
-    // The page's count is one record for every hike of the page.
+    // The loss that is one too many is not answered by another renderer: the hike ends as any hike that cannot go on.
+    expect(app).toContain('    ends: (reason) => reason === "lost" && faults.lastLoss?.end === true,');
+    expect(app).toContain('      options.losses.ended();\n      endSession(LOSS_ENDED_LINE, { why: "device_lost", losses: loss?.losses ?? 0, recent: loss?.recent ?? 0 });');
+    // The page's count is one record for every hike of the page, and the landing's line is the same constant.
     const main = stripComments(readFileSync(join(SRC, "main.ts"), "utf8"));
     expect([...main.matchAll(/\bcreateLossRecord\(/g)].length).toBe(1);
     expect(main).toContain("  note: () => lostDevices.note(performance.now()),");
+    expect(main).toContain("  ended: () => void leaveNotice(pageSessionStorage(), LOSS_ENDED_LINE, Date.now()),");
     expect(main).toContain("        engineFailed: record,\n        losses,");
+    // The line's words stand in one constant, and the bound's numbers in one module.
+    const naming = (pattern: RegExp): string[] =>
+      sourceFiles(SRC).flatMap((file) => [...stripComments(readFileSync(file, "utf8")).matchAll(pattern)].map(() => relative(SRC, file)));
+    expect(naming(/\bLOSS_ENDED_LINE = /g)).toEqual(["game/lossBound.ts"]);
+    expect(naming(/\bLOSS_BOUND_(?:COUNT|WINDOW_MS) = /g)).toEqual(["game/lossBound.ts", "game/lossBound.ts"]);
   });
 
   /**
