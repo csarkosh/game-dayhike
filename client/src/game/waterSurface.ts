@@ -11,6 +11,7 @@
  * Also the ripple bump's drift (`createBumpDrift`): how far the bump's
  * picture has slid under the low tier's sea and under the lakes.
  */
+import { MIRROR_OFFSET_K } from "./mirrorView.js";
 import { roughnessFor, type WaterRow } from "./waterShading.js";
 import { WIND_TIME_WRAP } from "./windParams.js";
 
@@ -235,6 +236,49 @@ export function lakeUniforms(surface: WaterSurface, level: number, shore: { pano
   for (let i = 0; i < 3; i++) put(out.waterShadeColour, i, surface.shadeColour[i] as number);
   put(out.waterPanoramaOn, 0, shore.panorama ? 1 : 0);
   put(out.waterSkylineOn, 0, shore.skyline ? 1 : 0);
+  return moved;
+}
+
+/**
+ * A lake's mirror's uniforms by the names its shader reads them under, on
+ * the tier that draws a mirror: the view-projection the picture was last
+ * drawn through, whether this lake reads it, the ripple's reach into the
+ * read, a full paw's smear and the held frames' smear.
+ */
+export type LakeMirrorUniforms = {
+  waterMirrorVP: Float32Array;
+  waterMirrorOn: Float32Array;
+  waterMirrorK: Float32Array;
+  waterMirrorSmearPx: Float32Array;
+  waterMirrorMotion: Float32Array;
+};
+
+/** A lake's mirror's uniforms: no mirror read, the identity. */
+export function emptyLakeMirrorUniforms(): LakeMirrorUniforms {
+  return {
+    waterMirrorVP: new Float32Array([1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1]), waterMirrorOn: new Float32Array(1), waterMirrorK: new Float32Array([MIRROR_OFFSET_K]),
+    waterMirrorSmearPx: new Float32Array(1), waterMirrorMotion: new Float32Array(1),
+  };
+}
+
+/**
+ * Fills `out` from `surface`, a lake's that reads the mirror this frame or
+ * not (`on`). Returns whether any value moved.
+ */
+export function lakeMirrorUniforms(surface: WaterSurface, on: boolean, out: LakeMirrorUniforms): boolean {
+  let moved = false;
+  const put = (to: Float32Array, at: number, value: number): void => {
+    const next = Math.fround(value);
+    if (to[at] !== next) {
+      to[at] = next;
+      moved = true;
+    }
+  };
+  for (let i = 0; i < 16; i++) put(out.waterMirrorVP, i, surface.mirrorViewProjection[i] as number);
+  put(out.waterMirrorOn, 0, on ? 1 : 0);
+  put(out.waterMirrorK, 0, MIRROR_OFFSET_K);
+  put(out.waterMirrorSmearPx, 0, surface.mirrorSmearPx);
+  put(out.waterMirrorMotion, 0, surface.mirrorMotion);
   return moved;
 }
 

@@ -4,7 +4,7 @@ import { describe, expect, it } from "vitest";
 import { SKYLINE_TEXELS } from "../../../src/game/lakeSkyline.js";
 import { PANORAMA_EYE_UP, PANORAMA_HEIGHT_M } from "../../../src/game/panoramaTurn.js";
 import {
-  LAKE_COMPOSE_WGSL, LAKE_LENS_WGSL, LAKE_LIGHTS_WGSL, LAKE_PANORAMA_WGSL, LAKE_RIPPLES_WGSL, LAKE_SHORE_WGSL, WATER_BUMP_WGSL, WATER_DEFS_WGSL, WATER_SPLIT_WGSL,
+  LAKE_COMPOSE_WGSL, LAKE_LENS_WGSL, LAKE_LIGHTS_WGSL, LAKE_MIRROR_WGSL, LAKE_PANORAMA_WGSL, LAKE_RIPPLES_WGSL, LAKE_SHORE_WGSL, WATER_BUMP_WGSL, WATER_DEFS_WGSL, WATER_SPLIT_WGSL,
   WATER_THROUGH_DEFS_WGSL, WATER_THROUGH_FINAL_WGSL, WATER_VERTEX_WGSL, lakeComposeWgsl, lakeLightsWgsl, waterThroughWgsl,
 } from "../../../src/game/lite/waterWgsl.js";
 import { WATER_F0 } from "../../../src/game/waterShading.js";
@@ -347,5 +347,65 @@ describe("the water read through its surface in WGSL, against the game's GLSL", 
     expect(inOrder(through, ["letwSkin=waterSkinMask(input.worldPos.xz,wDepth);", "wTransmit*=1.0-wSkin;", "alpha=mix(alpha,1.0,wSkin);"])).toBe(true);
     expect(tight(code("waterFinal.fragment.fx"))).toBe("finalColor.rgb+=wTransmit;");
     expect(WATER_THROUGH_FINAL_WGSL).toBe("color+=wTransmit;");
+  });
+});
+
+describe("the lake's mirror's read in WGSL, against the game's GLSL", () => {
+  const shore = tight(code("lakeMirror.fragment.fx"));
+  const compose = tight(code("waterCompose.fragment.fx"));
+  const wgsl = tight(LAKE_MIRROR_WGSL);
+
+  it("finds a point's place in the picture, reads it and smears it by the GLSL's statements", () => {
+    expect(inOrder(shore, [
+      "vec2waterMirrorUv(vec3worldPos,vec2slope,floatdepth,floatviewDepth){",
+      "vec4clip=vp*vec4(worldPos,1.0);",
+      "vec2uv0=clip.xy/clip.w*0.5+0.5;",
+      "vec2uv=uv0+slope*waterMirrorK*min(depth/WATER_MIRROR_DEPTH,1.0)/max(viewDepth,1.0);",
+      "uv.y=min(uv.y,uv0.y);",
+      "vec2inside=step(vec2(0.0),uv)*step(uv,vec2(1.0));",
+      "returntextureLod(waterMirror,clamp(uv,0.0,1.0),0.0)*inside.x*inside.y;",
+      "floatstride=smearPx*waterScreen.y/3.0;",
+      "vec4sum=waterMirrorTap(uv)+waterMirrorTap(uv-vec2(0.0,stride))+waterMirrorTap(uv-vec2(0.0,2.0*stride))+waterMirrorTap(uv-vec2(0.0,3.0*stride));",
+      "returnvec4(sum.rgb/max(sum.a,1.0e-4),sum.a*0.25);",
+    ])).toBe(true);
+    expect(inOrder(wgsl, [
+      "fnwaterMirrorUv(worldPos:vec3<f32>,slope:vec2<f32>,depth:f32,viewDepth:f32)->vec2<f32>{",
+      "letclip=material.waterMirrorVP*vec4<f32>(worldPos,1.0);",
+      "letuv0=clip.xy/clip.w*0.5+0.5;",
+      "varuv=uv0+slope*material.waterMirrorK*min(depth/WATER_MIRROR_DEPTH,1.0)/max(viewDepth,1.0);",
+      "uv.y=min(uv.y,uv0.y);",
+      "letinside=step(vec2<f32>(0.0),uv)*step(uv,vec2<f32>(1.0));",
+      // The picture is laid top row first and turned over left to right: the GLSL's coordinate, one less each way.
+      "returntextureSampleLevel(waterMirror,waterMirrorSampler,vec2<f32>(1.0)-clamp(uv,vec2<f32>(0.0),vec2<f32>(1.0)),0.0)*inside.x*inside.y;",
+      // The frame's height is the block's, where the GLSL has its reciprocal.
+      "letstride=smearPx/(material.fadeRows*3.0);",
+      "letsum=waterMirrorTap(uv)+waterMirrorTap(uv-vec2<f32>(0.0,stride))+waterMirrorTap(uv-vec2<f32>(0.0,2.0*stride))+waterMirrorTap(uv-vec2<f32>(0.0,3.0*stride));",
+      "returnvec4<f32>(sum.rgb/max(sum.a,1.0e-4),sum.a*0.25);",
+    ])).toBe(true);
+    for (const name of ["WATER_MIRROR_DEPTH", "LAKE_MOTION_SMEAR_CAP"]) {
+      const value = new RegExp(`constfloat${name}=([-0-9.e]+);`).exec(shore)?.[1];
+      expect(Number(new RegExp(`const${name}:f32=([-0-9.e]+);`).exec(wgsl)?.[1]), name).toBe(Number(value));
+    }
+  });
+
+  it("puts the mirror's image over the shore where its pass drew something, only in a material that is handed a mirror", () => {
+    expect(inOrder(compose, [
+      "if(waterMirrorWeight*waterCalmShare>0.0){",
+      "vec4wMirror=waterMirrorSample(waterMirrorUv(vPositionW,normalW.xz,wDepth,vWaterViewDepth),waterMirrorSmearPx*wPaw+min(waterMirrorMotion/max(vWaterViewDepth,1.0),LAKE_MOTION_SMEAR_CAP/waterScreen.y));",
+      "vec3wShore=mix(wProbeRadiance,waterSkylineRadiance(wShoreRay,wProbeRadiance),step(0.5,waterSkylineOn));",
+      "wShore=mix(wShore,wMirror.rgb,step(0.5,waterMirrorOn)*wMirror.a);",
+      "floatwMirrorW=waterMirrorWeight*(1.0-wPaw)*waterCalmShare;",
+    ])).toBe(true);
+    const with_ = tight(lakeComposeWgsl(false, true));
+    expect(inOrder(with_, [
+      "if(material.waterMirrorWeight*material.waterCalmShare>0.0){",
+      "letwMirror=waterMirrorSample(waterMirrorUv(input.worldPos,N.xz,wDepth,input.vWaterViewDepth),material.waterMirrorSmearPx*wPaw+min(material.waterMirrorMotion/max(input.vWaterViewDepth,1.0),LAKE_MOTION_SMEAR_CAP*material.fadeRows));",
+      "varwShore=mix(wProbeRadiance,waterSkylineRadiance(wShoreRay,wProbeRadiance),step(0.5,material.waterSkylineOn));",
+      "wShore=mix(wShore,wMirror.rgb,step(0.5,material.waterMirrorOn)*wMirror.a);",
+      "letwMirrorW=material.waterMirrorWeight*(1.0-wPaw)*material.waterCalmShare;",
+    ])).toBe(true);
+    // Without one, the compose is the text it was.
+    expect(lakeComposeWgsl(false, false)).toBe(LAKE_COMPOSE_WGSL);
+    expect(LAKE_COMPOSE_WGSL).not.toContain("waterMirrorUv");
   });
 });

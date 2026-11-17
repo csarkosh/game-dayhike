@@ -181,8 +181,19 @@
  * its column of one picture the water reads. A capture is asked for under
  * each new sky state and when something it draws lands late, as the game
  * asks, and runs only on frames whose view holds the lake's glass: with
- * no lake in view there is no pass and no write. The mirror a
- * lake reflects its shore in on the tier that draws one is not drawn yet.
+ * no lake in view there is no pass and no write.
+ *
+ * **On the tier with a mirror a lake's glass reflects its shore in it**
+ * (`lakeMirror.ts`): the shore as the player would see it in the lake's
+ * plane, drawn before the frame into a picture of half its size through
+ * the player's camera mirrored in the water, its near plane the water's,
+ * on the first frame the pass is armed and every third after, and armed
+ * only while the view holds the served lake's glass, the eye over it and
+ * within reach. The lake reads the picture by the view it was last drawn
+ * through, smeared by the eye's travel over the frames it is held, and
+ * shows the sky's sheen alone while the mirror is not armed. The ground,
+ * the far forest's billboards, the cliffs' far ring, the props and the
+ * lake's plants stand in it; the near forest's full geometry does not yet.
  *
  * **A lake's life is the game's, stepped for the lakes within the camera's
  * reach** (`waterLifeMeshes.ts`, over `waterLifeScene.ts`): the midges one
@@ -406,6 +417,7 @@ import { createFrameUploads, uploadCountsCopy, type FrameUploadCounts } from "./
 import { createLiteGpuTime } from "./gpuTimeReadout.js";
 import { GROUND_IMAGES, cloudMapTexture, loadGroundArrays, tableTexture, type CloudMapTexture, type TableTexture } from "./groundTextures.js";
 import { createLiteLakes, type LakeFrame, type LiteLakes } from "./lakeMeshes.js";
+import { createLiteLakeMirror, type LiteLakeMirror } from "./lakeMirror.js";
 import { createLitePanorama, type LitePanorama, type ReflectionRegistry } from "./lakePanorama.js";
 import { createLiteMistMeshes, type LiteMistMeshes, type MistFrame } from "./mistMeshes.js";
 import { createLiteMotes, type LiteMotes, type MotesFrame } from "./motes.js";
@@ -540,6 +552,8 @@ type Standing = {
   rainMap: LiteRainMap | null;
   /** The shore panorama a lake's glass reflects, on the tier that draws one (`lakePanorama.ts`); null with no lake. */
   panorama: LitePanorama | null;
+  /** The mirror a lake's glass reflects its shore in, on the tier that draws one (`lakeMirror.ts`); null with no lake. */
+  mirror: LiteLakeMirror | null;
   splash: LiteRainSplash | null;
   /** The clock every skinned model's clips are read by (`skinnedModels.ts`). */
   skinClock: SkinClock;
@@ -839,6 +853,7 @@ export function createLiteRenderer(canvas: HTMLCanvasElement, level: Level, fore
   function release(made: Standing): void {
     made.chain?.dispose();
     made.panorama?.dispose();
+    made.mirror?.dispose();
     for (const life of made.waterLives) life.dispose();
     made.waterPlants?.dispose();
     made.lakes?.dispose();
@@ -969,9 +984,14 @@ export function createLiteRenderer(canvas: HTMLCanvasElement, level: Level, fore
     // plants stand in as they are made.
     const firstLake = lakes[0];
     const panorama = forest !== null && firstLake !== undefined && tier === "medium" && chained ? createLitePanorama(engine, scene, firstLake, { shared, uploads }) : null;
-    /** What stands in the panorama in its own material: `late` for what lands after the first frames, which the picture is taken again for. */
+    // The mirror a lake's glass reflects its shore in, on the tier that draws one: a pass of its own too, drawn only on
+    // a frame whose view holds the served lake's glass, which the same parts stand in.
+    const mirror = forest !== null && firstLake !== undefined && tier === "high" && chained ? createLiteLakeMirror(engine, scene, firstLake, { player: camera, shared, uploads }) : null;
+    /** What stands in a lake's reflections in its own material: `late` for what lands after the first frames, which the panorama's picture is taken again for. */
     const reflectedAs = (late: boolean): ReflectionRegistry | undefined =>
-      panorama === null
+      mirror !== null
+        ? mirror.own
+        : panorama === null
         ? undefined
         : {
           add: (mesh) => {
@@ -1052,7 +1072,7 @@ export function createLiteRenderer(canvas: HTMLCanvasElement, level: Level, fore
           firstBuilds: options.firstBuilds,
           uploads,
           cover: coverAs("terrain"),
-          reflections: panorama?.ground,
+          reflections: mirror?.ground ?? panorama?.ground,
         },
       );
       if (options.deferClipmap !== true) finish(terrain.firstBuild());
@@ -1187,7 +1207,7 @@ export function createLiteRenderer(canvas: HTMLCanvasElement, level: Level, fore
         bed, calm: calmFade, air, shared,
         made: pieces,
         bump: fittingWaterBump(prepared, forest.seed),
-        uploads, cover: coverAs("water"), panorama: panorama?.texture, behind,
+        uploads, cover: coverAs("water"), panorama: panorama?.texture, behind, mirror: mirror ?? undefined,
       });
       // A murky lake's reeds, cattails and lilies: placed by the simulation, drawn once.
       waterPlants = createLiteWaterPlants(engine, scene, forest.seed, lakes, {
@@ -1195,7 +1215,7 @@ export function createLiteRenderer(canvas: HTMLCanvasElement, level: Level, fore
         placements: pieces.map((piece) => piece?.plants ?? null), uploads,
       });
       // The reeds and the lilies stand in the shore's panorama on their own materials, whatever the frame's view holds.
-      for (const mesh of waterPlants.meshes) panorama?.own.add(mesh, true);
+      for (const mesh of waterPlants.meshes) (mirror ?? panorama)?.own.add(mesh, true);
       // The midges, the dragonflies and the frogs of every lake, each placed once and stepped only while the camera is
       // within its lake's reach.
       if (hasWaterLife) {
@@ -1208,7 +1228,7 @@ export function createLiteRenderer(canvas: HTMLCanvasElement, level: Level, fore
     }
     const made: Standing = {
       engine, scene, camera, sun, fill, lamp, dome, capture, shared, chain, materials, terrain, road, cloudGround, forest: trees, blades, clutter, duff, cliffs, props, brushes, mist, motes,
-      rain, rainMap, panorama, splash, skinClock, entities, mask, veil, wornLamps, cap, wildlife, scenery, bed, sea, spray, lakes: lakeMeshes, waterPlants, waterLives,
+      rain, rainMap, panorama, mirror, splash, skinClock, entities, mask, veil, wornLamps, cap, wildlife, scenery, bed, sea, spray, lakes: lakeMeshes, waterPlants, waterLives,
     };
     if (disposed) {
       release(made);
@@ -1808,6 +1828,8 @@ export function createLiteRenderer(canvas: HTMLCanvasElement, level: Level, fore
           f.sky = sky;
           f.environmentIntensity = light.lights?.environmentIntensity ?? 0;
           f.frameHeight = canvas.height;
+          f.frameWidth = canvas.width;
+          f.up = axes;
           f.fov = fov;
           f.cover = null;
           if (coverDrawn && standing.rainMap !== null) {
@@ -1816,9 +1838,12 @@ export function createLiteRenderer(canvas: HTMLCanvasElement, level: Level, fore
             f.cover = coverSquare;
           }
           // The lake the shore's panorama is of: the nearest past its bound, held until another is nearer by a lead.
-          const served = standing.panorama === null ? null : lakeChoice.choose(pose.x, pose.z);
+          const served = standing.panorama === null && standing.mirror === null ? null : lakeChoice.choose(pose.x, pose.z);
           f.served = served?.index ?? -1;
-          if (served !== null) standing.panorama?.setLake(lakes[served.index] as LakeSource);
+          if (served !== null) {
+            standing.panorama?.setLake(lakes[served.index] as LakeSource);
+            standing.mirror?.setLake(lakes[served.index] as LakeSource);
+          }
           standing.lakes.update(f);
           frameValues.water = standing.lakes.frame;
           // A sector of the panorama with this frame, while a capture is owed and that lake's glass reads the picture.
@@ -1939,6 +1964,8 @@ export function createLiteRenderer(canvas: HTMLCanvasElement, level: Level, fore
       standing.rainMap?.frameDrawn();
       // And a sector of the shore's panorama with the frame that drew it.
       standing.panorama?.frameDrawn();
+      // And the lake's mirror with the frame that drew it.
+      standing.mirror?.frameDrawn();
       // And the wind sea's cascades with the frame that asked for them.
       standing.sea?.frameDrawn();
       // A frame that asked the device for a shader module or a pipeline is told of, and the measurement mode's line written.

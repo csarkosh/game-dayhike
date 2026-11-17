@@ -45,18 +45,26 @@
  *   the other way. `waterHigh` is no uniform: a tier's material is the one
  *   or the other, and carries only its own branch.
  *
+ * - **The mirror's picture** (`LAKE_MIRROR_WGSL`) is laid top row first and
+ *   turned over left to right against the one Babylon.js draws (the pass
+ *   is drawn through a camera of the ordinary kind, `mirrorPass.ts`), so a
+ *   read at the GLSL's coordinate is made at one less each of its two; and
+ *   the frame's height the smear is measured in is the frame's block's
+ *   (`fadeRows`), where the GLSL has its reciprocal in `waterScreen`.
+ *
  * Left out, as nothing here reads them: the cat's-paws' mask (`lakePaw`,
  * `lakePawThreshold`), which the GLSL keeps and no longer calls. The lens
  * of the second octave and the read of the frame behind the surface are a
- * material's only on the tier that draws its water opaque, and the shore's
- * panorama only where it is handed one (`LAKE_PANORAMA_WGSL`,
- * `lakeComposeWgsl`): a tier carries neither the read nor the picture of
- * what it does not draw.
+ * material's only on the tier that draws its water opaque, the mirror's
+ * read only on the tier that draws a mirror, and the shore's panorama only
+ * where it is handed one (`LAKE_PANORAMA_WGSL`, `lakeComposeWgsl`): a tier
+ * carries neither the read nor the picture of what it does not draw.
  *
  * Loads nothing.
  */
 import { CAUSTIC_DEPTH_M, CAUSTIC_GAIN, CAUSTIC_MAX, LENS_STEP_M } from "../lakeRipples.js";
 import { SKYLINE_TEXELS } from "../lakeSkyline.js";
+import { LAKE_MOTION_SMEAR_CAP, MIRROR_DEPTH_FULL } from "../mirrorView.js";
 import { PANORAMA_EYE_UP, PANORAMA_HEIGHT_M } from "../panoramaTurn.js";
 import { WATER_F0 } from "../waterShading.js";
 
@@ -360,6 +368,32 @@ fn waterPanoramaRadiance(origin:vec3<f32>,dir:vec3<f32>,fallback:vec3<f32>)->vec
 }`;
 
 /**
+ * `lakeMirror.fragment.fx`'s mirror, on the tier that draws one: where a
+ * point of the surface is read in the picture (its place in the mirrored
+ * camera's view, moved by the ripple's slope and never up the screen), one
+ * read of it, and the four reads down the screen that smear it.
+ */
+export const LAKE_MIRROR_WGSL = /* wgsl */ `
+const WATER_MIRROR_DEPTH:f32=${MIRROR_DEPTH_FULL.toFixed(1)};
+const LAKE_MOTION_SMEAR_CAP:f32=${LAKE_MOTION_SMEAR_CAP.toFixed(2)};
+fn waterMirrorUv(worldPos:vec3<f32>,slope:vec2<f32>,depth:f32,viewDepth:f32)->vec2<f32>{
+  let clip=material.waterMirrorVP*vec4<f32>(worldPos,1.0);
+  let uv0=clip.xy/clip.w*0.5+0.5;
+  var uv=uv0+slope*material.waterMirrorK*min(depth/WATER_MIRROR_DEPTH,1.0)/max(viewDepth,1.0);
+  uv.y=min(uv.y,uv0.y);
+  return uv;
+}
+fn waterMirrorTap(uv:vec2<f32>)->vec4<f32>{
+  let inside=step(vec2<f32>(0.0),uv)*step(uv,vec2<f32>(1.0));
+  return textureSampleLevel(waterMirror,waterMirrorSampler,vec2<f32>(1.0)-clamp(uv,vec2<f32>(0.0),vec2<f32>(1.0)),0.0)*inside.x*inside.y;
+}
+fn waterMirrorSample(uv:vec2<f32>,smearPx:f32)->vec4<f32>{
+  let stride=smearPx/(material.fadeRows*3.0);
+  let sum=waterMirrorTap(uv)+waterMirrorTap(uv-vec2<f32>(0.0,stride))+waterMirrorTap(uv-vec2<f32>(0.0,2.0*stride))+waterMirrorTap(uv-vec2<f32>(0.0,3.0*stride));
+  return vec4<f32>(sum.rgb/max(sum.a,1.0e-4),sum.a*0.25);
+}`;
+
+/**
  * The first ripple octave: the bump's picture at the mesh's coordinate plus
  * the drift, turned on the level surface's frame (the world's x and z, each
  * turned over, as Babylon.js's frame comes out for the side seen from
@@ -436,16 +470,20 @@ NdotV=abs(NdotVUnclamped)+0.0000001;
  * its parts, which Lite has summed already by this point. With a
  * `panorama` the shore is the picture's where the lake is the one it is
  * of (`waterPanoramaOn`, 0 or 1, which the GLSL mixes by: here the read is
- * not made where it would be dropped).
+ * not made where it would be dropped). With a `mirror` it is the mirror's
+ * image where its pass drew something, smeared by the cat's-paws and by the
+ * eye's travel over the frames the picture is held.
  */
-export function lakeComposeWgsl(panorama: boolean): string {
+export function lakeComposeWgsl(panorama: boolean, mirror = false): string {
   return /* wgsl */ `
 var wRadianceScaled=finalRadianceScaled;
-if(material.waterMirrorWeight*material.waterCalmShare>0.0){
+if(material.waterMirrorWeight*material.waterCalmShare>0.0){${mirror ? `
+  let wMirror=waterMirrorSample(waterMirrorUv(input.worldPos,N.xz,wDepth,input.vWaterViewDepth),material.waterMirrorSmearPx*wPaw+min(material.waterMirrorMotion/max(input.vWaterViewDepth,1.0),LAKE_MOTION_SMEAR_CAP*material.fadeRows));` : ""}
   let wProbeRadiance=environmentRadiance;
   let wShoreRay=reflect(-V,N);
-  ${panorama ? "var" : "let"} wShore=mix(wProbeRadiance,waterSkylineRadiance(wShoreRay,wProbeRadiance),step(0.5,material.waterSkylineOn));${panorama ? `
-  if(material.waterPanoramaOn>0.5){wShore=waterPanoramaRadiance(input.worldPos,wShoreRay,wShore);}` : ""}
+  ${panorama || mirror ? "var" : "let"} wShore=mix(wProbeRadiance,waterSkylineRadiance(wShoreRay,wProbeRadiance),step(0.5,material.waterSkylineOn));${panorama ? `
+  if(material.waterPanoramaOn>0.5){wShore=waterPanoramaRadiance(input.worldPos,wShoreRay,wShore);}` : ""}${mirror ? `
+  wShore=mix(wShore,wMirror.rgb,step(0.5,material.waterMirrorOn)*wMirror.a);` : ""}
   let wMirrorW=material.waterMirrorWeight*(1.0-wPaw)*material.waterCalmShare;
   wRadianceScaled=mix(wRadianceScaled,wShore*colorSpecularEnvReflectance,wMirrorW);
 }

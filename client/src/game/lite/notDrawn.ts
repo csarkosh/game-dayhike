@@ -24,8 +24,10 @@
  * ground and in the air; and the lakes' water, blended over what lies
  * under it or, on the tier that keeps the frame behind it, read through its
  * surface, calm by the hour and the weather's name, with the
- * skyline's shade for its shore and, on the tier that draws one, the
- * shore's panorama under it, the reeds and the lilies that grow in it,
+ * skyline's shade for its shore, on the tier that draws one the shore's
+ * panorama under it, and on the tier above that the shore in a mirror
+ * (less the near forest's full geometry, the cliffs' second ring, the
+ * insects and the animals), the reeds and the lilies that grow in it,
  * and its midges and dragonflies, with its frogs to hear; and the sea,
  * blended or read through as the lakes are: its swell, its wind sea (the ripple bump on low,
  * the baked loop above it, and the cascades computed each frame on the tier
@@ -53,7 +55,6 @@ import type { Renderer } from "../renderer.js";
 export type NotDrawn = { readonly what: string; readonly members: readonly (keyof Renderer)[] };
 
 export const NOT_DRAWN: readonly NotDrawn[] = [
-  { what: "the mirror a lake reflects its shore in on the tier that draws one", members: [] },
   { what: "the skin's shading (`skin.ts`): no model the game ships has a surface that shows it", members: ["setSkinShading"] },
   { what: "the sun's cast shadows on a tier given a shadow map: no tier has one (`quality.ts`), so the game casts none either", members: [] },
   { what: "the wireframe view: Lite draws a material's triangles alone, and has no way to draw a mesh's edges through its own material", members: ["setWireframe"] },

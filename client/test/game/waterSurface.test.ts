@@ -6,6 +6,8 @@ import {
   lakeUniforms, setWaterCalm, setWaterCove, setWaterLakeBody, setWaterLakeTime, setWaterMirrorMotion, setWaterPawCover, setWaterShade, setWaterWind,
   waterFrameUniforms, waterRoughnessDue,
 } from "../../src/game/waterSurface.js";
+import { MIRROR_OFFSET_K } from "../../src/game/mirrorView.js";
+import { emptyLakeMirrorUniforms, lakeMirrorUniforms } from "../../src/game/waterSurface.js";
 import { WIND_TIME_WRAP } from "../../src/game/windParams.js";
 
 describe("a water surface's numbers, kept with no engine", () => {
@@ -128,5 +130,24 @@ describe("a water surface's numbers, kept with no engine", () => {
     expect([...out.waterWindTime]).toEqual([...new Float32Array([1.2, 1.6])]);
     expect([out.waterRain[0], out.waterSun[0]]).toEqual([Math.fround(0.7), Math.fround(0.4)]);
     expect([...out.waterBumpOffset]).toEqual([...new Float32Array(drift.lake)]);
+  });
+
+  it("fills a lake's mirror's uniforms from its surface, and says whether any moved", () => {
+    const surface = createWaterSurface(lakeWaterRow(0.5));
+    const out = emptyLakeMirrorUniforms();
+    expect(Object.keys(out)).toEqual(["waterMirrorVP", "waterMirrorOn", "waterMirrorK", "waterMirrorSmearPx", "waterMirrorMotion"]);
+    expect(out.waterMirrorVP).toHaveLength(16);
+    // At rest: no read, the identity, the ripple's reach.
+    expect(lakeMirrorUniforms(surface, false, out)).toBe(false);
+    expect([...out.waterMirrorK]).toEqual([Math.fround(MIRROR_OFFSET_K)]);
+    surface.mirrorViewProjection.set([2, 0, 0, 0, 0, 3, 0, 0, 0, 0, 4, 1, 5, 6, 7, 0]);
+    setWaterCalm(surface, 0.5, 1, 12);
+    setWaterMirrorMotion(surface, 40);
+    expect(lakeMirrorUniforms(surface, true, out)).toBe(true);
+    expect([...out.waterMirrorVP]).toEqual([2, 0, 0, 0, 0, 3, 0, 0, 0, 0, 4, 1, 5, 6, 7, 0]);
+    expect([out.waterMirrorOn[0], out.waterMirrorSmearPx[0], out.waterMirrorMotion[0]]).toEqual([1, 12, 40]);
+    expect(lakeMirrorUniforms(surface, true, out)).toBe(false);
+    expect(lakeMirrorUniforms(surface, false, out)).toBe(true);
+    expect(out.waterMirrorOn[0]).toBe(0);
   });
 });
