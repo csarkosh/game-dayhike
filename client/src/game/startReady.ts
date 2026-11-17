@@ -9,10 +9,9 @@ import type { LoadProgress } from "./loadProgress.js";
 export const READY_MAX_MS = 60_000;
 
 /**
- * Resolves once the scene is ready with nothing in flight and the forest's
- * layers are in (`Renderer.whenReady`), then, on WebGPU, once a whole frame has
- * drawn with no draw left out (`reveal`); then the bar reads ready. Never
- * later than `maxMs` after the scene test began, whatever is still to come.
+ * Resolves once the renderer's world is in (`Renderer.whenReady`); then the
+ * bar reads ready. Never later than `maxMs` after the wait began, whatever
+ * is still to come.
  * A start whose first builds are stepped under the intro's film
  * (`firstBuilds.ts`) is not ready until they are done (`firstBuilds`): the
  * world must not be seen filling in by a player who skips the film.
@@ -20,7 +19,6 @@ export const READY_MAX_MS = 60_000;
 export async function startReady(input: {
   /** The hike's renderer, asked when its world is in. */
   renderer: { whenReady(maxMs: number): Promise<void> };
-  reveal: Promise<void> | null;
   progress: LoadProgress | null;
   maxMs: number;
   /** The start's first builds, done: asked for once the scene is ready, by when every model
@@ -29,11 +27,9 @@ export async function startReady(input: {
 }): Promise<void> {
   const began = Date.now();
   await input.renderer.whenReady(input.maxMs);
-  // Each wait is bounded by what is left of the limit: a build that never ends, or a frame that
-  // never comes whole (a pipeline that never lands), must not hold the intro past it.
+  // The wait is bounded by what is left of the limit: a build that never ends must not hold the intro past it.
   const left = (): number => input.maxMs - (Date.now() - began);
   if (input.firstBuilds !== undefined && input.firstBuilds !== null) await within(input.firstBuilds(), left());
-  if (input.reveal !== null) await within(input.reveal, left());
   input.progress?.gate();
 }
 

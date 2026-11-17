@@ -2395,8 +2395,6 @@ function buildGame(
   const ready = firstBuild.then(() =>
     startReady({
       renderer,
-      // No frame of the hike's renderer is waited on to come whole.
-      reveal: null,
       progress,
       maxMs: READY_MAX_MS,
       // Stepped first builds are done once a frame has shown the shells the player's place and the
