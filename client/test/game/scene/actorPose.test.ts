@@ -1,57 +1,41 @@
 import { describe, expect, it } from "vitest";
 import { readFileSync } from "node:fs";
-import { NullEngine } from "@babylonjs/core/Engines/nullEngine.js";
-import { Scene } from "@babylonjs/core/scene.js";
-import { loadAssetContainerAsync } from "@babylonjs/core/Loading/sceneLoader.js";
-import { registerBuiltInLoaders } from "@babylonjs/loaders/dynamic.js";
-import catalog from "../../../assets/catalog.json" with { type: "json" };
-import { createCharacterPool, type CharacterInstance, type CharacterLoader } from "../../../src/game/characterModel.js";
 import {
   actorBones, actorClips, actorNode, createActorPosed, invertAffine, poseActor, readActorRig, rootForJoint, type ActorBlend, type ActorRig,
 } from "../../../src/game/scene/actorPose.js";
-import { INTRO_RANGER } from "../../../src/game/scene/intro.js";
-import { worldOf } from "../../../src/game/scene/sceneStage.js";
+import { babylonValues } from "../../helpers/babylonFixture.js";
 
 const FILE = new URL("../../../assets/models/intro.ranger.glb", import.meta.url);
-
-/** The real file, read from disk the way `characterModel.test.ts` does. */
-const fromDisk: CharacterLoader = (asset, scene) => {
-  registerBuiltInLoaders();
-  const bytes = readFileSync(new URL(`../../../assets/${asset.output}`, import.meta.url));
-  return loadAssetContainerAsync(new Uint8Array(bytes), scene, { pluginExtension: ".glb" });
-};
 
 function rigFromDisk(): ActorRig {
   const bytes = readFileSync(FILE);
   return readActorRig(bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength));
 }
 
-/** The film's ranger as the stage on Babylon.js poses it: its instance, standing at the origin, facing +z. */
-async function stagedRanger(): Promise<{ instance: CharacterInstance; done(): void }> {
-  const engine = new NullEngine();
-  const scene = new Scene(engine);
-  const pool = createCharacterPool(catalog, fromDisk);
-  await pool.load(scene, [INTRO_RANGER]);
-  const instance = pool.acquire(1, INTRO_RANGER);
-  if (instance === null) throw new Error("the film's ranger did not load");
-  return {
-    instance,
-    done() {
-      pool.dispose();
-      engine.dispose();
-    },
-  };
-}
+/**
+ * The film's ranger as the stage on Babylon.js posed it, recorded: its instance from the shipped file, standing at
+ * the origin, facing +z. `nodes` are the file's nodes the instance had a joint by the name of (`names`), and each
+ * pose's `world` is their matrices in the world as Babylon.js held them, sixteen single floats a node in that
+ * order: `poses` a clip at a time, `blends` a clip mixed toward another (the last with no mix). `roots`: the ranger
+ * at the drive's second second, its root stood at `root` and turned `yaw`, and where its chest then was.
+ */
+const BABYLON = babylonValues<{
+  nodes: number[];
+  names: string[];
+  poses: { clip: string; seconds: number; world: number[] }[];
+  blends: { clip: string; seconds: number; blend: ActorBlend | null; world: number[] }[];
+  roots: { yaw: number; root: number[]; chest: number[] }[];
+}>("numbers/actorPose.json");
 
-/** How far (the largest float of sixteen) every named node of the rig stands from the same node on Babylon.js. */
-function apart(rig: ActorRig, world: Float64Array, instance: CharacterInstance): { worst: number; compared: number } {
+/** How far (the largest float of sixteen) every named node of the rig stands from the same node on Babylon.js, by the matrices recorded for a pose. */
+function apart(rig: ActorRig, world: Float64Array, recorded: readonly number[]): { worst: number; compared: number } {
+  expect(recorded).toHaveLength(BABYLON.nodes.length * 16);
+  const theirs = new Float32Array(recorded);
   let worst = 0;
   let compared = 0;
-  for (const [i, name] of rig.names.entries()) {
-    const node = name === undefined ? null : instance.joint(name);
-    if (node === null) continue;
-    const m = worldOf(node).m;
-    for (let e = 0; e < 16; e++) worst = Math.max(worst, Math.abs((m[e] as number) - (world[i * 16 + e] as number)));
+  for (const [k, i] of BABYLON.nodes.entries()) {
+    expect(rig.names[i]).toBe(BABYLON.names[k]);
+    for (let e = 0; e < 16; e++) worst = Math.max(worst, Math.abs((theirs[k * 16 + e] as number) - (world[i * 16 + e] as number)));
     compared++;
   }
   return { worst, compared };
@@ -72,29 +56,34 @@ describe("an actor's pose with no engine", () => {
     for (let i = 0; i < rig.nodes; i++) if ((rig.parents[i] as number) >= 0) expect(place.get(rig.parents[i] as number)!).toBeLessThan(place.get(i)!);
   });
 
-  it("stands every node where the stage on Babylon.js stands it: a clip at a time, a loop wrapped, a clip that begins after its first frame", async () => {
+  it("is held to every node of the file that has a name, as Babylon.js stood each", () => {
+    const rig = rigFromDisk();
+    const named = [...rig.names.keys()].filter((i) => rig.names[i] !== undefined);
+    expect(BABYLON.nodes).toEqual(named);
+    expect(BABYLON.names).toEqual(named.map((i) => rig.names[i]));
+    expect([BABYLON.nodes.length, BABYLON.poses.length, BABYLON.blends.length, BABYLON.roots.length]).toEqual([55, 17, 8, 4]);
+  });
+
+  it("stands every node where the stage on Babylon.js stands it: a clip at a time, a loop wrapped, a clip that begins after its first frame", () => {
     const rig = rigFromDisk();
     const posed = createActorPosed(rig);
-    const { instance, done } = await stagedRanger();
     const times: [string, number][] = [
       ["drive", 0], ["drive", 1.234], ["drive", 3.99], ["drive", 9.7], ["reach", 0.4], ["reach", 1.5 - 1 / 60], ["talk", 2.2], ["talk", 31.05],
       ["lower", 1.9], ["door", 0.01], ["door", 2.6], ["walk", 0], ["walk", 0.02], ["walk", 0.9], ["walk", 5.3], ["face_trail", 3.2], ["idle", 0.01],
     ];
-    for (const [clip, seconds] of times) {
-      instance.pose(clip, seconds);
+    expect(BABYLON.poses.map((pose) => [pose.clip, pose.seconds])).toEqual(times);
+    for (const [k, [clip, seconds]] of times.entries()) {
       expect(poseActor(rig, clip, seconds, undefined, posed), clip).toBe(true);
-      const { worst, compared } = apart(rig, posed.world, instance);
+      const { worst, compared } = apart(rig, posed.world, BABYLON.poses[k]!.world);
       expect(compared, clip).toBeGreaterThanOrEqual(52);
       // The model's joints are in hundredths of a metre: a float of a matrix is within a hundredth of a millimetre.
       expect(worst, `${clip} at ${seconds}`).toBeLessThan(1e-5);
     }
-    done();
   });
 
-  it("mixes two clips as the stage does, and poses one alone again after", async () => {
+  it("mixes two clips as the stage does, and poses one alone again after", () => {
     const rig = rigFromDisk();
     const posed = createActorPosed(rig);
-    const { instance, done } = await stagedRanger();
     const blends: [string, number, ActorBlend][] = [
       ["reach", 0.1, { clip: "drive", seconds: 15.1, weight: 0.7 }],
       ["talk", 0.2, { clip: "reach", seconds: 1.4, weight: 0.25 }],
@@ -103,19 +92,17 @@ describe("an actor's pose with no engine", () => {
       ["face_trail", 0.29, { clip: "walk", seconds: 6, weight: 0.01 }],
       ["drive", 0.5, { clip: "lower", seconds: 1.99, weight: 2 }],
     ];
-    for (const [clip, seconds, blend] of blends) {
-      instance.pose(clip, seconds, { clip: blend.clip, seconds: blend.seconds, weight: blend.weight });
+    // The record is of these mixes in this order, then of the two poses after them.
+    expect(BABYLON.blends.map((pose) => [pose.clip, pose.seconds, pose.blend])).toEqual([...blends, ["talk", 1, { clip: "drive", seconds: 2, weight: 0 }], ["talk", 1.7, null]]);
+    for (const [k, [clip, seconds, blend]] of blends.entries()) {
       expect(poseActor(rig, clip, seconds, blend, posed)).toBe(true);
-      expect(apart(rig, posed.world, instance).worst, `${clip} toward ${blend.clip}`).toBeLessThan(1e-5);
+      expect(apart(rig, posed.world, BABYLON.blends[k]!.world).worst, `${clip} toward ${blend.clip}`).toBeLessThan(1e-5);
     }
     // No weight, or the clip itself: the clip alone.
-    instance.pose("talk", 1, { clip: "drive", seconds: 2, weight: 0 });
     poseActor(rig, "talk", 1, { clip: "drive", seconds: 2, weight: 0 }, posed);
-    expect(apart(rig, posed.world, instance).worst).toBeLessThan(1e-5);
-    instance.pose("talk", 1.7);
+    expect(apart(rig, posed.world, BABYLON.blends[6]!.world).worst).toBeLessThan(1e-5);
     poseActor(rig, "talk", 1.7, undefined, posed);
-    expect(apart(rig, posed.world, instance).worst).toBeLessThan(1e-5);
-    done();
+    expect(apart(rig, posed.world, BABYLON.blends[7]!.world).worst).toBeLessThan(1e-5);
   });
 
   it("leaves the pose as it was for a clip the model lacks, and leaves out a blend's", () => {
@@ -129,25 +116,28 @@ describe("an actor's pose with no engine", () => {
     expect(posed.world).toEqual(before);
   });
 
-  it("stands the root so a joint is at its anchor, whichever way the actor faces", async () => {
+  it("stands the root so a joint is at its anchor, whichever way the actor faces", () => {
     const rig = rigFromDisk();
     const posed = createActorPosed(rig);
-    const { instance, done } = await stagedRanger();
     const chest = actorNode(rig, "chest");
     const anchor = { x: 12.5, y: 3.25, z: -40 };
-    for (const yaw of [0, 0.7, -2.4, Math.PI]) {
+    const yaws = [0, 0.7, -2.4, Math.PI];
+    expect(BABYLON.roots.map((stood) => stood.yaw)).toEqual(yaws);
+    for (const [k, yaw] of yaws.entries()) {
       poseActor(rig, "drive", 2, undefined, posed);
       const root = rootForJoint(posed, chest, yaw, anchor, { x: 0, y: 0, z: 0 });
-      // The stage on Babylon.js: the actor stood there and turned, its chest read back.
-      instance.pose("drive", 2);
-      instance.root.position.set(root.x, root.y, root.z);
-      instance.root.rotation.y = yaw;
-      const at = worldOf(instance.joint("chest")!).getTranslation();
+      // The stage on Babylon.js: the actor stood at a root and turned, its chest read back. A root moved carries the
+      // chest by as much, so the chest under this root is the recorded chest and how far this root is from the recorded one.
+      const stood = BABYLON.roots[k]!;
+      const at = {
+        x: stood.chest[0]! + (root.x - stood.root[0]!),
+        y: stood.chest[1]! + (root.y - stood.root[1]!),
+        z: stood.chest[2]! + (root.z - stood.root[2]!),
+      };
       expect(at.x).toBeCloseTo(anchor.x, 4);
       expect(at.y).toBeCloseTo(anchor.y, 4);
       expect(at.z).toBeCloseTo(anchor.z, 4);
     }
-    done();
   });
 
   it("tells a skin's bones in its mesh's own frame: at rest every joint turns its vertices as every other does", () => {
