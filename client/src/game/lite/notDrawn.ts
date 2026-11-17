@@ -55,7 +55,6 @@ export const NOT_DRAWN: readonly NotDrawn[] = [
   { what: "the skin's shading (`skin.ts`): no model the game ships has a surface that shows it", members: ["setSkinShading"] },
   { what: "the sun's cast shadows on a tier given a shadow map: no tier has one (`quality.ts`), so the game casts none either", members: [] },
   { what: "the wireframe view: Lite draws a material's triangles alone, and has no way to draw a mesh's edges through its own material", members: ["setWireframe"] },
-  { what: "the shaders' compiles told as they happen, kept shaders, and the GPU's timings", members: ["onShaderCompiled", "keepShaders", "gpuTime"] },
 ];
 
 /** What the setters of the absent parts were last told. */
@@ -65,11 +64,7 @@ export type NotDrawnHeld = {
 };
 
 /** The members answered as nothing: every member `NOT_DRAWN` names. */
-export type NotDrawnMembers = Pick<
-  Renderer,
-  | "setSkinShading"
-  | "setWireframe" | "onShaderCompiled" | "keepShaders" | "gpuTime"
->;
+export type NotDrawnMembers = Pick<Renderer, "setSkinShading" | "setWireframe">;
 
 /**
  * The members answered as nothing, and what their setters hold. One of each
@@ -86,9 +81,6 @@ export function notDrawnMembers(): { members: NotDrawnMembers; held: NotDrawnHel
     setWireframe(on) {
       held.wireframe = on;
     },
-    onShaderCompiled: () => () => undefined,
-    keepShaders: () => undefined,
-    gpuTime: null,
   };
   return { members, held };
 }

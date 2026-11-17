@@ -40,6 +40,29 @@ describe("the hike's renderer on Babylon Lite, before its engine stands", () => 
     expect(r.engine.isDisposed).toBe(false);
   });
 
+  it("reads out no GPU time outside the measurement mode, and in it says unsupported until its engine stands", () => {
+    expect(make().gpuTime).toBeNull();
+    renderer?.dispose();
+    const page = globalThis as { __gpuTime?: () => unknown };
+    const measured = createHikeRenderer(canvas(), EMPTY_LEVEL, null, { tier: "low", skyTable: skyFixture(), clock: () => 0, gpuTime: true });
+    renderer = measured;
+    expect(measured.gpuTime?.read()).toMatchObject({ supported: false, frameMs: null, mainMs: null, targets: [], missed: [] });
+    // The page's hook is the same read, and goes with the renderer.
+    expect(page.__gpuTime?.()).toEqual(measured.gpuTime?.read());
+    measured.dispose();
+    expect(page.__gpuTime).toBeUndefined();
+  });
+
+  it("tells a shader's compile to no one while no device has been asked for one, and keeps no shader", () => {
+    const r = make();
+    let told = 0;
+    const stop = r.onShaderCompiled(() => told++);
+    r.keepShaders();
+    r.drawFrame();
+    stop();
+    expect(told).toBe(0);
+  });
+
   it("offers a watch of its own on the engine it makes, which the hike is told a lost device through", () => {
     const r = make();
     expect(r.ownWatch).not.toBeNull();

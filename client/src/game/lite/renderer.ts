@@ -54,6 +54,18 @@
  * own recovery in place is not used. A GPU error nobody caught is said in
  * the console, the first few of them, and is not answered by a rebuild.
  *
+ * **What the engine tells on Babylon.js is told here in WebGPU's terms.** A
+ * shader's compile is no event in WGSL: a module is handed to the device,
+ * which compiles it when a pipeline first needs it, and a pipeline made the
+ * synchronous way holds the frame that asked. So `onShaderCompiled` tells
+ * of each frame that asked the device for a shader module or a pipeline
+ * (`deviceMakes.ts`, counted at the device's own calls), which is what the
+ * hike voids when it judges the frame rate. `keepShaders` keeps nothing:
+ * the device goes with the renderer. In the measurement mode `gpuTime`
+ * reads the GPU's own time for the frame and for each of its tasks from
+ * Lite's timers (`gpuTimeReadout.ts`), as `window.__gpuTime()` and the
+ * corner's line; outside it no timestamp is written.
+ *
  * **The frame is sized by the game's rule, not by the display**
  * (`frameSize.ts`): the canvas's box in CSS pixels over the tier's scaling,
  * the display's pixel ratio unread, as the game sizes it on Babylon.js, and
@@ -311,6 +323,7 @@ import { BASE_SPACING_BY_TIER } from "../clipmap.js";
 import { clutterReachFor } from "../clutterField.js";
 import { cloudDensityNow, cloudFor, cloudGroundDue, cloudGroundMap, cloudMarchSteps, cloudOn, cloudStepsFor, cloudUniforms, emptyCloudUniforms, noCloud } from "../cloudParams.js";
 import type { EngineHandle } from "../engineHandle.js";
+import { createDeviceMakes, type MakesDevice } from "../deviceMakes.js";
 import { createEngineWatch } from "../engineWatch.js";
 import { HEADLAMP_CONE, HEADLAMP_INTENSITY, HEADLAMP_RANGE } from "../endScene.js";
 import { createEntityPoses, type EntityFrame } from "../entityPoses.js";
@@ -377,6 +390,7 @@ import { createEntityMeshes, type EntityMeshes } from "./entityMeshes.js";
 import { createForestMeshes, type ForestMeshes } from "./forestMeshes.js";
 import { FADE_ROWS_NAME, FRAME_BLOCK, FRAME_FIELDS, FRAME_PROJECTION_NAME, writeFrameBlock, type FrameValues, type StageRecord } from "./frameBlock.js";
 import { createFrameUploads, uploadCountsCopy, type FrameUploadCounts } from "./frameUploads.js";
+import { createLiteGpuTime } from "./gpuTimeReadout.js";
 import { GROUND_IMAGES, cloudMapTexture, loadGroundArrays, tableTexture, type CloudMapTexture, type TableTexture } from "./groundTextures.js";
 import { createLiteLakes, type LakeFrame, type LiteLakes } from "./lakeMeshes.js";
 import { createLitePanorama, type LitePanorama, type ReflectionRegistry } from "./lakePanorama.js";
@@ -783,6 +797,13 @@ export function createLiteRenderer(canvas: HTMLCanvasElement, level: Level, fore
   /** Ground images still being fetched or decoded. */
   let loading = forest === null ? 0 : GROUND_IMAGES;
   let gpuErrors = 0;
+  /**
+   * What the device is asked to make of shaders (`deviceMakes.ts`): a frame that asked for a shader module or a
+   * pipeline is told to whoever hears a shader compile on Babylon.js (`onShaderCompiled`).
+   */
+  const makes = createDeviceMakes();
+  /** The measurement mode's readout of the GPU's own time (`gpuTimeReadout.ts`); none outside it. */
+  const gpuTime = options.gpuTime === true ? createLiteGpuTime(canvas, import.meta.env.VITE_BUILD_SHA || "dev") : null;
   /** The watch on the renderer's own engine (`engineWatch.ts`): the hike is told when the device is lost under it. */
   const engineWatch = createEngineWatch();
   const disposal = new AbortController();
@@ -838,6 +859,9 @@ export function createLiteRenderer(canvas: HTMLCanvasElement, level: Level, fore
     // The frame at the game's own size before anything is made for it.
     surface = engine;
     frameFit.fit();
+    // Counted from the device's first shader, and timed from its first frame where the page measures.
+    makes.count((engine as unknown as { _device: MakesDevice })._device);
+    gpuTime?.attach(engine);
     onEngineGpuError(engine, (error) => {
       if (gpuErrors++ < GPU_ERRORS_SAID) console.error(`the hike's renderer: ${error.message}`);
     });
@@ -1180,6 +1204,8 @@ export function createLiteRenderer(canvas: HTMLCanvasElement, level: Level, fore
       handle.isDisposed = true;
       disposed = true;
       engineWatch.close();
+      makes.stop();
+      gpuTime?.dispose();
       stopLoop();
       disposal.abort();
       light.dispose();
@@ -1395,6 +1421,12 @@ export function createLiteRenderer(canvas: HTMLCanvasElement, level: Level, fore
     engine: handle as EngineHandle,
     engineName: "webgpu",
     ownWatch: engineWatch.watch,
+    gpuTime,
+    onShaderCompiled: (fn) => makes.onMade(fn),
+    keepShaders() {
+      // Nothing to keep: every shader module and pipeline is the device's, which goes with this renderer (`retire`
+      // hands no engine on), and the next hike's renderer makes its own on a new one.
+    },
     forestReady,
     firstSynced,
     skyReady() {
@@ -1863,6 +1895,9 @@ export function createLiteRenderer(canvas: HTMLCanvasElement, level: Level, fore
       standing.panorama?.frameDrawn();
       // And the wind sea's cascades with the frame that asked for them.
       standing.sea?.frameDrawn();
+      // A frame that asked the device for a shader module or a pipeline is told of, and the measurement mode's line written.
+      makes.frameEnd();
+      gpuTime?.frameEnd();
     },
     runLoop(frame) {
       if (disposed) return;

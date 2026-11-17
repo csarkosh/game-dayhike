@@ -17,11 +17,6 @@ describe("what the renderer on Babylon Lite does not draw yet", () => {
     }
   });
 
-  it("reads out nothing: no GPU timing", () => {
-    const { members } = notDrawnMembers();
-    expect(members.gpuTime).toBeNull();
-  });
-
   it("keeps what its setters are told", () => {
     const { members, held } = notDrawnMembers();
     members.setWireframe(true);
@@ -113,13 +108,10 @@ describe("what the renderer on Babylon Lite does not draw yet", () => {
     expect(held.wireframe).toBe(true);
   });
 
-  it("tells no compile and keeps no shader: the stop it hands back does nothing", () => {
+  it("leaves the engine's read-outs to the renderer: a shader's compile, kept shaders and the GPU's time are its own", () => {
     const { members } = notDrawnMembers();
-    let told = 0;
-    const stop = members.onShaderCompiled(() => told++);
-    members.keepShaders();
-    stop();
-    expect(told).toBe(0);
+    for (const name of ["onShaderCompiled", "keepShaders", "gpuTime"]) expect(name in members, name).toBe(false);
+    expect(NOT_DRAWN.map((part) => part.what).join("; ")).not.toMatch(/compile|kept shaders|timings/);
   });
 
   it("holds each renderer's own", () => {
