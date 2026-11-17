@@ -6,7 +6,11 @@ import {
   FILM_CAR_WARM_FRAMES, SCENERY_REACH_M, SIGN_REACH_M, boxInSight, deferredScenery, inSight, liteSceneryOf, sightBox, type LiteCar, type LiteScenery,
   type LiteTrailhead, type SceneryView,
 } from "../../../src/game/lite/sceneryMeshes.js";
-import { factorByte, farthestFirst, listPanes, partsByMaterial, placeMatrix, placed, type SceneryPart } from "../../../src/game/lite/sceneryModels.js";
+import {
+  CAR_PART_ATTRIBUTE, CAR_TURNS_BLOCK, carTurnsFields, carTurnsPlugin, carTurnsWgsl, factorByte, farthestFirst, listPanes, partsByMaterial, placeMatrix, placed, readsTangents,
+  type SceneryPart,
+} from "../../../src/game/lite/sceneryModels.js";
+import { carPartTurn, partMatrix, poseVertices, restTurns, writeTurnRows } from "../../../src/game/carParts.js";
 import type { ModelPart } from "../../../src/game/lite/forestModels.js";
 
 function viewFrom(eye: CameraPose, cover: SceneryView["cover"] = null): SceneryView {
@@ -306,13 +310,96 @@ describe("a model placed once on Babylon Lite", () => {
 });
 
 describe("the parts of a car a pose turns, on Babylon Lite", () => {
-  it("sends only the runs the pose has moved: a door that swings on a car that stands sends no wheel", () => {
-    const source = readFileSync(new URL("../../../src/game/lite/sceneryMeshes.ts", import.meta.url), "utf8");
-    // A wheel by its spin, a front one by its turn too, the steering wheel and the door each by its own.
-    expect(source).toContain("name === DOOR_NAME ? swung : name === STEERING_NAME ? wheeled : spun || (steered && frontWheel(name));");
-    expect(source).toContain("if (!moved(run.name)) continue;");
-    // And of a mesh only the span that holds the moved runs, not the span of every run it has.
-    expect(source).toContain("updateMeshPositions(engine, turned.mesh, posed.positions, first, count, first);");
-    expect(source).not.toContain("turned.posed.positions, turned.first, turned.count, turned.first");
+  const source = readFileSync(new URL("../../../src/game/lite/sceneryMeshes.ts", import.meta.url), "utf8");
+  /** Lite's own PBR vertex stage and its tangent frame, as installed. */
+  const lite = (file: string): string => readFileSync(new URL(`../../../../node_modules/@babylonjs/lite/lib/material/pbr/${file}`, import.meta.url), "utf8");
+
+  it("sends the rows of the turns the pose has moved, in one write, and no vertex: a door that swings on a car that stands sends no wheel's", () => {
+    // Which turns a pose has moved is `carParts.ts`'s to say (`writeTurns`, held by its own tests): the run of the block's floats it names is the one sent.
+    expect(source).toContain("if (!writeTurns(turns.slots, stood.turn, pose, turns.rows, turnsMoved)) return;");
+    expect(source).toContain("writePluginUniformBlock(engine, turns.block, first + turnsMoved.from * 4, first + turnsMoved.to * 4);");
+    // No vertex of a turned part is carried on the processor or sent: the one run still carried there is the handset's.
+    expect(source).not.toContain("turned.mesh");
+    expect(source.match(/poseVertices\(/g)).toHaveLength(1);
+    expect(source).toContain("for (const run of handset.runs) poseVertices(carryScratch, holder.rest, posed, run.first, run.count);");
+    expect(source.match(/updateMeshPositions\(engine, [a-z.]+, posed\.positions/g)).toEqual(["updateMeshPositions(engine, holder.mesh, posed.positions"]);
+  });
+
+  it("numbers a turned mesh's vertices once, when the mesh is made, and stands the mesh in the rain's cover map under the same turns", () => {
+    expect(source).toContain("mesh.pluginVertexData = numbers;");
+    expect(source).toContain("if (turns !== null && turns.numbers[n] !== null) part.material.plugins = [...(part.material.plugins ?? []), carTurnsPlugin(turns.block, readsTangents(part))];");
+    expect(source).toContain("if (cover) options.cover?.add(mesh, numbers === null || turns === null ? undefined : carTurnsPlugin(turns.block, false));");
+    const renderer = readFileSync(new URL("../../../src/game/lite/renderer.ts", import.meta.url), "utf8");
+    expect(renderer).toContain('{ add: (mesh, place) => rainMap.register(mesh, "hard", place), remove: (mesh) => rainMap.unregister(mesh) }');
+  });
+
+  it("lays a car's turns out as a table of rows, three a turn, and names a vertex's turn by one float", () => {
+    expect(carTurnsFields(6)).toEqual([{ name: "rows", type: "array<vec4<u32>,18>" }]);
+    const block = { name: CAR_TURNS_BLOCK } as unknown as Parameters<typeof carTurnsPlugin>[0];
+    const plugin = carTurnsPlugin(block, false);
+    expect(plugin.getVertexAttributes?.()).toEqual([{ name: CAR_PART_ATTRIBUTE, type: "f32", format: "float32", stride: 4, offset: 0 }]);
+    expect(plugin.getUniformBlocks?.()).toEqual([block]);
+    // Nothing of the material's own: no uniform, no write, and nothing in the fragment.
+    expect(plugin.getUniforms).toBeUndefined();
+    expect(plugin.writeUbo).toBeUndefined();
+    expect(plugin.getCustomCode?.("fragment")).toBeNull();
+    expect(Object.keys(plugin.getCustomCode?.("vertex") ?? {})).toEqual(["CUSTOM_VERTEX_MAIN_END"]);
+    // A material's pipeline differs by whether its tangents are turned, and by nothing of a pose.
+    expect([carTurnsPlugin(block, false).defines, carTurnsPlugin(block, true).defines]).toEqual([{ tangents: false }, { tangents: true }]);
+  });
+
+  it("hands on a turned vertex through Lite's own statements, so it goes the way a vertex sent already turned went", () => {
+    const template = lite("pbr-template.js");
+    const lites = "let worldPos4=finalWorld*vec4<f32>(${posVar},1.0);out.worldPos=worldPos4.xyz;out.clipPos=scene.viewProjection*worldPos4;out.worldNormal=(finalWorld*vec4<f32>(normalize(${normVar}),0.0)).xyz;";
+    expect(template).toContain(lites);
+    const mine = lites.replaceAll("worldPos4", "ctWorld4").replace("${posVar}", "ctPosition").replace("${normVar}", "ctNormal");
+    expect(carTurnsWgsl(false)).toContain(mine);
+    expect(carTurnsWgsl(true)).toContain(mine);
+    // The tangent frame, where the material reads its normals' map through the mesh's tangents: Lite's again, on the turned normal and tangent.
+    const frame = "let N_local=normalize(${normVar});let T_local=normalize(tangent.xyz);let B_local=cross(N_local,T_local)*tangent.w;out.worldTangent=(finalWorld*vec4<f32>(T_local,0.0)).xyz;out.worldBitangent=(finalWorld*vec4<f32>(B_local,0.0)).xyz;";
+    expect(lite("fragments/pbr-normal-tangent-wgsl.js")).toContain(frame);
+    const turned = frame.replace("normalize(${normVar})", "normalize(ctNormal)").replace("normalize(tangent.xyz)", "normalize(ctTangent)").replaceAll("N_local", "ctNl").replaceAll("T_local", "ctTl").replaceAll("B_local", "ctBl");
+    expect(carTurnsWgsl(true)).toContain(turned);
+    expect(carTurnsWgsl(false)).not.toContain("tangent");
+    // A vertex that names no turn is left as the stage made it: everything is inside the one test of its number.
+    expect(carTurnsWgsl(true).startsWith("{let ctN=u32(carPart);if(ctN>0u){let ctAt=(ctN-1u)*3u;")).toBe(true);
+    expect(carTurnsWgsl(true).endsWith("}}")).toBe(true);
+    // Lite's rule for the tangent's attribute: a mesh with tangents under a material with a map of normals.
+    const part = (tangents: boolean, map: boolean): SceneryPart => ({ tangents: tangents ? new Float32Array(4) : null, material: map ? { normalTexture: {} } : {} }) as unknown as SceneryPart;
+    expect([readsTangents(part(true, true)), readsTangents(part(true, false)), readsTangents(part(false, true))]).toEqual([true, false, false]);
+  });
+
+  it("carries a position, a normal and a tangent by the rows where the processor's carrying put them: the stage's own sums, read as arithmetic", () => {
+    // The three sums of the stage's text, as functions of a vertex and a turn's three rows.
+    const wgsl = carTurnsWgsl(true);
+    const sums = (name: string): ((...vectors: object[]) => number[]) => {
+      const text = new RegExp(`let ${name}=vec3<f32>\\(([^;]*)\\);`).exec(wgsl)?.[1];
+      expect(text, name).toBeDefined();
+      // The stage's own text, which is arithmetic alone.
+      return new Function("position", "normal", "tangent", "ctX", "ctY", "ctZ", `return [${text}];`) as (...vectors: object[]) => number[];
+    };
+    const call = (name: string, v: number[], rows: Float32Array, slot: number): number[] => {
+      const vec = { x: v[0], y: v[1], z: v[2] };
+      const row = (k: number): object => ({ x: rows[slot * 12 + k * 4], y: rows[slot * 12 + k * 4 + 1], z: rows[slot * 12 + k * 4 + 2], w: rows[slot * 12 + k * 4 + 3] });
+      return sums(name)(vec, vec, vec, row(0), row(1), row(2));
+    };
+    // The door's frame under a mirrored root, swung; a turn at rest beside it.
+    const local = new Float32Array([0, 0, 1, 0, 0, 1, 0, 0, 1, 0, 0, 0, -0.752, 0.897, 0.875, 1]);
+    const pose = { x: 0, y: 0, z: 0, yaw: 0, wheelSpin: 0, doorOpen: 0.7, wheelTurn: 0, steer: 0, handset: "cradle" as const };
+    const matrix = partMatrix(local, carPartTurn("door_driver", pose, { x: 0, y: 0, z: 0, w: 1 }) as NonNullable<ReturnType<typeof carPartTurn>>, new Float32Array(16));
+    const rows = restTurns(2);
+    writeTurnRows(matrix, rows, 1);
+    const rest = { positions: new Float32Array([-0.7, 1.2, 0.4]), normals: new Float32Array([0.6, 0, 0.8]), tangents: new Float32Array([0.8, 0, -0.6, -1]) };
+    const sent = { positions: new Float32Array(3), normals: new Float32Array(3), tangents: new Float32Array(4) };
+    poseVertices(matrix, rest, sent, 0, 1);
+    for (let k = 0; k < 3; k++) {
+      expect(call("ctPosition", [...rest.positions], rows, 1)[k]).toBeCloseTo(sent.positions[k] as number, 6);
+      expect(call("ctNormal", [...rest.normals], rows, 1)[k]).toBeCloseTo(sent.normals[k] as number, 6);
+      expect(call("ctTangent", [...rest.tangents], rows, 1)[k]).toBeCloseTo(sent.tangents[k] as number, 6);
+    }
+    // The door moved the vertex; a turn at rest carries it nowhere, exactly.
+    expect(Math.hypot(...[0, 1, 2].map((k) => (sent.positions[k] as number) - (rest.positions[k] as number)))).toBeGreaterThan(0.3);
+    expect(call("ctPosition", [...rest.positions], rows, 0)).toEqual([...rest.positions]);
+    expect(call("ctNormal", [...rest.normals], rows, 0)).toEqual([...rest.normals]);
   });
 });

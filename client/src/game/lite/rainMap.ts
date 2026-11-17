@@ -24,9 +24,9 @@
  *   reads the canopy's density from the terrain's own vertex data
  *   (`TERRAIN_VERTEX_LAYOUT`); water is open, the rain landing on its
  *   surface; anything else is hard cover. A mesh whose vertices are placed
- *   by its own material's vertex stage (the sea's lattice) is registered
- *   with the plugin that places them, which the map's material of its kind
- *   then wears for it. A mesh the view does not hold is hidden, which
+ *   by its own material's vertex stage (the sea's lattice, the parts of a
+ *   car a pose turns) is registered with the plugin that places them, which
+ *   the map's material of its kind then wears for it. A mesh the view does not hold is hidden, which
  *   leaves it out of this pass too, so the map has its own word on a mesh
  *   that the two see differently (`show`): a lake's surface or the sea is
  *   drawn here while it reaches into the map's square, whatever the view
