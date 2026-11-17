@@ -2,6 +2,10 @@
 -- route), pressed Play, started a match and reached an outcome. The stages
 -- nest per session over the whole range: a session counts at a stage only
 -- where it counted at the one before, so each number is at most the last.
+-- Beside the stages, `turned_away`: of the sessions that landed, those the
+-- page's load check turned away (a `turned_away` row: a browser with no
+-- WebGPU, or no GPU behind it the game can draw on), which could never
+-- press Play.
 -- One line a build, newest first, and one line `all` over every build, the
 -- headline; a session is on the build of its last row.
 -- The rows that are real play, the same text in every query (`README.md`):
@@ -43,6 +47,7 @@ per_session AS (
     sid,
     ANY_VALUE(build HAVING MAX timestamp) AS build,
     LOGICAL_OR(n = 'page') AS landed,
+    LOGICAL_OR(n = 'turned_away') AS turned,
     LOGICAL_OR(n = 'play') AS played,
     LOGICAL_OR(n = 'match_start') AS started,
     LOGICAL_OR(n = 'outcome') AS finished,
@@ -56,6 +61,7 @@ nested AS (
     sid,
     build,
     landed,
+    landed AND turned AS turned_away,
     landed AND played AS pressed_play,
     landed AND played AND started AS started,
     landed AND played AND started AND finished AS finished,
@@ -66,6 +72,7 @@ nested AS (
 SELECT
   grp AS build,
   COUNTIF(landed) AS landed,
+  COUNTIF(turned_away) AS turned_away,
   COUNTIF(pressed_play) AS pressed_play,
   COUNTIF(started) AS started,
   COUNTIF(finished) AS finished,

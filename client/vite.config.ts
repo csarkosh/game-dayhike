@@ -1,7 +1,9 @@
+import { readFileSync } from "node:fs";
 import { createRequire } from "node:module";
 import { fileURLToPath } from "node:url";
 import { defineConfig } from "vitest/config";
 import { environmentBrdfPlugin } from "../tools/vite/environmentBrdf.mjs";
+import { liteVersion } from "../tools/vite/liteVersion.mjs";
 import { wgslMapPlugin } from "../tools/wgsl/lib/mapPlugin.mjs";
 import { translatorDigests } from "../tools/wgsl/lib/translators.mjs";
 import { timeLimit } from "./test/helpers/timeLimit.js";
@@ -45,6 +47,11 @@ export default defineConfig({
     // a build, so the page never hashes 2.7 MB; by the function the build's
     // translation of the corpus computes its salt with (`tools/wgsl/`).
     __WGSL_TRANSLATORS__: JSON.stringify(translatorDigests(CLIENT)),
+    // The version of Babylon Lite the hike is drawn with, as this package
+    // pins it: the fork's tag, which names its patches, where the installed
+    // package's own version says only which release they stand on. Every
+    // telemetry row carries it (`main.ts`).
+    __LITE_VERSION__: JSON.stringify(liteVersion(readFileSync(new URL("package.json", import.meta.url), "utf8"))),
   },
   // The web build lives under games.csarko.sh/dayhike; the desktop shell serves
   // from its own origin at /. The deploy scripts set DAYHIKE_BASE per build and

@@ -5,9 +5,11 @@ import { GRADE_SHADE_BLOCK, GRADE_STARE_BLOCK, VEIL_GAMMA } from "../../../src/g
 import { SHADE_BLOCK_WGSL, STARE_BLOCK_WGSL, gradeWgsl } from "../../../src/game/lite/postWgsl.js";
 import { SHADE_VEIL_WGSL, holdTexture, veilShown, veilUniforms } from "../../../src/game/lite/shadeVeil.js";
 import { binder, picture } from "./textureClaims.js";
+import { babylonText } from "../../helpers/babylonFixture.js";
 import { tight } from "./wgslText.js";
 
-const GLSL = readFileSync(new URL("../../../src/game/shaders/shadeVeil.fragment.fx", import.meta.url), "utf8");
+/** The veil's fragment stage on Babylon.js (`shaders/shadeVeil.fragment.fx`), its text recorded. */
+const GLSL = babylonText("stages/shadeVeil.fragment.glsl");
 const src = readFileSync(new URL("../../../src/game/lite/shadeVeil.ts", import.meta.url), "utf8");
 
 describe("the shade veil on Babylon Lite", () => {

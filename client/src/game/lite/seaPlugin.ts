@@ -23,6 +23,9 @@
  *   computed each frame (`seaFft.ts`), with the loop's frames in the
  *   displacement's place where those cannot be had. What `textures` holds
  *   is read whenever the material's bindings are made.
+ * - **On the tier that reads through its water** it carries the frame kept
+ *   behind it and that frame's depth (`waterBehind.ts`) and the read of
+ *   them in the place of the alpha, as a lake's does (`lakePlugin.ts`).
  * - **Its vertex data is none**: a vertex is its place in the lattice.
  * - **The plunging lip's strip wears the same plugin with another vertex
  *   stage** (`lip`; `waterPlugin.ts` made with `lip` on Babylon.js): its
@@ -41,7 +44,8 @@ import {
   seaShadeWgsl, seaSurfaceWgsl,
   type SeaLook,
 } from "./seaWgsl.js";
-import { WATER_DEFS_WGSL, WATER_SPLIT_WGSL } from "./waterWgsl.js";
+import type { WaterBehind } from "./waterBehind.js";
+import { WATER_DEFS_WGSL, WATER_SPLIT_WGSL, WATER_THROUGH_DEFS_WGSL, WATER_THROUGH_FINAL_WGSL } from "./waterWgsl.js";
 
 /** The pictures and tables the sea's material reads. */
 export type SeaTextures = {
@@ -59,6 +63,8 @@ export type SeaTextures = {
   windDisp: Texture2DArray | null;
   /** The cascades' slopes, a layer a cascade, where the look reads the cascades. */
   windSlope: Texture2DArray | null;
+  /** The frame behind the surface, where the look reads through it. */
+  behind?: WaterBehind | null;
 };
 
 /** The tables the plunging lip's strip is placed from, four 32-bit floats a texel each. */
@@ -87,6 +93,8 @@ export function seaFields(uniforms: SeaUniforms): UniformField[] {
  */
 export function seaPlugin(uniforms: SeaUniforms, textures: SeaTextures, shared: PluginUniformBlock, look: SeaLook, lip: LipTables | null = null): MaterialPlugin {
   const fft = look.fft === true;
+  const behind = textures.behind ?? null;
+  if ((look.through === true) !== (behind !== null)) throw new Error("the sea's look and the frame behind it disagree");
   if (look.bump !== (textures.bump !== null) || look.loop !== (textures.windDisp !== null) || fft !== (textures.windSlope !== null) || (fft && !look.loop)) {
     throw new Error("the sea's look and its pictures disagree");
   }
@@ -96,14 +104,16 @@ export function seaPlugin(uniforms: SeaUniforms, textures: SeaTextures, shared: 
     name: lip === null ? "SeaWater" : "SeaLip",
     priority: WATER_PRIORITY,
     // A tier below the cascades' keeps the two it had.
-    defines: { loop: look.loop, bump: look.bump, ...(fft ? { fft } : {}), ...(lip !== null ? { lip: true } : {}) },
+    defines: { loop: look.loop, bump: look.bump, ...(fft ? { fft } : {}), ...(lip !== null ? { lip: true } : {}), ...(behind !== null ? { through: true } : {}) },
     getFragmentDirectives: () => "diagnostic(off,derivative_uniformity);",
     getCustomCode: (stage) =>
       stage === "fragment"
         ? {
-          CUSTOM_FRAGMENT_DEFINITIONS: frameReads(WATER_DEFS_WGSL + SEA_RAIN_WGSL) + surface + frameReads(seaShadeWgsl(look)),
+          CUSTOM_FRAGMENT_DEFINITIONS: frameReads(WATER_DEFS_WGSL + SEA_RAIN_WGSL + (behind !== null ? WATER_THROUGH_DEFS_WGSL : "")) + surface + frameReads(seaShadeWgsl(look)),
           CUSTOM_FRAGMENT_BEFORE_LIGHTS: frameReads((look.bump ? SEA_BUMP_WGSL : SEA_ALBEDO_WGSL) + seaLightsWgsl(look) + WATER_SPLIT_WGSL),
           CUSTOM_FRAGMENT_BEFORE_FINALCOLORCOMPOSITION: SEA_COMPOSE_WGSL,
+          // After the air's fog, which is laid at the point before.
+          ...(behind !== null ? { CUSTOM_FRAGMENT_BEFORE_FRAGCOLOR: WATER_THROUGH_FINAL_WGSL } : {}),
         }
         : lip === null
           ? { CUSTOM_VERTEX_DEFINITIONS: surface, CUSTOM_VERTEX_MAIN_END: frameReads(SEA_VERTEX_WGSL) }
@@ -127,6 +137,7 @@ export function seaPlugin(uniforms: SeaUniforms, textures: SeaTextures, shared: 
       ...(look.bump ? [{ texture: "waterBump", sampler: "waterBumpSampler" }] : []),
       ...(look.loop ? [{ texture: "oceanWindDisp", sampler: "oceanWindDispSampler", textureType: "texture_2d_array<f32>" as const, visibility: BOTH }] : []),
       ...(fft ? [{ texture: "oceanWindSlope", textureType: "texture_2d_array<f32>" as const }] : []),
+      ...(behind !== null ? [{ texture: "waterKept", sampler: "waterKeptSampler" }, { texture: "waterKeptDepth", sampleType: "unfilterable-float" as const }] : []),
     ],
     writeUbo(data, offsets) {
       const { oceanK, ...scalars } = uniforms;
@@ -143,6 +154,8 @@ export function seaPlugin(uniforms: SeaUniforms, textures: SeaTextures, shared: 
       if (textures.bump !== null) out.push({ texture: textures.bump });
       if (textures.windDisp !== null) out.push({ texture: textures.windDisp });
       if (textures.windSlope !== null) out.push({ texture: textures.windSlope, sampler: false });
+      // The pass's own, as they stand when the bindings are made: never counted among the material's.
+      if (behind !== null) out.push({ texture: behind.colour() }, { texture: behind.depth(), sampler: false });
     },
     getActiveTextures(out) {
       out.push(textures.atlas, textures.swash);

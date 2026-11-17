@@ -1,0 +1,19 @@
+// The game's shell on Babylon.js 9.18.0: the material of the patch under a car as createCarShadowPatch makes it (client/src/game/trailheadMeshes.ts), a run of its lines
+  let material: StandardMaterial | PBRMaterial;
+  if (atmosphere) {
+    const pbr = new PBRMaterial("mat_car_shadow_fogged", scene);
+    pbr.unlit = true;
+    pbr.albedoColor = new Color3(0, 0, 0);
+    pbr.opacityTexture = texture;
+    pbr.transparencyMode = PBRMaterial.PBRMATERIAL_ALPHABLEND;
+    material = pbr;
+  } else {
+    const plain = new StandardMaterial("mat_trailhead_car_shadow", scene);
+    plain.disableLighting = true;
+    plain.opacityTexture = texture;
+    material = plain;
+  }
+  material.alpha = darkness;
+  material.disableDepthWrite = true;
+  material.backFaceCulling = false;
+  material.zOffsetUnits = CAR_SHADOW_BIAS;

@@ -1,39 +1,35 @@
-import { describe, it, expect, afterEach } from "vitest";
+import { describe, it, expect } from "vitest";
 import { readFileSync } from "node:fs";
-import { NullEngine } from "@babylonjs/core/Engines/nullEngine.js";
-import { Scene } from "@babylonjs/core/scene.js";
-import { VertexBuffer } from "@babylonjs/core/Buffers/buffer.js";
-import { Matrix, Vector3 } from "@babylonjs/core/Maths/math.vector.js";
-import type { AbstractMesh } from "@babylonjs/core/Meshes/abstractMesh.js";
-import { VertexData } from "@babylonjs/core/Meshes/mesh.vertexData.js";
-import type { AssetContainer } from "@babylonjs/core/assetContainer.js";
-import { PBRMaterial } from "@babylonjs/core/Materials/PBR/pbrMaterial.js";
-import { StandardMaterial } from "@babylonjs/core/Materials/standardMaterial.js";
-import { loadAssetContainerAsync } from "@babylonjs/core/Loading/sceneLoader.js";
-import { registerBuiltInLoaders } from "@babylonjs/loaders/dynamic.js";
 import type { SignPost } from "../../src/sim/signs.js";
-import { createSignMeshes, squareInnerEnd } from "../../src/game/signMeshes.js";
+import { glbParts } from "../../src/game/glbParts.js";
 import {
   ARM_THICKNESS, LABEL_LIFT, LABEL_SIZE, POST_HEIGHT, SIGN_ARM_OUTPUT, faceNormals, labelAlong, plankCount, postHeight, signPlaces, squareEnd,
 } from "../../src/game/signParts.js";
+import { babylonValues } from "../helpers/babylonFixture.js";
+import { carried, inverse } from "../helpers/ruler.js";
 
-registerBuiltInLoaders();
-
-let engine: NullEngine | null = null;
-afterEach(() => {
-  engine?.dispose();
-  engine = null;
-});
-function freshScene(): Scene {
-  engine = new NullEngine();
-  return new Scene(engine);
-}
-function diskLoader(scene: Scene) {
-  return (output: string): Promise<AssetContainer> => {
-    const bytes = readFileSync(new URL(`../../assets/${output}`, import.meta.url));
-    return loadAssetContainerAsync(new Uint8Array(bytes), scene, { pluginExtension: ".glb" });
-  };
-}
+/**
+ * The shipped arm as Babylon.js's loader handed it, recorded: a level of detail each, its positions, normals and
+ * indices, and the cut of its inner end as worked out with Babylon.js's own normals (`VertexData.ComputeNormals`
+ * over the moved positions): where the cut is, how many vertices moved to it, and the cut mesh's positions and
+ * normals.
+ */
+const ARM = babylonValues<{
+  levels: { mesh: string; positions: number[]; normals: number[]; indices: number[]; cut: number; moved: number; wantPositions: number[]; wantNormals: number[] }[];
+}>("numbers/signArm.json");
+/**
+ * What Babylon.js and the fingerposts' shell on it gave, recorded. `computeNormals`: `VertexData.ComputeNormals`
+ * over the notched board below. `end` and `planks`: the shell built with the shipped models for the posts below:
+ * the plank's end as it found it, and of each plank its node's matrix in the world and, for each face of its
+ * lettering, the four corners of the label's plane by their texture coordinates and the way the plane looks.
+ * `ruler`: a plank's matrix, Babylon.js's inverse of it, and eight points carried through that inverse.
+ */
+const SIGNS = babylonValues<{
+  computeNormals: number[];
+  end: number;
+  planks: { name: string; world: number[]; faces: { side: string; corners: number[]; normal: number[] }[] }[];
+  ruler: { m: number[]; inverse: number[]; carried: { p: number[]; out: number[] }[] };
+}>("numbers/signParts.json");
 
 const C20 = Math.cos(Math.PI / 9), S20 = Math.sin(Math.PI / 9);
 const POSTS: SignPost[] = [
@@ -67,8 +63,8 @@ function notched(): { positions: Float32Array; indices: number[] } {
 describe("faceNormals", () => {
   it("makes a vertex's normal as Babylon.js's VertexData.ComputeNormals does, float for float", () => {
     const { positions, indices } = notched();
-    const theirs: number[] = [];
-    VertexData.ComputeNormals(Array.from(positions), indices, theirs);
+    const theirs = SIGNS.computeNormals;
+    expect(theirs).toHaveLength(positions.length);
     expect(Array.from(faceNormals(positions, indices))).toEqual(theirs);
   });
 });
@@ -92,49 +88,19 @@ describe("squareEnd", () => {
     expect(positions).toEqual(before);
   });
 
-  it("cuts the shipped arm, every level of it, as the cut worked out with Babylon.js's own normals does", async () => {
-    const scene = freshScene();
-    const container = await diskLoader(scene)(SIGN_ARM_OUTPUT);
+  it("cuts the shipped arm, every level of it, as the cut worked out with Babylon.js's own normals does", () => {
+    // The record is of the arm the game ships: each level's mesh has as many vertices in the file.
+    const file = readFileSync(new URL(`../../assets/${SIGN_ARM_OUTPUT}`, import.meta.url));
+    const bytes = file.buffer.slice(file.byteOffset, file.byteOffset + file.byteLength) as ArrayBuffer;
+    for (const level of ARM.levels) expect(glbParts(bytes, level.mesh).map((part) => part.vertices)).toEqual([level.positions.length / 3]);
     let cuts = 0;
-    for (const mesh of container.meshes) {
-      const positions = mesh.getVerticesData(VertexBuffer.PositionKind);
-      const indices = mesh.getIndices();
-      const oldNormals = mesh.getVerticesData(VertexBuffer.NormalKind);
-      if (positions === null || indices === null || oldNormals === null || positions.length === 0) continue;
+    for (const level of ARM.levels) {
       // The cut as the shell had it before the plain module: Babylon.js's own normals over the moved positions.
-      let cut = Infinity;
-      for (let i = 0; i < positions.length; i += 3) if (Math.abs(positions[i + 1] as number) < 1e-4) cut = Math.min(cut, positions[i + 2] as number);
-      const moved = new Set<number>();
-      const next = Array.from(positions);
-      for (let v = 0; v < next.length / 3; v++) {
-        if ((next[3 * v + 2] as number) < cut) {
-          next[3 * v + 2] = cut;
-          moved.add(v);
-        }
-      }
-      const fresh: number[] = [];
-      VertexData.ComputeNormals(next, indices, fresh);
-      let agree = 0;
-      for (let v = 0; v < next.length / 3; v++) {
-        if (moved.has(v)) continue;
-        for (let k = 0; k < 3; k++) agree += (fresh[3 * v + k] as number) * (oldNormals[3 * v + k] as number);
-      }
-      const sign = agree < 0 ? -1 : 1;
-      const normals = Array.from(oldNormals);
-      for (let t = 0; t < indices.length; t += 3) {
-        const tri = [indices[t], indices[t + 1], indices[t + 2]] as number[];
-        if (!tri.some((v) => moved.has(v))) continue;
-        for (const v of tri) {
-          const n = [fresh[3 * v] as number, fresh[3 * v + 1] as number, fresh[3 * v + 2] as number];
-          if (Math.hypot(n[0] as number, n[1] as number, n[2] as number) < 0.5) continue;
-          for (let k = 0; k < 3; k++) normals[3 * v + k] = sign * (n[k] as number);
-        }
-      }
-      const geometry = { positions: Float32Array.from(positions), normals: Float32Array.from(oldNormals), indices };
-      expect(squareEnd(geometry)).toEqual({ end: cut, moved: moved.size });
-      expect(Array.from(geometry.positions)).toEqual(Array.from(Float32Array.from(next)));
-      expect(Array.from(geometry.normals)).toEqual(Array.from(Float32Array.from(normals)));
-      expect(moved.size).toBeGreaterThan(0);
+      const geometry = { positions: new Float32Array(level.positions), normals: new Float32Array(level.normals), indices: level.indices };
+      expect(squareEnd(geometry)).toEqual({ end: level.cut, moved: level.moved });
+      expect(Array.from(geometry.positions)).toEqual(Array.from(new Float32Array(level.wantPositions)));
+      expect(Array.from(geometry.normals)).toEqual(Array.from(new Float32Array(level.wantNormals)));
+      expect(level.moved).toBeGreaterThan(0);
       cuts++;
     }
     // Three levels of detail, each with its own notch.
@@ -157,63 +123,69 @@ describe("signPlaces", () => {
     expect(places.labels).toHaveLength(2 * 5);
   });
 
-  it("stands every plank and every face of its lettering where the shell on Babylon.js stands them", async () => {
-    const scene = freshScene();
-    const signs = createSignMeshes(scene, POSTS, groundH, {
-      materialFor: (name) => new StandardMaterial(`box_${name}`, scene),
-      paint: (s, name) => new PBRMaterial(name, s),
-      loader: diskLoader(scene),
-    });
-    await signs.ready;
-    // The plank's end as the shell found it: the same cut on a container of its own.
-    const end = squareInnerEnd(await diskLoader(scene)(SIGN_ARM_OUTPUT));
+  it("stands every plank and every face of its lettering where the shell on Babylon.js stands them", () => {
+    // The plank's end as the shell found it: the same cut, the furthest of the arm's levels.
+    const end = SIGNS.end;
+    expect(end).toBe(Math.max(...ARM.levels.map((level) => level.cut)));
     const places = signPlaces(POSTS, groundH, end);
     let plank = 0;
     for (const [p, post] of POSTS.entries()) {
       for (const arm of post.arms) {
         for (const rank of arm.ranks) {
           const name = `sign_${p}_plank_${rank}`;
-          const node = scene.getTransformNodeByName(name);
-          if (node === null) throw new Error(`no ${name}`);
-          const theirs = node.computeWorldMatrix(true).m;
+          const recorded = SIGNS.planks[plank];
+          if (recorded === undefined || recorded.name !== name) throw new Error(`no ${name}`);
+          const theirs = new Float32Array(recorded.world);
+          expect(theirs).toHaveLength(16);
           const ours = places.plankMatrices.subarray(plank * 16, plank * 16 + 16);
           for (let i = 0; i < 16; i++) expect(ours[i]).toBeCloseTo(theirs[i] as number, 4);
           for (const [f, side] of (["px", "nx"] as const).entries()) {
-            const plane = scene.getMeshByName(`${name}_label_${side}`) as AbstractMesh;
-            const world = plane.computeWorldMatrix(true);
-            const positions = plane.getVerticesData(VertexBuffer.PositionKind) as Float32Array;
-            const uvs = plane.getVerticesData(VertexBuffer.UVKind) as Float32Array;
+            const plane = recorded.faces[f];
+            if (plane === undefined || plane.side !== side) throw new Error(`no ${name}_label_${side}`);
             const face = places.labels[plank * 2 + f] as (typeof places.labels)[number];
             // The plane's corners by their texture coordinates: (0, 0) the bottom left as the face is read.
-            for (const [c, [u, v]] of ([[0, 0], [1, 0], [1, 1], [0, 1]] as const).entries()) {
-              let at = -1;
-              for (let i = 0; i < 4; i++) if (uvs[i * 2] === u && uvs[i * 2 + 1] === v) at = i;
-              const corner = Vector3.TransformCoordinates(new Vector3(positions[at * 3], positions[at * 3 + 1], positions[at * 3 + 2]), world);
-              expect(face.corners[c * 3]).toBeCloseTo(corner.x, 4);
-              expect(face.corners[c * 3 + 1]).toBeCloseTo(corner.y, 4);
-              expect(face.corners[c * 3 + 2]).toBeCloseTo(corner.z, 4);
+            expect(plane.corners).toHaveLength(12);
+            for (let c = 0; c < 4; c++) {
+              expect(face.corners[c * 3]).toBeCloseTo(plane.corners[c * 3] as number, 4);
+              expect(face.corners[c * 3 + 1]).toBeCloseTo(plane.corners[c * 3 + 1] as number, 4);
+              expect(face.corners[c * 3 + 2]).toBeCloseTo(plane.corners[c * 3 + 2] as number, 4);
             }
-            const out = Vector3.TransformNormal(new Vector3(0, 0, -1), world).normalize();
-            expect(face.normal.x).toBeCloseTo(out.x, 5);
-            expect(face.normal.y).toBeCloseTo(out.y, 5);
-            expect(face.normal.z).toBeCloseTo(out.z, 5);
+            expect(face.normal.x).toBeCloseTo(plane.normal[0] as number, 5);
+            expect(face.normal.y).toBeCloseTo(plane.normal[1] as number, 5);
+            expect(face.normal.z).toBeCloseTo(plane.normal[2] as number, 5);
           }
           plank++;
         }
       }
     }
     expect(plank).toBe(5);
-    signs.dispose();
+    expect(SIGNS.planks).toHaveLength(5);
+  });
+
+  it("measures a plank's own frame with a ruler that undoes a matrix and carries a point as Babylon.js did, bit for bit", () => {
+    const { m, inverse: theirs, carried: points } = SIGNS.ruler;
+    const back = inverse(new Float32Array(m));
+    if (back === null) throw new Error("the recorded matrix has no inverse");
+    const want = new Float32Array(theirs);
+    expect(Array.from(back, (value, i) => Object.is(value, want[i]))).toEqual(new Array(16).fill(true));
+    expect(points).toHaveLength(8);
+    for (const { p, out } of points) {
+      const got = carried(want, { x: p[0] as number, y: p[1] as number, z: p[2] as number });
+      expect([Object.is(got.x, out[0]), Object.is(got.y, out[1]), Object.is(got.z, out[2])]).toEqual([true, true, true]);
+    }
+    // The matrix stands a plank up a post, turned: its inverse is no copy of it.
+    expect(Array.from(back).filter((value, i) => Math.abs(value - (m[i] as number)) > 0.5).length).toBeGreaterThan(0);
   });
 
   it("lays a face's lettering a millimetre off its plank's face, centred on the board seen past the post", () => {
     const places = signPlaces([{ x: 0, z: 0, arms: [{ dx: 0, dz: 1, names: ["Summit"], ranks: [0] }] }], () => 0, 0.05);
-    const inverse = Matrix.FromArray(places.plankMatrices).invert();
+    const back = inverse(places.plankMatrices);
+    if (back === null) throw new Error("the plank's matrix has no inverse");
     for (const [f, side] of [1, -1].entries()) {
       const face = places.labels[f] as (typeof places.labels)[number];
       let cx = 0, cz = 0;
       for (let c = 0; c < 4; c++) {
-        const local = Vector3.TransformCoordinates(new Vector3(face.corners[c * 3], face.corners[c * 3 + 1], face.corners[c * 3 + 2]), inverse);
+        const local = carried(back, { x: face.corners[c * 3] as number, y: face.corners[c * 3 + 1] as number, z: face.corners[c * 3 + 2] as number });
         expect(local.x).toBeCloseTo(side * (ARM_THICKNESS / 2 + LABEL_LIFT), 5);
         expect(Math.abs(local.y)).toBeCloseTo(LABEL_SIZE.height / 2, 5);
         cx += local.x / 4;

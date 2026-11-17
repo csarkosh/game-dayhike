@@ -80,6 +80,7 @@ Every row carries the envelope the page sent:
 | `sid` | The session: one a page load. |
 | `vid` | The visitor: one a browser, kept in localStorage, so a returning player counts once. Empty where storage refuses. |
 | `build` | The client's git short sha, `-dirty` where the tree was, baked in by the deploy's build (`VITE_BUILD_SHA`); `dev` in development. |
+| `lite` | The version of Babylon Lite the hike is drawn with, as the client's package pins it: the tag of its repository, which names its patches (`v1.39.3-dayhike.7`), read from `client/package.json` as the page is built (`tools/vite/liteVersion.mjs`). The installed package's own version says only the release the tag stands on. |
 | `proto`, `gen` | `PROTOCOL_VERSION` and `GEN_VERSION`, the two constants that decide whether two pages can play together. |
 | `desktop`, `shell`, `os`, `browser`, `touch` | The platform, from `game/platform.ts`. |
 | `ref` | The referrer's origin and path, 200 characters at most; "" for none (`referrerOf`). |
@@ -122,6 +123,7 @@ The events, in the order a session makes them:
 | `lobby_end` | `reason`, `members` | `host_gone` or `left` |
 | `load` | `decideMs`, `introMs`, `engineMs`, `filmMs`, `worldMs`, `sceneMs`, `buildMs`, `tier`, `source`, `engine`, `prep`, `prepMs`, `scene` | the start chain finished (`startHike`); `worldMs` is what the start still waited for the world's worker once the film had its top-up, `prep` how that worker ended (`done`, `cached`, `no-worker`, `failed`, `timeout`) and `prepMs` how long it ran; `sceneMs` is what the start then still waited for the worker's first scene, and `scene` whether the worker sent one (`made`) or none came (`none`); a renderer made at a fallback tier or again on WebGL2 samples the ground itself either way |
 | `start_fail` | the laps so far, `msg` | it did not |
+| `turned_away` | `reason`: `no-webgpu`, `no-adapter`, `software`, `short`; `short`, what the adapter is short of, for that reason | the load check's verdict is that this browser and GPU cannot play (`game/loadCheck.ts`): once a page, sent once the GPU's signals are in, so the row carries `gpu` and `adapter`; the visitor sees the page for those turned away and no hike is started. A warning |
 | `ready` | `ms` | the world ready to be looked at, from the launch |
 | `match_start` | `role`, `party`, `lobby` | the host session, or a follower's once connected |
 | `act` | `act`: wet, dusk, mist; `p`; `tick` | the climb's ratchet passed the mark (`sim/acts.ts`) |
@@ -140,7 +142,7 @@ The events, in the order a session makes them:
 | `device_lost` | `reason`, `msg`, `losses`, `recent`, `sinceMs`, `verdict`, `errors`, `bufs`, `bufMB`, `texs`, `texMB`, `heapMB`, and what was happening | a hike's renderer lost its GPU device, not by the game's own letting go |
 | `engine_rebuilt` | `reason`, `ok`, `state`, `frames`, `ms`, `tier`, `engine`, `r`, `why` | the hike's rebuild after a failed engine came out |
 | `exit`, `continue_offline`, `match_end` | | leaving |
-| `error`, `warn` | `kind`, `msg`, `stack`, `where` | an uncaught throw, an unhandled rejection, the page's own `console.error`/`warn`, or Babylon's own logged warning or error (`kind: babylon`, §8) |
+| `error`, `warn` | `kind`, `msg`, `stack`, `where` | an uncaught throw, an unhandled rejection, the page's own `console.error`/`warn`, which what the hike's renderer and its library print pass through too (§8) |
 | `end` | `reason`, `dropped`, `trouble`, `suppressed`, `sent`, `failed`, `dur` | the page is leaving |
 
 "Did it run without errors" is answered by the last row of a session: an `end` with
@@ -273,6 +275,10 @@ world, the platform and the GPU from the first day; four things were missing for
   `watchWebGpu`). A batch is also cut at 40,000 characters of events (`MAX_BATCH_CHARS`):
   the server refuses a body over 64 KiB, and a refused batch is put back and sent again, so a
   session's twenty long errors in one batch would have held up every batch after them.
+  *(Amended 2026-11-17.)* The page loads nothing of Babylon.js any more and hands the capture
+  no logger: a hike is drawn by the renderer on Babylon Lite, and what it and the library
+  print goes through the console, which the capture wraps, so those rows are `kind: console`.
+  `installErrorCapture` still takes a logger from a page that hands one in.
 - **The session timeline.** `tools/telemetry/queries/session.sql`, every row a session sent
   and its lobby's signaling rows in order; the admin page opens it as a drawer from any
   session id.

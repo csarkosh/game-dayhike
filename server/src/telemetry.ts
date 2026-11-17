@@ -184,12 +184,14 @@ export type ReceiptMeta = {
  * GPU error is a warning, and its window an error where the picture broke
  * (`picture: "broke"`); a rebuild that did not stand (`ok: false`) and a
  * hike ended by its lost devices (`session_end` with `why: "device_lost"`)
- * are errors. A page that sends none of those fields, an older one, reads
- * as it always did.
+ * are errors. A visitor the load check turned away (`turned_away`: the
+ * browser or the GPU cannot play) is a warning: nothing of the game failed,
+ * and a visitor was lost. A page that sends none of those fields, an older
+ * one, reads as it always did.
  */
 export function severityOf(name: string, fields: Fields = {}): Severity {
   if (name === "error" || name === "device_lost") return "ERROR";
-  if (name === "warn" || name === "gpu_error") return "WARNING";
+  if (name === "warn" || name === "gpu_error" || name === "turned_away") return "WARNING";
   if (name === "gpu_window") return fields.picture === "broke" ? "ERROR" : "WARNING";
   if (name === "engine_rebuilt") return fields.ok === false ? "ERROR" : "INFO";
   if (name === "session_end") return fields.why === "device_lost" ? "ERROR" : "INFO";

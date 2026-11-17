@@ -1,17 +1,25 @@
 import { describe, expect, it } from "vitest";
-import { NullEngine } from "@babylonjs/core/Engines/nullEngine.js";
-import { Quaternion, Vector3 } from "@babylonjs/core/Maths/math.vector.js";
-import { TransformNode } from "@babylonjs/core/Meshes/transformNode.js";
-import { Scene } from "@babylonjs/core/scene.js";
 import {
   DOOR_NAME, DOOR_SWING, STEERING_COLUMN, STEERING_NAME, WHEEL_NAMES, affineInverse, carPartTurn, doorTurn, frontWheel, partMatrix, poseVertices,
   wheelSpinTurn, wheelSteerTurn,
 } from "../../src/game/carParts.js";
 import { matrixMultiply } from "../../src/game/instancePose.js";
-import { stageCar, type CarModel } from "../../src/game/scene/sceneStage.js";
+import { babylonValues } from "../helpers/babylonFixture.js";
 import type { CarPose } from "../../src/game/scene/timeline.js";
 
 const pose = (over: Partial<CarPose> = {}): CarPose => ({ x: 0, y: 0, z: 0, yaw: 0, wheelSpin: 0, doorOpen: 0, wheelTurn: 0, steer: 0, handset: "cradle", ...over });
+/**
+ * What Babylon.js's nodes and the stage on it gave, recorded. `frame`: the world matrix of a node turned, scaled
+ * (1, 1.5, -1) and moved to (3, -2, 5). `parts`: four of the car's parts as nodes where the file has them, under the
+ * model's own node turned a quarter, under a loader's root (it mirrors the file); of each its matrix in the model
+ * (`local`), three vertices of its own frame with a normal and a tangent each as they rest in the model, and where
+ * the same vertices and normal stood once the stage had turned the nodes by `pose`.
+ */
+const BABYLON = babylonValues<{
+  frame: number[];
+  pose: CarPose;
+  parts: { name: string; local: number[]; positions: number[]; normals: number[]; tangents: number[]; wantPositions: number[]; wantNormals: number[] }[];
+}>("numbers/carParts.json");
 
 describe("the film's car's parts, as a pose turns them", () => {
   it("names the four wheels, the front pair first, the steering wheel and the driver's door", () => {
@@ -30,93 +38,46 @@ describe("the film's car's parts, as a pose turns them", () => {
   });
 
   it("undoes a turn, a scale and a move", () => {
-    const scene = new Scene(new NullEngine());
-    const m = new Float32Array(16);
-    const q = Quaternion.RotationYawPitchRoll(0.7, -0.3, 1.1);
     // A mirrored, scaled, turned, moved frame, as a loader's root and a part's node make together.
-    const world = new TransformNode("n", scene);
-    world.rotationQuaternion = q;
-    world.scaling.set(1, 1.5, -1);
-    world.position.set(3, -2, 5);
-    world.computeWorldMatrix(true).copyToArray(m);
+    const m = new Float32Array(BABYLON.frame);
+    expect([m[12], m[13], m[14]]).toEqual([3, -2, 5]);
+    expect(Math.hypot(m[4] as number, m[5] as number, m[6] as number)).toBeCloseTo(1.5, 6);
     const inverse = affineInverse(m, new Float32Array(16));
     const one = new Float32Array(16);
     matrixMultiply(m, inverse, one);
     const identity = [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1];
     for (let i = 0; i < 16; i++) expect(one[i]).toBeCloseTo(identity[i] as number, 5);
-    scene.getEngine().dispose();
   });
 
   it("carries a part's vertices where the stage on Babylon.js turns its node: under a mirrored root, a wheel spun and turned, the steering wheel about its column", () => {
-    const scene = new Scene(new NullEngine());
-    // A loader's root (it mirrors the file), the model's own node turned a quarter, and the parts under it where the file has them.
-    const mirror = new TransformNode("__root__", scene);
-    mirror.rotationQuaternion = new Quaternion(0, 1, 0, 0);
-    mirror.scaling.set(1, 1, -1);
-    const model = new TransformNode("intro.car", scene);
-    model.parent = mirror;
-    model.rotationQuaternion = Quaternion.RotationAxis(new Vector3(0, 1, 0), -Math.PI / 2);
-    const part = (name: string, x: number, y: number, z: number): TransformNode => {
-      const node = new TransformNode(name, scene);
-      node.parent = model;
-      node.position.set(x, y, z);
-      return node;
-    };
-    const front = part("wheel_fl", 1.326, 0.348, -0.73);
-    const rear = part("wheel_rl", -1.349, 0.348, -0.73);
-    const steering = part("wheel_steering", 0.594, 1.034, -0.411);
-    const door = part("door_driver", 0.875, 0.897, -0.752);
-    const car: CarModel = {
-      root: mirror, wheels: [{ node: front, front: true }, { node: rear, front: false }], door, steering, handset: null, cradle: null, handsetRest: null,
-    };
-    // Three vertices of each part in its own frame, with a normal and a tangent each.
-    const own = [[0.3, 0.1, 0.05], [-0.2, 0.25, -0.1], [0, -0.348, 0.12]] as const;
-    const normal = new Vector3(0.6, 0.8, 0);
-    const local = (node: TransformNode): Float32Array => {
-      const out = new Float32Array(16);
-      node.computeWorldMatrix(true).copyToArray(out);
-      return out;
-    };
-    const rest = (node: TransformNode): { positions: Float32Array; normals: Float32Array; tangents: Float32Array; local: Float32Array } => {
-      const world = node.computeWorldMatrix(true);
-      const positions = new Float32Array(9), normals = new Float32Array(9), tangents = new Float32Array(12);
-      own.forEach((v, i) => {
-        Vector3.TransformCoordinates(new Vector3(v[0], v[1], v[2]), world).toArray(positions, i * 3);
-        Vector3.TransformNormal(normal, world).toArray(normals, i * 3);
-        Vector3.TransformNormal(normal, world).toArray(tangents, i * 4);
-        tangents[i * 4 + 3] = -1;
-      });
-      return { positions, normals, tangents, local: local(node) };
-    };
-    const parts = [front, rear, steering, door].map((node) => ({ node, ...rest(node) }));
     const staged = pose({ wheelSpin: 2.3, wheelTurn: 0.17, steer: 0.17 * 15, doorOpen: 0.4 });
-    stageCar(staged, car);
+    // The record is of this pose, and of a front wheel, a rear one, the steering wheel and the door.
+    expect(BABYLON.pose).toEqual(staged);
+    expect(BABYLON.parts.map((part) => part.name)).toEqual(["wheel_fl", "wheel_rl", "wheel_steering", "door_driver"]);
     const turn = { x: 0, y: 0, z: 0, w: 1 };
     const matrix = new Float32Array(16);
-    for (const { node, positions, normals, tangents, local: frame } of parts) {
-      const q = carPartTurn(node.name, staged, turn);
-      expect(q, node.name).not.toBeNull();
+    for (const part of BABYLON.parts) {
+      // Three vertices of the part as they rest in the model, with a normal and a tangent each, and the part's frame there.
+      const rest = { positions: new Float32Array(part.positions), normals: new Float32Array(part.normals), tangents: new Float32Array(part.tangents) };
+      const frame = new Float32Array(part.local);
+      const q = carPartTurn(part.name, staged, turn);
+      expect(q, part.name).not.toBeNull();
       const out = { positions: new Float32Array(9), normals: new Float32Array(9), tangents: new Float32Array(12) };
-      poseVertices(partMatrix(frame, q as NonNullable<typeof q>, matrix), { positions, normals, tangents }, out, 0, 3);
-      // Where Babylon.js has the same vertices now that the node is turned. The root's own place and turn (the pose's) are taken out: the parts are turned in the model.
-      mirror.position.set(0, 0, 0);
-      mirror.rotation.y = 0;
-      const world = node.computeWorldMatrix(true);
-      own.forEach((v, i) => {
-        const at = Vector3.TransformCoordinates(new Vector3(v[0], v[1], v[2]), world);
-        const n = Vector3.TransformNormal(normal, world);
-        for (const [k, want] of [at.x, at.y, at.z].entries()) expect(out.positions[i * 3 + k], `${node.name} vertex ${i}`).toBeCloseTo(want, 5);
-        for (const [k, want] of [n.x, n.y, n.z].entries()) {
-          expect(out.normals[i * 3 + k], `${node.name} normal ${i}`).toBeCloseTo(want, 5);
-          expect(out.tangents[i * 4 + k], `${node.name} tangent ${i}`).toBeCloseTo(want, 5);
+      poseVertices(partMatrix(frame, q as NonNullable<typeof q>, matrix), rest, out, 0, 3);
+      // Where Babylon.js had the same vertices once the node was turned, the root's own place and turn (the pose's) taken out: the parts are turned in the model.
+      expect([part.wantPositions.length, part.wantNormals.length]).toEqual([9, 9]);
+      for (let i = 0; i < 3; i++) {
+        for (let k = 0; k < 3; k++) {
+          expect(out.positions[i * 3 + k], `${part.name} vertex ${i}`).toBeCloseTo(part.wantPositions[i * 3 + k] as number, 5);
+          expect(out.normals[i * 3 + k], `${part.name} normal ${i}`).toBeCloseTo(part.wantNormals[i * 3 + k] as number, 5);
+          expect(out.tangents[i * 4 + k], `${part.name} tangent ${i}`).toBeCloseTo(part.wantNormals[i * 3 + k] as number, 5);
         }
         // A tangent's handedness is carried as it is.
         expect(out.tangents[i * 4 + 3]).toBe(-1);
-      });
+      }
     }
     // The column the steering wheel turns about is the stage's.
     expect(Math.hypot(...STEERING_COLUMN)).toBeGreaterThan(0.99);
-    scene.getEngine().dispose();
   });
 
   it("leaves a run it is not asked for as it was", () => {

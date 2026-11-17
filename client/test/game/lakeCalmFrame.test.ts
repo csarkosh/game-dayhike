@@ -1,9 +1,9 @@
 import { describe, expect, it } from "vitest";
 import { calmShare } from "../../src/game/lakeCalm.js";
 import { PAW_COVER_SHELTER, createCalmFade, fadedCalmShare, lakeCalmUnder, type LakeCalmFrame } from "../../src/game/lakeCalmFrame.js";
-import * as renderer from "../../src/game/renderer.js";
 import { DEFAULT_WEATHER, WEATHER_PRESETS } from "../../src/game/weather.js";
 import { GAME_FOV } from "../../src/game/gameLens.js";
+import { timeLimit } from "../helpers/timeLimit.js";
 
 describe("the lakes' calm through a weather fade", () => {
   it("stands at the default weather with no fade running", () => {
@@ -58,8 +58,11 @@ describe("the lakes' calm through a weather fade", () => {
     expect(c.rough).toBe(false);
     expect(c.cover).toBeCloseTo(((1 - 0.65) * 0.1) / PAW_COVER_SHELTER, 12);
   });
+});
 
-  it("is the calm the renderer on Babylon.js hands on", () => {
+describe("the renderer on Babylon.js: the lakes' calm", () => {
+  it("is the calm the renderer on Babylon.js hands on", { timeout: timeLimit(60_000) }, async () => {
+    const renderer = await import("../../src/game/renderer.js");
     expect(renderer.lakeCalmUnder).toBe(lakeCalmUnder);
     expect(renderer.fadedCalmShare).toBe(fadedCalmShare);
     expect(renderer.PAW_COVER_SHELTER).toBe(PAW_COVER_SHELTER);

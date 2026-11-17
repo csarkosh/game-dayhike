@@ -273,25 +273,16 @@ describe("the runner a screen's end scene is stepped on", () => {
 
 describe("the end scene on another player's run", () => {
   it("judges the arrival by the runner's own place, and builds the world round them, not round this screen's player far up the mountain", () => {
-    const renderer = readFileSync(new URL("../../src/game/renderer.ts", import.meta.url), "utf8");
     // The arrival is judged where the end scene is stepped, for both renderers (`scenePlay.ts`).
     const play = readFileSync(new URL("../../src/game/scenePlay.ts", import.meta.url), "utf8");
     expect(play).toContain("if (ctx.arrival === null && arrived(runner.at, ctx.door, t)) ctx.arrival = t;");
-    expect(renderer).toContain("const shown = shownId === undefined ? undefined : state.players.get(shownId);");
-    expect(renderer).toContain("const centre = shown !== undefined ? shown.pos : local.pos;");
-    expect(renderer).toContain("clipmap?.update(centre.x, centre.z);");
-    expect(renderer).toContain("forestMeshes?.update(centre.x, centre.z);");
-    expect(renderer).not.toContain("clipmap?.update(local.pos.x, local.pos.z);");
   });
 
 
   it("is stepped on the runner the setup names, drawn where their body is, with this screen's own body left out", () => {
-    const renderer = readFileSync(new URL("../../src/game/renderer.ts", import.meta.url), "utf8");
     const play = readFileSync(new URL("../../src/game/scenePlay.ts", import.meta.url), "utf8");
     expect(play).toContain("stepEndScene(endRun, runnerPose(runnerNow, local, other, other === undefined || id === undefined ? null : drawnAt(id), PLAYER_HALF.y), seconds, camera);");
     expect(play).toContain("now.showLocal = ctx.arrival === null && e.setup.runner === undefined;");
-    expect(renderer).toContain("const now = play.step(seconds, playCamera, local, state.players, (id) => views.drawnAt(id));");
-    expect(renderer).toContain("views.showLocal = now.showLocal;");
   });
 
   it("lets the `escape` look win as a match does: its player, stood at the car by hand, counts as one who was out", () => {
@@ -304,5 +295,22 @@ describe("the end scene on another player's run", () => {
     const app = readFileSync(new URL("../../src/app.ts", import.meta.url), "utf8");
     expect(app).toContain("if (!endRunOwn) return { ...cmd, moveX: 0, moveZ: 0, buttons: 0 };");
     expect(app).toContain("const won = state.outcome === Outcome.Won;");
+  });
+});
+
+describe("the renderer on Babylon.js: the end scene on another player's run", () => {
+  it("judges the arrival by the runner's own place, and builds the world round them, not round this screen's player far up the mountain", () => {
+    const renderer = readFileSync(new URL("../../src/game/renderer.ts", import.meta.url), "utf8");
+    expect(renderer).toContain("const shown = shownId === undefined ? undefined : state.players.get(shownId);");
+    expect(renderer).toContain("const centre = shown !== undefined ? shown.pos : local.pos;");
+    expect(renderer).toContain("clipmap?.update(centre.x, centre.z);");
+    expect(renderer).toContain("forestMeshes?.update(centre.x, centre.z);");
+    expect(renderer).not.toContain("clipmap?.update(local.pos.x, local.pos.z);");
+  });
+
+  it("is stepped on the runner the setup names, drawn where their body is, with this screen's own body left out", () => {
+    const renderer = readFileSync(new URL("../../src/game/renderer.ts", import.meta.url), "utf8");
+    expect(renderer).toContain("const now = play.step(seconds, playCamera, local, state.players, (id) => views.drawnAt(id));");
+    expect(renderer).toContain("views.showLocal = now.showLocal;");
   });
 });

@@ -3,7 +3,9 @@
 -- hundred characters so a message with a variable tail groups as one.
 -- `level` tells an error (a throw, a failed start or connection, an engine
 -- that would not build, a lost device, a hike ended by its lost devices)
--- from a warning (`warn`, a tier fallen back to). A GPU error under a hike
+-- from a warning (`warn`, a tier fallen back to, a visitor the load check
+-- turned away: `turned_away`, whose reason stands in `kind`, so the list
+-- says how many could not play here and why). A GPU error under a hike
 -- (`gpu_error`, its `kind` validation, out-of-memory or internal) is a
 -- warning where the picture held after it and an error where it broke: the
 -- window that judged the picture (`gpu_window`, `picture`) says which, and
@@ -60,7 +62,7 @@ ranged AS (
     JSON_VALUE(json_payload.sid) AS sid,
     JSON_VALUE(json_payload.build) AS build,
     JSON_VALUE(json_payload.n) AS n,
-    JSON_VALUE(json_payload.kind) AS kind,
+    IF(JSON_VALUE(json_payload.n) = 'turned_away', JSON_VALUE(json_payload.reason), JSON_VALUE(json_payload.kind)) AS kind,
     JSON_VALUE(json_payload.where) AS at_page,
     SUBSTR(JSON_VALUE(json_payload.msg), 1, 100) AS msg,
     JSON_VALUE(json_payload.os) AS os,
@@ -73,7 +75,7 @@ ranged AS (
   FROM play
   WHERE JSON_VALUE(json_payload.svc) = 'telemetry'
     AND timestamp >= TIMESTAMP(DATE_SUB(DATE_ADD(CURRENT_DATE('America/New_York'), INTERVAL 1 DAY), INTERVAL 7 DAY), 'America/New_York') -- range
-    AND JSON_VALUE(json_payload.n) IN ('error', 'warn', 'start_fail', 'connect_fail', 'engine_failed', 'webgpu_start_failed', 'tier_fallback', 'gpu_error', 'gpu_window', 'device_lost', 'session_end')
+    AND JSON_VALUE(json_payload.n) IN ('error', 'warn', 'start_fail', 'connect_fail', 'engine_failed', 'webgpu_start_failed', 'tier_fallback', 'turned_away', 'gpu_error', 'gpu_window', 'device_lost', 'session_end')
 ),
 -- The windows that found the picture broken.
 broke AS (
@@ -101,7 +103,7 @@ events AS (
     ranged.timestamp
   FROM ranged
   LEFT JOIN broke ON broke.sid = ranged.sid AND broke.judged = ranged.judged
-  WHERE ranged.n IN ('error', 'warn', 'start_fail', 'connect_fail', 'engine_failed', 'webgpu_start_failed', 'tier_fallback', 'gpu_error', 'device_lost')
+  WHERE ranged.n IN ('error', 'warn', 'start_fail', 'connect_fail', 'engine_failed', 'webgpu_start_failed', 'tier_fallback', 'turned_away', 'gpu_error', 'device_lost')
     OR (ranged.n = 'session_end' AND ranged.why = 'device_lost')
 ),
 totals AS (

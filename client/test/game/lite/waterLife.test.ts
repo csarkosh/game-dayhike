@@ -1,5 +1,3 @@
-import { readFileSync } from "node:fs";
-import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
 import { emptyDragonflyList, fillDragonflyList } from "../../../src/game/dragonflyShapes.js";
 import type { Dragonflies } from "../../../src/game/dragonflyBehaviour.js";
@@ -11,9 +9,11 @@ import { MIDGE_WGSL } from "../../../src/game/lite/midgeMeshes.js";
 import { WING_AMP_AT, WING_COLOURWAY_AT, WING_PHASE_AT } from "../../../src/game/lite/wingPlugin.js";
 import { MIDGE_HEAD_FLOATS, swarmSphere } from "../../../src/game/midgeLook.js";
 import { MIDGE_SWARMS_MAX, SWARM_ROW_FLOATS, packSwarm } from "../../../src/game/midgeMotion.js";
+import { babylonText } from "../../helpers/babylonFixture.js";
 import { inOrder, tight } from "./wgslText.js";
 
-const fx = (name: string): string => readFileSync(fileURLToPath(new URL(`../../../src/game/shaders/${name}`, import.meta.url)), "utf8");
+/** A stage of the game's GLSL on Babylon.js, whole, as recorded from its `.fx` file. */
+const fx = (name: string): string => babylonText(`stages/${name.replace(/\.fx$/, ".glsl")}`);
 const code = (name: string): string => fx(name).split("\n").filter((line) => !/^\s*\/\//.test(line)).join("\n");
 
 /** A GLSL statement of the midges' stages as the WGSL writes it. */

@@ -157,6 +157,17 @@ describe("rowsOf", () => {
     expect(severityOf("session_end")).toBe("INFO");
     expect(severityOf("engine_failed", { reason: "lost" })).toBe("INFO");
   });
+
+  it("grades a visitor the load check turned away as a warning, whatever the reason", () => {
+    for (const reason of ["no-webgpu", "no-adapter", "software", "short"]) expect(severityOf("turned_away", { reason })).toBe("WARNING");
+    expect(severityOf("turned_away")).toBe("WARNING");
+    const parsed = parseBatch(batch([{ n: "page", t: 3, kind: "landing" }, { n: "turned_away", t: 41, reason: "short", short: "maxTextureDimension2D 4096 < 8192" }]));
+    if (!parsed.ok) throw new Error(parsed.problem);
+    const rows = rowsOf(parsed.batch, { serverBuild: "s", receivedAt: 1_000 });
+    expect(rows.map((r) => [r.n, r.severity])).toEqual([["page", "INFO"], ["turned_away", "WARNING"]]);
+    // The reason and the shortfall ride on the row beside what every row carries.
+    expect(rows[1]).toMatchObject({ n: "turned_away", reason: "short", short: "maxTextureDimension2D 4096 < 8192", sid: "s1", message: "turned_away" });
+  });
 });
 
 /**

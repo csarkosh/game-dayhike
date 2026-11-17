@@ -1,0 +1,2 @@
+// The game's shell on Babylon.js 9.18.0: where the foliage's plugin reads the eye as it binds (bindForSubMesh, client/src/game/foliagePlugin.ts), a line of it
+    const u = foliageUniforms(this.look, scene.activeCamera?.globalPosition, bound);

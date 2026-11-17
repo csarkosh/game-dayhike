@@ -392,7 +392,7 @@ describe("the Babylon the spacing relies on", () => {
   });
 });
 
-describe("the WebGPU engine's start", () => {
+describe("the renderer on Babylon.js: the WebGPU engine's start", () => {
   it("spaces its effects once it stands, and lets them all go when the engine does", () => {
     const source = readFileSync(new URL("../../src/game/gpuEngine.ts", import.meta.url), "utf8");
     expect(source).toMatch(

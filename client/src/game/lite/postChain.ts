@@ -39,13 +39,24 @@
  * samples, their resolve, the depth's resolve (two bytes a pixel), the far
  * softening's frame, the two histories and the half-size strokes.
  *
+ * **On the tier that reads through its water the scene's pass is broken
+ * before the water** (`keep`, `enableRenderTaskBreak`): only on a frame that
+ * shows a surface marked for it, the opaque draws and the sky first, then
+ * the pass begun again over what they stored, with the water first, opaque
+ * and writing depth, and the see-through draws after it. What is kept
+ * between the halves (`kept`) is the frame's colour, which is the first
+ * half's own resolve, and its depth, one triangle into a 32-bit float. The
+ * depth the chain resolves after the pass is then the water's surface where
+ * there is water, as the game's is. A frame with no water in sight is one
+ * pass, as on the tiers below.
+ *
  * **The jitter is the camera's projection hook**: a step along the walk a
  * frame (`TaaFrame.jitter`), which every draw of the scene's pass is seen
  * through and no other pass.
  */
 import {
-  addTask, createCustomTask, createRenderTarget, createRenderTask, getFrameEncoder, getGpuDevice, getProjectionMatrix, getRenderTargetAttachments,
-  type BankedFreeCamera, type EngineContext, type RenderTarget, type RenderTargetAttachments, type RenderTask, type SceneContext, type Task, type Texture2D,
+  addTask, createCustomTask, createRenderTarget, createRenderTask, enableRenderTaskBreak, getFrameEncoder, getGpuDevice, getProjectionMatrix, getRenderTargetAttachments,
+  type BankedFreeCamera, type EngineContext, type RenderTarget, type RenderTargetAttachments, type RenderTask, type RenderTaskBreak, type SceneContext, type Task, type Texture2D,
 } from "@babylonjs/lite";
 import type { AtmosphereUniforms } from "../atmosphereParams.js";
 import { emptyCloudUniforms, type CloudUniforms } from "../cloudParams.js";
@@ -139,6 +150,8 @@ export type LitePostChain = {
    */
   frame(view: PostView, air: CloudSun, cloud: CloudUniforms): void;
   readonly counts: PostChainCounts;
+  /** The frame as the opaque draws left it, where the scene's pass is broken before the water (`keep`); null elsewhere. */
+  readonly kept: RenderTaskBreak | null;
   /** The record the last `update` made. */
   readonly record: GradeRecord;
   /** Lets go of the chain's own targets and buffer; the scene's pass and its targets go with the scene. */
@@ -153,6 +166,8 @@ export type PostChainOptions = {
   cloudMap: Texture2D;
   /** The clock (ms) the effects' motion reads: the renderer's. */
   now?: () => number;
+  /** The scene's pass is broken before the meshes marked for it, and the frame kept as the opaque draws left it: the tier that reads through its water. */
+  keep?: boolean;
   uploads?: FrameUploads;
 };
 
@@ -194,6 +209,9 @@ export function createLitePostChain(engine: EngineContext, scene: SceneContext, 
   const resolved: RenderTarget = createRenderTarget({ lbl: "post_scene_resolved", format: POST_FORMAT, samples: 1, size: frameSize, keep: true });
   const sceneTask: RenderTask = createRenderTask({ name: "scene", rt: samples, rst: resolved, clr: true }, engine, scene);
   addTask(scene, sceneTask);
+  // The break, on the tier that reads through its water: made only on a frame that shows a mesh marked for it.
+  // What the break keeps stands while the frame's size does, as the chain's own targets do.
+  const kept = options.keep === true ? enableRenderTaskBreak(sceneTask, engine, { depth: true, keep: true }) : null;
 
   // The chain's one buffer, a part a pass.
   const records: Sections = sections(features);
@@ -436,6 +454,7 @@ export function createLitePostChain(engine: EngineContext, scene: SceneContext, 
   return {
     features,
     counts,
+    kept,
     get record() {
       return record;
     },

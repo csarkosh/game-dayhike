@@ -1,11 +1,11 @@
 import { describe, expect, it } from "vitest";
 import {
-  LAKE_NEAR_SHORE_M, boxInPlanes, cornersPastBox, lakeDrawnFrom, lakeUnderEye, lakeViewPoints, shoreInPlanes, squareInPlanes, type ViewPlane,
+  LAKE_NEAR_SHORE_M, boxInPlanes, cornersPastBox, lakeDrawnFrom, lakeInViewFrom, lakeUnderEye, lakeViewPoints, shoreInPlanes, squareInPlanes, type ViewPlane,
 } from "../../src/game/lakeSeen.js";
-import * as lakeView from "../../src/game/lakeView.js";
 import { cameraAxes, restAxes, restPlanes, viewCorners, viewPlanes } from "../../src/game/lite/cameraPose.js";
 import type { LakeShape } from "../../src/sim/lakeShape.js";
 import { stadiumShape } from "../helpers/lakeShapes.js";
+import { timeLimit } from "../helpers/timeLimit.js";
 
 /** A diagonal lake: its spine from (−30, −30) to (30, 30), 8 m to the shore either side, at level 0. */
 const DIAGONAL: LakeShape = { ...stadiumShape({ cx: 0, cz: 0, halfLen: 42, w: 8, level: 0 }), px: [-30, 30], pz: [-30, 30] };
@@ -27,10 +27,6 @@ function drawn(x: number, y: number, z: number, tx: number, ty: number, tz: numb
 }
 
 describe("a lake's water in a view, read with no engine", () => {
-  it("is the shore the camera's own test reads", () => {
-    expect(lakeView.lakeViewPoints).toBe(lakeViewPoints);
-  });
-
   it("answers at once for an eye over the water, and for a centre ray that meets the level over water", () => {
     expect(lakeUnderEye(DIAGONAL, 0, 2, 0, 0, 0, 1)).toBe(true);
     // From the bank, 20 m off the spine, looking down at the middle of the lake.
@@ -67,6 +63,22 @@ describe("a lake's water in a view, read with no engine", () => {
     const off = (8 + 3) * Math.SQRT1_2;
     expect(3).toBeLessThan(LAKE_NEAR_SHORE_M);
     expect(drawn(off, 2, -off, off + 30, 2, -off - 30)).toBe(true);
+  });
+
+  it("says the water is in the view only by its shore: not from the bank with the back turned, where the surface is still drawn", () => {
+    const inView = (x: number, y: number, z: number, tx: number, ty: number, tz: number): boolean => {
+      const { planes, f } = view(x, y, z, tx, ty, tz);
+      return lakeInViewFrom(DIAGONAL, 0, HALF, POINTS, planes, x, y, z, f[0], f[1], f[2]);
+    };
+    const off = (8 + 3) * Math.SQRT1_2;
+    // 3 m outside the shore, back turned: drawn, and not in the view; turned to the water: both.
+    expect(drawn(off, 2, -off, off + 30, 2, -off - 30)).toBe(true);
+    expect(inView(off, 2, -off, off + 30, 2, -off - 30)).toBe(false);
+    expect(inView(off, 2, -off, 0, 0, 0)).toBe(true);
+    // From farther off the two say the same.
+    expect(inView(30, 2, -30, 0, 0, 0)).toBe(true);
+    expect(inView(30, 2, -30, 60, 0, -60)).toBe(false);
+    expect(inView(300, 2, 300, 600, 2, 600)).toBe(false);
   });
 
   it("does not draw a lake whose square the view does not hold", () => {
@@ -119,5 +131,12 @@ describe("a box far larger than the view", () => {
       }
     }
     expect(cornersPastBox(0.5, 0.5, 0.5, 2, 2, 2, unit)).toBe(false);
+  });
+});
+
+describe("the renderer on Babylon.js: a lake's water in its camera's view", () => {
+  it("is the shore the camera's own test reads", { timeout: timeLimit(60_000) }, async () => {
+    const lakeView = await import("../../src/game/lakeView.js");
+    expect(lakeView.lakeViewPoints).toBe(lakeViewPoints);
   });
 });

@@ -1,0 +1,7 @@
+// The game's shell on Babylon.js 9.18.0: the cord's material as createCordTube makes it (client/src/game/scene/cordTube.ts), a run of its lines
+  const material = new PBRMaterial("mat_film_cord", scene);
+  // #1c1d1f in linear light.
+  material.albedoColor = new Color3(0.0116, 0.0122, 0.0137);
+  material.metallic = 0;
+  material.roughness = 0.7;
+  material.environmentIntensity = CAB_SKY;

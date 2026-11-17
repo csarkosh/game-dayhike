@@ -20,7 +20,7 @@ export function laidOut(plugin: MaterialPlugin): { data: Float32Array; offsets: 
   for (const field of plugin.getUniforms?.().ubo ?? []) {
     offsets.set(field.name, at);
     const array = /^array<vec4<u32>,(\d+)>$/.exec(field.type);
-    at += array === null ? 16 : 16 * Number(array[1]);
+    at += array !== null ? 16 * Number(array[1]) : field.type === "mat4x4<f32>" ? 64 : 16;
   }
   return { data: new Float32Array(at / 4).fill(-99), offsets };
 }

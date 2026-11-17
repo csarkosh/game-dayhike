@@ -89,7 +89,7 @@ import { ROAD_FRAGMENT_DEFS, ROAD_FRAGMENT_PAINT, type RoadCenterX } from "./roa
 import { TRAIL_FRAGMENT_DEFS, TRAIL_FRAGMENT_PAINT } from "./trailPaint.js";
 import { FEATURE_FRAGMENT_DEFS, FEATURE_FRAGMENT_PAINT, createFeatureTexture } from "./featurePaint.js";
 import { featurePaintTable, followRoadCentre, roadCentreTable, trailPaintTable } from "./terrainTables.js";
-import { LAYER_F0, LAYER_ROUGHNESS, emptyTerrainUniforms, terrainUniforms, type TerrainUniformInputs } from "./terrainUniforms.js";
+import { LAYER_F0, LAYER_ROUGHNESS, emptyTerrainUniforms, layerMeanInverse, terrainUniforms, type TerrainUniformInputs } from "./terrainUniforms.js";
 import type { TrailGraph } from "../sim/trail.js";
 import type { Feature } from "../sim/features.js";
 import { loadGroundArrays, reportLayer, type GroundArrays, type GroundArraysFactory } from "./groundMaps.js";
@@ -107,38 +107,15 @@ import groundHexNoise from "./shaders/groundHexNoise.fragment.fx?raw";
 // include, whose latticeHash its clump noise calls.
 import groundFarCover from "./shaders/groundFarCover.fragment.fx?raw";
 
-/**
- * Each ground albedo's own mean COLOUR, measured off the committed 512² WebPs
- * (`client/test/game/groundMeans.test.ts` recomputes them and fails if a
- * rebuilt texture drifts). Each layer was scaled by ONE scalar
- * gain until its mean over R, G and B is TEXTURE_MEAN, which neutralises
- * luminance but NOT chroma: grass lands at (0.61, 0.53, 0.36) and forest floor
- * at (0.65, 0.49, 0.35), both strongly warm. Dividing the blend by the scalar
- * therefore left a tan cast multiplying the palette — a grass field's dark
- * green (0.09, 0.15, 0.06) rendered as olive dirt, which is why bare ground
- * beyond the clutter discs read as dirt and stone rather than as field.
- * Dividing each layer by its OWN mean makes a flat
- * texture exactly neutral in colour as well as brightness: the texture
- * contributes variation, the palette decides the hue.
- */
-export const LAYER_MEAN_RGB: Readonly<Record<"grass" | "floor" | "rock" | "sand" | "pebble", readonly [number, number, number]>> = {
-  grass: [0.608, 0.529, 0.358],
-  floor: [0.647, 0.495, 0.353],
-  rock: [0.540, 0.506, 0.449],
-  sand: [0.587, 0.512, 0.395],
-  pebble: [0.541, 0.497, 0.457],
-};
-
 /** A GLSL float literal with a decimal point, whatever the value. */
 function f2(n: number): string { return Number.isInteger(n) ? n.toFixed(1) : String(n); }
 
-/** `vec3` of 1/mean for one layer, for the blend above. */
-function meanInv(layer: keyof typeof LAYER_MEAN_RGB): string {
-  const m = LAYER_MEAN_RGB[layer];
-  return `vec3(${(1 / m[0]).toFixed(4)}, ${(1 / m[1]).toFixed(4)}, ${(1 / m[2]).toFixed(4)})`;
+/** `vec3` of 1/mean for one layer, for the blend below. */
+function meanInv(layer: Parameters<typeof layerMeanInverse>[0]): string {
+  return `vec3(${layerMeanInverse(layer).join(", ")})`;
 }
 
-// The per-layer roughness and F0 tables are the uniforms' (`terrainUniforms.ts`).
+// The per-layer roughness and F0 tables are the uniforms' (`terrainUniforms.ts`), as each layer's mean colour is.
 export { LAYER_F0, LAYER_ROUGHNESS };
 /** Height-blend depth: how far below the tallest layer another still shows. */
 export const HEIGHT_BLEND_DEPTH = 0.2;

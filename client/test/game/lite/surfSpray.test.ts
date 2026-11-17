@@ -1,12 +1,13 @@
-import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 import { FRAME_BLOCK, stageOwn, stageReads } from "../../../src/game/lite/frameBlock.js";
 import { SPLASH_WGSL } from "../../../src/game/lite/rainSplash.js";
 import { SPRAY_FRAME_READS, SPRAY_WGSL } from "../../../src/game/lite/surfSpray.js";
 import { SURF_SPRAY_BURSTS, emptySprayUniforms, sprayBurstName } from "../../../src/game/sprayField.js";
+import { babylonText } from "../../helpers/babylonFixture.js";
 import { inOrder, tight } from "./wgslText.js";
 
-const fx = (name: string): string => readFileSync(new URL(`../../../src/game/shaders/${name}`, import.meta.url), "utf8");
+/** One of the spray's stages on Babylon.js (`shaders/<name>`), its text recorded. */
+const fx = (name: string): string => babylonText(`stages/${name.replace(/\.fx$/, ".glsl")}`);
 const GLSL_VERTEX = fx("surfSpray.vertex.fx");
 const GLSL_FRAGMENT = fx("surfSpray.fragment.fx");
 const VERTEX = tight(SPRAY_WGSL.vertex);

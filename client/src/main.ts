@@ -47,13 +47,12 @@ import { PROTOCOL_VERSION } from "./net/protocol.js";
 import { GEN_VERSION } from "./sim/forest.js";
 import { startGame, type GameHandle } from "./app.js";
 import type { EngineOnCanvas } from "./game/rendererSwap.js";
-import { releaseEngine } from "./game/renderer.js";
-import { adoptEngine, dropEngine, keepEngine } from "./game/keptEngine.js";
-import { recordEngineFailure, startOnEngine } from "./game/engineFailure.js";
 import { LOSS_ENDED_LINE, createLossRecord } from "./game/lossBound.js";
-import { engineVersion } from "./game/engineVersion.js";
-import { hearEngineLog } from "./game/engineLog.js";
-import { browserEnv, browserMajor, readSignals, type GpuSignals } from "./game/gpuSignals.js";
+import { browserEnv, browserMajor, hostOs, isMobile, offersWebGpu, readSignals, type GpuSignals, type NavigatorLike } from "./game/gpuSignals.js";
+import { adapterVerdict, loadVerdict, type LoadVerdict } from "./game/loadCheck.js";
+import { creditsEntries } from "./game/credits.js";
+import { renderTurnedAway, type TurnedAwayHandle } from "./game/turnedAway.js";
+import { turnedAwayModel, visitorDevice, type TurnedAwayView } from "./game/turnedAwayModel.js";
 import {
   LOADING_LINE,
   START_FAILED_LINE,
@@ -84,11 +83,7 @@ import {
   type TierChoice,
   type TierSource,
 } from "./game/tierChoice.js";
-import {
-  parseEngineOverride,
-  withEngine,
-  type EngineEnv,
-} from "./game/engineChoice.js";
+import { NOTICE_RESTARTED } from "./game/engineChoice.js";
 import { createVeil, VEIL_CUT_COVER_MS, VEIL_CUT_LIFT_MS } from "./game/veil.js";
 
 const found = document.querySelector<HTMLDivElement>("#app");
@@ -154,8 +149,9 @@ const latestReady: Promise<void> = latestUrl
 
 // ---- telemetry -----------------------------------------------------------------
 // What this page tells of itself (net/telemetry.ts): a session id for the
-// visit, a visitor id for the browser, the build and the versions that decide
-// whether two pages can play together, the platform, and the page's own facts
+// visit, a visitor id for the browser, the build, the version of the library
+// its hikes are drawn with and the versions that decide whether two pages
+// can play together, the platform, and the page's own facts
 // (where it came from, which path, the language, the zone, the viewport, the
 // user agent, whether a robot drives it, whether a tester's browser). Made
 // before anything else runs, so the start's own failures are heard; off
@@ -167,6 +163,8 @@ const telemetry: Telemetry = createTelemetry(
     sid: createLobbyId(),
     vid: visitorId(pageStorage(), createLobbyId) ?? "",
     build: import.meta.env.VITE_BUILD_SHA || "dev",
+    // The tag of Babylon Lite the build pins, which the hike is drawn with.
+    lite: __LITE_VERSION__,
     proto: PROTOCOL_VERSION,
     gen: GEN_VERSION,
     desktop,
@@ -186,15 +184,9 @@ const telemetry: Telemetry = createTelemetry(
   },
   browserDeps(),
 );
-// Babylon's own warnings and errors too: its logger took the console's
-// functions when it loaded, so it is heard at its levels, not the console.
-installErrorCapture(
-  telemetry,
-  window,
-  console,
-  (window as unknown as { __dh?: EarlyCatch }).__dh,
-  hearEngineLog,
-);
+// What the hike's renderer and its library print is the console's, which
+// the capture wraps: nothing of theirs is printed past it.
+installErrorCapture(telemetry, window, console, (window as unknown as { __dh?: EarlyCatch }).__dh);
 // Every change of visibility is a row: the last `hidden` is "last seen" for a
 // page that never says goodbye. On the way out, everything held goes by
 // beacon with the session's counts; a tab put in the background flushes too,
@@ -226,12 +218,75 @@ const selfId = createLobbyId();
 const signalsRead = readSignals(browserEnv());
 const signalsReady = signalsRead.signals;
 let signals: GpuSignals | null = null;
-// The Settings panel's Auto line waits on them.
+// The Settings panel's Auto line waits on them, and the load check's verdict.
 void signalsReady.then((read) => {
   signals = read;
   telemetry.set({ gpu: (read.renderer ?? "").slice(0, 120), adapter: read.adapterStatus, cores: read.cores ?? 0, mem: read.memoryGb ?? 0, mobile: read.mobile });
+  const known = loadVerdict(webgpuOffered, read);
+  if (known !== null) settleVerdict(known);
+  // The adapter had not answered when the signals went on without it: not
+  // known, and nothing is refused meanwhile. The same request's answer
+  // decides when it comes, however late.
+  else void signalsRead.adapter.then((later) => settleVerdict(adapterVerdict(later)));
   repaintLanding();
 });
+
+// ---- the load check ------------------------------------------------------------
+// Whether this browser and GPU can play (`loadCheck.ts`), decided once a
+// page: at once, before the first render, where the browser offers no WebGPU
+// at all; else when the GPU's signals are in, from the adapter their one
+// request was answered with. While it is not known (null) nothing is
+// refused: the landing page is shown, and a hike or a staged scene asked for
+// meanwhile waits for the signals before anything of it starts (`render`).
+// Once it is "cannot", every route shows the page for those turned away
+// (`showTurnedAway`), and nothing of a hike is fetched, made or drawn.
+const webgpuOffered = offersWebGpu(navigator as NavigatorLike);
+let verdict: LoadVerdict | null = loadVerdict(webgpuOffered, null);
+/** The page for those turned away, once it is up: it stays for the page's life. */
+let turnedAway: TurnedAwayHandle | null = null;
+/** Whether the visitor's `turned_away` row has been sent: one a page. */
+let turnedAwayTold = false;
+
+/**
+ * The verdict is in. Where it is "cannot": the visitor's one row says why
+ * (`turned_away`: the reason, and what the adapter is short of where the
+ * check named it), sent once the GPU's signals are in, so that it carries
+ * what every row says of the GPU; a lobby joined or being joined meanwhile
+ * is left, so no host waits on a hiker who cannot play; and the page for
+ * those turned away takes the place of whatever is shown, a hike that had
+ * started on an adapter request still unanswered among it.
+ */
+function settleVerdict(next: LoadVerdict): void {
+  verdict = next;
+  if (next.play) return;
+  if (!turnedAwayTold) {
+    turnedAwayTold = true;
+    telemetry.event("turned_away", next.short === null ? { reason: next.reason } : { reason: next.reason, short: next.short });
+  }
+  if (joining) abandonAttempt();
+  if (lobby !== null) {
+    lobby.leave();
+    detach();
+  }
+  // Already up (no WebGPU, known as the page loaded): what the signals add is the GPU's name, for the app's offer.
+  if (turnedAway !== null) turnedAway.setView(turnedAwayView(next));
+  else render(app);
+}
+
+/** What the page for those turned away shows now (`turnedAwayModel`). */
+function turnedAwayView(why: Exclude<LoadVerdict, { play: true }>): TurnedAwayView {
+  const nav = navigator as NavigatorLike;
+  return turnedAwayModel({
+    reason: why.reason,
+    short: why.short,
+    desktop,
+    device: visitorDevice(hostOs(nav), isMobile(nav), navigator.userAgent),
+    host,
+    userAgent: navigator.userAgent,
+    renderer: signals?.renderer ?? null,
+    latest,
+  });
+}
 
 // ---- the graphics setting ------------------------------------------------------
 // The player's choice lives in localStorage; where the storage refuses a write
@@ -478,6 +533,8 @@ const roster = createRoster({
 });
 
 function paintRoster(): void {
+  // Gone with everything else of the game once a visitor is turned away.
+  if (turnedAway !== null) return;
   roster.setView(
     rosterModel({
       lobby: lobby?.state ?? null,
@@ -832,12 +889,9 @@ function onPlay(): void {
 // check are drawn by the hike's own renderer, which makes its engine from the
 // canvas it is handed and draws with WebGPU alone. An engine that fails under
 // a hike is answered by a live rebuild of the renderer (`app.ts`), never by a
-// reload, which would end a party, and remembered (`dayhike.engine`), or
-// carried as `?engine=webgl2` in the URL where storage refuses the record.
-
-function engineEnv(): EngineEnv {
-  return { browser: browserMajor(navigator.userAgent), babylon: engineVersion() };
-}
+// reload, which would end a party; there is no other engine to remember it
+// against or to fall back to, and the address's `?engine=` is read by
+// nothing.
 
 /**
  * The engine a hike is drawn with, which Auto's verdicts are kept for
@@ -854,9 +908,10 @@ function verdictEngineNow(): VerdictEngine {
  * renderer: whether one can be measured in this browser, and why not where
  * it cannot (`liteProbeSteps`). A browser that offers no WebGPU, or offers
  * it and has no adapter (the GPU's signals, `read`, from the page's one
- * adapter request), has nothing to measure with: no check is run there and
- * nothing is written, and the hike goes on as it does there (`hikeCanvas`
- * refuses it where the browser has no WebGPU at all).
+ * adapter request), has nothing to measure with, and no start reaches here
+ * there: the load check has turned the visitor away (`settleVerdict`). What
+ * does reach here with no adapter read is a request that had not answered
+ * when the signals went on without it, which may yet be measured.
  */
 function probeSteps(read: GpuSignals): ProbeSteps {
   return liteProbeSteps(read.adapterStatus !== "none");
@@ -866,32 +921,27 @@ function probeSteps(read: GpuSignals): ProbeSteps {
  * A hike's canvas: a fresh one, with no engine on it. The hike's renderer
  * makes its own engine from its canvas (`createHikeRenderer`), so the page
  * makes none for a hike, at its start or for a switch of tier or a rebuild
- * later, and an engine an earlier hike left is let go. The renderer draws
- * with WebGPU alone: on a browser that offers none the hike is refused here,
- * where the start's one catch says so, not left as a canvas nothing draws.
+ * later, and none is kept from one hike for the next: a hike's renderer
+ * lets its engine go with itself. No canvas is made
+ * where the load check's verdict is "cannot": no route reaches here then
+ * (`render` shows the page for those turned away first), and a renderer a
+ * running hike asks for after a verdict that came late is refused.
  */
 function hikeCanvas(): Promise<EngineOnCanvas> {
-  dropEngine(releaseEngine);
-  if ((navigator as { gpu?: unknown }).gpu === undefined) return Promise.reject(new Error("a hike is drawn with WebGPU, which this browser does not offer"));
+  if (verdict !== null && !verdict.play) return Promise.reject(new Error(`this browser cannot draw a hike (${verdict.reason})`));
   return Promise.resolve({ canvas: document.createElement("canvas"), engine: null, watchers: null });
 }
 
 /**
- * A failure of a running WebGPU engine, or a renderer that could not be built
- * on one (`"pipeline"`): remembered, and `engine=webgl2` pinned in this tab's
- * URL where the rule would otherwise give WebGPU again
- * (`recordEngineFailure`), so the rebuild's `engineFor` gives the engine the
- * failure asks for. The HUD's line for that engine.
+ * A failure of the engine a hike is drawn with: its row, and the HUD's line
+ * for the renderer built again in its place. Nothing is remembered of it for
+ * a later hike and nothing is pinned in the address: the rebuild is on
+ * WebGPU as the hike was, and how often a device may be lost is the page's
+ * own count (`lostDevices`).
  */
 function engineFailed(reason: "pipeline" | "lost"): string {
   telemetry.event("engine_failed", { reason });
-  return recordEngineFailure(reason, {
-    storage: pageStorage(),
-    env: engineEnv(),
-    now: Date.now(),
-    override: parseEngineOverride(location.search),
-    pin: () => history.replaceState(history.state, "", withEngine(location.href, "webgl2")),
-  });
+  return NOTICE_RESTARTED;
 }
 
 /**
@@ -916,9 +966,57 @@ function pageOf(route: ReturnType<typeof parseRoute>): "landing" | "game" | "sce
 }
 /** The page the last render put up, so a change of page can go behind the veil. */
 let shownPage: "landing" | "game" | "scene" | null = null;
+/** Set for the one render a route asks for itself once the GPU's signals are in: the same navigation, so no second `page` row. */
+let rendersAgain = false;
+
+/**
+ * The page for a visitor who cannot play (`turnedAway.ts`), in place of
+ * every route: the landing page and its panels, an invitation, a game's
+ * address, a staged scene. Put up once and left up, since the verdict does
+ * not change while the page lives; whatever was shown or starting goes
+ * first, and nothing of a hike is asked for after. The address is left as
+ * it is, so the same link works once the visitor has a browser that plays.
+ */
+function showTurnedAway(container: HTMLDivElement, route: Route, why: Exclude<LoadVerdict, { play: true }>): void {
+  // Whatever start was waiting on this page is no longer the page's.
+  renderToken += 1;
+  telemetry.mark("turned-away");
+  if (turnedAway !== null) return;
+  running?.dispose();
+  running = null;
+  game = null;
+  paused = false;
+  landing = null;
+  endIntro(activeIntro);
+  endIntro(pendingIntro);
+  container.replaceChildren();
+  // Nothing here makes a sound or starts a party: the page's mute goes, and its key with it, and the roster, which
+  // hidden would still take the keyboard's focus and a screen reader's.
+  mute.dispose();
+  roster.dispose();
+  if (veil.down) veil.lift();
+  // The navigation's row, where no route's own render sent it first: a visitor turned away as the page loads.
+  if (shownPage === null) {
+    telemetry.event("page", { kind: route.kind });
+    window.visits?.page?.();
+  }
+  const handle = renderTurnedAway(container, turnedAwayView(why), {
+    still: titleStillUrl(),
+    // The credit the still's works are owed, within reach here as from the landing page.
+    credits: creditsEntries(),
+    onDownload: (platform) => telemetry.event("download", { platform }),
+  });
+  turnedAway = handle;
+  // The app's offer waits on the release, which lands after the page is up.
+  void latestReady.then(() => handle.setView(turnedAwayView(why)));
+}
 
 function render(container: HTMLDivElement): void {
   const route = parseRoute(location.pathname);
+  if (verdict !== null && !verdict.play) {
+    showTurnedAway(container, route, verdict);
+    return;
+  }
   // A change of page goes behind the veil (veil.ts): it comes down first,
   // this render runs again under it, and it lifts once the page is up. The
   // intro's own film carries the title into the game, so it goes without.
@@ -934,7 +1032,8 @@ function render(container: HTMLDivElement): void {
   // One row a navigation: which page, and which of the landing's panels. Sent
   // once a running game is torn down, so a landing row never carries the match
   // it left (`app.ts` clears the context when the game is disposed).
-  let pageSent = false;
+  let pageSent = rendersAgain;
+  rendersAgain = false;
   const pageRow = (): void => {
     if (pageSent) return;
     pageSent = true;
@@ -949,7 +1048,11 @@ function render(container: HTMLDivElement): void {
   if (route.kind === "party") {
     pageRow();
     replaceWithLanding();
-    void enterLobby(route.lobbyId);
+    // Joined once the load check has the GPU's signals and has not turned the visitor away: a host's roster
+    // never shows a hiker who cannot play. A verdict not known by then (the adapter had not answered) joins.
+    void signalsReady.then(() => {
+      if (verdict === null || verdict.play) void enterLobby(route.lobbyId);
+    });
   }
 
   // Landing and its panels are one page, so moving between them swaps a class
@@ -973,6 +1076,28 @@ function render(container: HTMLDivElement): void {
   container.replaceChildren();
   // The mute sits faint over a hike, under its Pause button; plain on every other page.
   mute.setHike(route.kind === "game");
+
+  // A staged scene and a hike wait for the load check: where the GPU's
+  // signals are not in yet (a game's or a scene's own address, as the page
+  // loads), nothing of either starts, no worker, no film of the route's own,
+  // no canvas, until they are, under the start's own line. The signals'
+  // first listener settles the verdict before this one runs: turned away,
+  // this render is no longer the page's; else the route is rendered again,
+  // now with the signals, as the same navigation.
+  if (!isLandingRoute(route) && signals === null) {
+    const line = createHud(container);
+    line.setStatus(LOADING_LINE);
+    // The film Play started stays in the page meanwhile: taken out of it, it would stop.
+    pendingIntro?.overlay.mount(container);
+    running = { dispose: () => line.dispose() };
+    paintRoster();
+    void signalsReady.then(() => {
+      if (token !== renderToken) return;
+      rendersAgain = true;
+      render(container);
+    });
+    return;
+  }
 
   // The staged intro on its fixed world, a frame at a time for its recording:
   // the film is made on the high tier, which is what Auto means here, drawn
@@ -1176,17 +1301,14 @@ function render(container: HTMLDivElement): void {
     },
     paint: () => new Promise((resolve) => afterNextPaint(resolve)),
     engine: () => hikeCanvas(),
-    // A kept WebGL2 engine is left on its canvas for the renderer: let go too.
-    discard: (onCanvas) => {
-      const engine = onCanvas.engine ?? adoptEngine(onCanvas.canvas);
-      if (engine !== null) releaseEngine(engine);
-    },
+    // A canvas the start has left carries no engine: there is nothing to let go.
+    discard: () => undefined,
     build: (decided, onCanvas) => {
       container.appendChild(onCanvas.canvas);
       // The engine's lap ends here, a paint after it was made.
       lap("engine");
       telemetry.mark("start:build");
-      launch(container, onCanvas, route.token, decided, () => hikeCanvas(), intro, takeSampled);
+      launch(onCanvas, route.token, decided, () => hikeCanvas(), intro, takeSampled);
       lap("build");
       // The build has what it wanted of the worker: the worker ends, and the scene is let go of.
       prep.dispose();
@@ -1206,8 +1328,8 @@ function render(container: HTMLDivElement): void {
       console.error("The game could not start.", error);
       prep.dispose();
       endIntro(intro);
-      // Whichever canvas the start left: a renderer that fell back builds on
-      // a fresh one in the first one's place.
+      // Whichever canvas the start left: a renderer that fell back to a lower
+      // tier builds on a fresh one in the first one's place.
       for (const left of container.querySelectorAll("canvas")) left.remove();
       const line = createHud(container);
       line.setStatus(START_FAILED_LINE);
@@ -1217,20 +1339,15 @@ function render(container: HTMLDivElement): void {
 }
 
 /**
- * Starts the game on `onCanvas` at the tier decided, on the engine made for
- * it: WebGL2 when there is none, as always; otherwise WebGPU, which the game
- * listens to and answers live (`app.ts`). A start that throws on a WebGPU
- * engine, once the game has undone all it made, is started again at the same
- * tier on WebGL2 on a fresh canvas that takes the place of every canvas in
- * the container, and the throw is held against the engine once that stands
- * (`startOnEngine`); a throw on WebGL2 goes up to the start's one catch
- * (`startHike`). `engineForGame` makes the engine for a switch of tier or a
- * rebuild later. `takeSampled` gives up the hike's first scene from the
- * world's worker, once: the first renderer made takes its arrays, and a
- * start made again on WebGL2 finds none and samples the ground for itself.
+ * Starts the game on `onCanvas` at the tier decided: the hike's renderer
+ * makes its engine from the canvas, and the game listens to it and answers
+ * its failures live (`app.ts`). A start that throws goes up to the start's
+ * one catch (`startHike`). `engineForGame` hands the canvas a switch of tier
+ * or a rebuild later builds on. `takeSampled` gives up the hike's first
+ * scene from the world's worker, once: the first renderer made takes its
+ * arrays, and one made after it samples the ground for itself.
  */
 function launch(
-  container: HTMLElement,
   onCanvas: EngineOnCanvas,
   worldToken: string,
   decided: StartupTier,
@@ -1238,63 +1355,47 @@ function launch(
   intro: IntroRun | null,
   takeSampled: () => PreparedScene | null,
 ): void {
-  const handle = startOnEngine<GameHandle>(onCanvas, {
-    // The recorder the game is handed is `startOnEngine`'s: a fault found
-    // while it starts is the start's, recorded once; after, the hike's.
-    start: ({ canvas, engine, watchers }, record) =>
-      startGame(canvas, worldToken, {
-        lobby,
-        peerId: selfId,
-        onExit: exitGame,
-        onContinueOffline: continueOffline,
-        onPauseChange: (next) => {
-          paused = next;
-          paintRoster();
-        },
-        onConnectPanel: () => {
-          if (intro !== null && activeIntro === intro) cutIntro(intro, "error");
-        },
-        deferClipmap: intro !== null,
-        takePrepared: takeSampled,
-        engine: engine ?? undefined,
-        watchers: watchers ?? undefined,
-        keepEngine: (kept) => keepEngine(kept, releaseEngine),
-        engineFor: engineForGame,
-        engineFailed: record,
-        losses,
-        tier: decided.tier,
-        tierSource: decided.source,
-        fallbackTiers: signals === null ? ["low"] : startFallbacks(decided.tier, decided.cls, signals.cores, signals.memoryGb),
-        onTierFallback,
-        onGovernorDrop,
-        telemetry,
-        quality: {
-          choice: currentChoice,
-          stored: choiceStored,
-          auto: autoSummary,
-          override: parseTierOverride(location.search),
-          notice: () => choiceNotice,
-          save: saveChoice,
-        },
-        mode: { choice: currentMode, save: saveMode },
-        mute: {
-          bind: (apply) => {
-            gameMute = apply;
-            apply(mute.muted());
-            return () => {
-              if (gameMute === apply) gameMute = null;
-            };
-          },
-        },
-      }),
-    engineFailed,
-    // A canvas holds one kind of context for life.
-    freshCanvas: () => document.createElement("canvas"),
-    place: (fresh) => {
-      for (const left of container.querySelectorAll("canvas")) left.remove();
-      container.appendChild(fresh);
+  const handle = startGame(onCanvas.canvas, worldToken, {
+    lobby,
+    peerId: selfId,
+    onExit: exitGame,
+    onContinueOffline: continueOffline,
+    onPauseChange: (next) => {
+      paused = next;
+      paintRoster();
     },
-    log: (message, error) => console.error(message, error),
+    onConnectPanel: () => {
+      if (intro !== null && activeIntro === intro) cutIntro(intro, "error");
+    },
+    deferClipmap: intro !== null,
+    takePrepared: takeSampled,
+    engineFor: engineForGame,
+    engineFailed,
+    losses,
+    tier: decided.tier,
+    tierSource: decided.source,
+    fallbackTiers: signals === null ? ["low"] : startFallbacks(decided.tier, decided.cls, signals.cores, signals.memoryGb),
+    onTierFallback,
+    onGovernorDrop,
+    telemetry,
+    quality: {
+      choice: currentChoice,
+      stored: choiceStored,
+      auto: autoSummary,
+      override: parseTierOverride(location.search),
+      notice: () => choiceNotice,
+      save: saveChoice,
+    },
+    mode: { choice: currentMode, save: saveMode },
+    mute: {
+      bind: (apply) => {
+        gameMute = apply;
+        apply(mute.muted());
+        return () => {
+          if (gameMute === apply) gameMute = null;
+        };
+      },
+    },
   });
   game = handle;
   console.info(launchLine(decided, handle.graphics()));

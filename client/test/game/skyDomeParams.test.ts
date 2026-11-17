@@ -1,15 +1,15 @@
 import { describe, expect, it } from "vitest";
-import { readFileSync } from "node:fs";
 import { NIGHT_SKY } from "../../src/game/sky.js";
 import { SKY_DOME_SIZE, createSkyTableUploads, emptySkyDomeUniforms, skyDomeUniforms } from "../../src/game/skyDomeParams.js";
 import { skyStateFor } from "../../src/game/skyState.js";
 import { WEATHER_PRESETS } from "../../src/game/weather.js";
-import { babylonValues } from "../helpers/babylonFixture.js";
+import { babylonText, babylonValues } from "../helpers/babylonFixture.js";
 import { skyFixture } from "./helpers/skyFixture.js";
 
 /** The uniforms the dome's shell on Babylon.js names (`skyDome.ts`), and of them the image's, bound at each draw: recorded. */
 const { skyDomeUniforms: SKY_DOME_UNIFORMS, skyDomeImageUniforms: SKY_DOME_IMAGE_UNIFORMS } = babylonValues<{ skyDomeUniforms: string[]; skyDomeImageUniforms: string[] }>("stages/declared.json");
-const FRAGMENT = readFileSync(new URL("../../src/game/shaders/skyDome.fragment.fx", import.meta.url), "utf8");
+/** The dome's fragment stage there (`shaders/skyDome.fragment.fx`), its text recorded. */
+const FRAGMENT = babylonText("stages/skyDome.fragment.glsl");
 
 describe("what the sky's dome is drawn with", () => {
   it("is a box 8000 across", () => {

@@ -1,11 +1,12 @@
 import { describe, expect, it } from "vitest";
-import { readFileSync } from "node:fs";
 import { FRAME_BLOCK, stageOwn, stageReads } from "../../../src/game/lite/frameBlock.js";
 import { SKY_DOME_WGSL, SKY_FRAME_READS, SKY_RADIANCE_WGSL, SKY_TABLE_BYTES } from "../../../src/game/lite/skyDome.js";
 import { emptySkyDomeUniforms } from "../../../src/game/skyDomeParams.js";
 import { SLICE_AZIMUTHS, SLICE_ELEVATIONS } from "../../../src/game/skyModel.js";
+import { babylonText } from "../../helpers/babylonFixture.js";
 
-const GLSL = readFileSync(new URL("../../../src/game/shaders/skyDome.fragment.fx", import.meta.url), "utf8");
+/** The dome's fragment stage on Babylon.js (`shaders/skyDome.fragment.fx`), its text recorded. */
+const GLSL = babylonText("stages/skyDome.fragment.glsl");
 
 /** `text` with every run of white space taken out, so a statement reads the same however it is laid out. */
 const tight = (text: string): string => text.replace(/\s+/g, "");

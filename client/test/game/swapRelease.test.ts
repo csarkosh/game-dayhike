@@ -49,7 +49,7 @@ import { Engine } from "@babylonjs/core/Engines/engine.js";
 import { EngineStore } from "@babylonjs/core/Engines/engineStore.js";
 import { RGBDTextureTools } from "@babylonjs/core/Misc/rgbdTextureTools.js";
 import type { AbstractEngine } from "@babylonjs/core/Engines/abstractEngine.js";
-import { engineOf } from "../../src/game/engineHandle.js";
+import { engineOf } from "../../src/game/engineOf.js";
 import { createRenderer, type Renderer } from "../../src/game/renderer.js";
 import { swapRenderer, type SwapBindings } from "../../src/game/rendererSwap.js";
 import type { Level } from "../../src/sim/level.js";

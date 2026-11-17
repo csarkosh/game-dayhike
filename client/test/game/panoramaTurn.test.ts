@@ -1,10 +1,12 @@
 import { describe, expect, it } from "vitest";
-import { Matrix } from "@babylonjs/core/Maths/math.vector.js";
-import { panoramaProjection } from "../../src/game/lakePanorama.js";
 import {
   PANORAMA_EYE_UP, PANORAMA_HEIGHT, PANORAMA_HEIGHT_M, PANORAMA_SECTORS, PANORAMA_SECTOR_WIDTH, PANORAMA_WIDTH, TURN_HOLD, TURN_IDLE, createPanoramaArming,
   createPanoramaTurn, panoramaFrustum, sectorYaw,
 } from "../../src/game/panoramaTurn.js";
+import { babylonValues } from "../helpers/babylonFixture.js";
+
+/** The projection the shell on Babylon.js froze the shore panorama's camera at, in [0, 1] depth, for each radius, recorded. */
+const SHELL = babylonValues<{ radii: number[]; matrices: number[][] }>("numbers/panoramaProjection.json");
 
 describe("the shore panorama's numbers", () => {
   it("is sixteen sectors of 64 texels, 128 tall, from the skyline's eye to 64 m up the lake's cylinder", () => {
@@ -25,9 +27,12 @@ describe("the shore panorama's numbers", () => {
   });
 
   it("is what the shell on Babylon.js makes its projection from, term for term", () => {
-    for (const radius of [25, 40, 61.5, 120]) {
+    expect(SHELL.radii).toEqual([25, 40, 61.5, 120]);
+    expect(SHELL.matrices).toHaveLength(4);
+    for (const [at, radius] of SHELL.radii.entries()) {
       const f = panoramaFrustum(radius, { across: 0, up: 0, shift: 0 });
-      const m = panoramaProjection(radius, true, new Matrix()).m;
+      const m = new Float32Array(SHELL.matrices[at] as number[]);
+      expect(m).toHaveLength(16);
       // A matrix holds 32-bit floats.
       expect([m[0], m[5], m[9]]).toEqual([f.across, f.up, f.shift].map(Math.fround));
       expect([m[1], m[2], m[3], m[4], m[6], m[7], m[8], m[11], m[12], m[13], m[15]]).toEqual([0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0]);

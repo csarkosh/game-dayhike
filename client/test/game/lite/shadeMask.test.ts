@@ -9,10 +9,12 @@ import {
   type MaskTargets,
 } from "../../../src/game/lite/shadeMask.js";
 import { binder, picture, type FakePicture } from "./textureClaims.js";
+import { babylonText } from "../../helpers/babylonFixture.js";
 import { tight } from "./wgslText.js";
 
 const src = readFileSync(new URL("../../../src/game/lite/shadeMask.ts", import.meta.url), "utf8");
-const fx = (name: string): string => tight(readFileSync(new URL(`../../../src/game/shaders/${name}`, import.meta.url), "utf8"));
+/** One of the smoke's stages on Babylon.js (`shaders/<name>`), its text recorded, with no white space. */
+const fx = (name: string): string => tight(babylonText(`stages/${name.replace(/\.fx$/, ".glsl")}`));
 const SHARED = { name: FRAME_BLOCK } as never;
 
 describe("the haunt's figures in their mask on Babylon Lite", () => {

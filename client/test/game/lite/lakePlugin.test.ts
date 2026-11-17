@@ -4,7 +4,7 @@ import { ATMOSPHERE_PRIORITY } from "../../../src/game/lite/atmospherePlugin.js"
 import { FRAME_BLOCK, FRAME_FIELDS, inFrameBlock } from "../../../src/game/lite/frameBlock.js";
 import { WATER_PRIORITY, lakePlugin } from "../../../src/game/lite/lakePlugin.js";
 import { lakeWaterRow } from "../../../src/game/waterShading.js";
-import { createWaterSurface, emptyLakeUniforms, emptyWaterFrameUniforms, lakeUniforms, setWaterCalm, setWaterLakeBody } from "../../../src/game/waterSurface.js";
+import { createWaterSurface, emptyLakeMirrorUniforms, emptyLakeUniforms, emptyWaterFrameUniforms, lakeUniforms, setWaterCalm, setWaterLakeBody } from "../../../src/game/waterSurface.js";
 import { laidOut, readUniform, standInTexture } from "./pluginFixture.js";
 
 const SHARED = { name: FRAME_BLOCK } as unknown as PluginUniformBlock;
@@ -96,6 +96,79 @@ describe("a lake's water as a plugin on Babylon Lite", () => {
     for (const name of ["waterPanoramaOn", "waterLakeCentre", "waterLakeRadius"]) expect(code(plugin), name).toContain(`material.${name}`);
     // The uniforms are the same record either way.
     expect(plugin.getUniforms?.().ubo).toEqual(without.getUniforms?.().ubo);
+  });
+
+  it("carries the frame behind it only on the tier that reads through: two pictures of the pass's own, the read in the alpha's place, and the bed's light after the fog", () => {
+    const code = (plugin: ReturnType<typeof lakePlugin>): string => Object.values(plugin.getCustomCode?.("fragment") ?? {}).join("\n");
+    const without = lakePlugin(emptyLakeUniforms(), TEXTURES, SHARED);
+    expect(code(without)).not.toMatch(/waterKept|wTransmit|lakeLens/);
+    const colour = standInTexture("kept");
+    const depth = standInTexture("keptDepth");
+    let asked = 0;
+    const behind = { colour: () => (asked++, colour), depth: () => depth, breaks: 0 };
+    const plugin = lakePlugin(emptyLakeUniforms(), { ...TEXTURES, behind }, SHARED);
+    expect(plugin.getSamplers?.().slice(-2)).toEqual([{ texture: "waterKept", sampler: "waterKeptSampler" }, { texture: "waterKeptDepth", sampleType: "unfilterable-float" }]);
+    // Handed on as they stand each time the bindings are made, and never counted among the material's own.
+    for (let i = 0; i < 2; i++) {
+      const bound: { texture: unknown; sampler?: boolean }[] = [];
+      plugin.bindTextures?.(bound as never);
+      expect(bound.slice(-2)).toEqual([{ texture: colour }, { texture: depth, sampler: false }]);
+    }
+    expect(asked).toBe(2);
+    const active: unknown[] = [];
+    plugin.getActiveTextures?.(active as never);
+    expect(active).toEqual([TEXTURES.bump, TEXTURES.bed, TEXTURES.skyline]);
+    const points = plugin.getCustomCode?.("fragment") ?? {};
+    expect(Object.keys(points)).toEqual([
+      "CUSTOM_FRAGMENT_DEFINITIONS", "CUSTOM_FRAGMENT_BEFORE_LIGHTS", "CUSTOM_FRAGMENT_BEFORE_FINALCOLORCOMPOSITION", "CUSTOM_FRAGMENT_BEFORE_FRAGCOLOR",
+    ]);
+    expect(points.CUSTOM_FRAGMENT_BEFORE_FRAGCOLOR).toBe("color+=wTransmit;");
+    expect(code(plugin)).toContain("fn lakeLens(");
+    expect(code(plugin)).not.toContain("alpha=1.0-(1.0-wF)*exp(");
+    // The projection's terms and the sun's share are the frame's, read from the block.
+    expect(code(plugin)).toContain(`${FRAME_BLOCK}.frameProjection[3].z`);
+    expect(code(plugin)).toContain(`${FRAME_BLOCK}.waterSun`);
+    expect(code(plugin)).not.toContain("material.frameProjection");
+    // The uniforms are the same record either way.
+    expect(plugin.getUniforms?.().ubo).toEqual(without.getUniforms?.().ubo);
+  });
+
+  it("carries the mirror only where it is handed one: its picture as it stands when the bindings are made, the read of it, and its numbers after the lake's own", () => {
+    const code = (plugin: ReturnType<typeof lakePlugin>): string => Object.values(plugin.getCustomCode?.("fragment") ?? {}).join("\n");
+    const without = lakePlugin(emptyLakeUniforms(), TEXTURES, SHARED);
+    expect(code(without)).not.toMatch(/waterMirrorUv|waterMirrorSample|waterMirrorVP/);
+    const first = standInTexture("mirror");
+    const second = standInTexture("mirrorResized");
+    let now = first;
+    const numbers = emptyLakeMirrorUniforms();
+    const plugin = lakePlugin(emptyLakeUniforms(), { ...TEXTURES, mirror: { picture: () => now, uniforms: numbers } }, SHARED);
+    expect(plugin.getSamplers?.().at(-1)).toEqual({ texture: "waterMirror", sampler: "waterMirrorSampler" });
+    const bound: { texture: unknown; sampler?: boolean }[] = [];
+    plugin.bindTextures?.(bound as never);
+    expect(bound.at(-1)).toEqual({ texture: first });
+    now = second;
+    const again: { texture: unknown; sampler?: boolean }[] = [];
+    plugin.bindTextures?.(again as never);
+    expect(again.at(-1)).toEqual({ texture: second });
+    const active: unknown[] = [];
+    plugin.getActiveTextures?.(active as never);
+    expect(active).toEqual([TEXTURES.bump, TEXTURES.bed, TEXTURES.skyline]);
+    const fields = plugin.getUniforms?.().ubo ?? [];
+    const own = without.getUniforms?.().ubo ?? [];
+    expect(fields.slice(0, own.length)).toEqual(own);
+    expect(fields.slice(own.length)).toEqual([
+      { name: "waterMirrorVP", type: "mat4x4<f32>" }, { name: "waterMirrorOn", type: "f32" }, { name: "waterMirrorK", type: "f32" }, { name: "waterMirrorSmearPx", type: "f32" },
+      { name: "waterMirrorMotion", type: "f32" },
+    ]);
+    // Written with the lake's own, wherever Lite lays them.
+    numbers.waterMirrorVP.set([1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16]);
+    numbers.waterMirrorOn[0] = 1;
+    const { data, offsets } = laidOut(plugin);
+    plugin.writeUbo?.(data, offsets as never);
+    expect(readUniform(data, offsets, "waterMirrorVP", 16)).toEqual([1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16]);
+    expect(readUniform(data, offsets, "waterMirrorOn", 1)).toEqual([1]);
+    expect(code(plugin)).toContain("fn waterMirrorUv(");
+    expect(code(plugin)).toContain(`${FRAME_BLOCK}.fadeRows`);
   });
 
   it("shades before the air is laid over it, at the three points the game's plugin uses", () => {

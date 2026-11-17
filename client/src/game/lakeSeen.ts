@@ -118,6 +118,20 @@ export function sphereInPlanes(x: number, y: number, z: number, radius: number, 
   return true;
 }
 
+/**
+ * Whether a lake's water is in a view, read by its shore: its square of
+ * half-side `half` at `y` in the view's planes, and then the eye over the
+ * water, the centre ray meeting it, or a shore point in view. What the game
+ * arms a lake's mirror by (`lakeView.ts` asks the same of a Babylon.js
+ * camera): from the bank with the water behind the eye it is false.
+ */
+export function lakeInViewFrom(
+  shape: LakeShape, y: number, half: number, points: Float32Array, planes: readonly ViewPlane[],
+  ex: number, ey: number, ez: number, fx: number, fy: number, fz: number,
+): boolean {
+  return squareInPlanes(shape.cx, y, shape.cz, half, planes) && (lakeUnderEye(shape, ex, ey, ez, fx, fy, fz) || shoreInPlanes(points, planes));
+}
+
 /** How near its shore (m, either side of it) an eye is taken to see the lake wherever its surface's square is in view:
  * within it a strip of water can cross a corner of the view between two shore points. */
 export const LAKE_NEAR_SHORE_M = 8;

@@ -1,0 +1,2 @@
+// The game's shell on Babylon.js 9.18.0: where the shore panorama's capture sets its camera's viewport to a sector's column (client/src/game/lakePanorama.ts), a line of it
+      camera.viewport.x = sector / PANORAMA_SECTORS;

@@ -161,23 +161,8 @@ describe("the start where the rule gives WebGL2", () => {
     expect(main.match(/\bengineInput\b/g)).toBeNull();
   });
 
-  it("names the translators' files in the WebGPU module alone, so nothing else can fetch them", () => {
-    const src = fileURLToPath(new URL("../../src", import.meta.url));
-    const files = (dir: string): string[] =>
-      readdirSync(dir, { withFileTypes: true }).flatMap((e) => (e.isDirectory() ? files(join(dir, e.name)) : e.name.endsWith(".ts") ? [join(dir, e.name)] : []));
-    const naming = files(src).filter((file) => /glslang|twgsl/.test(readFileSync(file, "utf8").replace(/\/\*[\s\S]*?\*\/|\/\/.*$/gm, "")));
-    expect(naming.map((file) => relative(src, file))).toEqual(["game/gpuEngine.ts"]);
-  });
-
   it("names the map of translations the build ships in the WebGPU module alone, which the page's first load never imports", () => {
     const src = fileURLToPath(new URL("../../src", import.meta.url));
-    const files = (dir: string): string[] =>
-      readdirSync(dir, { withFileTypes: true }).flatMap((e) =>
-        e.isDirectory() ? files(join(dir, e.name)) : e.name.endsWith(".ts") && !e.name.endsWith(".d.ts") ? [join(dir, e.name)] : [],
-      );
-    const code = (file: string): string => readFileSync(file, "utf8").replace(/\/\*[\s\S]*?\*\/|\/\/.*$/gm, "");
-    const naming = files(src).filter((file) => code(file).includes("virtual:dayhike-wgsl-map"));
-    expect(naming.map((file) => relative(src, file))).toEqual(["game/gpuEngine.ts"]);
     // The modules that fetch and read it, and the one that names it, are
     // reached from main.ts only through the WebGPU module's dynamic import.
     const reached = new Set<string>();
@@ -214,15 +199,10 @@ describe("the start where the rule gives WebGL2", () => {
     const fromMain = [...reachedFrom(join(src, "main.ts"))].map((file) => relative(src, file));
     expect(fromMain.length).toBeGreaterThan(20);
     expect(fromMain.filter((file) => /asyncPipelines/.test(file))).toEqual([]);
-    expect([...reachedFrom(join(src, "game/gpuEngine.ts"))].map((file) => relative(src, file))).toContain("game/asyncPipelines.ts");
     // The engine is made by its module, which hands the game the patch and
     // the reveal beside it; the page asks it for none.
     const main = readFileSync(fileURLToPath(new URL("../../src/main.ts", import.meta.url)), "utf8");
     expect(main).not.toContain("startWebGpu");
-    const gpu = readFileSync(join(src, "game/gpuEngine.ts"), "utf8");
-    expect(gpu).toContain("  return { engine: await createWebGpuEngine(canvas, options), watchers: WATCHERS };");
-    expect(gpu).toContain("  asyncPipelines: (engine) => asyncPipelinesOf(engineOf(engine)),");
-    expect(gpu).toContain("  reveal: (engine, lift) => revealWhenWhole(engineOf(engine), lift),");
     // The game holds its first frames only on a WebGPU engine, and gives the
     // patch only to a renderer on one.
     const app = readFileSync(fileURLToPath(new URL("../../src/app.ts", import.meta.url)), "utf8");
@@ -249,5 +229,51 @@ describe("the start where the rule gives WebGL2", () => {
     const main = readFileSync(fileURLToPath(new URL("../../src/main.ts", import.meta.url)), "utf8");
     expect(main.match(/import\("\.\/game\/gpuEngine\.js"\)/g)).toBeNull();
     expect(main).not.toContain("gpuEngine");
+  });
+});
+
+describe("the renderer on Babylon.js: its WebGPU module", () => {
+  it("names the translators' files in the WebGPU module alone, so nothing else can fetch them", () => {
+    const src = fileURLToPath(new URL("../../src", import.meta.url));
+    const files = (dir: string): string[] =>
+      readdirSync(dir, { withFileTypes: true }).flatMap((e) => (e.isDirectory() ? files(join(dir, e.name)) : e.name.endsWith(".ts") ? [join(dir, e.name)] : []));
+    const naming = files(src).filter((file) => /glslang|twgsl/.test(readFileSync(file, "utf8").replace(/\/\*[\s\S]*?\*\/|\/\/.*$/gm, "")));
+    expect(naming.map((file) => relative(src, file))).toEqual(["game/gpuEngine.ts"]);
+  });
+
+  it("names the map of translations the build ships in the WebGPU module alone, which the page's first load never imports", () => {
+    const src = fileURLToPath(new URL("../../src", import.meta.url));
+    const files = (dir: string): string[] =>
+      readdirSync(dir, { withFileTypes: true }).flatMap((e) =>
+        e.isDirectory() ? files(join(dir, e.name)) : e.name.endsWith(".ts") && !e.name.endsWith(".d.ts") ? [join(dir, e.name)] : [],
+      );
+    const code = (file: string): string => readFileSync(file, "utf8").replace(/\/\*[\s\S]*?\*\/|\/\/.*$/gm, "");
+    const naming = files(src).filter((file) => code(file).includes("virtual:dayhike-wgsl-map"));
+    expect(naming.map((file) => relative(src, file))).toEqual(["game/gpuEngine.ts"]);
+  });
+
+  it("loads nothing of the asynchronous pipelines on a WebGL2 page: only the WebGPU module reaches them, and only a WebGPU engine's renderer is given them", () => {
+    const src = fileURLToPath(new URL("../../src", import.meta.url));
+    /** Every module `entry` reaches by a runtime import (types aside). */
+    const reachedFrom = (entry: string): Set<string> => {
+      const reached = new Set<string>();
+      const stack = [entry];
+      while (stack.length > 0) {
+        const file = stack.pop() as string;
+        if (reached.has(file)) continue;
+        reached.add(file);
+        for (const m of readFileSync(file, "utf8").matchAll(/^\s*(?:import|export)\s+(?!type\s)(?:[^"'();]*?\s+from\s+)?["'](\.[^"']+)\.js["']/gm)) {
+          stack.push(join(file, "..", `${m[1] as string}.ts`));
+        }
+      }
+      return reached;
+    };
+    expect([...reachedFrom(join(src, "game/gpuEngine.ts"))].map((file) => relative(src, file))).toContain("game/asyncPipelines.ts");
+    // The engine is made by its module, which hands the game the patch and
+    // the reveal beside it.
+    const gpu = readFileSync(join(src, "game/gpuEngine.ts"), "utf8");
+    expect(gpu).toContain("  return { engine: await createWebGpuEngine(canvas, options), watchers: WATCHERS };");
+    expect(gpu).toContain("  asyncPipelines: (engine) => asyncPipelinesOf(engineOf(engine)),");
+    expect(gpu).toContain("  reveal: (engine, lift) => revealWhenWhole(engineOf(engine), lift),");
   });
 });

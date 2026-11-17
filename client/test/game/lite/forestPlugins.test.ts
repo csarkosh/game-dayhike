@@ -1,5 +1,3 @@
-import { readFileSync } from "node:fs";
-import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
 import type { MaterialPlugin, PluginUniformBlock } from "@babylonjs/lite";
 import { BLADE_SOFT } from "../../../src/game/bladeClump.js";
@@ -193,10 +191,9 @@ describe("the forest's plugin on Babylon Lite: the eye it measures from", () => 
     expect(vertex).not.toMatch(/\b(windEye|fadeEye)\b/);
     // The rest of the wind is the frame's.
     expect(vertex).toContain(`${FRAME_BLOCK}.windTime`);
-    // The shells on Babylon.js bind the position of the scene's active camera, which a render target makes its own.
-    const src = (name: string): string => readFileSync(fileURLToPath(new URL(`../../../src/game/${name}`, import.meta.url)), "utf8");
-    expect(src("distanceFadePlugin.ts")).toContain("fadeUniforms(scene.activeCamera?.globalPosition, this.widen, bound)");
-    expect(src("foliagePlugin.ts")).toContain("foliageUniforms(this.look, scene.activeCamera?.globalPosition, bound)");
+    // The shells on Babylon.js bind the position of the scene's active camera, which a render target makes its own: the line of each that reads it, recorded.
+    expect(babylonText("stages/distanceFade.bind.txt")).toContain("fadeUniforms(scene.activeCamera?.globalPosition, this.widen, bound)");
+    expect(babylonText("stages/foliage.bind.txt")).toContain("foliageUniforms(this.look, scene.activeCamera?.globalPosition, bound)");
   });
 
   it("is the material's own uniform where no block is given", () => {

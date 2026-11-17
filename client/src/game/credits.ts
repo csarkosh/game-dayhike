@@ -152,6 +152,18 @@ function linkOrText(text: string, url: string): Node {
   return anchor;
 }
 
+/** One credit as a list's item: the work, its author, its licence, and that it was changed. DOM only, textContent
+ * only, as below; the Credits screen's list and the page for a visitor who cannot play are both made of these. */
+export function creditItem(e: CreditEntry): HTMLLIElement {
+  const item = document.createElement("li");
+  const work = linkOrText(e.source, e.url);
+  const by = document.createTextNode(` — ${e.author} · `);
+  const lic = linkOrText(e.license, e.licenseUrl);
+  const mod = document.createTextNode(e.modified ? " · modified" : "");
+  item.append(work, by, lic, mod);
+  return item;
+}
+
 /** DOM only, textContent only — the same no-innerHTML rule as landing.ts: the
  * strings come from third parties' pages via the catalog. */
 export function renderCredits(root: HTMLElement, entries: CreditEntry[], onBack: () => void): void {
@@ -163,15 +175,7 @@ export function renderCredits(root: HTMLElement, entries: CreditEntry[], onBack:
   // is not focusable can only be reached by tabbing to a link inside it. This
   // makes the box itself a tab stop, so arrow keys and Page Down work.
   list.tabIndex = 0;
-  for (const e of entries) {
-    const item = document.createElement("li");
-    const work = linkOrText(e.source, e.url);
-    const by = document.createTextNode(` — ${e.author} · `);
-    const lic = linkOrText(e.license, e.licenseUrl);
-    const mod = document.createTextNode(e.modified ? " · modified" : "");
-    item.append(work, by, lic, mod);
-    list.append(item);
-  }
+  for (const e of entries) list.append(creditItem(e));
   const back = document.createElement("button");
   back.type = "button";
   back.textContent = "Back";

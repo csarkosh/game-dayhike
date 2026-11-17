@@ -50,6 +50,19 @@ export type LandingInput = {
 
 export type DownloadCard = { platform: Platform; url: string; label: string; caption: string; note: string };
 
+/** The card of one platform's build in a release, or null where the release has none for it. */
+export function downloadCard(latest: DesktopRelease, platform: Platform): DownloadCard | null {
+  const build = latest.platforms[platform];
+  if (!build) return null;
+  return {
+    platform,
+    url: build.url,
+    label: COPY[platform].label,
+    caption: `v${latest.version} · ${formatSize(build.size)}`,
+    note: COPY[platform].note,
+  };
+}
+
 /** Which panel is showing. The route decides; see main.ts. */
 export type LandingPanel = "home" | "downloads" | "settings" | "credits";
 
@@ -121,15 +134,8 @@ export function landingModel(input: LandingInput): LandingView {
       // stable sort makes that one comparison enough.
       const order = [...PLATFORMS].sort((a, b) => Number(b === input.host) - Number(a === input.host));
       for (const platform of order) {
-        const build = input.latest.platforms[platform];
-        if (!build) continue;
-        cards.push({
-          platform,
-          url: build.url,
-          label: COPY[platform].label,
-          caption: `v${input.latest.version} · ${formatSize(build.size)}`,
-          note: COPY[platform].note,
-        });
+        const card = downloadCard(input.latest, platform);
+        if (card !== null) cards.push(card);
       }
     }
     if (input.touch) {

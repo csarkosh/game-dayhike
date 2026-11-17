@@ -2,7 +2,6 @@ import { describe, expect, it } from "vitest";
 import "../../src/sim/olympic.js";
 import { firstPondWorld, lakeOf } from "../sim/helpers/lakes.js";
 import { waterPlantPlacements } from "../../src/game/waterPlantField.js";
-import * as shell from "../../src/game/waterPlants.js";
 import {
   LILY_LIFT, REED_CHARACTERS, lilyFlowers, lilyYaw, reedGeometry, waterPlantLists,
 } from "../../src/game/waterPlantShapes.js";
@@ -59,8 +58,11 @@ describe("a lake's plants as lists, with no engine", { timeout: timeLimit(60_000
     expect(sampled.pads.matrices).toEqual(lists.pads.matrices);
     sampled.reeds.forEach((list, variant) => expect(list.matrices).toEqual(lists.reeds[variant]?.matrices));
   });
+});
 
-  it("is what the shell on Babylon.js draws from", () => {
+describe("the renderer on Babylon.js: a lake's plants", () => {
+  it("is what the shell on Babylon.js draws from", { timeout: timeLimit(60_000) }, async () => {
+    const shell = await import("../../src/game/waterPlants.js");
     expect(shell.reedGeometry).toBe(reedGeometry);
     expect(shell.lilyYaw).toBe(lilyYaw);
     expect(shell.LILY_LIFT).toBe(LILY_LIFT);

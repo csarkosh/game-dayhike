@@ -56,15 +56,19 @@ build on (older rows keep the time the batch arrived).
   `outcome` minus `match_start`.
 - The **funnel** nests per session over the whole range: landed (a `page` row), pressed Play,
   started a match, reached an outcome, each stage only of the one before. The builds are a
-  breakdown; the `all` row is the headline.
+  breakdown; the `all` row is the headline. **Turned away** is a count beside the stages, not
+  one of them: of the sessions that landed, those the page's load check turned away (a
+  `turned_away` row), which could never press Play.
 - **Clean** is of the sessions that said goodbye (an `end` row), those whose `trouble` was 0;
   **unknown** is the sessions with no `end` row, its own count. Of the sessions that played and
   never said goodbye, one whose last `visibility` was `hidden` **went to the background**; the
   rest **ended silently**.
 - **Errors** are `error`, `start_fail`, `connect_fail`, `engine_failed`, `webgpu_start_failed`,
   `device_lost` (a hike's renderer lost its GPU device) and a `session_end` whose `why` is
-  `device_lost` (the hike ended by the bound on rebuilds); **warnings** are `warn` and
-  `tier_fallback`. A `gpu_error` (a GPU error under a hike) is a warning where the picture held
+  `device_lost` (the hike ended by the bound on rebuilds); **warnings** are `warn`,
+  `tier_fallback` and `turned_away` (a visitor the load check turned away, its `reason` listed
+  as the line's kind: `no-webgpu`, `no-adapter`, `software` or `short`, the last with what the
+  adapter is short of in `short`). A `gpu_error` (a GPU error under a hike) is a warning where the picture held
   after it and an error where it broke, which its window's row says (`gpu_window`, `picture`:
   `held`, `broke` or `unknown`; unknown reads as a warning). Sessions are counted distinct per
   line and, in the two totals, distinct over the range. `kpis.sql` counts a session as erred by
@@ -72,7 +76,7 @@ build on (older rows keep the time the batch arrived).
 
 | File | Answers |
 |---|---|
-| `funnel.sql` | Of the sessions that landed, how many pressed Play, started a match, and reached an outcome; one line `all`, and one a build. |
+| `funnel.sql` | Of the sessions that landed, how many pressed Play, started a match, and reached an outcome, and how many the load check turned away; one line `all`, and one a build. |
 | `lobbies.sql` | How many parties formed, how big they were, and how joins failed, by calendar day (New York's pasted, the viewer's on the page). |
 | `progress.sql` | One line a match: its host's session, its players, how far they got, which acts they reached, and how it ended. |
 | `errors.sql` | What threw, where, on which build, and how many sessions it touched, errors before warnings, with the distinct totals. |
@@ -140,7 +144,7 @@ SELECT timestamp, JSON_VALUE(json_payload.sid) AS sid, JSON_VALUE(json_payload.b
 FROM `fps-csarko.dayhike_telemetry._AllLogs`
 WHERE JSON_VALUE(json_payload.svc) = 'telemetry'
   AND JSON_VALUE(json_payload.tester) = 'true'
-  AND JSON_VALUE(json_payload.n) IN ('error', 'warn', 'engine_failed', 'webgpu_start_failed', 'tier_fallback', 'start_fail', 'connect_fail', 'gpu_error', 'gpu_window', 'device_lost')
+  AND JSON_VALUE(json_payload.n) IN ('error', 'warn', 'engine_failed', 'webgpu_start_failed', 'tier_fallback', 'turned_away', 'start_fail', 'connect_fail', 'gpu_error', 'gpu_window', 'device_lost')
   AND timestamp >= TIMESTAMP_SUB(CURRENT_TIMESTAMP(), INTERVAL 7 DAY)
 ORDER BY timestamp DESC;
 ```

@@ -1,0 +1,213 @@
+// The game's shell on Babylon.js 9.18.0: the text of client/src/game/shaders/waterLights.fragment.fx
+// Water plugin, before lights: per-pixel depth, the waterline, the medium
+// and low tiers' alpha, and the horizon-safe normal. On the high tier the
+// transmitted colour is read from the scene copy instead and the surface
+// writes unblended (waterHigh is the gate, a uniform, since plugin code is
+// applied before conditional evaluation).
+#ifdef OCEAN
+// The sea's swell at this pixel's undisplaced point, from the vertex stage,
+// which summed it at the ring's vertices to displace them: its normal, height
+// and drawn slope variance interpolated over the ring's triangle, and its foam
+// made here from the interpolated envelope vector, its magnitude and this
+// pixel's own depth. The derivatives are taken here, in uniform control flow,
+// before any branch. Where the pixel spans more of the swell than the ring's
+// cells do, its normal's x and z fade by the pixel's own share and its drawn
+// variance by the share squared, which hands that variance to the roughness,
+// and only then is the normal's up part rebuilt from the other two (it is a
+// unit vector pointing up). The depth is the displaced surface's over the
+// bed, so the water's edge rises and falls with each wave.
+vec2 wOceanDx = dFdx(vOceanXZ);
+vec2 wOceanDy = dFdy(vOceanXZ);
+float wOceanKeep = oceanSwellPixelKeep(wOceanDx, wOceanDy);
+vec2 wOceanTilt = vOceanSwellA.xy * wOceanKeep;
+vec3 wOceanNormal = vec3(wOceanTilt.x, sqrt(max(1.0 - dot(wOceanTilt, wOceanTilt), 0.0)), wOceanTilt.y);
+float wOceanHeight = vOceanSwellA.z;
+float wOceanDrawn = vOceanSwellA.w * wOceanKeep * wOceanKeep;
+vec4 wOceanFoam = oceanFoamFromEnvelope(vOceanXZ, vOceanSwellB.xy, vOceanSwellB.z);
+// The plunging lip on the cove's face, none on the high tier's FFT.
+vec4 wOceanLip = oceanLipFromEnvelope(vOceanXZ, vOceanSwellB.xy, vOceanSwellB.z);
+float wOceanChop = oceanShelter(vOceanXZ, SHELTER_CHOP);
+// The wind sea here: its height for the water's edge and the whitecaps, its
+// slopes faded by the pixel's footprint, both scaled by its share of the
+// fully developed sea here, which the fetch off the land, the broken waves
+// and the headland's lee cut down. The fetch's share is read once, here, for
+// everything below that takes it.
+float wWindShare = oceanWindAmp(vOceanXZ);
+float wWindAmp = wWindShare * (1.0 - wOceanFoam.y) * wOceanChop;
+vec3 wWind = oceanWindDisplace(vOceanXZ);
+float wWindDrawn;
+vec2 wWindSlope = oceanWindSlopesAt(vOceanXZ, max(length(wOceanDx), length(wOceanDy)), wWindDrawn);
+// Along the cove (its share faded over its ends) the sea's bed is the
+// shallower of the bed read and the profile's depth the foam carries, inside
+// the bed's square and outside it, where the read stands in the ring vertex's
+// depth, held to 0 where the ground is above the level: the profile's up the
+// face, and the read's own ground wherever that is shallower, so a far
+// headland or a stack keeps its own. Both meet at 0 on the profile's
+// waterline, so the depth runs on across it. Along the rest of the coast the
+// bed read stands alone. On the face's dry side (the profile's ground above
+// the surface) the bed is the shallower of the two wherever the cove has any
+// share, its end fades too: the sea rests there on the profile's ground, and
+// in the fades the profile and the real ground part by millimetres, so a bed
+// blended toward the read would leave a film that thick drawn on the pebbles.
+// Under water the blend over the ends stands. Both are written so that the
+// bed is the shallower of the two exactly where it is taken whole.
+float wSurfaceHeight = wOceanHeight + wWind.y * wWindAmp;
+float wCoveShare = oceanCoveShare(vOceanXZ.y);
+float wDry = step(1.0e-6, wCoveShare) * step(0.0, -(wOceanFoam.w + wSurfaceHeight));
+float wBedRead = waterBedDepth(vPositionW.xz);
+float wBedLow = min(wBedRead, wOceanFoam.w);
+float wBedDepth = wBedLow + (wBedRead - wBedLow) * (1.0 - wCoveShare) * (1.0 - wDry);
+// Up the cove's face the depth takes the lift the vertex stage gave the
+// surface onto the swash's sheet (oceanSwash.fx), from the same profile's
+// depth, so the film over the pebbles is the sheet's thickness. Between
+// sheets the surface rests on the pebbles, the swell's and the wind's height
+// on it, so the depth there is 0 where the profile is the shallower and below
+// it elsewhere, and the pixel is discarded: the sheet's edge is the table's, a
+// column a metre, never the rings' grid. The surface's height is summed once
+// and the lift takes that same sum, and the rest cancels it to within
+// rounding: a depth under a hundredth of a millimetre (OCEAN_REST_EPS,
+// oceanSwash.fx) is taken as the sea resting on the ground.
+float wDepth = wBedDepth + wSurfaceHeight + swashLift(vOceanXZ, wOceanFoam.w, wSurfaceHeight);
+wDepth = wDepth > OCEAN_REST_EPS ? wDepth : 0.0;
+#else
+float wDepth = waterBedDepth(vPositionW.xz);
+#endif
+if (wDepth <= 0.0) discard;
+float wKdMean = (waterKd.r + waterKd.g + waterKd.b) / 3.0;
+#ifdef OCEAN
+// The sea's normal is the swell's with the wind sea's slopes on it. PBR's
+// bump is on the sea on the low tier alone, where its slope rides on the
+// swell's, scaled by the wind sea's height: elsewhere normalW is still the
+// ring's up and adds nothing. The second octave never runs on the sea.
+float wWindSteep = wWindAmp * oceanWindSlopeLimit(oceanWindDir.z, wOceanChop, wWindDrawn * wWindAmp * wWindAmp);
+vec2 wOceanExtra = normalW.xz / max(normalW.y, 0.05) * oceanBumpScale(wWindShare, wOceanFoam.y, wOceanChop) + wWindSlope * wWindSteep;
+normalW = normalize(wOceanNormal + vec3(wOceanExtra.x, 0.0, wOceanExtra.y) * wOceanNormal.y);
+normalW = oceanLipNormal(normalW, wOceanLip);
+// What Cox and Munk's slope variance for the wind leaves to the roughness
+// once the drawn waves carry theirs, calmer in a headland's lee as the chop is.
+float wOceanVar = oceanUndrawnVariance(oceanWindDir.z, wOceanChop, wOceanDrawn + wWindDrawn * wWindSteep * wWindSteep);
+#else
+// The lake's one surface (lakeRipples.fragment.fx): the breeze's field, the
+// cat's-paws' field never thresholded, sets the ripples' amplitude from
+// LAKE_BREEZE_FLOOR of the paws' cover to the cover itself, all scaled by
+// LAKE_BREEZE_GAIN: soft streaks that drift downwind and swell under the
+// gusts, with no edge anywhere. The same field shifts the second octave
+// across the wind by up to LAKE_WARP_M, so its ripples keep no one phase over
+// the lake. The paws' mask, patches with ripples inside and glass outside, is
+// no longer read: two states with moving edges read as one surface clipping
+// through another. The octaves run at least at a faint floor wherever the
+// lake is not glass, fading to silent as the glass share waterCalmShare
+// reaches 1, so the surface is glass only when the glass share is 1. PBR's
+// bump, the first octave, is scaled about the up it was built on.
+vec3 wBreeze = lakeBreeze(vPositionW.xz, waterLakeTime, waterWind, lakeGust(vPositionW.xz, waterLakeTime, waterWind));
+float wBreezeAt = clamp(wBreeze.x, 0.0, 1.0);
+float wPaw = waterPawCover * LAKE_BREEZE_GAIN * mix(LAKE_BREEZE_FLOOR, 1.0, wBreezeAt);
+vec2 wRippleXz = vPositionW.xz + (2.0 * wBreezeAt - 1.0) * LAKE_WARP_M * vec2(-waterWind.y, waterWind.x);
+float wOctave = octaveAmplitude(wPaw, waterCalmShare);
+normalW = normalize(vec3(normalW.x * wOctave, normalW.y, normalW.z * wOctave));
+if (waterOctaves > 1.5) {
+  vec2 wSlope = lakeRipple2(wRippleXz);
+  normalW = normalize(normalW + vec3(wSlope.x, 0.0, wSlope.y) * wOctave);
+}
+// The rain's rings near the eye, every tier: beyond their reach the rain is
+// the roughness it lifts. The skin's flatten below damps them where it lies.
+if (waterRain > 0.0) {
+  vec2 wRs = lakeRainSlope(vPositionW.xz, waterLakeTime, waterRain, length(vPositionW - vEyePosition.xyz));
+  normalW = normalize(normalW + vec3(wRs.x, 0.0, wRs.y));
+}
+#endif
+#ifdef OCEAN
+// The rain's rings, every tier, scaled by the rain as the puddles' are. The
+// skin's flatten below damps them where it lies.
+if (waterRain > 0.0) {
+  vec2 wRs = waterRainSlope(vPositionW.xz);
+  normalW = normalize(normalW + vec3(wRs.x, 0.0, wRs.y) * waterRain);
+}
+#endif
+normalW = waterHorizonNormal(normalW, viewDirectionW);
+// Fresnel on N.V, Schlick with water's F0: the reflected share, which the
+// transmitted light never gets.
+float wNdV = clamp(dot(normalW, viewDirectionW), 0.0, 1.0);
+float wF = WATER_F0 + (1.0 - WATER_F0) * pow(1.0 - wNdV, 5.0);
+// The bed's light through the surface on the high tier, added after lighting
+// (waterCompose.fragment.fx): it is already lit, so it is radiance, never an
+// albedo for PBR to light again. The bed is read from the scene copy bent by
+// the ripples' slope, over at least WATER_REFRACT_MIN metres of water so a
+// shallow shelf still wobbles under them. The bend fades in over the first
+// 2 cm of water rather than starting at once, so the bed does not jump a few
+// pixels at the waterline. On a lake the bed is lit by the second octave's
+// lens (lakeLens): brighter where the surface is convex and its tilts spread,
+// darker where concave and they gather, light the ripples move and never add,
+// scaled by the octaves' amplitude and the sun's share through the cloud
+// (the lake's own uniform), within CAUSTIC_MAX either way, and fading out over
+// CAUSTIC_DEPTH_M of water: caustics that move as the surface does, none on
+// glass, none without the sun. The sea skips them.
+vec3 wTransmit = vec3(0.0);
+if (waterHigh < 0.5) {
+  // The blend scales the reflection too, so the reflected share is kept out
+  // of the transmission: alpha = 1 - (1 - F) * T.
+  alpha = 1.0 - (1.0 - wF) * exp(-2.0 * wKdMean * wDepth);
+} else {
+  vec2 wUv = gl_FragCoord.xy * waterScreen;
+  // The opaque pass's device depth behind this pixel, linearised with the
+  // camera's near and far into view metres.
+  float wRaw = texture2D(waterDepth, wUv).r;
+  float wSceneDepth = waterNearFar.x * waterNearFar.y / (waterNearFar.y - wRaw * (waterNearFar.y - waterNearFar.x));
+  // How far below the surface the scene point on this eye ray lies: the ray
+  // runs on past the surface by wSceneDepth / vWaterViewDepth - 1 of the
+  // eye-to-surface leg, whose drop is the eye's height over the surface.
+  float wRayOn = wSceneDepth / max(vWaterViewDepth, 1.0e-3) - 1.0;
+  float wBehind = max(0.0, min(wDepth, (vEyePosition.y - vPositionW.y) * wRayOn));
+  vec2 wOff = normalW.xz * WATER_REFRACT * min(max(wBehind, WATER_REFRACT_MIN), WATER_REFRACT_DEPTH) * smoothstep(0.0, 0.02, wBehind);
+  vec3 wBed = texture2D(waterScene, wUv + wOff).rgb;
+#ifndef OCEAN
+  float wLens = lakeLens(wRippleXz);
+  float wShallow = 1.0 - smoothstep(0.0, CAUSTIC_DEPTH_M, wBehind);
+  wBed *= 1.0 + clamp(CAUSTIC_GAIN * wOctave * wShallow * waterSun * wLens, -CAUSTIC_MAX, CAUSTIC_MAX);
+#endif
+  vec3 wT = exp(-2.0 * waterKd * wBehind);
+  // The water's own colour where the bed is not seen: L-infinity times 1 - T.
+  surfaceAlbedo *= 1.0 - wT;
+  wTransmit = wBed * wT * (1.0 - wF);
+  alpha = 1.0;
+}
+
+// The skin, where a murky lake carries it: a matte film of fronds over the
+// water, the bed, the depth and the ripples hidden under it.
+float wSkin = waterSkinMask(vPositionW.xz, wDepth);
+// The sea and a clear lake skip the film.
+if (waterSkin.x > 0.0) {
+  surfaceAlbedo = mix(surfaceAlbedo, waterSkinColour(vPositionW.xz, vWaterViewDepth), wSkin);
+  wTransmit *= 1.0 - wSkin;
+  alpha = mix(alpha, 1.0, wSkin);
+  normalW = normalize(mix(normalW, vec3(0.0, 1.0, 0.0), wSkin));
+}
+#ifdef OCEAN
+// The white water, a matte layer over the sea the way the skin is over a
+// lake: the swell's foam through its lace, and the whitecaps, which the
+// broken waves eat shoreward of the break. The foam's cover is its amount
+// through the lace, a sheet at the roll and thinning behind, over the inner
+// surf's floor. Its albedo is the foam's by its age, a whitecap's fresh. Both
+// patterns fade to their mean as their cells shrink on the screen, from ten
+// pixels a cell to two and a half.
+float wOceanPixel = max(length(wOceanDx), length(wOceanDy));
+float wFoamAge = oceanFoamLookAge(wOceanFoam.z);
+float wOceanLace = oceanFoamCover(vOceanXZ, wOceanFoam.x, wOceanFoam.y, wOceanPixel);
+float wOceanCap;
+if (oceanCoast.w > 0.5) {
+  // A drawn wind sea's own crests, faded to their coverage as the waves that
+  // shape them fall under the pixel, as the cells fade where none is drawn.
+  float wCapCover = oceanCapCoverage(vOceanXZ, wWindShare);
+  wOceanCap = mix(wCapCover, oceanWhitecap(wCapCover, wWind.y / max(oceanWindStats.x, 1.0e-4)), oceanCrestKeep(wOceanPixel));
+} else {
+  wOceanCap = oceanCapCells(vOceanXZ, wOceanPixel, wWindShare);
+}
+wOceanCap *= 1.0 - wOceanFoam.y;
+float wFoam = max(wOceanLace, wOceanCap);
+wFoam = oceanLipFoam(wFoam, wOceanLip, wOceanFoam.z);
+float wFoamWhite = wOceanLace >= wOceanCap ? oceanFoamWhite(wFoamAge) : OCEAN_FOAM_ALBEDO;
+surfaceAlbedo = mix(surfaceAlbedo, vec3(wFoamWhite), wFoam);
+wTransmit *= 1.0 - wFoam;
+alpha = mix(alpha, 1.0, wFoam);
+normalW = normalize(mix(normalW, vec3(0.0, 1.0, 0.0), wFoam));
+#endif
