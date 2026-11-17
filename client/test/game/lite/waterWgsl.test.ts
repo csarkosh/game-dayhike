@@ -1,5 +1,3 @@
-import { readFileSync } from "node:fs";
-import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
 import { SKYLINE_TEXELS } from "../../../src/game/lakeSkyline.js";
 import { PANORAMA_EYE_UP, PANORAMA_HEIGHT_M } from "../../../src/game/panoramaTurn.js";
@@ -8,9 +6,11 @@ import {
   WATER_THROUGH_DEFS_WGSL, WATER_THROUGH_FINAL_WGSL, WATER_VERTEX_WGSL, lakeComposeWgsl, lakeLightsWgsl, waterThroughWgsl,
 } from "../../../src/game/lite/waterWgsl.js";
 import { WATER_F0 } from "../../../src/game/waterShading.js";
+import { babylonText } from "../../helpers/babylonFixture.js";
 import { inOrder, tight } from "./wgslText.js";
 
-const fx = (name: string): string => readFileSync(fileURLToPath(new URL(`../../../src/game/shaders/${name}`, import.meta.url)), "utf8");
+/** A stage of the game's GLSL on Babylon.js, whole, as recorded from its `.fx` file. */
+const fx = (name: string): string => babylonText(`stages/${name.replace(/\.fx$/, ".glsl")}`);
 /** A stage's GLSL with its comments taken out. */
 const code = (name: string): string => fx(name).split("\n").filter((line) => !/^\s*\/\//.test(line)).join("\n");
 

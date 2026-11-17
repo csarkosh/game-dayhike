@@ -8,9 +8,11 @@ import { REFLECTED_RINGS } from "../../../src/game/lite/terrainMeshes.js";
 import { TERRAIN_VERTEX_FLOATS, TERRAIN_VERTEX_LAYOUT } from "../../../src/game/lite/terrainPlugins.js";
 import { MIRROR_CANOPY_SHADE } from "../../../src/game/mirrorGround.js";
 import { laidOut, readUniform } from "./pluginFixture.js";
+import { babylonText } from "../../helpers/babylonFixture.js";
 import { inOrder, tight } from "./wgslText.js";
 
-const fx = (name: string): string => readFileSync(fileURLToPath(new URL(`../../../src/game/shaders/${name}`, import.meta.url)), "utf8");
+/** A stage of the game's GLSL on Babylon.js, whole, as recorded from its `.fx` file. */
+const fx = (name: string): string => babylonText(`stages/${name.replace(/\.fx$/, ".glsl")}`);
 const src = (name: string): string => readFileSync(fileURLToPath(new URL(`../../../src/game/${name}`, import.meta.url)), "utf8");
 const SHARED = { name: FRAME_BLOCK } as unknown as PluginUniformBlock;
 
@@ -62,9 +64,9 @@ describe("the ground in a lake's shore panorama on Babylon Lite", () => {
 
   it("holds the picture in half floats, and draws the ground's rings the game's reflections draw", () => {
     expect(PANORAMA_FORMAT).toBe("rgba16float");
-    expect(src("lakePanorama.ts")).toContain("type: Constants.TEXTURETYPE_HALF_FLOAT,");
+    expect(babylonText("stages/lakePanorama.target.txt")).toContain("type: Constants.TEXTURETYPE_HALF_FLOAT,");
     expect(REFLECTED_RINGS).toBe(5);
-    expect(src("renderer.ts")).toContain("for (const mesh of clipmap?.meshes.slice(0, 5) ?? []) {\n    lakeMirror?.register(mesh, mirrorTerrain);\n    lakePanorama?.register(mesh, mirrorTerrain);");
+    expect(babylonText("stages/renderer.reflectedRings.txt")).toContain("for (const mesh of clipmap?.meshes.slice(0, 5) ?? []) {\n    lakeMirror?.register(mesh, mirrorTerrain);\n    lakePanorama?.register(mesh, mirrorTerrain);");
   });
 
   it("draws a sector only on a frame that reads the picture, straight into the sector's column, which the pass clears alone", () => {
@@ -72,7 +74,7 @@ describe("the ground in a lake's shore panorama on Babylon Lite", () => {
     expect(text).toContain("if (sky === null || !read) return false;");
     // The column is the camera's viewport, as the game's capture has it on Babylon.js.
     expect(text).toContain("camera.viewport = { x: (held * PANORAMA_SECTOR_WIDTH) / PANORAMA_WIDTH, y: 0, width: PANORAMA_SECTOR_WIDTH / PANORAMA_WIDTH, height: 1 };");
-    expect(tight(src("lakePanorama.ts"))).toContain("camera.viewport.x=sector/PANORAMA_SECTORS;");
+    expect(tight(babylonText("stages/lakePanorama.viewport.txt"))).toContain("camera.viewport.x=sector/PANORAMA_SECTORS;");
     // A texel is drawn or not: Babylon.js writes an alpha of 1 for a material cut out by its alpha, where Lite hands
     // on the alpha it was cut at, so the pass ends by writing an alpha of 1 wherever it drew.
     expect(tight(fx("lakeMirror.fragment.fx"))).toContain("returnmix(fallback,shore.rgb,hit.z*below*shore.a);");

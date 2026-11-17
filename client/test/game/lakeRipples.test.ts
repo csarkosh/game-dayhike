@@ -1,6 +1,5 @@
 // client/test/game/lakeRipples.test.ts
 import { describe, it, expect } from "vitest";
-import { readFileSync } from "node:fs";
 import {
   PAW_FEATURE_M, PAW_SPEED, PAW_EDGE_M, PAW_LIFE_S, PAW_GUST_FLOOR, PAW_COVER_TABLE, OCTAVE_FLOOR,
   LAKE_RING_REACH, LAKE_RING_FADE_M, LAKE_RING_CELL, LAKE_RING_SPEED, LAKE_RING_LAMBDA, LAKE_RING_TAU, LAKE_RING_AMP,
@@ -15,10 +14,12 @@ import {
 } from "../../src/game/windParams.js";
 import { WEATHER_PRESETS } from "../../src/game/weather.js";
 import { midgeHash } from "../../src/game/midgeMotion.js";
+import { babylonText } from "../helpers/babylonFixture.js";
 import { timeLimit } from "../helpers/timeLimit.js";
 
-const source = (path: string): string => readFileSync(new URL(path, import.meta.url), "utf8");
-const glsl = source("../../src/game/shaders/lakeRipples.fragment.fx");
+/** A stage of the game's on Babylon.js, as recorded: a `.fx` file whole, or what a shell's plugin handed for a point. */
+const source = (name: string): string => babylonText(`stages/${name}.glsl`);
+const glsl = source("lakeRipples.fragment");
 const glslFloat = (n: number): string => (Number.isInteger(n) ? `${n}.0` : `${n}`);
 
 /** A top-level GLSL function's body: from its signature's brace to the closing brace on a line of its own. */
@@ -121,12 +122,12 @@ describe("the lake's ripples' constants", () => {
       "vec2 lakeRainSlope(vec2 xz, float t, float rate, float dist)",
     ]) expect(glsl).toContain(`${signature} {`);
     // the trees' gust, foliage.vertex.fx's, with the lake's names for its constants and its wind
-    const foliage = body(source("../../src/game/shaders/foliage.vertex.fx"), "float foliageGust(vec2 p, float t)");
+    const foliage = body(source("foliage.vertex"), "float foliageGust(vec2 p, float t)");
     expect(body(glsl, "float lakeGust(vec2 p, float t, vec2 dir)").replace(/LAKE_WIND_/g, "WIND_").replace(/\bdir\./g, "windDir."))
       .toBe(foliage);
     // Hoskins' hash as the midges' (midge.vertex.fx) and the splashes' (rainSplash.ts) are
-    expect(body(glsl, "float lakeHash(float i, float s)")).toBe(body(source("../../src/game/shaders/midge.vertex.fx"), "float midgeHash(float i, float s)"));
-    expect(body(glsl, "vec2 lakeRingHash(vec2 p)")).toBe(body(source("../../src/game/rainSplash.ts"), "vec2 splashHash(vec2 p)"));
+    expect(body(glsl, "float lakeHash(float i, float s)")).toBe(body(source("midge.vertex"), "float midgeHash(float i, float s)"));
+    expect(body(glsl, "vec2 lakeRingHash(vec2 p)")).toBe(body(source("splash.vertexDefinitions"), "vec2 splashHash(vec2 p)"));
     // no test on a varying: the branches are chosen by step, mix, clamp and
     // smoothstep. The one if is on the lake's time, a uniform at the one call
     // (waterLights.fragment.fx passes waterLakeTime): the next wrap's field is
@@ -143,11 +144,11 @@ describe("the lake's ripples' constants", () => {
     );
     expect(body(glsl, "float lakePaw(vec2 xz, float t, vec2 windDir, float cover, float gust)")).toContain("  vec3 f = lakeBreeze(xz, t, windDir, gust);\n");
     // the field is defined and its twin tested, but the lights no longer read it: the cover is the whole lake's amplitude
-    expect(source("../../src/game/shaders/waterLights.fragment.fx")).not.toContain("lakePaw(");
-    expect(source("../../src/game/shaders/waterLights.fragment.fx")).toContain(
+    expect(source("waterLights.fragment")).not.toContain("lakePaw(");
+    expect(source("waterLights.fragment")).toContain(
       "vec3 wBreeze = lakeBreeze(vPositionW.xz, waterLakeTime, waterWind, lakeGust(vPositionW.xz, waterLakeTime, waterWind));",
     );
-    expect(source("../../src/game/shaders/waterLights.fragment.fx")).toContain("float wPaw = waterPawCover * LAKE_BREEZE_GAIN * mix(LAKE_BREEZE_FLOOR, 1.0, wBreezeAt);");
+    expect(source("waterLights.fragment")).toContain("float wPaw = waterPawCover * LAKE_BREEZE_GAIN * mix(LAKE_BREEZE_FLOOR, 1.0, wBreezeAt);");
     expect(glsl).not.toContain("?");
     expect(glsl.endsWith("}\n")).toBe(true);
   });

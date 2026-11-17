@@ -1,8 +1,8 @@
 import { describe, expect, it } from "vitest";
-import { readFileSync } from "node:fs";
 import { MIRROR_CANOPY_SHADE, mirrorGroundColour } from "../../src/game/mirrorGround.js";
 import { NEEDLE_BED } from "../../src/game/terrainSurface.js";
 import { WEATHER_PRESETS, ambientCollapseUnder } from "../../src/game/weather.js";
+import { babylonText } from "../helpers/babylonFixture.js";
 
 const sky = {
   sunIntensity: 3, sunDir: { y: 0.5 }, fillIntensity: 0.8,
@@ -28,7 +28,7 @@ describe("the ground in a lake's reflections", () => {
 
   it("is half as bright under a full canopy, as the stand-in's shader has it", () => {
     expect(MIRROR_CANOPY_SHADE).toBe(0.5);
-    const fx = readFileSync(new URL("../../src/game/shaders/lakeMirrorTerrain.fragment.fx", import.meta.url), "utf8");
+    const fx = babylonText("stages/lakeMirrorTerrain.fragment.glsl");
     expect(fx).toContain(`const float LAKE_MIRROR_CANOPY_SHADE = ${MIRROR_CANOPY_SHADE.toFixed(1)};`);
   });
 });
