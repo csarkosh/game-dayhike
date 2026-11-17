@@ -75,11 +75,15 @@ describe("layer boundaries", () => {
 
   it("keeps the scene player pure of Babylon but its stage, and out of the sim's writes", () => {
     const dir = join(SRC, "game/scene");
-    for (const pure of ["timeline.ts", "shots.ts", "roadPath.ts", "sceneClock.ts", "intro.ts", "scenePlayer.ts"]) {
+    for (const pure of ["timeline.ts", "shots.ts", "roadPath.ts", "sceneClock.ts", "intro.ts", "scenePlayer.ts", "routeWorld.ts", "cord.ts", "cordTubeGeometry.ts", "actorPose.ts", "stageParts.ts"]) {
       expect(readFileSync(join(dir, pure), "utf8"), pure).not.toMatch(/from "@babylonjs/);
     }
+    // The route's world is made in one place, with no local player, and is only ever read: by the route on Babylon.js and by the one on Babylon Lite.
+    const world = readFileSync(join(dir, "routeWorld.ts"), "utf8");
+    expect(world).toContain("createWorld(level, seed, false)");
+    expect(world).not.toMatch(/world\.(step|apply|input)/);
     const route = readFileSync(join(dir, "sceneRoute.ts"), "utf8");
-    expect(route).toContain("createWorld(level, seed, false)");
+    expect(route).toContain("= routeWorld(name);");
     expect(route).toContain("renderer.sync(world.state, -1, 0)");
     expect(route).not.toMatch(/world\.(step|apply|input)/);
   });
@@ -580,6 +584,12 @@ describe("layer boundaries", () => {
       join(SRC, "game", "ending.ts"),
       join(SRC, "game", "endScene.ts"),
       join(SRC, "game", "carParts.ts"),
+      join(SRC, "game", "scene", "routeWorld.ts"),
+      join(SRC, "game", "scene", "scenePlayer.ts"),
+      join(SRC, "game", "scene", "actorPose.ts"),
+      join(SRC, "game", "scene", "stageParts.ts"),
+      join(SRC, "game", "scene", "cordTubeGeometry.ts"),
+      join(SRC, "game", "scene", "cord.ts"),
     ];
 
     // Guards against the guard: a rename or deletion of one of these files
@@ -822,7 +832,10 @@ describe("layer boundaries", () => {
    * the same play.
    */
   it("what the scenes and the endings are played with is computed without loading Babylon, whatever it imports", () => {
-    const ENGINE_FREE = ["scenePlay.ts", "cutscene.ts", "ending.ts", "endScene.ts", "carAudio.ts", "carParts.ts", "scene/roadPath.ts", "scene/timeline.ts", "scene/shots.ts"];
+    const ENGINE_FREE = [
+      "scenePlay.ts", "cutscene.ts", "ending.ts", "endScene.ts", "carAudio.ts", "carParts.ts", "scene/roadPath.ts", "scene/timeline.ts", "scene/shots.ts",
+      "scene/routeWorld.ts", "scene/scenePlayer.ts", "scene/actorPose.ts", "scene/stageParts.ts", "scene/cordTubeGeometry.ts", "scene/cord.ts",
+    ];
     const loaded = (file: string): string[] =>
       [...readFileSync(file, "utf8").matchAll(/^\s*(?:import|export)\s+(?!type\s)(?:[^"'();]*?\s+from\s+)?["']([^"']+)["']/gm)].map((m) => m[1] as string);
     const seen = new Set<string>();
@@ -843,6 +856,9 @@ describe("layer boundaries", () => {
     // And the shells on Babylon.js read them: the scenes' state is kept in one place, and the car's parts are turned by one rule.
     expect(readFileSync(join(SRC, "game/renderer.ts"), "utf8")).toContain("const play = createScenePlay({");
     expect(readFileSync(join(SRC, "game/scene/sceneStage.ts"), "utf8")).toContain("wheel.node.rotation.z = wheelSpinTurn(pose);");
+    // The handset's grip and the cord's ends, the cord's tube and the route's world likewise.
+    expect(readFileSync(join(SRC, "game/scene/sceneStage.ts"), "utf8")).toContain("new Vector3(GRIP_OFFSET[0], GRIP_OFFSET[1], GRIP_OFFSET[2])");
+    expect(readFileSync(join(SRC, "game/scene/cordTube.ts"), "utf8")).toContain("radius: CORD_TUBE_RADIUS, tessellation: CORD_TUBE_SIDES");
   });
 
   /**

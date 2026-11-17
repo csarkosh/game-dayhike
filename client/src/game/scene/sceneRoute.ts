@@ -6,57 +6,36 @@
  * disposed on leaving the route.
  */
 import type { Scene as BabylonScene } from "@babylonjs/core/scene.js";
-import sandbox01 from "../../../levels/sandbox01.json" with { type: "json" };
-import { parseLevel } from "../../sim/level.js";
-import { createForest } from "../../sim/forest.js";
-import { createWorld } from "../../sim/world.js";
 import type { WorldState } from "../../sim/types.js";
-import { DEFAULT_TERRAIN_VARIANT, activeTerrainVariant, elevationAt, setActiveTerrainVariant, type LakeSource } from "../../sim/terrain.js";
-import { coveFor } from "../../sim/olympic.js";
-import { trailheadPlaces } from "../../sim/trailhead.js";
 import type { EngineHandle } from "../engineHandle.js";
 import { createCharacterPool, type CharacterPool } from "../characterModel.js";
-import { lakeRimRadii, rimAt } from "../lakeSkyline.js";
 import { loadContainer, loadUntilAborted } from "../modelLoad.js";
 import { modelUrl } from "../assetUrls.js";
 import { placeStaticModel, type PlacedModel } from "../staticModel.js";
 import { createRenderer } from "../renderer.js";
 import type { SkyTable } from "../skyTable.js";
 import { startSkySource } from "../skyWorker.js";
-import { sunAltitudeDeg } from "../lighting.js";
+import { sunAltitudeDeg } from "../skyWait.js";
 import type { QualityTier } from "../quality.js";
-import { seedFromToken } from "../seed.js";
-import { carYaw, createCarShadowPatch, createTrailheadMeshes, type CarShadowPatch } from "../trailheadMeshes.js";
+import { createCarShadowPatch, createTrailheadMeshes, type CarShadowPatch } from "../trailheadMeshes.js";
 import { createSignMeshes } from "../signMeshes.js";
-import { boardDrawingOf, type BoardPainter } from "../boardPaint.js";
-import { BOARD_IMAGE_URLS } from "../boardImages.js";
-import { POSTER_LAST_SEEN } from "../posterPanel.js";
-import { SUMMIT_LABEL, TRAIL_NAME, signPosts } from "../../sim/signs.js";
-import { signSites } from "../../sim/placeNames.js";
+import type { BoardPainter } from "../boardPaint.js";
 import { terrainMaterialFor, type FreecamView } from "../renderer.js";
 import { whenSceneReady } from "../rendererSwap.js";
 import { READY_MAX_MS } from "../startReady.js";
 import { SETTLE_MAX_MS, WARM_FRAMES, cameraJumped } from "./cameraJump.js";
 import { createCaptionPanel } from "./captions.js";
 import { createCordTube } from "./cordTube.js";
-import { INTRO_CAR, INTRO_HOUR, INTRO_RANGER, INTRO_SEED_TOKEN, INTRO_WEATHER, introScene } from "./intro.js";
+import { INTRO_CAR, INTRO_RANGER } from "./intro.js";
+import { BLACK_STYLE, FILM_PATCH_DARKNESS, routeWorld, type DayhikeScene, type SceneName } from "./routeWorld.js";
 import { createSceneClock, type SceneClock } from "./sceneClock.js";
 import { createScenePlayer } from "./scenePlayer.js";
-import { TITLE_HOUR, TITLE_SEED_TOKEN, TITLE_WEATHER, titleScene, type TitleWorld } from "./title.js";
-import { carModelOf, dimCabParts, type CarModel, type StageDeps } from "./sceneStage.js";
+import { carModelOf, dimCabParts, stageFrame, type CarModel, type StageDeps } from "./sceneStage.js";
 
-export type DayhikeScene = {
-  seek(t: number): void;
-  frame(): Promise<void>;
-  time(): number;
-  /** Resolves once the sky's first slices are in and the intro's ranger and
-   * car have loaded or failed, or the title's world is in around its first
-   * camera: a recorder waits on it. */
-  ready: Promise<void>;
-  engine(): "webgpu" | "webgl2";
-};
+// The route's world, its names and what a recorder drives it by are the route's own with no engine (`routeWorld.ts`); named from here too.
+export { titleWater } from "./routeWorld.js";
+export type { DayhikeScene, SceneName } from "./routeWorld.js";
 export type SceneRun = { dispose(): void; worldState(): WorldState; scene(): BabylonScene; hasWildlife: boolean };
-export type SceneName = "intro" | "title";
 /** What the page gives the route: where it draws, at which tier, and the
  * engine made for its canvas (absent, the renderer makes WebGL2's). */
 export type ScenePage = {
@@ -82,19 +61,6 @@ export type SceneRouteDeps = ScenePage & {
   skyTable?: SkyTable;
 };
 
-/** How dark the film car's patch is against the hike's parked car's (its alpha). */
-const FILM_PATCH_DARKNESS = 0.5;
-
-/** The title's lake: its rim's distance from the centre by azimuth, the farthest shore a ray
- * crosses; the shape's mean radius in a direction no shore lies, as where the centre stands on
- * dry ground, put in before the directions are blended so no reading falls toward zero. */
-export function titleWater(lake: LakeSource): { x: number; z: number; level: number; rim: (a: number) => number } {
-  const rims = lakeRimRadii(lake.shape).map((r) => (r > 0 ? r : lake.shape.meanRadius));
-  return { x: lake.x, z: lake.z, level: lake.level, rim: (a) => rimAt(rims, a) };
-}
-
-const BLACK_STYLE = "position:absolute;inset:0;background:#000;pointer-events:none;z-index:29;";
-
 async function loadFilmCar(scene: BabylonScene, signal: AbortSignal): Promise<PlacedModel | null> {
   try {
     const container = await loadUntilAborted(() => loadContainer(modelUrl(`models/${INTRO_CAR}.glb`), scene), signal);
@@ -115,85 +81,32 @@ export function runSceneRoute(page: ScenePage, search: { t: number | null; step:
 }
 
 export function startSceneRoute(deps: SceneRouteDeps, search: { t: number | null; step: number | null }, name: SceneName = "intro"): SceneRun {
-  setActiveTerrainVariant(DEFAULT_TERRAIN_VARIANT);
   const now = deps.now ?? (() => performance.now());
   const raf = deps.raf ?? ((fn) => requestAnimationFrame(fn));
-  const title = name === "title";
-  const seed = seedFromToken(title ? TITLE_SEED_TOKEN : INTRO_SEED_TOKEN);
-  const level = parseLevel(sandbox01);
-  const forest = createForest(seed);
-  const world = createWorld(level, seed, false);
+  // The fixed world, the scene and what stands at its trailhead: the route's own with no engine (`routeWorld.ts`).
+  const { title, level, forest, world, hour, weather, scene, groundH, posts: signPosts, trailheadSites, board } = routeWorld(name);
   const clock: SceneClock = createSceneClock(now);
-  const hour = title ? TITLE_HOUR : INTRO_HOUR;
   // The sky's slices, from the route's hour outward: handed in, or made here
   // and stopped on leaving the route.
   const ownSky = deps.skyTable === undefined ? startSkySource(sunAltitudeDeg(hour)) : null;
   const renderer = createRenderer(deps.canvas, level, forest, {
     tier: deps.tier, engine: deps.engine, clock: () => clock.time() * 1000, wildlife: false, skyTable: deps.skyTable ?? ownSky?.table,
   });
-  renderer.setWeather(title ? TITLE_WEATHER : INTRO_WEATHER, 0);
+  renderer.setWeather(weather, 0);
   renderer.setHour(hour);
   const worldIn = deps.worldIn ?? ((maxMs: number) => whenSceneReady(renderer.scene, maxMs, renderer.forestReady));
 
-  const variant = activeTerrainVariant();
-  const graph = variant.trailGraph?.(seed);
-  const roadCenterX = variant.roadCenterX;
-  if (graph === undefined || roadCenterX === undefined) throw new Error("the scene's world has no road or trail");
-  const places = trailheadPlaces(graph, roadCenterX, seed);
-  const groundH = (x: number, z: number): number => elevationAt(seed, x, z);
-  const titleWorld = (): TitleWorld => {
-    const lake = (variant.waterBodies?.(seed) ?? []).find((b): b is LakeSource => b.kind === "lake") ?? null;
-    const meadow = graph.features.find((f) => f.kind === "meadow") ?? null;
-    const peak = graph.features[0]!;
-    const cove = coveFor(seed);
-    return {
-      ground: groundH,
-      seaLevel: variant.waterLevel ?? 0,
-      // Signed, positive inland, and one to one with x: the shoreline is where it is 0.
-      coastlineX: (z) => -(variant.coastDistance?.(seed, 0, z) ?? 0),
-      cove: { z0: cove.z0, halfWidth: cove.halfWidth },
-      water: lake === null ? null : titleWater(lake),
-      meadow: meadow === null ? null : { x: meadow.x, z: meadow.z, radius: meadow.radius },
-      peak: { x: peak.x, z: peak.z, radius: peak.radius },
-      start: places.start,
-    };
-  };
-  const road = { centerX: (z: number) => roadCenterX(seed, z), groundY: groundH };
-  const scene = title
-    ? titleScene(titleWorld())
-    : introScene(road, {
-        car: places.car,
-        start: places.start,
-        board: places.board,
-        direction: carYaw(places.car, graph.trailhead) === 0 ? 1 : -1,
-      });
-
   // The trailhead as the hike draws it: the board with its poster and the
-  // fingerposts, from the world's own search, so the film frames what a
-  // player meets. The title's tour has the hike's parked car too; in the
+  // fingerposts. The title's tour has the hike's parked car too; in the
   // intro the scene's car moves and the hike's is not there.
-  const found = world.search;
-  const hikerFirst = found === null ? "" : (found.hiker.name.split(" ")[0] as string);
-  const sites = found === null ? [] : signSites(seed, graph.features, hikerFirst, found.body.pos);
-  const posts = createSignMeshes(renderer.scene, signPosts(graph, sites), groundH, {
+  const posts = createSignMeshes(renderer.scene, signPosts, groundH, {
     materialFor: (name) => terrainMaterialFor(renderer.scene, name),
     shadows: renderer.shadows,
     cover: renderer.cover,
   });
-  const trailheadSites = title ? { car: { site: places.car, trailhead: graph.trailhead }, board: places.board } : { board: places.board };
   const trailhead = createTrailheadMeshes(renderer.scene, trailheadSites, groundH, {
     materialFor: (name) => terrainMaterialFor(renderer.scene, name),
-    board: boardDrawingOf({
-      seed,
-      trailName: TRAIL_NAME,
-      hikerName: found?.hiker.name ?? "",
-      lastSeen: POSTER_LAST_SEEN,
-      graph,
-      places: sites,
-      summitName: SUMMIT_LABEL,
-      roadCenterX,
-      urls: BOARD_IMAGE_URLS,
-    }),
+    board,
     shadows: renderer.shadows,
     cover: renderer.cover,
     ...(deps.paint === undefined ? {} : { paint: deps.paint }),
@@ -256,7 +169,7 @@ export function startSceneRoute(deps: SceneRouteDeps, search: { t: number | null
     },
     warn: (line) => console.warn(line),
   };
-  const player = createScenePlayer(scene, clock, stage);
+  const player = createScenePlayer(scene, clock, { frame: (frame) => stageFrame(frame, stage), dispose: () => captions.dispose() });
   if (search.step !== null) player.step(search.step);
   else if (search.t !== null) player.seek(search.t);
 

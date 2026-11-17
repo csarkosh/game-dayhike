@@ -4,10 +4,15 @@
  * recorder calls once a rendered frame. At the end the clock is held on the
  * last frame and `onEnd` is told once; a seek or a step moves it and plays
  * on. A hidden tab holds the clock.
+ *
+ * The stage is whoever draws the route's: it is handed each frame and
+ * decides nothing, so the player loads no engine.
  */
 import { FPS, type SceneClock } from "./sceneClock.js";
-import { stageFrame, type StageDeps } from "./sceneStage.js";
 import { evaluate, type Frame, type Scene } from "./timeline.js";
+
+/** What a player stages its frames on, and lets go of with itself. */
+export type SceneStage = { frame(frame: Frame): void; dispose(): void };
 
 export type ScenePlayer = {
   /** Evaluates and stages the frame at the clock's time (or at `at`, which also seeks); returns it. */
@@ -21,7 +26,7 @@ export type ScenePlayer = {
   dispose(): void;
 };
 
-export function createScenePlayer(scene: Scene, clock: SceneClock, deps: StageDeps, onEnd?: () => void): ScenePlayer {
+export function createScenePlayer(scene: Scene, clock: SceneClock, stage: SceneStage, onEnd?: () => void): ScenePlayer {
   let isEnded = false;
   let told = false;
   const player: ScenePlayer = {
@@ -39,7 +44,7 @@ export function createScenePlayer(scene: Scene, clock: SceneClock, deps: StageDe
         }
       }
       const frame = evaluate(scene, t);
-      stageFrame(frame, deps);
+      stage.frame(frame);
       return frame;
     },
     seek(t) {
@@ -55,7 +60,7 @@ export function createScenePlayer(scene: Scene, clock: SceneClock, deps: StageDe
     time: () => clock.time(),
     ended: () => isEnded,
     dispose() {
-      deps.captions.dispose();
+      stage.dispose();
     },
   };
   return player;

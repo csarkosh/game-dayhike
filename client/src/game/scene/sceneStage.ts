@@ -16,6 +16,7 @@ import { DOOR_NAME, STEERING_COLUMN as STEERING_COLUMN_AXIS, STEERING_NAME, WHEE
 import { CAB_SKY } from "../sceneryParts.js";
 import type { CaptionPanel } from "./captions.js";
 import { coiledCord } from "./cord.js";
+import { CORD, CORD_PLUG as CORD_PLUG_AT, CORD_SOCKET as CORD_SOCKET_AT, GRIP_OFFSET, GRIP_TURN } from "./stageParts.js";
 import type { ActorPose, CarPose, Frame } from "./timeline.js";
 
 /** The car: the node the whole model moves by, and its named parts where the
@@ -52,8 +53,9 @@ const STEERING_COLUMN = new Vector3(STEERING_COLUMN_AXIS[0], STEERING_COLUMN_AXI
 /** The handset in the hand: its offset (m) and turn in the hand joint's own frame, the fingers
  * along +y and the palm toward +z, measured on the talk clip's fist: the microphone's middle in
  * the fist and 0.025 m toward the index finger, so its grille end stands clear of it, and turned a
- * quarter about its length so the grille faces the mouth (`docs/gameplay/2026-09-30-intro-film-staging.md`). */
-const GRIP = { position: new Vector3(0.025, 0.075, 0.03), rotation: Quaternion.RotationAxis(new Vector3(1, 0, 0), Math.PI / 2) };
+ * quarter about its length so the grille faces the mouth (`docs/gameplay/2026-09-30-intro-film-staging.md`).
+ * The numbers are the stage's own with no engine (`stageParts.ts`). */
+const GRIP = { position: new Vector3(GRIP_OFFSET[0], GRIP_OFFSET[1], GRIP_OFFSET[2]), rotation: Quaternion.RotationAxis(new Vector3(1, 0, 0), GRIP_TURN) };
 /**
  * The car's parts by name under a placed model, each one missing said once;
  * none found, the whole model is the stand-in. A node the loader made
@@ -133,11 +135,9 @@ function stageHandset(car: CarModel, hand: TransformNode | null, grip: number): 
 }
 
 /** The cord's socket on the radio's faceplate and its plug at the microphone's foot, each in its
- * part's own frame, measured on the model; and the cord: 0.6 m, sagging 0.04 m at most, 20 coils
- * of 6 mm. */
-const CORD_SOCKET = new Vector3(-0.0645, -0.012, 0.025);
-const CORD_PLUG = new Vector3(-0.0645, 0, 0);
-const CORD = { length: 0.6, maxSag: 0.04, radius: 0.006, turns: 20, points: 201 };
+ * part's own frame, and the cord's length, sag and coils: the stage's own with no engine (`stageParts.ts`). */
+const CORD_SOCKET = new Vector3(CORD_SOCKET_AT[0], CORD_SOCKET_AT[1], CORD_SOCKET_AT[2]);
+const CORD_PLUG = new Vector3(CORD_PLUG_AT[0], CORD_PLUG_AT[1], CORD_PLUG_AT[2]);
 
 const warnedActors = new WeakMap<StageDeps, Set<string>>();
 const warnedJoints = new WeakMap<StageDeps, Set<string>>();

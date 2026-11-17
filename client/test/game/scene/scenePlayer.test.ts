@@ -1,8 +1,8 @@
 import { describe, expect, it, vi } from "vitest";
 import { createSceneClock } from "../../../src/game/scene/sceneClock.js";
-import { createScenePlayer } from "../../../src/game/scene/scenePlayer.js";
+import { createScenePlayer, type SceneStage } from "../../../src/game/scene/scenePlayer.js";
 import type { Scene } from "../../../src/game/scene/timeline.js";
-import type { StageDeps } from "../../../src/game/scene/sceneStage.js";
+import { stageFrame, type StageDeps } from "../../../src/game/scene/sceneStage.js";
 
 const scene: Scene = {
   duration: 10,
@@ -13,9 +13,12 @@ const scene: Scene = {
   black: () => 0,
 };
 
-function deps(): StageDeps & { cams: number[] } {
+/** The stage on Babylon.js, as the route hands it to the player. */
+function deps(): SceneStage & { cams: number[]; disposed: number } {
   const cams: number[] = [];
-  return { cams, setFreecam: (v) => void cams.push(v.x), setDepthOfField() {}, actor: () => null, car: null, captions: { set() {}, dispose() {} }, black() {}, warn() {} };
+  const stage: StageDeps = { setFreecam: (v) => void cams.push(v.x), setDepthOfField() {}, actor: () => null, car: null, captions: { set() {}, dispose() {} }, black() {}, warn() {} };
+  const out = { cams, disposed: 0, frame: (frame: Parameters<SceneStage["frame"]>[0]) => stageFrame(frame, stage), dispose: () => void (out.disposed += 1) };
+  return out;
 }
 
 describe("the scene player", () => {
@@ -59,5 +62,12 @@ describe("the scene player", () => {
     p.hidden(false);
     ms = 6000;
     expect(p.tick().t).toBe(2);
+  });
+
+  it("lets go of its stage with itself", () => {
+    const d = deps();
+    const p = createScenePlayer(scene, createSceneClock(() => 0), d);
+    p.dispose();
+    expect(d.disposed).toBe(1);
   });
 });
