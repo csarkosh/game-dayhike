@@ -132,9 +132,13 @@ The events, in the order a session makes them:
 | `death` | `tick`, `p`, `phase`, `cause`, `near`, `x`, `z` | this player died: the Hollow's reach is the one cause |
 | `outcome` | `result`, `self`, `alive`, `players`, `tick`, `p` | the match ended |
 | `hb` | `fps`, `worst`, `stalls`, `rtt`, `pe`, `p`, `dropped`, `failed` | every flush while a match runs |
-| `session_end`, `host_session_end` | `msg` or `kind` | the session ended short of an outcome |
+| `session_end`, `host_session_end` | `msg` or `kind`; `why`, `losses`, `recent` where the hike's lost devices ended it | the session ended short of an outcome |
 | `connect_fail`, `reconnect` | `msg` | a follower's handshake failed, or its channel dropped |
 | `tier_fallback`, `governor_drop`, `engine_failed`, `webgpu_start_failed` | the reason | the graphics ladders |
+| `gpu_error` | `kind`, `src`, `msg`, `labels`, `nth`, `w`, and what was happening (below) | a hike's renderer heard a GPU error (`game/gpuFaults.ts`): at once, for each distinct error up to six a hike |
+| `gpu_window` | `w`, `nth`, `errors`, `distinct`, `total`, `totalDistinct`, `frames`, `ms`, `picture`, `read`, `luma`, `black`, `spread`, `unread` | five seconds after a GPU error that opened a window, three a hike: what followed, and the picture read small |
+| `device_lost` | `reason`, `msg`, `losses`, `recent`, `sinceMs`, `verdict`, `errors`, `bufs`, `bufMB`, `texs`, `texMB`, `heapMB`, and what was happening | a hike's renderer lost its GPU device, not by the game's own letting go |
+| `engine_rebuilt` | `reason`, `ok`, `state`, `frames`, `ms`, `tier`, `engine`, `r`, `why` | the hike's rebuild after a failed engine came out |
 | `exit`, `continue_offline`, `match_end` | | leaving |
 | `error`, `warn` | `kind`, `msg`, `stack`, `where` | an uncaught throw, an unhandled rejection, the page's own `console.error`/`warn`, or Babylon's own logged warning or error (`kind: babylon`, §8) |
 | `end` | `reason`, `dropped`, `trouble`, `suppressed`, `sent`, `failed`, `dur` | the page is leaving |
@@ -147,6 +151,20 @@ set: the route, `start` while loading, `game` once running.
 The `p` on every match row is the party's climb, 0 at the trailhead and 1 at the crest, the
 same ratchet the acts and the sky read, so "how far did they get" is one number.
 
+What was happening, on the rows about the GPU (`gpu_error`, `device_lost`, and the hike's
+part on `gpu_window`): from the renderer, `r` (which of the hike's renderers, 1 the first),
+`tier`, `state` (`making`, `standing`, `lost`, `failed`, `gone`), `frames` it has drawn,
+`stoodMs` since it stood, `scene`, `ending`, `dark` (a death's closing dark, 0 to 1), `rain`,
+`wet`, `night`, `hour`, `lakes` shown and `sea`; from the hike, `ready` (the world is in),
+`busy` (`switch`, `drop` or `rebuild` under way), `film` (the intro's film is over the hike),
+`hidden`, `shownMs` since the page was last shown, `p` and `tick`. Each is read when the row
+is made and kept by no frame: a hike with no error makes none of these rows, sets no timer
+and reads nothing back; one count of frames drawn is all a frame adds. The rows are bounded
+for a hike (six `gpu_error`, three `gpu_window`), so a broken shader that reports every frame
+is a handful of rows, and its console lines are the first eight as before. With telemetry
+off no row is made, no picture read and what the device holds is not counted; the bound on
+rebuilds after lost devices (`game/lossBound.ts`) holds all the same.
+
 ## 3. What it costs the page
 
 - No per-frame work: the acts and the phase are compared against the last reported value
@@ -157,6 +175,10 @@ same ratchet the acts and the sky read, so "how far did they get" is one number.
 - About 2 KB of code and no library. One 200-byte request at page load, a few KB every
   30 s, nothing on the WebRTC channels.
 - Bounded memory: 500 events at most, errors capped at 20.
+- For the rows about the GPU, a frame the hike's renderer draws adds one to a count of frames
+  drawn and nothing else: the timer, the read of the picture and the rows come only once a
+  GPU error has (`game/gpuFaults.ts`), and what the device holds is counted where a buffer
+  or a texture is made or let go (`game/deviceHeld.ts`), never a frame.
 
 ## 4. Reading it
 

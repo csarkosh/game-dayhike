@@ -288,3 +288,42 @@ shows there.
 **What is not the viewer's.** The envelope's `tz` in a trail's head is the player's own
 browser zone, a fact about the player, and stays as the row says. The live card's "refreshed"
 time is the browser's local time, which is the viewer's zone already.
+
+## 9. What the GPU did under a hike (amended 2026-11-17)
+
+*A hike's renderer now tells the page of every error its GPU device reports and of a device
+lost under it (`client/src/game/gpuFaults.ts`; the rows are listed in
+`tools/telemetry/queries/README.md`, "A GPU failure, read back"). The page reads them so that
+a failure can be told from telemetry alone: one harmless bad draw or a broken picture, and
+why a device keeps being lost.*
+
+**What went wrong.** `errors.sql` lists a GPU error (`gpu_error`) with its kind beside its
+name, as a warning where the picture held after it and as an error where it broke: each
+error's row names the window it fell in (`w`), and that window's row (`gpu_window`) carries the
+verdict. A lost device (`device_lost`) and a hike ended by its lost devices (a `session_end`
+whose `why` is `device_lost`) are errors. `kpis.sql` counts a session as erred by the same
+rows.
+
+**The trail.** The session drawer names each of them in words (`timeline.ts` `describe`): a
+GPU error by its kind, its text, the objects it names and what was happening (the tier, which
+of the hike's renderers and how long it had stood, the frames it had drawn, and whatever was
+out of the ordinary: the world still loading, a switch or a rebuild under way, the intro's film
+over the hike, the page hidden or just shown, a scene or an ending, rain, night, water in
+view); its window by the picture's verdict, its luminance, the share of it that is black, the
+frames drawn and the errors that followed; a lost device by what the browser said, which loss
+of the page it was and how many fell within the bound, how long after the last, what the
+device held, and whether the hike rebuilt or ended; the rebuild by whether the new renderer
+stood and how many frames it drew under the cover. The marks follow the same reading
+(`toneOf`, `trailOf`): a lost device, a rebuild that did not stand and a hike ended by its
+losses are errors; a window is an error where the picture broke and a warning otherwise; a
+GPU error is the mark of the window it fell in, and a warning where no window judged it. In a
+visitor's or a match's list a lost device and a broken picture count among a session's errors.
+
+**The sample** (`?preview`) carries one of each: the sample session's trail has a GPU error
+whose picture held, one whose picture broke and a lost device that was rebuilt, and
+`?preview&session=s41b2` opens a session whose hike was ended by three lost devices in ten
+minutes; the errors card lists them.
+
+**One query more, pasted.** `gpu.sql` lists one session's GPU rows in order with a column for
+each field. It is not on the page, whose trail names the same rows; the deploy's dry run
+covers it with the others.
