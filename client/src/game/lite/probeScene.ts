@@ -9,14 +9,27 @@
  * model the renderer asked for to land, discards the warm-up frames,
  * measures the intervals between frames through the same meter
  * (`createProbeMeter`), and lets go of the renderer and its canvas whatever
- * happened, so no probe renderer outlives its step.
+ * happened, so no probe renderer outlives its step: the renderer's engine
+ * and its device go with it, before the step's reading is handed back, so
+ * the next step's, and then the hike's, are made with none living beside
+ * them.
  *
  * What differs from the probe on Babylon.js is what the two engines are:
- * the renderer makes its own engine from the canvas, so a step is handed
- * none and there is no second engine to measure on; and a frame is ready
- * when the renderer has nothing left to land (`waitingItems`), where a
- * Babylon.js scene says so itself. A shader compiled late starts the
- * warm-up again through `Renderer.onShaderCompiled`, as on Babylon.js.
+ * the renderer makes its own engine from the canvas, on WebGPU, so a step
+ * is handed none and there is no second engine to measure on; and a frame
+ * is ready when the renderer has nothing left to land (`waitingItems`),
+ * where a Babylon.js scene says so itself. A shader compiled late starts
+ * the warm-up again through `Renderer.onShaderCompiled`, as on Babylon.js.
+ *
+ * **A step whose renderer draws nothing reads nothing.** A renderer that
+ * cannot be made (no adapter, a device refused) is handed back all the
+ * same and stays empty: its sky comes in, nothing is left to land, and its
+ * frames, which draw nothing, would read as a tier that holds. So the step
+ * asks the renderer whether it came to stand (`Renderer.whenMade`) and ends
+ * at once where it did not; and it keeps the renderer's own watch on its
+ * device (`Renderer.ownWatch`), ending the same way where the device fails
+ * under it. Either is a step that failed: the probe is abandoned and the
+ * hike starts at the class's tier (`runProbe`).
  */
 import sandbox01 from "../../../levels/sandbox01.json" with { type: "json" };
 import { createForest } from "../../sim/forest.js";
@@ -86,7 +99,8 @@ export function liteProbeReady(meterReady: boolean, skyIn: boolean, renderer: Pi
  * Measures `tier` in `container`, frame by frame through `createProbeMeter`:
  * ready, warm, measured, with a late shader compile starting the warm-up
  * again. Null on a cancel, an abort, a scene that never readies (by
- * `opts.readyBy`, at most `PROBE_READY_MAX_MS` after its build), a throw, or
+ * `opts.readyBy`, at most `PROBE_READY_MAX_MS` after its build), a renderer
+ * that could not be made, a device that fails under the step, a throw, or
  * too few frames. `signal` stops it at once, letting go of the renderer
  * before `abort()` returns, so the page can build its next renderer straight
  * after without two living at once.
@@ -123,12 +137,15 @@ export function runLiteProbeStep(
     const meter = createProbeMeter(began, opts.readyBy === undefined ? PROBE_READY_MAX_MS : Math.min(PROBE_READY_MAX_MS, opts.readyBy - began));
     const uncompiled = renderer.onShaderCompiled(() => meter.compiled(now()));
     let done = false;
+    let unwatch = (): void => undefined;
     const finish = (reading: ProbeReading | null): void => {
       if (done) return;
       done = true;
       renderer.stopLoop(loop);
       uncompiled();
       opts.signal?.removeEventListener("abort", onAbort);
+      // Before the dispose: a renderer let go is not a failing one.
+      unwatch();
       probe.dispose();
       canvas.remove();
       resolve(reading);
@@ -151,6 +168,18 @@ export function runLiteProbeStep(
       }
     };
     opts.signal?.addEventListener("abort", onAbort);
+    // A renderer that could not be made stays empty, and one whose device has failed draws no more: frames that draw
+    // nothing are no measure of the tier.
+    void renderer.whenMade?.then((stood) => {
+      if (stood || done) return;
+      console.warn("quality probe: the renderer could not be made.");
+      finish(null);
+    });
+    unwatch =
+      renderer.ownWatch?.(renderer.engine, (reason) => {
+        console.warn(`quality probe: the renderer's device failed (${reason}).`);
+        finish(null);
+      }) ?? unwatch;
     renderer.runLoop(loop);
   });
 }

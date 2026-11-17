@@ -44,7 +44,9 @@
  * air's numbers, `drawFrame` draws nothing, and `skyReady` and `whenReady`
  * resolve only once it stands, so no start draws a frame before it. A
  * renderer that cannot be made (no WebGPU device, a shader refused) says so
- * in the console and stays empty.
+ * in the console and stays empty: those waits resolve all the same, and
+ * `whenMade` says which it was, for whoever must not take an empty
+ * renderer's frames for the world's (the tier check, `probeScene.ts`).
  *
  * **A lost device is the hike's to answer** (`engineWatch.ts`): the renderer
  * says the loss, tells whoever watches it (`ownWatch`, which the hike's
@@ -1459,6 +1461,7 @@ export function createLiteRenderer(canvas: HTMLCanvasElement, level: Level, fore
     },
     forestReady,
     firstSynced,
+    whenMade: made.then(() => standing !== null),
     skyReady() {
       // The sky's slices and the renderer itself: no frame is drawn before both.
       skyWait ??= Promise.all([whenSkyHeld(skyTable, () => light.hour, { signal: disposal.signal }), made]).then(() => {

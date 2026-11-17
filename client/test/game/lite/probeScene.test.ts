@@ -10,9 +10,13 @@ import { asHtml, installStandInDom } from "../helpers/standInDom.js";
 import { timeLimit } from "../../helpers/timeLimit.js";
 
 /** A renderer that draws nothing, runs its loop when told, and says what it was asked. */
-function fake(over: { failOn?: string } = {}) {
+function fake(over: { failOn?: string; made?: Promise<boolean>; watched?: boolean } = {}) {
   const log: string[] = [];
-  const state = { waiting: 0, view: null as FreecamView | null, loops: new Set<() => void>(), compiled: new Set<() => void>(), disposed: 0, options: null as unknown };
+  const state = {
+    waiting: 0, view: null as FreecamView | null, loops: new Set<() => void>(), compiled: new Set<() => void>(), disposed: 0, options: null as unknown,
+    /** Who watches the renderer's device, and how many have stopped. */
+    watchers: new Set<(reason: "pipeline" | "lost") => void>(), unwatched: 0,
+  };
   let skyIn: () => void = () => undefined;
   const sky = new Promise<void>((resolve) => { skyIn = resolve; });
   const renderer = {
@@ -30,6 +34,13 @@ function fake(over: { failOn?: string } = {}) {
     runLoop: (fn: () => void) => void state.loops.add(fn),
     stopLoop: (fn?: () => void) => { if (fn === undefined) state.loops.clear(); else state.loops.delete(fn); },
     dispose: () => { state.disposed += 1; },
+    // A renderer that makes its own engine says whether it came to stand, and keeps the watch on its device.
+    ...(over.made === undefined ? {} : { whenMade: over.made }),
+    engine: { isDisposed: false, dispose: () => undefined },
+    ownWatch: over.watched !== true ? null : (_engine: unknown, onFailure: (reason: "pipeline" | "lost") => void) => {
+      state.watchers.add(onFailure);
+      return () => { state.watchers.delete(onFailure); state.unwatched += 1; };
+    },
   };
   const make: ProbeRendererMaker = (_canvas, _level, _forest, options) => {
     state.options = options;
@@ -146,6 +157,61 @@ describe("a probe step on the hike's own renderer", () => {
     for (let i = 0; i < 60 && never.state.loops.size > 0; i++) { n.clock.ms += 20; never.tick(); }
     expect(await n.reading).toBeNull();
     expect(never.state.disposed).toBe(1);
+    vi.unstubAllGlobals();
+  }, timeLimit(60_000));
+
+  it("reads nothing, at once, where the renderer could not be made: it stays empty, its sky comes in and nothing is left to land, and its frames draw nothing", async () => {
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => undefined);
+    const f = fake({ made: Promise.resolve(false) });
+    const { container, clock, reading } = step(f);
+    // Everything a standing renderer's step waits for, as an empty renderer answers it.
+    f.skyIn();
+    clock.ms += PROBE_QUIET_MS;
+    expect(await reading).toBeNull();
+    expect(warn).toHaveBeenCalledWith("quality probe: the renderer could not be made.");
+    expect(f.state.disposed).toBe(1);
+    expect(f.state.loops.size).toBe(0);
+    expect(container.querySelector("canvas")).toBeNull();
+    // A renderer that came to stand is measured as ever.
+    const stood = fake({ made: Promise.resolve(true) });
+    const s = step(stood);
+    stood.skyIn();
+    await Promise.resolve();
+    s.clock.ms += PROBE_QUIET_MS;
+    for (let i = 0; i < PROBE_WARMUP_FRAMES + PROBE_FRAMES + 8 && stood.state.loops.size > 0; i++) { s.clock.ms += 16; stood.tick(); }
+    expect((await s.reading)?.frames).toBe(PROBE_FRAMES);
+    expect(warn).toHaveBeenCalledTimes(1);
+    warn.mockRestore();
+    vi.unstubAllGlobals();
+  }, timeLimit(60_000));
+
+  it("keeps the renderer's own watch on its device, and reads nothing once the device fails under the step", async () => {
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => undefined);
+    const f = fake({ watched: true });
+    const { container, clock, reading } = step(f);
+    expect(f.state.watchers.size).toBe(1);
+    f.skyIn();
+    await Promise.resolve();
+    clock.ms += PROBE_QUIET_MS;
+    for (let i = 0; i < PROBE_WARMUP_FRAMES + 20; i++) { clock.ms += 16; f.tick(); }
+    // The device is lost: the renderer draws no more, and the frames after would read as a tier that holds.
+    for (const lost of [...f.state.watchers]) lost("lost");
+    expect(await reading).toBeNull();
+    expect(warn).toHaveBeenCalledWith("quality probe: the renderer's device failed (lost).");
+    expect(f.state.disposed).toBe(1);
+    expect(f.state.unwatched).toBe(1);
+    expect(container.querySelector("canvas")).toBeNull();
+    // A step that ends with a reading lets the watch go before it lets go of the renderer.
+    const whole = fake({ watched: true });
+    const w = step(whole);
+    whole.skyIn();
+    await Promise.resolve();
+    w.clock.ms += PROBE_QUIET_MS;
+    for (let i = 0; i < PROBE_WARMUP_FRAMES + PROBE_FRAMES + 8 && whole.state.loops.size > 0; i++) { w.clock.ms += 16; whole.tick(); }
+    expect(await w.reading).not.toBeNull();
+    expect(whole.state.unwatched).toBe(1);
+    expect(whole.state.watchers.size).toBe(0);
+    warn.mockRestore();
     vi.unstubAllGlobals();
   }, timeLimit(60_000));
 

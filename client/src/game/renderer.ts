@@ -1384,6 +1384,13 @@ export type Renderer = {
    * watched by the module that made it (`EngineWatchers.failures`).
    */
   readonly ownWatch: WatchEngine | null;
+  /**
+   * Resolves once a renderer that makes its engine for itself stands (true)
+   * or cannot be made (false: it is handed back all the same, stays empty and
+   * draws nothing). Absent on a renderer built on an engine it was handed,
+   * which stands from the moment it is made.
+   */
+  readonly whenMade?: Promise<boolean>;
   /** The measurement mode's readout (`?gpuTime`, `gpuTime.ts`); null without it. */
   gpuTime: { read(): GpuTimeReport } | null;
   /** Resolves once the forest's first fill, billboards included, is drawn
