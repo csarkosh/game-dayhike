@@ -47,12 +47,7 @@ import { PROTOCOL_VERSION } from "./net/protocol.js";
 import { GEN_VERSION } from "./sim/forest.js";
 import { startGame, type GameHandle } from "./app.js";
 import type { EngineOnCanvas } from "./game/rendererSwap.js";
-import { releaseEngine } from "./game/renderer.js";
-import { adoptEngine, dropEngine, keepEngine } from "./game/keptEngine.js";
-import { recordEngineFailure, startOnEngine } from "./game/engineFailure.js";
 import { LOSS_ENDED_LINE, createLossRecord } from "./game/lossBound.js";
-import { engineVersion } from "./game/engineVersion.js";
-import { hearEngineLog } from "./game/engineLog.js";
 import { browserEnv, browserMajor, hostOs, isMobile, offersWebGpu, readSignals, type GpuSignals, type NavigatorLike } from "./game/gpuSignals.js";
 import { adapterVerdict, loadVerdict, type LoadVerdict } from "./game/loadCheck.js";
 import { renderTurnedAway, type TurnedAwayHandle } from "./game/turnedAway.js";
@@ -87,11 +82,7 @@ import {
   type TierChoice,
   type TierSource,
 } from "./game/tierChoice.js";
-import {
-  parseEngineOverride,
-  withEngine,
-  type EngineEnv,
-} from "./game/engineChoice.js";
+import { NOTICE_RESTARTED } from "./game/engineChoice.js";
 import { createVeil, VEIL_CUT_COVER_MS, VEIL_CUT_LIFT_MS } from "./game/veil.js";
 
 const found = document.querySelector<HTMLDivElement>("#app");
@@ -192,15 +183,9 @@ const telemetry: Telemetry = createTelemetry(
   },
   browserDeps(),
 );
-// Babylon's own warnings and errors too: its logger took the console's
-// functions when it loaded, so it is heard at its levels, not the console.
-installErrorCapture(
-  telemetry,
-  window,
-  console,
-  (window as unknown as { __dh?: EarlyCatch }).__dh,
-  hearEngineLog,
-);
+// What the hike's renderer and its library print is the console's, which
+// the capture wraps: nothing of theirs is printed past it.
+installErrorCapture(telemetry, window, console, (window as unknown as { __dh?: EarlyCatch }).__dh);
 // Every change of visibility is a row: the last `hidden` is "last seen" for a
 // page that never says goodbye. On the way out, everything held goes by
 // beacon with the session's counts; a tab put in the background flushes too,
@@ -903,12 +888,9 @@ function onPlay(): void {
 // check are drawn by the hike's own renderer, which makes its engine from the
 // canvas it is handed and draws with WebGPU alone. An engine that fails under
 // a hike is answered by a live rebuild of the renderer (`app.ts`), never by a
-// reload, which would end a party, and remembered (`dayhike.engine`), or
-// carried as `?engine=webgl2` in the URL where storage refuses the record.
-
-function engineEnv(): EngineEnv {
-  return { browser: browserMajor(navigator.userAgent), babylon: engineVersion() };
-}
+// reload, which would end a party; there is no other engine to remember it
+// against or to fall back to, and the address's `?engine=` is read by
+// nothing.
 
 /**
  * The engine a hike is drawn with, which Auto's verdicts are kept for
@@ -938,33 +920,27 @@ function probeSteps(read: GpuSignals): ProbeSteps {
  * A hike's canvas: a fresh one, with no engine on it. The hike's renderer
  * makes its own engine from its canvas (`createHikeRenderer`), so the page
  * makes none for a hike, at its start or for a switch of tier or a rebuild
- * later, and an engine an earlier hike left is let go. No canvas is made
+ * later, and none is kept from one hike for the next: a hike's renderer
+ * lets its engine go with itself. No canvas is made
  * where the load check's verdict is "cannot": no route reaches here then
  * (`render` shows the page for those turned away first), and a renderer a
  * running hike asks for after a verdict that came late is refused.
  */
 function hikeCanvas(): Promise<EngineOnCanvas> {
-  dropEngine(releaseEngine);
   if (verdict !== null && !verdict.play) return Promise.reject(new Error(`this browser cannot draw a hike (${verdict.reason})`));
   return Promise.resolve({ canvas: document.createElement("canvas"), engine: null, watchers: null });
 }
 
 /**
- * A failure of a running WebGPU engine, or a renderer that could not be built
- * on one (`"pipeline"`): remembered, and `engine=webgl2` pinned in this tab's
- * URL where the rule would otherwise give WebGPU again
- * (`recordEngineFailure`), so the rebuild's `engineFor` gives the engine the
- * failure asks for. The HUD's line for that engine.
+ * A failure of the engine a hike is drawn with: its row, and the HUD's line
+ * for the renderer built again in its place. Nothing is remembered of it for
+ * a later hike and nothing is pinned in the address: the rebuild is on
+ * WebGPU as the hike was, and how often a device may be lost is the page's
+ * own count (`lostDevices`).
  */
 function engineFailed(reason: "pipeline" | "lost"): string {
   telemetry.event("engine_failed", { reason });
-  return recordEngineFailure(reason, {
-    storage: pageStorage(),
-    env: engineEnv(),
-    now: Date.now(),
-    override: parseEngineOverride(location.search),
-    pin: () => history.replaceState(history.state, "", withEngine(location.href, "webgl2")),
-  });
+  return NOTICE_RESTARTED;
 }
 
 /**
@@ -1322,17 +1298,14 @@ function render(container: HTMLDivElement): void {
     },
     paint: () => new Promise((resolve) => afterNextPaint(resolve)),
     engine: () => hikeCanvas(),
-    // A kept WebGL2 engine is left on its canvas for the renderer: let go too.
-    discard: (onCanvas) => {
-      const engine = onCanvas.engine ?? adoptEngine(onCanvas.canvas);
-      if (engine !== null) releaseEngine(engine);
-    },
+    // A canvas the start has left carries no engine: there is nothing to let go.
+    discard: () => undefined,
     build: (decided, onCanvas) => {
       container.appendChild(onCanvas.canvas);
       // The engine's lap ends here, a paint after it was made.
       lap("engine");
       telemetry.mark("start:build");
-      launch(container, onCanvas, route.token, decided, () => hikeCanvas(), intro, takeSampled);
+      launch(onCanvas, route.token, decided, () => hikeCanvas(), intro, takeSampled);
       lap("build");
       // The build has what it wanted of the worker: the worker ends, and the scene is let go of.
       prep.dispose();
@@ -1352,8 +1325,8 @@ function render(container: HTMLDivElement): void {
       console.error("The game could not start.", error);
       prep.dispose();
       endIntro(intro);
-      // Whichever canvas the start left: a renderer that fell back builds on
-      // a fresh one in the first one's place.
+      // Whichever canvas the start left: a renderer that fell back to a lower
+      // tier builds on a fresh one in the first one's place.
       for (const left of container.querySelectorAll("canvas")) left.remove();
       const line = createHud(container);
       line.setStatus(START_FAILED_LINE);
@@ -1363,20 +1336,15 @@ function render(container: HTMLDivElement): void {
 }
 
 /**
- * Starts the game on `onCanvas` at the tier decided, on the engine made for
- * it: WebGL2 when there is none, as always; otherwise WebGPU, which the game
- * listens to and answers live (`app.ts`). A start that throws on a WebGPU
- * engine, once the game has undone all it made, is started again at the same
- * tier on WebGL2 on a fresh canvas that takes the place of every canvas in
- * the container, and the throw is held against the engine once that stands
- * (`startOnEngine`); a throw on WebGL2 goes up to the start's one catch
- * (`startHike`). `engineForGame` makes the engine for a switch of tier or a
- * rebuild later. `takeSampled` gives up the hike's first scene from the
- * world's worker, once: the first renderer made takes its arrays, and a
- * start made again on WebGL2 finds none and samples the ground for itself.
+ * Starts the game on `onCanvas` at the tier decided: the hike's renderer
+ * makes its engine from the canvas, and the game listens to it and answers
+ * its failures live (`app.ts`). A start that throws goes up to the start's
+ * one catch (`startHike`). `engineForGame` hands the canvas a switch of tier
+ * or a rebuild later builds on. `takeSampled` gives up the hike's first
+ * scene from the world's worker, once: the first renderer made takes its
+ * arrays, and one made after it samples the ground for itself.
  */
 function launch(
-  container: HTMLElement,
   onCanvas: EngineOnCanvas,
   worldToken: string,
   decided: StartupTier,
@@ -1384,63 +1352,47 @@ function launch(
   intro: IntroRun | null,
   takeSampled: () => PreparedScene | null,
 ): void {
-  const handle = startOnEngine<GameHandle>(onCanvas, {
-    // The recorder the game is handed is `startOnEngine`'s: a fault found
-    // while it starts is the start's, recorded once; after, the hike's.
-    start: ({ canvas, engine, watchers }, record) =>
-      startGame(canvas, worldToken, {
-        lobby,
-        peerId: selfId,
-        onExit: exitGame,
-        onContinueOffline: continueOffline,
-        onPauseChange: (next) => {
-          paused = next;
-          paintRoster();
-        },
-        onConnectPanel: () => {
-          if (intro !== null && activeIntro === intro) cutIntro(intro, "error");
-        },
-        deferClipmap: intro !== null,
-        takePrepared: takeSampled,
-        engine: engine ?? undefined,
-        watchers: watchers ?? undefined,
-        keepEngine: (kept) => keepEngine(kept, releaseEngine),
-        engineFor: engineForGame,
-        engineFailed: record,
-        losses,
-        tier: decided.tier,
-        tierSource: decided.source,
-        fallbackTiers: signals === null ? ["low"] : startFallbacks(decided.tier, decided.cls, signals.cores, signals.memoryGb),
-        onTierFallback,
-        onGovernorDrop,
-        telemetry,
-        quality: {
-          choice: currentChoice,
-          stored: choiceStored,
-          auto: autoSummary,
-          override: parseTierOverride(location.search),
-          notice: () => choiceNotice,
-          save: saveChoice,
-        },
-        mode: { choice: currentMode, save: saveMode },
-        mute: {
-          bind: (apply) => {
-            gameMute = apply;
-            apply(mute.muted());
-            return () => {
-              if (gameMute === apply) gameMute = null;
-            };
-          },
-        },
-      }),
-    engineFailed,
-    // A canvas holds one kind of context for life.
-    freshCanvas: () => document.createElement("canvas"),
-    place: (fresh) => {
-      for (const left of container.querySelectorAll("canvas")) left.remove();
-      container.appendChild(fresh);
+  const handle = startGame(onCanvas.canvas, worldToken, {
+    lobby,
+    peerId: selfId,
+    onExit: exitGame,
+    onContinueOffline: continueOffline,
+    onPauseChange: (next) => {
+      paused = next;
+      paintRoster();
     },
-    log: (message, error) => console.error(message, error),
+    onConnectPanel: () => {
+      if (intro !== null && activeIntro === intro) cutIntro(intro, "error");
+    },
+    deferClipmap: intro !== null,
+    takePrepared: takeSampled,
+    engineFor: engineForGame,
+    engineFailed,
+    losses,
+    tier: decided.tier,
+    tierSource: decided.source,
+    fallbackTiers: signals === null ? ["low"] : startFallbacks(decided.tier, decided.cls, signals.cores, signals.memoryGb),
+    onTierFallback,
+    onGovernorDrop,
+    telemetry,
+    quality: {
+      choice: currentChoice,
+      stored: choiceStored,
+      auto: autoSummary,
+      override: parseTierOverride(location.search),
+      notice: () => choiceNotice,
+      save: saveChoice,
+    },
+    mode: { choice: currentMode, save: saveMode },
+    mute: {
+      bind: (apply) => {
+        gameMute = apply;
+        apply(mute.muted());
+        return () => {
+          if (gameMute === apply) gameMute = null;
+        };
+      },
+    },
   });
   game = handle;
   console.info(launchLine(decided, handle.graphics()));

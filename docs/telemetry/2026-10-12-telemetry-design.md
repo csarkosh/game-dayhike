@@ -142,7 +142,7 @@ The events, in the order a session makes them:
 | `device_lost` | `reason`, `msg`, `losses`, `recent`, `sinceMs`, `verdict`, `errors`, `bufs`, `bufMB`, `texs`, `texMB`, `heapMB`, and what was happening | a hike's renderer lost its GPU device, not by the game's own letting go |
 | `engine_rebuilt` | `reason`, `ok`, `state`, `frames`, `ms`, `tier`, `engine`, `r`, `why` | the hike's rebuild after a failed engine came out |
 | `exit`, `continue_offline`, `match_end` | | leaving |
-| `error`, `warn` | `kind`, `msg`, `stack`, `where` | an uncaught throw, an unhandled rejection, the page's own `console.error`/`warn`, or Babylon's own logged warning or error (`kind: babylon`, §8) |
+| `error`, `warn` | `kind`, `msg`, `stack`, `where` | an uncaught throw, an unhandled rejection, the page's own `console.error`/`warn`, which what the hike's renderer and its library print pass through too (§8) |
 | `end` | `reason`, `dropped`, `trouble`, `suppressed`, `sent`, `failed`, `dur` | the page is leaving |
 
 "Did it run without errors" is answered by the last row of a session: an `end` with
@@ -275,6 +275,10 @@ world, the platform and the GPU from the first day; four things were missing for
   `watchWebGpu`). A batch is also cut at 40,000 characters of events (`MAX_BATCH_CHARS`):
   the server refuses a body over 64 KiB, and a refused batch is put back and sent again, so a
   session's twenty long errors in one batch would have held up every batch after them.
+  *(Amended 2026-11-17.)* The page loads nothing of Babylon.js any more and hands the capture
+  no logger: a hike is drawn by the renderer on Babylon Lite, and what it and the library
+  print goes through the console, which the capture wraps, so those rows are `kind: console`.
+  `installErrorCapture` still takes a logger from a page that hands one in.
 - **The session timeline.** `tools/telemetry/queries/session.sql`, every row a session sent
   and its lobby's signaling rows in order; the admin page opens it as a drawer from any
   session id.
