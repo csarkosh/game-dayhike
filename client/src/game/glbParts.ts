@@ -4,6 +4,8 @@
  * its material what a tree's look is decided by (whether its cards are
  * alpha-tested and at what cutoff, whether it is drawn on both sides, its
  * specular weight and its index of refraction where the file carries them).
+ * And what a file holds at all, by name and by count: its nodes, its clips
+ * and the vertices its nodes draw.
  *
  * A renderer whose model loader keeps a mesh's positions, normals and
  * coordinates but not its tangents, and a material's textures but not what
@@ -48,6 +50,7 @@ type GltfImage = { bufferView?: number; mimeType?: string };
 type GltfAccessor = { bufferView?: number; byteOffset?: number; componentType: number; count: number; type: string };
 type GltfBufferView = { buffer: number; byteOffset?: number; byteLength: number; byteStride?: number };
 type Gltf = {
+  animations?: { name?: string }[];
   nodes?: GltfNode[];
   meshes?: { primitives: GltfPrimitive[] }[];
   materials?: GltfMaterial[];
@@ -154,6 +157,35 @@ export function glbOcclusion(file: ArrayBuffer): Map<string, GlbOcclusion> {
     out.set(material.name, { strength: occlusion.strength ?? 1, alone });
   }
   return out;
+}
+
+/** What a model's file holds, by name and by count. */
+export type GlbOutline = {
+  /** The name of every node that has one, in the file's order. */
+  nodes: string[];
+  /** The name of every clip that has one, in the file's order. */
+  clips: string[];
+  /** The vertices of every primitive a node draws, a mesh that two nodes draw counted for each. */
+  vertices: number;
+};
+
+/**
+ * What `file` holds: its named nodes, its named clips and how many vertices
+ * its nodes draw. What the game asks of a model by name (a clip to play, a
+ * level of detail to stand) is in the file if it is here.
+ */
+export function glbOutline(file: ArrayBuffer): GlbOutline {
+  const { json } = chunks(file);
+  let vertices = 0;
+  for (const node of json.nodes ?? []) {
+    if (node.mesh === undefined) continue;
+    for (const primitive of json.meshes?.[node.mesh]?.primitives ?? []) {
+      const position = primitive.attributes.POSITION;
+      vertices += position === undefined ? 0 : (json.accessors?.[position]?.count ?? 0);
+    }
+  }
+  const named = (list: { name?: string }[] | undefined): string[] => (list ?? []).flatMap((item) => (item.name === undefined ? [] : [item.name]));
+  return { nodes: named(json.nodes), clips: named(json.animations), vertices };
 }
 
 /**

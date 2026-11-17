@@ -1,7 +1,7 @@
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
-import { glbEmissive, glbOcclusion, glbParts } from "../../src/game/glbParts.js";
+import { glbEmissive, glbOcclusion, glbOutline, glbParts } from "../../src/game/glbParts.js";
 
 const MODELS = join(import.meta.dirname, "../../assets/models");
 
@@ -169,5 +169,30 @@ describe("what a model's materials say of their occlusion maps, read from its fi
     const webp = occlusion.get("webp");
     expect([...(webp?.alone?.bytes ?? [])]).toEqual([5, 6, 7, 8]);
     expect([webp?.alone?.mime, webp?.alone?.roughness, webp?.alone?.metallic]).toEqual(["image/webp", 0.3, 1]);
+  });
+});
+
+describe("what a model's file holds, by name and by count", () => {
+  it("names the nodes and the clips that have a name, in the file's order, and counts the vertices its nodes draw", () => {
+    const file = glb({
+      nodes: [{ name: "LOD0", mesh: 0 }, { mesh: 1 }, { name: "LOD1", mesh: 0 }, { name: "empty" }],
+      meshes: [{ primitives: [{ attributes: { POSITION: 0 } }, { attributes: { POSITION: 1 } }] }, { primitives: [{ attributes: {} }] }],
+      accessors: [{ componentType: 5126, count: 7, type: "VEC3" }, { componentType: 5126, count: 5, type: "VEC3" }],
+      animations: [{ name: "idle" }, {}, { name: "walk" }],
+    }, new Uint8Array(0));
+    // The mesh of 7 + 5 vertices is drawn by two nodes; a primitive with no positions adds none.
+    expect(glbOutline(file)).toEqual({ nodes: ["LOD0", "LOD1", "empty"], clips: ["idle", "walk"], vertices: 24 });
+  });
+
+  it("is empty for a file with no node and no clip, and refuses what is not a binary glTF", () => {
+    expect(glbOutline(glb({}, new Uint8Array(0)))).toEqual({ nodes: [], clips: [], vertices: 0 });
+    expect(() => glbOutline(new ArrayBuffer(8))).toThrow(/not a binary glTF/);
+  });
+
+  it("reads the elk's four clips and the giant fir's three levels from the shipped files", () => {
+    expect(glbOutline(model("wildlife.elk.glb")).clips.length).toBeGreaterThanOrEqual(4);
+    const fir = glbOutline(model("tree.giant_fir.glb"));
+    for (const lod of ["LOD0", "LOD1", "LOD2"]) expect(fir.nodes).toContain(lod);
+    expect(fir.vertices).toBe(["LOD0", "LOD1", "LOD2"].reduce((n, lod) => n + glbParts(model("tree.giant_fir.glb"), lod).reduce((m, part) => m + part.vertices, 0), 0));
   });
 });
