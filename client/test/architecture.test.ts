@@ -915,10 +915,12 @@ describe("layer boundaries", () => {
    * asked to make of shaders, and the measurement mode's report. Both
    * renderers read the rule that says where the render scale runs, and both
    * answer the one type a renderer is held by (`rendererTypes.ts`). The
-   * hike's renderer's wait for its world is of the same kind (`worldWait.ts`).
+   * hike's renderer's wait for its world is of the same kind (`worldWait.ts`),
+   * and so are the swap of one renderer for another, the answer to an engine
+   * that fails and the start's gate.
    */
   it("what a renderer is sized and started by is computed without loading Babylon, whatever it imports", () => {
-    const ENGINE_FREE = ["frameSize.ts", "renderScale.ts", "quality.ts", "engineWatch.ts", "deviceMakes.ts", "gpuTimeTasks.ts", "gpuTimeReport.ts", "gpuFaults.ts", "deviceHeld.ts", "lossBound.ts", "rendererTypes.ts", "worldWait.ts"];
+    const ENGINE_FREE = ["frameSize.ts", "renderScale.ts", "quality.ts", "engineWatch.ts", "deviceMakes.ts", "gpuTimeTasks.ts", "gpuTimeReport.ts", "gpuFaults.ts", "deviceHeld.ts", "lossBound.ts", "rendererTypes.ts", "worldWait.ts", "rendererSwap.ts", "engineFailure.ts", "startReady.ts"];
     const loaded = (file: string): string[] =>
       [...readFileSync(file, "utf8").matchAll(/^\s*(?:import|export)\s+(?!type\s)(?:[^"'();]*?\s+from\s+)?["']([^"']+)["']/gm)].map((m) => m[1] as string);
     const seen = new Set<string>();
@@ -1128,7 +1130,9 @@ describe("layer boundaries", () => {
    * what only they import are named here, file by file: nothing else in
    * `src/` imports a module of Babylon.js or one of these files, for a
    * value or for a type, and nothing crosses the line, so the list is what
-   * goes when that renderer does.
+   * goes when that renderer does. Two modules that served its engines and
+   * load none stand outside it for their tests' sake, named beside it:
+   * nothing a hike or the page loads, or names, imports either.
    */
   it("keeps Babylon.js behind one line: the renderer on it, its shells and what only they import, named file by file", () => {
     const BABYLON_SIDE = [
@@ -1191,6 +1195,67 @@ describe("layer boundaries", () => {
       expect(importers.length, relative(SRC, file)).toBeGreaterThan(0);
       expect(importers.filter((from) => !side.has(from)).map((from) => relative(SRC, from)), relative(SRC, file)).toEqual([]);
     }
+    // What is left of the engines' rule, with no engine, kept for its tests: the rule that chose between
+    // Babylon.js's two engines, with its record of a failure and its second start, and the hold on a start's
+    // world until such an engine had drawn a whole frame. Neither names Babylon.js or a file behind the line,
+    // and nothing off the line imports either: no hike and no page reads them.
+    const RULE_LEFT = ["game/engineChoice.ts", "game/revealHold.ts"];
+    for (const name of RULE_LEFT) {
+      const file = join(SRC, name);
+      expect(existsSync(file), name).toBe(true);
+      expect(everyImport(file).filter(ofBabylon), name).toEqual([]);
+      expect((importedBy.get(file) ?? []).filter((from) => !side.has(from)).map((from) => relative(SRC, from)), name).toEqual([]);
+    }
+    expect(importedBy.has(join(SRC, "game/revealHold.ts"))).toBe(false);
+    // And the list is whole: no other file of src/ is imported by files on it alone, but the rule above and the
+    // skin's look in numbers (`skinParams.ts`), which the hike's renderer does not draw yet.
+    const onlyBehind = [...importedBy]
+      .filter(([target, from]) => !side.has(target) && from.every((file) => side.has(file)))
+      .map(([target]) => relative(SRC, target))
+      .sort();
+    expect(onlyBehind).toEqual(["game/engineChoice.ts", "game/skinParams.ts"]);
+  });
+
+  /**
+   * A hike is handed no engine. Its renderer makes its own from the canvas
+   * it is built on, keeps its own watch on it and lets it go with itself, so
+   * the hike, the swap and the type a renderer is held by carry nothing that
+   * was written for an engine made elsewhere: none handed to a start or to
+   * a renderer, none kept for the next hike with its shaders pinned, no
+   * watchers of one, no start held or switch's cover kept up until one had
+   * drawn a whole frame, no log of one heard, and no override of one in the
+   * address.
+   */
+  it("hands a hike no engine, keeps none after it and waits on none: its renderer makes its own and lets it go with itself", () => {
+    const code = (name: string): string => stripComments(readFileSync(join(SRC, name), "utf8"));
+    const app = code("app.ts");
+    expect(app).not.toMatch(/\b(?:unowned|keepEngine|KeptEngine|watchers|EngineWatchers|pipelinesFor|AsyncPipelines|asyncPipelines|pinCompiles|keepShaders|retire)\b/);
+    expect(app).not.toMatch(/\b(?:holdReveal|whenFrameWhole|endRevealHold|firstWholeFrame|revealWhenWhole|revealHold|reveal:)/);
+    expect(app).not.toMatch(/options\.engine\b(?!F)/);
+    // A renderer is made from its canvas, its tier and the world, at the start and for every swap: no engine among them.
+    expect([...app.matchAll(/\bcreateHikeRenderer\(next, level, forest, \{ tier: (?:at|target), /g)].length).toBe(2);
+    expect(app).not.toMatch(/engine: engine|pipelines:/);
+    // A switch's ladder is handed a tier and no engine, and its cover waits for the new renderer's world alone.
+    expect(app).toContain("          { tier: target, engine: null, fallbackTier: tier },");
+    expect(app).toContain("      await renderer.whenReady(made.leftMs);\n      return tier;\n    } finally {");
+    // The hike's end lets its renderer go, engine and all.
+    const dispose = app.slice(app.lastIndexOf("    dispose() {\n      disposed = true;"));
+    expect(dispose).toMatch(/untellCompiles\?\.\(\);\s+renderer\.dispose\(\);\s+\}/);
+    // The page makes a canvas and nothing more, and the swap holds it as that.
+    expect(code("main.ts")).toContain('  return Promise.resolve({ canvas: document.createElement("canvas") });');
+    const swap = code("game/rendererSwap.ts");
+    expect(swap).toContain("export type EngineOnCanvas = { canvas: HTMLCanvasElement };");
+    expect(swap).not.toMatch(/\b(?:EngineWatchers|AsyncPipelines|whenSceneReady|walkSceneReady)\b/);
+    // The type every renderer is held by names no engine handed in, no pipelines, no kept shaders and no retiring;
+    // the hike's renderer answers none, and the start's gate waits on no frame of one.
+    const types = code("game/rendererTypes.ts");
+    expect(types).not.toMatch(/\b(?:keepShaders|retire|pipelines|AsyncPipelines)\b|\bengine\?:/);
+    const lite = code("game/lite/renderer.ts");
+    expect(lite).not.toMatch(/\b(?:keepShaders|retire)\b|options\.engine|options\.pipelines/);
+    expect(code("game/startReady.ts")).not.toMatch(/\breveal\b/);
+    // The address's `?engine=` and `?wgsl=` are no page's own, and the page's error capture hears no library's log.
+    expect(code("game/router.ts")).toContain('const OVERRIDES = ["tier", "probe"] as const;');
+    expect(code("net/telemetry.ts")).not.toMatch(/babylon|EngineLog/i);
   });
 
   /**

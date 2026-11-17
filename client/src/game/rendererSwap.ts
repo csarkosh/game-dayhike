@@ -37,6 +37,9 @@
  * one the swap need not wait for. The other is an Android phone, where the
  * rule gives WebGPU to low alone: a tier above it, which only the address
  * can ask for there, ladders down to low on WebGL2 for the same reason.
+ * A hike hands its ladders no engine: its renderer makes its own from its
+ * canvas, so every rung of a hike's ladder is built with none and is
+ * listened to through the renderer's own watch.
  *
  * **Only a standing engine is listened to.** The old engine's watcher is
  * taken off before anything of it is disposed (`unwatch`), so a disposed
