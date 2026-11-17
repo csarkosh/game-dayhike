@@ -13,12 +13,15 @@ import { asHtml, installStandInDom } from "../helpers/standInDom.js";
 import { timeLimit } from "../../helpers/timeLimit.js";
 
 /** A renderer that draws nothing and says what it was asked: the hike's own, as the route holds it. */
-function fakeRenderer() {
+function fakeRenderer(heldWorld = false) {
   const log: string[] = [];
   const asked = { posts: 0, sites: [] as unknown[], film: [] as ({ darkness: number } | undefined)[], actors: [] as string[], poses: 0, staged: 0, disposed: [] as string[] };
   let skyIn: () => void = () => undefined;
   const sky = new Promise<void>((resolve) => { skyIn = resolve; });
   let waiting = 0;
+  /** The renderer's world: in from the start, or when a test says so. */
+  let worldIn: () => void = () => undefined;
+  const world = heldWorld ? new Promise<void>((resolve) => { worldIn = resolve; }) : Promise.resolve();
   /** Frames the scenery will still say the world streamed in. */
   let streaming = 0;
   let view: FreecamView | null = null;
@@ -54,23 +57,23 @@ function fakeRenderer() {
     setFreecam: (v: FreecamView | null) => { view = v; },
     setDepthOfField: () => undefined,
     skyReady: () => sky,
-    whenReady: (maxMs: number) => { log.push(`whenReady ${maxMs}`); return Promise.resolve(); },
+    whenReady: (maxMs: number) => { log.push(`whenReady ${maxMs}`); return world; },
     waitingItems: () => waiting,
     sync: (_state: unknown, localId: number, alpha: number) => void log.push(`sync ${localId} ${alpha}`),
     drawFrame: () => void log.push("draw"),
     resize: () => void log.push("resize"),
     dispose: () => void asked.disposed.push("renderer"),
   };
-  return { renderer: renderer as unknown as Renderer, log, asked, skyIn, view: () => view, setWaiting: (n: number) => { waiting = n; }, setStreaming: (n: number) => { streaming = n; } };
+  return { renderer: renderer as unknown as Renderer, log, asked, skyIn, worldIn: () => worldIn(), view: () => view, setWaiting: (n: number) => { waiting = n; }, setStreaming: (n: number) => { streaming = n; } };
 }
 
 type Api = { seek(t: number): void; frame(): Promise<void>; time(): number; ready: Promise<void>; engine(): string };
 const api = (): Api | undefined => (globalThis as { dayhikeScene?: Api }).dayhikeScene;
 
-function route(name: "intro" | "title", search: { t: number | null; step: number | null }, over: Partial<LiteSceneRouteDeps> = {}) {
+function route(name: "intro" | "title", search: { t: number | null; step: number | null }, over: Partial<LiteSceneRouteDeps> = {}, heldWorld = false) {
   const doc = installStandInDom();
   const container = doc.createElement("div");
-  const fake = fakeRenderer();
+  const fake = fakeRenderer(heldWorld);
   const frames: ((ms: number) => void)[] = [];
   const clock = { ms: 0 };
   let options: unknown = null;
@@ -187,6 +190,69 @@ describe("the scene route on the hike's own renderer", () => {
     expect(fake.log.filter((line) => line === "draw").length).toBe(drawn + 1 + WARM_FRAMES + 2 + 5 + SETTLE_FRAMES + 1);
     expect(SETTLE_FRAMES).toBe(SYNC_LATE_FRAMES_MAX + 2);
     expect(SETTLE_STRETCH).toBeGreaterThan(1);
+    run.dispose();
+    vi.unstubAllGlobals();
+  }, timeLimit(60_000));
+
+  it("draws no frame that counts before the renderer's world is in, which the far trees' billboards join only once their last bake has settled: a frame a turn of the page until it is, at a cut the route does not take for one", async () => {
+    const { run, fake, frames, drain, turn } = route("intro", { t: null, step: 0 }, {}, true);
+    fake.skyIn();
+    // The intro is ready once its ranger and its car have loaded: a recorder may ask for a frame before the world is in.
+    await api()!.ready;
+    // The cut to the fifth shot moves the camera less than the route takes for a cut.
+    const from = INTRO_SHOTS[4]!.from;
+    api()?.seek(from - 1 / 24);
+    const first = api()!.frame();
+    await turn();
+    const before = fake.view()!;
+    // No model is still to land and nothing streams, yet the world is not in: the frame, and one more a turn of the page.
+    expect(fake.log.filter((line) => line === "draw").length).toBe(2);
+    for (let i = 3; i <= 5; i += 1) {
+      for (const fn of frames.splice(0)) fn(0);
+      await turn();
+      expect(fake.log.filter((line) => line === "draw").length).toBe(i);
+    }
+    // The last bake settles: a run of quiet frames, and the frame that counts.
+    fake.worldIn();
+    await drain(first);
+    expect(fake.log.filter((line) => line === "draw").length).toBe(5 + SETTLE_FRAMES + 1);
+    // With the world in, the frame across that cut is one frame: every shell builds a camera moved that far at once.
+    api()?.seek(from);
+    await drain(api()!.frame());
+    const after = fake.view()!;
+    const moved = Math.hypot(after.x - before.x, after.y - before.y, after.z - before.z);
+    expect(moved).toBeGreaterThan(10);
+    expect(moved).toBeLessThan(JUMP_M);
+    expect(fake.log.filter((line) => line === "draw").length).toBe(5 + SETTLE_FRAMES + 1 + 1);
+    run.dispose();
+    vi.unstubAllGlobals();
+  }, timeLimit(60_000));
+
+  it("waits at a cut for the renderer's world as well: the cut's frames, then a frame a turn of the page until it is in", async () => {
+    const { run, fake, frames, drain, turn } = route("intro", { t: null, step: 0 }, {}, true);
+    fake.skyIn();
+    await turn();
+    // The page's own loop has drawn the first shot.
+    for (const fn of frames.splice(0)) fn(0);
+    const drawn = fake.log.filter((line) => line === "draw").length;
+    expect(drawn).toBe(1);
+    const before = fake.view()!;
+    // The cut to the second shot: no model is still to land and nothing streams, but the world is not in yet.
+    api()?.seek(INTRO_SHOTS[1]!.from);
+    const frame = api()!.frame();
+    await turn();
+    const after = fake.view()!;
+    expect(Math.hypot(after.x - before.x, after.y - before.y, after.z - before.z)).toBeGreaterThan(JUMP_M);
+    expect(fake.log.filter((line) => line === "draw").length).toBe(drawn + 1 + WARM_FRAMES + 1);
+    for (let i = 2; i <= 4; i += 1) {
+      for (const fn of frames.splice(0)) fn(0);
+      await turn();
+      expect(fake.log.filter((line) => line === "draw").length).toBe(drawn + 1 + WARM_FRAMES + i);
+    }
+    // The last bake settles: a run of quiet frames, and the frame that counts.
+    fake.worldIn();
+    await drain(frame);
+    expect(fake.log.filter((line) => line === "draw").length).toBe(drawn + 1 + WARM_FRAMES + 4 + SETTLE_FRAMES + 1);
     run.dispose();
     vi.unstubAllGlobals();
   }, timeLimit(60_000));
