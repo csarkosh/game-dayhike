@@ -56,6 +56,17 @@
  * own recovery in place is not used. A GPU error nobody caught is said in
  * the console, the first few of them, and is not answered by a rebuild.
  *
+ * **What the device says went wrong is told to the hike** (`gpuFaults.ts`,
+ * as `gpuFaults`): each GPU error, one nobody caught or one an error scope
+ * handed back, and a loss the renderer did not ask for, with what the
+ * renderer knows of itself when asked: its tier, the frames it has drawn
+ * and how long it has stood, whether a scene or an ending has the frame,
+ * the weather, the lakes and the sea in view, what its device holds
+ * (`deviceHeld.ts`, counted only for a hike that sends it on), and the
+ * picture read small in the task of a frame it has just drawn. Its own
+ * letting go destroys the device too and is told to no one. A frame with
+ * no error does none of it: one count of frames drawn is all a frame adds.
+ *
  * **What the engine tells on Babylon.js is told here in WebGPU's terms.** A
  * shader's compile is no event in WGSL: a module is handed to the device,
  * which compiles it when a pipeline first needs it, and a pipeline made the
@@ -329,6 +340,7 @@ import { BASE_SPACING_BY_TIER } from "../clipmap.js";
 import { clutterReachFor } from "../clutterField.js";
 import { cloudDensityNow, cloudFor, cloudGroundDue, cloudGroundMap, cloudMarchSteps, cloudOn, cloudStepsFor, cloudUniforms, emptyCloudUniforms, noCloud } from "../cloudParams.js";
 import type { EngineHandle } from "../engineHandle.js";
+import { createDeviceHeld, type HeldDevice } from "../deviceHeld.js";
 import { createDeviceMakes, type MakesDevice } from "../deviceMakes.js";
 import { createEngineWatch } from "../engineWatch.js";
 import { HEADLAMP_CONE, HEADLAMP_INTENSITY, HEADLAMP_RANGE } from "../endScene.js";
@@ -340,6 +352,7 @@ import { FOLIAGE_PLAYERS, FOLIAGE_PLAYER_PARKED, setFoliageWind } from "../folia
 import { createFrameFit } from "../frameSize.js";
 import { nearRadiusFor } from "../forestField.js";
 import { GAME_FOV, lensProjection } from "../gameLens.js";
+import { hearErrorScopes, readPictureSmall, type FaultListener, type FaultSource } from "../gpuFaults.js";
 import { PAINT_PALETTES, gradeRecordUnder, sightUnder, type PaintPaletteName } from "../gradeParams.js";
 import { brushBoxes } from "../propBoxes.js";
 import { emptyMaterialGradeUniforms, materialGradeUniforms } from "../materialGrade.js";
@@ -819,6 +832,51 @@ export function createLiteRenderer(canvas: HTMLCanvasElement, level: Level, fore
   const gpuTime = options.gpuTime === true ? createLiteGpuTime(canvas, import.meta.env.VITE_BUILD_SHA || "dev") : null;
   /** The watch on the renderer's own engine (`engineWatch.ts`): the hike is told when the device is lost under it. */
   const engineWatch = createEngineWatch();
+  /** Frames drawn, and when the renderer stood, on its clock (ms): what a row about a GPU error or a loss says of it. */
+  let drawn = 0;
+  let stoodAt: number | null = null;
+  /** The device was lost under the renderer; the renderer could not be made. */
+  let deviceLost = false;
+  let unmade = false;
+  /** Who is told of the device's errors and of a loss (`gpuFaults.ts`): the hike's record, once the hike has put it there. */
+  let heard: FaultListener | null = null;
+  /** What the device holds (`deviceHeld.ts`), counted only where the hike sends it on, and the device's error scopes heard. */
+  const held = createDeviceHeld();
+  let holds = false;
+  let stopScopes: () => void = () => undefined;
+  /** What the renderer says of itself when the hike's record makes a row; read then, and kept by no frame. */
+  const gpuFaults: FaultSource = {
+    tell(listener) {
+      heard = disposed ? null : listener;
+    },
+    facts: () => ({
+      tier,
+      state: disposed ? "gone" : deviceLost ? "lost" : unmade ? "failed" : standing === null ? "making" : "standing",
+      frames: drawn,
+      stoodMs: stoodAt === null ? null : clock() - stoodAt,
+      scene: playNow !== null && playNow.fov !== null,
+      ending: play.endScene() !== null || play.close > 0,
+      dark: play.close,
+      rain: light.weather.rain,
+      wet: light.weather.wetness,
+      night: light.sky?.night ?? 0,
+      hour: light.hour,
+      lakes: standing?.lakes?.shown ?? 0,
+      sea: standing?.sea?.shown ?? false,
+    }),
+    held: () => (holds ? { ...held.counts } : null),
+    judge(done) {
+      // In the task of the next frame drawn, where the canvas still holds that frame in every browser.
+      const from = drawn;
+      const read = (): void => {
+        if (drawn === from) return;
+        frameEnds.delete(read);
+        done(readPictureSmall(canvas, () => canvas.ownerDocument.createElement("canvas")));
+      };
+      frameEnds.add(read);
+      return () => void frameEnds.delete(read);
+    },
+  };
   const disposal = new AbortController();
 
   let markSynced: () => void = () => undefined;
@@ -875,14 +933,25 @@ export function createLiteRenderer(canvas: HTMLCanvasElement, level: Level, fore
     // Counted from the device's first shader, and timed from its first frame where the page measures.
     makes.count(getGpuDevice(engine) as unknown as MakesDevice);
     gpuTime?.attach(engine);
+    // What the device is asked to hold is counted from its first buffer, for a hike that sends a loss's row on.
+    if (heard?.counting === true) {
+      holds = true;
+      held.count(getGpuDevice(engine) as unknown as HeldDevice);
+    }
     onEngineGpuError(engine, (error) => {
       if (gpuErrors++ < GPU_ERRORS_SAID) console.error(`the hike's renderer: ${error.message}`);
+      heard?.error(gpuFaults, error, "uncaptured");
     });
+    // An error a scope hands back is its popper's to answer, and the hike's to hear of.
+    stopScopes = hearErrorScopes(getGpuDevice(engine), (error) => heard?.error(gpuFaults, error, "scope"));
     onEngineDeviceLost(engine, (info) => {
       // Its own letting go destroys the device too: only a loss it did not ask for is said, and told to the hike,
       // which builds the renderer again on a new engine. Nothing is drawn with a lost device meanwhile.
       if (disposed) return;
       console.error(`the hike's renderer lost its device (${info.reason === undefined ? "no reason given" : info.reason}): ${info.message}`);
+      // Told as the renderer stood when it came, then marked lost.
+      heard?.lost(gpuFaults, info);
+      deviceLost = true;
       engineWatch.fail("lost");
     });
     // The frame's block, before any material: every material's plugins name it.
@@ -1205,11 +1274,13 @@ export function createLiteRenderer(canvas: HTMLCanvasElement, level: Level, fore
     // A palette asked for while the renderer was being made is worn from the first frame.
     if (palette !== null) chain?.setPalette(PAINT_PALETTES[palette.name], 0);
     standing = made;
+    stoodAt = clock();
   }
 
   /** Resolved once the renderer stands, or cannot: a failure is said and leaves it empty. */
   const made: Promise<void> = make().catch((error: unknown) => {
     loading = 0;
+    unmade = true;
     if (!disposed) console.error("the hike's renderer could not be made; nothing of the world is drawn", error);
   });
 
@@ -1226,6 +1297,9 @@ export function createLiteRenderer(canvas: HTMLCanvasElement, level: Level, fore
       handle.isDisposed = true;
       disposed = true;
       engineWatch.close();
+      heard = null;
+      stopScopes();
+      held.stop();
       makes.stop();
       gpuTime?.dispose();
       stopLoop();
@@ -1447,12 +1521,13 @@ export function createLiteRenderer(canvas: HTMLCanvasElement, level: Level, fore
   /** Everything that lands as its models do, drawn: the forest, the ground clutter and the cliffs. */
   const sceneryReady: Promise<void> = made.then(() => Promise.all([standing?.forest?.ready, standing?.clutter?.ready, standing?.cliffs?.ready, standing?.entities?.ready])).then(() => undefined);
 
-  const renderer: Renderer & { scenery: SceneryHost } = {
+  const renderer: Renderer & { scenery: SceneryHost; gpuFaults: FaultSource } = {
     ...absent,
     scenery: sceneryHost,
     engine: handle as EngineHandle,
     engineName: "webgpu",
     ownWatch: engineWatch.watch,
+    gpuFaults,
     gpuTime,
     onShaderCompiled: (fn) => makes.onMade(fn),
     keepShaders() {
@@ -1923,6 +1998,7 @@ export function createLiteRenderer(canvas: HTMLCanvasElement, level: Level, fore
       frameFit.fit();
       // The hike's own surface alone: a billboard's bake has another, drawn when the bake is (`impostorBake.ts`).
       renderFrame(standing.engine, 1000 / 60, [standing.engine]);
+      drawn++;
       // The cover map is drawn with the frame that asked for it, and no other.
       standing.rainMap?.frameDrawn();
       // And a sector of the shore's panorama with the frame that drew it.

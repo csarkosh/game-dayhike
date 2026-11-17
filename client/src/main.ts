@@ -50,6 +50,7 @@ import type { EngineOnCanvas } from "./game/rendererSwap.js";
 import { releaseEngine } from "./game/renderer.js";
 import { adoptEngine, dropEngine, keepEngine } from "./game/keptEngine.js";
 import { recordEngineFailure, startOnEngine } from "./game/engineFailure.js";
+import { LOSS_ENDED_LINE, createLossRecord } from "./game/lossBound.js";
 import { engineVersion } from "./game/engineVersion.js";
 import { hearEngineLog } from "./game/engineLog.js";
 import { browserEnv, browserMajor, readSignals, type GpuSignals } from "./game/gpuSignals.js";
@@ -893,6 +894,19 @@ function engineFailed(reason: "pipeline" | "lost"): string {
   });
 }
 
+/**
+ * The devices this page's hikes have lost (`lossBound.ts`), by the page's
+ * clock: every hike's, since the machine is the same in the next one. A
+ * hike notes each loss here and reads what the bound on rebuilds makes of
+ * it; one that ends by the bound leaves the landing page its line, as a
+ * hike whose graphics could not be restarted does (`onTierFallback`).
+ */
+const lostDevices = createLossRecord();
+const losses = {
+  note: () => lostDevices.note(performance.now()),
+  ended: () => void leaveNotice(pageSessionStorage(), LOSS_ENDED_LINE, Date.now()),
+};
+
 // `app` is passed in rather than closed over: the null check above does not
 // narrow inside a hoisted function declaration, which could be called first.
 /** Which page a route is, for the veil: the title, the game, or a scene. */
@@ -1247,6 +1261,7 @@ function launch(
         keepEngine: (kept) => keepEngine(kept, releaseEngine),
         engineFor: engineForGame,
         engineFailed: record,
+        losses,
         tier: decided.tier,
         tierSource: decided.source,
         fallbackTiers: signals === null ? ["low"] : startFallbacks(decided.tier, decided.cls, signals.cores, signals.memoryGb),

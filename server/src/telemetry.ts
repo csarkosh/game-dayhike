@@ -177,11 +177,22 @@ export type ReceiptMeta = {
   stamp?: Record<string, boolean>;
 };
 
-/** An event's severity: its name says. Errors and warnings the page caught
- * surface in the Logs Explorer's severity column without a query. */
-export function severityOf(name: string): Severity {
-  if (name === "error") return "ERROR";
-  if (name === "warn") return "WARNING";
+/**
+ * An event's severity: its name says, and for what the GPU did under a hike
+ * its outcome does. Errors and warnings the page caught surface in the Logs
+ * Explorer's severity column without a query. A lost device is an error; a
+ * GPU error is a warning, and its window an error where the picture broke
+ * (`picture: "broke"`); a rebuild that did not stand (`ok: false`) and a
+ * hike ended by its lost devices (`session_end` with `why: "device_lost"`)
+ * are errors. A page that sends none of those fields, an older one, reads
+ * as it always did.
+ */
+export function severityOf(name: string, fields: Fields = {}): Severity {
+  if (name === "error" || name === "device_lost") return "ERROR";
+  if (name === "warn" || name === "gpu_error") return "WARNING";
+  if (name === "gpu_window") return fields.picture === "broke" ? "ERROR" : "WARNING";
+  if (name === "engine_rebuilt") return fields.ok === false ? "ERROR" : "INFO";
+  if (name === "session_end") return fields.why === "device_lost" ? "ERROR" : "INFO";
   return "INFO";
 }
 
@@ -212,7 +223,7 @@ export function rowsOf(batch: Batch, meta: ReceiptMeta): LogRow[] {
     // An error's text in the summary column, so a scan of the log reads the
     // failures without opening a row.
     const text = typeof event.fields.msg === "string" ? `${event.n}: ${event.fields.msg}` : event.n;
-    return row(severityOf(event.n), event.n, fields, text, new Date(eventTimeOf(event, batch, meta.receivedAt)).toISOString());
+    return row(severityOf(event.n, event.fields), event.n, fields, text, new Date(eventTimeOf(event, batch, meta.receivedAt)).toISOString());
   });
 }
 

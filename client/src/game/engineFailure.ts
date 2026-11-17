@@ -108,6 +108,14 @@ export type FailureDeps = {
   rebuild(readyMaxMs: number): Promise<void>;
   flash(line: string): void;
   log(line: string): void;
+  /** Whether the hike is to end and build no renderer again: a lost device
+   * that is one too many in too short a time (`lossBound.ts`). Absent: never. */
+  ends?(reason: "pipeline" | "lost"): boolean;
+  /** Ends the hike with its line, where `ends` said so. */
+  end?(): void;
+  /** How a rebuild came out, once it has: `failure` is null where it ran to
+   * its end, else the throw's text where no tier could be built. */
+  rebuilt?(reason: "pipeline" | "lost", failure: string | null): void;
 };
 
 /**
@@ -124,7 +132,9 @@ export type FailureDeps = {
  * answered, changes nothing more; so does one whose engine a switch already
  * left while it waited. The HUD's line says what the rebuild ended on:
  * restarted on WebGPU, switched to WebGL2. The cover lifts on every outcome;
- * a rebuild that throws shows no line.
+ * a rebuild that throws shows no line. Where the failure is one too many
+ * (`ends`), it is remembered and the hike ends with its line (`end`): no
+ * cover, no rebuild. How each rebuild came out is told (`rebuilt`).
  */
 export function answerFailures(deps: FailureDeps): (engine: unknown, reason: "pipeline" | "lost") => Promise<void> {
   const answered = new Set<unknown>();
@@ -134,6 +144,12 @@ export function answerFailures(deps: FailureDeps): (engine: unknown, reason: "pi
     deps.unwatch();
     deps.abandon();
     if (!deps.alive()) return;
+    if (deps.ends?.(reason) === true) {
+      deps.log("WebGPU: the device was lost once too often; ending the hike.");
+      deps.record(reason);
+      deps.end?.();
+      return;
+    }
     deps.log(`WebGPU: ${reason === "lost" ? "the device was lost" : "a GPU error"}; rebuilding the renderer.`);
     deps.record(reason);
     await deps.serial.settled();
@@ -149,10 +165,12 @@ export function answerFailures(deps: FailureDeps): (engine: unknown, reason: "pi
           await deps.rebuild(GOVERNOR_SWAP_READY_MAX_MS);
         } catch (error) {
           deps.log(`WebGPU: the renderer could not be rebuilt after a failure: ${String(error)}`);
+          deps.rebuilt?.(reason, String(error));
           return;
         } finally {
           lift();
         }
+        deps.rebuilt?.(reason, null);
         if (deps.alive()) deps.flash(deps.runningOnWebGpu() ? NOTICE_RESTARTED : NOTICE_SWITCHED);
       })(),
     );

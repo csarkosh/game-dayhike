@@ -1,5 +1,7 @@
 import { describe, it, expect, vi } from "vitest";
 import { sampleSource } from "../../src/admin/sample.js";
+import { trailOf } from "../../src/admin/timeline.js";
+import { LOSS_ENDED_LINE } from "../../src/game/lossBound.js";
 import type { DrawableTrail } from "../../src/admin/trail.js";
 
 // A trail of three nodes up a straight stem: enough for the sample to walk sessions on.
@@ -32,5 +34,57 @@ describe("the sample's paths come from the trail builder it is given", () => {
   it("answers no paths when the builder has no trail for the world", async () => {
     const source = sampleSource(() => Promise.resolve(null));
     expect(await source.query("paths", 7)).toEqual([]);
+  });
+});
+
+describe("the sample's trail carries each thing the GPU can do under a hike", () => {
+  it("has a GPU error whose picture held, one whose picture broke, and a lost device that was rebuilt, each read as the page reads it", async () => {
+    const trail = trailOf(await sampleSource(() => Promise.resolve(null)).session("s3f8a"));
+    const gpu = trail.steps.filter((s) => ["gpu_error", "gpu_window", "device_lost", "engine_failed", "engine_rebuilt"].includes(s.n));
+    expect(gpu.map((s) => [s.n, s.tone])).toEqual([
+      // The start's own: a renderer that could not be built on WebGPU.
+      ["engine_failed", "error"],
+      ["gpu_error", "warn"],
+      ["gpu_window", "warn"],
+      ["gpu_error", "error"],
+      ["gpu_window", "error"],
+      ["device_lost", "error"],
+      ["engine_failed", "error"],
+      ["engine_rebuilt", ""],
+    ]);
+    expect(gpu[1]?.text).toContain('names RenderPassEncoder "post_scene"; RenderPipeline "clutter-fern"');
+    expect(gpu[2]?.text).toContain("picture held, luminance 41.2 of 255, 1% black");
+    expect(gpu[4]?.text).toContain("picture broke, luminance 0 of 255, 100% black");
+    expect(gpu[5]?.text).toContain("unknown: The GPU process exited unexpectedly., loss 1 of this page, 1 within the bound, rebuilt");
+    expect(gpu[5]?.text).toContain("held 1807 buffers (96.2 MB) and 275 textures (540.3 MB), heap 311.4 MB");
+    expect(gpu[7]?.text).toBe("stood again after lost, medium on webgpu renderer 3, 104 frames under the cover, in 4.3 s");
+    // The session went on to its end.
+    expect(trail.steps.some((s) => s.n === "outcome")).toBe(true);
+  });
+
+  it("has a session whose hike its lost devices ended: three in ten minutes, the line, then the landing", async () => {
+    const trail = trailOf(await sampleSource(() => Promise.resolve(null)).session("s41b2"));
+    const losses = trail.steps.filter((s) => s.n === "device_lost");
+    expect(losses).toHaveLength(3);
+    expect(losses.map((s) => s.text.includes("the hike ends"))).toEqual([false, false, true]);
+    expect(losses[2]?.text).toContain("loss 3 of this page, 3 within the bound, 1 min 47 s after the last");
+    const end = trail.steps.find((s) => s.n === "session_end");
+    expect(end?.tone).toBe("error");
+    expect(end?.text).toBe(`${LOSS_ENDED_LINE}, ended by lost devices: 3 this page, 3 within the bound, 52% up`);
+    expect(trail.steps.filter((s) => s.n === "engine_rebuilt")).toHaveLength(2);
+    expect(trail.steps.some((s) => s.n === "outcome")).toBe(false);
+    // The rows after the end are the landing's.
+    const names = trail.steps.map((s) => s.n);
+    expect(names.slice(names.indexOf("session_end"))).toEqual(["session_end", "match_end", "page", "end"]);
+  });
+
+  it("lists them on the errors card: a GPU error as a warning and as an error, a lost device, and the hike it ended", async () => {
+    const rows = await sampleSource(() => Promise.resolve(null)).query("errors", 7);
+    expect(rows.filter((r) => r.n === "gpu_error").map((r) => r.level)).toEqual(["error", "warning"]);
+    expect(rows.find((r) => r.n === "device_lost")).toMatchObject({ level: "error", a_session: "s41b2" });
+    expect(rows.find((r) => r.n === "session_end")).toMatchObject({ level: "error", msg: LOSS_ENDED_LINE, a_session: "s41b2" });
+    // Errors before warnings, as the query orders them.
+    const levels = rows.map((r) => r.level);
+    expect(levels.lastIndexOf("error")).toBeLessThan(levels.indexOf("warning"));
   });
 });

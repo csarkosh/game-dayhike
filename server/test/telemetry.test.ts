@@ -140,6 +140,81 @@ describe("rowsOf", () => {
     expect(severityOf("warn")).toBe("WARNING");
     expect(severityOf("hb")).toBe("INFO");
   });
+
+  it("grades what the GPU did under a hike by how it came out, and an older page's rows as before", () => {
+    expect(severityOf("gpu_error", { kind: "validation" })).toBe("WARNING");
+    expect(severityOf("gpu_window", { picture: "held" })).toBe("WARNING");
+    expect(severityOf("gpu_window", { picture: "unknown" })).toBe("WARNING");
+    expect(severityOf("gpu_window", { picture: "broke" })).toBe("ERROR");
+    expect(severityOf("device_lost", { reason: "unknown" })).toBe("ERROR");
+    expect(severityOf("engine_rebuilt", { ok: true })).toBe("INFO");
+    expect(severityOf("engine_rebuilt", { ok: false })).toBe("ERROR");
+    expect(severityOf("session_end", { msg: "The host ended this session." })).toBe("INFO");
+    expect(severityOf("session_end", { msg: "any words", why: "device_lost" })).toBe("ERROR");
+    // A page that sends none of the fields: the name alone, as before.
+    expect(severityOf("gpu_window")).toBe("WARNING");
+    expect(severityOf("engine_rebuilt")).toBe("INFO");
+    expect(severityOf("session_end")).toBe("INFO");
+    expect(severityOf("engine_failed", { reason: "lost" })).toBe("INFO");
+  });
+});
+
+/**
+ * The rows a hike sends of a GPU error and of a lost device
+ * (`client/src/game/gpuFaults.ts`), as a page sends them: its own context of
+ * four fields beside each event's.
+ */
+describe("the rows of a GPU error and of a lost device", () => {
+  const context = { game: "0f1c2a3b-4d5e-4f60-8a9b-0c1d2e3f4a5b", world: "forest/9/alpine/12/34", seed: 77, lobby: "3f2504e0-4f89-41d3-9a0c-0305e82c3301" };
+  const hike = { ready: true, busy: "", film: false, hidden: false, shownMs: 41_000, p: 0.312, tick: 4810 };
+  const renderer = { tier: "medium", state: "standing", frames: 600, stoodMs: 20_000, scene: false, ending: false, dark: 0, rain: 0.25, wet: 0.5, night: 0.13, hour: 14.3, lakes: 1, sea: false };
+  const gpuError = { n: "gpu_error", t: 61_000, ...context, ...hike, ...renderer, r: 1, nth: 1, kind: "validation", src: "uncaptured", msg: "x".repeat(1000), labels: 'RenderPipeline "terrain-ground"' };
+  const gpuWindow = {
+    n: "gpu_window", t: 66_000, ...context, ...hike, r: 1, nth: 1, tier: "medium", state: "standing", ms: 5000, errors: 50, distinct: 1, total: 50, totalDistinct: 1, frames: 298,
+    picture: "broke", read: true, scene: false, ending: false, dark: 0, luma: 0, black: 1, spread: 0,
+  };
+  const deviceLost = {
+    n: "device_lost", t: 90_000, ...context, ...hike, ...renderer, r: 2, reason: "unknown", msg: "The GPU process crashed.", losses: 3, recent: 3, sinceMs: 4250, verdict: "end", errors: 1,
+    bufs: 1807, bufMB: 96, texs: 275, texMB: 540.3, heapMB: 311,
+  };
+  const rebuilt = { n: "engine_rebuilt", t: 94_000, ...context, reason: "lost", ok: true, ms: 3900, tier: "medium", engine: "webgpu", r: 3, state: "standing", frames: 12 };
+  const ended = { n: "session_end", t: 95_000, ...context, msg: "The hike ended because the graphics kept failing.", p: 0.312, why: "device_lost", losses: 3, recent: 3 };
+
+  it("takes each whole: no field of it is past what a row may carry", () => {
+    const parsed = parseBatch(batch([gpuError, gpuWindow, deviceLost, rebuilt, ended], { st: 95_500 }));
+    if (!parsed.ok) throw new Error(parsed.problem);
+    expect(parsed.batch.events.map((e) => e.n)).toEqual(["gpu_error", "gpu_window", "device_lost", "engine_rebuilt", "session_end"]);
+    for (const [i, sent] of [gpuError, gpuWindow, deviceLost, rebuilt, ended].entries()) {
+      const fields = Object.fromEntries(Object.entries(sent).filter(([key]) => key !== "n" && key !== "t"));
+      expect(Object.keys(fields).length, sent.n).toBeLessThanOrEqual(MAX_FIELDS);
+      expect(parsed.batch.events[i]?.fields, sent.n).toEqual(fields);
+    }
+    const rows = rowsOf(parsed.batch, { serverBuild: "srv1", receivedAt: 1000 });
+    expect(rows.map((r) => r.severity)).toEqual(["WARNING", "ERROR", "ERROR", "INFO", "ERROR"]);
+    expect(rows[2]).toMatchObject({ n: "device_lost", sid: "s1", build: "abc1234", reason: "unknown", verdict: "end", texMB: 540.3, message: "device_lost: The GPU process crashed." });
+  });
+
+  it("bounds them as it bounds any row: a text cut, a field past the fortieth dropped, a nested one dropped", () => {
+    const fat: Record<string, unknown> = { ...deviceLost, msg: "m".repeat(MAX_STRING_LENGTH + 800), held: { buffers: 1 } };
+    for (let i = 0; i < 20; i++) fat[`more${i}`] = i;
+    const parsed = parseBatch(batch([fat]));
+    if (!parsed.ok) throw new Error(parsed.problem);
+    const fields = parsed.batch.events[0]?.fields ?? {};
+    expect(Object.keys(fields)).toHaveLength(MAX_FIELDS);
+    expect((fields.msg as string).length).toBe(MAX_STRING_LENGTH);
+    expect(fields).not.toHaveProperty("held");
+    // What the page sends first is what is kept: the loss's own facts, not the tail.
+    expect(fields).toMatchObject({ reason: "unknown", losses: 3, verdict: "end" });
+  });
+
+  it("takes a row from an older page, with none of the fields, and one from a newer page, with fields it has never heard of", () => {
+    const parsed = parseBatch(batch([{ n: "engine_failed", t: 1, reason: "lost" }, { n: "session_end", t: 2, msg: "The host ended this session.", p: 0.4 }, { ...gpuWindow, sharpness: 0.42, picture: "smeared" }, { n: "gpu_trace", t: 3, pass: "grade" }]));
+    if (!parsed.ok) throw new Error(parsed.problem);
+    const rows = rowsOf(parsed.batch, { serverBuild: "srv1", receivedAt: 1000 });
+    expect(rows.map((r) => [r.n, r.severity])).toEqual([["engine_failed", "INFO"], ["session_end", "INFO"], ["gpu_window", "WARNING"], ["gpu_trace", "INFO"]]);
+    expect(rows[2]).toMatchObject({ sharpness: 0.42, picture: "smeared" });
+    expect(rows[3]).toMatchObject({ pass: "grade" });
+  });
 });
 
 describe("PostLimiter", () => {
