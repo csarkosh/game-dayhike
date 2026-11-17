@@ -231,8 +231,8 @@
  * the stare's darkness, hidden while there is neither.
  */
 import {
-  NeutralToneMapping, addToScene, createBankedFreeCamera, createTexture2DFromPixels, createDirectionalLight, createEngine, createHemisphericLight, createPbrMaterial, createSpotLight,
-  createPluginUniformBlock, createSceneContext, disposeEngine, disposeScene, enableMaterialPlugins, enablePbrLinearOutput, enablePbrMaterialPluginVertexData,
+  NeutralToneMapping, addTask, addToScene, createBankedFreeCamera, createTexture2DFromPixels, createDirectionalLight, createEngine, createHemisphericLight, createPbrMaterial, createSpotLight,
+  createPluginUniformBlock, createRenderTarget, createRenderTask, createSceneContext, disposeEngine, disposeScene, enableMaterialPlugins, enablePbrLinearOutput, enablePbrMaterialPluginVertexData,
   getProjectionMatrix,
   markLightDirty, markMaterialUboDirty, onEngineDeviceLost, onEngineGpuError, registerScene, renderFrame, resizeEngine, vec3,
   writePluginUniformBlock,
@@ -346,6 +346,9 @@ const DISPLAY_CONTRAST = 1.1;
 
 /** How far ahead of the eye the point the camera looks at is put, metres. */
 const LOOK_AHEAD = 10;
+
+/** The samples a pixel of the frame's own pass on a tier with no post chain. */
+const FRAME_SAMPLES = 4;
 
 /** GPU errors said in the console before the rest are left out: one broken
  * shader reports again every frame. */
@@ -717,7 +720,7 @@ export function createLiteRenderer(canvas: HTMLCanvasElement, level: Level, fore
     // The tier's scaling of the canvas's pixels: Lite sizes its surface by the
     // device's pixel ratio, held at the ratio the tier draws at.
     // A chain's scene is multisampled in its own target: the canvas then takes the grade's one sample a pixel.
-    const engine = await createEngine(canvas, { msaaSamples: chained ? 1 : 4, maxDevicePixelRatio: 1 / QUALITY[tier].hardwareScaling });
+    const engine = await createEngine(canvas, { msaaSamples: chained ? 1 : FRAME_SAMPLES, maxDevicePixelRatio: 1 / QUALITY[tier].hardwareScaling });
     if (disposed) {
       disposeEngine(engine);
       return;
@@ -736,7 +739,16 @@ export function createLiteRenderer(canvas: HTMLCanvasElement, level: Level, fore
       enablePbrLinearOutput();
       linearPage = true;
     }
-    const scene = createSceneContext(engine, chained ? { defaultRenderTask: false } : undefined);
+    // The scene is made with no pass of Lite's own: a tier with a chain draws it into the chain's first target
+    // (`postChain.ts`), and a tier with none draws it as Lite's own pass would, the tier's samples a pixel in the
+    // canvas's format resolved into the canvas, into a target that stands while the frame's size does (`keep`). Lite
+    // records the frame's passes again as a hike loads and when a hiker's lamp joins the scene's lights, and its own
+    // pass's target was destroyed and made at each recording.
+    const scene = createSceneContext(engine, { defaultRenderTask: false });
+    if (!chained) {
+      const samples = createRenderTarget({ lbl: "scene-color", format: engine.format, dFormat: "depth24plus-stencil8", samples: FRAME_SAMPLES, size: engine, keep: true });
+      addTask(scene, createRenderTask({ name: "scene", rt: samples, rst: engine.scRT, clr: true }, engine, scene));
+    }
     scene.imageProcessing.toneMappingEnabled = !chained;
     scene.imageProcessing.toneMapping = NeutralToneMapping;
     scene.imageProcessing.contrast = DISPLAY_CONTRAST;
