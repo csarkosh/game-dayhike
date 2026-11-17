@@ -1,6 +1,8 @@
 import { parseLevel } from "./sim/level.js";
 import { createForest } from "./sim/forest.js";
-import { createHikeRenderer, type EndSceneSetup, type FreecamView, type Renderer } from "./game/renderer.js";
+import { createHikeRenderer } from "./game/hikeRenderer.js";
+import type { FreecamView, Renderer } from "./game/rendererTypes.js";
+import type { EndSceneSetup } from "./game/scenePlay.js";
 import type { AsyncPipelines } from "./game/asyncPipelines.js";
 import type { EngineHandle } from "./game/engineHandle.js";
 import { FALLBACK_NOTICE_MS, parseGpuTime } from "./game/engineChoice.js";

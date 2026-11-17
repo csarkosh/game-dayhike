@@ -10,7 +10,7 @@ import { PBRMaterial } from "@babylonjs/core/Materials/PBR/pbrMaterial.js";
 import { TransformNode } from "@babylonjs/core/Meshes/transformNode.js";
 import type { Node } from "@babylonjs/core/node.js";
 import type { CharacterInstance } from "../characterModel.js";
-import type { FreecamView } from "../renderer.js";
+import type { FreecamView } from "../rendererTypes.js";
 import type { PlacedModel } from "../staticModel.js";
 import { DOOR_NAME, STEERING_COLUMN as STEERING_COLUMN_AXIS, STEERING_NAME, WHEEL_NAMES, doorTurn, frontWheel, wheelSpinTurn, wheelSteerTurn } from "../carParts.js";
 import { CAB_SKY } from "../sceneryParts.js";

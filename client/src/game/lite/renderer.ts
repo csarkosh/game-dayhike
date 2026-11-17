@@ -375,7 +375,7 @@ import { QUALITY, detectTier } from "../quality.js";
 import type { RainLamp } from "../rainField.js";
 import { RAIN_MAP } from "../rainParams.js";
 import { renderScaleRuns } from "../renderScale.js";
-import type { FreecamView, Renderer, RendererOptions } from "../renderer.js";
+import type { FreecamView, Renderer, RendererOptions } from "../rendererTypes.js";
 import { createScenePlay, stareWithDark, type EndSceneSetup, type PlayNow } from "../scenePlay.js";
 import type { EndingKind } from "../ending.js";
 import { emptySeaFrameUniforms } from "../seaUniforms.js";

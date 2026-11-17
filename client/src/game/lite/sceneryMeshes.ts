@@ -91,7 +91,7 @@ import { CAR_SHADOW_BIAS, CAR_SHADOW_HALF, carShadowGrid } from "../carShadow.js
 import { TAIL_LAMP_COLOUR } from "../endScene.js";
 import { quatFromEuler, type Quat } from "../instancePose.js";
 import { PROP_ROUGHNESS, propBoxGeometry, propColour, type PropBox } from "../propBoxes.js";
-import type { Renderer } from "../renderer.js";
+import type { Renderer } from "../rendererTypes.js";
 import type { CarHandle } from "../scenePlay.js";
 import { invertAffine } from "../scene/actorPose.js";
 import { coiledCord } from "../scene/cord.js";

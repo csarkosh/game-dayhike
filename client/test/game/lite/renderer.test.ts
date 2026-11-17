@@ -7,7 +7,8 @@ import { GAME_FOV } from "../../../src/game/gameLens.js";
 import type { CarPose } from "../../../src/game/scene/timeline.js";
 import { PLAYER_HALF } from "../../../src/sim/constants.js";
 import { DEPTH_AHEAD_MAX_DEGREES, depthAheadPlugin } from "../../../src/game/lite/renderer.js";
-import { createHikeRenderer, sceneRendererOf, type Renderer } from "../../../src/game/renderer.js";
+import { createHikeRenderer } from "../../../src/game/hikeRenderer.js";
+import type { Renderer } from "../../../src/game/rendererTypes.js";
 import { WEATHER_PRESETS } from "../../../src/game/weather.js";
 import { windRecordUnder } from "../../../src/game/windParams.js";
 import { EMPTY_LEVEL, windTestState } from "../helpers/rendererWorld.js";
@@ -36,7 +37,8 @@ describe("the hike's renderer on Babylon Lite, before its engine stands", () => 
   it("is what the hike is given: drawn on WebGPU by an engine of its own, with no Babylon scene to build into", () => {
     const r = make();
     expect(r.engineName).toBe("webgpu");
-    expect(sceneRendererOf(r)).toBeNull();
+    // A renderer with a Babylon scene to build into is told by its `scene` (`sceneRendererOf`, `renderer.ts`): this one has none.
+    expect("scene" in r).toBe(false);
     expect(r.engine.isDisposed).toBe(false);
   });
 

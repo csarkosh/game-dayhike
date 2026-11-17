@@ -42,7 +42,7 @@ import { createWorld } from "../../sim/world.js";
 import { PROBE_HOUR, PROBE_READY_MAX_MS, PROBE_SEED_TOKEN, createProbeMeter, probePose } from "../frameProbe.js";
 import { pageProbe, type PageProbe } from "../probePage.js";
 import { containerPixels, type ProbeReading, type QualityTier } from "../quality.js";
-import type { Renderer, RendererOptions } from "../renderer.js";
+import type { Renderer, RendererOptions } from "../rendererTypes.js";
 import { seedFromToken } from "../seed.js";
 import type { SkyTable } from "../skyTable.js";
 import type { SkySource } from "../skyWorker.js";

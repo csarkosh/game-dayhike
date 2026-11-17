@@ -614,6 +614,8 @@ describe("layer boundaries", () => {
       join(SRC, "game", "endScene.ts"),
       join(SRC, "game", "carParts.ts"),
       join(SRC, "game", "loadReport.ts"),
+      join(SRC, "game", "rendererTypes.ts"),
+      join(SRC, "game", "hikeRenderer.ts"),
       join(SRC, "game", "scene", "routeWorld.ts"),
       join(SRC, "game", "scene", "scenePlayer.ts"),
       join(SRC, "game", "scene", "actorPose.ts"),
@@ -899,10 +901,11 @@ describe("layer boundaries", () => {
    * scaling and the render scale under the paint, the watch a renderer
    * keeps on an engine it made for itself, the count of what a device is
    * asked to make of shaders, and the measurement mode's report. Both
-   * renderers read the rule that says where the render scale runs.
+   * renderers read the rule that says where the render scale runs, and both
+   * answer the one type a renderer is held by (`rendererTypes.ts`).
    */
   it("what a renderer is sized and started by is computed without loading Babylon, whatever it imports", () => {
-    const ENGINE_FREE = ["frameSize.ts", "renderScale.ts", "quality.ts", "engineWatch.ts", "deviceMakes.ts", "gpuTimeTasks.ts", "gpuTimeReport.ts", "gpuFaults.ts", "deviceHeld.ts", "lossBound.ts"];
+    const ENGINE_FREE = ["frameSize.ts", "renderScale.ts", "quality.ts", "engineWatch.ts", "deviceMakes.ts", "gpuTimeTasks.ts", "gpuTimeReport.ts", "gpuFaults.ts", "deviceHeld.ts", "lossBound.ts", "rendererTypes.ts"];
     const loaded = (file: string): string[] =>
       [...readFileSync(file, "utf8").matchAll(/^\s*(?:import|export)\s+(?!type\s)(?:[^"'();]*?\s+from\s+)?["']([^"']+)["']/gm)].map((m) => m[1] as string);
     const seen = new Set<string>();
@@ -1015,10 +1018,45 @@ describe("layer boundaries", () => {
       "game/lite/lakeMeshes.ts", "game/lite/lakePanorama.ts", "game/lite/lipMeshes.ts", "game/lite/listMeshes.ts", "game/lite/midgeMeshes.ts", "game/lite/mistMeshes.ts", "game/lite/motes.ts", "game/lite/postChain.ts", "game/lite/propMeshes.ts", "game/lite/rain.ts", "game/lite/rainMap.ts", "game/lite/rainSplash.ts", "game/lite/renderer.ts", "game/lite/sceneActor.ts", "game/lite/sceneryMeshes.ts", "game/lite/sceneryModels.ts", "game/lite/sceneryPaint.ts", "game/lite/seaFft.ts", "game/lite/seaMeshes.ts", "game/lite/shadeMask.ts", "game/lite/shadeVeil.ts", "game/lite/shaderUniforms.ts",
       "game/lite/skinnedModels.ts", "game/lite/skyCapture.ts", "game/lite/skyDome.ts", "game/lite/surfSpray.ts", "game/lite/terrainMeshes.ts", "game/lite/waterBed.ts", "game/lite/waterPlantMeshes.ts", "game/lite/wildlifeMeshes.ts", "game/lite/wornLamps.ts",
     ]);
-    // And the hike is handed that renderer, which reaches the Babylon.js one's module for its types alone.
-    const renderer = readFileSync(join(SRC, "game/renderer.ts"), "utf8");
-    expect(renderer).toContain("  return createLiteRenderer(canvas, level, forest, options);");
-    expect(loaded(join(SRC, "game/lite/renderer.ts")).filter((spec) => spec === "../renderer.js")).toEqual([]);
+    // And the hike is handed that renderer by a module that loads it and nothing else that draws.
+    expect(readFileSync(join(SRC, "game/hikeRenderer.ts"), "utf8")).toContain("  return createLiteRenderer(canvas, level, forest, options);");
+    expect(loaded(join(SRC, "game/hikeRenderer.ts"))).toEqual(["./lite/renderer.js"]);
+    // Nothing under game/lite/ names the module of the renderer on Babylon.js, for a value or for a type.
+    expect(own.filter((file) => importsOf(file).includes("../renderer.js")).map((file) => relative(SRC, file))).toEqual([]);
+  });
+
+  /**
+   * A renderer is held by types alone (`rendererTypes.ts`): the hike, the
+   * ladders that swap one renderer for another, the staged scenes and the
+   * renderer on Babylon Lite name them there, and naming them loads nothing.
+   * The renderer on Babylon.js answers the same type, which it takes from
+   * there too, and does not load the hike's renderer.
+   */
+  it("holds a renderer by types that load nothing: the hike's, the swap's, the staged scenes' and both renderers' name them in one module", () => {
+    const loaded = (file: string): string[] =>
+      [...readFileSync(file, "utf8").matchAll(/^\s*(?:import|export)\s+(?!type\s)(?:[^"'();]*?\s+from\s+)?["']([^"']+)["']/gm)].map((m) => m[1] as string);
+    const types = join(SRC, "game/rendererTypes.ts");
+    // Every import of it is a type's, and it names nothing of an engine's own package.
+    expect(loaded(types)).toEqual([]);
+    expect(importsOf(types).length).toBeGreaterThan(10);
+    expect(importsOf(types).filter((spec) => spec.startsWith("@babylonjs"))).toEqual([]);
+    const text = readFileSync(types, "utf8");
+    for (const name of ["FreecamView", "FrameView", "Renderer", "RendererOptions"]) expect(text, name).toContain(`export type ${name} = {`);
+    // Each of them is defined once in src/.
+    const defined = sourceFiles(SRC).flatMap((file) =>
+      [...stripComments(readFileSync(file, "utf8")).matchAll(/\bexport type (?:FreecamView|FrameView|Renderer|RendererOptions) =/g)].map(() => relative(SRC, file)),
+    );
+    expect(defined).toEqual(["game/rendererTypes.ts", "game/rendererTypes.ts", "game/rendererTypes.ts", "game/rendererTypes.ts"]);
+    // Who holds a renderer takes the types from there.
+    for (const holder of ["app.ts", "game/hikeRenderer.ts", "game/rendererSwap.ts", "game/scene/sceneStage.ts", "game/lite/renderer.ts", "game/lite/notDrawn.ts", "game/lite/probeScene.ts", "game/lite/sceneRoute.ts", "game/lite/sceneStage.ts", "game/lite/sceneryMeshes.ts"]) {
+      const specs = importsOf(join(SRC, holder));
+      expect(specs.some((spec) => spec.endsWith("/rendererTypes.js")), holder).toBe(true);
+    }
+    // The renderer on Babylon.js takes them from there and names them on for what builds on it; it loads no renderer but itself.
+    const babylon = readFileSync(join(SRC, "game/renderer.ts"), "utf8");
+    expect(babylon).toContain('import type { FrameView, FreecamView, Renderer, RendererOptions } from "./rendererTypes.js";');
+    expect(babylon).toContain("export type { FrameView, FreecamView, Renderer, RendererOptions };");
+    expect(importsOf(join(SRC, "game/renderer.ts"))).not.toContain("./lite/renderer.js");
   });
 
   /**
