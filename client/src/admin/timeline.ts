@@ -142,6 +142,14 @@ export function payloadOf(row: Row): Payload {
   return row as Payload;
 }
 
+/** Why the load check turned a visitor away (`game/loadCheck.ts`, `TurnedAwayReason`), in words. */
+const TURNED_AWAY: Readonly<Record<string, string>> = {
+  "no-webgpu": "the browser has no WebGPU",
+  "no-adapter": "the browser gave no adapter",
+  software: "a software adapter",
+  short: "the adapter is short of what the game needs",
+};
+
 const has = (v: unknown): boolean => v !== null && v !== undefined && v !== "";
 const str = (v: unknown): string => (has(v) ? String(v) : "");
 const num = (v: unknown): number | null => (has(v) && Number.isFinite(Number(v)) ? Number(v) : null);
@@ -251,6 +259,8 @@ export function describe(n: string, p: Payload): string {
     case "engine_failed":
     case "webgpu_start_failed":
       return str(p.reason);
+    case "turned_away":
+      return join(TURNED_AWAY[str(p.reason)] ?? str(p.reason), has(p.short) ? `short of ${str(p.short)}` : "", has(p.adapter) ? `adapter ${str(p.adapter)}` : "");
     case "gpu_error":
       return join([str(p.kind), p.src === "scope" ? "(caught by a scope)" : ""].filter((s) => s !== "").join(" "), str(p.msg).trim(), has(p.labels) ? `names ${str(p.labels)}` : "", happening(p));
     case "gpu_window": {
@@ -360,11 +370,13 @@ export function describe(n: string, p: Payload): string {
  * ended by its lost devices are errors; a window of GPU errors is an error
  * where the picture broke and a warning where it held or could not be
  * judged; a GPU error by itself is a warning, which `trailOf` makes an
- * error where the window it fell in says the picture broke.
+ * error where the window it fell in says the picture broke. A visitor the
+ * load check turned away is a warning: nothing failed, and a visitor could
+ * not play.
  */
 export function toneOf(n: string, p: Payload): "" | "error" | "warn" | "won" | "lost" {
   if (n === "error" || n === "start_fail" || n === "connect_fail" || n === "engine_failed" || n === "webgpu_start_failed" || n === "lobby_error" || n === "device_lost") return "error";
-  if (n === "warn" || n === "tier_fallback" || n === "governor_drop" || n === "room_refused" || n === "gpu_error") return "warn";
+  if (n === "warn" || n === "tier_fallback" || n === "governor_drop" || n === "room_refused" || n === "gpu_error" || n === "turned_away") return "warn";
   if (n === "gpu_window") return p.picture === "broke" ? "error" : "warn";
   if (n === "engine_rebuilt") return p.ok === false || p.ok === "false" ? "error" : "";
   if (n === "session_end") return p.why === "device_lost" ? "error" : "";

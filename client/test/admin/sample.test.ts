@@ -87,4 +87,17 @@ describe("the sample's trail carries each thing the GPU can do under a hike", ()
     const levels = rows.map((r) => r.level);
     expect(levels.lastIndexOf("error")).toBeLessThan(levels.indexOf("warning"));
   });
+
+  it("counts the visitors the load check turned away: beside the funnel's stages, and as warnings by their reason", async () => {
+    const source = sampleSource(() => Promise.resolve(null));
+    const funnel = await source.query("funnel", 7);
+    const all = funnel.find((r) => r.build === "all");
+    // Of those that landed, and never more than those that did not press Play.
+    expect(all).toMatchObject({ landed: 181, turned_away: 6, pressed_play: 78 });
+    for (const r of funnel) expect(Number(r.turned_away)).toBeLessThanOrEqual(Number(r.landed) - Number(r.pressed_play));
+    const builds = funnel.filter((r) => r.build !== "all");
+    expect(builds.reduce((n, r) => n + Number(r.turned_away), 0)).toBe(6);
+    const turned = (await source.query("errors", 7)).filter((r) => r.n === "turned_away");
+    expect(turned.map((r) => [r.level, r.kind, r.sessions])).toEqual([["warning", "no-webgpu", 4], ["warning", "software", 2]]);
+  });
 });

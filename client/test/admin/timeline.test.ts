@@ -183,6 +183,19 @@ describe("describe", () => {
     // By itself a GPU error is a warning: its window says the rest (`trailOf`).
     expect(toneOf("gpu_error", { kind: "validation" })).toBe("warn");
   });
+
+  it("names a visitor the load check turned away by the reason, in words, and marks it a warning", () => {
+    expect(describeEvent("turned_away", { reason: "no-webgpu", adapter: "none" })).toBe("the browser has no WebGPU, adapter none");
+    expect(describeEvent("turned_away", { reason: "no-adapter", adapter: "rejected" })).toBe("the browser gave no adapter, adapter rejected");
+    expect(describeEvent("turned_away", { reason: "software", adapter: "ok" })).toBe("a software adapter, adapter ok");
+    expect(describeEvent("turned_away", { reason: "short", short: "maxTextureDimension2D 4096 < 8192", adapter: "ok" })).toBe(
+      "the adapter is short of what the game needs, short of maxTextureDimension2D 4096 < 8192, adapter ok",
+    );
+    // A reason this page does not know is said as it came, and a row with none says nothing.
+    expect(describeEvent("turned_away", { reason: "novel" })).toBe("novel");
+    expect(describeEvent("turned_away", {})).toBe("");
+    for (const reason of ["no-webgpu", "no-adapter", "software", "short"]) expect(toneOf("turned_away", { reason })).toBe("warn");
+  });
 });
 
 const row = (ms: number, n: string, fields: Record<string, unknown> = {}, sid = "s1"): Row => ({
