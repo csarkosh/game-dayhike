@@ -86,7 +86,7 @@ const CANOPY_MAX = 0.85;
 /**
  * Steep rock and the scree past it: dark, neutral grey. The ground shader
  * divides the rock texture by its own mean colour (`LAYER_MEAN_RGB.rock` in
- * `terrainTexture.ts`, which `groundMeans.test.ts` measures off the texture),
+ * `terrainUniforms.ts`, which `groundMeans.test.ts` measures off the texture),
  * so the texture adds variation and no hue, and what a face shows on average
  * is this colour itself; past the texture's fade it is this colour alone. A
  * neutral grey here is therefore a neutral grey on screen, and the warm rock

@@ -31,6 +31,34 @@ import { wetSurfaceUnder, type WeatherParams } from "./weather.js";
 export const TEXTURE_MEAN = 0.5;
 
 /**
+ * Each ground albedo's own mean COLOUR, measured off the committed 512² WebPs
+ * (`client/test/game/groundMeans.test.ts` recomputes them and fails if a
+ * rebuilt texture drifts). Each layer was scaled by ONE scalar
+ * gain until its mean over R, G and B is TEXTURE_MEAN, which neutralises
+ * luminance but NOT chroma: grass lands at (0.61, 0.53, 0.36) and forest floor
+ * at (0.65, 0.49, 0.35), both strongly warm. Dividing the blend by the scalar
+ * therefore left a tan cast multiplying the palette — a grass field's dark
+ * green (0.09, 0.15, 0.06) rendered as olive dirt, which is why bare ground
+ * beyond the clutter discs read as dirt and stone rather than as field.
+ * Dividing each layer by its OWN mean makes a flat
+ * texture exactly neutral in colour as well as brightness: the texture
+ * contributes variation, the palette decides the hue.
+ */
+export const LAYER_MEAN_RGB: Readonly<Record<"grass" | "floor" | "rock" | "sand" | "pebble", readonly [number, number, number]>> = {
+  grass: [0.608, 0.529, 0.358],
+  floor: [0.647, 0.495, 0.353],
+  rock: [0.540, 0.506, 0.449],
+  sand: [0.587, 0.512, 0.395],
+  pebble: [0.541, 0.497, 0.457],
+};
+
+/** One over a layer's mean colour, a channel each, to the four places the fragment stage writes it with on either renderer. */
+export function layerMeanInverse(layer: keyof typeof LAYER_MEAN_RGB): readonly [string, string, string] {
+  const m = LAYER_MEAN_RGB[layer];
+  return [(1 / m[0]).toFixed(4), (1 / m[1]).toFixed(4), (1 / m[2]).toFixed(4)];
+}
+
+/**
  * Metres of world per texture repeat, per layer. These are each source
  * texture's own recorded real-world footprint (grass 2.00 m,
  * forest floor 2.07 m, sand 1.80 m, pebble 2.00 m): tiled at its

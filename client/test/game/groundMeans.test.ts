@@ -2,10 +2,10 @@ import { describe, expect, it } from "vitest";
 import { fileURLToPath } from "node:url";
 import sharp from "sharp";
 
-import { LAYER_MEAN_RGB } from "../../src/game/terrainTexture.js";
+import { LAYER_MEAN_RGB, layerMeanInverse } from "../../src/game/terrainUniforms.js";
 
 /**
- * `terrainTexture.ts` divides each ground layer's texel by that layer's own
+ * The terrain's fragment stage divides each ground layer's texel by that layer's own
  * mean COLOUR so a flat texture is exactly neutral and the palette decides the
  * hue. Those means are measured off the committed WebPs, so they are only true
  * while those files are the ones on disk — a rebuilt or re-encoded texture
@@ -46,6 +46,13 @@ describe("the ground layers' mean colours", () => {
     for (const file of Object.values(FILES)) {
       const [r, g, b] = await meanRgb(file);
       expect((r + g + b) / 3, file).toBeCloseTo(0.5, 2);
+    }
+  });
+
+  it("are divided by as their reciprocals to four places, a channel each", () => {
+    expect(layerMeanInverse("grass")).toEqual(["1.6447", "1.8904", "2.7933"]);
+    for (const layer of Object.keys(FILES) as (keyof typeof LAYER_MEAN_RGB)[]) {
+      layerMeanInverse(layer).forEach((text, c) => expect(Number(text), `${layer} channel ${c}`).toBeCloseTo(1 / LAYER_MEAN_RGB[layer][c]!, 4));
     }
   });
 

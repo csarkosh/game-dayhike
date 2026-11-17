@@ -30,7 +30,7 @@
  *   translated stages do.
  */
 import type { MaterialPlugin, PluginUniformBlock, Texture2D, Texture2DArray } from "@babylonjs/lite";
-import { emptyTerrainUniforms, type TerrainUniforms } from "../terrainUniforms.js";
+import { emptyTerrainUniforms, layerMeanInverse, type TerrainUniforms } from "../terrainUniforms.js";
 import { TERRAIN_ATTRIBUTES, TERRAIN_VERTEX_SIZES, type TerrainVertices } from "../terrainVertices.js";
 import type { WetUniforms } from "../wetSurface.js";
 import { frameReads, ownFields } from "./frameBlock.js";
@@ -252,6 +252,9 @@ fn featureWetInside(xz:vec2<f32>,centre:vec2<f32>,radius:f32,count:f32)->f32{
 
 const MAIN_BEGIN = `var terrainRough=1.0;var terrainF0=1.0;var terrainSpecW=1.0;var terrainFarW=0.0;var terrainPaintW=0.0;var terrainFarN=vec3<f32>(0.0,1.0,0.0);`;
 
+/** One over a ground layer's mean colour, as the blend multiplies its texel by it: the layer's own colour made neutral (`LAYER_MEAN_RGB`). */
+const meanInv = (layer: Parameters<typeof layerMeanInverse>[0]): string => `vec3<f32>(${layerMeanInverse(layer).join(",")})`;
+
 // The blend (TERRAIN_FRAGMENT_BLEND). It starts from the material's colour times the vertex colour, which is
 // what Babylon's surfaceAlbedo holds where the GLSL runs.
 const BLEND = /* wgsl */ `
@@ -348,14 +351,14 @@ surfaceAlbedo=baseColor*input.vTerrainColor.rgb;
     N=nrm;
   }
   var grassAlbedo:vec3<f32>;
-  if(input.vTerrainW.x>0.0){grassAlbedo=hexFetch(terrainGrass,gh,0,gdx,gdy)*vec3<f32>(1.6447,1.8904,2.7933);}
-  else{grassAlbedo=textureSampleGrad(terrainGrass,terrainSmp,uvG,0,gdx,gdy).rgb*vec3<f32>(1.6447,1.8904,2.7933);}
+  if(input.vTerrainW.x>0.0){grassAlbedo=hexFetch(terrainGrass,gh,0,gdx,gdy)*${meanInv("grass")};}
+  else{grassAlbedo=textureSampleGrad(terrainGrass,terrainSmp,uvG,0,gdx,gdy).rgb*${meanInv("grass")};}
   let blended=
       grassAlbedo*w0
-    +tex2(terrainFloor,uvF)*vec3<f32>(1.5456,2.0202,2.8329)*w1
-    +tex2(terrainSand,uvS)*vec3<f32>(1.7036,1.9531,2.5316)*w3
-    +tex2(terrainPebble,uvP)*vec3<f32>(1.8484,2.0121,2.1882)*w4
-    +w2*vec3<f32>(1.8519,1.9763,2.2272)*(
+    +tex2(terrainFloor,uvF)*${meanInv("floor")}*w1
+    +tex2(terrainSand,uvS)*${meanInv("sand")}*w3
+    +tex2(terrainPebble,uvP)*${meanInv("pebble")}*w4
+    +w2*${meanInv("rock")}*(
       tex2(terrainRock,P.yz*rt+rpX)*bw.x
     +tex2(terrainRock,P.xz*rt+rpY)*bw.y
     +tex2(terrainRock,P.xy*rt+rpZ)*bw.z);

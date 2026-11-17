@@ -13,7 +13,7 @@
  * `GRASS`, Y 0.131) and the pale tuft's at 2.2 times it, and the tuft's is
  * a yellow green where the fern's is a blue one. The ground textures follow
  * one rule for this already (the terrain divides each by its own mean,
- * `terrainTexture.ts` `LAYER_MEAN_RGB`); this is the cards'. Every green
+ * `terrainUniforms.ts` `LAYER_MEAN_RGB`); this is the cards'. Every green
  * card's mean colour is brought to one green, `COVER_GREEN`, by a gain on
  * each channel of its albedo; a card whose colour is its own (the flowers)
  * is brought to the green's luminance alone, by one grey gain; and the
