@@ -2,7 +2,7 @@
  * Wooden sign posts at every junction of the trail graph, one arm per branch
  * and one plank per place: each place named once on a post, on the
  * arm with the shortest trail to it, the Summit on top. Pure geometry over the
- * graph: the pass emits the post's collision box, `game/signMeshes.ts` paints
+ * graph: the pass emits the post's collision box, `game/lite/sceneryMeshes.ts` paints
  * the planks.
  *
  * sim/ determinism rules: no trig, no Math.pow, no `**`, no hypot. Arms carry

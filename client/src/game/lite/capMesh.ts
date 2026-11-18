@@ -2,10 +2,9 @@
  * The dropped cap on Babylon Lite: the missing hiker's cap beside the trail
  * (`droppedCap.ts` says where it lies, how it is seated and its shape).
  *
- * One mesh and one draw, the crown and the brim together, where the game on
- * Babylon.js builds two meshes of one material: the shape is the same
- * vertices, each already where its own mesh's transform would put it in the
- * cap's frame, and the mesh stands at the cap's seat. Its material is the
+ * One mesh and one draw, the crown and the brim together: the shape is the
+ * two parts' vertices, each already where its own part's transform would
+ * put it in the cap's frame, and the mesh stands at the cap's seat. Its material is the
  * game's: the cap's red, matt, lit as every surface is and under the air.
  * The cap does not move: nothing is written for it after it is made. And it
  * is small and lies in one place: it is drawn only while the view's planes

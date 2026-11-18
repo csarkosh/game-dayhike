@@ -104,7 +104,7 @@ import { TERRAIN_VERTEX_FLOATS, terrainVertexData } from "./terrainPlugins.js";
 const CLIPMAP_UPLOAD_MS = 1;
 
 /** What a patched cell's slice is expected to take (ms) by its spacing, near and far, and a wide cell's: the game's
- * own estimates (`facePatchMeshes.ts`). A near one is more than a frame's share and starts only as one begins. */
+ * own estimates. A near one is more than a frame's share and starts only as one begins. */
 const FACE_PATCH_SLICE_MS: Readonly<Record<number, number>> = { [PATCH_NEAR_SPACING]: 5, [PATCH_FAR_SPACING]: 2 };
 const WIDE_SLICE_MS = 0.5;
 

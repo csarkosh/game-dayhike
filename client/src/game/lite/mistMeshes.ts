@@ -11,8 +11,7 @@
  *   (exponential squared, toward the gradient's far end) mixed in before
  *   the colour is taken to linear, then the material colour path
  *   (`displayCurve.ts`), and the mesh's visibility on the alpha last. The
- *   atmosphere's plugin is not on it: on Babylon.js that plugin takes PBR
- *   materials alone, and the banks' fog is the scene's own.
+ *   atmosphere's plugin is not on it: the banks' fog is the stage's own.
  * - **A bank's visibility rides in the last float of its instance's
  *   matrix** (`writeMistInstances`), so a frame that moves a bank, turns the
  *   camera or changes a fade writes one buffer, counted on the renderer's

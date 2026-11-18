@@ -25,13 +25,11 @@
  *   `read`: its water is in the view and has glass on it). One that is
  *   asked for meanwhile is owed, and runs from the first frame that reads
  *   it, a sector a frame; until its columns are drawn the water reads the
- *   ones it has, and where a column holds nothing, the skyline's shade. On
- *   Babylon.js a capture runs when it is asked for, wherever the camera
- *   looks.
+ *   ones it has, and where a column holds nothing, the skyline's shade.
  * - **The ground is a stand-in**, as the game's is: the terrain's rings and
  *   patches through one flat lit colour, darker under the canopy, under the
  *   scene's distance fog from the capture's eye
- *   (`lakeMirrorTerrain.*.fx`). Everything else is drawn in its own
+ *   (`lakeMirrorTerrain.*.glsl`). Everything else is drawn in its own
  *   material, lit and hazed as it is, linear and unexposed as the tier's
  *   materials hand their colour on. A texel nothing drew holds alpha 0.
  * - **The picture is laid top row first**, as a pass of WebGPU writes it:

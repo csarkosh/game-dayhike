@@ -4,9 +4,8 @@
  * game's own, stepped with no engine (`waterLifeScene.ts`: the presence by
  * the hour, the weather, the wind and the dread, the swarms' table, the
  * dragonflies' state machines, the chorus, and the sound of it all); this
- * module hands what a frame stepped to the two shells that draw it
- * (`midgeMeshes.ts`, `dragonflyMeshes.ts`), as `waterLife.ts` does on
- * Babylon.js.
+ * module hands what a frame stepped to the two modules that draw it
+ * (`midgeMeshes.ts`, `dragonflyMeshes.ts`).
  *
  * A lake out of the camera's reach is rested, not stepped: nothing of it is
  * drawn, heard or written. Within reach, a swarm or a kind of dragonfly is

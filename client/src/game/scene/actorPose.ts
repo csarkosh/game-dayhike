@@ -4,8 +4,8 @@
  * in, or mixed part of the way to a second clip at its own time, read from
  * the model's file (its nodes, its skin and its clips' samplers).
  *
- * It is the pose the stage on Babylon.js gives the same model
- * (`CharacterInstance.pose`, `characterModel.ts`): a clip's keys stand at
+ * It is the pose Babylon.js's own animation gives the same model, which
+ * the tests hold it to by record: a clip's keys stand at
  * sixty frames a second, a clip is as long as its last key and wraps in
  * that length, a time before a channel's first key or after its last holds
  * that key, a turn is mixed along the arc between two keys and a place or a

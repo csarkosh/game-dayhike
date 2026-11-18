@@ -1253,7 +1253,7 @@ function buildGame(
    */
   let body: { dispose(): void } | null = null;
   /**
-   * The film's car (`trailheadMeshes.ts` `swapCar`), the parked car's double
+   * The film's car (`loadFilmCar`, `hikeScenery.ts`), the parked car's double
    * with wheels and a door, for the end scene: fetched into the trailhead as
    * the hike's scenery is built, and again into one built anew with the
    * extras, so its textures, its shaders and its pipelines are made while the

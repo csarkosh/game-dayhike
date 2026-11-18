@@ -5,13 +5,10 @@
  * game draws them with (`rainField.ts`: the seeds, what a frame steps, the
  * counts and the uniforms; `rainParams.ts`: the placement's arithmetic).
  *
- * - **One mesh, one stage and one draw for both volumes.** On Babylon.js the
- *   streaks and the drips are two meshes on two materials that carry the
- *   same plugin under different defines (`rainPlugin.ts`), drawn one after
- *   the other. Here an instance says which it is, the stage takes the
+ * - **One mesh, one stage and one draw for both volumes.** An instance
+ *   says whether it is a streak or a drip, the stage takes the
  *   plugin's statements for its kind, and the drips are the list's first
- *   instances, so they are blended before the streaks as the game blends
- *   them.
+ *   instances, so they are blended before the streaks.
  * - **The stage is Babylon.js's Standard material as the game sets it for
  *   the rain**, statement for statement, with the streak plugin's code at
  *   its two points: unlit, the rain's colour its emissive (the fog colour
@@ -83,7 +80,7 @@ const OPEN = /* wgsl */ `
   let rCover=select(1.0,0.0,drip);`;
 
 /**
- * The vertex stage: the streak plugin's placement (`rainPlugin.ts`), each
+ * The vertex stage: the streak plugin's placement (`rain.vertexUpdatePosition.glsl`), each
  * line the streaks' or, for an instance that is a drip, the one the plugin
  * has under `RAIN_DRIP`; then the Standard material's own, the position
  * taken as the world's (the mesh and every instance stand at the origin)

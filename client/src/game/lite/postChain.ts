@@ -135,7 +135,7 @@ export type PostChainCounts = {
 
 export type LitePostChain = {
   readonly features: PostFeatures;
-  /** The frame's grade and the rain on the lens, as `Post.update` takes them (`post.ts`). */
+  /** The frame's grade and the rain on the lens. */
   update(weather: WeatherParams, hour: number, night: number, unsettle: number, stare: StareLens, lens?: number, chase?: number): void;
   setPalette(palette: PaintPalette, fadeSeconds?: number): void;
   palette(): PaintPalette;

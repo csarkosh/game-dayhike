@@ -278,7 +278,7 @@ export function airPatchMaterial(engine: EngineContext, darkness: number, air: (
 /**
  * A patch's grid in the world's own coordinates: `grid` (`carShadowGrid`)
  * stood at its origin, scaled to its size and turned by `yaw` about the
- * vertical, as its mesh's transform stands it on Babylon.js.
+ * vertical.
  */
 export function patchGeometry(grid: CarShadowGrid, yaw = 0): { positions: Float32Array; normals: Float32Array; uvs: Float32Array; indices: Uint32Array } {
   const sin = Math.sin(yaw), cos = Math.cos(yaw);

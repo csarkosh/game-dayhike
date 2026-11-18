@@ -8,9 +8,8 @@
  * (the tangent the sum of the two segments at a point, the normal the last
  * binormal crossed with it), a ring's first vertex is repeated as its last
  * so the seam has a vertex either side, and a vertex's normal is the sum of
- * its faces' unit normals, the seam's two halved together. So the stage on
- * Babylon.js (`cordTube.ts`) and a renderer that writes its own mesh draw
- * the same cord.
+ * its faces' unit normals, the seam's two halved together. So a
+ * renderer that writes its own mesh draws that cord.
  *
  * The triangles never change: a cord laid again writes positions and
  * normals alone, into the arrays it was made with.

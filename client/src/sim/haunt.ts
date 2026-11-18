@@ -18,7 +18,7 @@
  *
  * Host only, off the wire and outside the fingerprint, like the watcher's
  * record; the shades themselves are enemies in the snapshot, drawn as the
- * Hollow with the shadow's look (game/entityViews.ts). The lens and the
+ * Hollow with the shadow's look (game/lite/shadeMask.ts). The lens and the
  * whispers each screen adds are its own (game/escalation.ts). Draws come
  * from the haunt's own stream, `worldSeed ^ HAUNT_SALT`.
  *
@@ -89,7 +89,7 @@ export const OFF_TRAIL_REAL_EACH = 0.1;
  * point it stands off may be. It must be in view, from SHADE_BEARING_MIN_COS
  * (16°, just outside the stare's 20°, so a shade is seen before it is
  * looked at) to SHADE_TRAIL_BEARING_MAX_COS (50°) off the look. The figure
- * is drawn as a blur in the mist, not lit (game/shadeSilhouette.ts), so the
+ * is drawn as a blur in the mist, not lit (game/lite/shadeMask.ts), so the
  * headlamp's cone does not bound it.
  */
 export const SHADE_BEARING_MIN_COS = 0.9613;

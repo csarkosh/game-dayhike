@@ -1,8 +1,8 @@
 /**
  * What the sky's dome is drawn with, for a sky state (`skyStateFor`), with no
  * engine: the box's size, the stage's uniforms by name, and whether the
- * table's slice is to go up again. `lite/skyDome.ts` draws the dome with them on
- * Babylon.js, `lite/skyDome.ts` on Babylon Lite; the stage's own text is
+ * table's slice is to go up again. `lite/skyDome.ts` draws the dome with them;
+ * the stage's own text is
  * `skyDome.fragment.glsl`, whose uniforms these are.
  *
  * Loads no engine.

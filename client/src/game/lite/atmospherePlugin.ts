@@ -2,8 +2,8 @@
  * The atmosphere as a material plugin on Babylon Lite: the air between the
  * eye and a surface, drawn by the surface's own material (`atmosphereParams.ts`
  * has the arithmetic and says what the air is; `cloudParams.ts` the ground
- * cloud). Statement for statement the GLSL of
- * `shaders/atmosphereFog.fragment.fx`; what differs is where it goes in:
+ * cloud). Statement for statement GLSL written for Babylon.js's PBR
+ * material; what differs is where it goes in:
  *
  * - The fog is applied to the lit colour at the point before the final
  *   colour is composed, ahead of the display curve, where the GLSL edits

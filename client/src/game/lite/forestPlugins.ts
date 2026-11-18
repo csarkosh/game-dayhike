@@ -11,15 +11,14 @@
  * `deadwoodParams.ts`, `mossParams.ts`, `cliffInstances.ts`,
  * `wetSurface.ts`).
  *
- * The WGSL is, statement for statement, the GLSL of the game's plugins
- * (`shaders/foliage*.fx`, `distanceFadePlugin.ts`, `groundConformPlugin.ts`,
- * `shaders/moss*.fx`, `shaders/deadwood*.fx`, `shaders/cliffTint*.fx`,
- * `shaders/wetLights.fragment.fx`).
+ * The WGSL is, statement for statement, GLSL written for Babylon.js's PBR
+ * material, of which the tests read a record
+ * (`client/test/fixtures/babylon/stages/`).
  * What differs is where it goes into the material:
  *
  * - The foliage, the fade's widening and the conform are ONE plugin
- *   (`vegetationPlugin`). On Babylon.js each of them moves the same world
- *   position in turn at one point of the vertex stage, by priority; a Lite
+ *   (`vegetationPlugin`). Babylon.js has a point of the vertex stage where
+ *   each plugin moves the same world position in turn, by priority; a Lite
  *   plugin writes the clip position at the vertex stage's end, so the three
  *   run there on one running position and the clip position is made from it
  *   once. The moss and the dead trees' dressing ride with them, for their
@@ -65,9 +64,9 @@ import { uniformFields, writeUniforms, type UniformField, type UniformRecord } f
 import { WET_FIELDS, WET_LIGHTS, WET_WGSL, writeWetUniforms } from "./wetWgsl.js";
 
 /**
- * The eye the foliage and the fade measure from, as the scene's own uniforms hold it for the pass being drawn. On
- * Babylon.js the two plugins bind the position of the camera the scene is then drawn through
- * (`scene.activeCamera`), so a pass with a camera of its own (a lake's shore panorama, from the lake's centre)
+ * The eye the foliage and the fade measure from, as the scene's own uniforms hold it for the pass being drawn. The
+ * bindings recorded on Babylon.js (`foliage.bind.txt`, `distanceFade.bind.txt`) take the position of the camera the
+ * scene is then drawn through (`scene.activeCamera`), so a pass with a camera of its own (a lake's shore panorama, from the lake's centre)
  * measures from that camera; the frame's block is written once a frame and holds the hike's own eye for every pass.
  */
 export const PASS_EYE = "scene.vEyePosition";
@@ -110,7 +109,7 @@ export type Vegetation = {
   deadwood: { base: number } | null;
   /** Whether the scene has an image-based light, which the canopy cuts. */
   sky: boolean;
-  /** The share of the ground's colour under the instance mixed into the albedo (`cliffTintPlugin.ts`), by the
+  /** The share of the ground's colour under the instance mixed into the albedo, by the
    * instance's `foliage`: a rock wall's, which wears no foliage. None when absent. */
   ground?: number;
   /** The frame's block (`frameBlock.ts`): given it, the wind, the eye and the frame's height are read from it, and
@@ -172,7 +171,7 @@ const GUST = /* wgsl */ `fn foliageGust(p:vec2<f32>,t:f32)->f32{
   let ragged=${f(WIND_RAGGED)}*(fract(c.x*0.618034+c.y*0.381966)-0.5);
   return sin(${f(WIND_K1)}*u-${f(WIND_OMEGA_GUST)}*t+ragged)+0.5*sin(${f(WIND_K2)}*u-${f(WIND_OMEGA_GUST2)}*t+1.7*ragged);
 }`;
-// moss.vertex.fx: a tree's draw, hashed from its foot.
+// The moss: a tree's draw, hashed from its foot.
 const MOSS_HASH = /* wgsl */ `fn mossHash(p:vec2<f32>)->f32{var p3=fract(vec3<f32>(p.x,p.y,p.x)*0.1031);p3+=dot(p3,p3.yzx+33.33);return fract((p3.x+p3.y)*p3.z);}`;
 
 /** The vertex stage: one running world position, as Babylon's `worldPos` is, and the clip position from it at the end.
@@ -180,7 +179,7 @@ const MOSS_HASH = /* wgsl */ `fn mossHash(p:vec2<f32>)->f32{var p3=fract(vec3<f3
 function vertexCode(v: Vegetation): string {
   const tint = v.foliage !== null && v.foliage.profile.groundTint > 0;
   const blades = v.foliage !== null && v.foliage.profile.blades;
-  // foliageWorldPos.vertex.fx: a blade clump's motion ignores the outer edge, and in place of the far sink each of
+  // The foliage's blades: a blade clump's motion ignores the outer edge, and in place of the far sink each of
   // its blades is pulled to its root by its share of the tier's band and of the cell's strength, last, so a
   // collapsed blade's vertices coincide.
   const collapse = /* wgsl */ `{
@@ -228,19 +227,19 @@ function vertexCode(v: Vegetation): string {
     ? `${blades ? "" : `w.y-=${f(FOLIAGE_SINK)}*material.foliageHeight*smoothstep(material.foliageEdges.x,material.foliageEdges.y,fDist);`}out.vFoliage=foliage;`
     : `out.vFoliage=vec4<f32>(0.0,0.0,0.0,1.0);`}${blades ? collapse : ""}
   out.vFoliageH=fH;out.vFoliageClump=fClump;out.vFoliageDist=fDist;`;
-  // distanceFadePlugin.ts: the bands and the distance handed on, the instance widened about its origin.
+  // The distance fade: the bands and the distance handed on, the instance widened about its origin.
   const fade = !v.fade ? "" : /* wgsl */ `
   out.vFadeBands=fadeBands;
   let dfD=distance(o,material.fadeEye.xz);
   out.vFadeDist=dfD;
   let dfK=1.0+material.fadeWiden.z*smoothstep(material.fadeWiden.x,material.fadeWiden.y,dfD);
   w=vec3<f32>(o.x+(w.x-o.x)*dfK,w.y,o.y+(w.z-o.y)*dfK);`;
-  // groundConformPlugin.ts.
+  // The base conform.
   const conform = !v.conform ? "" : /* wgsl */ `
   let gcOff=w.xz-o;
   let gcW=1.0-smoothstep(0.0,material.gcRamp,position.y);
   w.y+=gcW*min(0.0,material.gcOvershoot*dot(gcOff,groundGrad));`;
-  // mossFoot.vertex.fx, or deadwoodUv.vertex.fx: the bark's coordinates from the position (round the axis, along the
+  // The moss's height and draw; or, on dead wood, the bark's coordinates from the position (round the axis, along the
   // length), over the mesh's own, and the varying.
   const moss = v.moss === null ? "" : v.deadwood === null ? `
   out.vMoss=vec2<f32>(position.y,mossHash(o));` : /* wgsl */ `{
@@ -250,7 +249,7 @@ function vertexCode(v: Vegetation): string {
   let dwTiles=max(1.0,floor(6.283185307179586*material.deadwoodBark.z*dwScale*material.deadwoodBark.y+0.5));
   out.uv=vec2<f32>(dwTurn*dwTiles,dwAlong);
   out.vDeadwood=vec4<f32>(deadwoodRole,(position.x+material.deadwoodBark.w)*dwScale,position.y,mossHash(o));}`;
-  // cliffTintWorldPos.vertex.fx: the ground's colour under the instance, handed on untouched.
+  // A rock wall: the ground's colour under the instance, handed on untouched.
   const ground = v.ground === undefined ? "" : `
   out.vCliffTint=foliage;`;
   return `{
@@ -260,8 +259,8 @@ function vertexCode(v: Vegetation): string {
 }`;
 }
 
-/** The colour block before the lights: foliageLights.fragment.fx (with its match), then mossLights.fragment.fx or
- * deadwoodLights.fragment.fx with the moss's roughness, which the game sets where Babylon reads its own, then a rock
+/** The colour block before the lights: the foliage's (with its match), then the moss's or
+ * the dead wood's with the moss's roughness, which the game sets where Babylon reads its own, then a rock
  * wall's tint toward the ground. */
 function lightsCode(v: Vegetation): string {
   const foliage = v.foliage === null ? "" : /* wgsl */ `{
@@ -294,12 +293,12 @@ function lightsCode(v: Vegetation): string {
   roughness=mix(roughness,${f(MOSS_ROUGHNESS)},mossW);
   ${v.deadwood === null ? "" : `surfaceAlbedo*=mix(1.0,mix(${f(DEADWOOD_CONTACT)},1.0,smoothstep(${f(DEADWOOD_CONTACT_BAND[0])},${f(DEADWOOD_CONTACT_BAND[1])},input.vDeadwood.z)),dwLog);`}
 }`;
-  // cliffTintLights.fragment.fx: the module's own colour and the ground's under it; a black tint is no tint.
+  // A rock wall's tint: the module's own colour and the ground's under it; a black tint is no tint.
   const ground = v.ground === undefined ? "" : `{let cHas=step(1.0/255.0,max(input.vCliffTint.r,max(input.vCliffTint.g,input.vCliffTint.b)));surfaceAlbedo=mix(surfaceAlbedo,input.vCliffTint.rgb,${f(v.ground)}*cHas);}`;
   return foliage + moss + ground;
 }
 
-// foliageLightPlugin.ts and foliageDiffuse.fragment.fx, inside the light loop: the directional light's Lambert term,
+// The foliage's light, inside the light loop: the directional light's Lambert term,
 // which Lite has added by this point, replaced by the wrapped and back-lit one under the canopy's cut.
 const FOLIAGE_LIGHT = /* wgsl */ `{
   if(u32(lights.lights[lightIndex].vLightData.w)==1u){
@@ -313,13 +312,12 @@ const FOLIAGE_LIGHT = /* wgsl */ `{
   }
 }`;
 
-// foliageSky.fragment.fx: the image-based light on a card, thinned by the canopy over it.
+// The foliage's sky: the image-based light on a card, thinned by the canopy over it.
 const FOLIAGE_SKY = `{let fSky=1.0-${f(FOLIAGE_CANOPY_SKY)}*(1.0-input.vFoliage.a);color-=(finalIrradiance+finalRadianceScaled)*(1.0-fSky);}`;
 
-// distanceFadePlugin.ts: the screen-door, before any texture is read. The noise is a fixed pattern of the pixel, and the
-// game counts a pixel's row up from the frame's bottom on either of its engines, where a WGSL fragment's counts down
-// from its top: the row is turned over by the frame's height, so a seam's two buckets, and a still of either
-// renderer, keep the same pixels.
+// The distance fade's screen-door, before any texture is read. The noise is a fixed pattern of the pixel, whose row
+// the game counts up from the frame's bottom, where a WGSL fragment's counts down
+// from its top: the row is turned over by the frame's height, so a seam's two buckets keep the same pixels.
 const FADE_MAIN_BEGIN = `{let dfN=dfNoise(vec2<f32>(input.clipPos.x,material.fadeRows-input.clipPos.y));let dfIn=smoothstep(input.vFadeBands.x,input.vFadeBands.y,input.vFadeDist);let dfOut=1.0-smoothstep(input.vFadeBands.z,input.vFadeBands.w,input.vFadeDist);if(dfIn<1.0-dfN||dfOut<dfN){discard;}}`;
 
 /** The floats a vertex of a blade clump's `blade` attribute: the mesh's plugin vertex data. */
@@ -513,7 +511,7 @@ export function oneSidedLightPlugin(turned = false): MaterialPlugin {
   };
 }
 
-// The weather's share (`shaders/wetWeather.fragment.fx`), where the map's roughness is known: the roughness glossed at
+// The weather's share, where the map's roughness is known: the roughness glossed at
 // once, the albedo's factor kept for the split, since the game darkens the colour after the colour block has run.
 const WET_WEATHER_KEPT = `var wetShare=1.0;{let wetPorosity=min(material.wetCap,clamp((roughness-0.5)/0.4,0.0,1.0));let wetFactor=mix(1.0,0.2,wetPorosity);wetShare=mix(1.0,wetFactor,material.wetWeather);let wetGloss=mix(1.0,1.0-roughness,mix(1.0,wetFactor,0.5*material.wetWeather));roughness=1.0-wetGloss;}`;
 
@@ -594,10 +592,10 @@ export function surfaceSplitPlugin(): MaterialPlugin {
 /** The bake's one uniform: which picture the next draw writes (`ImpostorBakeMode`). */
 export const BAKE_MODE_FIELD: UniformField = { name: "bakeMode", type: "f32" };
 
-// impostorBakePlugin.ts: the two pictures, in place of the lit colour. The albedo is the surface's own after its maps
+// The bake's two pictures, in place of the lit colour. The albedo is the surface's own after its maps
 // and its split, in gamma space as a colour map is stored; the normal is the shaded one in the world's frame, which is
 // the bake camera's (it looks along +z with +y up), written as a map of the card, whose face looks along -z. A
-// fragment the material's alpha test kept is whole, as it is on Babylon.js, which sets a tested alpha to one.
+// fragment the material's alpha test kept is whole.
 const BAKE_PICTURES = `if(material.bakeMode>1.5){let bakeN=normalize(N);color=vec3<f32>(bakeN.x,bakeN.y,-bakeN.z)*0.5+0.5;alpha=1.0;}else if(material.bakeMode>0.5){color=pow(surfaceAlbedo,vec3<f32>(1.0/2.2));alpha=1.0;}`;
 
 /**

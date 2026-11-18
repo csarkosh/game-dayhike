@@ -2,12 +2,11 @@
  * A wing's beat as a material plugin on Babylon Lite: each wing turned about
  * its body's forward axis by amp·sin(ωt + phase), weighted by how far out
  * along the wing a vertex lies, so the body holds still and the tip moves
- * most (`wingParams.ts` has the numbers; `wingPlugin.ts` beside the game's
- * Babylon.js shells is the same stage in GLSL, and this is it statement for
+ * most (`wingParams.ts` has the numbers; the recorded `wing.glsl` is the
+ * same stage in GLSL, and this is it statement for
  * statement). Position only: normals are left unturned, as there.
  *
- * What differs is where a bird's own numbers ride. On Babylon.js they are
- * a buffer of their own, two floats an instance. A flock's beats change
+ * What differs is where a bird's own numbers ride. A flock's beats change
  * every frame, as its matrices do, and a second buffer would be a second
  * write a frame; so here they ride in the instance's matrix,
  * in the three floats of its last row a placed thing leaves at zero: the

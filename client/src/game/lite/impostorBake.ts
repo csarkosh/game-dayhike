@@ -22,10 +22,9 @@
  * the second's and read, and let go with its meshes and its target.
  *
  * **The pixels are the picture's rows from its foot up**, four bytes a texel
- * as the draw wrote them, the colour in gamma space: the order the game's
- * own bake is read in on Babylon.js, which keeps a target's first row at
- * the picture's foot. The distance field made of them breaks its ties by
- * the order it walks the rows in, so a field made here is the game's.
+ * as the draw wrote them, the colour in gamma space. The distance field
+ * made of them (`impostorField.ts`) breaks its ties by the order it walks
+ * the rows in, so the order is part of what a far tree looks like.
  */
 import {
   addTask, addToScene, createFreeCamera, createRenderTargetTexture, createRenderTask, createSceneContext, createSurface, disposeMeshGpu,

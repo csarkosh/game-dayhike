@@ -5,14 +5,12 @@
  * draws it (`lite/lakeMirror.ts`) takes its values from here; the reflection
  * and the oblique near plane themselves are `mirrorView.ts`'s.
  *
- * The mirrored camera is the player's seen in the water's plane. On
- * Babylon.js its view is the reflection times the player's view, which
- * turns the winding over, and the engine is told to turn its front faces
- * with it. A renderer that cannot be told draws through a camera of the
- * ordinary kind instead (`mirroredPose`): the player's place, aim and up,
- * each mirrored in the plane. Its picture is the same one turned over left
- * to right, and its winding is as it was; the read turns the picture back
- * (`mirrorRead`).
+ * The mirrored camera is the player's seen in the water's plane. The
+ * reflection times the player's view would turn the winding over, so the
+ * pass is drawn through a camera of the ordinary kind (`mirroredPose`): the
+ * player's place, aim and up, each mirrored in the plane. Its picture is
+ * the reflection's turned over left to right, and its winding is the
+ * frame's own; the read turns the picture back (`mirrorRead`).
  */
 import { cameraSpacePlane, obliqueProjectionReversed } from "./mirrorView.js";
 

@@ -8,8 +8,7 @@
  * A layer's albedo is an array of one layer, since the terrain's plugin
  * reads every image through one sampler. Every image is decoded as data,
  * its rows turned over (`decodeGroundLayer`), so v = 0 is its bottom row in
- * the albedos and the two arrays alike, as in the textures Babylon draws
- * the terrain with. Lite's samplers filter between levels and repeat; they
+ * the albedos and the two arrays alike. Lite's samplers filter between levels and repeat; they
  * take no anisotropy.
  */
 import {

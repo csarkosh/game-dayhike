@@ -37,17 +37,16 @@ export const DRAW_ORDER = { rings: 80, patches: 90, forest: 100, clutter: 110, b
  * their places. A mesh of the hike's see-through effects is an instance list
  * or a field round the eye, whose origin says nothing of where it is seen;
  * so each stands at the world's origin, all at one depth, and their places
- * alone order them, the same from every view. The order is the game's on
- * Babylon.js, which draws a rendering group's particles before its blended
- * meshes: the motes, then the mist banks, which order themselves farthest
+ * alone order them, the same from every view. The order: the motes, as
+ * Babylon.js draws a rendering group's particles before its blended
+ * meshes, then the mist banks, which order themselves farthest
  * first within their one draw (`mistBanks.ts`), then the rain, which the
  * game puts last of its group as the nearest blended volume (`rain.ts`):
  * the splashes, then the drips and the streaks, one draw whose instances
  * are in that order (`rainField.ts`).
  *
- * Then the water the tiers blend over what lies under it. The game leaves
- * a lake's surface and the sea's rings at Babylon.js's default place among
- * the blended meshes, which is past the rain's, so the rain is blended
+ * Then the water the tiers blend over what lies under it. A lake's
+ * surface and the sea's rings stand past the rain's place, so the rain is blended
  * first and the water over it: a streak falling in front of deep water is
  * covered by it. The sea first, its rings outermost first within its one
  * draw, then the lakes, which stand over it: no ray meets both, so either
@@ -66,8 +65,7 @@ export const DRAW_ORDER = { rings: 80, patches: 90, forest: 100, clutter: 110, b
  * its water's group ahead of the effects it moves into that group.
  *
  * Then the see-through parts of the scenery a hike places once
- * (`sceneryMeshes.ts`), which the game leaves at Babylon.js's default place
- * too and that renderer orders by how far each is: they stand near, with
+ * (`sceneryMeshes.ts`): they stand near, with
  * the water beyond them, so they follow it. The patch under the car first,
  * which lies on the ground; then the lettering on the fingerposts' planks
  * and the board's face; then the car's glass, through which the patch and

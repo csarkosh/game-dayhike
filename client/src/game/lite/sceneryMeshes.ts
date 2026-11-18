@@ -69,8 +69,8 @@
  *   Its handset is a run of one mesh's vertices, carried on the processor
  *   from its cradle into the hand a pose gives it (`scene/stageParts.ts`),
  *   sent as that run alone on a frame that moves it, and never while it rests.
- *   Its cord is one mesh the car carries: the tube the stage on Babylon.js
- *   lays (`scene/cordTubeGeometry.ts`), laid in the car's own frame, so a
+ *   Its cord is one mesh the car carries: the tube `scene/cordTubeGeometry.ts`
+ *   makes, laid in the car's own frame, so a
  *   cord that hangs still is written nothing however far the car drives,
  *   and one that swings is written its positions and normals whole.
  * - **A scene's actor is one skinned body** (`sceneActor.ts`), posed from
