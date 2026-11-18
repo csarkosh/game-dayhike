@@ -195,7 +195,7 @@ export type SyncJobs = {
    * ran; and the milliseconds the slices took, how many of those a late run
    * took, and the milliseconds by the jobs' names (`begin`'s `name`, `other`
    * for a job given none, `idle` for idle work). For the tests, and for the
-   * measurement mode's `window.__syncJobs()` (renderer.ts), which a phone
+   * measurement mode's `window.__syncJobs()` (lite/renderer.ts), which a phone
    * harness reads each frame (tools/frame-budget/phone.mjs). */
   readonly last: {
     readonly slices: number; readonly late: number; readonly completed: number; readonly idle: number;

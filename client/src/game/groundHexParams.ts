@@ -6,7 +6,7 @@ import { clamp01, type Rgb } from "./colour.js";
  * macro noise is built on, the lush/dry macro tint, and the horizon tint's
  * weight. `shaders/groundHex.fragment.fx` carries the GLSL twins and a
  * lockstep test pins them to these constants; `terrainTexture.ts` binds the
- * uniforms; `clutterMeshes.ts` and `forestMeshes.ts` multiply each card's
+ * uniforms; `lite/clutterMeshes.ts` and `lite/forestMeshes.ts` multiply each card's
  * ground colour by `macroTint` so tuft and floor agree where the ground is
  * grass and inside the relief fade (the paragraph below says where not).
  *

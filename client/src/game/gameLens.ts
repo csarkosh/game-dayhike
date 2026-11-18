@@ -4,7 +4,7 @@
  * y up, z forward), its field of view the vertical one, its aspect the
  * canvas's width over its height, between a near and a far plane.
  *
- * Babylon-free: `renderer.ts` gives the player's camera these.
+ * Babylon-free: `lite/renderer.ts` gives the player's camera these.
  */
 
 /** The game's own lens (rad, vertical). */

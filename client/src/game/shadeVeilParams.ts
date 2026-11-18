@@ -1,5 +1,5 @@
 /**
- * The shade veil's pure numbers (shadeVeil.ts is the Babylon shell): the
+ * The shade veil's pure numbers (`lite/shadeVeil.ts` draws it): the
  * quad the material path draws over the frame after the scene, on the
  * tiers with no post chain, to darken it by the haunt's shades and the
  * stare as the grade pass does on the post tiers

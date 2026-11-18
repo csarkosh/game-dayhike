@@ -1,6 +1,6 @@
 /**
  * How the trees take the sky's image-based light. Babylon-free and on the
- * architecture test's BABYLON_FREE_FILES list; `forestMeshes.ts` sets them on
+ * architecture test's BABYLON_FREE_FILES list; `lite/forestMeshes.ts` sets them on
  * every tree, sapling and snag material and on the billboards. All four are
  * material values Babylon binds as uniforms (`environmentIntensity` into the
  * lighting infos, `metallicF0Factor` into the reflectance factors), not

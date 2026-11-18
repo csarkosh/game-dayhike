@@ -52,7 +52,7 @@ export const LAYER_MEAN_RGB: Readonly<Record<"grass" | "floor" | "rock" | "sand"
   pebble: [0.541, 0.497, 0.457],
 };
 
-/** One over a layer's mean colour, a channel each, to the four places the fragment stage writes it with on either renderer. */
+/** One over a layer's mean colour, a channel each, to the four places the fragment stage writes it with. */
 export function layerMeanInverse(layer: keyof typeof LAYER_MEAN_RGB): readonly [string, string, string] {
   const m = LAYER_MEAN_RGB[layer];
   return [(1 / m[0]).toFixed(4), (1 / m[1]).toFixed(4), (1 / m[2]).toFixed(4)];

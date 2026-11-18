@@ -2,7 +2,7 @@
  * A far tree's bake as arithmetic: how large its two pictures are, how long
  * a bake may take, how the tree is posed and framed for them, and what the
  * forest keeps of each bake. The pictures are drawn by the forest's shell
- * (`forestMeshes.ts`), which makes of them a billboard's colour and normal
+ * (`lite/forestMeshes.ts`), which makes of them a billboard's colour and normal
  * map through the distance field (`impostorField.ts`); the quad the pictures
  * are laid on is `forestInstances.ts`'s (`impostorQuad`, `snagImpostorQuad`).
  *

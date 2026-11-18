@@ -3,7 +3,7 @@
  * drawn with, made from the modules `cliffField.ts` collects round the eye.
  * One list a model and a LOD ring, each a matrix and the ground's colour
  * under the module an instance (`instanceLists.ts`), the far ring's with
- * the bands it dithers out across at the reach. `cliffMeshes.ts` says what
+ * the bands it dithers out across at the reach. `lite/cliffMeshes.ts` says what
  * the buckets are and draws them.
  *
  * Where a module stands is the simulation's (`sim/cliffField.ts`), and in

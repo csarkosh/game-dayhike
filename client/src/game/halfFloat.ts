@@ -2,7 +2,7 @@
  * IEEE 754 binary16, the half float: the texel format of an RGBA16F texture.
  * WebGL2 and WebGPU both take a half-float texture's data as 16-bit words, so
  * the float data the sky's table holds is packed here before it goes up
- * (`skyDome.ts`), every frame of a weather fade. Pure and Babylon-free.
+ * (`lite/skyDome.ts`), every frame of a weather fade. Pure and Babylon-free.
  *
  * Packed from the bits of the value as a float32, shifted and rounded as
  * integers: no logarithm and no division per channel.

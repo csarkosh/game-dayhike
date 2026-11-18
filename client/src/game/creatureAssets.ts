@@ -159,7 +159,7 @@ export function creatureGroupsByName<T extends { name: string }>(
  * Every role resolved to its group ONCE, at acquire — the whole of `play`'s
  * decision, precomputed.
  *
- * `play` runs once per member per frame (`wildlifeMeshes.ts`), and resolving the
+ * `play` runs once per member per frame (`lite/wildlifeMeshes.ts`), and resolving the
  * role there ran `creatureClipFor` every time. For a role the catalog does not
  * declare — `alert` and `idle` are optional — that falls to the synonym
  * scan, which splits and filters a fresh array per clip name per synonym: for a

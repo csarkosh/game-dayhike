@@ -2,7 +2,7 @@
  * What a piece of ground clutter is drawn with, as plain numbers: which
  * model and which of its LODs a class draws, how a rock is spread across its
  * cuts, each class's foliage profile and wet cap, and an instance's matrix
- * and ground tint. `clutterMeshes.ts` says what the clutter is and draws it;
+ * and ground tint. `lite/clutterMeshes.ts` says what the clutter is and draws it;
  * the blades, the duff and the cliffs seat and tint their instances with the
  * same writers. Loads no engine.
  */
@@ -80,7 +80,7 @@ export const SHRUB_F0 = 0.12;
 
 /** LOD node names inside each shipped GLB, in bucket order: index 0 is the
  * `near` band's bucket, index 1 the `far` band's. Every file also ships an
- * "LOD2"; see `clutterMeshes.ts`'s head for why most classes leave it unused. */
+ * "LOD2"; see `lite/clutterMeshes.ts`'s head for why most classes leave it unused. */
 export const LOD_NAMES = ["LOD0", "LOD1"] as const;
 /** The sword fern draws the model's LOD1 near and its LOD2 far, not LOD0 and
  * LOD1. The ferns were the most of the understory's triangles: at LOD0's 784
@@ -90,7 +90,7 @@ export const LOD_NAMES = ["LOD0", "LOD1"] as const;
  * seam it is a few pixels under the canopy. */
 const FERN_LOD_NAMES = ["LOD1", "LOD2"] as const;
 /** A drift log draws the trunk's LOD1 near and its LOD2 far: the forest's own
- * logs draw LOD1 (`forestMeshes.ts`), and LOD0's 4,196 triangles buy nothing
+ * logs draw LOD1 (`lite/forestMeshes.ts`), and LOD0's 4,196 triangles buy nothing
  * on a beach seen from the road. */
 const DRIFTLOG_LOD_NAMES = ["LOD1", "LOD2"] as const;
 /** The bushes draw the model's LOD1 near and its LOD2 far, as the ferns do

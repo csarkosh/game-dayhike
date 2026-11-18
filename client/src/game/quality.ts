@@ -11,7 +11,7 @@
  * tier and a ceiling, a stored verdict (a probe's measurement, or a drop after
  * a sustained low frame rate) moves the tier within them, and two cores or two
  * gigabytes cap it at low. `tierFor` is the older rule, from cores and memory
- * alone, which `renderer.ts` applies through `detectTier` when it is given no
+ * alone, which `lite/renderer.ts` applies through `detectTier` when it is given no
  * tier.
  */
 import { CLASS_TIERS, type GpuClass } from "./gpuClass.js";

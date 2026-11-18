@@ -7,8 +7,8 @@
  * `moteUniforms`) and as the stage's own steps in plain code (`moteAt`),
  * which the tests read and the stage's text is held to.
  *
- * What it stands in for is the game's pair of particle systems on
- * Babylon.js (`motes.ts`), and it keeps their look:
+ * It keeps the look of a pair of particle systems, the pollen's and the
+ * frost's:
  *
  * - **A slot a particle of the tier's capacity**, a third of it a species.
  *   A slot lives one life after another. Where a system's pool is full

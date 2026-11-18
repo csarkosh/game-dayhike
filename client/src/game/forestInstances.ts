@@ -1,6 +1,6 @@
 /**
  * The forest's instance lists as typed arrays: what each bucket of
- * `forestMeshes.ts` is drawn with, made from the bands `forestField.ts`
+ * `lite/forestMeshes.ts` is drawn with, made from the bands `forestField.ts`
  * collects. A matrix an instance (sixteen floats, `instancePose.ts`), and
  * beside it the per-instance attributes the materials read: the fade's bands
  * (`distanceFade.ts`), the ground's gradient for the base conform
@@ -117,7 +117,7 @@ export function groundGradBuffer(list: readonly TreeInstance[]): Float32Array {
 
 /** Per-instance ground colour and the sky's openness (`1 − canopy`) for the
  * understory's `foliage`
- * attribute — the four floats `writeFoliage` in clutterMeshes.ts writes for
+ * attribute — the four floats `writeFoliage` in `clutterInstances.ts` writes for
  * ground cover, from the same palette, so a fern's base and the ground it
  * stands in can never disagree. Only the tinting profiles need it, which among
  * the forest buckets is the understory alone: the tree profile has no ground

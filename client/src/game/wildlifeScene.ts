@@ -77,7 +77,7 @@ export const BIRD_ASSET: readonly (string | null)[] = [
 export const BIRD_PERCHED_ASSET = "wildlife.crow_perched";
 
 // Wing-beat rates. Every ω is an exact 2π·n / WING_TIME_WRAP so the shader's
-// time wrap is phase-continuous — wingPlugin.ts's rule, inherited from wind.
+// time wrap is phase-continuous — lite/wingPlugin.ts's rule, inherited from wind.
 const RAVEN_WING_OMEGA = (2 * Math.PI * 900) / WING_TIME_WRAP; // 3 Hz
 const GULL_WING_OMEGA = (2 * Math.PI * 750) / WING_TIME_WRAP;  // 2.5 Hz
 /**
@@ -154,7 +154,7 @@ const BUTTERFLY_PATTERN: readonly number[] = [0.45, 1, 0.75, 0.34];
  * noticed at, an unmodelled centimetre is not a gap a player could name). Eight vertices in
  * all, no ninth for a body.
  *
- * Flat in the XZ plane, wings running out along ±X from the hinge: `wingPlugin.ts` rotates
+ * Flat in the XZ plane, wings running out along ±X from the hinge: `lite/wingPlugin.ts` rotates
  * a vertex about that same axis by `|x| / halfSpan`, so this is exactly the shape a bird's
  * wing card already takes, just two of them meeting at the body instead of one continuous
  * span — the one thing the bird card path gains for this species is which geometry sits
@@ -195,7 +195,7 @@ export function butterflyGeometry(): {
 }
 
 /** Instances a bird bucket's first real allocation covers, then doubling —
- * `clutterMeshes.ts`'s BUCKET_MIN_INSTANCES, at the same size. A 400 m disc
+ * the lists' own `LIST_MIN_INSTANCES` (`instanceLists.ts`), at the same size. A 400 m disc
  * holds tens of birds per bucket, so this is usually the only allocation. */
 const BIRD_MIN_INSTANCES = 64;
 /** Shared zero-length placeholder for a bucket that has never held an instance. */

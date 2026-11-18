@@ -12,7 +12,7 @@
  * alpha 1, which the material multiplies into its own white albedo. The
  * triangles wind as the game's other meshes do, for a left-handed world.
  *
- * Babylon-free: `renderer.ts` uploads a ring's and `facePatchMeshes.ts` a
+ * Babylon-free: `lite/renderer.ts` uploads a ring's and `facePatchMeshes.ts` a
  * patch's.
  */
 import { WEIGHTS2_STRIDE, type RingGeometry } from "./clipmap.js";

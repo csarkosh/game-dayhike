@@ -2,7 +2,7 @@
  * A wing's beat, as numbers: the angle a wing is turned through about its
  * body's forward axis, amp·sin(ωt + phase), the clock it is counted on and
  * the share of it a vertex takes by how far out along the wing it lies. The
- * stage that turns the vertices is each renderer's own (`wingPlugin.ts` on
+ * stage that turns the vertices is each renderer's own (`lite/wingPlugin.ts` on
  * Babylon.js); this is what both turn them by.
  *
  * Renderer-only by design: no constant here may migrate into sim/ or a

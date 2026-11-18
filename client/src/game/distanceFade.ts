@@ -53,7 +53,7 @@ export function fadeKeeps(dist: number, bands: FadeBands, noise: number): boolea
 
 /** The single-edge CPU sibling of `fadeVisibility`'s out-band half: 1 inside
  * `edgeStart`, 0 at and beyond `edgeEnd`, smoothstep between. Moved here from
- * the retired clutter edge-fade plugin — `wildlifeMeshes.ts`
+ * the retired clutter edge-fade plugin — `lite/wildlifeMeshes.ts`
  * still needs it: a pooled creature is a container CLONE sharing its
  * species' material, so it cannot carry the per-instance `fadeBands`
  * attribute this file's thin-instance path uses, and shrinks its own root

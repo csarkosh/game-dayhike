@@ -130,7 +130,7 @@ export function bladeCharacterFor(draw: number, strength: number): number {
 /**
  * One cell of the field. It is shaped as a `ClutterInstance` of the meadow
  * class (unit scale, variant 0) so the cards' matrix, trample and tint
- * writers in clutterMeshes.ts serve it unchanged, plus the field's own: the
+ * writers in lite/clutterMeshes.ts serve it unchanged, plus the field's own: the
  * cover and its clamped strength, the canopy, the trail distance, the
  * character and the size.
  */

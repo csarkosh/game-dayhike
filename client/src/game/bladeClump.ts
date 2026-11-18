@@ -6,8 +6,8 @@ import { BLADE_CHARACTER_COUNT } from "./bladeField.js";
  * The blade clumps: the meshes the blade field (bladeField.ts) draws, one per
  * character and distance tier, built here from a parameter table and a
  * lattice hash so they need no asset and every value can be retuned in one
- * place. Babylon-free: the shell (bladeMeshes.ts) wraps the arrays in
- * meshes, and the tests read them directly.
+ * place. Babylon-free: `lite/bladeMeshes.ts` wraps the arrays in meshes,
+ * and the tests read them directly.
  *
  * A blade is a strip of BLADE_RINGS cross-sections plus one tip vertex, its
  * root on a disc of BLADE_CLUMP_RADIUS at y = 0 (the model convention: origin

@@ -124,7 +124,7 @@ export function bakeBed(grid: BedGrid, seed: number, camX: number, camZ: number)
 /** A lake as the bed needs it: its centre, its shape and how far its ground reaches. */
 export type BedPond = { x: number; z: number; bound: number; shape: LakeShape };
 
-/** How far past a lake's shore its surface reaches, metres (renderer.ts `lakeSurface`). */
+/** How far past a lake's shore its surface reaches, metres (`lakeSurfaceGrid.ts`). */
 export const LAKE_SURFACE_REACH = 3;
 /** The lattice a lake's part of a square is read on (m), and the shore distance past the surface's reach a lattice point may stand and still answer for the square about it (m): 2√2 m to the nearest lattice point at a stretch of up to 1.6. */
 const BED_LAKE_STEP = 4;

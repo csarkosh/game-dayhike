@@ -1,6 +1,6 @@
 /**
  * Which bark each tree wears and how it tiles. Babylon-free and on the
- * architecture test's BABYLON_FREE_FILES list; `forestMeshes.ts` dresses
+ * architecture test's BABYLON_FREE_FILES list; `lite/forestMeshes.ts` dresses
  * every tree's bark material from these as the models land.
  *
  * Four bark sets ship as KTX2 (`client/assets/textures/bark.<set>.<size>…`,
@@ -165,7 +165,7 @@ export function barkUv(transform: { uScale: number; vScale: number; wAng: number
 }
 
 /**
- * What a bark material is dressed with (`forestMeshes.ts`, `dressBark`): the
+ * What a bark material is dressed with (`lite/forestMeshes.ts`): the
  * set's three maps at a size, the transform each is laid by, and the
  * surface's own numbers. The ARM map's values are the surface's (occlusion
  * in red, on the lights as on the sky; roughness in green; metalness in

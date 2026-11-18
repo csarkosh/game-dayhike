@@ -5,7 +5,7 @@
  * LOD level, each a matrix and the fade's bands an instance and, for a class
  * that wears the foliage, its ground tint (`instanceLists.ts`); the grass
  * class's lists are cut to the view on the tiers that ask for it
- * (`grassCull.ts`). `clutterMeshes.ts` says what the buckets are and draws
+ * (`grassCull.ts`). `lite/clutterMeshes.ts` says what the buckets are and draws
  * them.
  *
  * Loads no engine: the shell that draws the clutter hands these arrays to

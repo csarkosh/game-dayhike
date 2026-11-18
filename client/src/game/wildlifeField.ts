@@ -32,7 +32,7 @@ export const SPECIES_EAGLE = 7;
 /**
  * A butterfly, numbered among the birds because it rides their thin-instance card path
  * (the wing beat, the buffers) rather than a pooled creature — but it flies no loop of its
- * own, so `wildlifeMeshes.ts`'s `isLoopFlier` names it out of the four true fliers above it,
+ * own, so `wildlifeScene.ts`'s `isLoopFlier` names it out of the four true fliers above it,
  * and it is placed in the open near flower cover rather than scanned for a snag or a coast.
  *
  * Numbering a non-flier above `FIRST_BIRD_SPECIES` has a cost worth naming before a second
@@ -111,7 +111,7 @@ export const WILDLIFE_D: readonly number[] = [0.35, 0.5, 0.6, 0.5, 0.25, 0.4, 0.
  * three 8 cm cards in a bucket that already exists.
  *
  * The entry also has to stay non-zero for as long as the species can be cued at all: while
- * `wildlifeMeshes.ts` shipped it no asset this held at 0, so `poolSlotFor` never handed out
+ * `lite/wildlifeMeshes.ts` shipped it no asset this held at 0, so `poolSlotFor` never handed out
  * a slot for an animal nothing could render. `wildlifeMeshes.test.ts`'s asset/pool
  * consistency check holds the two facts (asset shipped, pool slot given) to changing
  * together in either direction.
@@ -177,7 +177,7 @@ export const RAVEN_ROOST_CLEARANCE: readonly [number, number] = [10, 20];
 export const RAVEN_ROOST_ALT_FLOOR = 40;
 /**
  * Shipped model height (m) at scale 1, by `treeInCell`'s species index — 0 fir, 1 pine,
- * the order `forestMeshes.ts` maps to tree.giant_fir / tree.giant_pine. The numbers are the
+ * the order `lite/forestMeshes.ts` maps to tree.giant_fir / tree.giant_pine. The numbers are the
  * ACTUAL bounding boxes recorded in `client/assets/catalog.json`, not any
  * generic reference figures; `vegetation.ts` sizes a giant as this × its drawn scale, and
  * that scale already carries VALLEY_SCALE_BOOST.
@@ -296,7 +296,7 @@ function membersFor(seed: number, species: number, cx: number, cz: number): numb
  * origin repeat an earlier cell's draw — e.g. (-4, 44) with (0, -48) — and every
  * one of those pairs shares `(x | 0) ^ (z | 0)`. Two of the five squirrel units
  * inside the disc at the origin shared an id. Every consumer treats the id as a
- * unit's name — `wildlifeMeshes.ts` keys its state and pool slots on it,
+ * unit's name — `lite/wildlifeMeshes.ts` keys its state and pool slots on it,
  * `wildlifeBehaviour.ts` draws every per-unit random from
  * `hash3(unit.id, ...)` — so a collision rendered one of the two animals and gave
  * the other its dwell, wander, refuge and call schedule. The (species, cell)

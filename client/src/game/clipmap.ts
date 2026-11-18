@@ -10,7 +10,7 @@
  * steep ground (`CoveredGround`, the face patches), a ring leaves the
  * triangles under it out of its index buffer.
  *
- * Pure and Babylon-free; `renderer.ts` is the shell that uploads the output.
+ * Pure and Babylon-free; `lite/terrainMeshes.ts` hands the output to the GPU.
  */
 import { groundCover } from "../sim/clutter.js";
 import { FACE_SLOPE_HI } from "../sim/faceRelief.js";

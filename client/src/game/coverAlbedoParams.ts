@@ -1,6 +1,6 @@
 /**
  * The ground cover in one green. Babylon-free and on the architecture
- * test's BABYLON_FREE_FILES list; `clutterMeshes.ts` and `forestMeshes.ts`
+ * test's BABYLON_FREE_FILES list; `lite/clutterMeshes.ts` and `lite/forestMeshes.ts`
  * apply it as the models land, and the foliage plugin's shader holds the
  * green, the contrast and the albedo's floor (`foliagePlugin.ts`,
  * `shaders/foliage.fragment.fx`); the light plugin holds the cover's shadow

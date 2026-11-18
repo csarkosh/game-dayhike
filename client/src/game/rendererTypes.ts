@@ -108,7 +108,7 @@ export type Renderer = {
    */
   wildlifeEvents(): readonly WildlifeEvent[];
   /**
-   * The wildlife director's own sighting log — `wildlifeMeshes.ts`'s
+   * The wildlife director's own sighting log — `lite/wildlifeMeshes.ts`'s
    * `directorLog()`, read straight through. Empty for a hand-authored level
    * (no wildlife shell at all) and empty for as long as nothing has been
    * arranged for the player to see; a test seam, not something `app.ts` reads.

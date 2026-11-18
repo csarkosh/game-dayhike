@@ -2,8 +2,8 @@
  * The chunk props the simulation collides with, as the boxes drawn for
  * them: which chunks' props are drawn round a place, which of a chunk's
  * props are a box here and which are another shell's to draw, and a box's
- * mesh as plain arrays. The shells that draw them (`propMeshes.ts`, and
- * `lite/propMeshes.ts` on Babylon Lite) keep the meshes and the materials.
+ * mesh as plain arrays. What draws them (`lite/propMeshes.ts`) keeps the
+ * meshes and the materials.
  * A hand-authored level's brushes are boxes of the same kind, in the same
  * colours by their materials' names (`brushBoxes`), drawn where a world has
  * no forest.

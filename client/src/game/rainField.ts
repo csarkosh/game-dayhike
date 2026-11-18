@@ -3,8 +3,8 @@
  * volumes' seeds, what a frame steps (the folded time, the wind's drift, the
  * smoothed frame, the canopy's water), how many of each are drawn, and the
  * uniforms each is drawn with, by name. `rainParams.ts` has the constants and
- * the placement's arithmetic; a shell that draws the rain (`rain.ts` on
- * Babylon.js with `rainPlugin.ts`) takes every value from here.
+ * the placement's arithmetic; what draws the rain (`lite/rain.ts`) takes
+ * every value from here.
  *
  * Renderer-only by design, as `rainParams.ts` is: nothing here may migrate
  * into sim/ or a tunables registry.

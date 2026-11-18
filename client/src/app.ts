@@ -316,7 +316,7 @@ function buildGame(
   // re-initialisation validates against the same list it will resolve from.
   registerTerrainVariants(terrainVariantNames());
 
-  // sandbox01 stays imported as the fallback and as the shape `renderer.ts` and
+  // sandbox01 stays imported as the fallback and as the shape `lite/renderer.ts` and
   // both sessions expect. A forest world carries a stub level with no brushes, so
   // the brush-mesh path is simply a no-op rather than a second code path.
   const level = parseLevel(sandbox01);

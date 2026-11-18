@@ -1,10 +1,9 @@
 /**
  * What a scene's stage works out for the film car's handset and its cord,
  * with no engine: where the handset sits in the hand, how it eases there
- * from its cradle, and where the cord's two ends are. The stage on
- * Babylon.js (`sceneStage.ts`) moves the loader's nodes by the same numbers;
- * a renderer with no node to move carries the handset's vertices by
- * `handsetCarry` and lays the cord between `cordEnds`.
+ * from its cradle, and where the cord's two ends are. The stage
+ * (`lite/sceneStage.ts`), which has no node to move, carries the handset's
+ * vertices by `handsetCarry` and lays the cord between `cordEnds`.
  *
  * Every matrix is sixteen floats as a shader reads them, and every frame
  * here is told in one frame of the caller's choosing (the world's, or the

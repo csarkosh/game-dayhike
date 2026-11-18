@@ -19,7 +19,7 @@ export const DRAGONFLY_DRAWN_SCALE = 3;
 /** The wingbeat shown (Hz) by kind. */
 export const DRAGONFLY_WING_HZ: readonly [number, number, number] = [36, 30, 18];
 /** ω by kind (rad/s): 2π·Hz, written as 2π·n / WING_TIME_WRAP with n whole so the shader's time wrap
- * is phase-continuous (`wingPlugin.ts`'s rule). */
+ * is phase-continuous (`lite/wingPlugin.ts`'s rule). */
 export const DRAGONFLY_OMEGA: readonly [number, number, number] = [
   (2 * Math.PI * 10800) / WING_TIME_WRAP, // 36 Hz
   (2 * Math.PI * 9000) / WING_TIME_WRAP, // 30 Hz
@@ -78,7 +78,7 @@ const SALT_COLOURWAY = 76;
 /**
  * A kind's geometry, built in code: a body of two crossed quads (one upright, one flat) running the
  * kind's length along +z (head forward), and four wing quads hinged beside it, flat in the XZ plane,
- * the right pair at +x and the left at −x, so `wingPlugin.ts` rotates each about the body's axis by
+ * the right pair at +x and the left at −x, so `lite/wingPlugin.ts` rotates each about the body's axis by
  * `|x| / halfSpan` while the upright body quad, at x = 0, holds still. 24 vertices, 12 triangles.
  */
 export function dragonflyGeometry(kind: number): {

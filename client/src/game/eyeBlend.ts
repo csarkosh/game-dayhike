@@ -12,7 +12,7 @@
  * can tell.
  *
  * Pure, so the blend is tested under Node; the renderer applies it to the
- * camera (`renderer.ts`), and the loops capture the pose before their last
+ * camera (`lite/renderer.ts`), and the loops capture the pose before their last
  * tick (`app.ts`).
  */
 import type { PlayerState } from "../sim/types.js";

@@ -651,7 +651,7 @@ export function observe(
  * of the large group goes to the elk and the deer.
  *
  * The BUTTERFLY was a third, briefly, for exactly as long as nothing could render one:
- * `wildlifeMeshes.ts`'s `SPECIES_ASSET` and `BIRD_ASSET` both stopped short of it, and
+ * `lite/wildlifeMeshes.ts`'s `SPECIES_ASSET` and `BIRD_ASSET` both stopped short of it, and
  * `DIRECTOR_POOL[SPECIES_BUTTERFLY]` held at 0 for the same reason. Weighting it here
  * anyway once cost the beat itself: `placeable()` still let a butterfly be drawn,
  * `poolSlotFor` then always declined it, and `applyPlace` returned having done nothing —

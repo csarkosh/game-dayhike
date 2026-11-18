@@ -53,7 +53,7 @@ export const DUFF_CHARACTER_WEIGHTS: readonly number[] = [0.15, 0.75, 0.10];
 
 /**
  * One cell of the field. Shaped as a `ClutterInstance` of the litter class
- * so the cards' matrix and tint writers in clutterMeshes.ts serve it
+ * so the cards' matrix and tint writers in lite/clutterMeshes.ts serve it
  * unchanged, plus the field's own: the strength, the canopy and the
  * character. `variant` is set to `DUFF_CHARACTER_COUNT`, one past
  * `LITTER_VARIANT_SCALE`'s indices — deliberately out of range, so

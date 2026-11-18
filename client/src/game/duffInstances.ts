@@ -6,7 +6,7 @@
  * (`instanceLists.ts`), filled with the clutter's own matrix and tint
  * writers (`clutterInstances.ts`). `bladeInstances.ts`'s sibling: the
  * differences are the field's own — two tiers, not three, no size axis, and
- * no cut to the view. `duffMeshes.ts` says what the buckets are and draws
+ * no cut to the view. `lite/duffMeshes.ts` says what the buckets are and draws
  * them.
  *
  * Loads no engine: the shell that draws the duff hands these arrays to its

@@ -23,7 +23,7 @@ export const SUN_UP = 0.1;
 
 /**
  * What the rings' stage reads, by the names the splash plugin declares
- * (`rainSplash.ts`): the folded running time, the eye, the rain value, the
+ * (`lite/rainSplash.ts`): the folded running time, the eye, the rain value, the
  * direction the sun's light travels scaled by how far up the sun is (0 once
  * it is down), the headlamp (its place, its direction, its intensity as
  * alpha with the cosine of its half-angle), and the cover map's centre and

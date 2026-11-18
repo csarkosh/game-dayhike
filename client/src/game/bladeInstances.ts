@@ -4,7 +4,7 @@
  * character, distance tier and size, each a matrix, a ground tint and a
  * strength an instance (`instanceLists.ts`), filled with the clutter's own
  * matrix, trample and tint writers (`clutterInstances.ts`), and cut to the
- * view (`grassCull.ts`). `bladeMeshes.ts` says what the buckets are and
+ * view (`grassCull.ts`). `lite/bladeMeshes.ts` says what the buckets are and
  * draws them.
  *
  * Loads no engine: the shell that draws the grass hands these arrays to its

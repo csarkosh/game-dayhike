@@ -244,7 +244,7 @@ export function lakeRingDh(r: number, age: number): number {
   return LAKE_RING_AMP * Math.exp(-age / LAKE_RING_TAU) * (k * Math.cos(phase) * window + Math.sin(phase) * windowDr);
 }
 
-/** `splashHash` (rainSplash.ts), Hoskins' sine-free hash22, of (px, py): two values in [0, 1). */
+/** `splashHash` (lite/rainSplash.ts), Hoskins' sine-free hash22, of (px, py): two values in [0, 1). */
 export function lakeRingHash(px: number, py: number): [number, number] {
   let x = fract(px * 0.1031);
   let y = fract(py * 0.103);

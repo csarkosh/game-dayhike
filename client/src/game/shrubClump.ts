@@ -5,7 +5,7 @@ import { hash3 } from "../sim/field.js";
  * The evergreen shrub: the mesh the clutter's shrub class draws
  * (`CLUTTER_SHRUB`, sim/clutter.ts), built here from a parameter table and a
  * hash so it needs no asset. Babylon-free, like `bladeClump.ts`: the shell
- * (`clutterMeshes.ts`) wraps the arrays in meshes, and the tests read them
+ * (`lite/clutterMeshes.ts`) wraps the arrays in meshes, and the tests read them
  * directly.
  *
  * It is modelled on salal (Gaultheria shallon), the shrub of the Olympic
