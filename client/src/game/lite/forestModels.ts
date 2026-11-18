@@ -15,7 +15,7 @@
  * loader's own meshes, which nothing draws, are let go.
  */
 import {
-  disposeMeshGpu, getContainerMeshes, getMeshGeometry, loadGltf, loadKtx2Texture2D, setKtx2DecoderUrl,
+  disposeMeshGpu, enableKtx2WorkerDecoding, getContainerMeshes, getMeshGeometry, loadGltf, loadKtx2Texture2D, setKtx2DecoderUrl,
   type EngineContext, type Mesh, type PbrMaterialProps, type SceneNode, type Texture2D,
 } from "@babylonjs/lite";
 import { glbParts, type GlbPart } from "../glbParts.js";
@@ -143,7 +143,9 @@ let decoderPointed = false;
  * Points Lite's KTX2 decoder at the copies the game vendors under its own
  * base (`tools/vendor-ktx2.mjs`), every transcoder by name, so nothing
  * reaches for a CDN: a transcoder left unnamed keeps the address it was
- * built with. Once a page, before the first map is read.
+ * built with. Once a page, before the first map is read. The maps are
+ * transcoded in Lite's pool of workers, from the same files into the same
+ * formats: the page's thread hands the bytes over and takes the levels back.
  */
 function pointKtx2Decoder(): void {
   if (decoderPointed) return;
@@ -159,6 +161,7 @@ function pointKtx2Decoder(): void {
     MSCTranscoder: { JSModuleURL: `${KTX2_BASE}/msc_basis_transcoder.js`, WasmModuleURL: `${KTX2_BASE}/msc_basis_transcoder.wasm` },
     ZSTDDecoder: wasm("zstddec.wasm"),
   });
+  enableKtx2WorkerDecoding();
 }
 
 /**
