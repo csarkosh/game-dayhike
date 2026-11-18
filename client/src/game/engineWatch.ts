@@ -1,18 +1,15 @@
 /**
  * A renderer's own watch on the engine it made for itself.
  *
- * A renderer handed an engine is watched by the module that made the engine
- * (the renderer on Babylon.js, by `gpuEngine.ts`). A renderer
- * that makes its engine from its canvas is the only one that can hear it
- * fail, so it keeps one of these and offers its `watch` as
+ * A renderer that makes its engine from its canvas is the only one that can
+ * hear it fail, so it keeps one of these and offers its `watch` as
  * `Renderer.ownWatch`: the hike's ladders put it on once the renderer stands
  * (`rendererSwap.ts`), and a failure told here is answered as any engine's
  * is, by a live rebuild of the renderer (`answerFailures`).
  *
- * As `watchWebGpu` has it, each reason is told once an engine, and only to
- * who is listening. One difference: a failure that came before anyone
- * listened is told to the first who does, a turn later, since this engine is
- * made after its renderer is handed back.
+ * Each reason is told once an engine, and only to who is listening. A
+ * failure that came before anyone listened is told to the first who does, a
+ * turn later, since this engine is made after its renderer is handed back.
  *
  * No engine: the renderer calls `fail` from its engine's own events.
  */

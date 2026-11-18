@@ -4,9 +4,8 @@
  * runs from frame to frame (the anti-aliasing's last camera, the lens's
  * gate, the palette's fade), and the passes a tier runs with the size each
  * writes. `postParams.ts` has the tier ladder and the passes' constants,
- * `gradeParams.ts` the grade's record; the shell on Babylon.js (`post.ts`)
- * and the one on Babylon Lite (`lite/postChain.ts`) both take their values
- * from here.
+ * `gradeParams.ts` the grade's record; the chain (`lite/postChain.ts`)
+ * takes its values from here.
  *
  * Loads no engine.
  */

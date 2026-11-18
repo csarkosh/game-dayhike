@@ -1,9 +1,8 @@
 /**
  * What the haunt's figures are drawn into their mask with, with no engine
  * (docs/gameplay/2026-10-06-the-mist-shades.md): the mask's size, a
- * figure's colour there, and its smoke's numbers. `shadeSilhouette.ts` and
- * `shadeSmoke.ts` are the shell on Babylon.js, `lite/shadeMask.ts` the one
- * on Babylon Lite; both take their values from here.
+ * figure's colour there, and its smoke's numbers. `lite/shadeMask.ts` draws
+ * the mask and takes its values from here.
  */
 
 /** The mask's size as a share of the frame: a blurred figure wants no more. */

@@ -3,8 +3,7 @@
  * turns, by the names its file gives their nodes, each part's turn in its
  * own frame at a pose, and the arithmetic that carries a part's vertices
  * there for a renderer that draws the car as one mesh a material and has
- * no node to turn. The stage on Babylon.js turns the loader's nodes by the
- * same angles (`scene/sceneStage.ts`).
+ * no node to turn (`lite/sceneStage.ts`).
  *
  * A renderer that carries them in its vertex stage is handed the same
  * arithmetic as numbers: a turn for each frame a pose turns (`turnSlots`),

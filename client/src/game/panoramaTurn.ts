@@ -3,9 +3,8 @@
  * size and its sectors, the eye's height and the reach of the picture up the
  * lake's cylinder, the frustum a sector is seen through, which way a sector
  * faces, the turn (which sector a frame draws, and how many are left of the
- * capture running) and when a capture is asked for. The shell on Babylon.js
- * (`lakePanorama.ts`, and the renderer that arms it) and the hike's own
- * renderer (`lite/lakePanorama.ts`) both take their values from here; the
+ * capture running) and when a capture is asked for. The hike's renderer
+ * (`lite/lakePanorama.ts`) takes its values from here; the
  * ground in the picture is the mirror's stand-in (`mirrorGround.ts`).
  */
 import { SKYLINE_EYE_UP } from "./lakeSkyline.js";

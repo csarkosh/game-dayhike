@@ -3,7 +3,7 @@
  * and the speck's numbers the stages hold as literals, a frame of the
  * midges as the lake's life fills it (`waterLifeScene.ts`), the instances
  * laid out once by row and slot, and a frame's uniforms by the names the
- * stages read them under. `midgeSwarms.ts` draws them on Babylon.js.
+ * stages read them under. `lite/midgeMeshes.ts` draws them.
  */
 import { MIDGE_SWARMS_MAX, SWARM_ROW_FLOATS } from "./midgeMotion.js";
 

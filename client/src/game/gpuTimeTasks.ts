@@ -9,7 +9,7 @@
  *
  * The frame's last task is the one that ends on the canvas: the scene's own
  * pass on a tier with no post chain, the chain's passes on a tier with one.
- * Its time is `mainMs`, as the canvas's pass is on Babylon.js; the tasks
+ * Its time is `mainMs`; the tasks
  * before it are the report's targets. A task's target size is not the
  * timer's to know: a target is given the size its name is known by
  * (`sizes`), else none. Where the device has no timestamp queries the

@@ -7,9 +7,7 @@
  * and which engine it is (`engineHandle.ts`), the watch a
  * renderer keeps on one it made (`engineWatch.ts`) and the measurement
  * mode's report (`gpuTimeReport.ts`). No renderer is handed an engine here:
- * the hike's makes its own (`hikeRenderer.ts`), and what the renderer on
- * Babylon.js is handed, keeps and gives back of an engine is its own to name
- * (`renderer.ts`).
+ * the hike's makes its own (`hikeRenderer.ts`).
  */
 import type { Vec3, WorldState } from "../sim/types.js";
 import type { ListenerPose } from "./ambientAudio.js";
@@ -44,10 +42,8 @@ export type FrameView = { dt: number; sprinting: boolean; before?: EyePose | nul
 /**
  * The renderer as the hike holds it: what it is told, what it is asked, and
  * what it reads back, in the game's own terms. Nothing here says what draws
- * the world. Two things answer it: the renderer on Babylon Lite the hike is
- * given (`lite/renderer.ts`), and the renderer on Babylon.js (`renderer.ts`),
- * which the game's own modules that build into its scene, and the tests,
- * hold as a `SceneRenderer`.
+ * the world: the renderer on Babylon Lite the hike is given answers it
+ * (`lite/renderer.ts`).
  */
 export type Renderer = {
   /** The engine the renderer draws with, as the page holds one
@@ -60,15 +56,14 @@ export type Renderer = {
    * The renderer's own watch on the engine it made for itself
    * (`engineWatch.ts`): the hike's ladders put it on once the renderer stands
    * and answer what it tells (a lost device) by building the renderer again.
-   * Null for a renderer drawing with an engine it was handed, which is
-   * watched by the module that made it (the renderer on Babylon.js).
+   * Null for a renderer that keeps none (a stand-in in a test).
    */
   readonly ownWatch: WatchEngine | null;
   /**
    * Resolves once a renderer that makes its engine for itself stands (true)
    * or cannot be made (false: it is handed back all the same, stays empty and
-   * draws nothing). Absent on a renderer built on an engine it was handed,
-   * which stands from the moment it is made.
+   * draws nothing). Absent on a renderer that stands from the moment it is
+   * made (a stand-in in a test).
    */
   readonly whenMade?: Promise<boolean>;
   /** The measurement mode's readout (`?gpuTime`, `gpuTime.ts`); null without it. */

@@ -1,8 +1,8 @@
 /**
  * The splashes with no engine: their seeds, how many a frame draws, and the
  * uniforms the rings are drawn with, by name. `rainParams.ts` has the
- * constants; a shell that draws them (`rainSplash.ts` on Babylon.js) takes
- * every value from here.
+ * constants; what draws them (`lite/rainSplash.ts`) takes every value from
+ * here.
  *
  * Renderer-only by design, as `rainParams.ts` is: nothing here may migrate
  * into sim/ or a tunables registry.

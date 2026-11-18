@@ -24,7 +24,7 @@
  * Which plunges throw spray (`createSprayThrow`): this frame's, within
  * SURF_SPRAY_RANGE_M of the camera, nearest first.
  *
- * Whoever draws the spray (`surfSpray.ts` on Babylon.js) reads these.
+ * What draws the spray (`lite/surfSpray.ts`) reads these.
  */
 import { LIP_SPEED_MAX, LIP_SPEED_MIN, type LipTracker } from "./oceanBreaker.js";
 import { WIND_SEA_U_PER_WIND } from "./oceanWindSea.js";

@@ -6,8 +6,8 @@
  * and where the end scene's car is. The shots themselves are arithmetic
  * (`cutscene.ts`, `ending.ts`, `endScene.ts`); this is the state that runs
  * from frame to frame between them, and the order they take the camera in.
- * The renderer on Babylon.js and the one on Babylon Lite both step it once a
- * frame, after the player's own eye is placed, and draw what it says.
+ * The hike's renderer steps it once a frame, after the player's own eye is
+ * placed, and draws what it says.
  *
  * A frame's order, each later one taking the camera from the one before:
  * the summit's scene or the cap's, while neither ending has begun; the end

@@ -10,9 +10,8 @@ import type { Renderer, RendererOptions } from "./rendererTypes.js";
 
 /**
  * A hike's renderer, as the hike holds it: the one drawn with Babylon Lite
- * (`lite/renderer.ts`), from the same canvas, world and options the renderer
- * on Babylon.js takes (`createRenderer`, `renderer.ts`), but an engine,
- * which it makes for itself. The hike makes its first renderer and each one
+ * (`lite/renderer.ts`), from a canvas, a world and its options; its engine
+ * it makes for itself. The hike makes its first renderer and each one
  * a swap builds through this, so nothing it holds names what draws the
  * world.
  */

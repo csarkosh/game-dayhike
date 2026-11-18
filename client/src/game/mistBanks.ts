@@ -1,9 +1,8 @@
 /**
  * The valley mist banks as a frame draws them, with no engine: which of the
  * banks `mistField.ts` places round the camera are shown, where the wind has
- * carried each, and how far each has faded. A renderer's shell hands these to
- * its quads: the one on Babylon.js (`mistMeshes.ts`) a mesh a bank, the one on
- * Babylon Lite (`lite/mistMeshes.ts`) an instance a bank.
+ * carried each, and how far each has faded. What draws them hands these to
+ * its quads, an instance a bank (`lite/mistMeshes.ts`).
  *
  * A bank is a soft sprite on a quad that turns about the vertical to face
  * along the camera's view. It fades out near the eye so the camera can pass

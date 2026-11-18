@@ -1,9 +1,8 @@
 /**
  * The lake's mirror as arithmetic, with no engine: how large its picture is,
  * when its pass is armed and on which armed frames it draws, how far the
- * image it holds lags the eye, and the camera it is drawn through. The
- * shell on Babylon.js (`lakeMirror.ts`) and the one on Babylon Lite
- * (`lite/lakeMirror.ts`) both take their values from here; the reflection
+ * image it holds lags the eye, and the camera it is drawn through. What
+ * draws it (`lite/lakeMirror.ts`) takes its values from here; the reflection
  * and the oblique near plane themselves are `mirrorView.ts`'s.
  *
  * The mirrored camera is the player's seen in the water's plane. On

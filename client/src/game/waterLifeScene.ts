@@ -12,7 +12,7 @@
  * (`frogChorus.ts`), and fills one reused `WaterLifeSound` for
  * `waterLifeAudio.ts` to voice. What it steps it hands to whoever draws it
  * (`WaterLifeDraws`): the midges' frame, or none, and the dragonflies as
- * they stand. `waterLife.ts` draws them on Babylon.js.
+ * they stand. `lite/waterLifeMeshes.ts` draws them.
  *
  * Under the frogs' voices lies a far chorus, the frogs farther out: two
  * places over the water, fixed once a world (the marsh's middle, or without

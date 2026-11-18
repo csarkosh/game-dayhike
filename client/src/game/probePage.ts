@@ -12,8 +12,7 @@
  *
  * How a step is measured is its caller's (`StepMeasure`): the hike's own
  * renderer measures on the engine it makes for itself from the step's
- * canvas (`lite/probeScene.ts`), and the renderer on Babylon.js on the
- * engine the WebGPU rule gives the step's tier (`probeScene.ts`).
+ * canvas (`lite/probeScene.ts`).
  */
 import { PROBE_HOUR, probeReadingLine, type StartupDeps } from "./frameProbe.js";
 import { afterNextPaint } from "./paint.js";

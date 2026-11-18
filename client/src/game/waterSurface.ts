@@ -4,9 +4,9 @@
  * each lake's): the row it is shaded by, where its bed's square lies, the
  * clock and the wind and the wind's integral over the run, the rain and the
  * sun's share, and on a lake its time, the cat's-paws' cover, its calm, its
- * mirror's numbers and the shore it reflects. `waterPlugin.ts` binds a
- * record on Babylon.js; a renderer that binds uniforms by name takes the
- * same values as records of them (`lakeUniforms`, `waterFrameUniforms`).
+ * mirror's numbers and the shore it reflects. The water's plugins take the
+ * values as records of uniforms by name (`lakeUniforms`,
+ * `waterFrameUniforms`).
  *
  * Also the ripple bump's drift (`createBumpDrift`): how far the bump's
  * picture has slid under the low tier's sea and under the lakes.

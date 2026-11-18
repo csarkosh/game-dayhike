@@ -4,7 +4,7 @@
  * and where, how many workgroups each of a frame's four dispatches takes,
  * the sizes of the buffers and the two pictures they fill, the uniforms a
  * frame writes, and the starting amplitudes a spectrum is uploaded as.
- * Whoever runs the passes (`oceanGpuFft.ts` on Babylon.js) reads them here.
+ * What runs the passes (`lite/seaFft.ts`) reads them here.
  *
  * A frame is four dispatches:
  * 1. evolve: every bin of every cascade turned to the frame's time, the

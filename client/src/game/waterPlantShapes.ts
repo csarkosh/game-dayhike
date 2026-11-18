@@ -2,8 +2,7 @@
  * A murky lake's plants as shapes and lists, with no engine: the reeds' and
  * the cattails' clumps, a lily's pad and its flower, which pads flower and
  * how each is turned, and every plant a world's lakes hold as instance
- * matrices, a list a mesh. `waterPlants.ts` draws them on Babylon.js; a
- * renderer of another kind draws the same shapes from the same lists.
+ * matrices, a list a mesh. `lite/waterPlantMeshes.ts` draws them.
  */
 import { CLUTTER_LILY_PATCH_WAVE, CLUTTER_LILY_SALT, type ClutterInstance } from "../sim/clutter.js";
 import { hash3 } from "../sim/field.js";

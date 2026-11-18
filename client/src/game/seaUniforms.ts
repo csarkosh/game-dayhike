@@ -1,7 +1,7 @@
 /**
  * The sea's uniforms by the names its shaders read them under, with no
- * engine: for a renderer that binds uniforms by name. `waterPlugin.ts`
- * binds the same values one by one on Babylon.js, from the same records
+ * engine, for the sea's plugin, which binds uniforms by name
+ * (`lite/seaPlugin.ts`), from the records the game computes
  * (`OceanNumbers`, `WaterSurface`).
  *
  * Two records. What is the world's and the bed's (`SeaUniforms`): the

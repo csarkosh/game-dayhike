@@ -32,7 +32,7 @@
  * `seaWetBounds` is `wetBounds` of a ring's geometry, read from the ring's
  * samples without making the geometry. `seaWetRun` is the run of the
  * lattice's triangles a draw is held to so that no ring past the wet ones
- * is drawn: on Babylon.js a ring with no water is a mesh that is not drawn.
+ * is drawn.
  */
 import { HOLE_CELLS, blendWeight } from "./clipmap.js";
 import { OCEAN_BOUND, WATER_RING_CELLS, WATER_RING_COUNT, WATER_UV_SCALE, waterHoleCellsFor, waterRingSpacing, type WaterRingSamples } from "./water.js";

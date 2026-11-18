@@ -2,8 +2,8 @@
  * The cover map with no engine: what a registered mesh is to the rain and
  * what its texel holds, the colour the map is cleared to, the camera that
  * looks straight down on it, and where it stands and when it is drawn again.
- * `rainParams.ts` has the map's constants and the step rule; a shell that
- * draws the map (`rainMap.ts` on Babylon.js) takes every value from here.
+ * `rainParams.ts` has the map's constants and the step rule; what draws
+ * the map (`lite/rainMap.ts`) takes every value from here.
  *
  * Renderer-only by design, as `rainParams.ts` is: nothing here may migrate
  * into sim/ or a tunables registry.

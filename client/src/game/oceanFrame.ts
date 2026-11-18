@@ -4,9 +4,9 @@
  * swell's field for the world and the tier (`oceanWaves.ts`), its tables,
  * whose coastline row follows the camera along z, the phases on the shared
  * clock, and the wind sea's state for the wind as it blows and as the sea
- * follows it. `oceanRender.ts` binds these on Babylon.js beside the
- * textures it makes of the tables and the wind sea's field; a renderer that
- * binds uniforms by name takes them as records (`seaUniforms.ts`).
+ * follows it. The sea's meshes (`lite/seaMeshes.ts`) take these as records
+ * of uniforms by name (`seaUniforms.ts`), beside the textures they make of
+ * the tables and the wind sea's field.
  */
 import { coveFor } from "../sim/olympic.js";
 import { SWELL_COMPONENTS, SWELL_COMPONENTS_LOW, type SwellComponent } from "./oceanSwell.js";

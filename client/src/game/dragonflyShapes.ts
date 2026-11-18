@@ -3,7 +3,7 @@
  * built in code, the colourways an individual can wear, the wingbeat's
  * numbers, and each kind's units a frame as instances (a matrix, the wing's
  * phase and amplitude, a colourway). `dragonflyBehaviour.ts` decides where
- * every unit is; `dragonflies.ts` draws these on Babylon.js.
+ * every unit is; `lite/dragonflyMeshes.ts` draws these.
  */
 import { hash3 } from "../sim/field.js";
 import type { Dragonflies } from "./dragonflyBehaviour.js";

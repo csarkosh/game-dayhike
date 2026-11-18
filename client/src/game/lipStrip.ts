@@ -9,7 +9,7 @@
  * profile and the sea's own surface there. Here: the strips' vertices and
  * triangles, the box that holds every place a vertex can take, which strip
  * a camera is handed, and the tracker's state as the strip reads it.
- * Whoever draws the strip (`oceanLip.ts` on Babylon.js) reads them here.
+ * What draws the strip (`lite/lipMeshes.ts`) reads them here.
  */
 import { COVE_END_BLEND } from "../sim/olympic.js";
 import { LIP_COLUMNS, LIP_PROFILE_VERTS, LIP_RANGE_M, LIP_SLOTS } from "./oceanBreaker.js";

@@ -2,20 +2,16 @@
  * The size of the frame a hike is drawn into, in the engine's pixels, and
  * when it is sized again.
  *
- * The rule is the game's on Babylon.js, as arithmetic. There the engine's
- * hardware scaling level is set to the tier's (`QUALITY`, by the lighting),
- * which replaces what the display's pixel ratio had made it: the frame is
- * the canvas's box in CSS pixels over the level, whatever the display. The
- * render scale under the paint (`renderScale.ts`) divides the level by its
- * share, so a step down draws fewer pixels into the same box. And when the
- * display's ratio moves while a hike runs (the page zoomed, the window
- * dragged to another display), Babylon multiplies the level by the old ratio
- * over the new, so the frame keeps the pixels it had: the box's CSS pixels
- * have changed by exactly that share.
- *
- * One thing differs from Babylon.js, on purpose: there a step of the render
- * scale sets the level afresh and so forgets a zoom made since the hike
- * began; here the ratio the hike began at is kept for the hike's life.
+ * The rule, as arithmetic: a scaling level is the tier's (`QUALITY`),
+ * whatever the display's pixel ratio, so the frame is the canvas's box in
+ * CSS pixels over the level. The render scale under the paint
+ * (`renderScale.ts`) divides the level by its share, so a step down draws
+ * fewer pixels into the same box. And when the display's ratio moves while
+ * a hike runs (the page zoomed, the window dragged to another display), the
+ * level is multiplied by the old ratio over the new, so the frame keeps the
+ * pixels it had: the box's CSS pixels have changed by exactly that share.
+ * The ratio the hike began at is kept for the hike's life, through every
+ * step of the render scale.
  *
  * No engine: the canvas's box, the display's ratio and the surface that is
  * sized come in as functions, so the rule runs under Node.
