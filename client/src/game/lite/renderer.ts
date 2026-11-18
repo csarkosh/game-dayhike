@@ -79,9 +79,11 @@
  * pipeline made the synchronous way holds the browser's GPU thread while it
  * compiles, and that thread presents the intro's film, which stands still
  * meanwhile on a first visit, when no cache holds the shaders. So the hike's
- * own pass asks for its pipelines with `createRenderPipelineAsync`
- * (`enableAsyncPbrPipelines`), a mesh joining it on the frame after its
- * pipeline is ready, under the film, whose frames no one sees; the passes
+ * own pass asks for its pipelines with `createRenderPipelineAsync`, the PBR
+ * and the shader materials' alike, whenever a material joins
+ * (`enableAsyncPbrPipelines`, `enableAsyncShaderMaterialPipelines`), a mesh
+ * joining the pass on the frame after its pipeline is ready, under the
+ * film, whose frames no one sees; the passes
  * whose pictures are kept (a far tree's bake, the rain's cover map, the
  * shore's panorama, the haunt's mask) make theirs at once (`syncPipelines`),
  * so no kept picture is short of a mesh. The world is in only once a frame
@@ -360,8 +362,8 @@
  */
 import {
   NeutralToneMapping, addTask, addToScene, createBankedFreeCamera, createTexture2DFromPixels, createDirectionalLight, createEngine, createHemisphericLight, createPbrMaterial, createSpotLight,
-  createPluginUniformBlock, createRenderTarget, createRenderTask, createSceneContext, disposeEngine, disposeScene, enableAsyncPbrPipelines, enableMaterialPlugins, enablePbrLinearOutput,
-  enablePbrMaterialPluginVertexData, getGpuDevice, getProjectionMatrix,
+  createPluginUniformBlock, createRenderTarget, createRenderTask, createSceneContext, disposeEngine, disposeScene, enableAsyncPbrPipelines, enableAsyncShaderMaterialPipelines,
+  enableMaterialPlugins, enablePbrLinearOutput, enablePbrMaterialPluginVertexData, getGpuDevice, getProjectionMatrix,
   markLightDirty, markMaterialUboDirty, onEngineDeviceLost, onEngineGpuError, registerScene, renderFrame, setSurfaceSize, vec3,
   whenPbrPipelinesIdle, writePluginUniformBlock,
   type BankedFreeCamera, type DirectionalLight, type EngineContext, type HemisphericLight, type MaterialPlugin, type Mesh, type PbrMaterialProps,
@@ -1025,9 +1027,10 @@ export function createLiteRenderer(canvas: HTMLCanvasElement, level: Level, fore
     // canvas's format resolved into the canvas, into a target that stands while the frame's size does (`keep`). Lite
     // records the frame's passes again as a hike loads and when a hiker's lamp joins the scene's lights, and its own
     // pass's target was destroyed and made at each recording.
-    // The hike's own pass makes its PBR pipelines off the page's thread, a mesh joining it on the frame after its pipeline
-    // is ready; the passes whose pictures are kept make theirs at once (`syncPipelines`).
+    // The hike's own pass makes its pipelines off the page's thread, PBR and shader materials alike, a mesh joining it on the
+    // frame after its pipeline is ready; the passes whose pictures are kept make theirs at once (`syncPipelines`).
     enableAsyncPbrPipelines();
+    enableAsyncShaderMaterialPipelines();
     const scene = createSceneContext(engine, { defaultRenderTask: false });
     if (!chained) {
       const samples = createRenderTarget({ lbl: "scene-color", format: engine.format, dFormat: "depth24plus-stencil8", samples: FRAME_SAMPLES, size: engine, keep: true });
