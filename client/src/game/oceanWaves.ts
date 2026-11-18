@@ -2,7 +2,7 @@
  * The swell at a point: its height, its trochoidal displacement and slopes,
  * its envelope, its break and its white water, and how a headland shelters it.
  * Babylon-free (on BABYLON_FREE_FILES). The sea's shaders evaluate the same
- * maths from the same atlas (`shaders/oceanSurface.fx`: `oceanSwellSum`, and
+ * maths from the same atlas (`oceanSurface.glsl`: `oceanSwellSum`, and
  * `oceanFoamFromEnvelope` for the foam from its envelope); tests hold the two
  * in lockstep.
  *

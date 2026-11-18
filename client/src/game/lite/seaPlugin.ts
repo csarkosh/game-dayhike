@@ -1,9 +1,8 @@
 /**
  * The sea's water as a material plugin on Babylon Lite: Lite's PBR with the
  * sea's waves and shading spliced in (`seaWgsl.ts` has the WGSL, the game's
- * GLSL statement for statement, over the water's own definitions in
- * `waterWgsl.ts`; `waterPlugin.ts` with an ocean is the same plugin on
- * Babylon.js): the lattice's vertices placed on their rings and moved by
+ * recorded GLSL statement for statement, over the water's own definitions
+ * in `waterWgsl.ts`): the lattice's vertices placed on their rings and moved by
  * the swell, the swash's sheet lifting the sea up the cove's face, the depth
  * of water under each pixel, the swell's normal with the wind sea on it, the
  * rain's rings, the one alpha it is blended by, the white water and the
@@ -28,7 +27,7 @@
  *   them in the place of the alpha, as a lake's does (`lakePlugin.ts`).
  * - **Its vertex data is none**: a vertex is its place in the lattice.
  * - **The plunging lip's strip wears the same plugin with another vertex
- *   stage** (`lip`; `waterPlugin.ts` made with `lip` on Babylon.js): its
+ *   stage** (`lip`): its
  *   vertices are placed from the crests the breaker's tracker found and the
  *   baked cross-section, two more tables its vertex stage reads at a whole
  *   texel, in place of the rings' depths, which it has none of. Everything

@@ -81,7 +81,7 @@ export function midgeSlots(blocks: readonly number[]): { slots: Float32Array; to
  * The sphere a row of the table `table` keeps its midges in, into `out` (x,
  * y, z, radius); false for a row that draws none (no midge, or no presence).
  * A midge strays its swarm's radius along each of the ground's axes and the
- * taller of the radius and the column's height up or down (`midge.vertex.fx`).
+ * taller of the radius and the column's height up or down (`midge.vertex.glsl`).
  */
 export function swarmSphere(table: Float32Array, row: number, out: [number, number, number, number]): boolean {
   const o = row * SWARM_ROW_FLOATS;

@@ -5,8 +5,7 @@
  * WGSL (`postWgsl.ts`) fed the game's own uniforms. What it is drawn with is
  * made with no engine: the tier's passes and constants (`postParams.ts`),
  * the grade's record (`gradeParams.ts`), each pass's uniforms and the state
- * that runs from frame to frame (`postFrame.ts`); the shell on Babylon.js
- * (`post.ts`) takes its values from the same modules.
+ * that runs from frame to frame (`postFrame.ts`).
  *
  * **The passes are one task of the scene's frame**, after the scene's own
  * pass, drawn by this module on the engine's device with the frame's own

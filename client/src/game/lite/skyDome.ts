@@ -1,6 +1,6 @@
 /**
  * The sky's dome on Babylon Lite: a box round the eye drawn by one fragment
- * stage, the game's own (`shaders/skyDome.fragment.fx`) in WGSL statement
+ * stage, the game's own (`skyDome.fragment.glsl`) in WGSL statement
  * for statement, from the numbers the game draws it with
  * (`skyDomeParams.ts`): the clear sky's slice of the scattering table at the
  * sun's altitude, the cloud deck, the night floor, the sun's disc and the
@@ -16,9 +16,9 @@
  * - **Colour** is the low tier's material path, as every other material on
  *   Lite: the frame's exposure, Khronos PBR Neutral, the encode and the
  *   display curve's contrast, the exposure and the contrast read from the
- *   frame's block (`frameBlock.ts`). The vignette, the colour curves and the
- *   dither, which the low tier grades with in its materials on Babylon.js,
- *   are not drawn on Lite by any material, and not by this one.
+ *   frame's block (`frameBlock.ts`). With no chain the dome grades its own
+ *   colour as every material does: the vignette, the colour curves and the
+ *   dither (`displayCurve.ts`).
  * - **The image-based light's capture** draws the same sky in linear light
  *   (`SKY_RADIANCE_WGSL`, `skyCapture.ts`), with the disc capped.
  *

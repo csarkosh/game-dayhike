@@ -2,7 +2,7 @@
  * The shade veil on Babylon Lite: how a tier with no post chain draws the
  * haunt's figures and the stare, which the grade draws where there is a
  * chain. One triangle over the whole frame, last of the see-through draws,
- * multiplied into it, as the game's veil is on Babylon.js (`shadeVeil.ts`):
+ * multiplied into it:
  * its fragment is the grade's shade block and its stare block, the same
  * text the grade's pass runs (`postWgsl.ts`), and the factor they leave is
  * raised to the display's gamma (`VEIL_GAMMA`), since the frame under it is
@@ -68,7 +68,7 @@ struct VeilOut{@builtin(position)position:vec4<f32>,@location(0)vUV:vec2<f32>}
   return out;
 }`;
 
-/** shadeVeil.fragment.fx: a factor of 1 where nothing darkens, the grade's two blocks on it, and the display's gamma. */
+/** shadeVeil.fragment.glsl: a factor of 1 where nothing darkens, the grade's two blocks on it, and the display's gamma. */
 const FRAGMENT = /* wgsl */ `
 struct VeilOut{@builtin(position)position:vec4<f32>,@location(0)vUV:vec2<f32>}
 fn tx(uv:vec2<f32>)->vec2<f32>{return vec2<f32>(uv.x,1.0-uv.y);}

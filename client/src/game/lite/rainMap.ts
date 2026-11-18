@@ -1,7 +1,6 @@
 /**
  * The rain's cover map on Babylon Lite: what the rain has to fall through,
- * seen from above, as the game draws it on Babylon.js (`rainMap.ts`), from
- * what the game draws it with (`rainCover.ts`: the kinds and their texels,
+ * seen from above, from what the game draws it with (`rainCover.ts`: the kinds and their texels,
  * the clear colour, the camera, where the map stands; `rainParams.ts`: its
  * size and its step).
  *
@@ -16,8 +15,7 @@
  * - **Drawn only where it is read.** The map follows the player by the
  *   game's step rule whatever the weather, but it is drawn only on a frame
  *   that reads it (`update`'s `read`: a streak, a drip or a splash is
- *   shown), once for the place it then stands at. On Babylon.js it is drawn
- *   again at every step, rain or none.
+ *   shown), once for the place it then stands at.
  * - **A texel is the height shader's**: the top surface's world height, its
  *   transmission and its ceiling's lift, written in place of the lit colour
  *   by a plugin on a plain material, last in its fragment. The terrain's

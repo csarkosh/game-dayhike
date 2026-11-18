@@ -14,8 +14,7 @@
  *
  * **A body is not drawn while its model is on the way.** The capsule is for
  * the model that never came: one draw for every such hiker, in the game's
- * blue. On Babylon.js a capsule also stands in while a model loads, which
- * there is the start of the hike; here it would be a blue shape for the
+ * blue. One standing in while a model loads would be a blue shape for the
  * moment after each hiker joins.
  *
  * **The local hiker's own body is an instance like any other's**, of the
@@ -24,8 +23,7 @@
  * is moved to its eyes. Its ranger is fetched with the hike and drawn for
  * its first frames under the ground it stands on (`LOCAL_WARM_FRAMES`), so
  * the pipelines its two draws need are made as the hike starts and not in
- * the first frame of the summit's scene, where the game on Babylon.js draws
- * it out of sight for the same reason.
+ * the first frame of the summit's scene.
  *
  * **Of a Hollow the frame shows its eyes, glowing at their level.** The
  * figure itself is a shadow in the silhouette mask, which the grade lays
@@ -50,11 +48,7 @@
  * plugin's own: four bytes a pair are written on a frame in which a level
  * has changed or a pair has joined, and while no level is above nothing
  * there is no draw and no write. A pair at no level among pairs that glow
- * is put outside the view. The game sets the same level on Babylon.js, as
- * the eye meshes' visibility, and there it does not show: Babylon.js
- * blends a mesh by its visibility only under a material with no
- * transparency mode of its own, which a loaded model's material has, so
- * that renderer draws the eyes whole.
+ * is put outside the view.
  *
  * The eyes are drawn with the bodies, at the last of their places
  * (`BODY_PLACES.eyes`), and write the frame's depth as every opaque draw

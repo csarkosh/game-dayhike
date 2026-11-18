@@ -8,8 +8,8 @@
  * A box is a mesh of its own, standing where the prop stands, in a material
  * a prop material's name: Lite's PBR in the name's colour, matt, soaked by
  * the weather at a prop's cap and under the air. The chunks round a new
- * place are made when the camera crosses into another chunk, in the call as
- * the game makes them on Babylon.js, or a chunk a slice by the loader of
+ * place are made when the camera crosses into another chunk, in the call,
+ * or a chunk a slice by the loader of
  * first builds while the intro's film covers the hike (`firstBuilds.ts`);
  * a chunk that has left the window goes with its meshes.
  */

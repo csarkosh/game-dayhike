@@ -5,7 +5,7 @@
  * stare as the grade pass does on the post tiers
  * (docs/rendering/2026-11-05-low-tier-material-path.md).
  *
- * The veil's fragment shader carries two blocks of grade.fragment.fx
+ * The veil's fragment shader carries two blocks of grade.fragment.glsl
  * verbatim, the shades' taps and the stare's crawl, and the grade's text is
  * recorded in the WGSL corpus and never edited for it: `shadeVeilShader.test.ts`
  * reads both files and holds the blocks the same, line for line, by the

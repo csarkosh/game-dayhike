@@ -38,7 +38,7 @@ export function endBlurKernel(blur: number): number {
 export const FAR_SOFT_BAND: readonly [number, number] = [80, 450];
 export const FAR_SOFT_RADIUS = 5;
 
-/** The far softening's uniforms for the ground cloud it marches (farSoft.fragment.fx). */
+/** The far softening's uniforms for the ground cloud it marches (farSoft.fragment.glsl). */
 export const FAR_CLOUD_UNIFORMS = [
   "farEye", "farForward", "farRight", "farUp", "atmSunDir", "atmSunColour",
   "atmCloudDensity", "atmCloudSteps", "atmCloudRange", "atmCloudFalloff", "atmCloudSeat", "atmCloudGroundRange",
@@ -250,7 +250,7 @@ export function extractUniforms(record: GradeRecord, out: ExtractUniforms = { ex
 
 type M3 = [number, number, number, number, number, number, number, number, number];
 
-/** The grade's uniforms by name (grade.fragment.fx): the two matrices nine floats each, column by column. */
+/** The grade's uniforms by name (grade.fragment.glsl): the two matrices nine floats each, column by column. */
 export type GradeUniforms = {
   texelSize: V2; time: [number]; exposure: [number]; whitePoint: M3; purkinje: M3; purkinjeThreshold: [number]; purkinjeStrength: [number];
   shadowTint: V3; shadowAmount: V2; midtoneTint: V3; midtoneAmount: V2; highlightTint: V3; highlightAmount: V2;

@@ -10,7 +10,7 @@
  * the foliage's numbers (`foliageUniforms.ts`). This module is where those
  * meet Lite: a mesh a bucket (`listMeshes.ts`) and a material a tier.
  *
- * **The material**, as `bladeMeshes.ts` dresses it on Babylon.js: opaque,
+ * **The material**: opaque,
  * the meadow green under the clump's own vertex colours, drawn on both
  * sides and lit on one, with the foliage at the blades' profile (the wind,
  * each blade's collapse to its root across the tier's band and by the

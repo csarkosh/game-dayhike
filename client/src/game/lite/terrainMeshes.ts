@@ -19,9 +19,8 @@
  * shown is the mesh's one list of triangles, each patch's in its slot, the
  * patches in the order of their cells' places.
  *
- * **The rings and the patches change as the game's do on Babylon.js**
- * (`createClipmap` in `renderer.ts`, `facePatchMeshes.ts`), under the
- * renderer's scheduler (`syncJobs.ts`). The rings move when the camera
+ * **The rings and the patches change under the renderer's scheduler**
+ * (`syncJobs.ts`). The rings move when the camera
  * crosses a line of the finest ring's lattice: at a walk as a job, every
  * ring's samples moved and each ring whose inputs changed made again in
  * slices and written to its hidden mesh, then all of them shown in the
@@ -100,7 +99,7 @@ import type { ReflectionRegistry } from "./lakePanorama.js";
 import { RAIN_MAP_RINGS, type CoverRegistry } from "./rainMap.js";
 import { TERRAIN_VERTEX_FLOATS, terrainVertexData } from "./terrainPlugins.js";
 
-/** What writing one ring's buffers is expected to take (ms): the game's own estimate for its rings on Babylon.js. The
+/** What writing one ring's buffers is expected to take (ms): the game's own estimate. The
  * rings' job says so before its last slice (`syncJobs.ts`). */
 const CLIPMAP_UPLOAD_MS = 1;
 

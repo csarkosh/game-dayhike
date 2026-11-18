@@ -44,7 +44,7 @@
  *   mesh's plugin vertex data.
  *
  * With them, the plugin a far tree's bake draws its two pictures with
- * (`impostorBakePlugin`), `impostorBakePlugin.ts`'s on Babylon.js.
+ * (`impostorBakePlugin`).
  */
 import type { MaterialPlugin, PluginUniformBlock, Texture2D } from "@babylonjs/lite";
 import { BLADE_SOFT } from "../bladeClump.js";
@@ -165,7 +165,7 @@ export function writeVegetationInstances(
   }
 }
 
-// foliage.vertex.fx: two octaves whose phase is the position projected onto the wind's direction, and a lattice hash.
+// foliage.vertex.glsl: two octaves whose phase is the position projected onto the wind's direction, and a lattice hash.
 const GUST = /* wgsl */ `fn foliageGust(p:vec2<f32>,t:f32)->f32{
   let u=material.windDir.x*p.x+material.windDir.y*p.y;
   let c=floor(p/${f(WIND_RAGGED_CELL)});

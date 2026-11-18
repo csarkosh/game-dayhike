@@ -1,7 +1,7 @@
 /**
  * The plunging lip's swept curl on Babylon Lite: the strip the game draws
- * over the cove's face on the tier whose wind sea is computed each frame
- * (`oceanLip.ts` on Babylon.js), from what the game draws it with, computed
+ * over the cove's face on the tier whose wind sea is computed each frame,
+ * from what the game draws it with, computed
  * with no engine: the strips' vertices, their reach and the crests as they
  * read them (`lipStrip.ts`), the tracker the sea's edge steps
  * (`seaEdge.ts`) and the baked cross-section (`oceanBreaker.ts`). Its

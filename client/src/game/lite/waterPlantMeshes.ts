@@ -1,7 +1,6 @@
 /**
  * A murky lake's plants on Babylon Lite: the reeds and the cattails, the
- * lily pads and their flowers, as the game draws them on Babylon.js
- * (`waterPlants.ts`), from the shapes and the lists made with no engine
+ * lily pads and their flowers, from the shapes and the lists made with no engine
  * (`waterPlantShapes.ts`): a mesh a reed variant, one for the pads and one
  * for the flowers, each every lake's plants of its kind as instances,
  * placed once.

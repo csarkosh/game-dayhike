@@ -2,7 +2,7 @@
  * The startup probe's scene on Babylon Lite, one measured step of it, and
  * the page's `StartupDeps` that measure every step so (`liteProbeDeps`).
  *
- * It is the scene the probe on Babylon.js builds (`probeScene.ts`): the
+ * The scene is the
  * canopy pose (`probePose`) at the tier being measured, on a forest, the
  * stub level and an empty world nothing steps, in mist at the probe's hour,
  * drawn by the hike's own renderer on a canvas of its own filling the
@@ -17,12 +17,11 @@
  * device only once its making has ended, so a step that ends that early
  * (the probe's time ran out) hands its answer back after that.
  *
- * What differs from the probe on Babylon.js is what the two engines are:
- * the renderer makes its own engine from the canvas, on WebGPU, so a step
+ * The renderer makes its own engine from the canvas, on WebGPU, so a step
  * is handed none and there is no second engine to measure on; and a frame
- * is ready when the renderer has nothing left to land (`waitingItems`),
- * where a Babylon.js scene says so itself. A shader compiled late starts
- * the warm-up again through `Renderer.onShaderCompiled`, as on Babylon.js.
+ * is ready when the renderer has nothing left to land (`waitingItems`). A
+ * shader compiled late starts the warm-up again through
+ * `Renderer.onShaderCompiled`.
  *
  * **A step whose renderer draws nothing reads nothing.** A renderer that
  * cannot be made (no adapter, a device refused) is handed back all the

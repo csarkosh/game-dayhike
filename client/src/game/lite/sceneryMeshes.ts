@@ -28,7 +28,7 @@
  *   collides with is drawn in its place**, as the chunk props' boxes are
  *   (`propBoxes.ts`); the body's stand-in is its cross of dark timber and
  *   pale figure. The parked car gives way to the film's car when that
- *   arrives (`filmCar`), as on Babylon.js, and is then let go: nothing
+ *   arrives (`filmCar`), and is then let go: nothing
  *   shows it again.
  * - **The see-through parts stand at the world's origin** with their
  *   vertices in the world's own coordinates, at their places among the
@@ -36,9 +36,8 @@
  *   planks' lettering and the board's face. A car's glass rides the car's
  *   own place and turn as its opaque parts do, and is ordered from the
  *   world's origin with the rest (`Mesh.sortOrigin`).
- * - **A car's glass is one draw, its panes listed farthest first.**
- *   Babylon.js draws a mesh a pane and orders them by how far each is, so a
- *   pane seen through another is laid under it. Here the one mesh's
+ * - **A car's glass is one draw, its panes listed farthest first**, so a
+ *   pane seen through another is laid under it. The one mesh's
  *   triangles are listed pane by pane in that order, judged in the car's
  *   own frame, and written again on the frame the order changes: when the
  *   eye crosses between two panes.
@@ -58,8 +57,7 @@
  *   pane of the glass, is turned by the door's rows, its middle carried
  *   with it for the panes' order. A pose the car already stands at writes
  *   nothing, so a parked car costs a hike and the scene's first seconds
- *   nothing; the game on Babylon.js keeps a node a part for it through the
- *   whole hike. The rain's cover map draws those meshes under the same
+ *   nothing. The rain's cover map draws those meshes under the same
  *   turns. The tail lamps are one mesh, shown from the catch.
  * - **The film's car is drawn in its first frames wherever it stands**, its
  *   patch and its tail lamps with it (the lamps dark, in its middle), so
@@ -1307,8 +1305,7 @@ export function createLiteScenery(engine: EngineContext, scene: SceneContext, op
               model.release();
               return;
             }
-            // The hike's car is wetted by the weather; a staged scene's own is not, as on Babylon.js, whose stage gives
-            // its car's materials no wet look.
+            // The hike's car is wetted by the weather; a staged scene's own is not: its materials are given no wet look.
             const turns = carTurnsOf(model);
             dressed(model, PLACES.film, alone === undefined, turns);
             // The radio and its handset take a share of the sky's reflected light: the rest of it is roof.

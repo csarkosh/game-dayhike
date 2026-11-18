@@ -3,10 +3,8 @@
  * a spot light each, at the hiker's eyes and along their aim, at the state
  * the frame gives every lamp alike (`lampParams.ts`).
  *
- * **A light is made for a hiker, not for a seat.** The game on Babylon.js
- * raises every material to seven lights, the sun, the fill and a lamp a
- * player, and every lit pixel works through all seven whoever is on the
- * trail. Lite's materials loop over the lights the scene holds, so here it
+ * **A light is made for a hiker, not for a seat.** Lite's materials loop
+ * over the lights the scene holds, so it
  * holds the lens's lamp, the sun, the fill and one lamp for each other
  * hiker there has been at once: a hike alone lights with three.
  *

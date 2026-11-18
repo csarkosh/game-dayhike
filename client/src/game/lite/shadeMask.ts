@@ -2,8 +2,7 @@
  * The haunt's figures in their mask on Babylon Lite: a shade, a lunge or the
  * Hollow itself drawn as a flat shape through smoke of its own into a
  * target of its own, which the grade reads back through a wide blur and
- * darkens the frame by, as the game draws it on Babylon.js
- * (`shadeSilhouette.ts`, `shadeSmoke.ts`), from what the game draws it with
+ * darkens the frame by, from what the game draws it with
  * (`shadeMaskParams.ts`: the mask's size, a figure's colour and its smoke's
  * numbers; `entityPoses.ts`: how far in each figure is, how soft and how
  * near).
@@ -15,14 +14,12 @@
  *   camera is the frame's without the anti-aliasing's jitter, at the frame's
  *   own shape whatever the target's. A frame with no figure skips the pass
  *   whole, and the grade then reads none of the mask.
- * - **The body is drawn nowhere else.** On Babylon.js the mask's camera sees
- *   a layer the frame's does not. Lite has no layers; a pass has its own
- *   word on a mesh instead: the body stands hidden, which leaves it out of
+ * - **The body is drawn nowhere else.** Lite has no layers; a pass has its
+ *   own word on a mesh instead: the body stands hidden, which leaves it out of
  *   the frame's own pass and every other, and the mask's pass shows it
  *   (`setTaskMeshVisible`).
  * - **One material for every figure, a figure's own values an instance's.**
- *   Babylon.js makes a material a figure and writes each its colour and its
- *   smoke's uniforms. Here every body is an instance of the model's one draw
+ *   Every body is an instance of the model's one draw
  *   a primitive, and what differs between figures rides with the instance:
  *   its colour in the mask, its opacity there, how far in it is and where
  *   its feet stand. The smoke's clock is the frame's block's.
@@ -81,7 +78,7 @@ export const SHADE_LOOK_FLOATS = 8;
 /** How far the mask's camera looks ahead of the eye for its target, metres. */
 const LOOK_AHEAD = 10;
 
-/** shadeSmokeNoise.fx: value noise in three dimensions on a hash, three octaves of it, and where a point is in the smoke at a time. */
+/** shadeSmokeNoise.glsl: value noise in three dimensions on a hash, three octaves of it, and where a point is in the smoke at a time. */
 export const SHADE_SMOKE_NOISE_WGSL = /* wgsl */ `
 const SHADE_SMOKE_SCALE:f32=${f(SHADE_SMOKE_SCALE)};
 const SHADE_SMOKE_RISE:f32=${f(SHADE_SMOKE_RISE)};
@@ -117,7 +114,7 @@ fn shadeSmokeAt(world:vec3<f32>,seconds:f32)->vec3<f32>{
 }`;
 
 /**
- * shadeSmokeWorldPos.vertex.fx: the outline swells and draws in along the
+ * shadeSmokeWorldPos.vertex.glsl: the outline swells and draws in along the
  * normal; then the clip position from the place it came to, which the
  * fragment reads too, and the figure's own values handed on.
  */
@@ -135,7 +132,7 @@ export const SHADE_SMOKE_VERTEX_WGSL = /* wgsl */ `{
 /**
  * The mask's texel: Babylon.js's Standard material as the mask sets it (the
  * emissive alone, held to 0 to 1, in linear light), then
- * shadeSmokeColour.fragment.fx on its alpha. `linear`: a post chain grades
+ * shadeSmokeColour.fragment.glsl on its alpha. `linear`: a post chain grades
  * the frame, and the colour is handed on as it is; without one it goes
  * through the material colour path, as every Standard material's does there.
  */

@@ -25,8 +25,8 @@
  * hidden: Lite draws every mesh it is not told to hide.
  *
  * **A rebuild is a job** of the renderer's scheduler where the camera
- * crosses a tree cell at a walk (`rebuildJobs.ts`), as the forest's is on
- * Babylon.js: the bands collected, then each bucket's new list made in a
+ * crosses a tree cell at a walk (`rebuildJobs.ts`): the bands collected,
+ * then each bucket's new list made in a
  * slice of its own, in arrays no mesh holds, then every bucket handed its
  * list in the last slice, so no frame draws one bucket moved on against
  * another that has not. Between crossings the bands of the cell the camera
@@ -34,7 +34,7 @@
  * takes them made. The hand-over waits for a frame whose upload budget
  * has room for it (`frameUploads.ts`), and is counted there.
  *
- * **The materials**, as `forestMeshes.ts` dresses them on Babylon.js: a
+ * **The materials**: a
  * crown is its file's alpha-tested cards with the foliage at the tree's
  * profile, the distance dither and the base conform; a bark is one of the
  * four bark sets laid by its dressing's transform (in the mesh's own
@@ -139,8 +139,8 @@ const FIRST_CAPACITY = 16;
 
 /**
  * What handing every bucket its new list is expected to take (ms), the one
- * step of a rebuild that cannot be sliced: the game's own estimate for its
- * forest on Babylon.js. The forest's job says so before its last slice
+ * step of a rebuild that cannot be sliced: the game's own estimate. The
+ * forest's job says so before its last slice
  * (`syncJobs.ts`), so it starts where a frame's share has room for it.
  */
 const FOREST_UPLOAD_MS = 2;

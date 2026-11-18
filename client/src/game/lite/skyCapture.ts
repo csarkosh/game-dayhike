@@ -2,7 +2,7 @@
  * The sky's capture as the scene's image-based light on Babylon Lite: the
  * dome drawn into a cube of the scene's own (Lite's `createCustomEnvironment`),
  * which every PBR material of the scene reads its reflection of the sky
- * from, as the game's probe is read on Babylon.js (`lighting.ts`).
+ * from.
  *
  * The cube is the probe's (`skyProbeParams.ts`): its size, its six layers
  * in the cube map's own layout, the world's axes as they stand, each face

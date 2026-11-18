@@ -18,10 +18,10 @@
  * bytes are held to `UPLOAD_BUDGET_BYTES`: a hand-over asks first
  * (`hold`), and one that does not fit in what is left of the frame's
  * budget waits for a frame that has room, so what one frame would have
- * sent is carried over the frames after. The renderer on Babylon.js has no
- * such number: what bounds its frame is the scheduler's time
- * (`SYNC_BUDGET_MS`), with each upload slice said ahead (a millisecond a
- * ring, two for the forest's lists). The budget here is two mebibytes,
+ * sent is carried over the frames after. The scheduler's time
+ * (`SYNC_BUDGET_MS`) bounds a frame's work, with each upload slice said
+ * ahead (a millisecond a ring, two for the forest's lists); this bounds
+ * its bytes. The budget is two mebibytes,
  * about one shell's lists at a forest view (the forest's and the clutter's
  * are 1.9 MB each on the low tier), so two shells' hand-overs do not share
  * a frame and the small ones (a cut of the grass, the duff's lists) do.

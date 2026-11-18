@@ -5,7 +5,7 @@ import { emptySkyDomeUniforms } from "../../../src/game/skyDomeParams.js";
 import { SLICE_AZIMUTHS, SLICE_ELEVATIONS } from "../../../src/game/skyModel.js";
 import { babylonText } from "../../helpers/babylonFixture.js";
 
-/** The dome's fragment stage on Babylon.js (`shaders/skyDome.fragment.fx`), its text recorded. */
+/** The dome's fragment stage on Babylon.js (`skyDome.fragment.glsl`), its text recorded. */
 const GLSL = babylonText("stages/skyDome.fragment.glsl");
 
 /** `text` with every run of white space taken out, so a statement reads the same however it is laid out. */

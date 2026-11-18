@@ -119,7 +119,7 @@ export function paintRadiusFor(base: number, rows: number): number {
  * each read a 2 by 2 average of the frame. A laptop's 1512 by 982 window on
  * the medium tier drew at 32 to 37 frames a second with the strokes at full
  * resolution and 51 at half, on an Apple M4. The compose
- * (`paintCompose.fragment.fx`) brings them back to full. */
+ * (`paintCompose.fragment.glsl`) brings them back to full. */
 export const PAINT_SCALE = 0.5;
 /** How sharply the compose prefers, of the four painted texels round a
  * pixel, those whose scene is like the pixel's own (a joint bilateral

@@ -9,7 +9,7 @@
  * Lite: the models its loader reads (`forestModels.ts`) and their
  * materials.
  *
- * **The materials**, as `cliffMeshes.ts` dresses them on Babylon.js: a
+ * **The materials**: a
  * model's own maps, its colour drawn half way to the ground's under each
  * module, the wet look at the cliffs' cap and the air. The two near rings
  * hand off by their geometry and share a material; the far ring dithers out

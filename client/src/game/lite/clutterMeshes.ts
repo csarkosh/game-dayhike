@@ -15,7 +15,7 @@
  * (`forestModels.ts`) and a PBR material a class's model with the
  * vegetation's plugins (`forestPlugins.ts`).
  *
- * **The materials**, as `clutterMeshes.ts` dresses them on Babylon.js. A
+ * **The materials.** A
  * class that sways (the cards and the plants) wears the foliage at its
  * profile with the foliage's own light, its far level's edges, and for a
  * card model its tint toward the cover's green and the cards' contrast;

@@ -1,7 +1,6 @@
 /**
- * The sea on Babylon Lite: its seven rings round the world's centre, as the
- * game lays them on Babylon.js (`createWater`'s rings in `renderer.ts`),
- * from what the game draws them with, computed with no engine: the rings'
+ * The sea on Babylon Lite: its seven rings round the world's centre, from
+ * what the game draws them with, computed with no engine: the rings'
  * samples of the ground (`water.ts`) and the lattice they are drawn as
  * (`seaLattice.ts`), the swell and the wind sea (`oceanFrame.ts`,
  * `oceanWindSea.ts`), the sea's edge on the cove (`seaEdge.ts`), the
@@ -14,8 +13,7 @@
  *   after the scene's pass is broken for it, as a lake's surface is
  *   (`lakeMeshes.ts`), and the lip's curl with it. The seven rings
  *   are one mesh made once, a vertex its place in its ring's lattice, placed
- *   by the vertex stage; on Babylon.js they are seven meshes, each made
- *   again as it moves. The draw is held to the run of rings that hold
+ *   by the vertex stage. The draw is held to the run of rings that hold
  *   water, so a dry ring's vertices are not placed at all. A ring has water where the ground under one of its
  *   cells is below the level (or, along the cove, within the swash's climb
  *   of it), and the box of those cells is what a view is tested against, as
@@ -33,8 +31,7 @@
  *   whole of its tables).
  * - **The edge is stepped every frame, shown or not**: the wet ground reads
  *   the swash's table, and the surf is heard by it.
- * - **The wind sea's field is the tier's** (`windSeaField.ts`, which the
- *   shell on Babylon.js reads too). The loop on the tier that bakes one,
+ * - **The wind sea's field is the tier's** (`windSeaField.ts`). The loop on the tier that bakes one,
  *   in the game's worker (`oceanLoopStart.ts`), sent once when it lands, 64
  *   frames of 128 texels a side; until then the sea is the swell alone. On
  *   the tier that computes its field each frame, the three cascades of

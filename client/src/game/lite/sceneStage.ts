@@ -1,8 +1,8 @@
 /**
  * A scene's frame applied to what draws it on Babylon Lite: the renderer's
  * free camera, the actors, the scene's car with its handset, the caption
- * and the black. It decides nothing: every number comes from the frame, as
- * on Babylon.js (`scene/sceneStage.ts`), and the actors and the car are the
+ * and the black. It decides nothing: every number comes from the frame,
+ * and the actors and the car are the
  * renderer's own to stand (`sceneryMeshes.ts`). What is missing (an actor
  * never asked for, a hand no actor has) is said once and skipped, so the
  * scene plays with whatever has arrived.

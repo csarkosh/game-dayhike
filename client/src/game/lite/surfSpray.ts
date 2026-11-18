@@ -4,11 +4,11 @@
  * instance of one unit quad that the vertex stage places from its seed and
  * its burst's record, from what the game draws them with (`sprayField.ts`:
  * the seeds, the slots and their ages, the wind's velocity, the colour and
- * the rule that throws a burst; `surfSpray.ts` is the same on Babylon.js).
+ * the rule that throws a burst).
  *
  * - **The stage is Babylon.js's Standard material as the game sets it for
  *   the spray**, with the spray plugin's code at its points
- *   (`shaders/surfSpray.vertex.fx`, `surfSpray.fragment.fx`, statement for
+ *   (`surfSpray.vertex.glsl`, `surfSpray.fragment.glsl`, statement for
  *   statement): unlit, the foam's white under the sun and the fill its
  *   emissive, the scene's distance fog mixed in before the colour is taken
  *   to linear, then the tier's colour path (`displayCurve.ts`); and after

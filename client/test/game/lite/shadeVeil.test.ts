@@ -8,7 +8,7 @@ import { binder, picture } from "./textureClaims.js";
 import { babylonText } from "../../helpers/babylonFixture.js";
 import { tight } from "./wgslText.js";
 
-/** The veil's fragment stage on Babylon.js (`shaders/shadeVeil.fragment.fx`), its text recorded. */
+/** The veil's fragment stage on Babylon.js (`shadeVeil.fragment.glsl`), its text recorded. */
 const GLSL = babylonText("stages/shadeVeil.fragment.glsl");
 const src = readFileSync(new URL("../../../src/game/lite/shadeVeil.ts", import.meta.url), "utf8");
 

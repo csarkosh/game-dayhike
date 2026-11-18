@@ -121,16 +121,16 @@ describe("the lake's ripples' constants", () => {
       "vec2 lakeRingHash(vec2 p)",
       "vec2 lakeRainSlope(vec2 xz, float t, float rate, float dist)",
     ]) expect(glsl).toContain(`${signature} {`);
-    // the trees' gust, foliage.vertex.fx's, with the lake's names for its constants and its wind
+    // the trees' gust, foliage.vertex.glsl's, with the lake's names for its constants and its wind
     const foliage = body(source("foliage.vertex"), "float foliageGust(vec2 p, float t)");
     expect(body(glsl, "float lakeGust(vec2 p, float t, vec2 dir)").replace(/LAKE_WIND_/g, "WIND_").replace(/\bdir\./g, "windDir."))
       .toBe(foliage);
-    // Hoskins' hash as the midges' (midge.vertex.fx) and the splashes' (rainSplash.ts) are
+    // Hoskins' hash as the midges' (midge.vertex.glsl) and the splashes' (rainSplash.ts) are
     expect(body(glsl, "float lakeHash(float i, float s)")).toBe(body(source("midge.vertex"), "float midgeHash(float i, float s)"));
     expect(body(glsl, "vec2 lakeRingHash(vec2 p)")).toBe(body(source("splash.vertexDefinitions"), "vec2 splashHash(vec2 p)"));
     // no test on a varying: the branches are chosen by step, mix, clamp and
     // smoothstep. The one if is on the lake's time, a uniform at the one call
-    // (waterLights.fragment.fx passes waterLakeTime): the next wrap's field is
+    // (waterLights.fragment.glsl passes waterLakeTime): the next wrap's field is
     // read only over the wrap's last life.
     expect(glsl.match(/\bif\s*\(/g)).toHaveLength(1);
     expect(body(glsl, "vec3 lakeBreeze(vec2 xz, float t, vec2 windDir, float gust)")).toContain(

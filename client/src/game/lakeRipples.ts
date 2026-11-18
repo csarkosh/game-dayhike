@@ -1,7 +1,7 @@
 /**
  * The lake's ripples as two states (spec §7): the cat's-paw mask that switches
  * the surface between glass and the rippled octaves, and the rain's rings
- * near the eye. The GLSL lives in `shaders/lakeRipples.fragment.fx`: every
+ * near the eye. The GLSL lives in `lakeRipples.fragment.glsl`: every
  * function here but `lakeRingHeight` (the height whose derivative
  * `lakeRingDh` is, kept for its tests) has a GLSL twin of the same name and
  * arguments, and the GLSL's `lakeRipple2` and `lakeLens`, which sample the

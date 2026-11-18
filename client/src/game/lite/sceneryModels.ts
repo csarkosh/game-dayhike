@@ -4,9 +4,9 @@
  * loader (`forestModels.ts`), its geometry stood where its nodes put it, and
  * its primitives gathered a material.
  *
- * - **One mesh a material.** The game on Babylon.js draws a mesh for every
- *   primitive of the file, each under one of the file's few materials: the
- *   film's car is thirty primitives of seven materials. Nothing here moves
+ * - **One mesh a material.** A file holds a mesh for every primitive, each
+ *   under one of its few materials: the film's car is thirty primitives of
+ *   seven materials. Nothing here moves
  *   one of them against another, so the primitives of a material are one
  *   geometry and one draw.
  * - **The materials are the file's own**, as the loader made them, under the
@@ -18,8 +18,8 @@
  *   coordinates** (`placed`), so its mesh stands at the origin with every
  *   other see-through mesh and its place alone orders it (`drawOrder.ts`).
  * - **A tangent's handedness is turned with the loader's mirror.** The
- *   game on Babylon.js draws these models through the loader's own nodes,
- *   the mirror among them; here their geometry is baked across it, which
+ *   loader stands these models under nodes of its own, a mirror among
+ *   them; here their geometry is baked across it, which
  *   carries a tangent's direction and leaves its sign, so the sign is
  *   turned (`partsByMaterial`) and a map of normals is read the way up its
  *   file means. (The forest's buckets are baked on both renderers and keep
@@ -329,8 +329,7 @@ export function placed(part: SceneryPart, matrix: Float32Array): { positions: Fl
 
 /**
  * The order a see-through part's panes are drawn in from `eye`: farthest
- * first by the middle of each pane's box, as Babylon.js orders the blended
- * meshes a model's primitives are there, so a pane seen through another is
+ * first by the middle of each pane's box, so a pane seen through another is
  * laid under it. `centres` is xyz a pane, in the world; `order` is filled
  * with the panes' numbers and returned.
  */

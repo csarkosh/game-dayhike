@@ -10,7 +10,7 @@
 import { NEEDLE_BED } from "./terrainSurface.js";
 import { ambientCollapseUnder, type WeatherParams } from "./weather.js";
 
-/** How much darker the ground draws under a full canopy in a lake's reflections: `lakeMirrorTerrain.fragment.fx`'s LAKE_MIRROR_CANOPY_SHADE. */
+/** How much darker the ground draws under a full canopy in a lake's reflections: `lakeMirrorTerrain.fragment.glsl`'s LAKE_MIRROR_CANOPY_SHADE. */
 export const MIRROR_CANOPY_SHADE = 0.5;
 
 /** The sky as the ground's colour in a lake's reflections reads it. */

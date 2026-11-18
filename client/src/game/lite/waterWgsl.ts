@@ -1,10 +1,10 @@
 /**
  * The water's shading in WGSL, statement for statement the game's GLSL: what
- * `shaders/water.fragment.fx`, `lakeRipples.fragment.fx`,
- * `lakeMirror.fragment.fx`, `waterLights.fragment.fx` and
- * `waterCompose.fragment.fx` say of a lake on the tiers that blend their
- * water over what lies under it (`waterPlugin.ts` on Babylon.js splices the
- * GLSL into its PBR material; `lakePlugin.ts` here hands these to Lite's).
+ * `water.fragment.glsl`, `lakeRipples.fragment.glsl`,
+ * `lakeMirror.fragment.glsl`, `waterLights.fragment.glsl` and
+ * `waterCompose.fragment.glsl` say of a lake on the tiers that blend their
+ * water over what lies under it (`lakePlugin.ts` hands these to Lite's PBR
+ * material; the stages named are the recorded ones the tests hold them to).
  *
  * What is written differently, and why:
  *
@@ -74,7 +74,7 @@ const PBR_DIELECTRIC_F0 = 0.04;
 /** The lake's varyings from the vertex stage: the bed's depth under the vertex and the vertex's view depth, metres. */
 export const WATER_VERTEX_WGSL = "out.vBedDepth=bedDepth;out.vWaterViewDepth=out.clipPos.w;";
 
-/** `water.fragment.fx`: the bed's depth, the horizon-safe normal and the skin. */
+/** `water.fragment.glsl`: the bed's depth, the horizon-safe normal and the skin. */
 export const WATER_DEFS_WGSL = /* wgsl */ `
 const WATER_F0:f32=0.02;
 const WATER_F0_FACTOR:f32=${(WATER_F0 / PBR_DIELECTRIC_F0).toFixed(4)};
@@ -145,13 +145,13 @@ fn waterSkinColour(xz:vec2<f32>,viewDepth:f32)->vec3<f32>{
   return mix(duckweed,algae,0.5*smoothstep(0.4,0.6,waterSkinNoise(p/1.6)));
 }`;
 
-/** `water.fragment.fx`'s numbers of the read through the surface: how far a ripple bends the read, over what depth of water. */
+/** `water.fragment.glsl`'s numbers of the read through the surface: how far a ripple bends the read, over what depth of water. */
 export const WATER_THROUGH_DEFS_WGSL = /* wgsl */ `
 const WATER_REFRACT:f32=0.02;
 const WATER_REFRACT_DEPTH:f32=1.0;
 const WATER_REFRACT_MIN:f32=0.3;`;
 
-/** `lakeRipples.fragment.fx`'s lens: the second octave's tilt's divergence a metre, which lights the bed under a lake that is read through. */
+/** `lakeRipples.fragment.glsl`'s lens: the second octave's tilt's divergence a metre, which lights the bed under a lake that is read through. */
 export const LAKE_LENS_WGSL = /* wgsl */ `
 const LENS_STEP_M:f32=${LENS_STEP_M.toFixed(4)};
 const CAUSTIC_GAIN:f32=${CAUSTIC_GAIN.toFixed(2)};
@@ -169,7 +169,7 @@ fn lakeLens(xz:vec2<f32>)->f32{
 }`;
 
 /**
- * `waterLights.fragment.fx`'s branch of the tier that reads through its
+ * `waterLights.fragment.glsl`'s branch of the tier that reads through its
  * surface, in the place of the one alpha: the bed's light through the water,
  * read from the frame kept behind it and bent by the ripples, dimmed by the
  * metres of water it comes through; the water's own colour only where the
@@ -198,10 +198,10 @@ var wTransmit=vec3<f32>(0.0);
 }`;
 }
 
-/** `waterFinal.fragment.fx`: the bed's light, added past the surface's own haze, since the frame it is read from is hazed already. */
+/** `waterFinal.fragment.glsl`: the bed's light, added past the surface's own haze, since the frame it is read from is hazed already. */
 export const WATER_THROUGH_FINAL_WGSL = "color+=wTransmit;";
 
-/** `lakeRipples.fragment.fx`: the breeze's field, the octaves' amplitude, the rain's rings and the second octave. */
+/** `lakeRipples.fragment.glsl`: the breeze's field, the octaves' amplitude, the rain's rings and the second octave. */
 export const LAKE_RIPPLES_WGSL = /* wgsl */ `
 const PAW_FEATURE_M:f32=10.0;
 const PAW_SPEED:f32=1.5;
@@ -322,7 +322,7 @@ fn lakeRipple2(xz:vec2<f32>)->vec2<f32>{
   return n.xy*WATER_OCTAVE2_WEIGHT;
 }`;
 
-/** `lakeMirror.fragment.fx`'s shore on the tiers with no mirror: the skyline's shade under the treeline. */
+/** `lakeMirror.fragment.glsl`'s shore on the tiers with no mirror: the skyline's shade under the treeline. */
 export const LAKE_SHORE_WGSL = /* wgsl */ `
 const WATER_SKYLINE_TEXELS:i32=${SKYLINE_TEXELS};
 fn waterAzimuth(d:vec2<f32>)->f32{
@@ -339,7 +339,7 @@ fn waterSkylineRadiance(dir:vec3<f32>,probeRadiance:vec3<f32>)->vec3<f32>{
 }`;
 
 /**
- * `lakeMirror.fragment.fx`'s shore on the tier with a panorama: the picture
+ * `lakeMirror.fragment.glsl`'s shore on the tier with a panorama: the picture
  * of the shore where the reflected ray meets the cylinder of the lake's
  * radius under the skyline and the capture drew something, the fallback
  * elsewhere. The picture is laid top row first, as a pass writes it here,
@@ -368,7 +368,7 @@ fn waterPanoramaRadiance(origin:vec3<f32>,dir:vec3<f32>,fallback:vec3<f32>)->vec
 }`;
 
 /**
- * `lakeMirror.fragment.fx`'s mirror, on the tier that draws one: where a
+ * `lakeMirror.fragment.glsl`'s mirror, on the tier that draws one: where a
  * point of the surface is read in the picture (its place in the mirrored
  * camera's view, moved by the ripple's slope and never up the screen), one
  * read of it, and the four reads down the screen that smear it.
@@ -409,7 +409,7 @@ surfaceAlbedo=baseColor;
 }`;
 
 /**
- * `waterLights.fragment.fx` on a lake: its depth, its ripples and its skin, and
+ * `waterLights.fragment.glsl` on a lake: its depth, its ripples and its skin, and
  * either the one alpha its water is blended by or, `through`, the read of
  * the frame behind it.
  */
@@ -465,7 +465,7 @@ NdotV=abs(NdotVUnclamped)+0.0000001;
 }`;
 
 /**
- * `waterCompose.fragment.fx` on a lake: the shore in place of the probe's
+ * `waterCompose.fragment.glsl` on a lake: the shore in place of the probe's
  * radiance, and the skin held matte; then the lit colour summed again from
  * its parts, which Lite has summed already by this point. With a
  * `panorama` the shore is the picture's where the lake is the one it is

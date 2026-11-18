@@ -1,6 +1,5 @@
 /**
- * The lakes' water on Babylon Lite: one surface a lake, as the game lays it
- * on Babylon.js (`createWater`'s lakes in `renderer.ts`), from what the game
+ * The lakes' water on Babylon Lite: one surface a lake, from what the game
  * draws them with, computed with no engine: the surface's grid and the
  * bed's depth under each vertex (`lakeSurfaceGrid.ts`), the bed's square
  * following the camera (`bedFollow.ts`, in `waterBed.ts`), the ripple bump and its drift

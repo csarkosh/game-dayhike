@@ -1,10 +1,9 @@
 /**
- * The midges on Babylon Lite: every swarm of a lake in one draw, as the game
- * draws them on Babylon.js (`midgeSwarms.ts`): one unit card an instance,
+ * The midges on Babylon Lite: every swarm of a lake in one draw, one unit
+ * card an instance,
  * placed in the vertex stage from its swarm's row in a small table and the
  * shared clock, and a fragment stage that adds the sun's glint and the
- * sky's and darkens by the speck's coverage. The stages are the game's
- * (`shaders/midge.*.fx`) statement for statement.
+ * sky's and darkens by the speck's coverage.
  *
  * - **One buffer a frame, and none while no swarm is in sight.** The game's
  *   stages read a dozen uniforms and the table; here they are one run of
@@ -40,7 +39,7 @@ import type { FrameUploads } from "./frameUploads.js";
 const DATA = `struct MidgeData{eye:vec4<f32>,sun:vec4<f32>,sunLight:vec4<f32>,skyGlow:vec4<f32>,tone:vec4<f32>,swarms:array<vec4<f32>,${(SWARM_ROW_FLOATS * MIDGE_SWARMS_MAX) / 4}>}`;
 const VARYINGS = "struct MidgeOut{@builtin(position)position:vec4<f32>,@location(0)vCorner:vec2<f32>,@location(1)vAlpha:f32,@location(2)vSunGlint:f32,@location(3)vSkyGlint:f32}";
 
-/** `midge.vertex.fx`. The uniforms are read from the frame's floats under the GLSL's names. */
+/** The midges' vertex stage. The uniforms are read from the frame's floats by name. */
 const VERTEX = /* wgsl */ `
 ${DATA}
 ${VARYINGS}
@@ -118,7 +117,7 @@ fn midgeAxis(slot:f32,seed:f32,axis:f32,t:f32)->f32{
   return out;
 }`;
 
-/** `midge.fragment.fx`. */
+/** The midges' fragment stage. */
 const FRAGMENT = /* wgsl */ `
 ${DATA}
 ${VARYINGS}

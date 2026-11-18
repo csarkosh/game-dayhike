@@ -192,13 +192,13 @@ export function cameraSpacePlane(view: Float32Array, level: number, out: Float32
 
 /** The ripple offset's scale in the mirror's read: the plugin binds it as `waterMirrorK`. */
 export const MIRROR_OFFSET_K = 0.05;
-/** The water depth (m) at which a ripple moves the read by its whole offset: `lakeMirror.fragment.fx`'s WATER_MIRROR_DEPTH. */
+/** The water depth (m) at which a ripple moves the read by its whole offset: `lakeMirror.fragment.glsl`'s WATER_MIRROR_DEPTH. */
 export const MIRROR_DEPTH_FULL = 0.5;
-/** The held frames' smear's cap, a share of the frame's height: `lakeMirror.fragment.fx`'s LAKE_MOTION_SMEAR_CAP. */
+/** The held frames' smear's cap, a share of the frame's height: `lakeMirror.fragment.glsl`'s LAKE_MOTION_SMEAR_CAP. */
 export const LAKE_MOTION_SMEAR_CAP = 0.05;
 
 /**
- * The TypeScript twin of `waterMirrorUv` (`lakeMirror.fragment.fx`): the
+ * The TypeScript twin of `waterMirrorUv` (`lakeMirror.fragment.glsl`): the
  * mirror target's texel [u, v] for a surface point whose clip position in
  * the mirrored camera is (clipX, clipY, ·, clipW), mapped to 0..1 as Babylon
  * samples a target (v up the screen), then moved by the ripple's slope

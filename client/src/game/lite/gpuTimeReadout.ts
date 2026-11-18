@@ -3,8 +3,7 @@
  * time for the frame and for each of its tasks, read on each `read()` and
  * handed to `gpuTimeTasks.ts` for the arithmetic. `window.__gpuTime()` gives
  * the whole report to a rig driving the page, and a line in the bottom right
- * corner shows the frame and the task that ends on the canvas, as the
- * readout on Babylon.js does (`gpuTime.ts`).
+ * corner shows the frame and the task that ends on the canvas.
  *
  * The timers are Lite's. The frame's is one pair of timestamps written round
  * the frame's passes into one query set, resolved by a small submit of its
@@ -25,7 +24,7 @@ import { taskTimeReport } from "../gpuTimeTasks.js";
 /** The corner line's refresh, at most twice a second. */
 const LINE_REFRESH_MS = 500;
 
-/** The corner line as the readout on Babylon.js draws it. */
+/** The corner line. */
 const STYLE = `
   .gputime {
     position: fixed; right: 8px; bottom: 8px; z-index: 60;

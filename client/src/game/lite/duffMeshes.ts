@@ -11,7 +11,7 @@
  * (`foliageUniforms.ts`). This module is where those meet Lite: a mesh a
  * bucket (`listMeshes.ts`) and a material a tier.
  *
- * **The material**, as `duffMeshes.ts` dresses it on Babylon.js: opaque,
+ * **The material**: opaque,
  * the dead-leaf brown under the clump's own vertex colours, drawn on both
  * sides and lit on one, with the foliage at the duff's profile (no wind;
  * each piece's collapse to its root across the tier's band and by the

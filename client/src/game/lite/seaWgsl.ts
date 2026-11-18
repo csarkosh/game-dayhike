@@ -1,11 +1,11 @@
 /**
  * The sea's waves and shading in WGSL, statement for statement the game's
- * GLSL: what `shaders/oceanSurface.fx`, `oceanSwash.fx`,
- * `oceanDisplace.vertex.fx`, `oceanShade.fragment.fx`, the rain's rings of
- * `water.fragment.fx` and the sea's halves of `waterLights.fragment.fx` and
- * `waterCompose.fragment.fx` say of the sea on the tiers that blend their
- * water over what lies under it (`waterPlugin.ts` on Babylon.js splices the
- * GLSL into its PBR material; `seaPlugin.ts` here hands these to Lite's).
+ * GLSL: what `oceanSurface.glsl`, `oceanSwash.glsl`,
+ * `oceanDisplace.vertex.glsl`, `oceanShade.fragment.glsl`, the rain's rings of
+ * `water.fragment.glsl` and the sea's halves of `waterLights.fragment.glsl` and
+ * `waterCompose.fragment.glsl` say of the sea on the tiers that blend their
+ * water over what lies under it (`seaPlugin.ts` hands these to Lite's PBR
+ * material; the stages named are the recorded ones the tests hold them to).
  * The water's own definitions are `waterWgsl.ts`'s, which a lake reads too.
  *
  * What is written differently, and why:
@@ -97,7 +97,7 @@ function cascadesBranch(look: SeaLook): (body: string) => string {
   }else ` : "");
 }
 
-/** `oceanSurface.fx` and `oceanSwash.fx`: the swell's sum, the wind sea's field and the swash's sheet, for both stages. */
+/** `oceanSurface.glsl` and `oceanSwash.glsl`: the swell's sum, the wind sea's field and the swash's sheet, for both stages. */
 export function seaSurfaceWgsl(look: SeaLook): string {
   const cascades = cascadesBranch(look);
   const loop = !look.loop ? "" : /* wgsl */ `${look.fft === true ? FFT_CONSTS_WGSL : ""}
@@ -401,7 +401,7 @@ const SEA_HOLE_WGSL = /* wgsl */ `
 
 /**
  * The vertex stage's last step: the lattice's vertex placed on its ring
- * (`seaVertexAt`), then `oceanDisplace.vertex.fx` on that place, and the
+ * (`seaVertexAt`), then `oceanDisplace.vertex.glsl` on that place, and the
  * depth of water under it from its ring's table.
  */
 export const SEA_VERTEX_WGSL = /* wgsl */ `{${SEA_RING_WGSL}
@@ -439,7 +439,7 @@ export const SEA_VERTEX_WGSL = /* wgsl */ `{${SEA_RING_WGSL}
 }`;
 
 /**
- * `oceanLipShape.vertex.fx`: the plunging lip's strip, vertex definitions
+ * `oceanLipShape.vertex.glsl`: the plunging lip's strip, vertex definitions
  * after the sea's surface, on the strip's material alone. The crests the
  * strip draws (the tracker's state: a row a slot, a texel a column) and the
  * baked cross-section (a row a keyframe, a texel a vertex) are read at the
@@ -495,7 +495,7 @@ fn oceanLipPlace(strip:vec3<f32>)->OceanLipPlaced{
 }`;
 
 /**
- * The strip's vertex, `oceanLip.vertex.fx`, in place of the lattice's on the
+ * The strip's vertex, `oceanLip.vertex.glsl`, in place of the lattice's on the
  * strip's material: its position carries the column's world z, the slot and
  * the section's vertex, and `oceanLipPlace` makes the place from them. The
  * swell goes on to the fragment stage as the lattice hands it on, so the
@@ -526,7 +526,7 @@ export function seaRestVertexWgsl(level: number): string {
 }`;
 }
 
-/** The rain's rings of `water.fragment.fx`, the puddles' own: the sea's. */
+/** The rain's rings of `water.fragment.glsl`, the puddles' own: the sea's. */
 export const SEA_RAIN_WGSL = /* wgsl */ `
 const WATER_RAIN_RADIUS:f32=0.25;
 const WATER_RAIN_INSET:f32=0.25;
@@ -554,7 +554,7 @@ fn waterRainSlope(xz:vec2<f32>)->vec2<f32>{
     +waterRainLayer(xz,t,3.0,3.8,vec2<f32>(0.19,0.83),1.13,0.7);
 }`;
 
-/** `oceanShade.fragment.fx`: the white water, the whitecaps, the wind sea's slopes and the plunging lip. */
+/** `oceanShade.fragment.glsl`: the white water, the whitecaps, the wind sea's slopes and the plunging lip. */
 export function seaShadeWgsl(look: SeaLook): string {
   const cascades = cascadesBranch(look);
   const loop = !look.loop ? "" : /* wgsl */ `
@@ -765,7 +765,7 @@ surfaceAlbedo=baseColor;
 /** Where no bump is read: the albedo taken back to the base colour alone. */
 export const SEA_ALBEDO_WGSL = "surfaceAlbedo=baseColor;";
 
-/** The sea's half of `waterLights.fragment.fx`, its water blended or read through as the look says, then the roughness of the slope variance its normal leaves undrawn. */
+/** The sea's half of `waterLights.fragment.glsl`, its water blended or read through as the look says, then the roughness of the slope variance its normal leaves undrawn. */
 export function seaLightsWgsl(look: SeaLook): string {
   const wind = look.loop
     ? `let wWind=oceanWindDisplace(input.vOceanXZ);
@@ -841,7 +841,7 @@ roughness=min(sqrt(sqrt(2.0*wOceanVar)),1.0);`;
 }
 
 /**
- * `waterCompose.fragment.fx` on the sea: the white water held matte; then
+ * `waterCompose.fragment.glsl` on the sea: the white water held matte; then
  * the lit colour summed again from its parts, which Lite has summed already
  * by this point.
  */

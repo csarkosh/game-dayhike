@@ -1,9 +1,9 @@
 /**
  * A shell's rebuilds as the renderer's jobs (`syncJobs.ts`): which of a
  * view's crossings build at once and which over the frames after, and the
- * idle work between them, decided as the game's shells on Babylon.js decide
- * it (`forestMeshes.ts`, `clutterMeshes.ts`, `bladeMeshes.ts`,
- * `duffMeshes.ts`): by `crossingAt`, on the shell's own rebuild grid.
+ * idle work between them, decided alike for every shell (`forestMeshes.ts`,
+ * `clutterMeshes.ts`, `bladeMeshes.ts`, `duffMeshes.ts`): by `crossingAt`,
+ * on the shell's own rebuild grid.
  *
  * A crossing at a walk begins a job, or takes the place of the shell's job
  * still pending, which keeps its deadline. The first build, a jump of more

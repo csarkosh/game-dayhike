@@ -11,7 +11,7 @@ import {
 import { babylonText } from "../helpers/babylonFixture.js";
 import { skyFixture } from "./helpers/skyFixture.js";
 
-/** The grade's fragment stage on Babylon.js (`shaders/grade.fragment.fx`), its text recorded. */
+/** The grade's fragment stage on Babylon.js (`grade.fragment.glsl`), its text recorded. */
 const gradeFragment = babylonText("stages/grade.fragment.glsl");
 
 const CLEAR = WEATHER_PRESETS.clear;

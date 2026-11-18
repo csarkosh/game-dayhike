@@ -4,8 +4,7 @@
  * (`seaPlugin.ts`). The compute shaders are the game's own, as they are
  * (`shaders/oceanFft*.compute.wgsl`); what they bind, the workgroups of a
  * frame's four dispatches and the amplitudes a spectrum is uploaded as are
- * kept with no engine (`oceanFftPasses.ts`), and `oceanGpuFft.ts` runs the
- * same passes on Babylon.js. `windSeaField.ts` decides when this field is
+ * kept with no engine (`oceanFftPasses.ts`). `windSeaField.ts` decides when this field is
  * the one drawn.
  *
  * - **A frame's four dispatches are one compute pass of the hike's own

@@ -1,7 +1,6 @@
 /**
  * The lake's dragonflies on Babylon Lite: one instanced card a kind (darner,
- * skimmer, damselfly), as the game draws them on Babylon.js
- * (`dragonflies.ts`), from the shapes and the lists made with no engine
+ * skimmer, damselfly), from the shapes and the lists made with no engine
  * (`dragonflyShapes.ts`). `dragonflyBehaviour.ts` decides where every unit
  * is; this module hands their instances to Lite.
  *

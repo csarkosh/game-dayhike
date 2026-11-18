@@ -1,8 +1,8 @@
 /**
  * A lake's water as a material plugin on Babylon Lite: Lite's PBR with what
  * a lake's surface is about spliced in (`waterWgsl.ts` has the WGSL, the
- * game's GLSL statement for statement; `waterPlugin.ts` is the same plugin
- * on Babylon.js): the depth of the bed under each pixel, the waterline, the
+ * game's recorded GLSL statement for statement): the depth of the bed under
+ * each pixel, the waterline, the
  * ripples and the rain's rings on its normal, the one alpha it is blended
  * by, the skin on a murky lake, and the shore's shade under the skyline in
  * place of the sky's reflection where the water is glass.

@@ -7,8 +7,7 @@
  * - **A material's brushes are one mesh.** A brush never moves, and every
  *   brush of a material's name is the same matt surface in that name's
  *   colour (`propColour`), so they are one geometry and one draw: six draws
- *   for the sandbox's thirteen brushes, where the game on Babylon.js draws
- *   a box a brush.
+ *   for the sandbox's thirteen brushes.
  * - **The weather wets them as it wets the game's**: a brush's material has
  *   no porosity of its own, so its colour and its roughness are scaled as a
  *   whole by how wet the weather is (`wetSurfaceUnder`), written when that

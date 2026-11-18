@@ -181,7 +181,7 @@ function agxContrast(x: number): number {
   return c6 * x4 * x2 + c5 * x4 * x + c4 * x4 + c3 * x2 * x + c2 * x2 + c1 * x + c0;
 }
 
-/** The TS reference of `agxToneMap` in grade.fragment.fx. Input linear sRGB with exposure already applied; output linear sRGB in [0, 1]. */
+/** The TS reference of `agxToneMap` in grade.fragment.glsl. Input linear sRGB with exposure already applied; output linear sRGB in [0, 1]. */
 export function agx(c: Rgb): Rgb {
   let v = mulMat3(AGX_INSET, mulMat3(SRGB_TO_REC2020, c));
   const enc = (x: number) => clamp01((Math.log2(Math.max(x, 1e-10)) - AGX_MIN_EV) / (AGX_MAX_EV - AGX_MIN_EV));

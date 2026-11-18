@@ -1,7 +1,7 @@
 /**
  * The shore panorama on Babylon Lite: the medium tier's picture of a lake's
- * shore, which its water reflects under the skyline, as the game draws it
- * on Babylon.js (`lakePanorama.ts`), from what the game draws it with
+ * shore, which its water reflects under the skyline, from what the game
+ * draws it with
  * (`panoramaTurn.ts`: the picture's size and sectors, a sector's frustum
  * and yaw, the turn and when a capture is asked for; `mirrorGround.ts`: the
  * ground's flat colour).
@@ -12,15 +12,15 @@
  *   (`rainMap.ts`): a registered mesh is the scene's mesh, so its geometry
  *   and its instance list are the buffers the hike's own draw reads.
  * - **A sector is drawn straight into its column of the picture**, 64 by
- *   128 texels, through its camera's viewport, as on Babylon.js: the pass
+ *   128 texels, through its camera's viewport: the pass
  *   clears that column alone (its colour to nothing drawn, and its depth),
  *   so the fifteen other columns stand, and it ends by writing an alpha of
  *   1 wherever the sector drew: a material that is cut out by its alpha
- *   hands the alpha it was cut at on, where Babylon.js writes 1, and the
- *   water weighs the picture by it. The water reads one picture with one
+ *   hands the alpha it was cut at on, and the water weighs the picture by
+ *   1. The water reads one picture with one
  *   filtered read round the whole turn, as the game's does. A fragment's
  *   own coordinates are then the picture's, which is where the forest's
- *   dithered fade lays its screen-door on Babylon.js too.
+ *   dithered fade lays its screen-door.
  * - **A capture runs only while the lake reads the picture** (`update`'s
  *   `read`: its water is in the view and has glass on it). One that is
  *   asked for meanwhile is owed, and runs from the first frame that reads
@@ -72,7 +72,7 @@ const CANOPY = TERRAIN_VERTEX_LAYOUT.find((part) => part.varying === "vTerrainW2
 export type PanoramaGroundUniforms = { lakeMirrorColour: Float32Array };
 
 /**
- * The ground's stand-in, `lakeMirrorTerrain.fragment.fx` statement for
+ * The ground's stand-in, `lakeMirrorTerrain.fragment.glsl` statement for
  * statement, in place of the lit colour and last in the fragment: the flat
  * colour, darker under the canopy, under the scene's distance fog (its
  * density and colour the frame's, as the air's plugin reads them) from the

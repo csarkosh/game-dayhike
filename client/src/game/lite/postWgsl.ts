@@ -1,8 +1,8 @@
 /**
  * The post chain's passes in WGSL, for Babylon Lite: the game's fragment
- * shaders (`shaders/farSoft.fragment.fx`, `taa.fragment.fx`,
- * `taaSharpen.fragment.fx`, `paint.fragment.fx`, `paintCompose.fragment.fx`,
- * `halationExtract.fragment.fx`, `grade.fragment.fx`, `lens.fragment.fx`)
+ * shaders (`farSoft.fragment.glsl`, `taa.fragment.glsl`,
+ * `taaSharpen.fragment.glsl`, `paint.fragment.glsl`, `paintCompose.fragment.glsl`,
+ * `halationExtract.fragment.glsl`, `grade.fragment.glsl`, `lens.fragment.glsl`)
  * statement for statement, and how a pass's uniforms are laid out from the
  * record `postFrame.ts` makes of them.
  *
@@ -110,7 +110,7 @@ export function depthResolveWgsl(samples: number): string {
 }`;
 }
 
-/** farSoft.fragment.fx. */
+/** farSoft.fragment.glsl. */
 export const FAR_SOFT_WGSL = /* wgsl */ `
 @group(0)@binding(0)var<uniform>u:U;
 @group(0)@binding(1)var postSampler:sampler;
@@ -188,7 +188,7 @@ fn farSoftened(uv:vec2<f32>,d:f32,c:vec3<f32>)->vec3<f32>{
   return vec4<f32>(col,c.a);
 }`;
 
-/** taa.fragment.fx. */
+/** taa.fragment.glsl. */
 export const TAA_WGSL = /* wgsl */ `
 @group(0)@binding(0)var<uniform>u:U;
 @group(0)@binding(1)var postSampler:sampler;
@@ -268,7 +268,7 @@ fn taaClip(p:vec3<f32>,lo:vec3<f32>,hi:vec3<f32>)->vec3<f32>{
   return vec4<f32>(mix(cur.rgb,blended,ok),cur.a);
 }`;
 
-/** taaSharpen.fragment.fx. */
+/** taaSharpen.fragment.glsl. */
 export const TAA_SHARPEN_WGSL = /* wgsl */ `
 @group(0)@binding(0)var<uniform>u:U;
 @group(0)@binding(1)var postSampler:sampler;
@@ -287,7 +287,7 @@ fn sharpenRead(uv:vec2<f32>)->vec4<f32>{return textureSampleLevel(textureSampler
   return vec4<f32>(clamp(lifted,lo,hi),c.a);
 }`;
 
-/** paint.fragment.fx: its eight sectors' sums as arrays, where the GLSL names each. */
+/** paint.fragment.glsl: its eight sectors' sums as arrays, where the GLSL names each. */
 export const PAINT_WGSL = /* wgsl */ `
 @group(0)@binding(0)var<uniform>u:U;
 @group(0)@binding(1)var postSampler:sampler;
@@ -360,7 +360,7 @@ fn paintCompress(c:vec3<f32>)->vec3<f32>{
 }`;
 
 /**
- * paintCompose.fragment.fx as a function of the place: `composed(uv)` is
+ * paintCompose.fragment.glsl as a function of the place: `composed(uv)` is
  * the pixel the game's compose writes there, from the strokes
  * (`paintSampler`, the GLSL's `textureSampler`) and the frame they were
  * painted from (`sceneSampler`).
@@ -398,7 +398,7 @@ fn composed(vUV:vec2<f32>)->vec3<f32>{
 }`;
 
 /**
- * halationExtract.fragment.fx, at a quarter of the frame on each axis. The
+ * halationExtract.fragment.glsl, at a quarter of the frame on each axis. The
  * game's reads the composed frame once, bilinearly, at its own texel's
  * centre, which is the mean of the four composed texels round it; here
  * those four are composed in place (`texel` is the full frame's).
@@ -503,7 +503,7 @@ ${taps}
 }`;
 }
 
-/** grade.fragment.fx's blotches for the shades' going: one octave of value noise on a hash. */
+/** grade.fragment.glsl's blotches for the shades' going: one octave of value noise on a hash. */
 export const SHADE_HELPERS_WGSL = /* wgsl */ `fn shadeHash(p:vec2<f32>)->f32{
   return fract(sin(dot(p,vec2<f32>(127.1,311.7)))*43758.5453);
 }
@@ -519,7 +519,7 @@ fn shadeNoise(p:vec2<f32>)->f32{
 }`;
 
 /**
- * grade.fragment.fx's shade block: the mask read back through its blur
+ * grade.fragment.glsl's shade block: the mask read back through its blur
  * (`shadeRead`, the reader's own) and the frame `c` darkened by the figure,
  * only while a figure is in the mask. The veil on the tiers with no chain
  * runs the same text (`shadeVeil.ts`), as the game's veil carries the
@@ -553,7 +553,7 @@ export const SHADE_BLOCK_WGSL = /* wgsl */ `  if(u.shadeShape.w>0.0){
     c*=1.0-min(1.0,shadeRGB.x*u.shadeShape.y+shadeReal*u.shadeMonster)*shadeKeep;
   }`;
 
-/** grade.fragment.fx's stare block: the darkness closing on an open centre (`centred` the place from the frame's middle), only while it has closed at all. */
+/** grade.fragment.glsl's stare block: the darkness closing on an open centre (`centred` the place from the frame's middle), only while it has closed at all. */
 export const STARE_BLOCK_WGSL = /* wgsl */ `  if(u.stareShade.z>0.0){
     let sp=centred-u.stareShade.xy;
     let sa=atan2(sp.y,sp.x);
@@ -566,7 +566,7 @@ export const STARE_BLOCK_WGSL = /* wgsl */ `  if(u.stareShade.z>0.0){
   }`;
 
 /**
- * grade.fragment.fx, the compose ahead of it. `halation`: the tier makes a
+ * grade.fragment.glsl, the compose ahead of it. `halation`: the tier makes a
  * halation, read from `halationSampler`; without it the GLSL screens the
  * frame with black, which changes nothing, and nothing is read here.
  */
@@ -664,7 +664,7 @@ ${STARE_BLOCK_WGSL}  var shown=toSrgb(clamp(c,vec3<f32>(0.0),vec3<f32>(1.0)));
 }`;
 }
 
-/** lens.fragment.fx. */
+/** lens.fragment.glsl. */
 export const LENS_WGSL = /* wgsl */ `
 @group(0)@binding(0)var<uniform>u:U;
 @group(0)@binding(1)var postSampler:sampler;

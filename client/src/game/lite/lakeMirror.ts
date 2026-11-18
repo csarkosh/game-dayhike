@@ -1,8 +1,7 @@
 /**
  * The lake's mirror on Babylon Lite: the high tier's picture of a lake's
  * shore as the player would see it reflected in the lake's plane, which the
- * lake's glass reads, as the game draws it on Babylon.js (`lakeMirror.ts`),
- * from what the game draws it with (`mirrorPass.ts`: the picture's size,
+ * lake's glass reads, from what the game draws it with (`mirrorPass.ts`: the picture's size,
  * when the pass is armed and which armed frames draw, the mirrored camera
  * and its projection; `mirrorView.ts`: the oblique near plane;
  * `mirrorGround.ts`: the ground's flat colour).
@@ -18,8 +17,8 @@
  *   view there is no pass and no write.
  * - **Its camera is the player's mirrored in the plane, of the ordinary
  *   kind** (`mirroredPose`): Lite cannot be told to turn its front faces
- *   over for one pass, which the reflection's own view would ask, as
- *   Babylon.js is told. The picture is the reflection's turned over left to
+ *   over for one pass, which the reflection's own view would ask. The
+ *   picture is the reflection's turned over left to
  *   right, and the lake's read turns it back (`mirrorRead`,
  *   `LAKE_MIRROR_WGSL`). The eye every material of the pass lights and
  *   fades by is the mirrored one, the pass's own.

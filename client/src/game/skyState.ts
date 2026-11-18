@@ -9,7 +9,7 @@
  * Pure and Babylon-free; `lighting.ts`, `skyDome.ts` and `atmosphereParams.ts`
  * are the shells that apply it. `domeRadiance`, `skyTableUv` and
  * `deckRadiance` transcribe the dome's fragment stage
- * (`shaders/skyDome.fragment.fx`) step for step, and a lockstep test holds the
+ * (`skyDome.fragment.glsl`) step for step, and a lockstep test holds the
  * stage's constants to the ones here.
  */
 import { clamp01, desaturateRgb, luma, mixRgb, type Rgb } from "./colour.js";

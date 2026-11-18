@@ -8,7 +8,7 @@
 /** The mask's size as a share of the frame: a blurred figure wants no more. */
 export const SHADE_MASK_RATIO = 0.5;
 
-/** Noise cells a metre, the metres a second the smoke rises through the figure, the soft edge of its coming and going, and the share of the figure's height at its feet lost in the mist. Mirrored in shaders/shadeSmokeNoise.fx; the lockstep test asserts them. */
+/** Noise cells a metre, the metres a second the smoke rises through the figure, the soft edge of its coming and going, and the share of the figure's height at its feet lost in the mist. Mirrored in shadeSmokeNoise.glsl; the lockstep test asserts them. */
 export const SHADE_SMOKE_SCALE = 0.9;
 export const SHADE_SMOKE_RISE = 0.6;
 export const SHADE_SMOKE_SOFT = 0.12;

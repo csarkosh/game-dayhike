@@ -1,9 +1,8 @@
 /**
  * The frame behind the water on Babylon Lite: what the surface reads on the
- * tier that draws its water opaque over the frame the opaque draws left
- * (`waterFrame.ts` is the same on Babylon.js, a copy of the frame's colour
- * and its depth resolved, made as the scene's pass is broken before the
- * water's group).
+ * tier that draws its water opaque over the frame the opaque draws left:
+ * the frame's colour and its depth, kept as the scene's pass is broken
+ * before the water.
  *
  * Here the scene's pass is broken by Lite before the meshes marked for it
  * (`enableRenderTaskBreak`, `postChain.ts`), only on a frame that shows one,

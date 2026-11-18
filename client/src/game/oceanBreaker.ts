@@ -218,7 +218,7 @@ export const LIP_FOAM_ENVELOPE = 1000;
 /**
  * How far the strip's vertex v hands the sea its leading edge's envelope in
  * place of the swell's own, at progress p and size (height times share): the
- * `edge` line of oceanLipPlace (`shaders/oceanLipShape.vertex.fx`). On the
+ * `edge` line of oceanLipPlace (`oceanLipShape.vertex.glsl`). On the
  * edge's vertices of a live slot it is 1 from the lip's throw on and 0 before
  * it, where the section lies near the rings and the swell's own break carries
  * the foam; 0 everywhere else.
@@ -232,7 +232,7 @@ const shapeScratch = { across: 0, up: 0 };
 /**
  * Where the strip's vertex stage puts vertex v of a slot, `slot` its four
  * floats (crest d, progress, height, share), in the column at world z: the
- * swell's part of oceanLipPlace (`shaders/oceanLipShape.vertex.fx`), line for
+ * swell's part of oceanLipPlace (`oceanLipShape.vertex.glsl`), line for
  * line. The crest stands crest d metres from the coastline, read from the
  * atlas's coast row as the shader reads it; the section runs from the crest
  * along the swell's travel; the vertex is lifted from the swell's surface at
@@ -661,7 +661,7 @@ export class LipTracker {
   }
 }
 
-/** The lip on medium and low (`shaders/oceanShade.fragment.fx`): how far the face's normal tilts shoreward at the
+/** The lip on medium and low (`oceanShade.fragment.glsl`): how far the face's normal tilts shoreward at the
  * lip's whole weight, the crest line's highlight (a foam's cover), the band (m) either side of the crest line it
  * covers, the seconds the collapse's burst lasts in the foam's age, and the crest's front the tilt spans (rad,
  * a quarter wave ahead of the crest). */
@@ -680,7 +680,7 @@ export type LipShadeInput = {
 };
 
 /**
- * oceanLipFromEnvelope's lip after its break (`shaders/oceanShade.fragment.fx`), line for line: `tilt` the
+ * oceanLipFromEnvelope's lip after its break (`oceanShade.fragment.glsl`), line for line: `tilt` the
  * normal's tilt weight, `burst` the burst's share once the curl has collapsed, `band` the highlight's weight,
  * `slope` the coastline's dx/dz. None seaward of the face's toe, none on the FFT's tier, which draws the strip.
  */

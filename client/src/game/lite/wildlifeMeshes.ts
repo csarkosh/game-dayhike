@@ -5,9 +5,8 @@
  * instances).
  *
  * **A ground species is one skinned model, every member an instance**
- * (`skinnedModels.ts`): one draw a species in sight, whatever the herd,
- * where the game on Babylon.js clones a container an animal and steps each
- * one's clip. A member that grazes on costs nothing a frame; one that walks
+ * (`skinnedModels.ts`): one draw a species in sight, whatever the herd.
+ * A member that grazes on costs nothing a frame; one that walks
  * is its matrix; one whose clip changes, eight floats. A member nobody can
  * see keeps its clip where it stood, as the game's does. One drawn at no
  * size (the weather has emptied the ground, or it stands at its disc's
