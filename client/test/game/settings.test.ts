@@ -68,19 +68,19 @@ describe("settingsModel", () => {
     ]);
   });
 
-  it("names the class's start tier where the probe is skipped because shaders compile on the page's thread", () => {
+  it("names the class's start tier where the probe is skipped because its steps cannot be measured", () => {
     // Firefox 156 on an Apple M4, and the page's own summary of Auto (`autoSummary` in main.ts).
     const firefox: GpuSignals = {
       renderer: "Apple M1, or similar", adapter: null, limits: null, features: null, adapterStatus: "none", parallelCompile: false,
       cores: 10, memoryGb: null, mobile: false, browser: 156,
     };
-    const caption = (signals: GpuSignals) => {
-      const pick = autoPick(signals, { record: null, pixels: 2_073_600, now: 1_790_000_000_000 });
+    const caption = (stepSettles: boolean) => {
+      const pick = autoPick(firefox, { record: null, pixels: 2_073_600, now: 1_790_000_000_000, stepSettles });
       const auto = { tier: pick.tier, probePending: pick.probeFrom !== null, ceiling: pick.ceiling };
       return settingsModel({ context: "title", choice: "auto", auto, override: null, stored: true }).lines;
     };
-    expect(caption(firefox)).toEqual(["Auto picks Medium on this computer."]);
-    expect(caption({ ...firefox, parallelCompile: true })).toEqual(["Auto tests this computer when your next hike starts."]);
+    expect(caption(false)).toEqual(["Auto picks Medium on this computer."]);
+    expect(caption(true)).toEqual(["Auto tests this computer when your next hike starts."]);
   });
 
   it("has no Apply on the title screen, where a choice is kept as it is picked", () => {

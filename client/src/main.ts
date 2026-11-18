@@ -325,7 +325,7 @@ function onTierFallback(fallback: { attempted: QualityTier; built: QualityTier |
     const record = readAutoRecord(pageStorage());
     const now = Date.now();
     const engine = verdictEngineNow();
-    const pick = autoPick(signals, { record, pixels, now, engine });
+    const pick = autoPick(signals, { record, pixels, now, engine, stepSettles: probeSteps(signals).settle });
     const out = recordFallback({ ...fallback, record, gpu: pick.gpu, browser: signals.browser, cls: pick.cls, choice: currentChoice(), pixels, now, engine });
     if (out.record !== null) writeAutoRecord(pageStorage(), out.record);
     if (out.choice !== null) saveChoice(out.choice);
@@ -344,7 +344,7 @@ function onGovernorDrop(running: QualityTier): void {
   const record = readAutoRecord(pageStorage());
   const now = Date.now();
   const engine = verdictEngineNow();
-  const pick = autoPick(signals, { record, pixels, now, engine });
+  const pick = autoPick(signals, { record, pixels, now, engine, stepSettles: probeSteps(signals).settle });
   const next = withGovernorDrop(record, pick.gpu, signals.browser, pick.cls, running, pixels, now, engine);
   if (next !== null) writeAutoRecord(pageStorage(), next);
 }
