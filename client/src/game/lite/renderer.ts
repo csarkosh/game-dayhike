@@ -86,7 +86,11 @@
  * shore's panorama, the haunt's mask) make theirs at once (`syncPipelines`),
  * so no kept picture is short of a mesh. The world is in only once a frame
  * has been drawn that asked for nothing and no pipeline is compiling
- * (`drawnSettle.ts`), so the first frame a player sees is whole. Nothing of a shader is kept
+ * (`drawnSettle.ts`), so the first frame a player sees is whole. From the
+ * world's coming in on (`whenReady`) every pass makes its pipelines at once
+ * again (`syncPipelines` on the scene), so what joins a hike under way (a
+ * hiker, the car, a Hollow, a lamp that builds the scene again) is drawn
+ * from the frame it joins. Nothing of a shader is kept
  * past the renderer: the device goes with it. In the measurement mode `gpuTime`
  * reads the GPU's own time for the frame and for each of its tasks from
  * Lite's timers (`gpuTimeReadout.ts`), as `window.__gpuTime()` and the
@@ -788,6 +792,8 @@ export function createLiteRenderer(canvas: HTMLCanvasElement, level: Level, fore
   /** The device has failed (`abandon`): the forest's bakes are ended, and a forest made after bakes none. */
   let abandoned = false;
   let standing: Standing | null = null;
+  /** The world is in: from then on every pass makes its pipelines at once, as it draws what joins (`whenReady`). */
+  let pipelinesAtOnce = false;
   /** The light's version the lights and the cleared frame were last written for. */
   let litVersion = -1;
   /**
@@ -1357,6 +1363,7 @@ export function createLiteRenderer(canvas: HTMLCanvasElement, level: Level, fore
     // A palette asked for while the renderer was being made is worn from the first frame.
     if (palette !== null) chain?.setPalette(PAINT_PALETTES[palette.name], 0);
     standing = made;
+    if (pipelinesAtOnce) scene.syncPipelines = true;
     stoodAt = clock();
   }
 
@@ -1643,7 +1650,12 @@ export function createLiteRenderer(canvas: HTMLCanvasElement, level: Level, fore
       return heardLife !== null && waterLifeStepped ? heardLife.sound() : SILENT_WATER_LIFE;
     },
     whenReady(maxMs) {
-      return whenWorldIn(sceneryReady, maxMs);
+      return whenWorldIn(sceneryReady, maxMs).then(() => {
+        // Once the world is in, what joins it (another hiker, the car, a Hollow, a lamp that builds the scene again) is
+        // drawn from the frame it joins, its pipelines made at once: the passes wait for none.
+        pipelinesAtOnce = true;
+        if (standing !== null) standing.scene.syncPipelines = true;
+      });
     },
     waitingItems() {
       return loading + (standing?.forest?.waiting() ?? 0) + (standing?.clutter?.waiting() ?? 0) + (standing?.cliffs?.waiting() ?? 0) + (standing?.entities?.waiting() ?? 0);
