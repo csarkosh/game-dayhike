@@ -10,9 +10,7 @@ import { GOVERNOR_SWAP_READY_MAX_MS } from "./rendererSwap.js";
 /** How long the HUD shows the line after a swap that answered a failure. */
 export const FALLBACK_NOTICE_MS = 6_000;
 
-/** The HUD's line once a rebuild has answered a failure, by the engine the
- * rebuild ended on. */
-export const NOTICE_SWITCHED = "Graphics switched to WebGL2 after a GPU error.";
+/** The HUD's line once a rebuild has answered a failure. */
 export const NOTICE_RESTARTED = "Graphics restarted after a GPU error.";
 
 /** The work under way on a hike's renderer (a switch of tier, the
@@ -78,8 +76,6 @@ export type FailureDeps = {
   alive(): boolean;
   /** The engine the running renderer draws with. */
   running(): unknown;
-  /** Whether the running renderer draws with WebGPU. */
-  runningOnWebGpu(): boolean;
   /** Stops listening to the running engine. */
   unwatch(): void;
   /** Ends the running renderer's asynchronous work on the failed engine at
@@ -87,17 +83,16 @@ export type FailureDeps = {
    * pipelines being made, which would otherwise poll the dead engine until
    * the rebuild disposes the renderer and report failures of their own. */
   abandon(): void;
-  /** Tells the page of the failure (its row; `main.ts`'s `engineFailed`).
-   * Its line is the page's for a renderer built again; the line shown is
-   * chosen from the engine the rebuild ends on. */
+  /** Tells the page of the failure (its row; `main.ts`'s `engineFailed`),
+   * which gives its line for a renderer built again. */
   record(reason: "pipeline" | "lost"): string;
   /** Covers play; the function returned lifts it. */
   cover(): () => void;
   /** Stops the render loop on the failed engine. */
   stopLoop(): void;
-  /** Rebuilds the renderer at the running tier on the engine the rule now
-   * gives it (the live switch), waiting at most `readyMaxMs` for its new
-   * scene; rejects when no tier builds. */
+  /** Rebuilds the renderer at the running tier on a new engine of its own
+   * (the live switch), waiting at most `readyMaxMs` for its new scene;
+   * rejects when no tier builds. */
   rebuild(readyMaxMs: number): Promise<void>;
   flash(line: string): void;
   log(line: string): void;
@@ -113,18 +108,16 @@ export type FailureDeps = {
 
 /**
  * The hike's answer to a failure of its running WebGPU engine, reported by
- * its watcher (`watchWebGpu`): the watcher comes off first (the rebuild then
- * disposes the engine, and a disposed engine is not a failing one), the
+ * its watcher (`Renderer.ownWatch`): the watcher comes off first (the rebuild
+ * then disposes the engine, and a disposed engine is not a failing one), the
  * renderer's work still in flight on the engine ends (`abandon`, so one
- * failure is one report: a bake polling the dead engine meanwhile logged a
- * failure of its own for each billboard, 2026-10-19), the failure is
- * remembered, and once any switch under way has settled, the
- * renderer is rebuilt at the running tier on the engine the rule now gives
- * it, under a cover over play, with the loop stopped on the failed engine.
- * A report from an engine that is no longer the running one, or one already
- * answered, changes nothing more; so does one whose engine a switch already
- * left while it waited. The HUD's line says what the rebuild ended on:
- * restarted on WebGPU, switched to WebGL2. The cover lifts on every outcome;
+ * failure is one report), the failure is told to the page, and once any
+ * switch under way has settled, the renderer is rebuilt at the running tier
+ * on a new engine of its own, under a cover over play, with the loop stopped
+ * on the failed engine. A report from an engine that is not the running
+ * one, or one already answered, changes nothing more; so does one whose
+ * engine a switch already left while it waited. The HUD then says the
+ * graphics restarted (`NOTICE_RESTARTED`). The cover lifts on every outcome;
  * a rebuild that throws shows no line. Where the failure is one too many
  * (`ends`), it is remembered and the hike ends with its line (`end`): no
  * cover, no rebuild. How each rebuild came out is told (`rebuilt`).
@@ -164,7 +157,7 @@ export function answerFailures(deps: FailureDeps): (engine: unknown, reason: "pi
           lift();
         }
         deps.rebuilt?.(reason, null);
-        if (deps.alive()) deps.flash(deps.runningOnWebGpu() ? NOTICE_RESTARTED : NOTICE_SWITCHED);
+        if (deps.alive()) deps.flash(NOTICE_RESTARTED);
       })(),
     );
   };

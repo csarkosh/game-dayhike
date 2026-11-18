@@ -2,7 +2,6 @@ import { describe, it, expect } from "vitest";
 import {
   FALLBACK_NOTICE_MS,
   NOTICE_RESTARTED,
-  NOTICE_SWITCHED,
   answerFailures,
   coverWith,
   createSerial,
@@ -10,10 +9,7 @@ import {
 } from "../../src/game/engineFailure.js";
 import { LOSS_BOUND_WINDOW_MS, createLossRecord, type LossNote } from "../../src/game/lossBound.js";
 
-type Engine = { name: string; webgpu: boolean };
-
-/** What a rebuild ends on: an engine that draws with WebGPU, or one that does not. */
-type Ends = "webgpu" | "other";
+type Engine = { name: string };
 
 /** Resolves when `resolve` is called: a switch or a rebuild still under way. */
 function deferred(): { promise: Promise<void>; resolve(): void } {
@@ -23,19 +19,16 @@ function deferred(): { promise: Promise<void>; resolve(): void } {
 }
 
 /**
- * A hike on engine `first`, answering its failures as a page would. Each
- * rebuild makes a new engine on a fresh canvas (`c1`, `c2`, …), and `ends`
- * says, rebuild by rebuild, what it ends on: an engine that draws with
- * WebGPU (`gpu1`, `gpu2`, …) or one that does not (`gl1`, `gl2`, …); past the
- * list's end a rebuild ends on WebGPU. The recorder notes the failure and
- * returns the page's line for a renderer built again, whatever the rebuild
- * then ends on: the line shown is the answer's to choose.
+ * A hike on engine `gpu0`, answering its failures as a page would. Each
+ * rebuild makes a new engine (`gpu1`, `gpu2`, …) on a fresh canvas (`c1`,
+ * `c2`, …). The recorder notes the failure and returns the page's line for a
+ * renderer built again.
  */
-function hike(ends: readonly Ends[] = [], first: Engine = { name: "gpu0", webgpu: true }) {
+function hike() {
   const log: string[] = [];
   /** What each rebuild was given: the bound on its wait for the new scene. */
   const bounds: unknown[][] = [];
-  let engine = first;
+  let engine: Engine = { name: "gpu0" };
   let alive = true;
   let canvases = 0;
   let rebuildGate: Promise<void> | null = null;
@@ -46,7 +39,6 @@ function hike(ends: readonly Ends[] = [], first: Engine = { name: "gpu0", webgpu
     serial,
     alive: () => alive,
     running: () => engine,
-    runningOnWebGpu: () => engine.webgpu,
     unwatch: () => void log.push(`unwatch ${engine.name}`),
     abandon: () => void log.push(`abandon ${engine.name}`),
     record: (reason) => {
@@ -64,8 +56,7 @@ function hike(ends: readonly Ends[] = [], first: Engine = { name: "gpu0", webgpu
       if (rebuildGate !== null) await rebuildGate;
       if (rebuildThrows) throw new Error("no tier builds");
       canvases += 1;
-      const webgpu = (ends[canvases - 1] ?? "webgpu") === "webgpu";
-      engine = { name: `${webgpu ? "gpu" : "gl"}${canvases}`, webgpu };
+      engine = { name: `gpu${canvases}` };
       log.push(`on ${engine.name} (c${canvases})`);
       // The new scene getting ready, the new engine already running.
       if (readyGate !== null) await readyGate;
@@ -89,14 +80,13 @@ function hike(ends: readonly Ends[] = [], first: Engine = { name: "gpu0", webgpu
 }
 
 describe("a failure of the running WebGPU engine: a live rebuild, never a reload", () => {
-  it("says one of two lines on the HUD once the rebuild is done, for six seconds", () => {
-    expect(NOTICE_SWITCHED).toBe("Graphics switched to WebGL2 after a GPU error.");
+  it("says one line on the HUD once the rebuild is done, for six seconds", () => {
     expect(NOTICE_RESTARTED).toBe("Graphics restarted after a GPU error.");
     expect(FALLBACK_NOTICE_MS).toBe(6_000);
   });
 
-  it("rebuilds at once after a pipeline error: the watcher off first, the renderer's work on the engine ended, the cover lifted, the line of what the rebuild ended on", async () => {
-    const h = hike(["other"]);
+  it("rebuilds at once after a pipeline error: the watcher off first, the renderer's work on the engine ended, the cover lifted, the line shown", async () => {
+    const h = hike();
     await h.answer(h.engine(), "pipeline");
     expect(h.log).toEqual([
       "unwatch gpu0",
@@ -105,9 +95,9 @@ describe("a failure of the running WebGPU engine: a live rebuild, never a reload
       "cover",
       "stop gpu0",
       "rebuild from gpu0",
-      "on gl1 (c1)",
+      "on gpu1 (c1)",
       "lift",
-      `flash ${NOTICE_SWITCHED}`,
+      `flash ${NOTICE_RESTARTED}`,
     ]);
   });
 
@@ -121,8 +111,8 @@ describe("a failure of the running WebGPU engine: a live rebuild, never a reload
     }
   });
 
-  it("says restarted where a lost device's rebuild ends on a new WebGPU engine on a fresh canvas, and switched where the next one's does not", async () => {
-    const h = hike(["webgpu", "other"]);
+  it("says restarted after each lost device's rebuild, each on a new engine on a fresh canvas", async () => {
+    const h = hike();
     await h.answer(h.engine(), "lost");
     expect(h.log.slice(-3)).toEqual(["on gpu1 (c1)", "lift", `flash ${NOTICE_RESTARTED}`]);
     h.log.length = 0;
@@ -134,22 +124,16 @@ describe("a failure of the running WebGPU engine: a live rebuild, never a reload
       "cover",
       "stop gpu1",
       "rebuild from gpu1",
-      "on gl2 (c2)",
+      "on gpu2 (c2)",
       "lift",
-      `flash ${NOTICE_SWITCHED}`,
+      `flash ${NOTICE_RESTARTED}`,
     ]);
-  });
-
-  it("says switched, not restarted, when a lost device's first rebuild ended on an engine that does not draw with WebGPU, whatever line the recorder gave", async () => {
-    const h = hike(["other"]);
-    await h.answer(h.engine(), "lost");
-    expect(h.log.slice(-3)).toEqual(["on gl1 (c1)", "lift", `flash ${NOTICE_SWITCHED}`]);
   });
 
   it("waits for a Settings switch under way, and does nothing more when that switch has left the failed engine", async () => {
     const h = hike();
     const apply = deferred();
-    void h.serial.track(apply.promise.then(() => void h.setEngine({ name: "gpu9", webgpu: true })));
+    void h.serial.track(apply.promise.then(() => void h.setEngine({ name: "gpu9" })));
     const answered = h.answer(h.engine(), "pipeline");
     await Promise.resolve();
     expect(h.log).toEqual(["unwatch gpu0", "abandon gpu0", "record pipeline"]);
@@ -162,7 +146,7 @@ describe("a failure of the running WebGPU engine: a live rebuild, never a reload
   });
 
   it("rebuilds after a Settings switch under way that did not leave the failed engine", async () => {
-    const h = hike(["other"]);
+    const h = hike();
     const apply = deferred();
     void h.serial.track(apply.promise);
     const answered = h.answer(h.engine(), "pipeline");
@@ -170,7 +154,7 @@ describe("a failure of the running WebGPU engine: a live rebuild, never a reload
     h.log.push("switch settles");
     apply.resolve();
     await answered;
-    expect(h.log.slice(3)).toEqual(["switch settles", "cover", "stop gpu0", "rebuild from gpu0", "on gl1 (c1)", "lift", `flash ${NOTICE_SWITCHED}`]);
+    expect(h.log.slice(3)).toEqual(["switch settles", "cover", "stop gpu0", "rebuild from gpu0", "on gpu1 (c1)", "lift", `flash ${NOTICE_RESTARTED}`]);
   });
 
   it("keeps a governor's drop out while the rebuild runs: one at a time", async () => {
@@ -202,13 +186,13 @@ describe("a failure of the running WebGPU engine: a live rebuild, never a reload
   });
 
   it("answers the new engine's own failure while the first rebuild is still under way, after it: both recorded, two rebuilds, each cover lifted once", async () => {
-    const h = hike(["webgpu", "other"]);
+    const h = hike();
     const ready = deferred();
     h.holdReady(ready.promise);
     const first = h.answer(h.engine(), "lost");
     await new Promise((resolve) => setTimeout(resolve, 0));
-    // The rebuilt renderer runs on a new WebGPU engine, its scene still getting ready.
-    expect(h.engine()).toEqual({ name: "gpu1", webgpu: true });
+    // The rebuilt renderer runs on a new engine, its scene still getting ready.
+    expect(h.engine()).toEqual({ name: "gpu1" });
     const second = h.answer(h.engine(), "pipeline");
     await Promise.resolve();
     ready.resolve();
@@ -230,14 +214,14 @@ describe("a failure of the running WebGPU engine: a live rebuild, never a reload
       "cover",
       "stop gpu1",
       "rebuild from gpu1",
-      "on gl2 (c2)",
+      "on gpu2 (c2)",
       "lift",
-      `flash ${NOTICE_SWITCHED}`,
+      `flash ${NOTICE_RESTARTED}`,
     ]);
   });
 
   it("does not loop: a late report from the engine the rebuild left, once the new renderer runs on another, changes nothing", async () => {
-    const h = hike(["other"]);
+    const h = hike();
     const failed = h.engine();
     await h.answer(failed, "pipeline");
     const before = [...h.log];
@@ -245,7 +229,7 @@ describe("a failure of the running WebGPU engine: a live rebuild, never a reload
     // running one.
     await h.answer(failed, "lost");
     expect(h.log).toEqual(before);
-    expect(h.engine()).toEqual({ name: "gl1", webgpu: false });
+    expect(h.engine()).toEqual({ name: "gpu1" });
   });
 
   it("lifts the cover on every outcome: a rebuild that throws shows no line", async () => {
@@ -257,7 +241,7 @@ describe("a failure of the running WebGPU engine: a live rebuild, never a reload
   });
 
   it("lifts the cover and shows no line when the session ends during the rebuild", async () => {
-    const h = hike(["other"]);
+    const h = hike();
     const gate = deferred();
     h.holdRebuild(gate.promise);
     const answered = h.answer(h.engine(), "pipeline");
@@ -265,7 +249,7 @@ describe("a failure of the running WebGPU engine: a live rebuild, never a reload
     h.end();
     gate.resolve();
     await answered;
-    expect(h.log.slice(-2)).toEqual(["on gl1 (c1)", "lift"]);
+    expect(h.log.slice(-2)).toEqual(["on gpu1 (c1)", "lift"]);
   });
 
   it("does nothing for a hike that is already gone but take its watcher off and end its work", async () => {
@@ -278,8 +262,8 @@ describe("a failure of the running WebGPU engine: a live rebuild, never a reload
 
 describe("a lost device that is one too many: the hike ends, with no rebuild", () => {
   /** A hike whose losses are counted against a bound (`lossBound.ts`), as the page counts them. */
-  function bounded(ends: readonly Ends[] = []) {
-    const h = hike(ends);
+  function bounded() {
+    const h = hike();
     const record = createLossRecord();
     let last: LossNote | null = null;
     const said: string[] = [];
@@ -319,15 +303,15 @@ describe("a lost device that is one too many: the hike ends, with no rebuild", (
   });
 
   it("is a lost device's alone: a GPU error on the same hike is still answered by a rebuild", async () => {
-    const { h, lose, answer } = bounded(["webgpu", "webgpu", "other"]);
+    const { h, lose, answer } = bounded();
     await lose(0);
     await lose(1);
     await lose(2);
     expect(h.log.at(-1)).toBe("end");
     // The page would be on its way to the landing by now; a hike that went on answers a pipeline error as ever.
-    h.setEngine({ name: "gpu9", webgpu: true });
+    h.setEngine({ name: "gpu9" });
     await answer(h.engine(), "pipeline");
-    expect(h.log.slice(-5)).toEqual(["rebuild from gpu9", "on gl3 (c3)", "lift", "rebuilt pipeline: stands", `flash ${NOTICE_SWITCHED}`]);
+    expect(h.log.slice(-5)).toEqual(["rebuild from gpu9", "on gpu3 (c3)", "lift", "rebuilt pipeline: stands", `flash ${NOTICE_RESTARTED}`]);
   });
 
   it("does not end a hike that is already gone", async () => {

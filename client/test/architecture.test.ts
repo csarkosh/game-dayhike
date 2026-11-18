@@ -181,7 +181,6 @@ describe("layer boundaries", () => {
     expect(app).toContain("      const engine = r.engine;\n      stopWatching = detector(engine, (reason) => void answerFailure(engine, reason));");
     // The answer compares it with the engine the running renderer draws with.
     expect(app).toContain("    running: () => renderer.engine,");
-    expect(app).toContain('    runningOnWebGpu: () => renderer.engineName === "webgpu",');
     // The game records every failure of its engine through the page's one recorder, handed to its start as it
     // is: the start is given no engine that could fail apart from the hike's renderer, so there is no start's
     // fault to tell from the hike's, and no second start on another engine.

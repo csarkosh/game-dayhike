@@ -2600,16 +2600,15 @@ function buildGame(
   }
 
   /**
-   * A failure of the running WebGPU engine (`watchWebGpu`), answered live,
-   * never by a reload, which would end a party (`answerFailures`): the page
-   * remembers it, and the renderer is rebuilt at the running tier on the
-   * engine the WebGPU rule now gives it, under a cover over play.
+   * A failure of the running WebGPU engine (`Renderer.ownWatch`), answered
+   * live, never by a reload, which would end a party (`answerFailures`): the
+   * page is told of it, and the renderer is rebuilt at the running tier on a
+   * new engine of its own, under a cover over play.
    */
   const answerFailure = answerFailures({
     serial,
     alive: () => !disposed && !broken && landingTimer === null,
     running: () => renderer.engine,
-    runningOnWebGpu: () => renderer.engineName === "webgpu",
     unwatch: () => engineBindings.unwatch(),
     abandon: () => renderer.abandon(),
     record: (reason) => {
@@ -2633,8 +2632,8 @@ function buildGame(
       };
     },
     stopLoop: () => renderer.stopLoop(),
-    // The answer shows the line for what the rebuild ended on; the swap's
-    // own is dropped, so it shows once.
+    // The answer shows the line of a rebuild done; the swap's own is dropped,
+    // so it shows once.
     rebuild: (readyMaxMs) => switchNow(tier, tierSource, null, readyMaxMs).then(() => {
       engineNotice = null;
     }),
