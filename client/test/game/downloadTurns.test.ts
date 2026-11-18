@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
-  createDownloadTurns, FILM_HIGH_S, FILM_LOW_S, HOLD_BOUND_MS, LOOK_MS, turnsLine, WIDTH_OPEN, WIDTH_START, WIDTH_TRIAL_MS,
+  createDownloadTurns, FILM_HIGH_S, FILM_LOW_S, HOLD_BOUND_MS, HOLD_GIVE_UP, LOOK_MS, turnsLine, WIDTH_OPEN, WIDTH_START, WIDTH_TRIAL_MS,
   type FilmState, type TurnsClock, type TurnsCourse,
 } from "../../src/game/downloadTurns.js";
 
@@ -273,6 +273,72 @@ describe("a hike's downloads taking turns behind the intro's film", () => {
     expect(all.map((d) => d.started())).toEqual([true, true, false]);
     clock.pass(HOLD_BOUND_MS);
     expect(all.map((d) => d.started())).toEqual([true, true, true]);
+  });
+
+  it("gives up a film hungry for good at its third let-through: the line goes, and later downloads start in the call", () => {
+    expect(HOLD_GIVE_UP).toBe(3);
+    const clock = fakeClock();
+    const turns = createDownloadTurns(clock);
+    const courses: TurnsCourse[] = [];
+    const takeAway = turns.film(fakeFilm({ playing: true, ahead: 0 }).probe, (c) => courses.push(c));
+    const all = Array.from({ length: 10 }, download);
+    for (const d of all) void turns.run(d.start);
+    const started = (): number => all.filter((d) => d.started()).length;
+    clock.pass(HOLD_BOUND_MS);
+    expect(started()).toBe(1);
+    clock.pass(HOLD_BOUND_MS);
+    expect(started()).toBe(2);
+    expect(turns.view().gaveUp).toBe(false);
+    clock.pass(HOLD_BOUND_MS);
+    expect(started()).toBe(10);
+    expect(turns.view().gaveUp).toBe(true);
+    const late = download();
+    void turns.run(late.start);
+    expect(late.started()).toBe(true);
+    takeAway();
+    expect(courses[0]?.gaveUp).toEqual({ settled: 0 });
+    expect(courses[0]?.letThrough).toBe(3);
+    expect(turnsLine(courses[0] as TurnsCourse)).toContain("let through 3; gave up at 0 settled;");
+  });
+
+  it("starts the count of hungry let-throughs again when the film is fed between them", () => {
+    const clock = fakeClock();
+    const turns = createDownloadTurns(clock);
+    const film = fakeFilm({ playing: true, ahead: 0 });
+    turns.film(film.probe);
+    // One download in flight that never settles, and a line behind it.
+    const all = Array.from({ length: 12 }, download);
+    for (const d of all) void turns.run(d.start);
+    clock.pass(2 * HOLD_BOUND_MS);
+    expect(all.filter((d) => d.started()).length).toBe(2);
+    // Fed: a width's worth starts, then hungry again.
+    film.set({ ahead: 12 });
+    clock.pass(LOOK_MS);
+    const fed = all.filter((d) => d.started()).length;
+    expect(fed).toBe(WIDTH_START);
+    film.set({ ahead: 0 });
+    clock.pass(LOOK_MS);
+    clock.pass(2 * HOLD_BOUND_MS);
+    expect(turns.view().gaveUp).toBe(false);
+    expect(all.filter((d) => d.started()).length).toBe(fed + 2);
+    clock.pass(HOLD_BOUND_MS);
+    expect(turns.view().gaveUp).toBe(true);
+    expect(all.every((d) => d.started())).toBe(true);
+  });
+
+  it("bounds a film handed after one that was given up", () => {
+    const clock = fakeClock();
+    const turns = createDownloadTurns(clock);
+    const first = turns.film(fakeFilm({ playing: true, ahead: 0 }).probe);
+    for (let i = 0; i < HOLD_GIVE_UP + 1; i++) void turns.run(download().start);
+    clock.pass(HOLD_GIVE_UP * HOLD_BOUND_MS);
+    expect(turns.view().gaveUp).toBe(true);
+    first();
+    turns.film(fakeFilm({ playing: true, ahead: 0 }).probe);
+    expect(turns.view().gaveUp).toBe(false);
+    const d = download();
+    void turns.run(d.start);
+    expect(d.started()).toBe(false);
   });
 
   it("starts first come, first started", () => {

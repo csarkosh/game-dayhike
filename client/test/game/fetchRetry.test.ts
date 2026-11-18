@@ -117,7 +117,7 @@ describe("a download asked for again when the network drops it", () => {
         return start().finally(() => held--);
       },
       film: () => () => undefined,
-      view: () => ({ width: 0, inFlight: held, waiting: 0, hungry: false }),
+      view: () => ({ width: 0, inFlight: held, waiting: 0, hungry: false, gaveUp: false }),
     };
     const inTurns: FetchRetryDeps = {
       fetch: deps.fetch,

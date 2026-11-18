@@ -28,6 +28,11 @@
  *   `HOLD_BOUND_MS` while downloads wait (the film's own fetch is stuck, the
  *   element says what is not so), one is let through anyway, and again each
  *   time the bound passes.
+ * - Holding the hike is worth it only while it feeds the film: a film still
+ *   hungry at its `HOLD_GIVE_UP`th let-through in a row is one this link
+ *   cannot feed, and the turns stop bounding for the rest of that film, as
+ *   though it did not play. A film fed again before that starts the count
+ *   again; a film handed later starts fresh.
  * - First come, first started. A caller whose signal aborts while it waits
  *   leaves the line. A turn is freed when its download settles, failed or not.
  *
@@ -83,6 +88,17 @@ export const WIDTH_OPEN = 32;
  */
 export const HOLD_BOUND_MS = 15_000;
 
+/**
+ * The let-throughs in a row, the film hungry through all of them, after which
+ * the turns give the film up. Holding the hike only ever bought the film the
+ * link; a film that stays hungry through three bounds (about 45 s, with at
+ * most three of the hike's files started) is not fed by holding it, whether
+ * its own fetch is stuck or the link is slower than the film, and holding on
+ * would load a hike of ninety files a file a bound. So a hike is held at most
+ * about a minute by a film that holding does not feed.
+ */
+export const HOLD_GIVE_UP = 3;
+
 /** How often the film is looked at while downloads wait or are in flight under it. */
 export const LOOK_MS = 250;
 
@@ -112,6 +128,8 @@ export type TurnsCourse = {
   most: number;
   /** Downloads settled while the film was handed. */
   settled: number;
+  /** Whether the turns gave the film up (`HOLD_GIVE_UP`), and how many downloads had settled under it then. */
+  gaveUp: { settled: number } | null;
 };
 
 export type DownloadTurns = {
@@ -129,7 +147,7 @@ export type DownloadTurns = {
    */
   film(probe: FilmProbe, told?: (course: TurnsCourse) => void): () => void;
   /** How the turns stand, for tests. */
-  view(): { width: number; inFlight: number; waiting: number; hungry: boolean };
+  view(): { width: number; inFlight: number; waiting: number; hungry: boolean; gaveUp: boolean };
 };
 
 const browserClock: TurnsClock = {
@@ -154,15 +172,18 @@ export function createDownloadTurns(clock: TurnsClock = browserClock): DownloadT
   let lastStart = 0;
   let lineSince = 0;
   let cancelLook: (() => void) | null = null;
+  /** Let-throughs in a row with the film hungry through them; and whether this film was given up. */
+  let hungryLetThroughs = 0;
+  let gaveUp = false;
   let course: TurnsCourse = freshCourse();
 
   function freshCourse(): TurnsCourse {
-    return { widths: [{ width: WIDTH_START, settled: 0 }], hungry: 0, held: 0, letThrough: 0, most: 0, settled: 0 };
+    return { widths: [{ width: WIDTH_START, settled: 0 }], hungry: 0, held: 0, letThrough: 0, most: 0, settled: 0, gaveUp: null };
   }
 
   /** The film's state when it bounds the hike's downloads; null when nothing bounds them. */
   function bounding(): FilmState | null {
-    if (probe === null) return null;
+    if (probe === null || gaveUp) return null;
     const state = probe();
     return state.playing ? state : null;
   }
@@ -227,11 +248,19 @@ export function createDownloadTurns(clock: TurnsClock = browserClock): DownloadT
         setWidth(Math.max(1, Math.floor((width === Infinity ? inFlight : width) / 2)));
       } else if (hungry && film.ahead >= FILM_HIGH_S) {
         hungry = false;
+        hungryLetThroughs = 0;
       }
       while (line.length > 0 && !hungry && inFlight < width) startNext();
       if (line.length > 0 && clock.now() - Math.max(lastStart, lineSince) >= HOLD_BOUND_MS) {
         course.letThrough++;
+        if (hungry) hungryLetThroughs++;
         startNext();
+        if (hungryLetThroughs >= HOLD_GIVE_UP) {
+          // Holding does not feed this film: the rest of its turns are unbounded.
+          gaveUp = true;
+          course.gaveUp = { settled: course.settled };
+          while (line.length > 0) startNext();
+        }
       }
     }
     const again = probe !== null && (line.length > 0 || inFlight > 0);
@@ -281,6 +310,8 @@ export function createDownloadTurns(clock: TurnsClock = browserClock): DownloadT
       width = WIDTH_START;
       settledAtWidth = 0;
       widthSince = null;
+      hungryLetThroughs = 0;
+      gaveUp = false;
       course = freshCourse();
       look();
       let taken = false;
@@ -293,7 +324,7 @@ export function createDownloadTurns(clock: TurnsClock = browserClock): DownloadT
         told?.(done);
       };
     },
-    view: () => ({ width, inFlight, waiting: line.length, hungry }),
+    view: () => ({ width, inFlight, waiting: line.length, hungry, gaveUp }),
   };
 }
 
@@ -303,5 +334,6 @@ export const pageTurns: DownloadTurns = createDownloadTurns();
 /** A line for the console of how a film's turns went: each width with the downloads settled when it was taken. */
 export function turnsLine(course: TurnsCourse): string {
   const widths = course.widths.map((w) => `${w.width === Infinity ? "open" : w.width}@${w.settled}`).join(" ");
-  return `Downloads under the film: widths ${widths}; hungry ${course.hungry}; held ${course.held}; let through ${course.letThrough}; most in flight ${course.most}; settled ${course.settled}.`;
+  const gaveUp = course.gaveUp === null ? "" : `; gave up at ${course.gaveUp.settled} settled`;
+  return `Downloads under the film: widths ${widths}; hungry ${course.hungry}; held ${course.held}; let through ${course.letThrough}${gaveUp}; most in flight ${course.most}; settled ${course.settled}.`;
 }
