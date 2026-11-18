@@ -33,6 +33,7 @@
  */
 import { LOOP_GAIN_RAMP_S, type AmbientAudio, type LoopEmitter, type VoiceSource } from "./ambientAudio.js";
 import { audioUrl } from "./assetUrls.js";
+import { pageTurns } from "./downloadTurns.js";
 import { SURF_EVENTS, SURF_RANGE_M, type SurfSound } from "./surfSound.js";
 
 export { SURF_RANGE_M };
@@ -192,11 +193,12 @@ export function createSurfAudio(
     unlocked = true;
   });
 
-  const fetchClip = options.fetchClip ?? (async (id: string) => {
+  // In a turn of the page's downloads, behind the intro's film while it plays (`downloadTurns.ts`).
+  const fetchClip = options.fetchClip ?? ((id: string) => pageTurns.run(async () => {
     const response = await fetch(audioUrl(`audio/${id}.mp3`));
     if (!response.ok) throw new Error(`HTTP ${response.status}`);
     return response.arrayBuffer();
-  });
+  }));
   /** Fetches clip `id` now and hands it to `into` once the context exists and it is decoded. */
   function load(id: string, into: (buffer: AudioBuffer) => void): void {
     const warn = (reason: string): void => console.warn(`surf clip "${id}" will not play: ${reason}`);

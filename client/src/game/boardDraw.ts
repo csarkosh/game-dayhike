@@ -19,6 +19,7 @@ import { lakeOutline, type LakeShape } from "../sim/lakeShape.js";
 import { sheetWear, type SheetWear } from "./boardWear.js";
 import { labelWear, nameHash } from "./labelWear.js";
 import { scrape } from "./signParts.js";
+import { pageTurns } from "./downloadTurns.js";
 
 export type BoardDrawing = {
   seed: number;
@@ -431,15 +432,15 @@ export async function whenImagesArrive<T>(
   }
 }
 
-/** The picture at `url`, or null where it cannot be had. */
+/** The picture at `url`, or null where it cannot be had: loaded in a turn of the page's downloads (`downloadTurns.ts`). */
 export function loadBoardImage(url: string): Promise<HTMLImageElement | null> {
-  return new Promise((resolve) => {
+  return pageTurns.run(() => new Promise((resolve) => {
     const image = new Image();
     image.onload = () => resolve(image);
     // A missing image costs the look, never the board: the stand-in stays.
     image.onerror = () => resolve(null);
     image.src = url;
-  });
+  }));
 }
 
 /**

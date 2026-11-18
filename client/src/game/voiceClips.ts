@@ -9,6 +9,7 @@
  */
 import type { AmbientAudio } from "./ambientAudio.js";
 import { audioUrl } from "./assetUrls.js";
+import { pageTurns } from "./downloadTurns.js";
 import type { VoiceLine } from "./innerVoice.js";
 
 /** The clips' level on the voice bus. */
@@ -32,10 +33,11 @@ export type VoiceClips = {
 
 /** `fetchBytes` fetches a clip's bytes by its id, or null when there is no such clip; the default fetches `audio/<id>.mp3`. */
 export function createVoiceClips(ambient: AmbientAudio, fetchBytes?: (id: string) => Promise<ArrayBuffer | null>): VoiceClips {
-  const fetchClip = fetchBytes ?? (async (id: string): Promise<ArrayBuffer | null> => {
+  // In a turn of the page's downloads, behind the intro's film while it plays (`downloadTurns.ts`).
+  const fetchClip = fetchBytes ?? ((id: string): Promise<ArrayBuffer | null> => pageTurns.run(async () => {
     const response = await fetch(audioUrl(`audio/${id}.mp3`));
     return response.ok ? response.arrayBuffer() : null;
-  });
+  }));
   const clips = new Map<string, Promise<AudioBuffer | null>>();
   let asked = 0, had = 0, disposed = false;
   /** Bumped by a cut: a clip that arrives from before it is not spoken. */

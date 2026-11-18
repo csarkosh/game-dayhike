@@ -27,6 +27,7 @@
 
 import type { AmbientAudio, ListenerPose } from "./ambientAudio.js";
 import { audioUrl } from "./assetUrls.js";
+import { pageTurns } from "./downloadTurns.js";
 import { reportLayer } from "./loadReport.js";
 import type { Presence, WildlifeEvent } from "./wildlifeBehaviour.js";
 
@@ -148,14 +149,15 @@ export function createWildlifeAudio(
    * placed one. What the distance gate in `play` measures against. */
   let listenerX = 0, listenerY = 0, listenerZ = 0, listenerSet = false;
 
-  const fetchClip = options.fetchClip ?? (async (id: string) => {
+  // In a turn of the page's downloads, behind the intro's film while it plays (`downloadTurns.ts`).
+  const fetchClip = options.fetchClip ?? ((id: string) => pageTurns.run(async () => {
     const response = await fetch(audioUrl(`audio/${id}.mp3`));
     // Without this the body of a 404 — an HTML error page, on most hosts — goes
     // to `decodeAudioData`, which rejects with a message about the audio data
     // rather than about the missing file.
     if (!response.ok) throw new Error(`HTTP ${response.status}`);
     return response.arrayBuffer();
-  });
+  }));
 
   /**
    * Decodes everything still held as bytes, at most one batch at a time.
