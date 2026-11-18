@@ -83,7 +83,8 @@
  * and the shader materials' alike, whenever a material joins
  * (`enableAsyncPbrPipelines`, `enableAsyncShaderMaterialPipelines`), a mesh
  * joining the pass on the frame after its pipeline is ready, under the
- * film, whose frames no one sees. The passes whose pictures are kept (a
+ * film, whose frames no one sees; and a frame asks for a few at most
+ * (`LOAD_PIPELINE_ASKS_PER_FRAME`). The passes whose pictures are kept (a
  * far tree's bake, the rain's cover map, the shore's panorama, the haunt's
  * mask) ask for theirs the same way and draw whole or not at all
  * (`drawWhole`): each is drawn, or asked for again, once its pipelines are
@@ -365,7 +366,7 @@ import {
   NeutralToneMapping, addTask, addToScene, createBankedFreeCamera, createTexture2DFromPixels, createDirectionalLight, createEngine, createHemisphericLight, createPbrMaterial, createSpotLight,
   createPluginUniformBlock, createRenderTarget, createRenderTask, createSceneContext, disposeEngine, disposeScene, enableAsyncPbrPipelines, enableAsyncShaderMaterialPipelines,
   enableMaterialPlugins, enablePbrLinearOutput, enablePbrMaterialPluginVertexData, getGpuDevice, getProjectionMatrix,
-  markLightDirty, markMaterialUboDirty, onEngineDeviceLost, onEngineGpuError, registerScene, renderFrame, setSurfaceSize, vec3,
+  markLightDirty, markMaterialUboDirty, onEngineDeviceLost, onEngineGpuError, registerScene, renderFrame, setPipelineAsksPerFrame, setSurfaceSize, vec3,
   whenPbrPipelinesIdle, writePluginUniformBlock,
   type BankedFreeCamera, type DirectionalLight, type EngineContext, type HemisphericLight, type MaterialPlugin, type Mesh, type PbrMaterialProps,
   type PluginUniformBlock, type SceneContext, type SpotLight,
@@ -616,6 +617,17 @@ type Standing = {
   /** Each lake's midges, dragonflies and frogs (`waterLifeMeshes.ts`), by its place in the list; none in a world without them. */
   waterLives: LiteWaterLife[];
 };
+
+/**
+ * The pipelines a frame asks for off the page's thread at most while a hike
+ * loads. Each ask makes its shader modules on the page's thread first, and
+ * the browser compiles what one frame asked for together on its GPU thread,
+ * which presents the intro's film: unbounded, a frame of a load asked for 25
+ * to 29 pipelines and 50 to 58 modules at once (a forest's species landing
+ * together). Four spreads such a burst over a few of the film's frames;
+ * whether it is the right number is for a timed machine to say.
+ */
+export const LOAD_PIPELINE_ASKS_PER_FRAME = 4;
 
 /**
  * A hike's renderer on `canvas` for `forest`'s world (null: a hand-authored
@@ -1029,9 +1041,11 @@ export function createLiteRenderer(canvas: HTMLCanvasElement, level: Level, fore
     // records the frame's passes again as a hike loads and when a hiker's lamp joins the scene's lights, and its own
     // pass's target was destroyed and made at each recording.
     // The hike's own pass makes its pipelines off the page's thread, PBR and shader materials alike, a mesh joining it on the
-    // frame after its pipeline is ready; the passes whose pictures are kept draw whole or not at all (`drawWhole`).
+    // frame after its pipeline is ready; the passes whose pictures are kept draw whole or not at all (`drawWhole`); a frame
+    // asks for a few at most.
     enableAsyncPbrPipelines();
     enableAsyncShaderMaterialPipelines();
+    setPipelineAsksPerFrame(LOAD_PIPELINE_ASKS_PER_FRAME);
     const scene = createSceneContext(engine, { defaultRenderTask: false });
     if (!chained) {
       const samples = createRenderTarget({ lbl: "scene-color", format: engine.format, dFormat: "depth24plus-stencil8", samples: FRAME_SAMPLES, size: engine, keep: true });
