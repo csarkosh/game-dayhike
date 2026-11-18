@@ -1515,7 +1515,8 @@ export function createLiteRenderer(canvas: HTMLCanvasElement, level: Level, fore
     }
     // Everywhere but under water that is read through its surface, the water above darkens what stands in it: read
     // through, the water dims it by its own depth. The terrain's cap is none; every other material's is its own, and
-    // the rest of the look is this record's.
+    // the rest of the look is this record's. The swash's band on the cove is the sea's: while the wet line is a
+    // lake's the record carries no cove (`wetUniforms`).
     const wetLine = wetLineFor(wetBodies, pose.x, pose.z);
     wetUniforms({ ...wetLine, attenuate: !waterThrough, cap: 0 }, wetValues);
     // The ground cloud is marched in the tier's steps while it has density: by the chain where there is one, and

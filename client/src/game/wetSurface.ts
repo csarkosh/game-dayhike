@@ -44,6 +44,16 @@ export const WET_SWASH_VECS = SWASH_COLUMNS / 2;
 /** No cove: a half-width so far below zero that the cove's share is 0 at every z. */
 export const WET_NO_COVE = -1e6;
 
+/**
+ * Whether a wet line's body is the sea: the one body with no bound, its radius
+ * infinite or held to WET_RADIUS_MAX (`wetLineFor`). The cove and the swash
+ * that runs up it are the sea's alone; a lake's radius is its farthest shore
+ * point.
+ */
+export function wetBodyIsSea(radius: number): boolean {
+  return radius >= WET_RADIUS_MAX;
+}
+
 /** The porosity cap of each kind of material the weather wets. */
 export const WET_CAP = {
   bark: 1,
@@ -220,7 +230,9 @@ type V4 = [number, number, number, number];
 
 /** What of the wet look is a surface's own: the wet line it is under
  * (`WetState`, the nearest body's), whether the water above it darkens it a
- * channel (not on the high tier), and its material's porosity cap. */
+ * channel (not on the high tier), and its material's porosity cap. The
+ * body's radius says whether it is the sea (`wetBodyIsSea`), and so whether
+ * the surface is under the cove's swash at all. */
 export type WetSurface = {
   readonly line: number;
   readonly level: number;
@@ -245,7 +257,9 @@ export type WetUniforms = {
   /** The weather's wetness, [0, 1] (`setWetWeather`). */
   wetWeather: V1;
   wetCap: V1;
-  /** (centre z, half-width, toe, face grade) of the swash's cove (`setWetCove`). */
+  /** (centre z, half-width, toe, face grade) of the swash's cove (`setWetCove`)
+   * for a surface under the sea's wet line; no cove (`WET_NO_COVE`) for one
+   * under a lake's, whose bank the sea's swash never reaches. */
   wetCove: V4;
   /** The swash's table, WET_SWASH_VECS vec4s, (reach, age) of two columns
    * each (`setWetSwash`): the page's one array, not a copy. */
@@ -262,8 +276,12 @@ export function emptyWetUniforms(): WetUniforms {
 
 /**
  * The uniforms a surface's wet look is drawn with: its own wet line and cap,
- * and the page's wetness, cove and swash table as last set. Fills and
- * returns `out` (a record of its own when none is given).
+ * and the page's wetness, cove and swash table as last set. The cove is the
+ * sea's: the look measures the swash's band from the level of the surface's
+ * body and holds it to that body's footprint, so a surface under a lake's
+ * wet line is given no cove, and the band's share is 0 at every z of the
+ * lake's bank whatever the table holds. Fills and returns `out` (a record of
+ * its own when none is given).
  */
 export function wetUniforms(surface: WetSurface, out: WetUniforms = emptyWetUniforms()): WetUniforms {
   out.wetLine[0] = surface.line;
@@ -277,10 +295,11 @@ export function wetUniforms(surface: WetSurface, out: WetUniforms = emptyWetUnif
   out.wetAttenuate[0] = surface.attenuate ? 1 : 0;
   out.wetWeather[0] = weatherWet;
   out.wetCap[0] = surface.cap;
-  out.wetCove[0] = wetCove[0];
-  out.wetCove[1] = wetCove[1];
-  out.wetCove[2] = wetCove[2];
-  out.wetCove[3] = wetCove[3];
+  const sea = wetBodyIsSea(surface.radius);
+  out.wetCove[0] = sea ? wetCove[0] : 0;
+  out.wetCove[1] = sea ? wetCove[1] : WET_NO_COVE;
+  out.wetCove[2] = sea ? wetCove[2] : 0;
+  out.wetCove[3] = sea ? wetCove[3] : 0;
   out.wetSwash = wetSwash;
   return out;
 }
