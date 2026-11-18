@@ -83,9 +83,8 @@ export type FailureDeps = {
    * pipelines being made, which would otherwise poll the dead engine until
    * the rebuild disposes the renderer and report failures of their own. */
   abandon(): void;
-  /** Tells the page of the failure (its row; `main.ts`'s `engineFailed`),
-   * which gives its line for a renderer built again. */
-  record(reason: "pipeline" | "lost"): string;
+  /** Tells the page of the failure (its row; `main.ts`'s `engineFailed`). */
+  record(reason: "pipeline" | "lost"): void;
   /** Covers play; the function returned lifts it. */
   cover(): () => void;
   /** Stops the render loop on the failed engine. */

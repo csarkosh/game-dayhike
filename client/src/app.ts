@@ -220,11 +220,9 @@ export type GameOptions = {
    * what a switch of tier, and a rebuild after a failure, builds on. It
    * carries no engine: the renderer makes its own from it. */
   engineFor(tier: QualityTier, wanted: () => boolean): Promise<EngineOnCanvas>;
-  /** A failure of the running WebGPU engine, or a renderer that could not be
-   * built on one (`"pipeline"`): the page remembers it (`failureSwap`), so the
-   * WebGPU rule gives the rebuild its engine. The HUD's line for once the
-   * rebuild is done. */
-  engineFailed(reason: "pipeline" | "lost"): string;
+  /** A failure of the running WebGPU engine, a GPU error (`"pipeline"`) or a
+   * lost device: the page sends its row. */
+  engineFailed(reason: "pipeline" | "lost"): void;
   /** The page's record of lost devices (`lossBound.ts`): `note` takes one
    * down as the hike's renderer loses its device and says what the bound on
    * rebuilds makes of it; `ended` is called as the hike ends by that bound,
@@ -2588,7 +2586,7 @@ function buildGame(
     abandon: () => renderer.abandon(),
     record: (reason) => {
       failedAt = performance.now();
-      return options.engineFailed(reason);
+      options.engineFailed(reason);
     },
     // The loss that is one too many in too short a time is not answered by another renderer (`lossBound.ts`): the
     // hike ends as one whose graphics could not be restarted does, with its line here and on the landing page.

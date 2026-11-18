@@ -188,9 +188,9 @@ describe("layer boundaries", () => {
     expect(main).toContain("  const handle = startGame(onCanvas.canvas, worldToken, {");
     expect([...main.matchAll(/^ {4}engineFailed,$/gm)].length).toBe(1);
     expect(main).not.toMatch(/\b(?:startOnEngine|starting)\b/);
-    // The recorder sends the failure's row and gives the line of a renderer built again: it remembers nothing
-    // for a later hike and pins nothing in the address.
-    expect(main).toContain('function engineFailed(reason: "pipeline" | "lost"): string {\n  telemetry.event("engine_failed", { reason });\n  return NOTICE_RESTARTED;\n}');
+    // The recorder sends the failure's row and no more: it remembers nothing for a later hike and pins nothing
+    // in the address.
+    expect(main).toContain('function engineFailed(reason: "pipeline" | "lost"): void {\n  telemetry.event("engine_failed", { reason });\n}');
     expect(main).not.toMatch(/\b(?:recordEngineFailure|parseEngineOverride|withEngine|engineEnv|replaceState)\b/);
     // The answer's own module holds the answer and no more: nothing remembers a failure against an engine or
     // starts a hike again on another.
@@ -307,9 +307,8 @@ describe("layer boundaries", () => {
     // The page keeps no engine between hikes, reads no library's version and hears no library's log.
     expect(code(main)).not.toMatch(/\b(?:releaseEngine|adoptEngine|dropEngine|keepEngine|engineVersion|hearEngineLog|tellEngineLog)\b/);
     // The line of a renderer built again is the failure answer's own (`engineFailure.ts`), which holds no
-    // rule and no record.
-    expect([...code(main).matchAll(/from "\.\/game\/engineFailure\.js"/g)].length).toBe(1);
-    expect(code(main)).toContain('import { NOTICE_RESTARTED } from "./game/engineFailure.js";');
+    // rule and no record: the page's recorder gives none and the page reads nothing of that module.
+    expect(code(main)).not.toMatch(/engineFailure\.js|NOTICE_RESTARTED/);
     // How long the line shows is the answer's too, and the measurement mode's flag is the measurement's
     // (`gpuTimeReport.ts`).
     const hike = importsOf(join(SRC, "app.ts"));

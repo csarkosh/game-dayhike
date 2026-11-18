@@ -21,8 +21,7 @@ function deferred(): { promise: Promise<void>; resolve(): void } {
 /**
  * A hike on engine `gpu0`, answering its failures as a page would. Each
  * rebuild makes a new engine (`gpu1`, `gpu2`, …) on a fresh canvas (`c1`,
- * `c2`, …). The recorder notes the failure and returns the page's line for a
- * renderer built again.
+ * `c2`, …). The recorder notes the failure.
  */
 function hike() {
   const log: string[] = [];
@@ -41,10 +40,7 @@ function hike() {
     running: () => engine,
     unwatch: () => void log.push(`unwatch ${engine.name}`),
     abandon: () => void log.push(`abandon ${engine.name}`),
-    record: (reason) => {
-      log.push(`record ${reason}`);
-      return NOTICE_RESTARTED;
-    },
+    record: (reason) => void log.push(`record ${reason}`),
     cover: () => {
       log.push("cover");
       return () => void log.push("lift");

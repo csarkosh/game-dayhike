@@ -83,7 +83,6 @@ import {
   type TierChoice,
   type TierSource,
 } from "./game/tierChoice.js";
-import { NOTICE_RESTARTED } from "./game/engineFailure.js";
 import { createVeil, VEIL_CUT_COVER_MS, VEIL_CUT_LIFT_MS } from "./game/veil.js";
 
 const found = document.querySelector<HTMLDivElement>("#app");
@@ -933,15 +932,13 @@ function hikeCanvas(): Promise<EngineOnCanvas> {
 }
 
 /**
- * A failure of the engine a hike is drawn with: its row, and the HUD's line
- * for the renderer built again in its place. Nothing is remembered of it for
- * a later hike and nothing is pinned in the address: the rebuild is on
- * WebGPU as the hike was, and how often a device may be lost is the page's
- * own count (`lostDevices`).
+ * A failure of the engine a hike is drawn with: its row. Nothing is
+ * remembered of it for a later hike and nothing is pinned in the address:
+ * the rebuild is on WebGPU as the hike was, and how often a device may be
+ * lost is the page's own count (`lostDevices`).
  */
-function engineFailed(reason: "pipeline" | "lost"): string {
+function engineFailed(reason: "pipeline" | "lost"): void {
   telemetry.event("engine_failed", { reason });
-  return NOTICE_RESTARTED;
 }
 
 /**
