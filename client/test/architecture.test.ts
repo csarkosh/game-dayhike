@@ -271,9 +271,9 @@ describe("layer boundaries", () => {
     expect(importsOf(join(SRC, "main.ts"))).not.toContain("./game/probeScene.js");
     // No step is handed an engine, and none is measured on WebGL2 in WebGPU's place.
     expect(main).not.toMatch(/\b(?:probeDeps|probeStepEngine|probeStepCanSettle|measureOnRuleEngine)\b/);
-    // Nor does the page make an engine any other way: no rule is asked which, and the only canvas it makes is a
-    // hike's (`hikeCanvas`).
-    expect(main).not.toMatch(/\b(?:makeWebGpu|engineForTier|resolveWebGpu|chooseEngine|startWebGpu|loadTranslators)\b/);
+    // Nor does the page make an engine any other way: no rule is asked which or handed anything to decide by, and
+    // the only canvas it makes is a hike's (`hikeCanvas`).
+    expect(main).not.toMatch(/\b(?:makeWebGpu|engineForTier|resolveWebGpu|chooseEngine|startWebGpu|loadTranslators|engineInput)\b/);
     expect(main).not.toMatch(/\bengineFor\(/);
     expect(main).not.toContain("gpuEngine");
     expect([...main.matchAll(/document\.createElement\("canvas"\)/g)].length).toBe(1);

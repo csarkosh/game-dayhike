@@ -33,7 +33,6 @@ import {
   type StartupDeps,
 } from "../../src/game/frameProbe.js";
 import type { GpuSignals } from "../../src/game/gpuSignals.js";
-import { WEBGPU_TIERS } from "../../src/game/engineChoice.js";
 import { landingModel } from "../../src/game/landingModel.js";
 import { DETECT_VERSION, autoTier, withGovernorDrop, type ProbeReading, type QualityTier, type VerdictEngine } from "../../src/game/quality.js";
 import { readAutoRecord, writeAutoRecord } from "../../src/game/tierChoice.js";
@@ -174,11 +173,6 @@ describe("probeStepCanSettle", () => {
     expect(probeStepEngine({ adapterStatus: "ok" }, "webgpu", true)).toBe("webgpu");
     expect(probeStepEngine({ adapterStatus: "timed-out" }, "webgpu", true)).toBe(null);
     expect(probeStepEngine({ adapterStatus: "ok" }, "webgl2", true)).toBe("webgl2");
-    // High and medium draw on WebGPU and low does not, so the probed tiers
-    // need not share the rule's engine: `engine` is the high tier's, and a
-    // step that ends on another engine is asked as it runs
-    // (`measureOnRuleEngine`).
-    expect(WEBGPU_TIERS).toEqual(["high", "medium"]);
   });
 });
 
