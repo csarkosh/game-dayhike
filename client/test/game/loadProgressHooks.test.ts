@@ -3,7 +3,6 @@ import { createLoadProgress } from "../../src/game/loadProgress.js";
 import { MODEL_TOTAL, reportLayer, reportProgress, setLoadProgress } from "../../src/game/loadReport.js";
 import { reportCall } from "../../src/game/wildlifeAudio.js";
 import { stepSlices } from "../../src/game/syncJobs.js";
-import { timeLimit } from "../helpers/timeLimit.js";
 
 /** A progress model with every model landed, so the line reads the next stage. */
 function afterModels() {
@@ -76,32 +75,5 @@ describe("the loading hooks", () => {
     await stepSlices(rings(), 8, () => false, () => clock);
     vi.unstubAllGlobals();
     expect(handBacks).toBe(7);
-  });
-});
-
-describe("the renderer on Babylon.js: the loading hooks of its shells", () => {
-  it("are the loading bar's own where a shell names them on", { timeout: timeLimit(60_000) }, async () => {
-    const modelLoad = await import("../../src/game/modelLoad.js");
-    const groundMaps = await import("../../src/game/groundMaps.js");
-    expect(modelLoad.MODEL_TOTAL).toBe(MODEL_TOTAL);
-    expect(modelLoad.setLoadProgress).toBe(setLoadProgress);
-    expect(modelLoad.reportProgress).toBe(reportProgress);
-    expect(groundMaps.reportLayer).toBe(reportLayer);
-  });
-
-  it("report pipelines landed of asked", { timeout: timeLimit(60_000) }, async () => {
-    const { reportPipelines } = await import("../../src/game/asyncPipelines.js");
-    const p = afterModels();
-    reportPipelines({ asked: 60, landed: 40 });
-    expect(p.view().lines).toContain("pipelines 40 of 60");
-    setLoadProgress(null);
-  });
-
-  it("report nothing when no progress model is set", { timeout: timeLimit(60_000) }, async () => {
-    const { reportPipelines } = await import("../../src/game/asyncPipelines.js");
-    setLoadProgress(null);
-    expect(() => {
-      reportPipelines({ asked: 1, landed: 1 });
-    }).not.toThrow();
   });
 });

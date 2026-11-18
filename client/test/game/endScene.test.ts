@@ -297,20 +297,3 @@ describe("the end scene on another player's run", () => {
     expect(app).toContain("const won = state.outcome === Outcome.Won;");
   });
 });
-
-describe("the renderer on Babylon.js: the end scene on another player's run", () => {
-  it("judges the arrival by the runner's own place, and builds the world round them, not round this screen's player far up the mountain", () => {
-    const renderer = readFileSync(new URL("../../src/game/renderer.ts", import.meta.url), "utf8");
-    expect(renderer).toContain("const shown = shownId === undefined ? undefined : state.players.get(shownId);");
-    expect(renderer).toContain("const centre = shown !== undefined ? shown.pos : local.pos;");
-    expect(renderer).toContain("clipmap?.update(centre.x, centre.z);");
-    expect(renderer).toContain("forestMeshes?.update(centre.x, centre.z);");
-    expect(renderer).not.toContain("clipmap?.update(local.pos.x, local.pos.z);");
-  });
-
-  it("is stepped on the runner the setup names, drawn where their body is, with this screen's own body left out", () => {
-    const renderer = readFileSync(new URL("../../src/game/renderer.ts", import.meta.url), "utf8");
-    expect(renderer).toContain("const now = play.step(seconds, playCamera, local, state.players, (id) => views.drawnAt(id));");
-    expect(renderer).toContain("views.showLocal = now.showLocal;");
-  });
-});

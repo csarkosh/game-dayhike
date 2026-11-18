@@ -1456,10 +1456,6 @@ describe("wall-clock tests", () => {
    * `console.time`.
    */
   const PRINTED_NOT_ASSERTED: Record<string, string> = {
-    "game/bladeMeshes.test.ts > keeps, at the two gate poses, the cells the widened frustum holds, and pins how many":
-      "logs one cull pass's time; asserts only the cell and draw counts",
-    "game/clutterMeshes.test.ts > keeps, at the two gate poses, the cards the widened frustum holds, and pins how many":
-      "logs one cull pass's time; asserts only the card counts",
     "sim/trailSystem.test.ts > finds the longest way home the graph offers":
       "logs the guide walk's time over the seed set; asserts only the walks themselves",
   };
@@ -1474,7 +1470,6 @@ describe("wall-clock tests", () => {
       [...report.tagged].sort(),
       "the wall-clock tests changed: if that is meant, update this list and the files test:wall-clock names; if not, remove the tag",
     ).toEqual([
-      "game/facePatchMeshes.test.ts > keeps the first update to the near band, and a crossing's frames to the share and a slice",
       "game/forestField.test.ts > keeps a warm one-cell-move collect fast — the 25-33 ms rescan must not return",
       "game/oceanBreaker.test.ts > costs under 0.3 ms an update on average over 600 updates of the widest cove",
       "game/swashTable.test.ts > costs under 0.2 ms an update on average over 600 updates of the widest cove",

@@ -5,7 +5,6 @@ import {
 } from "../../src/game/dragonflyShapes.js";
 import { MIDGE_DARK, MIDGE_FRAME_FLOATS, MIDGE_HEAD_FLOATS, MIDGE_TABLE_FLOATS, midgeSlots, packMidgeFrame, type MidgeFrame } from "../../src/game/midgeLook.js";
 import { MIDGE_SWARMS_MAX, SWARM_ROW_FLOATS } from "../../src/game/midgeMotion.js";
-import { timeLimit } from "../helpers/timeLimit.js";
 
 const SEED = 388817;
 
@@ -81,15 +80,5 @@ describe("the dragonflies as lists", () => {
     for (let i = 0; i < shape.positions.length; i += 3) widest = Math.max(widest, Math.abs(shape.positions[i] as number));
     expect(dragonflyHalfSpan(shape.positions)).toBe(widest);
     expect(widest).toBeGreaterThan(0.03);
-  });
-});
-
-describe("the renderer on Babylon.js: the shells of the lake's insects", () => {
-  it("draw from these shapes and this look", { timeout: timeLimit(60_000) }, async () => {
-    const dragonflies = await import("../../src/game/dragonflies.js");
-    const midgeSwarms = await import("../../src/game/midgeSwarms.js");
-    expect(dragonflies.dragonflyGeometry).toBe(dragonflyGeometry);
-    expect(dragonflies.DRAGONFLY_COLOURS).toBe(DRAGONFLY_COLOURS);
-    expect(midgeSwarms.MIDGE_DARK).toBe(0.9);
   });
 });

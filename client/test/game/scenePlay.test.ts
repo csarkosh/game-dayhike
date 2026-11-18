@@ -314,15 +314,3 @@ describe("the end scene", () => {
     expect(back.roll).toBe(0);
   });
 });
-
-describe("the renderer on Babylon.js: the two renderers", () => {
-  it("both step the one play and set its camera, its lens and its body", () => {
-    const babylon = readFileSync(new URL("../../src/game/renderer.ts", import.meta.url), "utf8");
-    for (const piece of [
-      "const now = play.step(seconds, playCamera, local, state.players, (id) => views.drawnAt(id));",
-      "views.showLocal = now.showLocal;", "views.hideNear = now.hideNear;", "camera.fov = now.fov ?? GAME_FOV;",
-      "rainMap?.update(now.endRun ? camera.position : local.pos);", "const shown = play.shown(stareLens);",
-      "play.setScene(kind, at, more, fromS, clock() / 1000);", "play.clearEnding(liftS, clock() / 1000);", "play.setEnding(kind, scene, clock() / 1000);",
-    ]) expect(babylon).toContain(piece);
-  });
-});

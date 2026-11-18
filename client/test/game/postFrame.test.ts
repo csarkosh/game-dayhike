@@ -148,21 +148,3 @@ describe("what the post chain's passes are drawn with", () => {
     expect(src("postFrame.ts")).not.toMatch(/@babylonjs/);
   });
 });
-
-describe("the renderer on Babylon.js: the chain's passes", () => {
-  it("gives the sharpen, the paint and its compose their texels and their strengths", () => {
-    expect(src("post.ts")).toContain("const u = paintUniforms(strokes, engine.getRenderWidth(), engine.getRenderHeight());");
-  });
-
-  it("is what the shell on Babylon.js binds: every pass's values are read from it there", () => {
-    const post = src("post.ts");
-    for (const name of [
-      "farSoftUniforms(", "taaFrame.step(", "taaFrame.jitter(", "sharpenUniforms(", "paintUniforms(", "composeUniforms(", "extractUniforms(", "gradeUniforms(",
-      "lensUniforms(", "lensGate.step(", "paletteFade.set(", "paletteFade.now()", "endBlurKernel(",
-    ]) {
-      expect(post, name).toContain(name);
-    }
-    // The numbers the shell hands on are this module's own, under the names its importers knew them by.
-    expect(post).toMatch(/export \{\s*END_BLUR_KERNEL, END_BLUR_STEPS, FAR_CLOUD_UNIFORMS, FAR_SOFT_BAND, FAR_SOFT_RADIUS, SHADE_BLUR, SHADE_DARK, SHADE_MONSTER_DARK, endBlurKernel,\s*\} from "\.\/postFrame\.js";/);
-  });
-});

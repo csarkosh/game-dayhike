@@ -41,15 +41,3 @@ describe("what the haunt's figures are drawn into their mask with", () => {
     expect(src("shadeMaskParams.ts")).not.toMatch(/@babylonjs/);
   });
 });
-
-describe("the renderer on Babylon.js: the haunt's mask", () => {
-  it("is what the shells on Babylon.js read: the mask's size, a figure's colour and the smoke's numbers", () => {
-    const silhouette = src("shadeSilhouette.ts");
-    expect(silhouette).toContain("shadeMaskColour(e.soft, e.near, maskColour)");
-    expect(silhouette).toContain("shadeSmokeSeconds(performance.now() - started)");
-    expect(silhouette).toContain('{ ratio: SHADE_MASK_RATIO }');
-    const smoke = src("shadeSmoke.ts");
-    expect(smoke).toContain("shadeSmokeUniforms(this.presence, this.time, this.feetY, this.height");
-    expect(smoke).toMatch(/export \{[^}]*SHADE_SMOKE_SCALE[^}]*\} from "\.\/shadeMaskParams\.js";/);
-  });
-});

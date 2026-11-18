@@ -2,7 +2,6 @@ import { describe, it, expect } from "vitest";
 import { cameraSpacePlane, obliqueProjection, reflectionMatrix } from "../../src/game/mirrorView.js";
 import { babylonValues } from "../helpers/babylonFixture.js";
 import { carried, determinant, inverse, product } from "../helpers/ruler.js";
-import { timeLimit } from "../helpers/timeLimit.js";
 
 /** The murky lake's level (room-3) and a standing eye 1.7 m over it. */
 const LEVEL = 50.79;
@@ -242,38 +241,5 @@ describe("the mirrored camera's projection from a camera's own matrices", () => 
     expect(halfZ).toBe(false);
     const oblique = obliqueProjection(floats(BABYLON.camera.projection), plane, halfZ, new Float32Array(16));
     expect(worldDepth(view, oblique, 1, LEVEL, 8)).toBeCloseTo(-1, 4);
-  });
-});
-
-describe("the renderer on Babylon.js: its mirrored camera", () => {
-  it("freezes the oblique projection and draws the water at the near depth", { timeout: timeLimit(60_000) }, async () => {
-    const { NullEngine } = await import("@babylonjs/core/Engines/nullEngine.js");
-    const { Scene } = await import("@babylonjs/core/scene.js");
-    const { UniversalCamera } = await import("@babylonjs/core/Cameras/universalCamera.js");
-    const { TargetCamera } = await import("@babylonjs/core/Cameras/targetCamera.js");
-    const { Matrix, Vector3 } = await import("@babylonjs/core/Maths/math.vector.js");
-    const engine = new NullEngine();
-    try {
-      const scene = new Scene(engine);
-      const player = new UniversalCamera("player", new Vector3(0, EYE_Y, 0), scene);
-      player.fov = 1.4;
-      player.minZ = 0.05;
-      player.maxZ = 10000;
-      player.setTarget(new Vector3(0, EYE_Y - 3, 10));
-      scene.activeCamera = player;
-      const view = new Float32Array(16);
-      Matrix.FromArray(reflectionMatrix(LEVEL, new Float32Array(16))).multiplyToArray(player.getViewMatrix(true), view, 0);
-      const plane = cameraSpacePlane(view, LEVEL, new Float32Array(4));
-      const halfZ = engine.isNDCHalfZRange;
-      expect(halfZ).toBe(false);
-      const oblique = obliqueProjection(new Float32Array(player.getProjectionMatrix(true).m), plane, halfZ, new Float32Array(16));
-      const mirror = new TargetCamera("lake_mirror_cam_probe", Vector3.Zero(), scene);
-      mirror.freezeProjectionMatrix(Matrix.FromArray(oblique));
-      expect(Array.from(mirror.getProjectionMatrix().m)).toEqual(Array.from(oblique));
-      const vp = Matrix.FromArray(view).multiply(Matrix.FromArray(new Float32Array(mirror.getProjectionMatrix().m)));
-      expect(Vector3.TransformCoordinates(new Vector3(1, LEVEL, 8), vp).z).toBeCloseTo(-1, 4);
-    } finally {
-      engine.dispose();
-    }
   });
 });

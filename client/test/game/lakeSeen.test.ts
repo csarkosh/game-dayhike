@@ -5,7 +5,6 @@ import {
 import { cameraAxes, restAxes, restPlanes, viewCorners, viewPlanes } from "../../src/game/lite/cameraPose.js";
 import type { LakeShape } from "../../src/sim/lakeShape.js";
 import { stadiumShape } from "../helpers/lakeShapes.js";
-import { timeLimit } from "../helpers/timeLimit.js";
 
 /** A diagonal lake: its spine from (−30, −30) to (30, 30), 8 m to the shore either side, at level 0. */
 const DIAGONAL: LakeShape = { ...stadiumShape({ cx: 0, cz: 0, halfLen: 42, w: 8, level: 0 }), px: [-30, 30], pz: [-30, 30] };
@@ -131,12 +130,5 @@ describe("a box far larger than the view", () => {
       }
     }
     expect(cornersPastBox(0.5, 0.5, 0.5, 2, 2, 2, unit)).toBe(false);
-  });
-});
-
-describe("the renderer on Babylon.js: a lake's water in its camera's view", () => {
-  it("is the shore the camera's own test reads", { timeout: timeLimit(60_000) }, async () => {
-    const lakeView = await import("../../src/game/lakeView.js");
-    expect(lakeView.lakeViewPoints).toBe(lakeViewPoints);
   });
 });

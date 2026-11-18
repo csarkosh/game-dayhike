@@ -110,14 +110,3 @@ describe("the grade on the material colour path", () => {
     expect(src("materialGrade.ts")).not.toMatch(/@babylonjs/);
   });
 });
-
-describe("the renderer on Babylon.js: the grade's curves", () => {
-  it("sets the curves by the weather's grade, and turns the shadows toward burgundy and deepens them by the chase's cast", () => {
-    // The shell on Babylon.js writes these settings onto its own curves.
-    const post = src("post.ts");
-    expect(post).toContain("const set = curveSettingsUnder(weather, record.chase);");
-    for (const line of ["curves.globalSaturation = set.globalSaturation;", "curves.shadowsHue = set.shadows.hue;", "curves.shadowsDensity = set.shadows.density;", "curves.highlightsSaturation = set.highlights.saturation;"]) {
-      expect(post, line).toContain(line);
-    }
-  });
-});

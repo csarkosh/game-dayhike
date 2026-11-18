@@ -118,13 +118,3 @@ describe("what the lake's life is handed", () => {
     expect(slots.fill(new Map([[9, b], [11, c]])).map((p) => p?.x)).toEqual([7, 4]);
   });
 });
-
-describe("the renderer on Babylon.js: what it hands the lake's life", () => {
-  it("is what the renderer on Babylon.js hands it", { timeout: timeLimit(60_000) }, async () => {
-    const renderer = await import("../../src/game/renderer.js");
-    expect(renderer.skyLumaOf).toBe(skyLumaOf);
-    expect(renderer.pixelAtOneMetre).toBe(pixelAtOneMetre);
-    expect(renderer.createPlayerSlots).toBe(createPlayerSlots);
-    expect(renderer.SILENT_WATER_LIFE).toBe(SILENT_WATER_LIFE);
-  });
-});
