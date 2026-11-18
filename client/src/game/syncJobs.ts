@@ -225,7 +225,7 @@ export function createSyncJobs(clock: () => number): SyncJobs {
    * (its name, and whether it ran late), or none. The clock is read once as
    * a frame's share starts, once before each slice and once as the share
    * ends, never inside a slice's timing, so a test clock that advances on
-   * every reading charges each slice one reading (rebuildShells.ts). */
+   * every reading charges each slice one reading. */
   let charging: { name: string; late: boolean } | null = null;
   let at = 0;
   /** The clock, read: the time since the last reading goes to the slice that ran in it. */

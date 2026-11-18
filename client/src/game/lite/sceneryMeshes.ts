@@ -3,8 +3,7 @@
  * trail's junctions, the trailhead's car and board, and the body at the
  * crest, from what the game places them with (`signParts.ts`,
  * `sceneryParts.ts`, `boardDraw.ts`, `carShadow.ts`). The hike asks for
- * each through `hikeScenery.ts`, as it asks the renderer on Babylon.js, and
- * holds what it is handed back.
+ * each through `hikeScenery.ts` and holds what it is handed back.
  *
  * - **Every post of a world is one draw, and every plank another.** A
  *   post and a plank are instances of their models' one mesh each, where

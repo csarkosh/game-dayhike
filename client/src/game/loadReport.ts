@@ -1,8 +1,8 @@
 /**
  * Where the game's loads report to the loading bar (`loadProgress.ts`), with
  * no engine: the progress model set while an intro is up, and the hooks the
- * loads call (a model's start, bytes and settle through `modelLoad.ts`; a
- * ground map, an albedo or a wildlife call here by name; a shader compiled).
+ * loads call (a ground map, an albedo or a wildlife call here by name; a
+ * shader compiled).
  * Nothing is reported when no bar is up.
  *
  * Kept apart from the model loader so that what only reports (the page, a

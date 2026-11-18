@@ -57,8 +57,8 @@ import { timeLimit } from "../helpers/timeLimit.js";
 
 setActiveTerrainVariant("olympic");
 
-/** A stage of the sea or the water on Babylon.js (`shaders/<name>`), its text recorded whole. */
-const fx = (name: string): string => babylonText(`stages/${name.replace(/\.fx$/, ".glsl")}`);
+/** A stage of the sea or the water as the game's GLSL wrote it, its text recorded whole (`stages/<name>.glsl`). */
+const fx = (name: string): string => babylonText(`stages/${name}.glsl`);
 const glslFloat = (n: number): string => (Number.isInteger(n) ? `${n}.0` : `${n}`);
 function pinned(text: string, name: string, value: number): void {
   expect(text, name).toContain(`const float ${name} = ${glslFloat(value)};`);
@@ -80,7 +80,7 @@ const smoothstep = (e0: number, e1: number, x: number): number => {
 const mod = (x: number, y: number): number => x - y * Math.floor(x / y);
 
 /**
- * oceanSwellSum (shaders/oceanSurface.fx) read line for line into TypeScript: the atlas read as the GPU
+ * oceanSwellSum (the stage `oceanSurface`) read line for line into TypeScript: the atlas read as the GPU
  * reads the nearest-sampled texture at texel centres, the uniforms as oceanRender.ts writes them (the
  * components' oceanK as the Float32Array it binds), steps (dpx, dpy) as the shader gets them. A
  * difference between this and swellAt is a difference between the shader and swellAt. `skipFaded` false
@@ -209,7 +209,7 @@ function shaderSwell(
 }
 
 /**
- * oceanFoamFromEnvelope (shaders/oceanSurface.fx) read line for line into TypeScript, the atlas and the
+ * oceanFoamFromEnvelope (the stage `oceanSurface`) read line for line into TypeScript, the atlas and the
  * uniforms read as shaderSwell reads them: the foam at (px, pz) from the envelope vector (envX, envY) and
  * its magnitude, which the vertex stage hands on beside it.
  */
@@ -252,7 +252,7 @@ function shaderFoamFromEnvelope(
 
 describe("the sea's shader constants and functions", () => {
   it("hold the TypeScript's values", () => {
-    const s = fx("oceanSurface.fx");
+    const s = fx("oceanSurface");
     const surface: [string, number][] = [
       ["OCEAN_G", OCEAN_G], ["OCEAN_TWO_PI", 2 * Math.PI], ["OCEAN_D_MIN", OCEAN_D_MIN], ["OCEAN_D_STEP", OCEAN_D_STEP],
       ["OCEAN_TABLE_SAMPLES", OCEAN_TABLE_SAMPLES], ["OCEAN_ATLAS_ROWS", OCEAN_ATLAS_ROWS],
@@ -270,14 +270,14 @@ describe("the sea's shader constants and functions", () => {
     for (const [name, value] of surface) pinned(s, name, value);
     // The components are the oceanK uniforms, not the atlas's components row.
     expect(s).not.toContain("OCEAN_ROW_COMPONENTS");
-    const f = fx("oceanShade.fragment.fx");
+    const f = fx("oceanShade.fragment");
     pinned(f, "WATER_COX_MUNK_A", WATER_COX_MUNK_A);
     pinned(f, "WATER_COX_MUNK_B", WATER_COX_MUNK_B);
     pinned(f, "OCEAN_SLOPE_VAR_FLOOR", OCEAN_SLOPE_VAR_FLOOR);
   });
 
   it("declares the sea's functions under OCEAN alone, the coastline's named apart from the oceanCoast uniform", () => {
-    const s = fx("oceanSurface.fx");
+    const s = fx("oceanSurface");
     for (const signature of [
       "vec4 oceanAtlasRow(float row, float d)",
       "vec4 oceanCoastAt(float z, out float phaseDz)",
@@ -292,20 +292,20 @@ describe("the sea's shader constants and functions", () => {
     expect(s).not.toContain("oceanSwellEval");
     expect(s).not.toMatch(/\boceanCoast\s*\(/);
     // Every line, comments too, inside the gate: a lake's definitions carry none of it.
-    for (const name of ["oceanSurface.fx", "oceanShade.fragment.fx"]) {
+    for (const name of ["oceanSurface", "oceanShade.fragment"]) {
       expect(fx(name).startsWith("#ifdef OCEAN\n"), name).toBe(true);
       expect(fx(name).endsWith("#endif\n"), name).toBe(true);
     }
   });
 
   it("reads every texture at a fixed level, in loops bounded by a constant and broken on the uniform count", () => {
-    for (const name of ["oceanSurface.fx", "oceanShade.fragment.fx", "oceanDisplace.vertex.fx", "oceanSwash.fx"]) {
+    for (const name of ["oceanSurface", "oceanShade.fragment", "oceanDisplace.vertex", "oceanSwash"]) {
       expect(fx(name), name).not.toMatch(/\btexture2D\s*\(|\btexture\s*\(/);
     }
     // The swash's one read, its table's texel, at level 0 too.
-    expect(fx("oceanSwash.fx").match(/\btexture\w*\(/g)).toHaveLength(1);
-    expect(fx("oceanSwash.fx")).toContain("  vec4 col = textureLod(oceanSwash, vec2(swashU(z), 0.5), 0.0);");
-    const s = fx("oceanSurface.fx");
+    expect(fx("oceanSwash").match(/\btexture\w*\(/g)).toHaveLength(1);
+    expect(fx("oceanSwash")).toContain("  vec4 col = textureLod(oceanSwash, vec2(swashU(z), 0.5), 0.0);");
+    const s = fx("oceanSurface");
     expect(s).toContain("return textureLod(oceanAtlas, vec2((column + 0.5) / OCEAN_TABLE_SAMPLES, (row + 0.5) / OCEAN_ATLAS_ROWS), 0.0);");
     expect(s.match(/for \(int c = 0; c < 12; c\+\+\) \{/g)).toHaveLength(3);
     expect(s.match(/if \(fc >= oceanCoast\.z\) break;/g)).toHaveLength(1);
@@ -317,7 +317,7 @@ describe("the sea's shader constants and functions", () => {
   });
 
   it("writes swellAt's sum: the phase, the wave vector, the dry rule, the cap, the Gerstner normal, the foam", () => {
-    const s = fx("oceanSurface.fx");
+    const s = fx("oceanSurface");
     for (const line of [
       "  return a + (b - a) * (c - i0);",
       // oceanCoastAt, coastRead's five values: the row's four channels, and the phase weight's slope along z
@@ -362,7 +362,7 @@ describe("the sea's shader constants and functions", () => {
   });
 
   it("holds oceanSwellSum's whole body, the text shaderSwell transcribes, so no change to it passes unseen", () => {
-    const s = fx("oceanSurface.fx");
+    const s = fx("oceanSurface");
     const start = at(s, "void oceanSwellSum(");
     const body = s.slice(start, s.indexOf("\n}\n", start) + 3);
     expect(body).toBe(`void oceanSwellSum(vec2 p, vec2 dpx, vec2 dpy, out vec3 disp, out vec3 normal, out vec4 foam, out float drawn, out vec2 env) {
@@ -472,7 +472,7 @@ describe("the sea's shader constants and functions", () => {
   });
 
   it("holds oceanFoamFromEnvelope's whole body, the text shaderFoamFromEnvelope transcribes: the sum's lines after its envelope's magnitude", () => {
-    const s = fx("oceanSurface.fx");
+    const s = fx("oceanSurface");
     const start = at(s, "vec4 oceanFoamFromEnvelope(");
     const body = s.slice(start, s.indexOf("\n}\n", start) + 3);
     expect(body).toBe(`vec4 oceanFoamFromEnvelope(vec2 p, vec2 env, float envelope) {
@@ -623,11 +623,11 @@ describe("the sea's shader constants and functions", () => {
       expect(oceanRingCell(32 * spacing, -5)).toBe(spacing);
       expect(oceanRingCell(-3, 64 * spacing)).toBe(2 * spacing);
     }
-    expect(fx("oceanSurface.fx")).toContain("  return max(OCEAN_RING_BASE, max(r.x, r.y) / OCEAN_RING_REACH);");
+    expect(fx("oceanSurface")).toContain("  return max(OCEAN_RING_BASE, max(r.x, r.y) / OCEAN_RING_REACH);");
   });
 
   it("displaces in UPDATE_POSITION once, at the vertex slid toward the coarser ring's lattice, the point it shades", () => {
-    const d = fx("oceanDisplace.vertex.fx");
+    const d = fx("oceanDisplace.vertex");
     const slide = at(d, "positionUpdated.xz -= oceanMorph * oceanCoarse;");
     const assign = at(d, "vOceanXZ = positionUpdated.xz;");
     const displace = at(d, "vec3 oceanVertexDisplace = oceanDisplace(positionUpdated.xz, oceanVertexSwell, oceanVertexEnv);");
@@ -641,7 +641,7 @@ describe("the sea's shader constants and functions", () => {
     // The ring's normal is left up: the sea's normal is made per pixel.
     expect(d).not.toContain("normalUpdated");
     // Each ring fades the swell at four of its cells a wavelength.
-    const s = fx("oceanSurface.fx");
+    const s = fx("oceanSurface");
     expect(s).toContain("  oceanSwellSum(p, vec2(2.0 * cell, 0.0), vec2(0.0, 2.0 * cell), disp, normal, foam, drawn, env);");
     expect(s).toContain("  swell = vec4(normal.x, normal.z, disp.y, drawn);");
     // Summed once a vertex, there alone: the fragment stage takes it from the varyings.
@@ -651,7 +651,7 @@ describe("the sea's shader constants and functions", () => {
 
 describe("the sea's normal, waterline and roughness", () => {
   it("takes the swell's derivatives in uniform control flow, before any branch, and its depth under the displaced surface", () => {
-    const l = fx("waterLights.fragment.fx");
+    const l = fx("waterLights.fragment");
     const top = l.slice(0, at(l, "vec2 wOceanDx = dFdx(vOceanXZ);"));
     expect(top.split("{").length).toBe(top.split("}").length);
     expect(l).toContain("vec2 wOceanDy = dFdy(vOceanXZ);");
@@ -666,7 +666,7 @@ describe("the sea's normal, waterline and roughness", () => {
   });
 
   it("fades the swell's interpolated normal by the pixel's footprint before its up part is rebuilt, its drawn variance by the square", () => {
-    const l = fx("waterLights.fragment.fx");
+    const l = fx("waterLights.fragment");
     const keep = at(l, "float wOceanKeep = oceanSwellPixelKeep(wOceanDx, wOceanDy);");
     const tilt = at(l, "vec2 wOceanTilt = vOceanSwellA.xy * wOceanKeep;");
     const rebuild = at(l, "vec3 wOceanNormal = vec3(wOceanTilt.x, sqrt(max(1.0 - dot(wOceanTilt, wOceanTilt), 0.0)), wOceanTilt.y);");
@@ -679,7 +679,7 @@ describe("the sea's normal, waterline and roughness", () => {
     // The normal is made from the faded tilt alone, never from the varying's own x and z.
     expect(l).not.toContain("vec3 wOceanNormal = vec3(vOceanSwellA.x");
     // swellPixelKeep (waterShading.ts) line for line: the deep wavenumber of the peak period along the travel.
-    const s = fx("oceanSurface.fx");
+    const s = fx("oceanSurface");
     const start = at(s, "float oceanSwellPixelKeep(");
     expect(s.slice(start, s.indexOf("\n}\n", start) + 3)).toBe(`float oceanSwellPixelKeep(vec2 dpx, vec2 dpy) {
   float kDeep = OCEAN_TWO_PI * OCEAN_TWO_PI / (OCEAN_G * oceanSwell.z * oceanSwell.z);
@@ -694,7 +694,7 @@ describe("the sea's normal, waterline and roughness", () => {
   });
 
   it("puts the swell's normal before the rain's rings, the horizon clamp and Fresnel, and the second octave off the sea", () => {
-    const l = fx("waterLights.fragment.fx");
+    const l = fx("waterLights.fragment");
     const swell = at(l, "normalW = normalize(wOceanNormal + vec3(wOceanExtra.x, 0.0, wOceanExtra.y) * wOceanNormal.y);");
     expect(swell).toBeLessThan(at(l, "if (waterRain > 0.0) {"));
     expect(swell).toBeLessThan(at(l, "normalW = waterHorizonNormal(normalW, viewDirectionW);"));
@@ -715,8 +715,8 @@ describe("the sea's normal, waterline and roughness", () => {
     expect(roughnessFromVariance(OCEAN_SLOPE_VAR_FLOOR)).toBeCloseTo(0.2340347, 6);
     expect(roughnessFromVariance(slopeVariance(0.5, 1))).toBeCloseTo(roughnessFor(0.5, 1), 12);
     expect(roughnessFromVariance(10)).toBe(1);
-    expect(fx("oceanShade.fragment.fx")).toContain("  return max((WATER_COX_MUNK_A + WATER_COX_MUNK_B * u10) * shelter - drawn, OCEAN_SLOPE_VAR_FLOOR);");
-    expect(fx("waterLights.fragment.fx")).toContain(
+    expect(fx("oceanShade.fragment")).toContain("  return max((WATER_COX_MUNK_A + WATER_COX_MUNK_B * u10) * shelter - drawn, OCEAN_SLOPE_VAR_FLOOR);");
+    expect(fx("waterLights.fragment")).toContain(
       "float wOceanVar = oceanUndrawnVariance(oceanWindDir.z, wOceanChop, wOceanDrawn + wWindDrawn * wWindSteep * wWindSteep);",
     );
   });
@@ -747,7 +747,7 @@ describe("the sea's swash in the shaders", () => {
   };
 
   it("holds the TypeScript's values, under OCEAN alone", () => {
-    const w = fx("oceanSwash.fx");
+    const w = fx("oceanSwash");
     expect(SWASH_COLUMNS).toBe(512);
     expect(SWASH_SHEET_MIN).toBe(0.001);
     pinned(w, "SWASH_COLUMNS", SWASH_COLUMNS);
@@ -761,7 +761,7 @@ describe("the sea's swash in the shaders", () => {
   });
 
   it("holds the functions sheetAt and sheetLiftAt transcribe, whole, so no change to them passes unseen", () => {
-    const w = fx("oceanSwash.fx");
+    const w = fx("oceanSwash");
     expect(w).toContain(
       "float swashU(float z) {\n" +
         "  return (clamp(z - oceanCove.x + SWASH_HALF, 0.0, SWASH_COLUMNS - 1.0) + 0.5) / SWASH_COLUMNS;\n" +
@@ -793,7 +793,7 @@ describe("the sea's swash in the shaders", () => {
         "  return bay + (oceanAtlasRead(OCEAN_ROW_COVE_PROFILE, column).x - bay) * coast.z;\n" +
         "}\n",
     );
-    const s = fx("oceanSurface.fx");
+    const s = fx("oceanSurface");
     expect(s).toContain("  float d = p.x - coast.x;\n  float column = (d - OCEAN_D_MIN) / OCEAN_D_STEP;");
     expect(s).toContain("  float h = bay.x + (cove.x - bay.x) * coast.z;");
   });
@@ -811,7 +811,7 @@ describe("the sea's swash in the shaders", () => {
       "float wDepth = wBedDepth + wSurfaceHeight + swashLift(vOceanXZ, wOceanFoam.w, wSurfaceHeight);",
       "wDepth = wDepth > OCEAN_REST_EPS ? wDepth : 0.0;",
     ];
-    const sea = fx("waterLights.fragment.fx");
+    const sea = fx("waterLights.fragment");
     let last = at(sea, "vec4 wOceanFoam = oceanFoamFromEnvelope(");
     for (const line of lines) {
       expect(at(sea, line), line).toBeGreaterThan(last);
@@ -822,16 +822,16 @@ describe("the sea's swash in the shaders", () => {
     expect(sea).toContain("float wDepth = waterBedDepth(vPositionW.xz);");
     // the sea's bed takes no square of its own: the bed read's, whose fallback outside it is the ring vertex's depth
     for (const name of ["wBedLocal", "wBedOutside"]) expect(sea, name).not.toContain(name);
-    const w = fx("water.fragment.fx");
+    const w = fx("water.fragment");
     expect(w).toContain("  vec2 local = (xz - waterBed.xy) * waterBed.z;");
     expect(w).toContain("  bool outside = local.x <= 0.0 || local.y <= 0.0 || local.x >= 1.0 || local.y >= 1.0;");
     expect(w).toContain("  return outside ? vBedDepth : waterLevel - h;");
     // the cove's share at z: 1 across the cove, 0 past OCEAN_COVE_END beyond either end, as the wet ground's,
     // in the swash's definitions, which both stages have, and nowhere else
-    const f = fx("oceanSwash.fx");
+    const f = fx("oceanSwash");
     pinned(f, "OCEAN_COVE_END", OCEAN_COVE_END);
-    expect(fx("oceanShade.fragment.fx")).not.toContain("OCEAN_COVE_END");
-    expect(fx("oceanShade.fragment.fx")).not.toContain("float oceanCoveShare(");
+    expect(fx("oceanShade.fragment")).not.toContain("OCEAN_COVE_END");
+    expect(fx("oceanShade.fragment")).not.toContain("float oceanCoveShare(");
     expect([OCEAN_COVE_END, OCEAN_COVE_END - COVE_END_BLEND]).toEqual([30, 0]);
     expect(f).toContain(
       "float oceanCoveShare(float z) {\n" +
@@ -1010,7 +1010,7 @@ describe("the sea's swash in the shaders", () => {
   });
 
   it("leaves the fragment stage no depth above 0 where the sea rests on the face, whatever the bed read a few mm off the profile", () => {
-    // As waterLights.fragment.fx sums it: the bed the shallower of the read and the profile's depth h across
+    // As the stage `waterLights.fragment` sums it: the bed the shallower of the read and the profile's depth h across
     // the cove, the surface's height s summed once, the lift given that same s. Where the read is the
     // deeper the bed is h and the rest cancels the depth to exactly 0; where the read is the shallower the
     // depth is the read's sum less h's, never above 0, rounding being monotonic.
@@ -1047,7 +1047,7 @@ describe("the sea's swash in the shaders", () => {
   });
 
   it("holds the depth where the sea rests to 0 within a hundredth of a millimetre, whatever order the GPU adds in", () => {
-    // waterLights.fragment.fx after its sum: wDepth > OCEAN_REST_EPS ? wDepth : 0. A compiler may regroup
+    // The stage `waterLights.fragment` after its sum: wDepth > OCEAN_REST_EPS ? wDepth : 0. A compiler may regroup
     // (bed + s) + lift as bed + (s + lift): in float32 that is a step or two off 0, and the hold takes it
     // to 0 again. Within the cove's share, its end fades too, where the bed on the dry side is the
     // shallower whole, the held depth is 0 wherever the read is the deeper and never above 0.
@@ -1101,7 +1101,7 @@ describe("the sea's swash in the shaders", () => {
 
 describe("the white water", () => {
   it("holds the TypeScript's look, lace and cap numbers", () => {
-    const f = fx("oceanShade.fragment.fx");
+    const f = fx("oceanShade.fragment");
     const look: [string, number][] = [
       ["OCEAN_FOAM_ALBEDO", OCEAN_FOAM_ALBEDO], ["OCEAN_FOAM_ALBEDO_OLD", OCEAN_FOAM_ALBEDO_OLD],
       ["OCEAN_FOAM_FADE", OCEAN_FOAM_FADE], ["OCEAN_INNER_COVER", OCEAN_INNER_COVER],
@@ -1126,14 +1126,14 @@ describe("the white water", () => {
   });
 
   it("keeps the lace's noise and its hash the TypeScript mirror's, line for line", () => {
-    const f = fx("oceanShade.fragment.fx");
+    const f = fx("oceanShade.fragment");
     for (const line of [
       "  float a = 1.0 - abs(2.0 * waterSkinNoise(q / OCEAN_LACE_TILE) - 1.0);",
       "  float b = 1.0 - abs(2.0 * waterSkinNoise(q / (OCEAN_LACE_FINE * OCEAN_LACE_TILE) + OCEAN_LACE_FINE_SHIFT) - 1.0);",
       "  return OCEAN_LACE_WEIGHT * a + (1.0 - OCEAN_LACE_WEIGHT) * b;",
     ]) expect(f).toContain(line);
     // The water's own hash and noise, which the lace and the caps reuse: waterShading.ts mirrors these lines.
-    const w = fx("water.fragment.fx");
+    const w = fx("water.fragment");
     for (const line of [
       "  vec3 p3 = fract(vec3(p.xyx) * 0.1031);",
       "  p3 += dot(p3, p3.yzx + 33.33);",
@@ -1150,7 +1150,7 @@ describe("the white water", () => {
     expect(foamWhite(0)).toBeCloseTo(0.4, 12);
     expect(foamWhite(10)).toBeCloseTo(0.1004995, 6);
     expect(foamWhite(1000)).toBeCloseTo(0.06, 9);
-    const f = fx("oceanShade.fragment.fx");
+    const f = fx("oceanShade.fragment");
     // The share (the foam's amount or the inner surf's floor, which the bores renew and which never thins with age),
     // the level that leaves it, the lace above the level through a soft edge centred on it, held back as the share
     // goes to none, and the share itself where a pixel spans more than a few of the lace's cells.
@@ -1177,7 +1177,7 @@ describe("the white water", () => {
     expect(Math.abs(whitecapThreshold(0.01) - 2.32635)).toBeLessThan(1e-3);
     expect(Math.abs(whitecapThreshold(0.001) - 3.09023)).toBeLessThan(1e-3);
     expect(Math.abs(whitecapThreshold(0.5))).toBeLessThan(1e-3);
-    expect(fx("oceanShade.fragment.fx")).toContain(
+    expect(fx("oceanShade.fragment")).toContain(
       "  return s - (2.515517 + 0.802853 * s + 0.010328 * s * s) / (1.0 + 1.432788 * s + 0.189269 * s * s + 0.001308 * s * s * s);",
     );
   });
@@ -1201,7 +1201,7 @@ describe("the white water", () => {
   });
 
   it("draws the cells' caps from a hash fresh every cycle, a strict chance, the coverage at the cap's centre and a clock that folds by the pattern's repeat", () => {
-    const f = fx("oceanShade.fragment.fx");
+    const f = fx("oceanShade.fragment");
     for (const line of [
       "  float n = mod(k, OCEAN_CAP_CYCLES);",
       "  vec2 shift = vec2(waterSkinHash(vec2(n, 31.0)), waterSkinHash(vec2(n, 77.0))) * 512.0;",
@@ -1221,7 +1221,7 @@ describe("the white water", () => {
   });
 
   it("lays the white water over the sea as the skin lies over a lake: after the transmission, matte in the compose", () => {
-    const l = fx("waterLights.fragment.fx");
+    const l = fx("waterLights.fragment");
     const layer = at(l, "float wFoam = max(wOceanLace, wOceanCap);");
     expect(layer).toBeGreaterThan(at(l, "if (waterSkin.x > 0.0) {"));
     expect(layer).toBeGreaterThan(at(l, "wTransmit = wBed * wT * (1.0 - wF);"));
@@ -1239,19 +1239,19 @@ describe("the white water", () => {
       "alpha = mix(alpha, 1.0, wFoam);",
       "normalW = normalize(mix(normalW, vec3(0.0, 1.0, 0.0), wFoam));",
     ]) expect(at(l, line)).toBeGreaterThan(layer);
-    const c = fx("waterCompose.fragment.fx");
+    const c = fx("waterCompose.fragment");
     const foam = at(c, "finalRadianceScaled *= 1.0 - wFoam;");
     expect(c).toContain("finalSpecularScaled *= 1.0 - wFoam;");
     expect(foam).toBeGreaterThan(at(c, "#ifdef OCEAN"));
-    // the bed's light is no longer added in the compose at all: it goes in after the fog (waterFinal.fragment.fx)
+    // the bed's light is no longer added in the compose at all: it goes in after the fog (the stage `waterFinal.fragment`)
     expect(c).not.toContain("wTransmit");
-    expect(fx("waterFinal.fragment.fx")).toContain("finalColor.rgb += wTransmit;");
+    expect(fx("waterFinal.fragment")).toContain("finalColor.rgb += wTransmit;");
   });
 });
 
 describe("the wind sea in the shaders", () => {
   it("holds the TypeScript's fields, scales and limits", () => {
-    const s = fx("oceanSurface.fx");
+    const s = fx("oceanSurface");
     const fields: [string, number][] = [
       ["LOOP_N", LOOP_N], ["LOOP_SIZE", LOOP_SIZE], ["LOOP_FRAMES", LOOP_FRAMES], ["LOOP_SECONDS", LOOP_SECONDS],
       ["FFT_N", FFT_N], ["FFT_CASCADE_0", FFT_CASCADES[0]], ["FFT_CASCADE_1", FFT_CASCADES[1]], ["FFT_CASCADE_2", FFT_CASCADES[2]],
@@ -1260,7 +1260,7 @@ describe("the wind sea in the shaders", () => {
     ];
     for (const [name, value] of fields) pinned(s, name, value);
     expect(OCEAN_LOOP_SCALE_MIN).toBeCloseTo((WIND_SEA_U_FLOOR / WIND_SEA_U_REF) ** 2, 15);
-    const f = fx("oceanShade.fragment.fx");
+    const f = fx("oceanShade.fragment");
     for (const [name, value] of [
       ["OCEAN_BUMP_HS", OCEAN_BUMP_HS], ["OCEAN_BUMP_MAX", OCEAN_BUMP_MAX],
     ] as const) pinned(f, name, value);
@@ -1273,7 +1273,7 @@ describe("the wind sea in the shaders", () => {
   });
 
   it("keeps the wind sea's share near shore windSeaShare's: the fetch off the land, mixed toward the whole onshore", () => {
-    const s = fx("oceanSurface.fx");
+    const s = fx("oceanSurface");
     pinned(s, "OCEAN_FETCH_RATIO", WIND_SEA_FETCH_COEFF / WIND_SEA_HS_COEFF);
     pinned(s, "WIND_SEA_U_FLOOR", WIND_SEA_U_FLOOR);
     for (const line of [
@@ -1283,8 +1283,8 @@ describe("the wind sea in the shaders", () => {
       "  return share + (1.0 - share) * oceanWindDir.w;",
     ]) expect(s, line).toContain(line);
     // Every caller passes its own point: the ring's vertex, the pixel, the caps' cut and the low tier's bump.
-    const f = fx("oceanShade.fragment.fx");
-    const l = fx("waterLights.fragment.fx");
+    const f = fx("oceanShade.fragment");
+    const l = fx("waterLights.fragment");
     // The fragment stage reads the share once, at the pixel, and hands it on; only a whitecap cell's centre,
     // another point, reads its own. The vertex stage reads it once more, at the vertex.
     expect(l).toContain("float wWindShare = oceanWindAmp(vOceanXZ);");
@@ -1347,7 +1347,7 @@ describe("the wind sea in the shaders", () => {
   });
 
   it("samples both fields in the wind's frame: the loop's frames blended at the loop's time and scale, the cascades summed", () => {
-    const s = fx("oceanSurface.fx");
+    const s = fx("oceanSurface");
     for (const line of [
       "  vec2 r = p - oceanWindPivot.xy;",
       "  return vec2(dot(r, d), d.x * r.y - d.y * r.x);",
@@ -1361,7 +1361,7 @@ describe("the wind sea in the shaders", () => {
       "  float chop = oceanWindAmp(p) * (1.0 - foam.y) * oceanShelter(p, SHELTER_CHOP);",
       "  return disp + oceanWindDisplaceAt(p, cell) * chop;",
     ]) expect(s, line).toContain(line);
-    const f = fx("oceanShade.fragment.fx");
+    const f = fx("oceanShade.fragment");
     // The slope texture's (slopeX, slopeZ) (oceanGpuFft.ts).
     expect(f).toContain("    g = textureLod(oceanWindSlope, vec3(w / FFT_CASCADE_0, 0.0), 0.0).xy * k0");
     expect(f).toContain("    g = vec2(gx, gz) * (LOOP_N / (2.0 * LOOP_SIZE)) * keep;");
@@ -1396,7 +1396,7 @@ describe("the wind sea in the shaders", () => {
     expect(windPixelKeep(60, 128, 60 / 256)).toBe(1);
     expect(windPixelKeep(25, 256, 0.0732421875)).toBeCloseTo(0.5, 12);
     expect(windPixelKeep(60, 128, 60 / 128)).toBe(0);
-    expect(fx("oceanShade.fragment.fx")).toContain(
+    expect(fx("oceanShade.fragment")).toContain(
       "  return 1.0 - smoothstep(OCEAN_RESOLVE_PHASE_LO, OCEAN_RESOLVE_PHASE_HI, 0.5 * OCEAN_TWO_PI * n * pixel / size);",
     );
   });
@@ -1413,7 +1413,7 @@ describe("the wind sea in the shaders", () => {
     // A calm dawn, the wind onshore: the bump nearly gone, the sea glassy.
     const dawn = windSeaStateFor(0.25, [1, 0], 6);
     expect(bumpScale(dawn.hs * windSeaShare(dawn, -50), 0, 1)).toBeCloseTo(0.0411, 4);
-    const l = fx("waterLights.fragment.fx");
+    const l = fx("waterLights.fragment");
     expect(l).toContain("float wWindSteep = wWindAmp * oceanWindSlopeLimit(oceanWindDir.z, wOceanChop, wWindDrawn * wWindAmp * wWindAmp);");
     expect(l).toContain(
       "vec2 wOceanExtra = normalW.xz / max(normalW.y, 0.05) * oceanBumpScale(wWindShare, wOceanFoam.y, wOceanChop) + wWindSlope * wWindSteep;",
@@ -1421,8 +1421,8 @@ describe("the wind sea in the shaders", () => {
   });
 
   it("whitens a drawn wind sea's own crests, faded to their coverage as their waves fall under the pixel, the cells only where none is drawn", () => {
-    const l = fx("waterLights.fragment.fx");
-    const f = fx("oceanShade.fragment.fx");
+    const l = fx("waterLights.fragment");
+    const f = fx("oceanShade.fragment");
     const branch = at(l, "if (oceanCoast.w > 0.5) {");
     for (const line of [
       "  float wCapCover = oceanCapCoverage(vOceanXZ, wWindShare);",
@@ -1475,7 +1475,7 @@ describe("the plunging lip on medium and low", () => {
   };
 
   it("holds the TypeScript's constants", () => {
-    const f = fx("oceanShade.fragment.fx");
+    const f = fx("oceanShade.fragment");
     for (const [name, value] of [
       ["LIP_FACE_IRIBARREN_LO", LIP_FACE_IRIBARREN_LO], ["LIP_FACE_IRIBARREN_HI", LIP_FACE_IRIBARREN_HI], ["LIP_THROW", LIP_THROW],
       ["LIP_TILT", LIP_TILT], ["LIP_HIGHLIGHT", LIP_HIGHLIGHT], ["LIP_BAND_M", LIP_BAND_M], ["LIP_BURST_S", LIP_BURST_S],
@@ -1485,10 +1485,10 @@ describe("the plunging lip on medium and low", () => {
   });
 
   it("reads the break as the foam does, word for word, then lipShadeAt's lines", () => {
-    const f = fx("oceanShade.fragment.fx");
+    const f = fx("oceanShade.fragment");
     const start = at(f, "vec4 oceanLipFromEnvelope(");
     const body = f.slice(start, f.indexOf("\n}\n", start) + 3);
-    const foam = fx("oceanSurface.fx");
+    const foam = fx("oceanSurface");
     const foamStart = at(foam, "vec4 oceanFoamFromEnvelope(");
     const foamBody = foam.slice(foamStart, foam.indexOf("\n}\n", foamStart) + 3);
     // its first fourteen lines, the coast, the profiles and the break, are the foam's own
@@ -1512,7 +1512,7 @@ describe("the plunging lip on medium and low", () => {
   });
 
   it("tilts the normal after the swell's and lifts the foam before the white water is laid, every line under OCEAN", () => {
-    const l = fx("waterLights.fragment.fx");
+    const l = fx("waterLights.fragment");
     const lip = at(l, "vec4 wOceanLip = oceanLipFromEnvelope(vOceanXZ, vOceanSwellB.xy, vOceanSwellB.z);");
     expect(lip).toBeGreaterThan(at(l, "vec4 wOceanFoam = oceanFoamFromEnvelope(vOceanXZ, vOceanSwellB.xy, vOceanSwellB.z);"));
     const tilt = at(l, "normalW = oceanLipNormal(normalW, wOceanLip);");

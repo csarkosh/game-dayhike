@@ -67,8 +67,8 @@ export default defineConfig({
       input: fileURLToPath(new URL("index.html", import.meta.url)),
     },
     // Never inline a model, and never inline a ground texture. `game/assetUrls.ts`
-    // imports every shipped .glb with `?url`, and `groundMaps.ts`/`terrainTexture.ts`
-    // import every `client/assets/textures/ground.*.webp` the same way, so Vite
+    // imports every shipped .glb with `?url`, and `groundLayers.ts`
+    // imports every `client/assets/textures/ground.*.webp` the same way, so Vite
     // content-hashes them — but Vite turns a `?url` asset under `assetsInlineLimit`
     // (4096 bytes by default) into a base64 `data:` URI instead, no separate
     // request and no cacheable URL either. That is not a hypothetical margin on
