@@ -355,7 +355,7 @@ describe("the telemetry route", () => {
   it("writes the owner's address marked tester and owner; a bad batch from it is still refused", async () => {
     rows.length = 0;
     for (const ip of ["203.0.113.7", "::ffff:203.0.113.8", "2001:db8:1:2::3"]) {
-      const res = await post(batch([{ n: "error", t: 0, kind: "babylon", msg: "boom" }]), { origin: ORIGIN }, ip);
+      const res = await post(batch([{ n: "error", t: 0, kind: "console", msg: "boom" }]), { origin: ORIGIN }, ip);
       expect(res.status).toBe(204);
       expect(res.headers.get("access-control-allow-origin")).toBe(ORIGIN);
     }
