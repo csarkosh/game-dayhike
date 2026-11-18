@@ -63,8 +63,9 @@ build on (older rows keep the time the batch arrived).
   **unknown** is the sessions with no `end` row, its own count. Of the sessions that played and
   never said goodbye, one whose last `visibility` was `hidden` **went to the background**; the
   rest **ended silently**.
-- **Errors** are `error`, `start_fail`, `connect_fail`, `engine_failed`, `webgpu_start_failed`,
-  `device_lost` (a hike's renderer lost its GPU device) and a `session_end` whose `why` is
+- **Errors** are `error`, `start_fail`, `connect_fail`, `engine_failed`, `webgpu_start_failed`
+  (sent by builds that started an engine apart from the hike's renderer: no page sends it now, and
+  the queries keep reading those builds' rows), `device_lost` (a hike's renderer lost its GPU device) and a `session_end` whose `why` is
   `device_lost` (the hike ended by the bound on rebuilds); **warnings** are `warn`,
   `tier_fallback` and `turned_away` (a visitor the load check turned away, its `reason` listed
   as the line's kind: `no-webgpu`, `no-adapter`, `software` or `short`, the last with what the
