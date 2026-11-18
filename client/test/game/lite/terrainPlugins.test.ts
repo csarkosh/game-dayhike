@@ -5,6 +5,12 @@ import {
   emptyTerrainMaterialUniforms, terrainPlugin, terrainSplitPlugin, terrainVertexData, terrainWetPlugin,
   type TerrainPaints, type TerrainTextures,
 } from "../../../src/game/lite/terrainPlugins.js";
+import {
+  FAR_BARE_AO, FAR_CANOPY_SHADE, FAR_CLUMP_AO, FAR_CLUMP_CELL, FAR_CLUMP_SALT, FAR_CLUMP_TILT, FAR_CLUMP_WEIGHT, FAR_CLUMP_WRAP, FAR_COVER_BAND, FAR_COVER_BAND_LOW,
+  FAR_COVER_TILT, FAR_DRIFT_AO, FAR_DRIFT_CELL, FAR_DRIFT_SALT, FAR_DRIFT_TILT, FAR_DRIFT_WEIGHT, FAR_LITTER, FAR_MACRO_CELL, FAR_MACRO_SALT, FAR_MACRO_WEIGHT,
+  FAR_SELF_SHADOW, FAR_SPEC_CUT, FAR_SUN_GAIN_MAX, FAR_SWARD, FAR_SWARD_COVER, FAR_SWARD_MAX,
+  HEX_LATTICE, HEX_SHARPNESS, HEX_SKEW, HEX_UNSKEW, MACRO_DRY, MACRO_LUSH, MACRO_SLOPE, MACRO_WAVE, MACRO_WEIGHT,
+} from "../../../src/game/groundHexParams.js";
 import { emptyTerrainUniforms, terrainUniforms, type TerrainUniformInputs } from "../../../src/game/terrainUniforms.js";
 import { TERRAIN_ATTRIBUTES, TERRAIN_VERTEX_SIZES, type TerrainVertices } from "../../../src/game/terrainVertices.js";
 import { WET_SWASH_VECS, emptyWetUniforms, wetUniforms } from "../../../src/game/wetSurface.js";
@@ -117,6 +123,91 @@ describe("the terrain's plugin on Babylon Lite: what it compiles", () => {
     const active: unknown[] = [];
     plugin.getActiveTextures?.(active as never);
     expect(active).toEqual(bound.map((b) => b.texture));
+  });
+});
+
+/**
+ * The ground's hex tiling, its macro tint and its far cover are written in
+ * the plugin's WGSL with their numbers as literals. Each is the number
+ * `groundHexParams.ts` holds, which the arithmetic the tests read is made
+ * with: a change to one without the other fails here.
+ */
+describe("the terrain's plugin on Babylon Lite: its constants stay in lockstep with groundHexParams.ts", () => {
+  const f = (n: number): string => (Number.isInteger(n) ? `${n}.0` : `${n}`);
+  const vec2 = (v: readonly [number, number]): string => `vec2<f32>(${f(v[0])},${f(v[1])})`;
+  const vec3 = (c: { r: number; g: number; b: number }): string => `vec3<f32>(${f(c.r)},${f(c.g)},${f(c.b)})`;
+  const code = fragment(ALL);
+
+  it("carries the hex lattice, its sharpness and its skew matrices verbatim", () => {
+    expect(code).toContain(`const HEX_LATTICE:f32=${f(HEX_LATTICE)};`);
+    expect(code).toContain(`const HEX_SHARPNESS:f32=${f(HEX_SHARPNESS)};`);
+    expect(code).toContain(`const HEX_SKEW:mat2x2<f32>=mat2x2<f32>(${HEX_SKEW.map(f).join(",")});`);
+    expect(code).toContain(`const HEX_UNSKEW:mat2x2<f32>=mat2x2<f32>(${HEX_UNSKEW.map(f).join(",")});`);
+  });
+
+  it("carries the lattice hash token for token", () => {
+    expect(code).toContain("fn latticeHash(c:vec2<f32>)->f32{return fract(0.618034*c.x+0.381966*c.y+0.0113*c.x*c.y);}");
+  });
+
+  it("carries the macro octaves, weights, slope push and tints verbatim", () => {
+    expect(code).toContain(`const MACRO_WAVE:vec2<f32>=${vec2(MACRO_WAVE)};`);
+    expect(code).toContain(`const MACRO_WEIGHT:vec2<f32>=${vec2(MACRO_WEIGHT)};`);
+    expect(code).toContain(`const MACRO_SLOPE:f32=${f(MACRO_SLOPE)};`);
+    expect(code).toContain(`const MACRO_LUSH:vec3<f32>=${vec3(MACRO_LUSH)};`);
+    expect(code).toContain(`const MACRO_DRY:vec3<f32>=${vec3(MACRO_DRY)};`);
+  });
+
+  it("fetches a hex's three taps with explicit gradients, so the seams carry no mip discontinuity", () => {
+    const fetch = code.slice(code.indexOf("fn hexFetch("), code.indexOf("fn latticeHash("));
+    expect([...fetch.matchAll(/textureSampleGrad\(tex,terrainSmp,h\.u[123],layer,dx,dy\)\.rgb\*h\.s\.[xyz]/g)].length).toBe(3);
+    expect(fetch).not.toMatch(/textureSample\(|textureSampleLevel\(/);
+  });
+
+  it("carries every constant of the far cover verbatim, the band of each tier among them", () => {
+    expect(fragment(ALL, true)).toContain(`const FAR_COVER_BAND:vec2<f32>=${vec2(FAR_COVER_BAND_LOW)};`);
+    expect(fragment(ALL, false)).toContain(`const FAR_COVER_BAND:vec2<f32>=${vec2(FAR_COVER_BAND)};`);
+    for (const line of [
+      `const FAR_SWARD_COVER:vec2<f32>=${vec2(FAR_SWARD_COVER)};`,
+      `const FAR_SWARD_MAX:f32=${f(FAR_SWARD_MAX)};`,
+      `const FAR_SWARD:vec3<f32>=${vec3(FAR_SWARD)};`,
+      `const FAR_LITTER:vec3<f32>=${vec3(FAR_LITTER)};`,
+      `const FAR_CANOPY_SHADE:f32=${f(FAR_CANOPY_SHADE)};`,
+      `const FAR_CLUMP_CELL:vec2<f32>=${vec2(FAR_CLUMP_CELL)};`,
+      `const FAR_CLUMP_WEIGHT:vec2<f32>=${vec2(FAR_CLUMP_WEIGHT)};`,
+      `const FAR_CLUMP_SALT:vec2<f32>=${vec2(FAR_CLUMP_SALT)};`,
+      `const FAR_CLUMP_WRAP:f32=${f(FAR_CLUMP_WRAP)};`,
+      `const FAR_CLUMP_AO:f32=${f(FAR_CLUMP_AO)};`,
+      `const FAR_CLUMP_TILT:f32=${f(FAR_CLUMP_TILT)};`,
+      `const FAR_COVER_TILT:f32=${f(FAR_COVER_TILT)};`,
+      `const FAR_SPEC_CUT:f32=${f(FAR_SPEC_CUT)};`,
+      `const FAR_DRIFT_CELL:vec2<f32>=${vec2(FAR_DRIFT_CELL)};`,
+      `const FAR_DRIFT_WEIGHT:vec2<f32>=${vec2(FAR_DRIFT_WEIGHT)};`,
+      `const FAR_DRIFT_SALT_A:vec2<f32>=${vec2(FAR_DRIFT_SALT[0])};`,
+      `const FAR_DRIFT_SALT_B:vec2<f32>=${vec2(FAR_DRIFT_SALT[1])};`,
+      `const FAR_DRIFT_AO:f32=${f(FAR_DRIFT_AO)};`,
+      `const FAR_DRIFT_TILT:f32=${f(FAR_DRIFT_TILT)};`,
+      `const FAR_BARE_AO:f32=${f(FAR_BARE_AO)};`,
+      `const FAR_MACRO_CELL:vec2<f32>=${vec2(FAR_MACRO_CELL)};`,
+      `const FAR_MACRO_WEIGHT:vec2<f32>=${vec2(FAR_MACRO_WEIGHT)};`,
+      `const FAR_MACRO_SALT_A:vec2<f32>=${vec2(FAR_MACRO_SALT[0])};`,
+      `const FAR_MACRO_SALT_B:vec2<f32>=${vec2(FAR_MACRO_SALT[1])};`,
+    ]) expect(code, line).toContain(line);
+  });
+
+  it("hashes the far cover on the wrapped cells with the macro noise's hash, band-limits with a rising smoothstep, and reads no texture for it", () => {
+    const far = code.slice(code.indexOf("fn farCoverWeight("), code.indexOf("fn trailValueNoise1("));
+    expect(far.length).toBeGreaterThan(1000);
+    expect(far).toContain("let c0=gmod2(c+salt,FAR_CLUMP_WRAP);");
+    expect(far).toContain("let a=latticeHash(c0);");
+    expect(far.split("1.0-smoothstep(0.5,1.0,").length - 1).toBe(4);
+    expect(far).not.toMatch(/texture|discard|material\./);
+    for (const name of ["fn farCoverWeight(", "fn farClumpOctave(", "fn farClump(", "fn farDrift(", "fn farMacro("]) expect(far, name).toContain(name);
+  });
+
+  it("gives the sun's line on the far cover its two constants", () => {
+    expect(code).toContain(
+      `min(clamp(dot(terrainFarN,pl.L),0.0,1.0)/max(pl.NdotL,0.0000001),${f(FAR_SUN_GAIN_MAX)})*mix(${f(FAR_SELF_SHADOW)},1.0,clamp(dot(V,pl.L),0.0,1.0))`,
+    );
   });
 });
 
