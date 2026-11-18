@@ -196,7 +196,7 @@ fn trailValueNoise1(u:f32,wave:f32)->f32{
   let f=smoothstep(0.0,1.0,q-c);
   return mix(latticeHash(vec2<f32>(c,0.0)),latticeHash(vec2<f32>(c+1.0,0.0)),f);
 }
-// trailPaint.ts's RIPPLE_LAYERS_GLSL: one of its four layers.
+// One of the four layers the trail's ripple sums over.
 fn trailRipple(xz:vec2<f32>,scale:f32,off:vec2<f32>,rank:f32,rate:f32,phase:f32)->vec2<f32>{
   let tRp=xz*scale+off;
   let tRc=floor(tRp);

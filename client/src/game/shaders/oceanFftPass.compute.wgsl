@@ -1,4 +1,4 @@
-// One direction of the wind sea's inverse FFT (oceanGpuFft.ts): a workgroup
+// One direction of the wind sea's inverse FFT (`lite/seaFft.ts`): a workgroup
 // a line of N values, every line of every layer in one dispatch. The line is
 // read into workgroup memory, transformed by a radix-2 Stockham FFT of
 // STAGES stages, each reading one half of the scratch and writing the other

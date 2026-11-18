@@ -1,5 +1,5 @@
 // The wind sea's spectra at one time, one invocation a bin of each cascade
-// (oceanGpuFft.ts). It mirrors evolveSpectrum in oceanFft.ts: each bin's
+// (`lite/seaFft.ts`). It mirrors evolveSpectrum in oceanFft.ts: each bin's
 // starting amplitude turned by its frequency, and from it the eight fields,
 // packed two real fields to a complex value, so that the inverse FFT of
 // a + i b is a(x) + i b(x). Layer 2c of the spectra holds

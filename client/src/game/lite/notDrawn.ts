@@ -55,7 +55,7 @@ import type { Renderer } from "../rendererTypes.js";
 export type NotDrawn = { readonly what: string; readonly members: readonly (keyof Renderer)[] };
 
 export const NOT_DRAWN: readonly NotDrawn[] = [
-  { what: "the skin's shading (`skin.ts`): no model the game ships has a surface that shows it", members: ["setSkinShading"] },
+  { what: "the skin's shading (`skinParams.ts` has its numbers): no model the game ships has a surface that shows it", members: ["setSkinShading"] },
   { what: "the sun's cast shadows on a tier given a shadow map: no tier has one (`quality.ts`), so the game casts none either", members: [] },
   { what: "the wireframe view: Lite draws a material's triangles alone, and has no way to draw a mesh's edges through its own material", members: ["setWireframe"] },
 ];

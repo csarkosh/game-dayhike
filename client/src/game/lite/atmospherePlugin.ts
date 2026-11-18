@@ -52,8 +52,9 @@ ${cloud ? ATM_CLOUD_WGSL : ""}
 fn atmosphereFog(lit:vec3<f32>,worldPos:vec3<f32>,eye:vec3<f32>)->vec3<f32>{
   let toFrag=worldPos-eye;
   let d=length(toFrag);
-  // The distance fog's factor, exponential squared (1 clear, 0 fogged), linearised: what Babylon's PBR hands the GLSL.
+  // The distance fog's factor, exponential squared (1 clear, 0 fogged), linearised.
   let fog=pow(clamp(exp(-(d*material.atmBaseDensity)*(d*material.atmBaseDensity)),0.0,1.0),2.2);
+  // No record to draw the air by yet: the lit colour as it is.
   if(material.atmOn<0.5){return lit;}
   let rd=toFrag/max(d,1.0e-4);
   let y0=eye.y-material.atmReferenceLevel;
