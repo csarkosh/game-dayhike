@@ -1,35 +1,17 @@
 // client/test/game/oceanShader.test.ts
 /**
- * The sea's shaders: shaders/oceanSurface.fx (both stages), oceanShade.fragment.fx,
- * the displacement in oceanDisplace.vertex.fx and the OCEAN blocks of
- * waterLights.fragment.fx and waterCompose.fragment.fx. Their constants in
- * lockstep with the TypeScript, their swell the same sum as swellAt's, their
- * order in the stages Babylon builds, the lakes' text untouched, and every
- * tier's stages compiled through glslang and translated to WGSL under Node as
- * the page translates them, the sea's textures read at a fixed level only.
+ * The sea's shaders as the game's GLSL wrote them, read from the record of
+ * that text (`test/fixtures/babylon/stages/`): the surface of both stages,
+ * the shade, the displacement, the swash and the OCEAN blocks of the water's
+ * lights and compose. Their constants in lockstep with the TypeScript, and
+ * their swell the same sum as swellAt's. The WGSL the sea is drawn with is
+ * held to the same text, statement for statement (`lite/seaWgsl.test.ts`,
+ * `lite/waterWgsl.test.ts`), so a number changed in the TypeScript alone
+ * fails here, and one changed in the WGSL alone fails there.
  */
-import { describe, it, expect, beforeAll } from "vitest";
-import { readFileSync } from "node:fs";
-import { createHash } from "node:crypto";
-import { createRequire } from "node:module";
-import { NullEngine } from "@babylonjs/core/Engines/nullEngine.js";
-import { Scene } from "@babylonjs/core/scene.js";
-import { UniversalCamera } from "@babylonjs/core/Cameras/universalCamera.js";
-import { Vector3 } from "@babylonjs/core/Maths/math.vector.js";
-import { PBRMaterial } from "@babylonjs/core/Materials/PBR/pbrMaterial.js";
-import { RawTexture } from "@babylonjs/core/Materials/Textures/rawTexture.js";
-import { Texture } from "@babylonjs/core/Materials/Textures/texture.js";
-import { Constants } from "@babylonjs/core/Engines/constants.js";
-import { CreateGround } from "@babylonjs/core/Meshes/Builders/groundBuilder.js";
-import { Process } from "@babylonjs/core/Engines/Processors/shaderProcessor.js";
-import type { _IProcessingOptions } from "@babylonjs/core/Engines/Processors/shaderProcessingOptions.js";
-import { ShaderLanguage } from "@babylonjs/core/Materials/shaderLanguage.js";
+import { describe, it, expect } from "vitest";
 import { COVE_END_BLEND, COVE_FACE_GRADE, COVE_TOE_DEPTH, coveFor } from "../../src/sim/olympic.js";
 import { setActiveTerrainVariant } from "../../src/sim/terrain.js";
-import {
-  OCEAN_ROUGHNESS_ANCHOR, OCEAN_ROUGHNESS_CODE, attachWater, oceanArrayPlaceholder, type OceanBinding,
-} from "../../src/game/waterPlugin.js";
-import { oceanComponentsFor, oceanTipsFor } from "../../src/game/oceanRender.js";
 import {
   OCEAN_BUMP_HS, OCEAN_BUMP_MAX, OCEAN_CAP_CELL, OCEAN_CAP_CYCLES, OCEAN_CAP_DRIFT, OCEAN_CAP_INSET, OCEAN_CAP_PERIOD,
   OCEAN_CAP_RADIUS, OCEAN_CAP_SHARE, OCEAN_CAP_SOFT, OCEAN_COVE_END, OCEAN_DETAIL_HI, OCEAN_DETAIL_LO, OCEAN_FOAM_ALBEDO,
@@ -37,7 +19,7 @@ import {
   OCEAN_LACE_FINE, OCEAN_LACE_FINE_SHIFT, OCEAN_LACE_FIT_A, OCEAN_LACE_FIT_B, OCEAN_LACE_FIT_C, OCEAN_LACE_FIT_D,
   OCEAN_LACE_FIT_E, OCEAN_LACE_ONSET, OCEAN_LACE_SOFT, OCEAN_LACE_TILE, OCEAN_LACE_WEIGHT, OCEAN_LOOP_SCALE_MIN,
   OCEAN_RESOLVE_PHASE_HI, OCEAN_RESOLVE_PHASE_LO, OCEAN_RING_REACH, OCEAN_SLOPE_VAR_FLOOR, OCEAN_WIND_TILE_CELLS,
-  WATER_COX_MUNK_A, WATER_COX_MUNK_B, WATER_ROWS, bumpScale, capProfile, coxMunkVariance, drawnWhitecap, foamWhite,
+  WATER_COX_MUNK_A, WATER_COX_MUNK_B, bumpScale, capProfile, coxMunkVariance, drawnWhitecap, foamWhite,
   oceanRingCell, resolvedShare, resolvedSlopeVariance, roughnessFor, roughnessFromVariance, slopeVariance, swellPixelKeep,
   undrawnSlopeVariance, whitecapThreshold, windFrame, windPixelKeep, windRingKeep, windSlopeLimit,
 } from "../../src/game/waterShading.js";
@@ -67,109 +49,22 @@ import {
   SWASH_COLUMNS, SWASH_COVE_END, SWASH_REST_EPS, SWASH_SHEET_MIN, SWASH_STRIDE, SwashTable, coveShareAt, sheetAt, sheetLiftAt, swashColumnAt,
   type SwashCove,
 } from "../../src/game/swashTable.js";
-import { WET_COVE_END } from "../../src/game/wetPlugin.js";
 import { SWASH_REACH_MAX_M } from "../../src/game/swashRunUp.js";
-import { startTranslators, translateStage, type StartedTranslators } from "../../../tools/wgsl/lib/translators.mjs";
-import { translatorInput, uniformityOff } from "../../src/game/wgslFormat.js";
-import { drawnEffect, webgpuProcessingEngine, type ProcessedEffect } from "./helpers/webgpuProcessing.js";
+import { WET_COVE_END } from "../../src/game/wetSurface.js";
+import { oceanComponentsFor } from "../../src/game/oceanFrame.js";
+import { babylonText } from "../helpers/babylonFixture.js";
 import { timeLimit } from "../helpers/timeLimit.js";
 
 setActiveTerrainVariant("olympic");
 
-const fx = (name: string): string => readFileSync(new URL(`../../src/game/shaders/${name}`, import.meta.url), "utf8");
+/** A stage of the sea or the water on Babylon.js (`shaders/<name>`), its text recorded whole. */
+const fx = (name: string): string => babylonText(`stages/${name.replace(/\.fx$/, ".glsl")}`);
 const glslFloat = (n: number): string => (Number.isInteger(n) ? `${n}.0` : `${n}`);
 function pinned(text: string, name: string, value: number): void {
   expect(text, name).toContain(`const float ${name} = ${glslFloat(value)};`);
 }
 
-/** Babylon's preprocessor over one hook's text, as shaderHygiene.test.ts runs it, with a lake's gates on (or the sea's). */
-const LAKE_DEFINES = ["#define WATER", "#define BUMP", "#define REFLECTION", "#define SPECULARTERM"];
-const SEA_DEFINES = [...LAKE_DEFINES, "#define OCEAN"];
-function processed(source: string, isFragment: boolean, defines: string[] = LAKE_DEFINES): Promise<string> {
-  const options: _IProcessingOptions = {
-    defines,
-    indexParameters: {},
-    isFragment,
-    shouldUseHighPrecisionShader: true,
-    supportsUniformBuffers: false,
-    shadersRepository: "",
-    includesShadersStore: {},
-    processor: { shaderLanguage: ShaderLanguage.GLSL },
-    version: "",
-    platformName: "WEBGL2",
-    processingContext: null,
-    isNDCHalfZRange: false,
-    useReverseDepthBuffer: false,
-  };
-  return new Promise((resolve) => Process(source, options, (code) => resolve(code)));
-}
-const sha256 = (text: string): string => createHash("sha256").update(text).digest("hex");
-
-type Tier = "high" | "medium" | "low";
-const MODE: Record<Tier, number> = { high: 2, medium: 1, low: 0 };
 const SEED = 0x5eed;
-
-function floatTexture(scene: Scene): RawTexture {
-  return RawTexture.CreateRTexture(new Float32Array(4), 2, 2, scene, false, false, Texture.NEAREST_SAMPLINGMODE, Constants.TEXTURETYPE_FLOAT);
-}
-
-/** The sea's binding for a tier, as oceanRender.ts makes it: the world's atlas and swell, the scene's array
- * placeholder for the wind sea's fields, the tier's mode. */
-function bindingFor(scene: Scene, tier: Tier): OceanBinding {
-  const field = oceanFieldFor(SEED, tier === "low" ? 8 : 12);
-  return {
-    atlas: new RawTexture(
-      field.tables.data, field.tables.width, field.tables.rows, Constants.TEXTUREFORMAT_RGBA, scene,
-      false, false, Texture.NEAREST_SAMPLINGMODE, Constants.TEXTURETYPE_FLOAT,
-    ),
-    windDisp: oceanArrayPlaceholder(scene),
-    windSlope: oceanArrayPlaceholder(scene),
-    phases: swellPhases(field, 0),
-    components: oceanComponentsFor(field.components),
-    swell: [field.travel[0], field.travel[1], field.tp, field.hs],
-    tips: oceanTipsFor(field.tips),
-    coast: [field.tables.coastOriginZ, OCEAN_COAST_STEP, field.count, MODE[tier]],
-    wind: [0, 1, 0, 0],
-    windDir: [1, 0, 6, 0],
-    windStats: [0.5, 0.01, 0.02, 0.03],
-    windPivot: [-412.5, 37, 0, 0],
-  };
-}
-
-/** The water material's effect as Babylon's WebGPU processing builds it for a tier: the sea's, or a lake's. */
-async function waterEffect(tier: Tier, lake = false): Promise<{ effect: ProcessedEffect; defines: string; dispose(): void }> {
-  const engine = webgpuProcessingEngine();
-  const scene = new Scene(engine);
-  new UniversalCamera("c", new Vector3(0, 2, 0), scene);
-  const mat = new PBRMaterial(lake ? "mat_water_lake_0" : "mat_water_sea", scene);
-  mat.backFaceCulling = false;
-  mat.transparencyMode = tier === "high" ? PBRMaterial.PBRMATERIAL_OPAQUE : PBRMaterial.PBRMATERIAL_ALPHABLEND;
-  const plugin = attachWater(mat, lake ? WATER_ROWS.lowlandLake : WATER_ROWS.sea);
-  plugin.octaves = tier === "low" ? 1 : 2;
-  plugin.bedTexture = floatTexture(scene);
-  if (tier === "high") {
-    plugin.sceneTexture = floatTexture(scene);
-    plugin.depthTexture = floatTexture(scene);
-  }
-  // As createWater sets it: the bump on every lake, and on the sea on the low tier alone.
-  if (lake || tier === "low") mat.bumpTexture = RawTexture.CreateRGBATexture(new Uint8Array(16), 2, 2, scene);
-  if (!lake) plugin.ocean = bindingFor(scene, tier);
-  const mesh = CreateGround("water_0", { width: 64, height: 64, subdivisions: 4 }, scene);
-  const count = mesh.getTotalVertices();
-  mesh.setVerticesData("bedDepth", new Float32Array(count), false, 1);
-  mesh.setVerticesData("oceanMorph", new Float32Array(count), false, 1);
-  mesh.setVerticesData("oceanCoarse", new Float32Array(count * 2), false, 2);
-  mesh.material = mat;
-  const effect = await drawnEffect(mesh);
-  return {
-    effect,
-    defines: (effect as unknown as { defines: string }).defines,
-    dispose: () => {
-      scene.dispose();
-      engine.dispose();
-    },
-  };
-}
 
 /** Where `needle` sits in `text`, failing when it is not there. */
 function at(text: string, needle: string): number {
@@ -702,6 +597,7 @@ describe("the sea's shader constants and functions", () => {
     expect(kept).toBeGreaterThan(0);
   }, timeLimit(60_000));
 
+
   it("binds the components as the floats the atlas's components row holds, to the bit", () => {
     for (const seed of [SEED, 12345, 777]) {
       const field = oceanFieldFor(seed);
@@ -836,25 +732,6 @@ describe("the sea's normal, waterline and roughness", () => {
     expect(resolvedSlopeVariance(wave, 10 * Math.PI)).toBe(0);
   });
 
-  it("reads the roughness at Babylon's one roughness line, on the sea alone", () => {
-    expect(OCEAN_ROUGHNESS_ANCHOR).toBe("!float roughness=reflectivityOut\\.roughness;");
-    expect(OCEAN_ROUGHNESS_CODE).toBe("float roughness=min(sqrt(sqrt(2.0 * wOceanVar)), 1.0);");
-    // A canary on the installed Babylon: the line is there, once.
-    const pbr = readFileSync(createRequire(import.meta.url).resolve("@babylonjs/core/Shaders/pbr.fragment.js"), "utf8");
-    expect(pbr.match(new RegExp(OCEAN_ROUGHNESS_ANCHOR.slice(1), "g"))).toHaveLength(1);
-    const engine = new NullEngine();
-    try {
-      const scene = new Scene(engine);
-      const sea = attachWater(new PBRMaterial("sea", scene), WATER_ROWS.sea);
-      const lake = attachWater(new PBRMaterial("lake", scene), WATER_ROWS.lowlandLake);
-      sea.ocean = bindingFor(scene, "medium");
-      expect(sea.getCustomCode("fragment")![OCEAN_ROUGHNESS_ANCHOR]).toBe(OCEAN_ROUGHNESS_CODE);
-      // An empty string injects nothing: the lake's line stays Babylon's own.
-      expect(lake.getCustomCode("fragment")![OCEAN_ROUGHNESS_ANCHOR]).toBe("");
-    } finally {
-      engine.dispose();
-    }
-  }, timeLimit(30_000));
 });
 
 describe("the sea's swash in the shaders", () => {
@@ -921,37 +798,9 @@ describe("the sea's swash in the shaders", () => {
     expect(s).toContain("  float h = bay.x + (cove.x - bay.x) * coast.z;");
   });
 
-  it("is spliced after the sea's surface in both stages, lifts the vertex after the waves, and gives the depth the same lift", () => {
-    const engine = new NullEngine();
-    try {
-      const scene = new Scene(engine);
-      const sea = attachWater(new PBRMaterial("sea", scene), WATER_ROWS.sea);
-      sea.ocean = bindingFor(scene, "medium");
-      const vertex = sea.getCustomCode("vertex")!.CUSTOM_VERTEX_DEFINITIONS!;
-      const fragment = sea.getCustomCode("fragment")!.CUSTOM_FRAGMENT_DEFINITIONS!;
-      for (const defs of [vertex, fragment]) {
-        expect(at(defs, fx("oceanSwash.fx"))).toBe(at(defs, fx("oceanSurface.fx")) + fx("oceanSurface.fx").length);
-      }
-    } finally {
-      engine.dispose();
-    }
-    const d = fx("oceanDisplace.vertex.fx");
-    const lift = at(d, "positionUpdated.y += swashLift(vOceanXZ, swashDepth(vOceanXZ), oceanVertexDisplace.y);");
-    expect(lift).toBeGreaterThan(at(d, "positionUpdated += oceanVertexDisplace;"));
-    expect(d.match(/swashLift\(/g)).toHaveLength(1);
-    // the strip's shape displaces its own points and never lifts them onto the sheet
-    expect(fx("oceanLipShape.vertex.fx")).not.toContain("swashLift");
-    // The fragment stage takes the profile's depth from the foam the swell's envelope makes, its h.
-    const l = fx("waterLights.fragment.fx");
-    const fragmentLift = "swashLift(vOceanXZ, wOceanFoam.w, wSurfaceHeight)";
-    expect(at(l, fragmentLift)).toBeGreaterThan(at(l, "float wSurfaceHeight = wOceanHeight + wWind.y * wWindAmp;"));
-    expect(at(l, fragmentLift)).toBeGreaterThan(at(l, "vec4 wOceanFoam = oceanFoamFromEnvelope("));
-    expect(at(l, fragmentLift)).toBeGreaterThan(at(l, "vec3 wWind = oceanWindDisplace(vOceanXZ);"));
-    expect(at(l, fragmentLift)).toBeLessThan(at(l, "if (wDepth <= 0.0) discard;"));
-    expect(fx("oceanSurface.fx")).toContain("  return vec4(max(max(roll, trailing), breaking * OCEAN_INNER_FOAM), breaking, foamAge, h);");
-  });
 
-  it("gives the sea's bed along the cove the shallower of the bed read and the profile's depth, in the bed's square and out of it, on the sea alone", async () => {
+
+  it("gives the sea's bed along the cove the shallower of the bed read and the profile's depth, in the bed's square and out of it, on the sea alone", () => {
     const lines = [
       "float wSurfaceHeight = wOceanHeight + wWind.y * wWindAmp;",
       "float wCoveShare = oceanCoveShare(vOceanXZ.y);",
@@ -962,19 +811,15 @@ describe("the sea's swash in the shaders", () => {
       "float wDepth = wBedDepth + wSurfaceHeight + swashLift(vOceanXZ, wOceanFoam.w, wSurfaceHeight);",
       "wDepth = wDepth > OCEAN_REST_EPS ? wDepth : 0.0;",
     ];
-    const sea = await processed(fx("waterLights.fragment.fx"), true, SEA_DEFINES);
+    const sea = fx("waterLights.fragment.fx");
     let last = at(sea, "vec4 wOceanFoam = oceanFoamFromEnvelope(");
     for (const line of lines) {
       expect(at(sea, line), line).toBeGreaterThan(last);
       last = at(sea, line);
     }
     expect(last).toBeLessThan(at(sea, "if (wDepth <= 0.0) discard;"));
-    // a lake keeps the bed read and its fallback as they were
-    const lake = await processed(fx("waterLights.fragment.fx"), true);
-    expect(lake).toContain("float wDepth = waterBedDepth(vPositionW.xz);");
-    for (const name of ["wBedLow", "wBedDepth", "wSurfaceHeight", "wCoveShare", "wDry", "OCEAN_REST_EPS"]) {
-      expect(lake, name).not.toContain(name);
-    }
+    // a lake keeps the bed read and its fallback as they were: its own line stands beside the sea's
+    expect(sea).toContain("float wDepth = waterBedDepth(vPositionW.xz);");
     // the sea's bed takes no square of its own: the bed read's, whose fallback outside it is the ring vertex's depth
     for (const name of ["wBedLocal", "wBedOutside"]) expect(sea, name).not.toContain(name);
     const w = fx("water.fragment.fx");
@@ -1252,198 +1097,6 @@ describe("the sea's swash in the shaders", () => {
     // a ring's box reaches OCEAN_BOUND past its last wet vertex, at or seaward of the waterline
     expect(OCEAN_BOUND - SWASH_REACH_MAX_M).toBeGreaterThanOrEqual(0);
   });
-});
-
-describe("a lake's shaders", () => {
-  it("process to the text they had before the sea moved, the lights' as the lake's ripples made it, the rest but for the lake's mirror", async () => {
-    // Each hook through Babylon's preprocessor with a lake's gates, hashed as it was at 9edee7e; the
-    // lights' hashed again once the lake's ripples replaced its octaves' and rings' lines (their own
-    // test, waterPlugin.test.ts, pins what they are); the water's definitions and the composition
-    // hashed again as the lake's mirror and its shore left them (their samplers, their reads); the
-    // lights' and the composition hashed again once the paws' field and the shore's reads went
-    // under their uniform branches; the composition once more as the mirror's read gained the eye's
-    // motion's smear; the lights' once more as the lake's octaves took their floor outside the
-    // paws, scaled by the lake's glass share (`octaveAmplitude(wPaw, waterCalmShare)`); the water's
-    // definitions and the lights' as the bed's refraction took its floor and the lake's bed its caustics;
-    // the lights' again as the caustics took their sign and the sun's share (`waterSun`); the water's
-    // definitions as the skin's mats took an edge (the depth and the murk raise its threshold); the lights'
-    // as the paws' cover became the whole lake's amplitude, the paws' field no longer read; and again as the
-    // breeze's field set that amplitude in streaks and shifted the second octave.
-    const before: Record<string, string> = {
-      "water.vertex.fx": "3732482554b89e357fec2298edc8724ad085cc9defe35017b243df6b7782d50b",
-      "waterWorldPos.vertex.fx": "d5bb8eb0b5c8047604fd2f58f00894c3968a427b29fa74daa73691917583dde3",
-      "water.fragment.fx": "72c5c6c4679453d9107a4e11c9be407c9ac6396b28590b6d2d43790b651d8601",
-      "waterLights.fragment.fx": "d36fda42c95ca57d06956aac44c1e0845e1283b84411d6df7bceca5a59c502d0",
-      "waterCompose.fragment.fx": "03bc9a45b4f0e057189cbe23cd00476bf69722e75d177b733e6bf61670d2dc19",
-    };
-    for (const [name, hash] of Object.entries(before)) {
-      expect(sha256(await processed(fx(name), !name.includes(".vertex."))), name).toBe(hash);
-    }
-  });
-
-  it("carry none of the sea's text: its definitions vanish under a lake's gates", async () => {
-    const engine = new NullEngine();
-    try {
-      const lake = attachWater(new PBRMaterial("lake", new Scene(engine)), WATER_ROWS.lowlandLake);
-      const v = lake.getCustomCode("vertex")!;
-      const f = lake.getCustomCode("fragment")!;
-      expect(await processed(v.CUSTOM_VERTEX_DEFINITIONS!, false)).toBe(await processed(fx("water.vertex.fx"), false));
-      expect(await processed(f.CUSTOM_FRAGMENT_DEFINITIONS!, true)).toBe(
-        await processed(fx("water.fragment.fx") + fx("lakeRipples.fragment.fx") + fx("lakeMirror.fragment.fx"), true),
-      );
-    } finally {
-      engine.dispose();
-    }
-  });
-});
-
-describe("the sea's shaders", () => {
-  it("process to the text they had before the lake's mirror: its every line vanishes under the sea's gates", async () => {
-    // Each fragment hook through Babylon's preprocessor with the sea's gates, hashed as it was at 378b040;
-    // the lights' hashed again once the sea's depth took the swash's lift, and the profile's depth
-    // outside the bed's square; once more as the plunging lip tilted the normal and lifted the foam, and
-    // again as the sea came to rest on the face between the swash's sheets and the cove's bed took the
-    // shallower of the read and the profile's depth inside the bed's square as well, and as the depth where
-    // the sea rests was held to 0 within a hundredth of a millimetre, and once more as the bed on the dry side
-    // of the cove's end fades took the shallower whole; the water's definitions and the lights' again as the
-    // bed's refraction took its floor, and the lights' as the caustics' comment over the sea's gate changed;
-    // the water's definitions again as the skin's mats took an edge.
-    const before: Record<string, string> = {
-      "water.fragment.fx": "b992aca0388f5a2e470767c6c2d043990e9aad4d06708dd64aba80c0459c0e1a",
-      "waterLights.fragment.fx": "75313b6facc8e867bf24ca9ebab961bea2770424a2063ac95bccfb605227ea60",
-      "waterCompose.fragment.fx": "57480eeaf3cae19b7c214edd7fd5ccc80bf86fb82da75f131237cce969ef34f2",
-    };
-    for (const [name, hash] of Object.entries(before)) {
-      expect(sha256(await processed(fx(name), true, SEA_DEFINES)), name).toBe(hash);
-    }
-    // and the sea's definitions never carry the mirror's read
-    const engine = new NullEngine();
-    try {
-      const scene = new Scene(engine);
-      const sea = attachWater(new PBRMaterial("sea", scene), WATER_ROWS.sea);
-      sea.ocean = bindingFor(scene, "medium");
-      expect(sea.getCustomCode("fragment")!.CUSTOM_FRAGMENT_DEFINITIONS).not.toContain(fx("lakeMirror.fragment.fx"));
-    } finally {
-      engine.dispose();
-    }
-  }, timeLimit(30_000));
-});
-
-describe("the water material's stages, compiled", () => {
-  let translators: StartedTranslators;
-  beforeAll(async () => {
-    translators = await startTranslators();
-  }, timeLimit(60_000));
-
-  const translated = (effect: ProcessedEffect, defines: string): { vertex: string; fragment: string } => {
-    const stage = (kind: "vertex" | "fragment", code: string): string =>
-      translateStage(translators, { stage: kind, flag: uniformityOff(code), glsl: translatorInput(code, defines) });
-    return { vertex: stage("vertex", effect._vertexSourceCode), fragment: stage("fragment", effect._fragmentSourceCode) };
-  };
-
-  for (const tier of ["high", "medium", "low"] as const) {
-    it(`compile through glslang and translate to WGSL for the sea on the ${tier} tier, its textures read at a fixed level, in order`, async () => {
-      const sea = await waterEffect(tier);
-      try {
-        const { effect, defines } = sea;
-        expect(defines).toContain("#define OCEAN");
-        expect(defines.split("\n").includes("#define BUMP")).toBe(tier === "low");
-        const v = effect._vertexSourceCode;
-        const f = effect._fragmentSourceCode;
-        // The displacement before worldPos, so it reaches the position, vPositionW and the view depth.
-        const displaced = at(v, "positionUpdated += oceanVertexDisplace;");
-        expect(displaced).toBeGreaterThan(at(v, "vec3 oceanVertexDisplace = oceanDisplace(positionUpdated.xz, oceanVertexSwell, oceanVertexEnv);"));
-        expect(displaced).toBeGreaterThan(at(v, "vOceanXZ = positionUpdated.xz;"));
-        expect(at(v, "vOceanXZ = positionUpdated.xz;")).toBeGreaterThan(at(v, "positionUpdated.xz -= oceanMorph * oceanCoarse;"));
-        expect(displaced).toBeLessThan(at(v, "vec4 worldPos=finalWorld*vec4(positionUpdated,1.0);"));
-        // The swash's lift after the waves, before worldPos, so the sheet reaches the position and the depth.
-        const lifted = at(v, "positionUpdated.y += swashLift(vOceanXZ, swashDepth(vOceanXZ), oceanVertexDisplace.y);");
-        expect(lifted).toBeGreaterThan(displaced);
-        expect(lifted).toBeLessThan(at(v, "vec4 worldPos=finalWorld*vec4(positionUpdated,1.0);"));
-        // The swell's normal and the variance it leaves, then the rain's rings, the horizon clamp and
-        // Fresnel; Babylon's roughness line, rewritten, after them all.
-        const order = [
-          "vec2 wOceanTilt = vOceanSwellA.xy * wOceanKeep;",
-          "vec3 wOceanNormal = vec3(wOceanTilt.x,",
-          "vec4 wOceanFoam = oceanFoamFromEnvelope(vOceanXZ, vOceanSwellB.xy, vOceanSwellB.z);",
-          "normalW = normalize(wOceanNormal",
-          "float wOceanVar =",
-          "if (waterRain > 0.0) {",
-          "normalW = waterHorizonNormal(normalW, viewDirectionW);",
-          "float wF = WATER_F0",
-          OCEAN_ROUGHNESS_CODE,
-        ].map((needle) => at(f, needle));
-        for (let i = 1; i < order.length; i++) expect(order[i]).toBeGreaterThan(order[i - 1] as number);
-        expect(f).not.toContain("float roughness=reflectivityOut.roughness;");
-        expect(f).not.toContain("waterRipple2(vPositionW.xz)");
-        // A stage that does not parse throws here, with glslang's message on stderr.
-        const { vertex, fragment } = translated(effect, defines);
-        expect(vertex).toContain("oceanAtlas");
-        expect(vertex).toContain("oceanSwellSum");
-        // The components from the material's uniforms, twelve vec4s, declared in both stages.
-        expect(v).toMatch(/\bvec4 oceanK\[12\];/);
-        expect(f).toMatch(/\bvec4 oceanK\[12\];/);
-        // In the uniform block's struct of both, read by the loop's index in the vertex stage alone, which
-        // sums the swell: the fragment stage takes it from the varyings and makes no sum.
-        for (const stage of [vertex, fragment]) expect(stage).toMatch(/\boceanK : \w+,/);
-        expect(vertex).toMatch(/\.oceanK\[\w+\]/);
-        expect(fragment).not.toMatch(/\.oceanK\[\w+\]/);
-        expect(fragment).not.toContain("oceanSwellSum");
-        expect(vertex).toMatch(/\bvOceanSwellA\b/);
-        expect(vertex).toMatch(/\bvOceanSwellB\b/);
-        expect(fragment).toMatch(/\bvOceanSwellA\b/);
-        expect(fragment).toMatch(/\bvOceanSwellB\b/);
-        expect(vertex).toContain("oceanWindDisplaceAt");
-        // WGSL allows no implicit-derivative sample in a vertex stage.
-        expect(vertex).toMatch(/textureSampleLevel\(/);
-        expect(vertex).not.toMatch(/textureSample\(/);
-        // And the fragment stage reads the sea's textures at a fixed level only, so no read of theirs can
-        // stand in non-uniform control flow.
-        expect(fragment).toMatch(/textureSampleLevel\(\s*oceanAtlasTexture/);
-        // The swash's table, read at a fixed level in both stages.
-        expect(vertex).toMatch(/textureSampleLevel\(\s*oceanSwashTexture/);
-        expect(fragment).toMatch(/textureSampleLevel\(\s*oceanSwashTexture/);
-        expect(vertex).toMatch(/\boceanCove : vec4<f32>,/);
-        expect(fragment).not.toMatch(/textureSample(?:Bias|Grad|Compare)?\(\s*ocean/);
-        expect(fragment).toContain("oceanFoamFromEnvelope");
-        expect(fragment).toContain("oceanSwellPixelKeep");
-        expect(fragment).toContain("oceanFoamCover");
-        expect(fragment).toContain("oceanLaceLevel");
-        expect(fragment).toContain("oceanCapCells");
-        expect(fragment).toContain("oceanWindSlopesAt");
-        expect(fragment).toContain("oceanCapFire");
-        expect(fragment).toContain("oceanLipFromEnvelope");
-      } finally {
-        sea.dispose();
-      }
-    }, timeLimit(120_000));
-  }
-
-  it("leave a lake's roughness line and its vertices as they were, its downwind octave, paws and rings compiling", async () => {
-    const lake = await waterEffect("medium", true);
-    try {
-      const f = lake.effect._fragmentSourceCode;
-      expect(lake.defines).not.toContain("#define OCEAN");
-      expect(f).toContain("float roughness=reflectivityOut.roughness;");
-      // the lake's shore read, the panorama's and the skyline's, translated with the rest
-      expect(f).toContain("vec3 waterPanoramaRadiance(vec3 origin, vec3 dir, vec3 fallback)");
-      expect(f).toContain("vec3 waterCylinderHit(vec3 origin, vec3 dir)");
-      expect(f).toContain("vec3 waterSkylineRadiance(vec3 dir, vec3 probeRadiance)");
-      expect(f).toContain("lakeRipple2(wRippleXz)");
-      // the cover is the whole lake's amplitude: the paws' field is defined but never read
-      expect(f).toContain("vec3 wBreeze = lakeBreeze(vPositionW.xz, waterLakeTime, waterWind, lakeGust(vPositionW.xz, waterLakeTime, waterWind));");
-      expect(f).toContain("float wOctave = octaveAmplitude(wPaw, waterCalmShare);");
-      expect(f).not.toContain("wPaw = lakePaw(");
-      expect(f).toContain("lakeRainSlope(vPositionW.xz, waterLakeTime, waterRain,");
-      expect(f).not.toContain("wOcean");
-      expect(f).not.toContain("swash");
-      expect(lake.effect._vertexSourceCode).not.toContain("oceanDisplace");
-      expect(lake.effect._vertexSourceCode).not.toContain("swash");
-      translated(lake.effect, lake.defines);
-    } finally {
-      lake.dispose();
-    }
-  }, timeLimit(60_000));
 });
 
 describe("the white water", () => {
