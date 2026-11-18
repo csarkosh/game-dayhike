@@ -9,7 +9,7 @@
     "preview": "vite preview"
   },
   "dependencies": {
-    "@babylonjs/lite": "github:csarkosh/babylon-lite#v1.39.3-dayhike.8"
+    "@babylonjs/lite": "github:csarkosh/babylon-lite#v1.39.3-dayhike.9"
   },
   "devDependencies": {
     "@babylonjs/ktx2decoder": "9.18.0",

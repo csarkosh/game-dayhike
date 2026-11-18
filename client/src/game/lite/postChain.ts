@@ -74,6 +74,7 @@ import {
   FAR_SOFT_WGSL, HALATION_EXTRACT_WGSL, LENS_WGSL, PAINT_WGSL, POST_VERTEX_WGSL, TAA_SHARPEN_WGSL, TAA_WGSL, blurWgsl, depthResolveWgsl, gradeWgsl, passLayout,
   writePass, type PassLayout,
 } from "./postWgsl.js";
+import { askRenderPipeline } from "./pipelineAsk.js";
 
 /** The format of every frame the chain's passes hand on, as the game's: half floats. */
 export const POST_FORMAT = "rgba16float";
@@ -151,6 +152,8 @@ export type LitePostChain = {
   readonly counts: PostChainCounts;
   /** The frame as the opaque draws left it, where the scene's pass is broken before the water (`keep`); null elsewhere. */
   readonly kept: RenderTaskBreak | null;
+  /** The passes' pipelines, asked for off the page's thread as the chain is made, all in: wait for it before the scene is registered. */
+  readonly ready: Promise<void>;
   /** The record the last `update` made. */
   readonly record: GradeRecord;
   /** Lets go of the chain's own targets and buffer; the scene's pass and its targets go with the scene. */
@@ -187,7 +190,10 @@ export function chainTargetsStand<D, V>(made: { readonly depth: D; readonly reso
 /**
  * The chain of `scene`, which was made with no pass of its own
  * (`defaultRenderTask: false`): the scene's pass into the chain's first
- * target, then the chain's task. Made before the scene is registered. A
+ * target, then the chain's task. Made before the scene is registered, its
+ * passes' pipelines asked for off the page's thread (`pipelineAsk.ts`), all
+ * at once: the chain draws nothing and makes no target until they are in
+ * (`ready`), which its maker waits for before the scene is registered. A
  * tier with no chain has none: `features.pipeline` is refused.
  */
 export function createLitePostChain(engine: EngineContext, scene: SceneContext, options: PostChainOptions): LitePostChain {
@@ -236,29 +242,40 @@ export function createLitePostChain(engine: EngineContext, scene: SceneContext, 
   };
 
   // A pipeline a pass: the shared triangle, the pass's uniforms as its struct, its fragment.
-  const pipeline = (name: SectionName, fragment: string, format: GPUTextureFormat): GPURenderPipeline => {
+  const describe = (name: SectionName, fragment: string, format: GPUTextureFormat): GPURenderPipelineDescriptor => {
     const module = device.createShaderModule({ label: `post ${name}`, code: `${part(name).layout.struct}\n${POST_VERTEX_WGSL}\n${fragment}` });
-    return device.createRenderPipeline({
+    return {
       label: `post ${name}`,
       layout: "auto",
       vertex: { module, entryPoint: "postVertex" },
       fragment: { module, entryPoint: "postFragment", targets: [{ format }] },
-    });
+    };
   };
-  const pipelines = {
-    depth: pipeline("depth", depthResolveWgsl(MSAA_SAMPLES), POST_DEPTH_RESOLVE_FORMAT),
-    farSoft: pipeline("farSoft", FAR_SOFT_WGSL, POST_FORMAT),
-    taa: pipeline("taa", TAA_WGSL, POST_FORMAT),
-    taaSharpen: pipeline("taaSharpen", TAA_SHARPEN_WGSL, POST_FORMAT),
-    paint: pipeline("paint", PAINT_WGSL, POST_FORMAT),
-    grade: pipeline("grade", gradeWgsl(features.halation), surface.format),
-    // The grade's frame for the lens to read: half floats, as the game's.
-    gradeForLens: null as GPURenderPipeline | null,
-    lens: null as GPURenderPipeline | null,
-    halationExtract: features.halation ? pipeline("halationExtract" as SectionName, HALATION_EXTRACT_WGSL, POST_FORMAT) : null,
-    halationBlurX: features.halation ? pipeline("halationBlurX" as SectionName, blurWgsl(HALATION_KERNEL), POST_FORMAT) : null,
-    halationBlurY: features.halation ? pipeline("halationBlurY" as SectionName, blurWgsl(HALATION_KERNEL), POST_FORMAT) : null,
+  /** Made the synchronous way: the lens's two, which a frame first asks for when rain is on the glass. */
+  const pipeline = (name: SectionName, fragment: string, format: GPUTextureFormat): GPURenderPipeline => device.createRenderPipeline(describe(name, fragment, format));
+  const ask = (name: SectionName, fragment: string, format: GPUTextureFormat): Promise<GPURenderPipeline> => askRenderPipeline(device, describe(name, fragment, format));
+  const none: Promise<null> = Promise.resolve(null);
+  type Pipelines = {
+    depth: GPURenderPipeline; farSoft: GPURenderPipeline; taa: GPURenderPipeline; taaSharpen: GPURenderPipeline; paint: GPURenderPipeline; grade: GPURenderPipeline;
+    /** The grade's frame for the lens to read: half floats, as the game's. */
+    gradeForLens: GPURenderPipeline | null; lens: GPURenderPipeline | null;
+    halationExtract: GPURenderPipeline | null; halationBlurX: GPURenderPipeline | null; halationBlurY: GPURenderPipeline | null;
   };
+  /** The passes' pipelines once they are in; null until then. */
+  let pipelines: Pipelines | null = null;
+  const ready: Promise<void> = Promise.all([
+    ask("depth", depthResolveWgsl(MSAA_SAMPLES), POST_DEPTH_RESOLVE_FORMAT),
+    ask("farSoft", FAR_SOFT_WGSL, POST_FORMAT),
+    ask("taa", TAA_WGSL, POST_FORMAT),
+    ask("taaSharpen", TAA_SHARPEN_WGSL, POST_FORMAT),
+    ask("paint", PAINT_WGSL, POST_FORMAT),
+    ask("grade", gradeWgsl(features.halation), surface.format),
+    features.halation ? ask("halationExtract" as SectionName, HALATION_EXTRACT_WGSL, POST_FORMAT) : none,
+    features.halation ? ask("halationBlurX" as SectionName, blurWgsl(HALATION_KERNEL), POST_FORMAT) : none,
+    features.halation ? ask("halationBlurY" as SectionName, blurWgsl(HALATION_KERNEL), POST_FORMAT) : none,
+  ]).then(([depth, farSoft, taa, taaSharpen, paint, grade, halationExtract, halationBlurX, halationBlurY]) => {
+    pipelines = { depth, farSoft, taa, taaSharpen, paint, grade, gradeForLens: null, lens: null, halationExtract, halationBlurX, halationBlurY };
+  });
   const linear = device.createSampler({ label: "post", magFilter: "linear", minFilter: "linear", addressModeU: "clamp-to-edge", addressModeV: "clamp-to-edge" });
   const repeat = device.createSampler({ label: "post repeat", magFilter: "linear", minFilter: "linear", addressModeU: "repeat", addressModeV: "repeat" });
   // A black texel for the shades' reads while no mask is bound: none is made under the gate.
@@ -331,7 +348,8 @@ export function createLitePostChain(engine: EngineContext, scene: SceneContext, 
     const scene = getRenderTargetAttachments(resolved).colorView;
     if (chainTargetsStand(madeFor, own.depthTexture, scene)) return;
     release();
-    if (own.depthTexture === null || scene === null) return;
+    const made = pipelines;
+    if (own.depthTexture === null || scene === null || made === null) return;
     madeFor = { depth: own.depthTexture, resolve: scene };
     counts.builds++;
     const { width, height } = own;
@@ -351,15 +369,15 @@ export function createLitePostChain(engine: EngineContext, scene: SceneContext, 
       quarter = [target("halation_a", w, h, POST_FORMAT), target("halation_b", w, h, POST_FORMAT)];
     }
     groups = {
-      depth: group(pipelines.depth, [uniforms("depth"), depthSamples]),
-      farSoft: group(pipelines.farSoft, [uniforms("farSoft"), linear, scene, targets.depth.view, options.cloudMap.view, repeat]),
+      depth: group(made.depth, [uniforms("depth"), depthSamples]),
+      farSoft: group(made.farSoft, [uniforms("farSoft"), linear, scene, targets.depth.view, options.cloudMap.view, repeat]),
       // Writing history `flip`, the anti-aliasing reads the other; the sharpen then reads the one just written.
-      taa: [0, 1].map((to) => group(pipelines.taa, [uniforms("taa"), linear, (targets as NonNullable<typeof targets>).far.view, (histories[1 - to] as Target).view, (targets as NonNullable<typeof targets>).depth.view])) as [GPUBindGroup, GPUBindGroup],
-      taaSharpen: [0, 1].map((from) => group(pipelines.taaSharpen, [uniforms("taaSharpen"), linear, (histories[from] as Target).view])) as [GPUBindGroup, GPUBindGroup],
-      paint: group(pipelines.paint, [uniforms("paint"), linear, scene]),
-      halationExtract: pipelines.halationExtract === null ? null : group(pipelines.halationExtract, [uniforms("halationExtract" as SectionName), linear, scene, targets.paint.view]),
-      halationBlurX: pipelines.halationBlurX === null || quarter === null ? null : group(pipelines.halationBlurX, [uniforms("halationBlurX" as SectionName), linear, quarter[0].view]),
-      halationBlurY: pipelines.halationBlurY === null || quarter === null ? null : group(pipelines.halationBlurY, [uniforms("halationBlurY" as SectionName), linear, quarter[1].view]),
+      taa: [0, 1].map((to) => group(made.taa, [uniforms("taa"), linear, (targets as NonNullable<typeof targets>).far.view, (histories[1 - to] as Target).view, (targets as NonNullable<typeof targets>).depth.view])) as [GPUBindGroup, GPUBindGroup],
+      taaSharpen: [0, 1].map((from) => group(made.taaSharpen, [uniforms("taaSharpen"), linear, (histories[from] as Target).view])) as [GPUBindGroup, GPUBindGroup],
+      paint: group(made.paint, [uniforms("paint"), linear, scene]),
+      halationExtract: made.halationExtract === null ? null : group(made.halationExtract, [uniforms("halationExtract" as SectionName), linear, scene, targets.paint.view]),
+      halationBlurX: made.halationBlurX === null || quarter === null ? null : group(made.halationBlurX, [uniforms("halationBlurX" as SectionName), linear, quarter[0].view]),
+      halationBlurY: made.halationBlurY === null || quarter === null ? null : group(made.halationBlurY, [uniforms("halationBlurY" as SectionName), linear, quarter[1].view]),
     };
     shadeBound = undefined;
     taaFrame.reset();
@@ -397,21 +415,22 @@ export function createLitePostChain(engine: EngineContext, scene: SceneContext, 
       const encoder = getFrameEncoder(engine);
       const canvas = getRenderTargetAttachments(surface.scRT, canvasNow).colorView;
       const scene = getRenderTargetAttachments(resolved, resolvedNow).colorView;
-      if (disposed || encoder === undefined || canvas === null || scene === null || targets === null || groups === null) return 0;
+      const pipes = pipelines;
+      if (disposed || encoder === undefined || canvas === null || scene === null || targets === null || groups === null || pipes === null) return 0;
       let drawn = 0;
       const history = flip === 0 ? targets.historyA : targets.historyB;
-      draw(encoder, targets.depth.view, pipelines.depth, groups.depth);
-      draw(encoder, targets.far.view, pipelines.farSoft, groups.farSoft);
-      draw(encoder, history.view, pipelines.taa, groups.taa[flip] as GPUBindGroup);
+      draw(encoder, targets.depth.view, pipes.depth, groups.depth);
+      draw(encoder, targets.far.view, pipes.farSoft, groups.farSoft);
+      draw(encoder, history.view, pipes.taa, groups.taa[flip] as GPUBindGroup);
       // Over the scene's resolve, which the far softening has read and nothing reads again.
-      draw(encoder, scene, pipelines.taaSharpen, groups.taaSharpen[flip] as GPUBindGroup);
+      draw(encoder, scene, pipes.taaSharpen, groups.taaSharpen[flip] as GPUBindGroup);
       flip ^= 1;
-      draw(encoder, targets.paint.view, pipelines.paint, groups.paint);
+      draw(encoder, targets.paint.view, pipes.paint, groups.paint);
       drawn += 5;
-      if (quarter !== null && pipelines.halationExtract !== null && pipelines.halationBlurX !== null && pipelines.halationBlurY !== null) {
-        draw(encoder, quarter[0].view, pipelines.halationExtract, groups.halationExtract as GPUBindGroup);
-        draw(encoder, quarter[1].view, pipelines.halationBlurX, groups.halationBlurX as GPUBindGroup);
-        draw(encoder, quarter[0].view, pipelines.halationBlurY, groups.halationBlurY as GPUBindGroup);
+      if (quarter !== null && pipes.halationExtract !== null && pipes.halationBlurX !== null && pipes.halationBlurY !== null) {
+        draw(encoder, quarter[0].view, pipes.halationExtract, groups.halationExtract as GPUBindGroup);
+        draw(encoder, quarter[1].view, pipes.halationBlurX, groups.halationBlurX as GPUBindGroup);
+        draw(encoder, quarter[0].view, pipes.halationBlurY, groups.halationBlurY as GPUBindGroup);
         drawn += 3;
       }
       // The mask the grade reads: its group is made again when another is bound, or a figure comes or goes.
@@ -423,21 +442,21 @@ export function createLitePostChain(engine: EngineContext, scene: SceneContext, 
       }
       if (lensOn) {
         // The grade into the far softening's target, which nothing reads after the anti-aliasing, and the lens from it.
-        pipelines.gradeForLens ??= pipeline("grade", gradeWgsl(features.halation), POST_FORMAT);
-        pipelines.lens ??= pipeline("lens", LENS_WGSL, surface.format);
+        pipes.gradeForLens ??= pipeline("grade", gradeWgsl(features.halation), POST_FORMAT);
+        pipes.lens ??= pipeline("lens", LENS_WGSL, surface.format);
         if (droplets === null) {
           droplets = device.createTexture({ label: "lensDroplets", size: { width: LENS.size, height: LENS.size }, format: "rgba8unorm", usage: TEXTURE_BINDING | TEXTURE_COPY_DST });
           device.queue.writeTexture({ texture: droplets }, lensDropletMap(), { bytesPerRow: LENS.size * 4 }, { width: LENS.size, height: LENS.size });
           options.uploads?.count("textures", LENS.size * LENS.size * 4);
         }
-        lensGroup ??= group(pipelines.lens, [uniforms("lens"), linear, targets.far.view, droplets.createView(), repeat]);
-        gradeLensGroup ??= gradeGroups(scene, targets.paint, pipelines.gradeForLens);
-        draw(encoder, targets.far.view, pipelines.gradeForLens, gradeLensGroup);
-        draw(encoder, canvas, pipelines.lens, lensGroup);
+        lensGroup ??= group(pipes.lens, [uniforms("lens"), linear, targets.far.view, droplets.createView(), repeat]);
+        gradeLensGroup ??= gradeGroups(scene, targets.paint, pipes.gradeForLens);
+        draw(encoder, targets.far.view, pipes.gradeForLens, gradeLensGroup);
+        draw(encoder, canvas, pipes.lens, lensGroup);
         drawn += 2;
       } else {
-        gradeGroup ??= gradeGroups(scene, targets.paint, pipelines.grade);
-        draw(encoder, canvas, pipelines.grade, gradeGroup);
+        gradeGroup ??= gradeGroups(scene, targets.paint, pipes.grade);
+        draw(encoder, canvas, pipes.grade, gradeGroup);
         drawn += 1;
       }
       counts.passes = drawn;
@@ -454,6 +473,7 @@ export function createLitePostChain(engine: EngineContext, scene: SceneContext, 
     features,
     counts,
     kept,
+    ready,
     get record() {
       return record;
     },

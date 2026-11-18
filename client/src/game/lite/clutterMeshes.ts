@@ -29,7 +29,9 @@
  *
  * **The stones are cut** as the game cuts them: each rock and boulder model
  * into `ROCK_CUTS` fractures, one plane list a model and a cut for both of
- * its LOD levels, a bucket a cut.
+ * its LOD levels, a bucket a cut. A cut is a task of the page's own, so the
+ * cuts of a load do not hold the page in one stretch while a hike loads
+ * under the intro's film; the ground cover is ready once the last is made.
  *
  * **The lists follow the eye.** They are made again when the eye crosses a
  * grass cell (3 m): at a walk as a job of the renderer's scheduler
@@ -211,12 +213,12 @@ export function createClutterMeshes(engine: EngineContext, scene: SceneContext, 
     return { look, matched };
   }
 
-  /** A class of models: a row a model, or for the stones a row a cut of a model. */
-  function modelRows(cls: number, loaded: readonly LoadedModel[]): Row[] {
+  /** A class of models: a row a model, or for the stones a row a cut of a model, each cut in a task of its own. */
+  async function modelRows(cls: number, loaded: readonly LoadedModel[]): Promise<Row[]> {
     const [nearName, farName] = clutterLodNames(cls);
     const profile = FOLIAGE_BY_CLASS.get(cls);
     const rows: Row[] = [];
-    loaded.forEach((file, variant) => {
+    for (const [variant, file] of loaded.entries()) {
       const far = file.get(farName) ?? [];
       // The meadow's near band draws the far level's cut of the card under the blade field.
       const near = clutterNearLodName(cls, nearBlades) === "LOD0" ? (file.get(nearName) ?? []) : far;
@@ -245,12 +247,15 @@ export function createClutterMeshes(engine: EngineContext, scene: SceneContext, 
       if (first.facts.alphaMask) setPbrAlphaCutoff(made, first.facts.alphaCutoff);
       if (!CUT_CLASSES.has(cls)) {
         rows.push({ material: made, vegetation, levels: [near.map(geometryOf), far.map(geometryOf)] });
-        return;
+        continue;
       }
       // One plane list a model and a cut, from the near level's own vertices, for both levels: a rock cut with two
       // lists would change shape the moment its level swaps. A cut is unwelded, so it carries no tangent.
       const index = cutModel(cls, variant);
       for (let cut = 0; cut < ROCK_CUTS; cut++) {
+        // Each cut in a task of its own: the page draws and answers between them.
+        await new Promise<void>((resolve) => setTimeout(resolve, 0));
+        if (disposed) return rows;
         const planes = rockPlanes(index, cut, first.positions);
         const cutOf = (part: ModelPart): Geometry => {
           const relief = rockRelief({ positions: part.positions, normals: part.normals, uvs: part.uvs, indices: part.indices }, planes, index, cut);
@@ -258,7 +263,7 @@ export function createClutterMeshes(engine: EngineContext, scene: SceneContext, 
         };
         rows.push({ material: made, vegetation, levels: [near.map(cutOf), far.map(cutOf)] });
       }
-    });
+    }
     return rows;
   }
 
@@ -376,7 +381,8 @@ export function createClutterMeshes(engine: EngineContext, scene: SceneContext, 
         const loaded = await Promise.all(files);
         // The drift log's seat, from its own trunk as the model has it.
         if (cls === CLUTTER_DRIFTLOG) seatDriftLogs(loaded[0]?.get(clutterLodNames(cls)[0])?.[0]?.positions ?? []);
-        rows.push(modelRows(cls, loaded));
+        rows.push(await modelRows(cls, loaded));
+        if (disposed) return;
       }
     }
     adopt(rows);

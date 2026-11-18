@@ -39,7 +39,7 @@
  */
 import {
   addMeshToTask, addTaskAtStart, addToScene, createBankedFreeCamera, createMeshFromData, createPbrMaterial, createRenderTargetTexture, createRenderTask,
-  disposeMeshGpu, enableOrthographicCamera, removeFromScene, removeMeshFromTask, setMeshVisible, setTaskMeshVisible, setThinInstances, vec3,
+  disposeMeshGpu, enableOrthographicCamera, isRenderTaskHeld, removeFromScene, removeMeshFromTask, setMeshVisible, setTaskMeshVisible, setThinInstances, vec3,
   type EngineContext, type MaterialPlugin, type Mesh, type PbrMaterialProps, type SceneContext, type Texture2D,
 } from "@babylonjs/lite";
 import type { QualityTier } from "../quality.js";
@@ -109,7 +109,7 @@ export type LiteRainMap = {
   update(player: Vec3, read: boolean): boolean;
   /** The next frame that reads the map draws it again where it stands, moved or not. */
   redraw(): void;
-  /** Says the frame is drawn: the map's pass is not drawn again until an `update` asks. */
+  /** Says the frame is drawn: the map's pass is not drawn again until an `update` asks, or until a frame draws it whole where this one drew nothing for a pipeline still compiling. */
   frameDrawn(): void;
   /** Meshes registered. */
   readonly meshes: number;
@@ -155,6 +155,9 @@ export function createLiteRainMap(engine: EngineContext, scene: SceneContext, ti
     {
       name: "rain_map", rt: target.rt, cam: camera, clr: true,
       clrColor: { r: RAIN_MAP_CLEAR.height, g: RAIN_MAP_CLEAR.transmission, b: RAIN_MAP_CLEAR.lift, a: 1 }, autoMirror: false,
+      // The map is kept until it is drawn again: while a hike loads it draws whole or not at all (`drawWhole`), and a map
+      // not drawn for a pipeline still compiling is asked for again (`frameDrawn`).
+      drawWhole: true,
     },
     engine, scene,
   );
@@ -210,6 +213,8 @@ export function createLiteRainMap(engine: EngineContext, scene: SceneContext, ti
       return true;
     },
     frameDrawn() {
+      // A frame that drew nothing of the map, a pipeline of it still compiling, leaves it owed.
+      if (task.enabled && isRenderTaskHeld(task)) due = true;
       task.enabled = false;
     },
     dispose() {
