@@ -1,9 +1,8 @@
 /**
  * The wet look in WGSL, for the materials Babylon Lite draws: what water and
  * weather do to a surface (`wetSurface.ts` has the numbers and says what the
- * look is). Statement for statement the GLSL of `shaders/wet.fragment.fx` and
- * `shaders/wetWeather.fragment.fx`, its uniforms read as `material.<name>`
- * under the names `wetUniforms` gives them.
+ * look is). Its uniforms are read as `material.<name>` under the names
+ * `wetUniforms` gives them.
  *
  * The swash's table is 256 vec4s of floats. Lite lays out a plugin's array
  * only as `array<vec4<u32>, N>`, so the floats ride as their bits and the
@@ -67,8 +66,8 @@ export const WET_WEATHER = `{let wetPorosity=min(material.wetCap,clamp((roughnes
 
 /**
  * The wet look where a material's albedo and roughness are known and no
- * light has run (`shaders/wetLights.fragment.fx`, without the terrain's
- * made features): the surface under a body's wet line and inside its disc
+ * light has run (`WET_LIGHTS`, without the terrain's
+ * made features, which `terrainPlugins.ts` adds): the surface under a body's wet line and inside its disc
  * darkens and glosses, the swash's band soaks, dampens and speckles it, and
  * the water above takes its colour a channel.
  */

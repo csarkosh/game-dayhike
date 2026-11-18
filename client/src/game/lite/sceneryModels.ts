@@ -22,8 +22,8 @@
  *   them; here their geometry is baked across it, which
  *   carries a tangent's direction and leaves its sign, so the sign is
  *   turned (`partsByMaterial`) and a map of normals is read the way up its
- *   file means. (The forest's buckets are baked on both renderers and keep
- *   the file's sign on both.)
+ *   file means. (The forest's buckets keep
+ *   the file's sign.)
  * - **A material's occlusion is its file's** (`glbOcclusion`). Lite's loader
  *   packs occlusion, roughness and metalness into one map and takes every
  *   occlusion map at full strength; a material with an occlusion map and no

@@ -67,7 +67,7 @@
  * letting go destroys the device too and is told to no one. A frame with
  * no error does none of it: one count of frames drawn is all a frame adds.
  *
- * **What the engine tells on Babylon.js is told here in WebGPU's terms.** A
+ * **What the game hears of shaders is told in WebGPU's terms.** A
  * shader's compile is no event in WGSL: a module is handed to the device,
  * which compiles it when a pipeline first needs it, and a pipeline made the
  * synchronous way holds the frame that asked. So `onShaderCompiled` tells
@@ -81,7 +81,7 @@
  *
  * **The frame is sized by the game's rule, not by the display**
  * (`frameSize.ts`): the canvas's box in CSS pixels over the tier's scaling,
- * the display's pixel ratio unread, as the game sizes it on Babylon.js, and
+ * the display's pixel ratio unread, and
  * kept through a zoom made while the hike runs. Where a paint pass draws,
  * the render scale steps the frame down while the page's frames are slow
  * and back up when they have room (`renderScale.ts`), never in the
@@ -90,8 +90,8 @@
  * moved: Lite then makes the frame's own targets again at the new size,
  * and nothing else.
  *
- * **The world changes under the game's scheduler** (`syncJobs.ts`), by the
- * rules the renderer on Babylon.js gives it: a rebuild a crossing starts
+ * **The world changes under the game's scheduler** (`syncJobs.ts`): a
+ * rebuild a crossing starts
  * (the rings, the patches, the forest's lists, the ground cover's) is a job
  * a shell begins in its `update`, and `sync` runs the frame's share of them
  * once every shell has seen the view, the terrain's first, in the order the
@@ -267,10 +267,9 @@
  * is one pass, as on the tier below.
  *
  * **Colour is the tier's own path** (`postFeaturesFor`). With no post chain
- * it is the material path: Lite's display curve as Babylon's image
- * processing has it there (Khronos PBR Neutral, contrast 1.1), under the
- * weather's and the hour's exposure less what the stare takes of it, with
- * the grade Babylon's image processing lays on there in every material: the
+ * it is the material path: Lite's display curve (Khronos PBR Neutral,
+ * contrast 1.1), under the weather's and the hour's exposure less what the
+ * stare takes of it, with the grade laid on there in every material: the
  * vignette, the colour curves that carry the weather's split-tone and the
  * chase's cast, and the dither (`materialGrade.ts`, read from the frame's
  * block by the air's plugin at the material's last point, and by the
@@ -304,7 +303,7 @@
  * **A scene plays on the hike's one camera** (`scenePlay.ts`): the summit's
  * five shots and the cap's turn are stepped once a frame on the player's
  * eye, after it is placed, and what comes back is the frame's camera and
- * its lens, as on Babylon.js, whose renderer steps the same play. Nothing
+ * its lens. Nothing
  * is made, built again or recorded again for a scene. The chain's passes
  * rebuild a pixel's ray from the pose the frame is drawn with, and its
  * anti-aliasing weighs its history by how far that pose has moved since
@@ -326,8 +325,8 @@
  * pose each frame (`sceneryMeshes.ts` `LiteCar`), out of the rain's cover
  * once it has left its place, its tail lamps lit at the catch. The local
  * player's one lamp is worn at the eye of their body wherever a scene shows
- * it and is the car's headlamp from the catch: one light all game, as on
- * Babylon.js, so no scene adds a light and nothing is built again for one.
+ * it and is the car's headlamp from the catch: one light all game, so no
+ * scene adds a light and nothing is built again for one.
  *
  * **The sun casts no shadow**: no tier of the game has a shadow map
  * (`quality.ts`), so there is no pass for one and no material reads one.
@@ -473,7 +472,7 @@ import { createWornLamps, type WornLamps } from "./wornLamps.js";
  */
 let linearPage = false;
 
-/** The display curve's contrast on the material colour path, as the lighting sets Babylon's. */
+/** The display curve's contrast on the material colour path. */
 const DISPLAY_CONTRAST = 1.1;
 
 /** How far ahead of the eye the point the camera looks at is put, metres. */
@@ -488,9 +487,8 @@ const GPU_ERRORS_SAID = 8;
 
 /**
  * The steepest angle from facing the eye the slope-scaled depth offset is worked out at. Past it the vertex normal
- * overstates the slope of the polygons that are drawn, and a patch came ahead of ground the game on Babylon.js draws
- * over it: at 82 degrees Lite stood nearest that renderer across a lake's bank, the trailhead and the forest (89 and 75
- * were tried).
+ * overstates the slope of the polygons that are drawn, and a patch comes ahead of the ground it should lie over: 82
+ * degrees gave the best picture across a lake's bank, the trailhead and the forest (89 and 75 were tried).
  */
 export const DEPTH_AHEAD_MAX_DEGREES = 82;
 const DEPTH_AHEAD_MIN_COS = Math.cos((DEPTH_AHEAD_MAX_DEGREES * Math.PI) / 180);
@@ -534,7 +532,7 @@ type Standing = {
   camera: BankedFreeCamera;
   sun: DirectionalLight;
   fill: HemisphericLight;
-  /** The local player's headlamp, on the lens (`headlamp.ts`). */
+  /** The local player's headlamp, on the lens (`lampParams.ts`). */
   lamp: SpotLight;
   /** The sky's dome, drawn behind everything (`skyDome.ts`). */
   dome: LiteSkyDome;
@@ -763,8 +761,8 @@ export function createLiteRenderer(canvas: HTMLCanvasElement, level: Level, fore
   // The rebuilds a crossing starts run as jobs over the frames after it, under the game's per-frame budget
   // (`syncJobs.ts`): `sync` runs this frame's share once every shell has seen the view.
   const jobs = createSyncJobs(() => performance.now());
-  // The measurement mode (`?gpuTime`): the jobs' record of the last frame, read out as `window.__syncJobs()` as the
-  // renderer on Babylon.js gives it. A copy each time: the record is written in place every frame.
+  // The measurement mode (`?gpuTime`): the jobs' record of the last frame, read out as `window.__syncJobs()`. A copy
+  // each time: the record is written in place every frame.
   const measured = globalThis as { __syncJobs?: () => SyncJobs["last"]; __frameUploads?: () => FrameUploadCounts };
   if (options.gpuTime === true) measured.__syncJobs = () => ({ ...jobs.last, owners: { ...jobs.last.owners } });
   // What each frame hands to the GPU, and the budget its streamed part is held to (`frameUploads.ts`); the last
@@ -846,7 +844,7 @@ export function createLiteRenderer(canvas: HTMLCanvasElement, level: Level, fore
   let othersSeen = 0;
   /**
    * The frame's size (`frameSize.ts`): the canvas's box over the tier's scaling, whatever the display's pixel ratio,
-   * as the game sizes it on Babylon.js, and under the render scale where a paint pass hides its steps. The surface
+   * and under the render scale where a paint pass hides its steps. The surface
    * is the engine's own, once it stands.
    */
   let surface: EngineContext | null = null;
@@ -863,7 +861,7 @@ export function createLiteRenderer(canvas: HTMLCanvasElement, level: Level, fore
   let gpuErrors = 0;
   /**
    * What the device is asked to make of shaders (`deviceMakes.ts`): a frame that asked for a shader module or a
-   * pipeline is told to whoever hears a shader compile on Babylon.js (`onShaderCompiled`).
+   * pipeline is told to whoever hears a shader compile (`onShaderCompiled`).
    */
   const makes = createDeviceMakes();
   /** The measurement mode's readout of the GPU's own time (`gpuTimeReadout.ts`); none outside it. */
@@ -2152,7 +2150,7 @@ export function createLiteRenderer(canvas: HTMLCanvasElement, level: Level, fore
       unsettle = Math.max(0, Math.min(1, level));
     },
     setPalette(name, fadeSeconds) {
-      // On the material path there is no grade and nothing changes, as on Babylon.js.
+      // On the material path there is no grade and nothing changes.
       palette = { name, fadeSeconds };
       standing?.chain?.setPalette(PAINT_PALETTES[name], fadeSeconds);
     },

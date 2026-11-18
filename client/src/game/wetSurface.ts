@@ -3,8 +3,8 @@
  * nearest body, the swash's cove and table, the weather's wetness and a
  * material's porosity cap, the uniforms the wet look is drawn with by name,
  * and the look itself as the fragment stage makes it, for the tests.
- * `wetPlugin.ts` says what the look is and binds these to a material; this
- * module loads no Babylon.
+ * `lite/wetWgsl.ts` draws the look and binds these to a material; this
+ * module loads no engine.
  */
 import { clamp01 } from "./colour.js";
 import type { WaterBody } from "./waterShading.js";
@@ -122,9 +122,9 @@ function smoothstep(e0: number, e1: number, x: number): number {
 
 /**
  * The medium and low tiers' per-channel darkening by the water above a point,
- * as wetLights.fragment.fx computes it: exp(−2·(kd − mean kd)·depth), capped
+ * as `WET_LIGHTS` (`lite/wetWgsl.ts`) computes it: exp(−2·(kd − mean kd)·depth), capped
  * at 1, where the depth below `level` is held to the body's footprint (1 inside,
- * 0 from 3 m past the rim, blended from 1 m, `wetInside` in wet.fragment.fx).
+ * 0 from 3 m past the rim, blended from 1 m, `wetInside` in `lite/wetWgsl.ts`).
  * `radius` is capped at WET_RADIUS_MAX as the uniform is.
  */
 export function wetResidual(
@@ -148,18 +148,18 @@ function mix(x: number, y: number, a: number): number {
   return x * (1 - a) + y * a;
 }
 
-/** 1 below the line, 0 above it, blended over WET_BAND: `wetBelow` in wet.fragment.fx. */
+/** 1 below the line, 0 above it, blended over WET_BAND: `wetBelow` in `lite/wetWgsl.ts`. */
 export function wetBelowLine(y: number, line: number): number {
   return 1 - smoothstep(line - WET_BAND * 0.5, line + WET_BAND * 0.5, y);
 }
 
-/** The wet look at a point, as wetLights.fragment.fx makes it: how wet (the
+/** The wet look at a point, as `WET_LIGHTS` (`lite/wetWgsl.ts`) makes it: how wet (the
  * still line's weight, or the swash's soaked one where higher), how damp,
  * and the speckle's weight before its cells' mask. */
 export type WetLook = { wet: number; damp: number; speckle: number };
 
 /**
- * The wet look at height y and world z, as wetLights.fragment.fx makes it
+ * The wet look at height y and world z, as `WET_LIGHTS` (`lite/wetWgsl.ts`) makes it
  * from the still line `line`, the body's `level`, the footprint's `inside`
  * and the bound cove and table (`wetCove`, `wetSwash`, as `setWetCove` and
  * `setWetSwash` pack them): the TypeScript twin of `wetShore` and the lines

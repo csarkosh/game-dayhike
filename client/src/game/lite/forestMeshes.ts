@@ -148,8 +148,8 @@ const FOREST_UPLOAD_MS = 2;
 /** The first of the billboards' places among the forest's draws (`drawOrder.ts`): past every near tree's material. */
 const CARD_FIRST_PLACE = 512;
 
-/** The anisotropy a billboard's two maps are sampled with: what Babylon.js gives a map filtered between its levels,
- * which the game's cards are. Without it the far crowns are drawn a level softer than the game draws them. */
+/** The anisotropy a billboard's two maps are sampled with: the cards are filtered between their levels, and without it
+ * the far crowns are drawn a level softer. */
 const CARD_ANISOTROPY = 4;
 
 export type ForestMeshes = {
@@ -675,7 +675,7 @@ export function createForestMeshes(engine: EngineContext, scene: SceneContext, s
   function dress(board: Billboard, slot: number, albedo: Uint8Array, normal: Uint8Array): void {
     const colour = createTexture2DFromPixels(engine, albedo, IMPOSTOR_BAKE_SIZE, IMPOSTOR_BAKE_SIZE, { mipMaps: true });
     const normals = createTexture2DFromPixels(engine, cardNormals(normal), IMPOSTOR_BAKE_SIZE, IMPOSTOR_BAKE_SIZE, { mipMaps: true });
-    // Sampled as the game samples them: between levels, repeating, with the anisotropy Babylon.js gives such a map.
+    // Sampled between levels, repeating, with the cards' anisotropy.
     const sampler = getOrCreateSampler(engine, {
       addressModeU: "repeat", addressModeV: "repeat", minFilter: "linear", magFilter: "linear", mipmapFilter: "linear", maxAnisotropy: CARD_ANISOTROPY,
     });

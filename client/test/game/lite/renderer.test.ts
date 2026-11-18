@@ -42,7 +42,7 @@ describe("the hike's renderer on Babylon Lite, before its engine stands", () => 
   it("is what the hike is given: drawn on WebGPU by an engine of its own, with no Babylon scene to build into", () => {
     const r = make();
     expect(r.engineName).toBe("webgpu");
-    // A renderer with a Babylon scene to build into is told by its `scene` (`sceneRendererOf`, `renderer.ts`): this one has none.
+    // The renderer holds no `scene` field: nothing is built into a scene of Babylon.js's.
     expect("scene" in r).toBe(false);
     expect(r.engine.isDisposed).toBe(false);
   });

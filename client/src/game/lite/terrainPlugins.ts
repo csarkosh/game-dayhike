@@ -6,28 +6,21 @@
  * `terrainTables.ts` the float tables, `groundLayers.ts` the layers' images,
  * `terrainVertices.ts` what a terrain mesh carries a vertex).
  *
- * The WGSL is, statement for statement, the GLSL `terrainTexture.ts`
- * assembles with `groundHex*.fx`, `groundFarCover.fx`, `roadPaint.ts`,
- * `featurePaint.ts` and `trailPaint.ts`; its literals are that text's. What
- * differs is where it goes into the material:
+ * Where the WGSL goes into the material:
  *
- * - Babylon runs the blend before its reflectivity block, on the base
- *   colour. Lite has split the base colour into albedo and F0 by then, so
- *   the blend starts again from the base colour and a last plugin
+ * - Lite has split the base colour into albedo and F0 before the blend
+ *   runs, so the blend starts again from the base colour and a last plugin
  *   (`terrainSplitPlugin`, after the wet look) makes the split with the
- *   terrain's F0 and specular weight, which in GLSL are three edits of the
- *   reflectivity block's arguments.
- * - The far cover's sun term, in GLSL an edit inside Babylon's light loop,
- *   is at Lite's point inside its own.
+ *   terrain's F0 and specular weight.
+ * - The far cover's sun term is at Lite's point inside its own light loop.
  * - The layer weights, the cover and the vertex colour ride in the mesh's
  *   plugin vertex data, one interleaved buffer (`terrainVertexData`).
  * - Every texture shares one sampler: a stage has sixteen, and the material
  *   reads eleven textures. A layer's albedo is a one-layer array, and the
- *   three float tables are read with `textureLoad` at the texel the GLSL's
- *   nearest read lands on.
- * - The GLSL samples inside branches and loops, so the fragment module turns
- *   the derivative-uniformity diagnostic off for itself, as the game's
- *   translated stages do.
+ *   three float tables are read with `textureLoad` at the texel a nearest
+ *   read lands on.
+ * - The WGSL samples inside branches and loops, so the fragment module turns
+ *   the derivative-uniformity diagnostic off for itself.
  */
 import type { MaterialPlugin, PluginUniformBlock, Texture2D, Texture2DArray } from "@babylonjs/lite";
 import { emptyTerrainUniforms, layerMeanInverse, type TerrainUniforms } from "../terrainUniforms.js";
@@ -53,8 +46,8 @@ export function emptyTerrainMaterialUniforms(): TerrainMaterialUniforms {
 /** The plugin's fields: one a uniform, in the record's order. */
 export const TERRAIN_FIELDS: readonly UniformField[] = uniformFields(emptyTerrainMaterialUniforms());
 
-// The WGSL below reads each uniform by its bare name, as the GLSL does; in
-// the material's buffer it is `material.<name>`.
+// The WGSL below reads each uniform by its bare name; in the material's
+// buffer it is `material.<name>`.
 const uniformNames = new RegExp(`\\b(${TERRAIN_FIELDS.map((field) => field.name).join("|")})\\b`, "g");
 const bind = (wgsl: string): string => wgsl.replace(uniformNames, "material.$1");
 
@@ -255,8 +248,7 @@ const MAIN_BEGIN = `var terrainRough=1.0;var terrainF0=1.0;var terrainSpecW=1.0;
 /** One over a ground layer's mean colour, as the blend multiplies its texel by it: the layer's own colour made neutral (`LAYER_MEAN_RGB`). */
 const meanInv = (layer: Parameters<typeof layerMeanInverse>[0]): string => `vec3<f32>(${layerMeanInverse(layer).join(",")})`;
 
-// The blend (TERRAIN_FRAGMENT_BLEND). It starts from the material's colour times the vertex colour, which is
-// what Babylon's surfaceAlbedo holds where the GLSL runs.
+// The blend. It starts from the material's colour times the vertex colour.
 const BLEND = /* wgsl */ `
 surfaceAlbedo=baseColor*input.vTerrainColor.rgb;
 {
@@ -445,7 +437,7 @@ const ROAD = /* wgsl */ `
   }
 }`;
 
-// The made features (FEATURE_FRAGMENT_PAINT).
+// The made features.
 const FEATURE = /* wgsl */ `
 {
   let P=input.worldPos;
@@ -584,7 +576,7 @@ const TRAIL = /* wgsl */ `
   }
 }`;
 
-// The far cover's light (TERRAIN_FRAGMENT_FAR_LIGHT), then what Babylon does after the point: its
+// The far cover's light, then what the PBR shader does after the point: its
 // reflectivity block takes the material's roughness times terrainRough, and its geometry block reads the
 // normal the blend left (Lite read N for these before the point).
 const FAR_LIGHT = /* wgsl */ `
@@ -741,9 +733,8 @@ export function terrainPlugin(
   };
 }
 
-// The wet look as the terrain draws it (`wetLights.fragment.fx` under FEATUREPAINT: a tarn's own shore
-// decides what is inside it), then the wet look's roughness. After the terrain's statements at the point,
-// as in the GLSL.
+// The wet look as the terrain draws it (a tarn's own shore decides what is inside it), then the wet
+// look's roughness. After the terrain's statements at the point.
 const WET_LIGHTS_TERRAIN = /* wgsl */ `let wetIn=featureWetInside(input.worldPos.xz,material.wetCentre,material.wetRadius,material.featureInfo.x);
 let wetStill=wetBelow(input.worldPos.y,material.wetLine)*wetIn;
 let wetCoveW=wetShore(input.worldPos.xz,input.worldPos.y)*wetIn;
