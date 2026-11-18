@@ -47,7 +47,7 @@ export const HOLLOW_MAX_MEASURED_SPEED = 10;
 /**
  * Seconds a shade, or a Hollow stepping out, takes to come in from nothing,
  * and a lunge, which has metres to cover; and a shade or a lunge to go out.
- * Coming and going alike are the smoke's (shadeSmoke.ts): the figure stands
+ * Coming and going alike are the smoke's (lite/shadeMask.ts): the figure stands
  * at its whole height throughout and comes up out of the mist, or goes back
  * into it, patch by patch (2026-10-20; before, it grew up out of the ground
  * over 2.4 s, a lunge over 1.2).
@@ -213,7 +213,7 @@ export type PlayerPose = {
   lampOn: boolean;
 };
 
-/** A figure for the silhouette mask (`shadeSilhouette.ts`): its opacity there, how far in it is, how soft, how near, and its eyes' level on the frame. */
+/** A figure for the silhouette mask (`lite/shadeMask.ts`): its opacity there, how far in it is, how soft, how near, and its eyes' level on the frame. */
 export type ShadeLook = { fade: number; presence: number; soft: number; near: number; eyeLevel: number };
 
 /** A Hollow in a frame: every enemy the game spawns is one, shade and lunge included. */
@@ -474,7 +474,7 @@ export function createEntityPoses(): EntityPoses {
           fade.delay -= held;
           step -= held;
         }
-        // It comes up out of the mist at its whole height, the smoke bringing it in (shadeSmoke.ts).
+        // It comes up out of the mist at its whole height, the smoke bringing it in (lite/shadeMask.ts).
         if (step > 0 && fade.level < 1) fade.level = Math.min(1, fade.level + step / (fade.quick ? LUNGE_FADE_IN_S : SHADE_FADE_IN_S));
         // A lunge resolves from the mist as it closes on the local eye; a shade
         // never does; a Hollow out in the open is the resolved form from the
@@ -584,7 +584,7 @@ export function createEntityPoses(): EntityPoses {
           out.level -= dt / SHADE_FADE_OUT_S;
           out.soft = Math.min(1, out.soft + dt / SHADE_UNRESOLVE_S);
         }
-        // It keeps its height: the going is the smoke's, patch by patch (shadeSmoke.ts).
+        // It keeps its height: the going is the smoke's, patch by patch (lite/shadeMask.ts).
         if (out.level <= 0) {
           hollowsGone.push(id);
           fading.delete(id);

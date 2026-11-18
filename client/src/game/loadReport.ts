@@ -27,8 +27,8 @@ export function reportProgress(): LoadProgress | null {
 }
 
 /**
- * The ground's downloads for the loading bar: the twelve maps
- * (`groundMaps.ts`), the six albedos (`terrainTexture.ts`) and the six
+ * The ground's downloads for the loading bar: the twelve maps and the six
+ * albedos (`lite/groundTextures.ts`) and the six
  * wildlife calls (`wildlifeAudio.ts`) are one stage of 24, told by name as
  * each starts and lands. Nothing to report when no bar is up.
  */

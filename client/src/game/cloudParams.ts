@@ -8,7 +8,9 @@ import { hash2 } from "../sim/field.js";
  * PBR fragment, rather than sprites. Its density by the night, the haunt and
  * the chase; the tileable noise that shapes it; and the height map of the
  * ground round the player that it rests on. Babylon-free and on the
- * architecture test's BABYLON_FREE_FILES list; `atmosphere.ts` binds it.
+ * architecture test's BABYLON_FREE_FILES list; `lite/groundTextures.ts`
+ * makes its maps, and the air's plugin and the post chain march it
+ * (`lite/atmospherePlugin.ts`, `lite/postChain.ts`).
  */
 
 /**
@@ -127,7 +129,7 @@ function tileNoise(x: number, y: number, size: number, cells: number, seed: numb
 /**
  * The cloud's noise: RGBA8, tileable, two channels of two-octave value noise
  * on their own seeds (the large shapes read R, the small read G), each
- * stretched to fill [0, 1]. Plain arithmetic, so the shell builds it headlessly.
+ * stretched to fill [0, 1]. Plain arithmetic, so it is made with no engine.
  */
 export function cloudNoiseMap(size: number = CLOUD_NOISE_SIZE): Uint8Array {
   const data = new Uint8Array(size * size * 4);

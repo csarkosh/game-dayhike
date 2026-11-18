@@ -8,7 +8,7 @@ import { gustAt, type WindRecord } from "./windParams.js";
  * The pure arithmetic of the airborne motes. Babylon-free; `lite/motes.ts` binds it.
  * Species follow the sun through the same `twilightT` bands sky.ts uses, so
  * nothing new decides what time it is. Pollen by day, frost by night; the
- * midges are the lake's (`midgeSwarms.ts`), not the air's everywhere.
+ * midges are the lake's (`lite/midgeMeshes.ts`), not the air's everywhere.
  */
 
 export type MoteSpecies = "pollen" | "frost";

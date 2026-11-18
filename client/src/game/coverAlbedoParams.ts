@@ -1,10 +1,8 @@
 /**
  * The ground cover in one green. Babylon-free and on the architecture
  * test's BABYLON_FREE_FILES list; `lite/clutterMeshes.ts` and `lite/forestMeshes.ts`
- * apply it as the models land, and the foliage plugin's shader holds the
- * green, the contrast and the albedo's floor (`foliagePlugin.ts`,
- * `shaders/foliage.fragment.fx`); the light plugin holds the cover's shadow
- * floor (`foliageLightPlugin.ts`).
+ * apply it as the models land, and the foliage's plugin holds the green,
+ * the contrast and the albedo's floor (`lite/forestPlugins.ts`).
  *
  * The cards (the clutter tufts, meadow, flowers and bushes, and the
  * understory fern) are lit alike, yet their textures' exposures are
@@ -48,14 +46,14 @@ export const COVER_ALBEDO_TARGET = 0.0775;
  * pale tuft lands near it, not on it: its gain is clamped at `COVER_TINT_MIN`
  * on every channel. The green every green card's mean is brought to, and the
  * colour the cards' contrast compresses toward (`FOLIAGE_CARD_GREEN` in
- * `shaders/foliage.fragment.fx`, pinned to this at four decimals). */
+ * `lite/forestPlugins.ts`, written from this). */
 export const COVER_GREEN: Rgb = { r: 0.0791, g: 0.0815, b: 0.0328 };
 
 /** The darkest a ground-cover fragment's albedo may be, linear: five
  * eighths of the green, applied after the root darkening and the tint, so a
  * blade's tip, a card's baked-dark pixel or a root in the turf never goes to
- * black (`FOLIAGE_ALBEDO_FLOOR` in `shaders/foliage.fragment.fx`, pinned to
- * this at four decimals). */
+ * black (`FOLIAGE_ALBEDO_FLOOR` in `lite/forestPlugins.ts`, written from
+ * this). */
 export const FOLIAGE_ALBEDO_FLOOR: Rgb = { r: 0.0494, g: 0.0509, b: 0.0205 };
 
 /** The least of the sun's light a ground-cover fragment keeps in a cast

@@ -8,7 +8,7 @@ import type { WeatherParams } from "./weather.js";
  * summer air's temperature through the day, which the swarms' hum follows.
  *
  * Hours run 0–24 with the sun up from 06:00 to 18:00. Every edge is a
- * smoothstep over its span, so no share jumps as the clock runs; `waterLife.ts`
+ * smoothstep over its span, so no share jumps as the clock runs; `waterLifeScene.ts`
  * eases what this returns over 3 s, as the animals' presence is eased, so a
  * jump of the clock or the weather does not jump either.
  */

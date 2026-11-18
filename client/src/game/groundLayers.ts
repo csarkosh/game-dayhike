@@ -18,8 +18,8 @@
  * repeating both ways. Until the images land, each array is one neutral
  * texel a layer.
  *
- * Babylon-free: `terrainTexture.ts` makes the albedos' textures and
- * `groundMaps.ts` the arrays.
+ * Babylon-free: `lite/groundTextures.ts` makes the albedos' textures and
+ * the arrays.
  */
 import grassUrl from "../../assets/textures/ground.grass.webp?url";
 import floorUrl from "../../assets/textures/ground.forest_floor.webp?url";

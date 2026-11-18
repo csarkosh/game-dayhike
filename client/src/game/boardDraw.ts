@@ -7,9 +7,9 @@
  * What is drawn, and where, is decided by pure modules (`boardFace.ts`,
  * `boardMap.ts`, `boardWear.ts`); this is the one module that touches a
  * canvas, and only `wrap`, `paperCrop`, `portraitCrop`, `boardDrawingOf` and
- * `whenImagesArrive` of it run without one. The shells that show the face
- * (`boardPaint.ts`, and `lite/sceneryMeshes.ts` on Babylon Lite) make its
- * texture and its material.
+ * `whenImagesArrive` of it run without one. The modules that show the face
+ * (`lite/sceneryMeshes.ts`, `lite/sceneryPaint.ts`) make its texture and its
+ * material.
  *
  * Loads no engine: a canvas and an image are the page's own.
  */

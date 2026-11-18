@@ -22,8 +22,8 @@ import {
 } from "./wildlifeField.js";
 
 /**
- * Which animation clip a creature's model plays. Defined here, not in
- * creatureModel.ts (which re-exports it), because wildlifeBehaviour.ts is the
+ * Which animation clip a creature's model plays. Defined here because
+ * wildlifeBehaviour.ts is the
  * pure state machine that decides it; the model just plays what it is told.
  */
 export type ClipRole = "graze" | "idle" | "walk" | "run" | "alert";
@@ -1068,7 +1068,7 @@ export function stepUnit(u: UnitState, tick: number, players: readonly PlayerPoi
 export type Presence = { ground: number; aloft: number; raven: number; butterfly: number; callGain: readonly number[] };
 
 /** Hermite ramp, flat at both ends — the repo's own file-local `smoothstep` (trailPaint.ts,
- * lite/mistMeshes.ts, distanceFadePlugin.ts and the rest each carry their own copy). */
+ * distanceFade.ts and the rest each carry their own copy). */
 function smoothstep(e0: number, e1: number, x: number): number {
   const t = clamp01((x - e0) / (e1 - e0));
   return t * t * (3 - 2 * t);

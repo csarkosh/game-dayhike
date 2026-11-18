@@ -130,7 +130,7 @@ export function treeFoliageBuffer(seed: number, list: readonly TreeInstance[]): 
     const canopy = forestDensity(seed, t.x, t.z);
     const slope = Math.hypot(t.groundDx, t.groundDz);
     const c = surfaceAlbedo(seed, t.x, t.z, t.groundH, slope, canopy);
-    // The floor applies the same tint in terrainTexture.ts, so a tuft and the
+    // The floor applies the same tint in lite/terrainPlugins.ts, so a tuft and the
     // ground under it agree where the ground is grass and inside the relief
     // fade; on non-grass ground the card carries this tint alone, and past
     // the fade the floor's tint has faded out while the card keeps its own.
@@ -357,7 +357,7 @@ export function* impostorMatrixSlices(
       // is two-sided for the frames a rebuild is stale) at the camera:
       // rotating +Z by atan2(dx, dz) about Y lands it on (dx, dz), so −Z
       // faces the camera half a turn on. The face, not the back: the bake's
-      // normal map is in the face's frame (`impostorBakePlugin.ts`).
+      // normal map is in the face's frame (`impostorBakePlugin`, `lite/forestPlugins.ts`).
       quatAboutAxis(UP, Math.atan2(camX - t.x, camZ - t.z) + Math.PI, scratchQ);
       // A lattice card past the fill's seam grows (`farTreeScale`): the
       // on-lattice list is the first of the two.
@@ -409,7 +409,7 @@ export function partitionImpostors(
   return slots;
 }
 
-/** Each dead tree's role for its material (`deadwoodPlugin.ts`), a float an instance: 1 a fallen log, 0 a standing snag. */
+/** Each dead tree's role for its material (`lite/forestPlugins.ts`), a float an instance: 1 a fallen log, 0 a standing snag. */
 export function deadwoodRoleBuffer(list: readonly TreeInstance[]): Float32Array {
   const roles = new Float32Array(list.length);
   list.forEach((t, i) => {

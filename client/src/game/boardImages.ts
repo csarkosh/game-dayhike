@@ -1,7 +1,7 @@
 /**
  * The paper's and the photograph's addresses, where the files exist. A glob
  * and not an import by name, so a checkout without one of the files still
- * builds: the board then draws a stand-in for it (`boardPaint.ts`).
+ * builds: the board then draws a stand-in for it (`boardDraw.ts`).
  */
 const found = import.meta.glob("../../assets/textures/board.*.webp", { query: "?url", import: "default", eager: true }) as Record<string, string>;
 

@@ -3,8 +3,8 @@
  * the points of the shore a view is tested against, the two cheap answers
  * (the eye over the water, the view's centre ray meeting the lake's level
  * over water), a shore point inside every plane of the view, and a square,
- * a box and a sphere against the planes. `lakeView.ts` asks these of a Babylon.js camera; a
- * renderer with planes of its own asks them directly (`lakeDrawnFrom`).
+ * a box and a sphere against the planes. The renderer asks them with the
+ * planes of its own view (`lakeDrawnFrom`).
  *
  * Allocates nothing a call.
  */
@@ -122,8 +122,8 @@ export function sphereInPlanes(x: number, y: number, z: number, radius: number, 
  * Whether a lake's water is in a view, read by its shore: its square of
  * half-side `half` at `y` in the view's planes, and then the eye over the
  * water, the centre ray meeting it, or a shore point in view. What the game
- * arms a lake's mirror by (`lakeView.ts` asks the same of a Babylon.js
- * camera): from the bank with the water behind the eye it is false.
+ * arms a lake's mirror by: from the bank with the water behind the eye it
+ * is false.
  */
 export function lakeInViewFrom(
   shape: LakeShape, y: number, half: number, points: Float32Array, planes: readonly ViewPlane[],

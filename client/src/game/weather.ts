@@ -3,7 +3,7 @@ import { exposureFor, fogDensityFor } from "./sky.js";
 
 /**
  * The weather axis, alongside `hour`. Pure and Babylon-free like `sky.ts`;
- * `lighting.ts` is the shell that applies it. States are points in a continuous
+ * `lite/worldLight.ts` applies it. States are points in a continuous
  * parameter space so a transition — including the future scripted sunny-to-eerie
  * turn — is interpolation, never new machinery.
  */

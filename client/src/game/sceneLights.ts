@@ -3,8 +3,9 @@
  * `skyStateFor`) and that weather: the sun's direction, colour and
  * intensity and how dark its shadows are, the hemisphere fill's colours and
  * intensity, the image-based light's intensity, and the colour of the air
- * the fog and the cleared frame take. `lighting.ts` sets Babylon's lights,
- * fog and environment from these; this module loads no Babylon.
+ * the fog and the cleared frame take. `lite/worldLight.ts` keeps these for
+ * the renderer, which sets its lights, fog and environment from them; this
+ * module loads no engine.
  */
 import type { Rgb } from "./colour.js";
 import type { Vec3 } from "./sky.js";

@@ -3,7 +3,7 @@
  * engine: the cube's size, how its six faces are laid out and which way
  * each texel of a face looks, and when the capture is made again.
  *
- * **When.** The lighting (`lighting.ts`) captures the dome again at each
+ * **When.** The renderer (`lite/skyCapture.ts`) captures the dome again at each
  * apply that finds the sky's slices: an hour set, a weather set, a view
  * set, every frame of a weather fade, and the slice that completes an hour
  * the table was waiting on. It makes a new sky state each time, so a

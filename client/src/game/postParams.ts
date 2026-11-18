@@ -3,7 +3,7 @@ import type { QualityTier } from "./quality.js";
 /**
  * The pure arithmetic of the post chain: which passes a tier gets, and the
  * finish pass's record. Babylon-free and on the architecture test's
- * BABYLON_FREE_FILES list; `post.ts` is the shell.
+ * BABYLON_FREE_FILES list; `lite/postChain.ts` draws the chain.
  */
 
 export type PostFeatures = {

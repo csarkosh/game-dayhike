@@ -18,9 +18,7 @@ export const LAMP_EXPONENT = 8;
 /**
  * The tuned lamp, in Babylon's light units against a sun of ~4 at noon: 400
  * lifts the dusk bed from 28 to 110 (8-bit luminance) with the forest and
- * far trail untouched; 150 barely read and 1000 was a searchlight. Lives here
- * rather than in headlamp.ts so this module stays Babylon-free; headlamp.ts
- * re-exports them.
+ * far trail untouched; 150 barely read and 1000 was a searchlight.
  */
 export const LAMP_INTENSITY = 400;
 export const LAMP_COLOUR: readonly [number, number, number] = [1.0, 0.92, 0.78];
@@ -28,8 +26,7 @@ export const LAMP_COLOUR: readonly [number, number, number] = [1.0, 0.92, 0.78];
 /**
  * How the headlamp misbehaves under dread: dimmer and dirtier on the top
  * plateau, with sparse flicker bursts driven by the lens dread. Pure and
- * Babylon-free (`headlamp.ts` re-exports only numbers); `setLamp` applies
- * it. Exact at `clear`: full intensity, the tuned colour, no flicker.
+ * Babylon-free; the renderer applies it (`lampUnder`, `lite/renderer.ts`). Exact at `clear`: full intensity, the tuned colour, no flicker.
  *
  * The flicker is a hashed telegraph signal, not noise: time is cut into
  * LAMP_FLICKER_CELL-second cells, each cell draws one hashed value, and a

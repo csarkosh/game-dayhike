@@ -21,7 +21,7 @@ import { createRenderScale, type RenderScale } from "./renderScale.js";
 
 /**
  * The frame's size for a canvas box of `clientWidth` by `clientHeight` CSS
- * pixels: each over the level, cut to a whole pixel as Babylon cuts it. The
+ * pixels: each over the level, cut down to a whole pixel. The
  * level is the tier's `hardwareScaling` over the render scale's share, times
  * `ratioChange`: the display's ratio at the hike's start over its ratio now.
  */

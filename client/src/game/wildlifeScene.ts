@@ -257,8 +257,7 @@ export const FOOT_LIFT = 0.02;
 /** Seconds the ground presence takes to traverse a weather change. */
 export const PRESENCE_RAMP_SECONDS = 3;
 /**
- * Pool keys are `unit.id · SLOT_STRIDE + member`, the encoding creatureModel.ts
- * documents. Every species' member count is below the stride (the largest is
+ * Pool keys are `unit.id · SLOT_STRIDE + member`. Every species' member count is below the stride (the largest is
  * elk's 8, WILDLIFE_MEMBERS) and `unit.id` is unique per (species, cell) since
  * it became a packed int, so two units can never collide on a key.
  */

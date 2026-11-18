@@ -1,5 +1,5 @@
 /**
- * The base conform's arithmetic (`groundConformPlugin.ts` says what the
+ * The base conform's arithmetic (`lite/forestPlugins.ts` says what the
  * conform is and draws it): its two constants, the displacement the vertex
  * stage computes, and the uniforms it is drawn with as one record by name.
  * Loads no engine.

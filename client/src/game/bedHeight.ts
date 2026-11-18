@@ -2,8 +2,8 @@
  * The bed height texture's contents: a square of terrain heights around the
  * camera, sampled from `elevationAt` (the same function the water rings and
  * the terrain clipmap sample, so the three agree), that the water material
- * reads per pixel for its depth (spec §4.1). Pure and Babylon-free; the
- * water shell uploads `heights` as one R32F texture.
+ * reads per pixel for its depth (spec §4.1). Pure and Babylon-free;
+ * `lite/waterBed.ts` uploads `heights` as one texture of 32-bit floats.
  *
  * Re-centred when the camera leaves the inner half of the square, snapped
  * to a quarter of the extent so consecutive bakes share their alignment.

@@ -92,7 +92,7 @@ export function clutterReachFor(tier: "low" | "medium" | "high"): number {
  * 1 / COVER_FAR_KEEP by its hash, the rest fading out over COVER_FAR_RAMP,
  * and the survivors widen about their origin to COVER_WIDEN times their
  * width across COVER_WIDEN_RAMP of eye distance in the vertex stage
- * (`distanceFadePlugin.ts`), so the ground keeps silhouettes to the class's
+ * (`lite/forestPlugins.ts`), so the ground keeps silhouettes to the class's
  * radius at half the instances: the tile doubling a far grass field is
  * drawn with elsewhere. The meadow's: its cards ended at 40 m and the
  * ground past them read bare to the tree line; they now reach 100 m, the
@@ -280,10 +280,9 @@ export const CLUTTER_FAR_SPLIT = 0.45;
 export const CLUTTER_BUDGETS: readonly number[] = [4400, 550, 260, 700, 500, 2500, 43000, 3650, 5200, 4000, 2950, 620, 5200, 5200];
 
 /**
- * Edge-fade ramp per class, as a fraction of the effective radius (this
- * used to describe the deleted clutterFadePlugin.ts shrink-toward-the-base
- * mechanism): the width of the
- * dither dissolve band — `distanceFadePlugin.ts`'s `fadeBands` out-band —
+ * Edge-fade ramp per class, as a fraction of the effective radius: the
+ * width of the
+ * dither dissolve band — the `fadeBands` out-band (`distanceFade.ts`) —
  * as a fraction of the disc radius. An instance dissolves from full
  * visibility to fully discarded across the last `fraction × radius` metres
  * of the disc; nothing shrinks. Renderer-side, never a tunable. Meadow's

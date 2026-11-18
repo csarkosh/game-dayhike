@@ -8,8 +8,8 @@
  * casts none at all. So the dark is laid here, the same on every tier: a
  * patch that is darkest under the body and fades out a little way past it.
  *
- * Pure: the shape, the texture's bytes and the grid's corners. The mesh and
- * its material are `trailheadMeshes.ts`'s.
+ * Pure: the shape, the texture's bytes and the grid's corners. The mesh is
+ * `lite/sceneryMeshes.ts`'s and its material `lite/sceneryPaint.ts`'s.
  */
 import { CAR_HALF } from "../sim/trailhead.js";
 

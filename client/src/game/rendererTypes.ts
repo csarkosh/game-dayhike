@@ -66,7 +66,7 @@ export type Renderer = {
    * made (a stand-in in a test).
    */
   readonly whenMade?: Promise<boolean>;
-  /** The measurement mode's readout (`?gpuTime`, `gpuTime.ts`); null without it. */
+  /** The measurement mode's readout (`?gpuTime`, `lite/gpuTimeReadout.ts`); null without it. */
   gpuTime: { read(): GpuTimeReport } | null;
   /** Resolves once the forest's first fill, billboards included, is drawn
    * (`ForestMeshes.ready`); at once in a world without a forest. */
@@ -122,7 +122,7 @@ export type Renderer = {
    */
   readonly hasWildlife: boolean;
   /**
-   * Whether this world has the lake's insects and frogs (`waterLife.ts`): a
+   * Whether this world has the lake's insects and frogs (`waterLifeScene.ts`): a
    * forest world with a lake, the animals not turned off. False, `app.ts`
    * builds no audio for them.
    */
@@ -236,7 +236,7 @@ export type Renderer = {
   /** 0 silences the lens-side dread effects; 1 is full. */
   setUnsettle(level: number): void;
   /** The wind record computed by the last `sync` (weather-driven, or the
-   * `/wind` override) — what `foliagePlugin.ts`'s players bend into and what
+   * `/wind` override) — what the foliage sways in (`lite/forestPlugins.ts`) and what
    * `ambientAudio.ts`'s wind bed hears. */
   wind(): WindRecord;
   /** How wet the canopy is, 0 to 1, as the rain stepped it on the last
@@ -308,7 +308,7 @@ export type RendererOptions = {
    * its own (`startSkySource`) and stops it on dispose. */
   skyTable?: SkyTable;
   /** The measurement mode (`?gpuTime`, `parseGpuTime`, `gpuTimeReport.ts`): the GPU's timings
-   * read out as `window.__gpuTime()` and a corner line (`gpuTime.ts`), and
+   * read out as `window.__gpuTime()` and a corner line (`lite/gpuTimeReadout.ts`), and
    * the render scale held at full. */
   gpuTime?: boolean;
 };

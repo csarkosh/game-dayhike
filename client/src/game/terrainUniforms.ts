@@ -2,7 +2,7 @@
  * The numbers the terrain's material is drawn with: every uniform of the
  * ground blend, the road, trail and feature paints, the sward floor and the
  * far cover, by the name the fragment stage reads it under
- * (`terrainTexture.ts` has the GLSL and binds these).
+ * (`lite/terrainPlugins.ts` has the WGSL and binds these).
  *
  * Most are the look's constants, here and in `groundHexParams.ts`. What
  * moves with a frame is where the eye stands, the weather's wetness and rain

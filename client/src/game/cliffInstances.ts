@@ -28,8 +28,8 @@ export const CLIFF_FAR_LOD = 2;
 
 /** Share of the ground albedo in a module's colour: half the module's own,
  * half the ground's under it, so a brown granite module and a pale cobble
- * hillside read as one material. Mirrored in shaders/cliffTint.fragment.fx;
- * the lockstep test asserts it. */
+ * hillside read as one material. The cliffs' plugin mixes by it
+ * (`lite/forestPlugins.ts`, whose test holds the statement). */
 export const CLIFF_GROUND_TINT = 0.5;
 
 const scratchQ: Quat = { x: 0, y: 0, z: 0, w: 1 };

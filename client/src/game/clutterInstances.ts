@@ -206,8 +206,7 @@ export const FOLIAGE_BY_CLASS: ReadonlyMap<number, FoliageProfile> = new Map<num
 
 /** The weather's porosity cap per class (`wetSurface.ts`): the cards glaze,
  * stone darkens by half, driftwood and fungus soak. Litter is pebbles and
- * twigs under a metre across, taken as stone. Every class has an entry
- * (`clutterMeshes.test.ts` pins it). */
+ * twigs under a metre across, taken as stone. Every class has an entry. */
 export const WET_CAP_BY_CLASS: ReadonlyMap<number, number> = new Map<number, number>([
   [CLUTTER_GRASS, WET_CAP.leaf],
   [CLUTTER_ROCK, WET_CAP.rock],
@@ -373,7 +372,7 @@ export function writeFoliage(seed: number, inst: ClutterInstance, buf: Float32Ar
   const slope = Math.hypot(inst.groundDx, inst.groundDz);
   const canopy = forestDensity(seed, inst.x, inst.z);
   const c = surfaceAlbedo(seed, inst.x, inst.z, inst.groundH, slope, canopy);
-  // The floor applies the same tint in terrainTexture.ts, so a tuft and the
+  // The floor applies the same tint in lite/terrainPlugins.ts, so a tuft and the
   // ground under it agree where the ground is grass and inside the relief
   // fade; on non-grass ground the card carries this tint alone, and past the
   // fade the floor's tint has faded out while the card keeps its own.

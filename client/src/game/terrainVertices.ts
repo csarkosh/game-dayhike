@@ -12,8 +12,8 @@
  * alpha 1, which the material multiplies into its own white albedo. The
  * triangles wind as the game's other meshes do, for a left-handed world.
  *
- * Babylon-free: `lite/renderer.ts` uploads a ring's and `facePatchMeshes.ts` a
- * patch's.
+ * Babylon-free: `lite/terrainMeshes.ts` draws a ring's and `lite/patchPool.ts`
+ * lays out a patch's.
  */
 import { WEIGHTS2_STRIDE, type RingGeometry } from "./clipmap.js";
 import type { FacePatch } from "./facePatches.js";
@@ -46,7 +46,7 @@ export const TERRAIN_VERTEX_SIZES = {
 } as const;
 
 /** The names the terrain material's vertex stage reads the weights and the
- * cover under (`terrainTexture.ts`); the position, the normal and the colour
+ * cover under (`lite/terrainPlugins.ts`); the position, the normal and the colour
  * are the mesh's own. */
 export const TERRAIN_ATTRIBUTES = {
   weights: "terrainWeights",

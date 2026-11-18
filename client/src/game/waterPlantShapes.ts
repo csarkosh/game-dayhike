@@ -33,7 +33,7 @@ const CATTAIL_HEAD_VERTS = CATTAIL_HEAD_SIDES * 2 + 2;
 const CATTAIL_HEAD_COLOUR: Rgb = { r: 0.33, g: 0.21, b: 0.12 };
 /** Lily pads float this far above the lake's level (m), over the water's own
  * surface at +0.02, with the depth bias a painted face needs at a distance
- * (the decal note in `boardPaint.ts`). */
+ * (`BOARD_FACE_BIAS`'s note in `boardDraw.ts`). */
 export const LILY_LIFT = 0.03;
 /** A pad's and a flower's depth bias, in the depth buffer's units toward the eye. */
 export const LILY_DEPTH_BIAS = -120;

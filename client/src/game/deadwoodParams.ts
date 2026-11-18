@@ -1,11 +1,10 @@
 /**
- * The dead trees' dressing (`deadwoodPlugin.ts`): the one model `deadwood.snag`
+ * The dead trees' dressing (`lite/forestPlugins.ts`): the one model `deadwood.snag`
  * wears, lying as a fallen log and stood up as a snag, draws its bark from a
  * trunk bark set projected along its trunk instead of its file's one small
  * map, carries the trunks' moss on a log's upper side and down a snag's one
  * side, and darkens where a log's underside meets the floor. Babylon-free: the
- * GLSL in shaders/deadwood*.fx mirrors every constant here, a lockstep test
- * holding them equal.
+ * plugin's WGSL is written with the constants here.
  */
 import { BARK_FOOTPRINT, type BarkDressing } from "./barkParams.js";
 

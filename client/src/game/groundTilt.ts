@@ -7,12 +7,12 @@
  * angles are derived here. Same division of labour `clutterMeshes`'
  * `instanceMatrixFor` already documents for yaw.
  *
- * Loads no engine: a rotation is written into any `{ x, y, z, w }`, a
- * Babylon.js `Quaternion` among them (`instancePose.ts`).
+ * Loads no engine: a rotation is written into any `{ x, y, z, w }`
+ * (`instancePose.ts`).
  *
  * Used by the props that REST on the ground. Trees do not use it: a conifer
  * grows plumb whatever the hillside does, so its base is conformed in the
- * vertex stage instead (`groundConformPlugin.ts`).
+ * vertex stage instead (`lite/forestPlugins.ts`).
  */
 import { quatAboutAxis, quatFromUnitVectors, quatMultiply, type Quat, type Vec3 } from "./instancePose.js";
 

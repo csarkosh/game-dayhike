@@ -2,7 +2,7 @@
  * What the lake's dragonflies are doing: the darners patrolling their beats, hovering
  * and chasing their neighbours, the skimmers sallying from their perches and back, the
  * damselflies hopping among the reeds. Pure and Babylon-free: the layout, the clock, the
- * camera, the players and the presence in; poses and wing rustles out. `dragonflies.ts`
+ * camera, the players and the presence in; poses and wing rustles out. `lite/dragonflyMeshes.ts`
  * draws the poses and `waterLifeAudio.ts` sounds the rustles.
  *
  * Every random draw is hash3(unit, episode, salt, seed), the animals' rule
@@ -137,7 +137,7 @@ const PITCH_MAX = 0.6;
 const PERCHED = 0, PATROL = 1, HOVER = 2, CHASE = 3, ARC = 4, SALLY = 5;
 
 /**
- * Salts, in 70–79 (clear of the wildlife's and of `WATER_LIFE_SALT`'s; `dragonflies.ts` takes 75 and 76):
+ * Salts, in 70–79 (clear of the wildlife's and of `WATER_LIFE_SALT`'s; `dragonflyShapes.ts` takes 75 and 76):
  * a unit's one lifelong draw against its kind's shares (71 is spare), then the first, second and third
  * draw of an episode. An episode's number tells episodes apart and these tell its own draws apart, so no
  * phase needs a salt of its own: none draws more than three.

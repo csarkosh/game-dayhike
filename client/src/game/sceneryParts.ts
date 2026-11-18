@@ -2,8 +2,7 @@
  * The scenery a hike places once, as files and numbers: the trailhead's car,
  * its board and the film's car that takes the parked car's place, the body
  * at the crest and what stands for it until its model arrives, and where
- * each stands. The shells that draw them (`trailheadMeshes.ts` and
- * `bodyMesh.ts`, and `lite/sceneryMeshes.ts` on Babylon Lite) keep the
+ * each stands. `lite/sceneryMeshes.ts`, which draws them, keeps the
  * meshes and the materials.
  *
  * Loads no engine.

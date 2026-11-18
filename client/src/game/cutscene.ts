@@ -124,7 +124,7 @@ export function thresholdAt(into: number): Threshold {
 /** The seconds into the scene at which the threshold begins. */
 export const THRESHOLD_AT_S = SHOTS.slice(0, -1).reduce((a, b) => a + b, 0);
 
-/** The reveal's first beat: the pan from the hiker to the Hollow's spot, after which it rises (entityViews.ts SUMMIT_RISE_DELAY_S). */
+/** The reveal's first beat: the pan from the hiker to the Hollow's spot, after which it rises (entityPoses.ts SUMMIT_RISE_DELAY_S). */
 export const REVEAL_PAN_S = 0.8;
 export const SUMMIT_RISE_AT_S = 4 + 4 + REVEAL_PAN_S;
 /** The Hollow's head over its feet, drawn at HOLLOW_SCALE. */

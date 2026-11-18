@@ -11,7 +11,7 @@ import {
 
 /**
  * The pure arithmetic of the grade pass. Babylon-free and on the architecture
- * test's BABYLON_FREE_FILES list; `post.ts` binds it. Matrices are
+ * test's BABYLON_FREE_FILES list; `lite/postChain.ts` binds it. Matrices are
  * column-major in GLSL order, so a `Mat3` uploads with setMatrix3x3 unchanged.
  */
 

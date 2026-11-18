@@ -39,7 +39,7 @@ export const BLADE_ROUND = 0.3;
  * floors the albedo after it (`FOLIAGE_ALBEDO_FLOOR`, five eighths of the
  * cover's green), so a tip the tint has faded out of keeps the floor's
  * colour, not black; a blade edge-on to the sun keeps half the light of one
- * facing it (`FOLIAGE_WRAP`, `foliageLightPlugin.ts`). The far sward is
+ * facing it (the wrapped light in `lite/forestPlugins.ts`). The far sward is
  * fitted to the near field, never the near field darkened to meet it.
  *
  * The blades' colours sit under that floor: this albedo times the vertex
@@ -55,7 +55,7 @@ export const BLADE_TIP_TINT: Rgb = { r: 0.95, g: 0.95, b: 0.75 };
 /** Per-blade luminance spread: `1 + BLADE_LUMA · (random − 0.5)`. */
 export const BLADE_LUMA = 0.3;
 /** Width of one blade's shrink window in units of a hand-off ramp;
- * FOLIAGE_BLADE_SOFT in the GLSL. */
+ * the foliage's vertex stage reads it (`lite/forestPlugins.ts`). */
 export const BLADE_SOFT = 0.15;
 /** The high tier's whole field, every cell at BLADE_SIZE_FULL, must stay
  * under this many vertices (a test computes it from the reach, the pad and
@@ -350,8 +350,8 @@ export function bladeClumpGeometry(character: BladeCharacter, count: number): Bl
 }
 
 /** The second per-blade random the strength cut uses, derived from the root
- * so it is independent of the hand-off random. Mirrors bR2 in
- * foliageWorldPos.vertex.fx token for token; the roots stay under 0.35 m so
+ * so it is independent of the hand-off random. Mirrors the blade's second
+ * random in `lite/forestPlugins.ts` token for token; the roots stay under 0.35 m so
  * the products stay small enough for float32 to agree. */
 export function bladeSecondRandom(rootX: number, rootZ: number): number {
   const v = rootX * 37.31 + rootZ * 91.17 + 0.37;
@@ -364,7 +364,7 @@ export function bladeSecondRandom(rootX: number, rootZ: number): number {
  * 1 past it) removes them from the low randoms up, each over a window
  * BLADE_SOFT wide, so an inner tier's survivors and an outer tier's arrivals
  * are complementary halves of one clump; `strength` cuts blades whose second
- * random exceeds it. Mirrors the collapse in foliageWorldPos.vertex.fx.
+ * random exceeds it. Mirrors the collapse in `lite/forestPlugins.ts`.
  */
 export function bladeAlive(random: number, second: number, strength: number, grow: number, thin: number): number {
   const aliveIn = clamp01(((1 + BLADE_SOFT) * grow - random) / BLADE_SOFT);

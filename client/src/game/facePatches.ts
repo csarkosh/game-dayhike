@@ -14,7 +14,7 @@
  * leaves out its triangles under fully steep ground well inside the reach
  * (`facePatchCover`), where a patch is drawn over them.
  *
- * Pure and Babylon-free; `facePatchMeshes.ts` is the shell that uploads it.
+ * Pure and Babylon-free; `lite/patchPool.ts` and `lite/terrainMeshes.ts` draw it.
  *
  * Directions: west is −x, east +x, south −z, north +z. A cell (ci, cj)
  * covers [ci·16, (ci+1)·16] × [cj·16, (cj+1)·16].

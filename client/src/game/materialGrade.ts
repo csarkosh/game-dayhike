@@ -6,9 +6,7 @@
  * dither, each as the numbers a shader reads, worked out as Babylon.js works
  * them out from its own settings (`ColorCurves`, `ImageProcessingConfiguration`).
  *
- * `post.ts` writes the curves' settings from here onto Babylon.js's
- * configuration, which then computes the same vectors itself; the renderer
- * on Babylon Lite reads the vectors (`lite/displayCurve.ts`).
+ * The renderer reads the vectors (`lite/displayCurve.ts`).
  */
 import { CHASE_SHADOW_DENSITY, CHASE_SHADOW_HUE, VIGNETTE_COLOUR, type GradeRecord } from "./gradeParams.js";
 import { gradeUnder, saturationUnder, type WeatherParams } from "./weather.js";

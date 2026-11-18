@@ -1,5 +1,5 @@
 /**
- * What a foliage material is drawn with (`foliagePlugin.ts` says what the
+ * What a foliage material is drawn with (`lite/forestPlugins.ts` says what the
  * foliage's vertex and fragment stages do, and draws it): the constants its
  * shaders mirror, the profiles, which cover is matched to the ground, the
  * frame's wind and the players that bend it, and the uniforms as one record
@@ -9,7 +9,7 @@ import { FADE_NONE_IN, FADE_NONE_OUT } from "./distanceFade.js";
 import type { BladeEdges } from "./bladeField.js";
 import type { WindRecord } from "./windParams.js";
 
-/** Mirrored in the .fx files; the lockstep test asserts it. */
+/** The foliage's WGSL is written with these (`lite/forestPlugins.ts`). */
 export const FOLIAGE_TILT = 0.04;
 export const FOLIAGE_BEND = 0.25;
 export const FOLIAGE_BEND_R = 0.6;
@@ -17,7 +17,7 @@ export const FOLIAGE_SINK = 0.5;
 export const FOLIAGE_CLUMP_LUMA = 0.16;
 export const FOLIAGE_CLUMP_CELL = 1.5;
 /** The share of the sky's light the canopy takes from a card under full
- * density (foliageSky.fragment.fx). The trees' bark takes 0.65 and their
+ * density (`lite/forestPlugins.ts`). The trees' bark takes 0.65 and their
  * crowns 0.4 (`forestLookParams.ts`); the ground under a canopy sees the sky
  * through the trunks' gaps, less than a crown does, so a little under the
  * crown's cut. */
@@ -31,7 +31,7 @@ export const FOLIAGE_CANOPY_SKY = 0.4;
 export const FOLIAGE_CANOPY_SUN = 0.4;
 export const FOLIAGE_PLAYERS = 5;
 /** XZ magnitude a parked (absent) player slot sits at. The bend reads only
- * `windPlayers[i].xz` (foliageWorldPos.vertex.fx), so a slot parked below the
+ * `windPlayers[i].xz` (`lite/forestPlugins.ts`), so a slot parked below the
  * world at this origin's XZ would still be a live bender there — parking has
  * to move the slot's XZ, not its Y. */
 export const FOLIAGE_PLAYER_PARKED = 1e6;
@@ -112,7 +112,7 @@ export function foliageMatched(material: { readonly name: string }, profile: Fol
   return MATCHED_PROFILES.has(profile) || (profile === FOLIAGE_PROFILES.UNDERSTORY && MATCHED_MATERIAL.test(material.name));
 }
 
-// Module-level like skin.ts: every material's plugin instance reads one truth,
+// Module-level: every material's plugin reads one truth,
 // written once per frame by the renderer.
 let wind: WindRecord = { dirX: 1, dirZ: 0, speed: 0, lean: 0, gustAmp: 0, flutterAmp: 0, time: 0 };
 /** 5 × xyz; unused slots parked a thousand kilometres away in XZ, where no
@@ -141,7 +141,7 @@ export type FoliageOptions = {
    * the uniform binds `FOLIAGE_CANOPY_SUN`. */
   sunShadowed?: boolean;
   /** The share of the texture's own colour kept, the rest the ground cover's
-   * green (`FOLIAGE_CARD_GREEN` in foliage.fragment.fx): 1, the default, is
+   * green (`FOLIAGE_CARD_GREEN` in `lite/forestPlugins.ts`): 1, the default, is
    * the texture as it is. The card models pass `FOLIAGE_CARD_CONTRAST`
    * (`coverAlbedoParams.ts`), whose tint puts each texture's mean at the
    * green, so the mix compresses the texture's contrast around its mean and

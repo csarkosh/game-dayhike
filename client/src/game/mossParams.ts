@@ -1,9 +1,7 @@
 /**
  * The moss on the trunks: where it grows and how it reads. Babylon-free and
- * on the architecture test's BABYLON_FREE_FILES list; the moss plugin's
- * shader holds every constant as a literal (`mossPlugin.ts`,
- * `shaders/moss.fragment.fx`) and a lockstep test pins each to its value
- * here. Every value is a starting value, one literal to change, settled in
+ * on the architecture test's BABYLON_FREE_FILES list; the moss's WGSL is
+ * written with the constants here (`lite/forestPlugins.ts`). Every value is a starting value, one literal to change, settled in
  * the browser (`docs/rendering/2026-10-14-trunk-moss-design.md`).
  *
  * The mask is four terms, multiplied, then given an edge: how low on the
@@ -70,7 +68,8 @@ function smoothstep(a: number, b: number, x: number): number {
 }
 
 /**
- * The mask's weight, as `shaders/mossLights.fragment.fx` computes it: the
+ * The mask's weight, as the moss's fragment stage computes it
+ * (`lite/forestPlugins.ts`): the
  * moss's share of a fragment's albedo and roughness, 0 to 1. `height` is the
  * fragment's height above the tree's foot in the model's metres, `facing`
  * the dot of the geometric normal with `MOSS_SIDE`, `draw` the tree's own

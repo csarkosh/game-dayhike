@@ -2,7 +2,7 @@ import { clamp01, type Rgb } from "./colour.js";
 
 /**
  * Sun and sky maths: pure, Babylon-free, and therefore testable under
- * `environment: "node"`. `lighting.ts` is the Babylon shell that applies it.
+ * `environment: "node"`. `lite/worldLight.ts` applies it.
  *
  * Trigonometry is fine here. The ban on `Math.sin` is a `sim/` rule, because an
  * ULP difference between JS engines there would build a different world on each
@@ -80,7 +80,7 @@ export function twilightT(altitude: number): number {
  * Unit vector pointing from the world *toward* the sun.
  *
  * Note the direction: a Babylon `DirectionalLight` wants the direction light
- * travels, which is the negation of this. `lighting.ts` negates once, at the one
+ * travels, which is the negation of this. `sceneLights.ts` negates once (`sunTravel`), at the one
  * place it matters. Expressing it this way round means `y` reads as altitude —
  * positive above the horizon — which is what makes the tests legible.
  *

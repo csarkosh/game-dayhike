@@ -75,7 +75,7 @@ export const FROG_BED_REF = 30;
  * one's: the far frogs, the chorus that sits beneath the voices, carried
  * across the water at a level a player hears from the shore and never lost
  * beneath the ambience. Around a player it falls quiet as the voices there
- * do (`bed.duck`, `waterLife.ts`).
+ * do (`bed.duck`, `waterLifeScene.ts`).
  */
 export const FROG_BED_GAIN: readonly [number, number] = [0.5, 0.35];
 /** A chorus loop whose level has been nothing this long stops. */

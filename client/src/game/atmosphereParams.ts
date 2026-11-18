@@ -7,7 +7,7 @@ import { cloudUniforms, emptyCloudUniforms, type CloudState, type CloudUniforms 
 /**
  * The pure arithmetic of the atmosphere plugin: height fog, the distance
  * gradient and the glow toward the sun. Babylon-free and on the architecture
- * test's BABYLON_FREE_FILES list; `atmosphere.ts` is the shell that binds it.
+ * test's BABYLON_FREE_FILES list; `lite/atmospherePlugin.ts` binds it.
  * Its colours are the sky state's (`skyState.ts`): the gradient ends on the
  * dome's horizon away from the sun, and the glow is its horizon toward it, so
  * the haze and the sky behind it cannot disagree.
@@ -66,7 +66,7 @@ export function airTransmittance(t: number): [number, number, number] {
  * the share of the way from the gradient's air to the sun's colour the haze
  * is seen in, so the far ground sits in a faint, warm veil at noon and the
  * crowns in less of it. Mirrors ATM_HAZE_DENSITY, ATM_HAZE_FALLOFF,
- * ATM_HAZE_SEAT and ATM_HAZE_WARMTH in atmosphereFog.fragment.fx. */
+ * ATM_HAZE_SEAT and ATM_HAZE_WARMTH in `lite/atmospherePlugin.ts`. */
 export const HAZE = { density: 0.002, falloff: 0.12, seat: 1.5, warmth: 0.5 } as const;
 
 /** The haze's optical depth along a ray of slope `rdY` to `t` metres from an
@@ -79,7 +79,7 @@ export function groundHazeAmount(rdY: number, t: number): number {
 /**
  * Quílez's closed-form height fog: density a·exp(−b·y) integrated along a
  * ray of length t from height camY (relative to `level`) with vertical slope
- * rdY. Mirrors `atmHeightFog` in atmosphereFog.fragment.fx exactly, including
+ * rdY. Mirrors `atmHeightFog` in `lite/atmospherePlugin.ts` exactly, including
  * the clamp that keeps a level ray from dividing by zero.
  */
 export function heightFogAmount(camY: number, rdY: number, t: number, a: number, b: number, level: number): number {
@@ -94,7 +94,7 @@ export function heightFogAmount(camY: number, rdY: number, t: number, a: number,
  * dome's horizon away from the sun, one colour. `w` is the weather the state
  * was made under; its mist, cloud, rain and dread are in that colour already.
  * The shader draws the same curve on `farColour` itself (ATM_NEAR_DIM and
- * ATM_GRADIENT_BIAS in atmosphereFog.fragment.fx mirror GRADIENT_NEAR_DIM and
+ * ATM_GRADIENT_BIAS in `lite/atmospherePlugin.ts` mirror GRADIENT_NEAR_DIM and
  * GRADIENT_BIAS); this list is for the mist banks' and motes' colours.
  */
 export function fogGradientUnder(w: WeatherParams, sky: SkyState): Rgb[] {
@@ -143,11 +143,10 @@ export function atmosphereUnder(w: WeatherParams, sky: SkyState, viewDistance: n
  * declares them, then the ground cloud's (`cloudParams.ts`).
  */
 export type AtmosphereUniforms = {
-  /** 1 once there is a record to draw the air by; 0 before, when the fog is Babylon's own. */
+  /** 1 once there is a record to draw the air by; 0 before, when a material draws no air. */
   atmOn: [number];
-  /** The distance fog's density (exponential squared). Babylon carries it as
-   * the scene's fog density, which every material's fog reads, so the
-   * plugin declares no uniform of this name. */
+  /** The distance fog's density (exponential squared), a uniform of the
+   * air's plugin (`lite/atmospherePlugin.ts`). */
   atmBaseDensity: [number];
   atmHeightDensity: [number];
   atmHeightFalloff: [number];

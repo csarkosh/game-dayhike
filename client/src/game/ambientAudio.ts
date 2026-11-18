@@ -395,8 +395,8 @@ export function placeListener(
  * same noise `setDrip` schedules under a wet canopy. Everything is inert until
  * `unlock()`, and the latest weather/volume set before unlock applies then.
  *
- * `createCtx` is injectable so tests can hand in a fake — node has no
- * AudioContext, the same reason the Babylon shells test under NullEngine.
+ * `createCtx` is injectable so tests can hand in a fake: node has no
+ * AudioContext.
  * `random` draws the drips' intervals, centres and noise offsets, injectable
  * for the same reason.
  */

@@ -3,9 +3,8 @@
  * models' files, a plank's and a post's sizes, how high each plank hangs
  * and how tall its post is drawn, the lettering of a plank face as a canvas
  * takes it, the plank's inner end cut square, and where every post, plank
- * and label of a world stands. The shells that draw them (`signMeshes.ts`,
- * and `lite/sceneryMeshes.ts` on Babylon Lite) keep the meshes and the
- * materials.
+ * and label of a world stands. `lite/sceneryMeshes.ts`, which draws them,
+ * keeps the meshes and the materials.
  *
  * Loads no engine: a canvas's context is the page's own.
  */

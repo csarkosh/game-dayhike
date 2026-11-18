@@ -3,7 +3,7 @@ import type { WeatherParams } from "./weather.js";
 
 /**
  * The one wind field every moving thing reads: grass, carpet, flowers, bushes,
- * understory, the near tree LODs (foliagePlugin.ts), the motes, the mist banks,
+ * understory, the near tree LODs (lite/forestPlugins.ts), the motes, the mist banks,
  * the rain and the ambient wind bed. Babylon-free and on BABYLON_FREE_FILES.
  * Renderer-only by design: nothing here may migrate into sim/ or a tunables
  * registry — sway is cosmetic, and a wind constant in the level id would break

@@ -1,6 +1,7 @@
 /**
  * The made features' paint as data: the table the terrain's fragment stage
- * reads (`featurePaint.ts` has the GLSL and the texture), the (x, z, radius,
+ * reads (`lite/terrainPlugins.ts` has the stage and `lite/groundTextures.ts`
+ * the texture), the (x, z, radius,
  * kind) of each feature, the shared constants, and below them the shore
  * atlas of the lakes among them. Babylon-free, so the world's worker can make
  * a world's table ahead of the build (`preparedScene.ts`).

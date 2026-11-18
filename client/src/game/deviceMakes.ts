@@ -2,14 +2,13 @@
  * What a WebGPU device is asked to make of shaders, counted as it is asked,
  * and who is told of the frames that asked.
  *
- * On WebGL2 a shader's compile is an event the engine tells
- * (`onAfterShaderCompilationObservable`), and the game voids a frame it
- * happened in when it judges the frame rate (`governor.ts`). WGSL has no
- * such event: a shader module is handed to the device, which compiles it
+ * The game voids a frame in which a shader was compiled when it judges the
+ * frame rate (`governor.ts`). WGSL has no event for a compile: a shader
+ * module is handed to the device, which compiles it
  * when a pipeline first needs it, and a pipeline made the synchronous way
  * holds the frame that asked for it. So what `Renderer.onShaderCompiled`
- * tells of on WebGPU is a frame in which the device was asked for a shader
- * module or a pipeline: the same frames, to the same listeners.
+ * tells of is a frame in which the device was asked for a shader module or
+ * a pipeline.
  *
  * The count is taken at the device's own calls, by standing a function of
  * the same name on the device in front of each; nothing is counted or

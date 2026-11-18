@@ -95,7 +95,7 @@ const GLOB_PREFIX = "../../assets/";
  * typed as a string instead of throwing. `resolveCharacterAssets` accepts any
  * `output` that is merely a non-empty string, so the throw below is the only
  * thing standing between a malformed catalog entry and a function object handed
- * to Babylon as a URL.
+ * to the loader as a URL.
  */
 function urlMap(glob: Record<string, string>): Record<string, string> {
   const map: Record<string, string> = Object.create(null) as Record<string, string>;
@@ -154,7 +154,7 @@ export function titleStillUrl(): string | null {
  *
  * Throws on an unknown key rather than returning it. A typo or a catalog entry
  * whose file has not shipped would otherwise become a 404 at load time, which
- * Babylon reports by leaving the mesh absent — enemies silently fall back to
+ * the renderer meets by leaving the mesh absent — enemies silently fall back to
  * capsules and clutter silently disappears. Failing here makes it a startup
  * error naming both places the model has to exist.
  */

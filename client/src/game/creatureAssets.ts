@@ -32,7 +32,7 @@ export type CreatureAsset = { id: string; url: string; clips: Partial<Record<Cli
 
 /**
  * Every `creature` asset in the catalog, in catalog order, with its clip-role
- * map. Mirrors `resolveCharacterAssets` in characterModel.ts: reading the catalog here
+ * map. Mirrors `resolveCharacterAssets` in characterAssets.ts: reading the catalog here
  * means adding a species needs no code change, and going through `urlFor`
  * (defaulting to `modelUrl`) means a catalog entry with no shipped file behind
  * it throws at startup rather than 404ing at runtime.
@@ -78,7 +78,7 @@ function tokensOf(name: string): string[] {
 
 /**
  * Matches a synonym against whole tokens, not substrings. Plain `.includes()`
- * (this file's first pass, and `characterModel.ts`'s `pickClip` today) treats a
+ * (this file's first pass, and `characterAssets.ts`'s `pickClip` today) treats a
  * synonym as a substring of the whole clip name, so `"eat"` matches inside
  * `"Death"` and `"run"` matches inside `"Trunk_Idle"` or `"Grunt"` — false
  * positives that get more likely here than in the enemy list, because
@@ -134,7 +134,7 @@ export function creatureClipFor(
  * `` `${prefix}${original}` ``. Preferring that over a substring scan matters
  * because `includes` maps `Walk_Fast` onto `Walk` whenever `Walk` comes first in
  * the file's clip list — one group under two names and the real `Walk` lost
- * (inherited from `characterModel.ts`'s `pickClip`; the same fix applies there
+ * (inherited from `characterAssets.ts`'s `pickClip`; the same fix applies there
  * someday). The scan stays as the fallback for a loader that renames some other
  * way.
  *

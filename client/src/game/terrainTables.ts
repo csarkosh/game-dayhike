@@ -6,7 +6,7 @@
  * by hand, the trail and the features fetch one), so a table is 32-bit float,
  * read at the nearest texel, clamped at its edges, one level and no mips.
  *
- * Babylon-free: `terrainTexture.ts` makes its textures from these, and what
+ * Babylon-free: `lite/groundTextures.ts` makes its textures from these, and what
  * each puts in the material's uniforms (where the road's is centred, where the
  * trail's grid stands, how many features are painted) is `terrainUniforms.ts`'s.
  */

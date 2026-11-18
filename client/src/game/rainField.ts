@@ -67,7 +67,7 @@ export function rainMilk(fog: Rgb, out: [number, number, number] = [0, 0, 0]): [
 
 /**
  * What one volume's stage reads, by the names the streak plugin declares
- * (`rainPlugin.ts`): the box's low corner and size, the wind's folded drift
+ * (`lite/rain.ts`): the box's low corner and size, the wind's folded drift
  * and the folded time, the smoothed frame, the wind's horizontal velocity,
  * the eye, the headlamp (its place, its direction, its intensity as alpha
  * with the cosine of its half-angle, its colour), the classes' lanes, the

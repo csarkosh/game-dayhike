@@ -14,7 +14,7 @@
  * crest is which and which crests came to the face already broken.
  *
  * The high tier draws the curl with a strip of geometry swept along the face
- * (`oceanLip.ts`): two slots a column, each a cross-section of
+ * (`lite/lipMeshes.ts`): two slots a column, each a cross-section of
  * LIP_PROFILE_VERTS vertices whose shape at a progress is read from the baked
  * keyframes (`lipProfile`). `LipTracker` fills what the strip reads, a crest
  * in each slot with its place, progress, height and share, and the plunge

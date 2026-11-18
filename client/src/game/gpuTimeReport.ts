@@ -1,8 +1,8 @@
 /**
  * The measurement mode's readout (`?gpuTime`), as arithmetic: the GPU's own
  * timings of the frame, of its main pass and of each render target and post
- * pass, in milliseconds, from the nanoseconds Babylon's timestamp queries
- * count (`gpuTime.ts` gathers them). Babylon-free, so it is tested with plain
+ * pass, in milliseconds, from the nanoseconds the timestamp queries
+ * count (`lite/gpuTimeReadout.ts` gathers them). Babylon-free, so it is tested with plain
  * objects.
  *
  * Each counter is Babylon's average over the last second. A target that drew

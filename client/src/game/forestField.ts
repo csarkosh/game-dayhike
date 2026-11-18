@@ -10,8 +10,9 @@
  * it instead of popping. All comparisons are on squared distances: cheap,
  * exact, trig-free.
  *
- * Output is a pure function of the cell-snapped `bandsOrigin`, so the Babylon
- * shell rebuilds only when the camera crosses a tree-cell boundary.
+ * Output is a pure function of the cell-snapped `bandsOrigin`, so the
+ * forest's meshes are rebuilt only when the camera crosses a tree-cell
+ * boundary (`lite/forestMeshes.ts`).
  * Pure and Babylon-free, like `clipmap.ts` and `water.ts`. `collectBands` is
  * the pure one-shot; `createBandCollector` is the renderer's hot path — same
  * loop, with per-cell `treeInCell` results memoized across rebuilds so a

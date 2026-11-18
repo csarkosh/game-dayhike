@@ -1,5 +1,5 @@
 /**
- * The distance dither's arithmetic (`distanceFadePlugin.ts` says what the
+ * The distance dither's arithmetic (`lite/forestPlugins.ts` says what the
  * fade is and draws it): the bands an instance fades in and out across, the
  * visibility and the discard the fragment stage computes from them, the
  * screen-space noise they are tested against, how a material's instances
@@ -37,7 +37,7 @@ export function fadeVisibility(dist: number, bands: FadeBands): number {
   return smoothstep(bands[0], bands[1], dist) * (1 - smoothstep(bands[2], bands[3], dist));
 }
 
-/** The GLSL discard predicate (`FADE_FRAGMENT_MAIN_BEGIN`), mirrored exactly:
+/** The fragment stage's discard predicate (`lite/forestPlugins.ts`), mirrored exactly:
  * `true` means the fragment is KEPT (not discarded) at this noise sample.
  * `smoothstep(bands.x, bands.y, dist)` is the in-band term and
  * `1 - smoothstep(bands.z, bands.w, dist)` the out-band term — NOT their

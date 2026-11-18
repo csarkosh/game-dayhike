@@ -4,8 +4,8 @@ import { clamp01, type Rgb } from "./colour.js";
  * The grass floor's arithmetic, Babylon-free: hex tiling of the grass layer
  * (the lattice, the barycentric and sharpened weights), the lattice hash the
  * macro noise is built on, the lush/dry macro tint, and the horizon tint's
- * weight. `shaders/groundHex.fragment.fx` carries the GLSL twins and a
- * lockstep test pins them to these constants; `terrainTexture.ts` binds the
+ * weight. `lite/terrainPlugins.ts` carries the WGSL twins;
+ * `terrainUniforms.ts` names the
  * uniforms; `lite/clutterMeshes.ts` and `lite/forestMeshes.ts` multiply each card's
  * ground colour by `macroTint` so tuft and floor agree where the ground is
  * grass and inside the relief fade (the paragraph below says where not).
@@ -103,7 +103,7 @@ export type HexTriangle = {
 };
 
 /** The triangle of the lattice the uv point falls in, with barycentric weights.
- * Mirrors `hexTriangle` in groundHex.fragment.fx. */
+ * Mirrors `hexTriangle` in `lite/terrainPlugins.ts`. */
 export function hexTriangle(u: number, v: number): HexTriangle {
   const x = u * HEX_LATTICE, y = v * HEX_LATTICE;
   const sx = HEX_SKEW[0] * x + HEX_SKEW[2] * y;
@@ -126,7 +126,7 @@ export function hexWeights(w: readonly [number, number, number]): [number, numbe
 }
 
 /** One octave of value noise on the lattice hash at wavelength `wave` (m), in
- * [0, 1]. Mirrors macroValueNoise in groundHex.fragment.fx token for token;
+ * [0, 1]. Mirrors macroValueNoise in `lite/terrainPlugins.ts` token for token;
  * trailBenchParams.ts shares it at the trail's own wavelengths. */
 export function valueNoise2(x: number, z: number, wave: number): number {
   const px = x / wave, pz = z / wave;
@@ -167,10 +167,9 @@ export function swardWeight(cover: number, dist: number): number {
  * The far ground's cover: past the band where the meadow cards thin out,
  * ground under any cover the near field draws, grass or litter, takes the
  * colour the cover renders at, a clump pattern that shades with the sun, and
- * the cover's own answer to the sun. `shaders/groundFarCover.fragment.fx`
- * carries the GLSL twins and `groundFarCover.test.ts` pins them to these
- * constants. FAR_SELF_SHADOW and FAR_SUN_GAIN_MAX live here and in the sun's
- * line (`terrainTexture.ts`), not in the include.
+ * the cover's own answer to the sun. `lite/terrainPlugins.ts`
+ * carries the WGSL twins. FAR_SELF_SHADOW and FAR_SUN_GAIN_MAX live here and,
+ * as literals, in the sun's line there.
  */
 
 /** Eye distance (m) the far cover ramps in over on high and medium: from 4 m
@@ -400,9 +399,9 @@ export function farCoverTarget(duff: number, canopy: number, macro: Rgb, clump: 
 
 /** The sun's diffuse factor on the far cover: mix(1, gain × visibility, w),
  * the gain the cover normal's N·L over the ground's own (`groundNdotL`, never
- * 0 in the shader: Babylon's saturateEps), capped at FAR_SUN_GAIN_MAX, the
+ * 0 in the shader, which floors it at 1e-7), capped at FAR_SUN_GAIN_MAX, the
  * visibility mix(FAR_SELF_SHADOW, 1, V·L). Mirrors the sun's line in
- * `terrainTexture.ts`. */
+ * `lite/terrainPlugins.ts`. */
 export function farSunFactor(coverNdotL: number, groundNdotL: number, vDotL: number, w: number): number {
   const gain = Math.min(clamp01(coverNdotL) / groundNdotL, FAR_SUN_GAIN_MAX);
   const seen = mixNum(FAR_SELF_SHADOW, 1, clamp01(vDotL));
@@ -410,7 +409,7 @@ export function farSunFactor(coverNdotL: number, groundNdotL: number, vDotL: num
 }
 
 /** The specular weight: 1 − FAR_SPEC_CUT × w × (1 − wet). Mirrors
- * terrainSpecW in `terrainTexture.ts`. */
+ * terrainSpecW in `lite/terrainPlugins.ts`. */
 export function farSpecWeight(w: number, wet: number): number {
   return 1 - FAR_SPEC_CUT * w * (1 - wet);
 }

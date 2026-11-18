@@ -19,7 +19,7 @@
  * crown's shares, so the canopy's cut was already in the baked colour, and
  * the billboard lit that colour again with the live sky at full share so the
  * cut landed once. Now the bake is the species' colour unlit, with its
- * normal map (`impostorBakePlugin.ts`), and the billboard lights it once,
+ * normal map (`impostorBakePlugin`, `lite/forestPlugins.ts`), and the billboard lights it once,
  * live, as a crown (`CROWN_SKY`): the cut lands once on the far trees as on
  * the near, and the two meet at the seam under the same light.
  */
@@ -29,7 +29,7 @@ export const BARK_SKY = 0.35;
 /** A crown's share (the alpha-tested cards): it stands in the canopy, open to more of the sky than a trunk below it. */
 export const CROWN_SKY = 0.6;
 /** A billboard's share of the live sky before its bake lands: full. Since
- * 2026-10-15 the bake is the species' colour unlit (`impostorBakePlugin.ts`),
+ * 2026-10-15 the bake is the species' colour unlit (`lite/forestPlugins.ts`),
  * and a billboard whose bake has landed takes the crown's share, `CROWN_SKY`,
  * so the cut lands once, live, on the far trees as on the near ones. */
 export const IMPOSTOR_SKY = 1;

@@ -6,8 +6,8 @@
  * dome's horizon and the haze's glow is the dome's own glow toward the sun:
  * they cannot disagree.
  *
- * Pure and Babylon-free; `lighting.ts`, `lite/skyDome.ts` and `atmosphereParams.ts`
- * are the shells that apply it. `domeRadiance`, `skyTableUv` and
+ * Pure and Babylon-free; `lite/worldLight.ts`, `lite/skyDome.ts` and `atmosphereParams.ts`
+ * apply it. `domeRadiance`, `skyTableUv` and
  * `deckRadiance` transcribe the dome's fragment stage
  * (`skyDome.fragment.glsl`) step for step, and a lockstep test holds the
  * stage's constants to the ones here.
