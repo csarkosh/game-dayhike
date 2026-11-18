@@ -917,7 +917,7 @@ function probeSteps(read: GpuSignals): ProbeSteps {
 }
 
 /**
- * A hike's canvas: a fresh one, with no engine on it. The hike's renderer
+ * A hike's canvas, made now: a fresh one, with no engine on it. The hike's renderer
  * makes its own engine from its canvas (`createHikeRenderer`), so the page
  * makes none for a hike, at its start or for a switch of tier or a rebuild
  * later, and none is kept from one hike for the next: a hike's renderer
@@ -926,9 +926,14 @@ function probeSteps(read: GpuSignals): ProbeSteps {
  * (`render` shows the page for those turned away first), and a renderer a
  * running hike asks for after a verdict that came late is refused.
  */
+function hikeCanvasNow(): EngineOnCanvas {
+  if (verdict !== null && !verdict.play) throw new Error(`this browser cannot draw a hike (${verdict.reason})`);
+  return { canvas: document.createElement("canvas") };
+}
+
+/** `hikeCanvasNow` for a start's chain: its refusal a rejection. */
 function hikeCanvas(): Promise<EngineOnCanvas> {
-  if (verdict !== null && !verdict.play) return Promise.reject(new Error(`this browser cannot draw a hike (${verdict.reason})`));
-  return Promise.resolve({ canvas: document.createElement("canvas") });
+  return new Promise((resolve) => resolve(hikeCanvasNow()));
 }
 
 /**
@@ -1305,7 +1310,7 @@ function render(container: HTMLDivElement): void {
       // The engine's lap ends here, a paint after it was made.
       lap("engine");
       telemetry.mark("start:build");
-      launch(onCanvas, route.token, decided, () => hikeCanvas(), intro, takeSampled);
+      launch(onCanvas, route.token, decided, () => hikeCanvasNow(), intro, takeSampled);
       lap("build");
       // The build has what it wanted of the worker: the worker ends, and the scene is let go of.
       prep.dispose();
@@ -1348,7 +1353,7 @@ function launch(
   onCanvas: EngineOnCanvas,
   worldToken: string,
   decided: StartupTier,
-  engineForGame: (tier: QualityTier, wanted: () => boolean) => Promise<EngineOnCanvas>,
+  engineForGame: (tier: QualityTier) => EngineOnCanvas,
   intro: IntroRun | null,
   takeSampled: () => PreparedScene | null,
 ): void {

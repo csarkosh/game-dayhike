@@ -165,11 +165,13 @@ describe("layer boundaries", () => {
     expect([...main.matchAll(/\bstartHike</g)].length).toBe(1);
     // A hike's canvas carries no engine: its renderer makes its own from it, at the start and for every switch after.
     expect(main).toContain("    engine: () => hikeCanvas(),");
-    expect(main).toContain("launch(onCanvas, route.token, decided, () => hikeCanvas(), intro, takeSampled);");
+    expect(main).toContain("launch(onCanvas, route.token, decided, () => hikeCanvasNow(), intro, takeSampled);");
     // The scene route is drawn by the same renderer, on a canvas of the same kind: the one other caller.
     expect(main).toContain("    void hikeCanvas().then(");
     expect(main).toContain("runLiteSceneRoute({ canvas, container, tier }, parseSceneSearch(location.search), route.name);");
-    expect([...main.matchAll(/\bhikeCanvas\(/g)].length).toBe(4);
+    expect([...main.matchAll(/\bhikeCanvas\(/g)].length).toBe(3);
+    // A switch or a rebuild takes its canvas at once (`hikeCanvasNow`): the start's promise is made of the same.
+    expect([...main.matchAll(/\bhikeCanvasNow\(/g)].length).toBe(3);
     // Nothing of the start hangs off a promise outside the chain's catch.
     expect(main).not.toMatch(/makeWebGpu\([^)]*\)\.then\(/);
   });
@@ -366,7 +368,7 @@ describe("layer boundaries", () => {
       expect(body.lastIndexOf(start), start).toBe(body.indexOf(start));
     }
     // No canvas is made under a verdict of "cannot", for a route or for a hike that was running when it came.
-    expect(main).toContain("  if (verdict !== null && !verdict.play) return Promise.reject(");
+    expect(main).toContain("  if (verdict !== null && !verdict.play) throw new Error(");
     // An invitation is joined once the signals are in, and not by a visitor turned away; one who is leaves a
     // lobby joined meanwhile, by the lobby's own leaving.
     expect([...main.matchAll(/\benterLobby\(route\.lobbyId\)/g)].length).toBe(1);
@@ -389,10 +391,11 @@ describe("layer boundaries", () => {
       "switchNow(tier, tierSource, null, readyMaxMs)",
       'switchTo(next, "auto", null, readyMaxMs)',
     ]);
-    // The engine's making counts against the bound: the scene waits on what
-    // is left of it (`engineWithinBound`).
-    expect(app).toContain("const made = await engineWithinBound((wanted) => options.engineFor(target, wanted), readyMaxMs, ");
-    expect([...app.matchAll(/\bwhenReady\([^;]*;/g)].map((m) => m[0])).toEqual(["whenReady(made.leftMs);"]);
+    // The canvas a switch builds on is the page's, made at once and waited
+    // for by nothing, so the scene waits on the bound whole.
+    expect(app).toContain("      const next = options.engineFor(target);\n");
+    expect(app).not.toMatch(/await options\.engineFor|engineWithinBound|leftMs/);
+    expect([...app.matchAll(/\bwhenReady\([^;]*;/g)].map((m) => m[0])).toEqual(["whenReady(readyMaxMs);"]);
     expect(app).not.toMatch(/SWAP_READY_MAX_MS/);
   });
 
@@ -1139,14 +1142,21 @@ describe("layer boundaries", () => {
     // A switch's ladder is handed a tier and no engine, and its cover waits for the new renderer's world alone.
     expect(app).toContain("          { tier: target, fallbackTier: tier },");
     expect(code("game/rendererSwap.ts")).not.toMatch(/\bEngineHandle\b|engineFailed|engineFellBack/);
-    expect(app).toContain("      await renderer.whenReady(made.leftMs);\n      return tier;\n    } finally {");
+    expect(app).toContain("      await renderer.whenReady(readyMaxMs);\n      return tier;\n    } finally {");
     // The hike's end lets its renderer go, engine and all.
     const dispose = app.slice(app.lastIndexOf("    dispose() {\n      disposed = true;"));
     expect(dispose).toMatch(/unwatchCompiles\?\.\(\);\s+renderer\.dispose\(\);\s+\}/);
     // The page makes a canvas and nothing more, and the swap holds it as that.
-    expect(code("main.ts")).toContain('  return Promise.resolve({ canvas: document.createElement("canvas") });');
+    // A switch is handed its canvas at once, and one the page refuses is a throw; a start's chain takes the same canvas as a promise.
+    const main = code("main.ts");
+    expect(main).toContain('function hikeCanvasNow(): EngineOnCanvas {\n  if (verdict !== null && !verdict.play) throw new Error(`this browser cannot draw a hike (${verdict.reason})`);\n  return { canvas: document.createElement("canvas") };\n}');
+    expect(main).toContain("  return new Promise((resolve) => resolve(hikeCanvasNow()));");
+    expect(main).toContain("      launch(onCanvas, route.token, decided, () => hikeCanvasNow(), intro, takeSampled);");
+    expect(app).toContain("  engineFor(tier: QualityTier): EngineOnCanvas;");
     const swap = code("game/rendererSwap.ts");
     expect(swap).toContain("export type EngineOnCanvas = { canvas: HTMLCanvasElement };");
+    // The swap waits for no canvas: it keeps no timer and no bound but the two its callers pass.
+    expect(swap).not.toMatch(/\b(?:setTimeout|setTimer|engineWithinBound|SWAP_SCENE_MIN_MS)\b|\bnow\(\)/);
     expect(swap).not.toMatch(/\b(?:EngineWatchers|AsyncPipelines|whenSceneReady|walkSceneReady)\b/);
     // The type every renderer is held by names no engine handed in, no pipelines, no kept shaders and no retiring;
     // the hike's renderer answers none, and the start's gate waits on no frame of one.

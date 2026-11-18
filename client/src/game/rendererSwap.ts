@@ -61,49 +61,10 @@ export const GOVERNOR_SWAP_READY_MAX_MS = 10_000;
 export type Swappable<R extends Renderer = Renderer> = { renderer: R; canvas: HTMLCanvasElement };
 
 /** A canvas a hike's renderer is built on, as the page hands one over. It
- * carries no engine: the renderer makes its own from it. */
+ * carries no engine: the renderer makes its own from it. A canvas is made at
+ * once, so it takes nothing of the bound a switch's cover waits under: the
+ * new scene's wait (`Renderer.whenReady`) is given the bound whole. */
 export type EngineOnCanvas = { canvas: HTMLCanvasElement };
-
-/**
- * The least a switch's new scene waits under the cover for its models, ground
- * maps and bakes, whatever the engine's making took of the bound: without it a
- * late engine would lift the cover at once on a scene still loading.
- */
-export const SWAP_SCENE_MIN_MS = 5_000;
-
-/**
- * The canvas a switch builds on, made within its cover's bound, and what is
- * left of the bound for the new scene's wait (`Renderer.whenReady`), never less
- * than `SWAP_SCENE_MIN_MS`, so the cover stays up no longer than the bound its
- * caller names, plus that floor where the making ate into it, plus the build
- * itself. `make` is told, through `wanted`, whether what it makes is still
- * wanted. A canvas not made within `boundMs` is left when it arrives (it
- * carries no engine to let go of); the switch takes a fresh canvas at its
- * tier (`deps.fresh`, `late`), with nothing remembered against what was slow
- * rather than broken: `wanted` reads false from then on, so a failure the late
- * making meets records nothing, and the next switch or load tries it again.
- */
-export async function engineWithinBound(
-  make: (wanted: () => boolean) => Promise<EngineOnCanvas>,
-  boundMs: number,
-  deps: { now(): number; setTimer(fn: () => void, ms: number): () => void; fresh(): EngineOnCanvas },
-): Promise<{ onCanvas: EngineOnCanvas; leftMs: number; late: boolean }> {
-  const from = deps.now();
-  let wanted = true;
-  const making = make(() => wanted);
-  let clear: () => void = () => undefined;
-  const late = new Promise<null>((resolve) => {
-    clear = deps.setTimer(() => resolve(null), Math.max(0, boundMs));
-  });
-  const first = await Promise.race([making, late]).finally(() => clear());
-  if (first === null) {
-    wanted = false;
-    // A making that fails later fails for no one.
-    void making.catch(() => undefined);
-    return { onCanvas: deps.fresh(), leftMs: SWAP_SCENE_MIN_MS, late: true };
-  }
-  return { onCanvas: first, leftMs: Math.max(SWAP_SCENE_MIN_MS, boundMs - (deps.now() - from)), late: false };
-}
 
 /** A ladder's rungs: `first`, then each tier of `later`, none twice. */
 function ladderOf(first: QualityTier, later: readonly QualityTier[]): QualityTier[] {

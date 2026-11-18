@@ -91,7 +91,6 @@ import { resolveTier, type TierChoice, type TierSource } from "./game/tierChoice
 import {
   buildFirstRenderer,
   buildOrUndo,
-  engineWithinBound,
   swapRenderer,
   switchOutcome,
   whenStandingSkyHeld,
@@ -216,10 +215,11 @@ export type GameOptions = {
    * every renderer made after the first. Absent, or with none to give, the
    * renderer samples the ground itself, as always. */
   takePrepared?: () => PreparedScene | null;
-  /** A fresh canvas for a renderer at `tier` (`main.ts`'s `hikeCanvas`):
+  /** A fresh canvas for a renderer at `tier` (`main.ts`'s `hikeCanvasNow`):
    * what a switch of tier, and a rebuild after a failure, builds on. It
-   * carries no engine: the renderer makes its own from it. */
-  engineFor(tier: QualityTier, wanted: () => boolean): Promise<EngineOnCanvas>;
+   * carries no engine: the renderer makes its own from it. It throws where
+   * the page lets no hike be drawn. */
+  engineFor(tier: QualityTier): EngineOnCanvas;
   /** A failure of the running WebGPU engine, a GPU error (`"pipeline"`) or a
    * lost device: the page sends its row. */
   engineFailed(reason: "pipeline" | "lost"): void;
@@ -2486,20 +2486,9 @@ function buildGame(
     try {
       await new Promise<void>((resolve) => afterNextPaint(resolve));
       if (disposed) return tier;
-      // The canvas's making counts against the cover's bound; the scene waits
-      // on what is left of it. One too slow for the bound gives way to a
-      // fresh one at `target`, remembered against nothing.
-      const made = await engineWithinBound((wanted) => options.engineFor(target, wanted), readyMaxMs, {
-        now: () => performance.now(),
-        setTimer: (fn, ms) => {
-          const id = setTimeout(fn, ms);
-          return () => clearTimeout(id);
-        },
-        fresh: () => ({ canvas: document.createElement("canvas") }),
-      });
-      if (made.late) console.warn(`quality: the canvas was not ready within the switch's ${readyMaxMs} ms; building ${target} on a fresh one.`);
-      const next = made.onCanvas;
-      if (disposed || broken) return tier;
+      // The page's canvas, made at once: the cover's bound is the scene's whole.
+      const next = options.engineFor(target);
+      if (broken) return tier;
       // The canvas made for the switch is the first the swap takes.
       let engineCanvas: HTMLCanvasElement | null = next.canvas;
       const bindings: SwapBindings = {
@@ -2544,7 +2533,7 @@ function buildGame(
       console.info(`quality: ${tier} (${got.fellBack ? "fallback" : source}), engine ${renderer.engineName}`);
       // The forest's billboards too: they bake outside what the scene
       // counts, and would otherwise fill in after the cover has lifted.
-      await renderer.whenReady(made.leftMs);
+      await renderer.whenReady(readyMaxMs);
       return tier;
     } finally {
       switching = false;

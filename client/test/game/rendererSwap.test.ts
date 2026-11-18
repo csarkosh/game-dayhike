@@ -2,6 +2,8 @@ import { describe, it, expect, vi } from "vitest";
 import type { QualityTier } from "../../src/game/quality.js";
 import type { Renderer } from "../../src/game/rendererTypes.js";
 import {
+  APPLY_SWAP_READY_MAX_MS,
+  GOVERNOR_SWAP_READY_MAX_MS,
   buildFirstRenderer,
   buildOrUndo,
   swapRenderer,
@@ -298,6 +300,14 @@ describe("a throw after the build", () => {
     } finally {
       quiet.mockRestore();
     }
+  });
+});
+
+describe("the bound a switch's cover waits under", () => {
+  it("is the governor's 10 s over play and the Apply's 20 s on the pause screen, each handed whole to the new scene's wait", () => {
+    // A canvas is made at once, so nothing is taken off either before the scene's wait (`Renderer.whenReady`).
+    expect(GOVERNOR_SWAP_READY_MAX_MS).toBe(10_000);
+    expect(APPLY_SWAP_READY_MAX_MS).toBe(20_000);
   });
 });
 
