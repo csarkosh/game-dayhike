@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it } from "vitest";
 import { createLoadProgress, type LoadProgress, type Stage } from "../../src/game/loadProgress.js";
-import { GROUND_STAGE_TOTAL, MODEL_TOTAL, reportCompile, reportLayer, reportProgress, setLoadProgress } from "../../src/game/loadReport.js";
+import { GROUND_STAGE_TOTAL, MODEL_TOTAL, reportLayer, reportProgress, setLoadProgress } from "../../src/game/loadReport.js";
 import * as groundMaps from "../../src/game/groundLayers.js";
 
 /** A progress model that says what it was told. */
@@ -22,7 +22,6 @@ describe("where the loads report to", () => {
 
   it("is nothing until a bar is up, and every hook is quiet then", () => {
     expect(reportProgress()).toBeNull();
-    reportCompile();
     reportLayer("start", "normal.grass");
     reportLayer("done", "normal.grass");
     expect(reportProgress()).toBeNull();
@@ -34,17 +33,6 @@ describe("where the loads report to", () => {
     expect(reportProgress()).toBe(p);
     expect(p.log).toEqual([`total models ${MODEL_TOTAL}`]);
     expect(MODEL_TOTAL).toBeGreaterThan(0);
-  });
-
-  it("counts a compiled shader as an item begun and done, each its own", () => {
-    const p = told();
-    setLoadProgress(p);
-    reportCompile();
-    reportCompile();
-    const shaders = p.log.filter((line) => line.includes(" shaders "));
-    expect(shaders).toHaveLength(4);
-    expect(shaders[0]!.replace("start", "done")).toBe(shaders[1]);
-    expect(shaders[0]).not.toBe(shaders[2]);
   });
 
   it("tells the ground's stage of 24 by name: twelve maps, six albedos and six calls", () => {

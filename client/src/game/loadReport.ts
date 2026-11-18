@@ -1,8 +1,7 @@
 /**
  * Where the game's loads report to the loading bar (`loadProgress.ts`), with
  * no engine: the progress model set while an intro is up, and the hooks the
- * loads call (a ground map, an albedo or a wildlife call here by name; a
- * shader compiled).
+ * loads call (a ground map, an albedo or a wildlife call here by name).
  * Nothing is reported when no bar is up.
  *
  * Kept apart from the model loader so that what only reports (the page, a
@@ -25,17 +24,6 @@ export function setLoadProgress(p: LoadProgress | null): void {
 /** The progress model the loads report to, for the other hooks. */
 export function reportProgress(): LoadProgress | null {
   return progress;
-}
-
-let compiles = 0;
-/** A shader the WebGL2 engine compiled: one of the bar's shaders, a stage
- * with no total, since nothing says ahead how many the world will ask for. */
-export function reportCompile(): void {
-  const p = progress;
-  if (p === null) return;
-  const id = `c${compiles++}`;
-  p.start("shaders", id);
-  p.done("shaders", id);
 }
 
 /**
