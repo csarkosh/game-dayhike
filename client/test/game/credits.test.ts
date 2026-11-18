@@ -1,5 +1,7 @@
 import { describe, expect, it } from "vitest";
-import { existsSync, readFileSync } from "node:fs";
+import { existsSync, readFileSync, readdirSync } from "node:fs";
+import { createRequire } from "node:module";
+import { dirname, join } from "node:path";
 import { creditsModel, creditsRows, requiresAttribution, safeHref } from "../../src/game/credits.js";
 import catalog from "../../assets/catalog.json" with { type: "json" };
 
@@ -25,7 +27,10 @@ Everything not listed below is original work by the author.
 const REAL = readFileSync(new URL("../../../CREDITS.md", import.meta.url), "utf8");
 
 /** The code of others the game carries, credited beside the catalog's assets: the id of each credit. */
-const CODE = ["render.agx_tone_map", "render.babylon_lite", "render.environment_brdf"];
+const CODE = [
+  "render.agx_tone_map", "render.babylon_lite", "render.environment_brdf",
+  "render.ktx2_basis_transcoder", "render.ktx2_decoder", "render.ktx2_uastc_transcoders", "render.ktx2_zstd",
+];
 
 describe("creditsModel", () => {
   it("parses one entry per section with the four fields", () => {
@@ -40,6 +45,20 @@ describe("creditsModel", () => {
         modified: true,
       },
     ]);
+  });
+  it("takes a work as changed unless its section says `Modified: no`", () => {
+    const [changed] = creditsModel(SAMPLE);
+    expect(changed!.modified).toBe(true);
+    const unchanged = creditsModel(SAMPLE.replace("- **URL:** https://example.com/boulder_01", "- **URL:** https://example.com/boulder_01\n- **Modified:** no"));
+    expect(unchanged).toEqual([{ ...changed, modified: false }]);
+    // Any other word leaves the note the licences ask for.
+    for (const word of ["yes", "No", "none", ""]) {
+      const said = creditsModel(SAMPLE.replace("- **URL:** https://example.com/boulder_01", `- **URL:** https://example.com/boulder_01\n- **Modified:** ${word}`));
+      expect(said[0]!.modified, word).toBe(true);
+    }
+  });
+  it("says of the real file's works that one alone is shipped as it came: the environment BRDF table", () => {
+    expect(creditsModel(REAL).filter((e) => !e.modified).map((e) => e.id)).toEqual(["render.environment_brdf"]);
   });
   it("drops UNLICENSED (own-authored) entries", () => {
     expect(creditsModel(SAMPLE).some((e) => e.id === "enemy.grunt")).toBe(false);
@@ -73,12 +92,14 @@ describe("creditsModel", () => {
       ],
     ]);
   });
-  it("links Apache-2.0 and MIT to their texts, and asks for the credit of both", () => {
+  it("links Apache-2.0, MIT and BSD-3-Clause to their texts, and asks for the credit of each", () => {
     const apache = creditsModel(SAMPLE.replace("CC0-1.0", "Apache-2.0"));
     expect(apache[0]!.licenseUrl).toBe("https://www.apache.org/licenses/LICENSE-2.0");
     const mit = creditsModel(SAMPLE.replace("CC0-1.0", "MIT"));
     expect(mit[0]!.licenseUrl).toBe("https://opensource.org/license/mit");
-    expect([requiresAttribution("Apache-2.0"), requiresAttribution("MIT")]).toEqual([true, true]);
+    const bsd = creditsModel(SAMPLE.replace("CC0-1.0", "BSD-3-Clause"));
+    expect(bsd[0]!.licenseUrl).toBe("https://opensource.org/license/bsd-3-clause");
+    expect([requiresAttribution("Apache-2.0"), requiresAttribution("MIT"), requiresAttribution("BSD-3-Clause")]).toEqual([true, true, true]);
   });
   it("credits only ids the catalog ships and the code of others the game carries, and at least one", () => {
     const shipped = new Set([...catalog.assets, ...catalog.textures, ...catalog.audio].map((a) => a.id));
@@ -88,7 +109,7 @@ describe("creditsModel", () => {
     for (const id of CODE) expect(shipped.has(id), id).toBe(false);
   });
   it("credits the library the game is drawn with, its environment BRDF table and its tone map, each under its licence and each for something the tree holds", () => {
-    const code = creditsModel(REAL).filter((e) => CODE.includes(e.id));
+    const code = creditsModel(REAL).filter((e) => CODE.slice(0, 3).includes(e.id));
     expect(code.map((e) => [e.id, e.source, e.author, e.license, e.url])).toEqual([
       ["render.agx_tone_map", "three.js: AgX tone mapping", "three.js authors", "MIT", "https://github.com/mrdoob/three.js"],
       ["render.babylon_lite", "Babylon Lite (a patched build), which the game is drawn with", "BabylonJS", "Apache-2.0", "https://github.com/csarkosh/babylon-lite"],
@@ -103,6 +124,35 @@ describe("creditsModel", () => {
     expect(client.dependencies["@babylonjs/lite"]).toMatch(/^github:csarkosh\/babylon-lite#/);
     expect(existsSync(new URL("../../src/game/lite/environmentBrdf.png", import.meta.url))).toBe(true);
     expect(readFileSync(new URL("../../src/game/gradeParams.ts", import.meta.url), "utf8")).toContain("ported from three.js, MIT License, Copyright 2010-2024 three.js authors");
+  });
+  it("credits the KTX2 decoder the game ships and each work its notice names, each for files the game serves", () => {
+    const code = creditsModel(REAL).filter((e) => e.id.startsWith("render.ktx2_"));
+    expect(code.map((e) => [e.id, e.source, e.author, e.license, e.url])).toEqual([
+      ["render.ktx2_basis_transcoder", "Khronos KTX: Basis Universal transcoder", "The Khronos Group", "Apache-2.0", "https://www.khronos.org/ktx/"],
+      ["render.ktx2_decoder", "Babylon.js 9.18.0: KTX2 decoder", "The Babylon.js team", "Apache-2.0", "https://github.com/BabylonJS/Babylon.js"],
+      ["render.ktx2_uastc_transcoders", "Basis Universal Transcoders: UASTC to ASTC, BC7 and uncompressed", "The Khronos Group", "Apache-2.0", "https://github.com/KhronosGroup/Basis-Universal-Transcoders"],
+      ["render.ktx2_zstd", "zstddec (Don McCurdy): Zstandard decompression library", "Yann Collet, Facebook, Inc.", "BSD-3-Clause", "https://github.com/donmccurdy/zstddec"],
+    ]);
+    // Each is a row of its own on the screen, among the rows a licence asks for.
+    const rows = creditsRows(creditsModel(REAL));
+    const firstOptional = rows.findIndex((r) => !requiresAttribution(r.license));
+    for (const e of code) expect(rows.findIndex((r) => r.id === e.id), e.id).toBeGreaterThanOrEqual(0);
+    for (const e of code) expect(rows.findIndex((r) => r.id === e.id), e.id).toBeLessThan(firstOptional);
+    // What each names: the files under the page's `libs/ktx2/`, every one of them credited by one of the four.
+    const served = readdirSync(new URL("../../public/libs/ktx2/", import.meta.url)).sort();
+    const named: Record<string, string[]> = {
+      "render.ktx2_basis_transcoder": ["msc_basis_transcoder.js", "msc_basis_transcoder.wasm"],
+      "render.ktx2_decoder": ["babylon.ktx2Decoder.js"],
+      "render.ktx2_uastc_transcoders": ["uastc_astc.wasm", "uastc_bc7.wasm", "uastc_r8_unorm.wasm", "uastc_rg8_unorm.wasm", "uastc_rgba8_srgb_v2.wasm", "uastc_rgba8_unorm_v2.wasm"],
+      "render.ktx2_zstd": ["zstddec.wasm"],
+    };
+    expect(Object.keys(named)).toEqual(code.map((e) => e.id));
+    expect(Object.values(named).flat().sort()).toEqual(served);
+    // The package the files are vendored from says who made them, in its own notice.
+    const notice = readFileSync(join(dirname(createRequire(import.meta.url).resolve("@babylonjs/ktx2decoder/package.json")), "NOTICE.md"), "utf8");
+    for (const words of ["Copyright 2024 The Babylon.js team", "Copyright 2024 The Khronos Group", "github.com/KhronosGroup/Basis-Universal-Transcoders", "https://github.com/donmccurdy/zstddec by Don McCurdy", "Yann Collet, Facebook, Inc.", "BSD 3-Clause"]) {
+      expect(notice, words).toContain(words);
+    }
   });
   // LICENSE_URLS is a hand-kept map, so a licence it has never seen resolves to "" and would ship an
   // unlinked deed. This fails the moment a new licence appears in CREDITS.md.
@@ -141,6 +191,10 @@ describe("creditsRows", () => {
       entry({ id: "c", source: "Zero C" }),
     ]);
     expect(rows.map((r) => r.id)).toEqual(["a", "b", "c"]);
+  });
+  it("keeps a work shipped as it came apart from the same work changed: the two rows read differently", () => {
+    const rows = creditsRows([entry({ id: "a" }), entry({ id: "b", modified: false }), entry({ id: "c", modified: false })]);
+    expect(rows.map((r) => [r.id, r.modified])).toEqual([["a", true], ["b", false]]);
   });
   it("collapses two ids that render the identical row into one", () => {
     // Two catalog entries cut from one third-party work: same work, same author,

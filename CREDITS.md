@@ -687,6 +687,35 @@ Everything not listed below is original work by Cyrus Sarkosh.
 - **Author:** The Babylon.js team
 - **Licence:** Apache-2.0
 - **URL:** https://github.com/BabylonJS/Babylon.js
+- **Modified:** no
+
+## render.ktx2_basis_transcoder
+
+- **Source:** Khronos KTX: Basis Universal transcoder
+- **Author:** The Khronos Group
+- **Licence:** Apache-2.0
+- **URL:** https://www.khronos.org/ktx/
+
+## render.ktx2_decoder
+
+- **Source:** Babylon.js 9.18.0: KTX2 decoder
+- **Author:** The Babylon.js team
+- **Licence:** Apache-2.0
+- **URL:** https://github.com/BabylonJS/Babylon.js
+
+## render.ktx2_uastc_transcoders
+
+- **Source:** Basis Universal Transcoders: UASTC to ASTC, BC7 and uncompressed
+- **Author:** The Khronos Group
+- **Licence:** Apache-2.0
+- **URL:** https://github.com/KhronosGroup/Basis-Universal-Transcoders
+
+## render.ktx2_zstd
+
+- **Source:** zstddec (Don McCurdy): Zstandard decompression library
+- **Author:** Yann Collet, Facebook, Inc.
+- **Licence:** BSD-3-Clause
+- **URL:** https://github.com/donmccurdy/zstddec
 
 ## sign.arm
 

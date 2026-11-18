@@ -2,11 +2,13 @@
  * The Credits screen. CC-BY-4.0 requires the credit to be reasonably visible to the people
  * receiving the work, and a file in the repository is not that; this screen is. It renders
  * CREDITS.md, imported at build time: the models, textures and recordings the catalog ships,
- * and the code of others the game carries (the library it is drawn with, a table and a tone
- * map), each under its licence.
+ * and the code of others the game carries (the library it is drawn with, a table, a tone
+ * map, and the KTX2 decoder with the transcoders it loads), each under its licence.
  *
  * `creditsModel` parses that file's fixed shape only: an `## <id>` heading followed by
  * `- **Field:** value` lines. It is not a markdown renderer and must not grow into one.
+ * The fields are `Source`, `Author`, `Licence` and `URL`, and one more a work may carry:
+ * `- **Modified:** no`, for a work the game ships as its author made it, byte for byte.
  */
 import credits from "../../../CREDITS.md?raw";
 
@@ -17,7 +19,7 @@ export type CreditEntry = {
   license: string;
   licenseUrl: string;
   url: string;
-  /** CC-BY and Apache-2.0 ask for a note when the work was changed; every third-party asset here was adapted for the game (resized, re-meshed, re-encoded), so this is always true. */
+  /** CC-BY and Apache-2.0 ask for a note when the work was changed. True unless the file says `Modified: no`: every third-party asset was adapted for the game (resized, re-meshed, re-encoded), and a work shipped as it came says so itself. */
   modified: boolean;
 };
 
@@ -29,6 +31,7 @@ const LICENSE_URLS: Record<string, string> = {
   // The licences of the code the game carries: each asks that its notice go with the work.
   "Apache-2.0": "https://www.apache.org/licenses/LICENSE-2.0",
   MIT: "https://opensource.org/license/mit",
+  "BSD-3-Clause": "https://opensource.org/license/bsd-3-clause",
 };
 
 export function creditsModel(markdown: string): CreditEntry[] {
@@ -45,7 +48,7 @@ export function creditsModel(markdown: string): CreditEntry[] {
         license: current.license,
         licenseUrl: LICENSE_URLS[current.license] ?? "",
         url: current.url ?? "",
-        modified: true,
+        modified: current.modified ?? true,
       });
     }
     current = null;
@@ -59,7 +62,7 @@ export function creditsModel(markdown: string): CreditEntry[] {
       continue;
     }
     // "Licence" with a c: that is the spelling CREDITS.md uses.
-    const field = /^- \*\*(Source|Author|Licence|URL):\*\* (.*)$/.exec(line);
+    const field = /^- \*\*(Source|Author|Licence|URL|Modified):\*\* (.*)$/.exec(line);
     if (field && current) {
       const value = field[2]!.trim();
       switch (field[1]) {
@@ -74,6 +77,10 @@ export function creditsModel(markdown: string): CreditEntry[] {
           break;
         case "URL":
           current.url = value;
+          break;
+        case "Modified":
+          // Only a plain "no" says a work is unchanged: any other word leaves the note the licences ask for.
+          current.modified = value !== "no";
           break;
       }
     }
@@ -93,7 +100,7 @@ export function requiresAttribution(license: string): boolean {
 /**
  * What the screen actually shows: the same entries, ordered and deduped.
  *
- * ORDER — attribution-REQUIRED licences (today: CC-BY-4.0, Apache-2.0, MIT) first, then CC0, each group
+ * ORDER — attribution-REQUIRED licences (today: CC-BY-4.0, Apache-2.0, MIT, BSD-3-Clause) first, then CC0, each group
  * in catalog order. The list scrolls, and at 1080p its `max-height: 60vh` showed half
  * of it; with the catalog's own ordering the only three rows the licences legally
  * require were the last three, below the fold behind a macOS
@@ -104,14 +111,14 @@ export function requiresAttribution(license: string): boolean {
  * (one third-party model used at two scales, say), and the credit is a property of the pack,
  * not of the id: the row is identical word for word. Repeating it credits nobody twice
  * and pushes the rest further down. Keyed on everything the row RENDERS (source, author,
- * licence, URL) rather than on the id, so two genuinely distinct works that happen to
- * share an author stay two rows.
+ * licence, URL, and whether it was changed) rather than on the id, so two genuinely distinct
+ * works that happen to share an author stay two rows.
  */
 export function creditsRows(entries: readonly CreditEntry[]): CreditEntry[] {
   const seen = new Set<string>();
   const unique: CreditEntry[] = [];
   for (const e of entries) {
-    const key = JSON.stringify([e.source, e.author, e.url, e.license]);
+    const key = JSON.stringify([e.source, e.author, e.url, e.license, e.modified]);
     if (seen.has(key)) continue;
     seen.add(key);
     unique.push(e);
@@ -157,7 +164,7 @@ function linkOrText(text: string, url: string): Node {
   return anchor;
 }
 
-/** One credit as a list's item: the work, its author, its licence, and that it was changed. DOM only, textContent
+/** One credit as a list's item: the work, its author, its licence, and that it was changed (a work shipped as it came ends at its licence). DOM only, textContent
  * only, as below; the Credits screen's list and the page for a visitor who cannot play are both made of these. */
 export function creditItem(e: CreditEntry): HTMLLIElement {
   const item = document.createElement("li");
