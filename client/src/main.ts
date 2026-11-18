@@ -1209,9 +1209,13 @@ function render(container: HTMLDivElement): void {
   activeIntro = intro;
   if (intro !== null) intro.overlay.mount(container);
   // The loads report to the intro's bar when there is one, and in every case
-  // name their stage as telemetry's breadcrumb, so an error mid-load says
-  // which stage was in progress.
-  setLoadProgress(markedProgress(intro?.overlay.progress ?? null, (stage) => telemetry.mark(`load:${stage}`)));
+  // name their stage as telemetry's breadcrumb while the hike is built, so
+  // an error in the build says which stage was in progress. Before it the
+  // breadcrumb is the start's own (a tier check's renderer loads under
+  // `start:decide`), and after it the game's: the renderer asks for its
+  // models once its device is made, and an error under a hike is the game's.
+  let building = false;
+  setLoadProgress(markedProgress(intro?.overlay.progress ?? null, (stage) => telemetry.mark(`load:${stage}`), () => building));
   // The hike's trail and level check, made off this thread from now, while
   // the tier is decided, the film buffers and the engine starts: the build
   // waits for them (`beforeBuild`) and finds them made. With no worker, or
@@ -1310,6 +1314,7 @@ function render(container: HTMLDivElement): void {
       // The engine's lap ends here, a paint after it was made.
       lap("engine");
       telemetry.mark("start:build");
+      building = true;
       launch(onCanvas, route.token, decided, () => hikeCanvasNow(), intro, takeSampled);
       lap("build");
       // The build has what it wanted of the worker: the worker ends, and the scene is let go of.
@@ -1323,6 +1328,7 @@ function render(container: HTMLDivElement): void {
         prepMs: Math.round(prepOutcome?.ms ?? 0),
         scene: sampledFor === null ? "none" : "made",
       });
+      building = false;
       telemetry.mark("game");
     },
     fail: (error) => {

@@ -69,4 +69,33 @@ describe("markedProgress", () => {
     expect(marks).toEqual(["models", "ground", "world"]);
     expect(bare.view()).toEqual({ bar: 0, lines: [], ready: false });
   });
+
+  it("names a stage only while the hike is built, at the first of its items to start then, and forwards every item to the bar", () => {
+    const marks: Stage[] = [];
+    const started: string[] = [];
+    const inner = {
+      total: () => undefined, start: (s: Stage, id: string) => void started.push(`${s} ${id}`), bytes: () => undefined, done: () => undefined,
+      gate: () => undefined, view: () => ({ bar: 0, lines: [], ready: false }),
+    };
+    let building = false;
+    const p = markedProgress(inner, (s) => marks.push(s), () => building);
+    // A tier check's renderer loads before the build: the breadcrumb stays the start's own.
+    p.start("ground", "ground.grass.webp");
+    p.start("models", "tree.glb");
+    expect(marks).toEqual([]);
+    // The build: each stage at its first item, the ground's though an image of it started before.
+    building = true;
+    p.start("world", "ring0");
+    p.start("ground", "call.elk_bugle");
+    p.start("ground", "call.raven_croak");
+    expect(marks).toEqual(["world", "ground"]);
+    // The game is named: the hike's renderer asks for its models now, and their stage takes no one's place.
+    building = false;
+    p.start("models", "fern.glb");
+    p.start("models", "tree.glb");
+    expect(marks).toEqual(["world", "ground"]);
+    expect(started).toEqual([
+      "ground ground.grass.webp", "models tree.glb", "world ring0", "ground call.elk_bugle", "ground call.raven_croak", "models fern.glb", "models tree.glb",
+    ]);
+  });
 });
