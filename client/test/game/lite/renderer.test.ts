@@ -11,7 +11,7 @@ import { PLAYER_HALF } from "../../../src/sim/constants.js";
 import { DEPTH_AHEAD_MAX_DEGREES, depthAheadPlugin } from "../../../src/game/lite/renderer.js";
 import { createHikeRenderer } from "../../../src/game/hikeRenderer.js";
 import type { Renderer } from "../../../src/game/rendererTypes.js";
-import type { SkyTable } from "../../../src/game/skyTable.js";
+import { createSkyTable, type SkyTable } from "../../../src/game/skyTable.js";
 import { SILENT_WATER_LIFE } from "../../../src/game/waterLifeInputs.js";
 import { WEATHER_PRESETS } from "../../../src/game/weather.js";
 import { windRecordUnder } from "../../../src/game/windParams.js";
@@ -436,6 +436,92 @@ describe("the hike's renderer on Babylon Lite, before its engine stands", () => 
     await expect(r.firstSynced).resolves.toBeUndefined();
     expect(() => r.dispose()).not.toThrow();
     expect(() => r.sync(windTestState(), -1, 0)).not.toThrow();
+  });
+});
+
+/** One turn of the event loop: long enough for a resolved promise's callbacks. */
+const tick = (): Promise<void> => new Promise((resolve) => setTimeout(resolve, 0));
+
+/**
+ * The start shows the world only once the sky's first slices are in: the
+ * renderer's own wait on the table it is handed, which the hike's start and
+ * a swap's first frame both wait on.
+ */
+describe("the hike's renderer's sky before its first frame", () => {
+  const said = vi.spyOn(console, "error").mockImplementation(() => undefined);
+  afterEach(() => void said.mockClear());
+  const make = (table: SkyTable): Renderer => createHikeRenderer(canvas(), EMPTY_LEVEL, null, { tier: "low", skyTable: table, clock: () => 0 });
+
+  it("is ready once its table holds the slices either side of noon, at noon, and not before", async () => {
+    const table = createSkyTable();
+    const fixture = skyFixture();
+    const r = make(table);
+    try {
+      let ready = false;
+      void r.skyReady().then(() => {
+        ready = true;
+      });
+      await tick();
+      expect(ready).toBe(false);
+      table.add(fixture.blendAt(74));
+      await tick();
+      expect(ready).toBe(false);
+      table.add(fixture.blendAt(76));
+      await tick();
+      expect(ready).toBe(true);
+    } finally {
+      r.dispose();
+    }
+  });
+
+  it("waits for the hour it is set to while it waits, not the hour it was asked at", async () => {
+    const table = createSkyTable();
+    const fixture = skyFixture();
+    const r = make(table);
+    try {
+      let ready = false;
+      void r.skyReady().then(() => {
+        ready = true;
+      });
+      r.setHour(15);
+      table.add(fixture.blendAt(74));
+      table.add(fixture.blendAt(76));
+      await tick();
+      expect(ready).toBe(false);
+      // 15:00's sun stands between the slices at 42 and 44 degrees.
+      table.add(fixture.blendAt(42));
+      table.add(fixture.blendAt(44));
+      await tick();
+      expect(ready).toBe(true);
+    } finally {
+      r.dispose();
+    }
+  });
+
+  it("is one wait for every caller while it waits, and never resolves for a renderer disposed first", async () => {
+    const table = createSkyTable();
+    const fixture = skyFixture();
+    const r = make(table);
+    let ready = false;
+    const waiting = r.skyReady();
+    expect(r.skyReady()).toBe(waiting);
+    void waiting.then(() => {
+      ready = true;
+    });
+    r.dispose();
+    table.add(fixture.blendAt(74));
+    table.add(fixture.blendAt(76));
+    await tick();
+    expect(ready).toBe(false);
+  });
+
+  it("is ready at once on a table that already holds them", async () => {
+    const r = make(skyFixture());
+    try {
+      await expect(r.skyReady()).resolves.toBeUndefined();
+    } finally {
+      r.dispose();
+    }
   });
 });
 
