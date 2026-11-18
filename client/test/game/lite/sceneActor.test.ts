@@ -33,7 +33,7 @@ describe("a staged scene's actor on Babylon Lite", () => {
 });
 
 describe("the handset's cord on Babylon Lite", () => {
-  it("wears the material the stage on Babylon.js gives it: thin dark rubber under the cab's share of the sky", () => {
+  it("wears the material recorded of the stage on Babylon.js: thin dark rubber under the cab's share of the sky", () => {
     // The cord's material as the stage's shell on Babylon.js made it, its lines recorded.
     const shell = babylonText("stages/cordTube.material.txt");
     expect(shell).toContain(`material.albedoColor = new Color3(${CORD_COLOUR.join(", ")});`);

@@ -59,7 +59,7 @@ describe("the handset and its cord, as a stage places them", () => {
     for (let e = 0; e < 16; e++) expect(again[e]).toBeCloseTo(held[e] as number, 6);
   });
 
-  it("sits the handset where the stage on Babylon.js sits it: in its cradle, in the fist, and part of the way between", () => {
+  it("sits the handset where the record of the stage on Babylon.js has it: in its cradle, in the fist, and part of the way between", () => {
     const rest: Placed = { position: [0, 0.041, 0], rotation: [0, 0, 0, 1], scaling: [1, 1, 1] };
     const held = placed();
     const local = new Float64Array(16);

@@ -27,7 +27,7 @@ import { WET_CAP, WET_SWASH_VECS, emptyWetUniforms, wetUniforms } from "../../..
 import { WIND_K1, WIND_OMEGA_FLUTTER, type WindRecord } from "../../../src/game/windParams.js";
 import { laidOut, readUniform, standInTexture } from "./pluginFixture.js";
 
-/** The bake's fragment code and its one uniform's name on Babylon.js (`impostorBakePlugin.ts`), recorded. */
+/** The bake's fragment code and its one uniform's name on Babylon.js, recorded. */
 const IMPOSTOR_BAKE_FRAGMENT = babylonText("stages/impostorBake.fragment.glsl");
 const IMPOSTOR_BAKE_UNIFORM = babylonValues<{ impostorBakeUniform: string }>("stages/declared.json").impostorBakeUniform;
 
@@ -191,7 +191,7 @@ describe("the forest's plugin on Babylon Lite: the eye it measures from", () => 
     expect(vertex).not.toMatch(/\b(windEye|fadeEye)\b/);
     // The rest of the wind is the frame's.
     expect(vertex).toContain(`${FRAME_BLOCK}.windTime`);
-    // The shells on Babylon.js bind the position of the scene's active camera, which a render target makes its own: the line of each that reads it, recorded.
+    // The plugins on Babylon.js bind the position of the scene's active camera, which a render target makes its own: the line of each that reads it, recorded.
     expect(babylonText("stages/distanceFade.bind.txt")).toContain("fadeUniforms(scene.activeCamera?.globalPosition, this.widen, bound)");
     expect(babylonText("stages/foliage.bind.txt")).toContain("foliageUniforms(this.look, scene.activeCamera?.globalPosition, bound)");
   });
@@ -459,7 +459,7 @@ describe("a far tree's bake on Babylon Lite", () => {
     const fragment = plugin.getCustomCode?.("fragment") ?? {};
     expect(Object.keys(fragment)).toEqual(["CUSTOM_FRAGMENT_BEFORE_FRAGCOLOR"]);
     const text = fragment.CUSTOM_FRAGMENT_BEFORE_FRAGCOLOR ?? "";
-    // The game's own two pictures (`impostorBakePlugin.ts`): the same thresholds, the same albedo, the same turn of the normal's z.
+    // The recorded bake's two pictures: the same thresholds, the same albedo, the same turn of the normal's z.
     expect(IMPOSTOR_BAKE_FRAGMENT).toContain("if (bakeMode > 1.5) {");
     expect(text).toContain("if(material.bakeMode>1.5){let bakeN=normalize(N);color=vec3<f32>(bakeN.x,bakeN.y,-bakeN.z)*0.5+0.5;");
     expect(IMPOSTOR_BAKE_FRAGMENT).toContain("} else if (bakeMode > 0.5) {");

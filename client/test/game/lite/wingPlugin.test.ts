@@ -7,7 +7,7 @@ import type { PluginUniformBlock } from "@babylonjs/lite";
 
 const SHARED = { name: FRAME_BLOCK } as unknown as PluginUniformBlock;
 const WGSL = tight(WING_WGSL);
-/** The game's stage on Babylon.js (`wingPlugin.ts`), recorded. */
+/** The game's stage on Babylon.js, recorded. */
 const GLSL = tight(babylonText("stages/wing.glsl"));
 
 describe("a wing's beat on Babylon Lite", () => {

@@ -48,7 +48,7 @@ describe("the rain's sprite, seeds and colour", () => {
 
 describe("a volume's uniforms", () => {
   it("are the streak plugin's, name for name and component for component", () => {
-    // The plugin's own list on Babylon.js (`rainPlugin.ts`, recorded) is the one its material's buffer is laid out by.
+    // The plugin's own list on Babylon.js (recorded) is the one its material's buffer is laid out by.
     const declared = babylonValues<{ rainUniforms: { name: string; size: number }[] }>("stages/declared.json").rainUniforms;
     expect(declared.length).toBeGreaterThan(10);
     const record = emptyRainUniforms();

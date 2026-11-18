@@ -5,8 +5,8 @@ import { babylonValues } from "../helpers/babylonFixture.js";
 type Built = { positions: number[]; normals: number[]; indices: number[] };
 /**
  * What Babylon.js gave, recorded: the half sphere and the cylinder its builders make with the cap's own numbers
- * (their positions and normals as the single-precision floats a mesh holds), and the two meshes the game's shell
- * on it built for a cap (`createDroppedCap`, `droppedItem.ts`), each vertex carried through its mesh's own world
+ * (their positions and normals as the single-precision floats a mesh holds), and the two meshes built
+ * with them for a cap, each vertex carried through its mesh's own world
  * matrix, with the mesh's indices.
  */
 const BABYLON = babylonValues<{
@@ -38,7 +38,7 @@ describe("the dropped cap's shape with no engine", () => {
     expect([...ours.indices]).toEqual(theirs.indices);
   });
 
-  it("is the two meshes the game builds on Babylon.js, each vertex where its mesh's own transform puts it", () => {
+  it("is the two meshes recorded of the cap on Babylon.js, each vertex where its mesh's own transform puts it", () => {
     const cap = { x: 3, z: -4, yaw: 1 };
     expect([BABYLON.built.cap, BABYLON.built.groundY]).toEqual([cap, 12]);
     const seat = capSeatMatrix(cap, 12);

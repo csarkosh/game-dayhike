@@ -1189,7 +1189,7 @@ describe("layer boundaries", () => {
    * - `ai.ts`, `view.ts` — `faceToward` is host-only (`stepEnemy` sits inside
    *   the `authoritative` guard); `aimDirection` feeds Interact's resolver
    *   (`interact.ts`, host-only, so only the host's answer is authoritative)
-   *   and the headlamp's direction (`entityViews.ts`, render-only, never
+   *   and the headlamp's direction (`entityPoses.ts`, render-only, never
    *   hashed), so an engine difference is unobservable either way.
    * - `hollow.ts` — the Hollow's two facings, one in `walkToward` and one in
    *   `faceToward` for the states that do not walk, both written inside the

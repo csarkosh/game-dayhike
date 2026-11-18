@@ -6,7 +6,7 @@ import { SURF_SPRAY_BURSTS, emptySprayUniforms, sprayBurstName } from "../../../
 import { babylonText } from "../../helpers/babylonFixture.js";
 import { inOrder, tight } from "./wgslText.js";
 
-/** One of the spray's stages on Babylon.js (`shaders/<name>`), its text recorded. */
+/** One of the spray's stages on Babylon.js (named `<name>.fx`, kept as `stages/<name>.glsl`), its text recorded. */
 const fx = (name: string): string => babylonText(`stages/${name.replace(/\.fx$/, ".glsl")}`);
 const GLSL_VERTEX = fx("surfSpray.vertex.fx");
 const GLSL_FRAGMENT = fx("surfSpray.fragment.fx");

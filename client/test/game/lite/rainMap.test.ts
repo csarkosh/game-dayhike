@@ -8,7 +8,7 @@ import { TERRAIN_ATTRIBUTES } from "../../../src/game/terrainVertices.js";
 import { babylonText } from "../../helpers/babylonFixture.js";
 import { tight } from "./wgslText.js";
 
-/** The height shader's two stages on Babylon.js (`rainMap.ts`), recorded. */
+/** The height shader's two stages on Babylon.js, recorded. */
 const RAIN_HEIGHT_FRAGMENT = babylonText("stages/rainHeight.fragment.glsl");
 const RAIN_HEIGHT_VERTEX = babylonText("stages/rainHeight.vertex.glsl");
 const GLSL = tight(RAIN_HEIGHT_FRAGMENT);

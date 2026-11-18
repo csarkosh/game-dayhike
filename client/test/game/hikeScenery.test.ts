@@ -63,7 +63,7 @@ function liteRenderer() {
 }
 
 describe("the scenery a hike places once, on the hike's own renderer", () => {
-  it("asks that renderer for the posts and the trailhead the renderer on Babylon.js would be built, from the same seed", () => {
+  it("asks that renderer for the world's posts and its trailhead, from the hike's seed", () => {
     const world = searched();
     const { renderer, asked } = liteRenderer();
     const signs = createHikeSigns(renderer, world, SEED);

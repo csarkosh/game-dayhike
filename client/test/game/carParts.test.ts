@@ -49,7 +49,7 @@ describe("the film's car's parts, as a pose turns them", () => {
     for (let i = 0; i < 16; i++) expect(one[i]).toBeCloseTo(identity[i] as number, 5);
   });
 
-  it("carries a part's vertices where the stage on Babylon.js turns its node: under a mirrored root, a wheel spun and turned, the steering wheel about its column", () => {
+  it("carries a part's vertices where the record of the stage on Babylon.js has its node turned: under a mirrored root, a wheel spun and turned, the steering wheel about its column", () => {
     const staged = pose({ wheelSpin: 2.3, wheelTurn: 0.17, steer: 0.17 * 15, doorOpen: 0.4 });
     // The record is of this pose, and of a front wheel, a rear one, the steering wheel and the door.
     expect(BABYLON.pose).toEqual(staged);

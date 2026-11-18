@@ -45,9 +45,9 @@ describe("the lamp misbehaves", () => {
 });
 
 describe("the lamp's cone", () => {
-  it("is a 1.5 rad spot reaching 25 m, named once and handed on by the Babylon shell as it is", () => {
+  it("is a 1.5 rad spot reaching 25 m, named once, and the lamp recorded on Babylon.js holds the same numbers", () => {
     expect([LAMP_ANGLE, LAMP_RANGE, LAMP_EXPONENT]).toEqual([1.5, 25, 8]);
-    // What the shell on Babylon.js handed on (`headlamp.ts`), recorded.
+    // The lamp on Babylon.js, recorded.
     const headlamp = babylonValues<{ lamp: { angle: number; range: number; exponent: number; intensity: number; colour: number[] } }>("stages/declared.json").lamp;
     expect([headlamp.angle, headlamp.range, headlamp.exponent, headlamp.intensity, headlamp.colour]).toEqual([
       LAMP_ANGLE, LAMP_RANGE, LAMP_EXPONENT, LAMP_INTENSITY, LAMP_COLOUR,

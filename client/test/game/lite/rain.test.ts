@@ -6,7 +6,7 @@ import { emptyRainStageUniforms } from "../../../src/game/rainField.js";
 import { inOrder, tight } from "./wgslText.js";
 
 /**
- * The streak plugin's own code at its points on Babylon.js (`rainPlugin.ts`: where it updates the position, and
+ * The streak plugin's own code at its points on Babylon.js (where it updates the position, and
  * before the fragment's colour), and the Standard material's fragment stage with its fog, as Babylon.js installs
  * them (all recorded).
  */

@@ -13,7 +13,7 @@ import { babylonText } from "../../helpers/babylonFixture.js";
 import { tight } from "./wgslText.js";
 
 const src = readFileSync(new URL("../../../src/game/lite/shadeMask.ts", import.meta.url), "utf8");
-/** One of the smoke's stages on Babylon.js (`shaders/<name>`), its text recorded, with no white space. */
+/** One of the smoke's stages on Babylon.js (named `<name>.fx`, kept as `stages/<name>.glsl`), its text recorded, with no white space. */
 const fx = (name: string): string => tight(babylonText(`stages/${name.replace(/\.fx$/, ".glsl")}`));
 const SHARED = { name: FRAME_BLOCK } as never;
 

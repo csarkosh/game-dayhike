@@ -72,7 +72,7 @@ describe("the ground in a lake's shore panorama on Babylon Lite", () => {
   it("draws a sector only on a frame that reads the picture, straight into the sector's column, which the pass clears alone", () => {
     const text = src("lite/lakePanorama.ts");
     expect(text).toContain("if (sky === null || !read) return false;");
-    // The column is the camera's viewport, as the game's capture has it on Babylon.js.
+    // The column is the camera's viewport, as the capture recorded on Babylon.js has it.
     expect(text).toContain("camera.viewport = { x: (held * PANORAMA_SECTOR_WIDTH) / PANORAMA_WIDTH, y: 0, width: PANORAMA_SECTOR_WIDTH / PANORAMA_WIDTH, height: 1 };");
     expect(tight(babylonText("stages/lakePanorama.viewport.txt"))).toContain("camera.viewport.x=sector/PANORAMA_SECTORS;");
     // A texel is drawn or not: Babylon.js writes an alpha of 1 for a material cut out by its alpha, where Lite hands

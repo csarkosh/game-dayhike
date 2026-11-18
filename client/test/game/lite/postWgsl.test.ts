@@ -11,7 +11,7 @@ import { HALATION_KERNEL, HALATION_RATIO } from "../../../src/game/postFrame.js"
 import { babylonText, babylonValues } from "../../helpers/babylonFixture.js";
 import { inOrder, tight } from "./wgslText.js";
 
-/** A pass's fragment stage on Babylon.js (`shaders/<name>.fragment.fx`), its text recorded. */
+/** A pass's fragment stage on Babylon.js (`stages/<name>.fragment.glsl`), its text recorded. */
 const glsl = (name: string): string => babylonText(`stages/${name}.fragment.glsl`);
 /** The uniforms a GLSL stage declares that are not samplers, by name. */
 const uniformsOf = (text: string): string[] => [...text.matchAll(/^uniform (?!sampler)\w+ (\w+);/gm)].map((m) => m[1] as string);

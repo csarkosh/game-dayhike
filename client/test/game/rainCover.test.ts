@@ -3,7 +3,7 @@ import { RAIN_MAP_CAMERA, RAIN_MAP_CLEAR, createRainMapPlace, rainMapTexel } fro
 import { RAIN_MAP } from "../../src/game/rainParams.js";
 import { babylonText } from "../helpers/babylonFixture.js";
 
-/** The height shader's fragment stage on Babylon.js (`rainMap.ts`), recorded. */
+/** The height shader's fragment stage on Babylon.js, recorded. */
 const RAIN_HEIGHT_FRAGMENT = babylonText("stages/rainHeight.fragment.glsl");
 
 describe("the cover map with no engine", () => {

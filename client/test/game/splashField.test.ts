@@ -19,7 +19,7 @@ const AIR = { baseDensity: 0.004, farColour: { r: 0.3, g: 0.4, b: 0.5 } } as Atm
 
 describe("the splashes with no engine", () => {
   it("names the splash plugin's uniforms, name for name and component for component", () => {
-    // The plugin's own list on Babylon.js (`rainSplash.ts`), recorded.
+    // The plugin's own list on Babylon.js, recorded.
     const declared = babylonValues<{ splashUniforms: { name: string; size: number }[] }>("stages/declared.json").splashUniforms;
     expect(declared.length).toBeGreaterThan(5);
     const record = emptySplashUniforms();

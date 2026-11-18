@@ -273,7 +273,7 @@ describe("the runner a screen's end scene is stepped on", () => {
 
 describe("the end scene on another player's run", () => {
   it("judges the arrival by the runner's own place, and builds the world round them, not round this screen's player far up the mountain", () => {
-    // The arrival is judged where the end scene is stepped, for both renderers (`scenePlay.ts`).
+    // The arrival is judged where the end scene is stepped (`scenePlay.ts`).
     const play = readFileSync(new URL("../../src/game/scenePlay.ts", import.meta.url), "utf8");
     expect(play).toContain("if (ctx.arrival === null && arrived(runner.at, ctx.door, t)) ctx.arrival = t;");
   });

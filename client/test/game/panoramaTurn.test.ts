@@ -26,7 +26,7 @@ describe("the shore panorama's numbers", () => {
     expect(f.up * ((PANORAMA_HEIGHT_M / 2 - PANORAMA_EYE_UP) / 40) + f.shift).toBeCloseTo(0, 12);
   });
 
-  it("is what the shell on Babylon.js makes its projection from, term for term", () => {
+  it("is what the projection recorded on Babylon.js is made from, term for term", () => {
     expect(SHELL.radii).toEqual([25, 40, 61.5, 120]);
     expect(SHELL.matrices).toHaveLength(4);
     for (const [at, radius] of SHELL.radii.entries()) {

@@ -40,7 +40,7 @@ describe("the scenery placed once, as files and numbers", () => {
     expect(boardYaw({ x: 0, z: 0, fx: 0, fz: -1, ax: -1, az: 0 })).toBeCloseTo(Math.PI, 12);
   });
 
-  it("stands the painted face where the shell on Babylon.js stands its plane, corner for corner", () => {
+  it("stands the painted face where the record of the board on Babylon.js has its plane, corner for corner", () => {
     const boards = [
       { x: 6, z: 39, fx: 0, fz: -1, ax: 1, az: 0 },
       { x: -265.2, z: -6.6, fx: -0.8630244082664948, fz: 0.5051622221982427, ax: -0.5051622221982427, az: -0.8630244082664948 },

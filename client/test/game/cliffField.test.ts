@@ -197,10 +197,10 @@ describe("collectCliffs and the collector", () => {
   }, timeLimit(300_000));
 });
 
-describe("the shell seats what the field probed", () => {
-  it("turns a point by the shell's quaternion exactly as leanPoint turns the faced point, to 1e-9", () => {
+describe("the drawn seat is what the field probed", () => {
+  it("turns a point by the recorded seat's quaternion exactly as leanPoint turns the faced point, to 1e-9", () => {
     // What the shell on Babylon.js gave, recorded: for each of the five hundred modules below, the quaternion its
-    // seat wrote (`cliffSeat`, `cliffMeshes.ts`) and the module's four points turned by it with Babylon.js's own
+    // seat wrote (`cliffSeat`) and the module's four points turned by it with Babylon.js's own
     // `applyRotationQuaternionToRef`.
     const shell = babylonValues<{ seats: { q: number[]; turned: number[] }[] }>("numbers/cliffSeat.json").seats;
     expect(shell).toHaveLength(500);

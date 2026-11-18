@@ -17,7 +17,7 @@ import { midgeHash } from "../../src/game/midgeMotion.js";
 import { babylonText } from "../helpers/babylonFixture.js";
 import { timeLimit } from "../helpers/timeLimit.js";
 
-/** A stage of the game's on Babylon.js, as recorded: a `.fx` file whole, or what a shell's plugin handed for a point. */
+/** A stage of the game's on Babylon.js, as recorded: a stage's file whole, or what a plugin handed for a point. */
 const source = (name: string): string => babylonText(`stages/${name}.glsl`);
 const glsl = source("lakeRipples.fragment");
 const glslFloat = (n: number): string => (Number.isInteger(n) ? `${n}.0` : `${n}`);

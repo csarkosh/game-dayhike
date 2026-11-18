@@ -6,7 +6,7 @@ import { WEATHER_PRESETS } from "../../src/game/weather.js";
 import { babylonText, babylonValues } from "../helpers/babylonFixture.js";
 import { skyFixture } from "./helpers/skyFixture.js";
 
-/** The uniforms the dome's shell on Babylon.js names (`skyDome.ts`), and of them the image's, bound at each draw: recorded. */
+/** The uniforms the dome's shell on Babylon.js names, and of them the image's, bound at each draw: recorded. */
 const { skyDomeUniforms: SKY_DOME_UNIFORMS, skyDomeImageUniforms: SKY_DOME_IMAGE_UNIFORMS } = babylonValues<{ skyDomeUniforms: string[]; skyDomeImageUniforms: string[] }>("stages/declared.json");
 /** The dome's fragment stage there (`skyDome.fragment.glsl`), its text recorded. */
 const FRAGMENT = babylonText("stages/skyDome.fragment.glsl");

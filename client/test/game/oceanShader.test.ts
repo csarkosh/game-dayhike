@@ -81,7 +81,7 @@ const mod = (x: number, y: number): number => x - y * Math.floor(x / y);
 
 /**
  * oceanSwellSum (the stage `oceanSurface`) read line for line into TypeScript: the atlas read as the GPU
- * reads the nearest-sampled texture at texel centres, the uniforms as oceanRender.ts writes them (the
+ * reads the nearest-sampled texture at texel centres, the uniforms as seaUniforms.ts writes them (the
  * components' oceanK as the Float32Array it binds), steps (dpx, dpy) as the shader gets them. A
  * difference between this and swellAt is a difference between the shader and swellAt. `skipFaded` false
  * sums a wholly faded component's terms instead of skipping them, as the shader did before it skipped.
@@ -1298,7 +1298,7 @@ describe("the wind sea in the shaders", () => {
     expect(f).toContain("  return min(oceanWind.x * share * (1.0 - breaking) * shelter / OCEAN_BUMP_HS, OCEAN_BUMP_MAX);");
     expect(`${s}${f}${l}`).not.toContain("oceanWindAmp()");
     // oceanWindAmp read line for line into TypeScript: the coastline's x as oceanCoastAt reads the atlas's
-    // row, between texel centres, and the uniforms as oceanRender.ts writes them (oceanWindDir's z the wind's
+    // row, between texel centres, and the uniforms as seaUniforms.ts writes them (oceanWindDir's z the wind's
     // speed, its w the onshore weight).
     const t = oceanFieldFor(SEED).tables;
     const coastX = (z: number): number => {
@@ -1362,7 +1362,7 @@ describe("the wind sea in the shaders", () => {
       "  return disp + oceanWindDisplaceAt(p, cell) * chop;",
     ]) expect(s, line).toContain(line);
     const f = fx("oceanShade.fragment");
-    // The slope texture's (slopeX, slopeZ) (oceanGpuFft.ts).
+    // The slope texture's (slopeX, slopeZ) (lite/seaFft.ts).
     expect(f).toContain("    g = textureLod(oceanWindSlope, vec3(w / FFT_CASCADE_0, 0.0), 0.0).xy * k0");
     expect(f).toContain("    g = vec2(gx, gz) * (LOOP_N / (2.0 * LOOP_SIZE)) * keep;");
     expect(f).toContain("  return -oceanFromWind(g);");

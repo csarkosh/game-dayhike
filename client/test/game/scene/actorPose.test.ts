@@ -64,7 +64,7 @@ describe("an actor's pose with no engine", () => {
     expect([BABYLON.nodes.length, BABYLON.poses.length, BABYLON.blends.length, BABYLON.roots.length]).toEqual([55, 17, 8, 4]);
   });
 
-  it("stands every node where the stage on Babylon.js stands it: a clip at a time, a loop wrapped, a clip that begins after its first frame", () => {
+  it("stands every node where the record of the stage on Babylon.js has it: a clip at a time, a loop wrapped, a clip that begins after its first frame", () => {
     const rig = rigFromDisk();
     const posed = createActorPosed(rig);
     const times: [string, number][] = [

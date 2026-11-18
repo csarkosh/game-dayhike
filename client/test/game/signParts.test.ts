@@ -123,7 +123,7 @@ describe("signPlaces", () => {
     expect(places.labels).toHaveLength(2 * 5);
   });
 
-  it("stands every plank and every face of its lettering where the shell on Babylon.js stands them", () => {
+  it("stands every plank and every face of its lettering where the record of the fingerposts on Babylon.js has them", () => {
     // The plank's end as the shell found it: the same cut, the furthest of the arm's levels.
     const end = SIGNS.end;
     expect(end).toBe(Math.max(...ARM.levels.map((level) => level.cut)));

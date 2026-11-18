@@ -6,7 +6,7 @@ import { emptySplashStageUniforms, emptySplashUniforms } from "../../../src/game
 import { inOrder, tight } from "./wgslText.js";
 
 /**
- * The splash plugin's own code at its points on Babylon.js (`rainSplash.ts`: its vertex definitions, where it
+ * The splash plugin's own code at its points on Babylon.js (its vertex definitions, where it
  * updates the position, and before the fragment's colour), and the Standard material's fragment stage, as
  * Babylon.js installs it (all recorded).
  */
