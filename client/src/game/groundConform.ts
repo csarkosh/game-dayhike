@@ -15,7 +15,7 @@ export const GROUND_CONFORM_RAMP = 0.8;
  * so 1.5. Browser-tunable, like the WIND_AMP constants. */
 export const GROUND_CONFORM_OVERSHOOT = 1.5;
 
-/** The arithmetic of the conform's vertex code (`CONFORM_GLSL`), in TypeScript, so the analytic gate and the
+/** The arithmetic of the conform's vertex code (`lite/forestPlugins.ts`), in TypeScript, so the analytic gate and the
  * shader cannot drift apart. `modelY` is the vertex's model-space height;
  * `offX`/`offZ` are its world-space horizontal offset from the instance
  * origin; `dx`/`dz` are the local ground gradient at the instance (the

@@ -130,7 +130,7 @@ describe("the patch under the car on Babylon Lite", () => {
     expect(Object.keys(stageOwn({ patchDark: [1], patchFogColour: [0, 0, 0], patchFogDensity: [0], patchExposure: [1], patchContrast: [1] }, PATCH_FRAME_READS))).toEqual(["patchDark"]);
   });
 
-  it("stands the grid in the world as its mesh's place and scale stand it on Babylon.js", () => {
+  it("stands the grid in the world: at its place, to its size, each corner on the ground under it and lifted", () => {
     const groundH = (x: number, z: number): number => 5 + 0.1 * x - 0.05 * z;
     const grid = carShadowGrid({ x: 10, z: 20 }, groundH);
     const geometry = patchGeometry(grid);
