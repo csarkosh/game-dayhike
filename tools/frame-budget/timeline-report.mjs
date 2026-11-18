@@ -250,7 +250,7 @@ function sourceOf(c) {
   if (map === null) return null;
   const pos = originalPositionFor(map, { line: c.lineNumber + 1, column: c.columnNumber });
   if (pos.source === null) return null;
-  const source = pos.source.replace(/^(\.\.\/)+/, "").replace("node_modules/@babylonjs/core/", "bjs/");
+  const source = pos.source.replace(/^(\.\.\/)+/, "").replace("node_modules/@babylonjs/lite/", "babylon-lite/");
   return `${pos.name ?? c.functionName ?? ""} ${source}:${pos.line}`.trim();
 }
 const label = (n) => {

@@ -78,7 +78,8 @@ const WINDOW_EXPRESSION = `(async () => {
     gpu = (ext && gl.getParameter(ext.UNMASKED_RENDERER_WEBGL)) || null;
     gl && gl.getExtension("WEBGL_lose_context")?.loseContext();
   } catch {}
-  const ran = typeof window.dayhikePipelines !== "undefined" ? "webgpu" : "webgl2";
+  // The game draws with WebGPU alone: a page with a canvas ran on it.
+  const ran = "webgpu";
   return { frames, readings, canvasStart, canvasEnd, gpu, ran, dpr: devicePixelRatio, inner: [innerWidth, innerHeight], wgsl: { start: counters.wgsl, end: wgsl() }, pipes: { start: counters.pipes, end: pipes() } };
 })()`;
 
