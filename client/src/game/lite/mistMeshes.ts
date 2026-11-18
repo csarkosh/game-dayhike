@@ -118,7 +118,7 @@ export type MistFrame = {
 export type LiteMistMeshes = {
   readonly mesh: Mesh;
   readonly material: ShaderMaterial;
-  /** The banks for a camera at (camX, camZ) under `w`, at `seconds` of the render clock, as the game's shell is handed them. */
+  /** The banks for a camera at (camX, camZ) under `w`, at `seconds` of the render clock. */
   update(camX: number, camZ: number, w: WeatherParams, wind: WindRecord, seconds: number, frame: MistFrame): void;
   /** Banks drawn by the last update. */
   readonly shown: number;
@@ -148,7 +148,7 @@ export function createLiteMistMeshes(
     depthWrite: false,
     backFaceCulling: false,
   });
-  // The sprite as the game's shell makes it: its smaller levels filtered between, repeating.
+  // The sprite: its smaller levels filtered between, repeating.
   const sprite = createTexture2DFromPixels(engine, mistAlphaMap(), MIST_TEX_SIZE, MIST_TEX_SIZE, {
     addressModeU: "repeat", addressModeV: "repeat", minFilter: "linear", magFilter: "linear", mipMaps: true,
   });

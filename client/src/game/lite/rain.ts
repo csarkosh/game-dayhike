@@ -195,7 +195,7 @@ export type LiteRain = {
   readonly clocks: StageRecord;
   /** Whether a frame under `w` draws a drop that reads the cover map: so the map is drawn for one, and not for a dry frame. */
   reads(w: WeatherParams): boolean;
-  /** The rain under `w` in `wind`, as the game's shell is handed it. */
+  /** The rain under `w` in `wind`. */
   update(w: WeatherParams, wind: WindRecord, frame: RainFrame): void;
   /** Streaks and drips drawn by the last update. */
   readonly drawn: number;
@@ -233,7 +233,7 @@ export function createLiteRain(
     depthWrite: false,
     backFaceCulling: false,
   });
-  // The streak as the game's shell makes it: its smaller levels filtered between, repeating.
+  // The streak: its smaller levels filtered between, repeating.
   const sprite = createTexture2DFromPixels(engine, rainStreakMap(), RAIN_TEX_W, RAIN_TEX_H, {
     addressModeU: "repeat", addressModeV: "repeat", minFilter: "linear", magFilter: "linear", mipMaps: true,
   });

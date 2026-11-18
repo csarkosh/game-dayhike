@@ -167,7 +167,7 @@ export type LiteRainSplash = {
   readonly material: ShaderMaterial;
   /** The splashes' clock as the last update that drew a ring left it, for the frame's block (`stageClocks`). */
   readonly clocks: StageRecord;
-  /** The rings under `w`, as the game's shell is handed them. */
+  /** The rings under `w`. */
   update(w: WeatherParams, frame: SplashFrame): void;
   /** Rings drawn by the last update. */
   readonly shown: number;

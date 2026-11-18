@@ -51,7 +51,7 @@ describe("modelUrl", () => {
 
   it("throws on an output it does not know, naming both places it must exist", () => {
     // A typo must fail at startup. Returning the key unresolved would make it a
-    // 404, and Babylon answers a failed load by leaving the mesh out — enemies
+    // 404, and the renderer answers a failed load by leaving the mesh out — enemies
     // fall back to capsules and clutter disappears, with nothing in the console
     // pointing at the cause.
     expect(() => modelUrl("models/enemy.nonexistent.glb")).toThrow(
@@ -64,7 +64,7 @@ describe("modelUrl", () => {
   it("throws on an inherited Object.prototype key instead of returning a function", () => {
     // `resolveCharacterAssets` admits any non-empty string as an `output`, so a
     // malformed catalog can reach here with "toString". On a plain object that
-    // resolves to an inherited FUNCTION typed as a string, which Babylon would be
+    // resolves to an inherited FUNCTION typed as a string, which the loader would be
     // handed as a URL — the exact silent failure the throw exists to prevent.
     for (const key of ["toString", "constructor", "valueOf", "hasOwnProperty", "__proto__"]) {
       expect(() => modelUrl(key)).toThrow(/unknown model/);

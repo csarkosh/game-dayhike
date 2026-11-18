@@ -200,8 +200,8 @@ export type Renderer = {
   /** Calls `fn` at the end of each frame drawn; the function returned stops
    * it. */
   onFrameEnd(fn: () => void): () => void;
-  /** Calls `fn` each time a shader has compiled, on either engine; the
-   * function returned stops it. */
+  /** Calls `fn` each time a shader has compiled; the function returned
+   * stops it. */
   onShaderCompiled(fn: () => void): () => void;
   /**
    * The engine has failed (`answerFailures`): the asynchronous work still

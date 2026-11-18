@@ -85,9 +85,9 @@ export const GRADE_BLOCK = "hikeFrame";
  * - `gradeDither(color, at)`: the dither, last, and the clamp.
  *
  * `at` is the fragment's place on the frame in pixels, its rows counted
- * down from the frame's top as WebGPU counts them; the game's fragment
- * coordinates count up from its foot, on WebGPU as on WebGL2 (Babylon.js
- * keeps them so), and the dither draws its number from the place, so
+ * down from the frame's top as WebGPU counts them; the dither draws its
+ * number from a place whose rows count up from the frame's foot (Babylon.js
+ * keeps a fragment's coordinates so), so
  * `gradeAt` turns the rows over first.
  */
 export const MATERIAL_GRADE_WGSL = /* wgsl */ `

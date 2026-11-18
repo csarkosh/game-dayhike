@@ -18,8 +18,7 @@ export type PostFeatures = {
 };
 
 /**
- * The tier ladder as data. Without float render targets (NullEngine, weak
- * WebGL) nothing HDR can run, so every tier falls to the material path: an
+ * The tier ladder as data. Without float render targets nothing HDR can run, so every tier falls to the material path: an
  * 8-bit chain would band the very frames this restyle exists for. The lens
  * (rain on the glass) rides the pipeline: every tier with the chain has it.
  */

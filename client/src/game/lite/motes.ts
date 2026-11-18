@@ -126,7 +126,7 @@ export type LiteMotes = {
   readonly material: ShaderMaterial;
   /** The clock and the wind's carry as the last update left them, for the frame's block (`stageClocks`). */
   readonly clocks: StageRecord;
-  /** The motes under `w` at `hour`, coloured `air`, in `wind`, as the game's shell is handed them. The emitter's box is
+  /** The motes under `w` at `hour`, coloured `air`, in `wind`. The emitter's box is
    * round the camera the frame is drawn from. */
   update(w: WeatherParams, hour: number, air: Rgb, wind: WindRecord, frame: MotesFrame): void;
   /** Slots drawn by the last update, both species'. */
@@ -157,7 +157,7 @@ export function createLiteMotes(engine: EngineContext, scene: SceneContext, tier
     depthWrite: false,
     backFaceCulling: false,
   });
-  // The soft disc as the game's shell makes it: its smaller levels filtered between, repeating.
+  // The soft disc: its smaller levels filtered between, repeating.
   const sprite = createTexture2DFromPixels(engine, moteDiscMap(), MOTE_TEX_SIZE, MOTE_TEX_SIZE, {
     addressModeU: "repeat", addressModeV: "repeat", minFilter: "linear", magFilter: "linear", mipMaps: true,
   });

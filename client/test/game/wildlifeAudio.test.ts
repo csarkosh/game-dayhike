@@ -361,7 +361,7 @@ describe("the breadcrumb", () => {
 });
 
 describe("app.ts wiring", () => {
-  // `app.ts` builds a WebRTC session and a WebGL renderer, so nothing here can
+  // `app.ts` builds a WebRTC session and a WebGPU renderer, so nothing here can
   // run it — this reads the source for the wiring, the renderer.test.ts
   // precedent, because the wiring exists nowhere else. The failure it guards is
   // the silent one: a shell that is constructed and never fed plays nothing,

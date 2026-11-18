@@ -3,7 +3,7 @@ import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 
 /**
- * `app.ts` builds the peer-to-peer networking and a WebGL renderer, so nothing
+ * `app.ts` builds the peer-to-peer networking and a WebGPU renderer, so nothing
  * here can start a hike under Node: the sky's wiring is read from the source, as
  * `wildlifeAudio.test.ts` reads the audio's.
  */

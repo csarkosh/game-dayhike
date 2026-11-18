@@ -233,7 +233,7 @@ export function patchMaterial(engine: EngineContext, frame: PluginUniformBlock, 
     depthWrite: false,
     backFaceCulling: false,
   });
-  // The texture as the game's shell makes it: its smaller levels filtered between, held at its edges.
+  // The texture: its smaller levels filtered between, held at its edges.
   const map = createTexture2DFromPixels(engine, carShadowAlphaMap(), CAR_SHADOW_TEX.width, CAR_SHADOW_TEX.height, {
     addressModeU: "clamp-to-edge", addressModeV: "clamp-to-edge", minFilter: "linear", magFilter: "linear", mipMaps: true,
   });

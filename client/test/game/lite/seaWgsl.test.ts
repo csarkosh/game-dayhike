@@ -188,7 +188,7 @@ describe("the sea's waves and shading in WGSL, against the game's GLSL", () => {
     expect(high).toContain("step(material.oceanCoast.w,1.5)");
   });
 
-  it("places the plunging lip's strip as oceanLipShape.vertex.fx does: the crest's slot, the cross-section between two keyframes, the swell's sum at its foot", () => {
+  it("places the plunging lip's strip as the recorded oceanLipShape.vertex.glsl does: the crest's slot, the cross-section between two keyframes, the swell's sum at its foot", () => {
     const lipShape = code("oceanLipShape.vertex.fx");
     const wgsl = tight(SEA_LIP_SHAPE_WGSL);
     const constants = [...lipShape.matchAll(/const float ([A-Z0-9_]+) = ([-0-9.e]+);/g)];
@@ -296,7 +296,7 @@ describe("the sea's waves and shading in WGSL, against the game's GLSL", () => {
     expect(tight(SEA_ALBEDO_WGSL)).toBe("surfaceAlbedo=baseColor;");
   });
 
-  it("places a lattice's vertex on its ring, then moves it as oceanDisplace.vertex.fx does", () => {
+  it("places a lattice's vertex on its ring, then moves it as the recorded oceanDisplace.vertex.glsl does", () => {
     const wgsl = tight(SEA_VERTEX_WGSL);
     const displace = code("oceanDisplace.vertex.fx");
     expect(displace).toContain("positionUpdated.xz -= oceanMorph * oceanCoarse;");

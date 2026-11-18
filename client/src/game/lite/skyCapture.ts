@@ -21,8 +21,8 @@
  * - **One level.** Babylon.js reads a probe at its top level whatever a
  *   material's roughness, so the cube has no smaller levels and a material's
  *   roughness moves no lookup (a level-of-detail scale of 0).
- * - **No diffuse light.** No irradiance is worked for the game's probe on
- *   either engine: the cube's is left at zero.
+ * - **No diffuse light.** No irradiance is worked for the game's probe:
+ *   the cube's is left at zero.
  * - **The scene's share of it.** Babylon.js multiplies a material's own
  *   share of the image-based light (`environmentIntensity`, the trees'
  *   cut by the canopy) by the scene's, which the weather's dread collapses

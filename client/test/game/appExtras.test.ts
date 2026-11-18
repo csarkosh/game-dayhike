@@ -3,7 +3,7 @@ import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 
 /**
- * `app.ts` builds the peer-to-peer networking and a WebGL renderer, so nothing here can start a hike under
+ * `app.ts` builds the peer-to-peer networking and a WebGPU renderer, so nothing here can start a hike under
  * Node: where the signs and the body are built is read from the source, as `appSky.test.ts` reads the sky's.
  * How a build is put off is `extrasLater.test.ts`'s.
  */

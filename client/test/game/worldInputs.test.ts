@@ -53,7 +53,7 @@ describe("the seed and the terrain a hike's world is made from", () => {
     // Nothing here holds the scene past the wait: the promise that carried it is let go of at once.
     expect(wait).toContain("sampled = await sampling;\n      sampling = Promise.resolve(null);");
     // The game is handed the way to take it, never the scene: the first renderer made takes it, and a start
-    // made again on WebGL2 after a WebGPU start threw finds none left.
+    // made again finds none left.
     expect(main).toContain("takePrepared: takeSampled,");
     expect(main).not.toContain("takeSampled()");
     expect(main).toContain('scene: sampledFor === null ? "none" : "made",');

@@ -73,8 +73,7 @@ export function collectMistBanks(seed: number, camX: number, camZ: number): Mist
 
 /**
  * RGBA radial falloff sprite: white RGB, alpha (1-r^2)^2. Computed in plain
- * arithmetic so the shell can build a RawTexture headlessly — a DynamicTexture
- * needs a 2D canvas, which NullEngine test runs do not have.
+ * arithmetic, so the texture is made of bytes and needs no 2D canvas.
  */
 export function mistAlphaMap(size: number = MIST_TEX_SIZE): Uint8Array {
   const data = new Uint8Array(size * size * 4);

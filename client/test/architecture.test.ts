@@ -240,7 +240,7 @@ describe("layer boundaries", () => {
     expect([...main.matchAll(/\bliteProbeDeps\(/g)].length).toBe(1);
     expect(importsOf(join(SRC, "main.ts"))).toContain("./game/lite/probeScene.js");
     expect(importsOf(join(SRC, "main.ts"))).not.toContain("./game/probeScene.js");
-    // No step is handed an engine, and none is measured on WebGL2 in WebGPU's place.
+    // No step is handed an engine.
     expect(main).not.toMatch(/\b(?:probeDeps|probeStepEngine|probeStepCanSettle|measureOnRuleEngine)\b/);
     // Nor does the page make an engine any other way: no rule is asked which or handed anything to decide by, and
     // the only canvas it makes is a hike's (`hikeCanvas`).

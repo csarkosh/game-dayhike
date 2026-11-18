@@ -153,7 +153,7 @@ export function roughnessFor(wind01: number, shelter: number): number {
 
 /**
  * The sea's roughness from the slope variance its normal leaves undrawn, per pixel in the shader (the
- * roughness line `waterPlugin.ts` rewrites): √√(2σ²) as `roughnessFor`, at most 1.
+ * roughness line in `lite/seaWgsl.ts`): √√(2σ²) as `roughnessFor`, at most 1.
  */
 export function roughnessFromVariance(variance: number): number {
   return Math.min(Math.sqrt(Math.sqrt(2 * Math.max(0, variance))), 1);
