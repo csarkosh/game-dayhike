@@ -158,11 +158,17 @@ export function factorByte(factor: number): number {
  * the occlusion map's own red, with the material's roughness in the green
  * and its metalness in the blue of every texel, tiled and with its smaller
  * levels, as the loader's own maps are.
+ *
+ * The image is read on a canvas the browser keeps in the page's memory
+ * (`willReadFrequently`), and the packed pixels are handed to the GPU as
+ * pixels: a canvas the GPU draws would be read back through the GPU's own
+ * process to be packed, and drawn again to be uploaded, which holds that
+ * process (the one that presents the intro's film) while a hike loads.
  */
 export async function loneOcclusionMap(engine: EngineContext, alone: NonNullable<GlbOcclusion["alone"]>): Promise<Texture2D> {
   const image = await createImageBitmap(new Blob([alone.bytes as Uint8Array<ArrayBuffer>], { type: alone.mime }), { premultiplyAlpha: "none", colorSpaceConversion: "none" });
   const canvas = new OffscreenCanvas(image.width, image.height);
-  const ctx = canvas.getContext("2d");
+  const ctx = canvas.getContext("2d", { willReadFrequently: true });
   if (ctx === null) throw new Error("no canvas to pack a map on");
   ctx.drawImage(image, 0, 0);
   image.close();
@@ -174,8 +180,7 @@ export async function loneOcclusionMap(engine: EngineContext, alone: NonNullable
     pixels.data[i + 2] = metallic;
     pixels.data[i + 3] = 255;
   }
-  ctx.putImageData(pixels, 0, 0);
-  return createTexture2DFromExternalImage(engine, canvas, {
+  return createTexture2DFromExternalImage(engine, pixels, {
     mipMaps: true, invertY: false, srgb: false, premultiplyAlpha: false, addressModeU: "repeat", addressModeV: "repeat", minFilter: "linear", magFilter: "linear",
   });
 }
