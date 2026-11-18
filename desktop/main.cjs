@@ -154,6 +154,10 @@ function finishSmoke(code) {
  * answered it, which can be after the landing is up or a hike has started: a
  * check of the landing or of the hike that finds that page in their place is
  * not counted, and that page is judged instead.
+ *
+ * With DAYHIKE_SMOKE_NEEDS_HIKE=1 only a hike passes. A machine known to have
+ * a graphics card sets it (the release's own, through test/smoke.mjs): there
+ * the page for those turned away means the site turned a real card away.
  */
 async function runSmoke(win) {
   // Required here and by nothing else: a launch that is no smoke never loads it.
@@ -322,6 +326,9 @@ async function runSmoke(win) {
     await check('the page for those turned away says why', async () => seen.ok || seen.why, {
       gives: () => ({ reason: seen.reason, headline: seen.headline, detail: seen.detail }),
     });
+  }
+  if (process.env.DAYHIKE_SMOKE_NEEDS_HIKE === '1') {
+    await check('this machine draws a hike', async () => (seen.page === 'hike' && seen.ok) || `the last page seen is the ${seen.page} page, not a hike`);
   }
 
   clearTimeout(timer);

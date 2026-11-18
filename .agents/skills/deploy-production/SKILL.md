@@ -207,5 +207,6 @@ first load than an artifact defect — the script's single automatic re-dispatch
 A runner with no GPU cannot draw a hike, and the site shows it the page for those who
 cannot play. The smoke takes either page as proof the app loaded the site: a hike reached
 from the landing, or that page. Its last line says which (`"saw":"hike"` or
-`"saw":"turned-away"` with the `reason`), so read it: a green run on the release's own Mac
-that says `turned-away` means the site turned a real graphics card away.
+`"saw":"turned-away"` with the `reason`). The release's own Mac has a graphics card, so the
+script runs the smoke there with `--needs-hike`: only a hike passes, and the page for those
+who cannot play fails the release, since it means the site turned a real card away.

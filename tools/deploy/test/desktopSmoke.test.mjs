@@ -207,4 +207,15 @@ describe('the smoke and the site agree', () => {
     expect(main).toContain('  out({ summary: summaryOf(results, seen) });\n  finishSmoke(exitCodeOf(results, seen));');
     expect(main).toContain("const look = async () => pageSeen(await jsTimed(PAGE_READING), site);");
   });
+
+  it('and the release asks its own machine for a hike, by a flag the operator\'s shell cannot set', () => {
+    const runner = read('test/smoke.mjs');
+    expect(runner).toContain("const needsHike = args.includes('--needs-hike');");
+    expect(runner).toContain("delete env.DAYHIKE_SMOKE_NEEDS_HIKE; // the flag decides, not the operator's shell\nif (needsHike) env.DAYHIKE_SMOKE_NEEDS_HIKE = '1';");
+    expect(read('main.cjs')).toContain("  if (process.env.DAYHIKE_SMOKE_NEEDS_HIKE === '1') {\n    await check('this machine draws a hike',");
+    const release = readFileSync(new URL('../desktop.mjs', import.meta.url), 'utf8');
+    expect(release).toContain("runLoud('node', [path.join(DESKTOP, 'test', 'smoke.mjs'), app, '--needs-hike']);");
+    // The Windows runner has no graphics card: its workflow asks for no hike.
+    expect(readFileSync(new URL('../../../.github/workflows/desktop-smoke-windows.yml', import.meta.url), 'utf8')).not.toContain('NEEDS_HIKE');
+  });
 });

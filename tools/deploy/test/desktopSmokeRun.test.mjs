@@ -193,6 +193,31 @@ describe("the desktop app's smoke, run on a stand-in window", () => {
     }
   });
 
+  it('with a hike asked for, passes on a hike and fails on the page for those turned away: a machine with a graphics card', async () => {
+    process.env.DAYHIKE_SMOKE_NEEDS_HIKE = '1';
+    const hike = makePage();
+    hike.show('landing');
+    hike.onPlay = () => setTimeout(() => hike.show('hike'), 2_000);
+    hike.onCanvasClick = () => { hike.locked = true; };
+    const drawn = await smoke(hike);
+    expect(drawn.checks.at(-1)).toEqual({ check: 'this machine draws a hike', ok: true });
+    expect(drawn.summary).toEqual({ passed: 7, failed: 0, saw: 'hike' });
+    expect(drawn.exit).toBe(0);
+
+    const away = makePage();
+    away.show('turnedAway', 'software');
+    const turned = await smoke(away);
+    expect(turned.checks.map((line) => [line.check, line.ok])).toEqual([
+      ['origin is the site', true],
+      ['the site shows its landing or the page for those turned away', true],
+      ['the page for those turned away says why', true],
+      ['this machine draws a hike', false],
+    ]);
+    expect(turned.checks.at(-1).detail).toBe('the last page seen is the turned-away page, not a hike');
+    expect(turned.summary).toEqual({ passed: 3, failed: 1, saw: 'turned-away', reason: 'software' });
+    expect(turned.exit).toBe(1);
+  });
+
   it('passes where the site turns the app away after the landing is up: the checks it finds that page in the place of are not counted', async () => {
     // The GPU answers the site while the smoke waits for Play's hike.
     const afterPlay = makePage();
