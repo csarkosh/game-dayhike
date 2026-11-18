@@ -4,7 +4,7 @@ import { LOSS_BOUND_COUNT, LOSS_BOUND_WINDOW_MS, LOSS_ENDED_LINE, createLossReco
 const MINUTE = 60_000;
 
 describe("the bound on rebuilds after a lost device", () => {
-  it("is three losses within ten minutes, and its line is one sentence a player can read", () => {
+  it("is three losses within ten minutes, and its line is short enough for a player to read", () => {
     expect(LOSS_BOUND_COUNT).toBe(3);
     expect(LOSS_BOUND_WINDOW_MS).toBe(10 * MINUTE);
     expect(LOSS_ENDED_LINE.length).toBeGreaterThan(10);

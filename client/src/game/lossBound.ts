@@ -20,7 +20,7 @@ export const LOSS_BOUND_COUNT = 3;
 export const LOSS_BOUND_WINDOW_MS = 600_000;
 
 /** What a player reads when a hike is ended by the bound: on the hike's screen, then on the landing page. */
-export const LOSS_ENDED_LINE = "The hike ended because the graphics kept failing.";
+export const LOSS_ENDED_LINE = "The hike ended: this device's graphics keep resetting. Restarting the browser may help.";
 
 /** What the record says of a loss as it notes it. */
 export type LossNote = {
