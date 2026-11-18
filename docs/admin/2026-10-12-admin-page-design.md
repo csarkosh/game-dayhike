@@ -193,7 +193,10 @@ session read as a trail. What changed here:*
 CTE (`tools/telemetry/queries/README.md`): the deploy's verification rows and rooms, the
 owner's test browsers (`tester`), every session of the README's stills shoot (a `cmd` row) and
 headless or automated browsers (a SwiftShader GPU, a HeadlessChrome user agent, or
-`navigator.webdriver`, the last two since 2026-10-22) are out of every number on this page. The owner's own
+`navigator.webdriver`, the last two since 2026-10-22) are out of every number on this page, but one kind of row:
+a `turned_away` row from a browser on SwiftShader that is not automated is a person with hardware acceleration
+off, and the funnel's count of those turned away and the list of what went wrong read it (`software_away`,
+beside `real` in those two queries). The owner's own
 play is dropped at the server by address. The lookups by id exclude nothing.
 
 **New York.** The range row scopes a query to New York calendar days: "Today" is that

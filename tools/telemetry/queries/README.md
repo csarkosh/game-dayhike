@@ -29,6 +29,18 @@ network counts unless that browser is marked a tester (`?telemetry=tester` once)
 `visitor.sql`, `match.sql`, and `gpu.sql`, which is pasted and not on the page) are by id and exclude nothing, so a
 tester's own session can still be opened.
 
+**One kind of row comes back in two queries.** A person whose browser has hardware acceleration
+off, or found no graphics card, is drawn by SwiftShader too, and is who the `turned_away` row
+(reason `software` or `no-adapter`) was made for; `real` drops every row of theirs for the GPU's
+name. So `funnel.sql` and `errors.sql` read one more CTE beside `real`, `software_away`, the
+same text in both: the `turned_away` rows whose `gpu` names SwiftShader, from a browser that is
+not automated (`wd` not true, no `HeadlessChrome` in `ua`) and is none of the rest `real` leaves
+out (the verification, the testers, the stills shoot). The funnel counts such a session as
+landed and turned away, by that row alone; the errors list has it among the players' warnings.
+An automated browser on SwiftShader that sets neither mark would be counted with them. No other
+row of such a session is read, and no other query reads the CTE: the session is in no count of
+sessions, visitors or health.
+
 ## The range
 
 Each query over a range reads the last seven calendar days (`kpis.sql` the last twelve
@@ -58,7 +70,8 @@ build on (older rows keep the time the batch arrived).
   started a match, reached an outcome, each stage only of the one before. The builds are a
   breakdown; the `all` row is the headline. **Turned away** is a count beside the stages, not
   one of them: of the sessions that landed, those the page's load check turned away (a
-  `turned_away` row), which could never press Play.
+  `turned_away` row), which could never press Play. A session with that row has landed, whether
+  or not its `page` row is read (the shared exclusion, above).
 - **Clean** is of the sessions that said goodbye (an `end` row), those whose `trouble` was 0;
   **unknown** is the sessions with no `end` row, its own count. Of the sessions that played and
   never said goodbye, one whose last `visibility` was `hidden` **went to the background**; the

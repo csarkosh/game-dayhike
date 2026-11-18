@@ -16,7 +16,8 @@
 -- is `players` or `you`: the owner's own play (`owner`, marked at the server by
 -- address) is out of every count on the page, but the errors it meets are the
 -- first anyone sees, so they are here too, on rows of their own and out of the
--- totals (Cyrus, 2026-11-01).
+-- totals (Cyrus, 2026-11-01). A visitor turned away on a software renderer is
+-- among the players, by the one row of theirs that is read (`software_away`).
 -- The rows that are real play, the same text in every query (`README.md`):
 -- not the deploy's verification (`build = 'verify'` on a page's rows,
 -- `verify` on signaling's), not the owner's test browsers (`tester`), not a
@@ -41,6 +42,31 @@ WITH real AS (
         AND timestamp >= TIMESTAMP_SUB(CURRENT_TIMESTAMP(), INTERVAL 90 DAY)
     )
 ),
+-- The visitors the load check turned away on a software renderer: hardware
+-- acceleration is off in their browser, or it found no graphics card. Their
+-- `gpu` names SwiftShader as an automated browser's does, so `real` drops
+-- every row of theirs, and they are who the `turned_away` row was made for.
+-- These are the `turned_away` rows `real` dropped for that name alone: from a
+-- browser that is not automated (no `wd`, no `HeadlessChrome`) and is none of
+-- the rest `real` leaves out. The same text in `funnel.sql` and `errors.sql`.
+software_away AS (
+  SELECT timestamp, json_payload
+  FROM `fps-csarko.global.dayhike-telemetry._AllLogs`
+  WHERE JSON_VALUE(json_payload.n) = 'turned_away'
+    AND IFNULL(JSON_VALUE(json_payload.gpu), '') LIKE '%SwiftShader%'
+    AND IFNULL(JSON_VALUE(json_payload.build), '') != 'verify'
+    AND IFNULL(JSON_VALUE(json_payload.tester), '') != 'true'
+    AND IFNULL(JSON_VALUE(json_payload.verify), '') != 'true'
+    AND IFNULL(JSON_VALUE(json_payload.ua), '') NOT LIKE '%HeadlessChrome%'
+    AND IFNULL(JSON_VALUE(json_payload.wd), '') != 'true'
+    AND IFNULL(JSON_VALUE(json_payload.sid), '') NOT IN (
+      SELECT DISTINCT JSON_VALUE(json_payload.sid)
+      FROM `fps-csarko.global.dayhike-telemetry._AllLogs`
+      WHERE JSON_VALUE(json_payload.n) = 'cmd'
+        AND JSON_VALUE(json_payload.sid) IS NOT NULL
+        AND timestamp >= TIMESTAMP_SUB(CURRENT_TIMESTAMP(), INTERVAL 90 DAY)
+    )
+),
 -- The owner's own sessions: every row the server marked `owner`, less the deploy's verification.
 owner AS (
   SELECT timestamp, json_payload
@@ -51,6 +77,8 @@ owner AS (
 ),
 play AS (
   SELECT timestamp, json_payload, 'players' AS whose FROM real
+  UNION ALL
+  SELECT timestamp, json_payload, 'players' AS whose FROM software_away
   UNION ALL
   SELECT timestamp, json_payload, 'you' AS whose FROM owner
 ),
