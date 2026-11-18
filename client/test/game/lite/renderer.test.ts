@@ -1,4 +1,6 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { readFileSync } from "node:fs";
+import { fileURLToPath } from "node:url";
 import "../../../src/sim/passes/index.js";
 import { PLAYER_EYE_OFFSET } from "../../../src/sim/constants.js";
 import { CAP_SCENE_S, LENS_24, LENS_32, SHOTS, SUMMIT_SCENE_S, capStand, summitShot } from "../../../src/game/cutscene.js";
@@ -9,6 +11,8 @@ import { PLAYER_HALF } from "../../../src/sim/constants.js";
 import { DEPTH_AHEAD_MAX_DEGREES, depthAheadPlugin } from "../../../src/game/lite/renderer.js";
 import { createHikeRenderer } from "../../../src/game/hikeRenderer.js";
 import type { Renderer } from "../../../src/game/rendererTypes.js";
+import type { SkyTable } from "../../../src/game/skyTable.js";
+import { SILENT_WATER_LIFE } from "../../../src/game/waterLifeInputs.js";
 import { WEATHER_PRESETS } from "../../../src/game/weather.js";
 import { windRecordUnder } from "../../../src/game/windParams.js";
 import { EMPTY_LEVEL, windTestState } from "../helpers/rendererWorld.js";
@@ -369,6 +373,58 @@ describe("the hike's renderer on Babylon Lite, before its engine stands", () => 
     expect(r.impostorBakes()).toEqual([]);
     expect(() => r.abandon()).not.toThrow();
     expect(r.impostorBakes()).toEqual([]);
+  });
+
+  it("listens to the sky's table it is handed and stops with its dispose, making no slice of its own: the table is the hike's, kept across a swap", async () => {
+    const fixture = skyFixture();
+    let listening = 0;
+    // The fixture's table, counting who listens to it.
+    const table: SkyTable = {
+      add: (slice) => fixture.add(slice),
+      get count() {
+        return fixture.count;
+      },
+      has: (altitudeDeg) => fixture.has(altitudeDeg),
+      blendAt: (altitudeDeg) => fixture.blendAt(altitudeDeg),
+      whenReady: (altitudeDeg) => fixture.whenReady(altitudeDeg),
+      onChange(listener) {
+        listening += 1;
+        const off = fixture.onChange(listener);
+        return () => {
+          listening -= 1;
+          off();
+        };
+      },
+    };
+    const slices = table.count;
+    const old = createHikeRenderer(canvas(), EMPTY_LEVEL, null, { tier: "medium", skyTable: table, clock: () => 0 });
+    expect(listening).toBe(1);
+    // A swap takes the old renderer down before the new one is built on the same table.
+    old.dispose();
+    expect(listening).toBe(0);
+    const next = createHikeRenderer(canvas(), EMPTY_LEVEL, null, { tier: "low", skyTable: table, clock: () => 0 });
+    renderer = next;
+    expect(listening).toBe(1);
+    await expect(next.skyReady()).resolves.toBeUndefined();
+    // The table's slices, none made again.
+    expect(table.count).toBe(slices);
+    next.dispose();
+    expect(listening).toBe(0);
+  });
+
+  it("says nothing of the lake's life until a frame of its own has stepped it: the silent sound, which the hike's audio fades the old renderer's hums out by", () => {
+    const r = make();
+    expect(r.waterLifeSound()).toBe(SILENT_WATER_LIFE);
+    r.setFreecam({ x: 0, y: 10, z: 0, yaw: 0, pitch: 0 });
+    r.sync(windTestState(), -1, 0);
+    // Nothing stands to step the life under Node; a renderer whose engine stands is silent the same way until it has.
+    expect(r.waterLifeSound()).toBe(SILENT_WATER_LIFE);
+    const text = readFileSync(fileURLToPath(new URL("../../../src/game/lite/renderer.ts", import.meta.url)), "utf8");
+    expect(text).toContain("      return heardLife !== null && waterLifeStepped ? heardLife.sound() : SILENT_WATER_LIFE;");
+    expect(text).toContain("  let waterLifeStepped = false;");
+    // Stepped in one place, by a frame that drew a lake's life; a frame that did not takes the word back.
+    expect([...text.matchAll(/\bwaterLifeStepped = true;/g)].length).toBe(1);
+    expect([...text.matchAll(/\bwaterLifeStepped = false;/g)].length).toBe(2);
   });
 
   it("lets its engine go once, by dispose, and resolves what waited on its first frame", async () => {
