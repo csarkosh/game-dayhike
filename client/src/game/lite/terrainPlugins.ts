@@ -399,7 +399,7 @@ surfaceAlbedo=baseColor*input.vTerrainColor.rgb;
   terrainF0=terrainLayerF0.x*w0+terrainLayerF0.y*w1+terrainLayerF0.z*w2+terrainLayerF0.w*w3+terrainLayerF02.x*w4;
 }`;
 
-// The road (ROAD_FRAGMENT_PAINT). The centreline table is read at its texel (the GLSL reads it nearest at texel centres).
+// The road, its bands mirrored in `roadPaint.ts`. The centreline table is read at its texel.
 const ROAD = /* wgsl */ `
 {
   let P=input.worldPos;
@@ -476,8 +476,8 @@ const FEATURE = /* wgsl */ `
   }
 }`;
 
-// The trail (TRAIL_FRAGMENT_PAINT). The segment table's three reads are at their texels: a cell's row (2 + cell row), the
-// segment row 0, the arc-length row 1; the best segment is kept as its column, where the GLSL keeps its u.
+// The trail, its bands mirrored in `trailPaint.ts`. The segment table's three reads are at their texels: a cell's row
+// (2 + cell row), the segment row 0, the arc-length row 1; the best segment is kept as its column.
 const TRAIL = /* wgsl */ `
 {
   let P=input.worldPos;

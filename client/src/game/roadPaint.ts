@@ -7,24 +7,20 @@
  * now exact at every distance: verge tint, gravel shoulder over the pebble
  * texture, asphalt over its own texture in the road's (u, z) frame, and a
  * dashed centerline with per-dash wear. Asphalt also takes its own slice
- * (layer index 5) of `terrainTexture.ts`'s relief arrays — normal
+ * (layer index 5) of the ground's relief arrays (`lite/groundTextures.ts`) — normal
  * perturbation, roughness and F0 — mixed
  * into the `normalW`/`terrainRough`/`terrainF0` locals the ground blend
  * already wrote, so a road never reverts to flat asphalt where the ground
  * layers around it show relief.
  *
- * Pure and Babylon-free (architecture test): the GLSL lives here as strings
- * beside a TypeScript mirror of the same arithmetic, so the tests can pin
- * the bands and the two cannot drift apart — the `groundConformPlugin.ts`
- * idiom. `terrainTexture.ts` owns the textures, samplers and uniforms and
- * injects these strings after its ground blend.
+ * Pure and Babylon-free (architecture test): the bands' constants and a
+ * TypeScript mirror of the arithmetic the terrain's fragment stage runs
+ * after its ground blend (`lite/terrainPlugins.ts`, the road's block), so
+ * the tests can pin the bands.
  *
  * Renderer-only by construction: nothing here is a tunable. `ROAD_PAINT_END`
  * mirrors sim/road.ts's ROAD_CORRIDOR_HALF (30) — retune both together or
  * the paint band desyncs from the earthworks.
- *
- * COMMENT PROSE IN THE GLSL STRINGS IS NOT INERT — never spell a hashed
- * preprocessor keyword inside a comment there (terrainTexture.ts, note 2).
  */
 import { clamp01, mixRgb, type Rgb } from "./colour.js";
 
@@ -99,7 +95,7 @@ export type RoadBands = { verge: number; gravel: number; asphalt: number; line: 
 /**
  * Band weights at signed offset `u` (m) and world `z`. `aa` is the fragment
  * footprint in u (the shader's fwidth), 0 for the analytic answer. Mirrors
- * ROAD_FRAGMENT_PAINT line for line.
+ * the road's block of the terrain's fragment stage (`lite/terrainPlugins.ts`).
  */
 export function roadBands(u: number, z: number, aa = 0): RoadBands {
   const au = Math.abs(u);
@@ -129,96 +125,3 @@ export function roadAlbedo(ground: Rgb, bands: RoadBands, asphaltTex: Rgb = WHIT
   c = mixRgb(c, mulRgb(ASPHALT, asphaltTex), bands.asphalt);
   return mixRgb(c, CENTERLINE, bands.line);
 }
-
-/** GLSL float literal: `30` must become `30.0` or the shader sees an int. */
-function f(n: number): string {
-  return Number.isInteger(n) ? n.toFixed(1) : String(n);
-}
-function rgb(c: Rgb): string {
-  return `vec3(${f(c.r)}, ${f(c.g)}, ${f(c.b)})`;
-}
-
-/** Declarations for the fragment stage; `terrainTexture.ts` declares the
- * `roadTable` vec4 = (z0, step, N, asphalt repeats per metre) alongside its
- * own uniforms, both UBO and non-UBO paths. */
-export const ROAD_FRAGMENT_DEFS = `
-#ifdef ROADPAINT
-uniform sampler2D roadCenter;
-uniform sampler2D roadAsphalt;
-#endif
-`;
-
-/**
- * Injected after the ground-texture blend, inside the same
- * CUSTOM_FRAGMENT_BEFORE_LIGHTS block, so terrainFade/terrainEye/
- * terrainTiling/terrainRock2/terrainPebble are in scope. The centerline is
- * fetched nearest and lerped by hand, so no float-linear extension is
- * needed. fwidth runs BEFORE the branch: a derivative inside non-uniform
- * control flow is undefined. Colours are multiplied by the material albedo
- * so applyWetness's luminance scale still darkens a wet road. The
- * `texture2D` fetches for `rGravelTex`/`rAsphaltTex` sit inside the
- * `rau < ROAD_PAINT_END` branch too, with implicit LOD, which GLSL ES 3.00
- * leaves undefined at a non-uniform branch edge; it is harmless here
- * because at |u| = 30 (the branch's own edge) both `rGravel` and `rAsphalt`
- * are exactly 0, so any undefined sample there is multiplied away before it
- * reaches `surfaceAlbedo`.
- *
- * It writes the gravel shoulder's weight, which holds the asphalt, to
- * `terrainPaintW`, so the far cover's light (`terrainTexture.ts`) steps aside
- * on the road and the asphalt keeps the normal and reflectance it sets.
- */
-export const ROAD_FRAGMENT_PAINT = `
-#ifdef ROADPAINT
-{
-  float rfi = (vPositionW.z - roadTable.x) / roadTable.y;
-  float rfl = clamp(floor(rfi), 0.0, roadTable.z - 2.0);
-  float rft = clamp(rfi - rfl, 0.0, 1.0);
-  float rx0 = texture2D(roadCenter, vec2((rfl + 0.5) / roadTable.z, 0.5)).r;
-  float rx1 = texture2D(roadCenter, vec2((rfl + 1.5) / roadTable.z, 0.5)).r;
-  float ru = vPositionW.x - mix(rx0, rx1, rft);
-  float rau = abs(ru);
-  float raa = fwidth(rau);
-  if (rau < ${f(ROAD_PAINT_END)}) {
-    float rk = 1.0 - smoothstep(terrainFade.x, terrainFade.y, distance(vPositionW.xyz, terrainEye));
-    vec3 rGravelTex = mix(vec3(1.0), texture2D(terrainPebble, vPositionW.xz * terrainTiling.w).rgb / terrainRock2.y, rk);
-    vec3 rAsphaltTex = mix(vec3(1.0), texture2D(roadAsphalt, vec2(ru, vPositionW.z) * roadTable.w).rgb / terrainRock2.y, rk);
-    // Asphalt's slice of the relief arrays:
-    // the road's u axis is world X across the centreline, so it shares the
-    // ground's planar frame — the same (ru, z) * roadTable.w coordinate the
-    // asphalt albedo above was fetched with, on layer index 5.
-    vec3 rAsphaltN = texture2D(terrainNormals, vec3(vec2(ru, vPositionW.z) * roadTable.w, 5.0)).rgb * 2.0 - 1.0;
-    vec3 rAsphaltRAH = texture2D(terrainRAH, vec3(vec2(ru, vPositionW.z) * roadTable.w, 5.0)).rgb;
-    // AO, the same mean-1 form as the ground
-    // blend's own AO term in terrainTexture.ts: the packed channel is
-    // normalised to mean 0.5 when the texture was made, so dividing by 0.5 turns it
-    // into a multiplier centred on 1.0 rather than on asphalt's own raw mean.
-    rAsphaltTex *= mix(1.0, rAsphaltRAH.g / 0.5, rk);
-    float rVerge = ${f(ROAD_VERGE_STRENGTH)} * (1.0 - smoothstep(${f(ROAD_SHOULDER_HALF)}, ${f(ROAD_PAINT_END)}, rau));
-    float rGravel = 1.0 - smoothstep(${f(ROAD_ASPHALT_HALF)}, ${f(ROAD_SHOULDER_HALF)}, rau);
-    float rE = max(${f(ROAD_ASPHALT_EDGE)}, raa);
-    float rAsphalt = 1.0 - smoothstep(${f(ROAD_ASPHALT_HALF)} - rE, ${f(ROAD_ASPHALT_HALF)} + rE, rau);
-    // Normal/roughness/F0 blend toward the asphalt's own relief, faded by rk
-    // the same way its albedo is, then gated by the asphalt band's coverage.
-    float rRelief = rAsphalt * rk;
-    normalW = normalize(mix(normalW, normalize(normalW + vec3(rAsphaltN.x, 0.0, rAsphaltN.y)), rRelief));
-    terrainRough = mix(terrainRough, clamp(terrainLayerRough2.y * mix(1.0, rAsphaltRAH.r / 0.5, rk), 0.0, 1.0), rAsphalt);
-    terrainF0 = mix(terrainF0, terrainLayerF02.y, rAsphalt);
-    terrainPaintW = max(terrainPaintW, rGravel);
-    float rPhase = mod(vPositionW.z, ${f(ROAD_DASH_PERIOD)});
-    uint rh = uint(int(floor(vPositionW.z / ${f(ROAD_DASH_PERIOD)}))) * 2654435761u;
-    rh ^= rh >> 15u;
-    rh *= 2246822519u;
-    rh ^= rh >> 13u;
-    float rKeep = float(rh & 65535u) / 65536.0;
-    float rOn = (rPhase < ${f(ROAD_DASH_ON)} && rKeep < ${f(ROAD_DASH_KEEP)}) ? 1.0 : 0.0;
-    float rLe = max(${f(ROAD_LINE_EDGE)}, raa);
-    float rLine = rOn * ${f(ROAD_LINE_STRENGTH)} * (1.0 - smoothstep(${f(ROAD_LINE_HALF)}, ${f(ROAD_LINE_HALF)} + rLe, rau));
-    vec3 rCol = mix(surfaceAlbedo, ${rgb(VERGE)} * vAlbedoColor.rgb, rVerge);
-    rCol = mix(rCol, ${rgb(GRAVEL)} * rGravelTex * vAlbedoColor.rgb, rGravel);
-    rCol = mix(rCol, ${rgb(ASPHALT)} * rAsphaltTex * vAlbedoColor.rgb, rAsphalt);
-    rCol = mix(rCol, ${rgb(CENTERLINE)} * vAlbedoColor.rgb, rLine);
-    surfaceAlbedo = rCol;
-  }
-}
-#endif
-`;

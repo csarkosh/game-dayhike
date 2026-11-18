@@ -1,12 +1,11 @@
 import { describe, expect, it } from "vitest";
 import {
   ASPHALT, CENTERLINE, GRAVEL, VERGE,
-  ROAD_ASPHALT_HALF, ROAD_DASH_KEEP, ROAD_DASH_ON, ROAD_DASH_PERIOD, ROAD_LINE_HALF,
-  ROAD_PAINT_END, ROAD_SHOULDER_HALF, ROAD_TABLE_HALF_SPAN, ROAD_TABLE_N, ROAD_TABLE_RECENTRE,
-  ROAD_TABLE_STEP, ROAD_FRAGMENT_DEFS, ROAD_FRAGMENT_PAINT,
+  ROAD_DASH_KEEP, ROAD_DASH_ON, ROAD_DASH_PERIOD, ROAD_LINE_HALF,
+  ROAD_PAINT_END, ROAD_TABLE_HALF_SPAN, ROAD_TABLE_N, ROAD_TABLE_RECENTRE,
+  ROAD_TABLE_STEP,
   buildRoadTable, dashKeeps, roadAlbedo, roadBands, roadTableStale, roadTableZ0,
 } from "../../src/game/roadPaint.js";
-import { timeLimit } from "../helpers/timeLimit.js";
 
 describe("road bands — the mirror of the fragment shader", () => {
   const off = { verge: 0, gravel: 0, asphalt: 0, line: 0 };
@@ -65,7 +64,7 @@ describe("road bands — the mirror of the fragment shader", () => {
 
   it("dash wear is a pinned integer hash, defined for negative indices", () => {
     // Known answers for the hash the shader runs in 32-bit unsigned
-    // arithmetic. If these move, the GLSL and the mirror have drifted.
+    // arithmetic. If these move, the shader and the mirror have drifted.
     const sample = [-3, -2, -1, 0, 1, 2, 3, 4, 5, 6, 7, 8].map(dashKeeps);
     expect(sample).toEqual(sample.map(Boolean)); // booleans, no NaN
     expect(dashKeeps(0)).toBe(dashKeeps(0));
@@ -120,53 +119,4 @@ describe("centerline table", () => {
     // stay inside the half span.
     expect(ROAD_TABLE_RECENTRE + 4096 + 128).toBeLessThan(ROAD_TABLE_HALF_SPAN);
   });
-});
-
-describe("the GLSL strings", () => {
-  it("carry the same constants as the mirror", () => {
-    expect(ROAD_FRAGMENT_PAINT).toContain(`${ROAD_PAINT_END.toFixed(1)}`);
-    expect(ROAD_FRAGMENT_PAINT).toContain(`${ROAD_ASPHALT_HALF}`);
-    expect(ROAD_FRAGMENT_PAINT).toContain(`${ROAD_SHOULDER_HALF}`);
-    expect(ROAD_FRAGMENT_PAINT).toContain("fwidth(");
-    expect(ROAD_FRAGMENT_PAINT).toContain("vAlbedoColor.rgb"); // wetness still applies
-    expect(ROAD_FRAGMENT_DEFS).toContain("uniform sampler2D roadCenter;");
-    expect(ROAD_FRAGMENT_DEFS).toContain("uniform sampler2D roadAsphalt;");
-    // fwidth must be evaluated before the branch: derivatives inside
-    // non-uniform control flow are undefined.
-    expect(ROAD_FRAGMENT_PAINT.indexOf("fwidth(")).toBeLessThan(ROAD_FRAGMENT_PAINT.indexOf("if (rau <"));
-  });
-
-  it("takes the ground's own form for asphalt roughness: constant times a map/0.5 modulation, clamped", () => {
-    // terrainRough = Σ w'_i · R_i · (near ? map_i / 0.5 : 1) — the
-    // per-layer constant is authoritative and the map modulates around the
-    // neutral 0.5, the same form terrainTexture.ts's ground blend uses
-    // (`clamp(rBase * mix(1.0, rMap / 0.5, strength), 0.0, 1.0)`).
-    expect(ROAD_FRAGMENT_PAINT).toContain(
-      "terrainRough = mix(terrainRough, clamp(terrainLayerRough2.y * mix(1.0, rAsphaltRAH.r / 0.5, rk), 0.0, 1.0), rAsphalt);",
-    );
-    // The rejected form replaced the constant outright with the map:
-    // mix(terrainLayerRough2.y, rAsphaltRAH.r, rk) / 0.95 —
-    // a discontinuity against the ground's formula at the asphalt edge.
-    // Regression-pinned absent.
-    expect(ROAD_FRAGMENT_PAINT).not.toMatch(
-      /mix\(\s*terrainLayerRough2\.y\s*,\s*rAsphaltRAH\.r\s*,\s*rk\s*\)\s*\/\s*0\.95/,
-    );
-  });
-
-  it("applies asphalt's AO as a mean-1 multiplier, the same /0.5 form the ground blend uses", () => {
-    expect(ROAD_FRAGMENT_PAINT).toContain("rAsphaltTex *= mix(1.0, rAsphaltRAH.g / 0.5, rk);");
-    // The rejected form multiplied by the raw blended value: it would darken
-    // asphalt by whatever occlusion mean the source map happened to ship,
-    // rather than by a mean-1 multiplier around it.
-    expect(ROAD_FRAGMENT_PAINT).not.toMatch(/rAsphaltTex\s*\*=\s*mix\(\s*1\.0\s*,\s*rAsphaltRAH\.g\s*,\s*rk\s*\);/);
-  });
-});
-
-describe("the far cover steps aside on the road", () => {
-  it("writes the gravel shoulder's weight, which holds the asphalt, after the asphalt's F0", () => {
-    expect(ROAD_FRAGMENT_PAINT).toContain(
-      "    terrainF0 = mix(terrainF0, terrainLayerF02.y, rAsphalt);\n    terrainPaintW = max(terrainPaintW, rGravel);\n",
-    );
-    expect(ROAD_FRAGMENT_PAINT.split("terrainPaintW").length - 1).toBe(2);
-  }, timeLimit(5_000));
 });
