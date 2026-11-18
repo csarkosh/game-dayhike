@@ -253,4 +253,36 @@ describe("the intro overlay", () => {
     r.overlay.dispose();
   });
 
+  it("tells the hike's downloads the film plays only while it plays and could still use the link", () => {
+    const playing = rig();
+    const video = playing.video as unknown as { duration: number; error: unknown; networkState: number };
+    video.duration = 72;
+    video.networkState = 2;
+    playing.video.ranges = [[0, 8.5]];
+    playing.video.currentTime = 2;
+    expect(playing.overlay.film()).toEqual({ playing: true, ahead: 6.5 });
+    // Buffered to its end while its last bytes still arrive: it plays.
+    playing.video.ranges = [[0, 71.9]];
+    expect(playing.overlay.film().playing).toBe(true);
+    // Wholly buffered, its fetch idle: it needs nothing more of the link.
+    video.networkState = 1;
+    expect(playing.overlay.film().playing).toBe(false);
+    video.networkState = 2;
+    playing.video.ranges = [[0, 8.5]];
+    video.error = { code: 2 };
+    expect(playing.overlay.film().playing).toBe(false);
+    video.error = null;
+    playing.video.ended = true;
+    expect(playing.overlay.film().playing).toBe(false);
+    playing.video.ended = false;
+    playing.video.pause();
+    expect(playing.overlay.film().playing).toBe(false);
+    playing.overlay.dispose();
+    const stopped = rig();
+    expect(stopped.overlay.film().playing).toBe(true);
+    stopped.overlay.stop();
+    expect(stopped.overlay.film().playing).toBe(false);
+    stopped.overlay.dispose();
+  });
+
 });

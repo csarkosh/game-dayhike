@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { FETCH_PAUSES_MS, FETCH_TRIES, fetchRetried, statusMayPass, type FetchRetryDeps } from "../../src/game/fetchRetry.js";
+import type { DownloadTurns } from "../../src/game/downloadTurns.js";
 
 type Answer = { ok: boolean; status: number; body?: string; bodyFails?: boolean } | Error;
 
@@ -102,5 +103,38 @@ describe("a download asked for again when the network drops it", () => {
     };
     await expect(fetchRetried("pine.glb", abort.signal, text, waitThenAbort)).rejects.toBe(reason);
     expect(asked.length).toBe(1);
+  });
+
+  it("runs each try in a turn of its own, from its request to the end of its body, and holds none in the pause", async () => {
+    const { deps } = network([new TypeError("Failed to fetch"), { ok: true, status: 200, bodyFails: true }, { ok: true, status: 200, body: "trees" }]);
+    let turns = 0;
+    let held = 0;
+    const heldInPauses: number[] = [];
+    const counted: DownloadTurns = {
+      run: (start) => {
+        turns++;
+        held++;
+        return start().finally(() => held--);
+      },
+      film: () => () => undefined,
+      view: () => ({ width: 0, inFlight: held, waiting: 0, hungry: false, gaveUp: false }),
+    };
+    const inTurns: FetchRetryDeps = {
+      fetch: deps.fetch,
+      wait: async (ms, s) => {
+        heldInPauses.push(held);
+        await deps.wait(ms, s);
+      },
+      turns: counted,
+    };
+    const reads: number[] = [];
+    await expect(fetchRetried("pine.glb", undefined, (response) => {
+      reads.push(held);
+      return response.text();
+    }, inTurns)).resolves.toBe("trees");
+    expect(turns).toBe(FETCH_TRIES);
+    expect(reads).toEqual([1, 1]);
+    expect(heldInPauses).toEqual([0, 0]);
+    expect(held).toBe(0);
   });
 });

@@ -19,6 +19,7 @@ import {
 import { renderLanding, type LandingHandle, type LandingPanel } from "./game/landing.js";
 import { afterNextPaint } from "./game/paint.js";
 import { createIntroOverlay, type CutReason, type IntroOverlay } from "./game/introOverlay.js";
+import { pageTurns, turnsLine } from "./game/downloadTurns.js";
 import { INTRO_CAPTIONS } from "./game/scene/intro.js";
 import { setLoadProgress } from "./game/loadReport.js";
 import { markedProgress } from "./game/loadProgress.js";
@@ -382,6 +383,8 @@ type IntroRun = {
   launched: ((reason: CutReason) => void) | null;
   /** A cut before the launch (the video failed at once), kept for it. */
   cutEarly: CutReason | null;
+  /** Takes the film away from the hike's downloads, which then start as they are asked for. */
+  untell: () => void;
 };
 /** Made by Play, waiting for the game route's render. */
 let pendingIntro: IntroRun | null = null;
@@ -432,6 +435,7 @@ function waitForBuffer(overlay: IntroOverlay, seconds: number, maxMs: number): P
 function endIntro(run: IntroRun | null): void {
   if (run === null) return;
   cancelAnimationFrame(run.frame);
+  run.untell();
   run.overlay.dispose();
   setLoadProgress(null);
   if (pendingIntro === run) pendingIntro = null;
@@ -480,10 +484,17 @@ function warmFilmHead(): void {
 }
 
 function startIntro(src: string, muted: boolean): IntroRun {
-  const run: IntroRun = { overlay: null as unknown as IntroOverlay, frame: 0, launched: null, cutEarly: null };
+  const run: IntroRun = { overlay: null as unknown as IntroOverlay, frame: 0, launched: null, cutEarly: null, untell: () => undefined };
   // The film the title page has been loading, when there is one for this file; else one made here.
   const deps = { video: () => filmHead.take(src) ?? document.createElement("video"), now: () => performance.now() };
   run.overlay = createIntroOverlay(app, { src, captions: INTRO_CAPTIONS, muted, sound: () => !mute.muted(), onCut: (reason) => cutIntro(run, reason) }, deps);
+  // While the film plays, the hike's downloads take turns behind it, so its
+  // low-priority request keeps its share of the link (`downloadTurns.ts`);
+  // the film is taken away when it ends or fails, and when the intro goes.
+  const untell = pageTurns.film(() => run.overlay.film(), (course) => console.info(turnsLine(course)));
+  run.untell = untell;
+  run.overlay.video.addEventListener("ended", untell, { once: true });
+  run.overlay.video.addEventListener("error", untell, { once: true });
   const draw = (now: number): void => {
     run.overlay.render(now);
     run.frame = requestAnimationFrame(draw);

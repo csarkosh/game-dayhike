@@ -23,6 +23,7 @@ import { bakeGeometry, boundsOf, chainMatrix, type PlacedNode } from "../modelBa
 import type { Vec3 } from "../instancePose.js";
 import { BASE } from "../router.js";
 import { fetchRetried } from "../fetchRetry.js";
+import { pageTurns } from "../downloadTurns.js";
 import { modelLoadTold } from "../loadReport.js";
 
 /** One primitive of a LOD: its geometry at the origin, what its file says of its material, and the loader's textures of it. */
@@ -168,8 +169,11 @@ function pointKtx2Decoder(): void {
  * A KTX2 map from `url`, with the file's own smaller levels, tiling: a
  * colour map (`colour`) in an sRGB format, which the sampler decodes before
  * it filters; a normal or an occlusion, roughness and metalness map raw.
+ * Lite fetches the file itself and reads a 2D map from no bytes of the
+ * game's, so the whole call is one turn of the page's downloads
+ * (`downloadTurns.ts`): its fetch, and the decode and upload after it.
  */
 export function loadKtx2Map(engine: EngineContext, url: string, colour: boolean): Promise<Texture2D> {
   pointKtx2Decoder();
-  return loadKtx2Texture2D(engine, url, colour);
+  return pageTurns.run(() => loadKtx2Texture2D(engine, url, colour));
 }
