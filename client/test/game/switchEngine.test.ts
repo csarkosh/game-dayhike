@@ -34,17 +34,17 @@ describe("the canvas a switch has made, within its cover's bound", () => {
     },
   };
 
-  /** A canvas named `gpu`, made after `ms`. */
+  /** A canvas named `slow`, made after `ms`. */
   function slowCanvas(ms: number) {
     let asked: (() => boolean) | null = null;
-    const made: EngineOnCanvas = { canvas: { id: "gpu" } as unknown as HTMLCanvasElement };
+    const made: EngineOnCanvas = { canvas: { id: "slow" } as unknown as HTMLCanvasElement };
     const make = (wanted: () => boolean): Promise<EngineOnCanvas> => {
       asked = wanted;
       return new Promise((resolve) => setTimeout(() => resolve(made), ms));
     };
     const deps = {
       ...timers,
-      webgl2: (): EngineOnCanvas => ({ canvas: { id: "gl" } as unknown as HTMLCanvasElement }),
+      fresh: (): EngineOnCanvas => ({ canvas: { id: "fresh" } as unknown as HTMLCanvasElement }),
     };
     return { made, make, deps, wanted: () => asked?.() ?? null };
   }
@@ -79,7 +79,7 @@ describe("the canvas a switch has made, within its cover's bound", () => {
     expect(got.late).toBe(true);
     // The scene still gets its floor: models and bakes load under the cover.
     expect(got.leftMs).toBe(5_000);
-    expect((got.onCanvas.canvas as unknown as { id: string }).id).toBe("gl");
+    expect((got.onCanvas.canvas as unknown as { id: string }).id).toBe("fresh");
     // A failure the late making meets from here is not remembered.
     expect(t.wanted()).toBe(false);
     // The late canvas arrives and is left: there is no engine on it to let go of.
@@ -129,7 +129,7 @@ describe("the canvas a switch has made, within its cover's bound", () => {
   });
 
   it("takes a fresh canvas at the bound where the making would reject later, and never throws", async () => {
-    const deps = { ...timers, webgl2: (): EngineOnCanvas => ({ canvas: {} as HTMLCanvasElement }) };
+    const deps = { ...timers, fresh: (): EngineOnCanvas => ({ canvas: {} as HTMLCanvasElement }) };
     const result = engineWithinBound(() => new Promise((_, reject) => setTimeout(() => reject(new Error("no device")), 12_000)), 10_000, deps);
     await advance(10_000);
     expect((await result).late).toBe(true);

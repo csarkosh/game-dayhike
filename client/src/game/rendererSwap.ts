@@ -102,14 +102,14 @@ export const SWAP_SCENE_MIN_MS = 5_000;
  * itself. `make` is told, through `wanted`, whether what it makes is still
  * wanted. A canvas not made within `boundMs` is left when it arrives (it
  * carries no engine to let go of); the switch takes a fresh canvas at its
- * tier (`deps.webgl2`, `late`), with nothing remembered against what was slow
+ * tier (`deps.fresh`, `late`), with nothing remembered against what was slow
  * rather than broken: `wanted` reads false from then on, so a failure the late
  * making meets records nothing, and the next switch or load tries it again.
  */
 export async function engineWithinBound(
   make: (wanted: () => boolean) => Promise<EngineOnCanvas>,
   boundMs: number,
-  deps: { now(): number; setTimer(fn: () => void, ms: number): () => void; webgl2(): EngineOnCanvas },
+  deps: { now(): number; setTimer(fn: () => void, ms: number): () => void; fresh(): EngineOnCanvas },
 ): Promise<{ onCanvas: EngineOnCanvas; leftMs: number; late: boolean }> {
   const from = deps.now();
   let wanted = true;
@@ -123,7 +123,7 @@ export async function engineWithinBound(
     wanted = false;
     // A making that fails later fails for no one.
     void making.catch(() => undefined);
-    return { onCanvas: deps.webgl2(), leftMs: SWAP_SCENE_MIN_MS, late: true };
+    return { onCanvas: deps.fresh(), leftMs: SWAP_SCENE_MIN_MS, late: true };
   }
   return { onCanvas: first, leftMs: Math.max(SWAP_SCENE_MIN_MS, boundMs - (deps.now() - from)), late: false };
 }

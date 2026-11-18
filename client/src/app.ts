@@ -2522,9 +2522,9 @@ function buildGame(
           const id = setTimeout(fn, ms);
           return () => clearTimeout(id);
         },
-        webgl2: () => ({ canvas: document.createElement("canvas") }),
+        fresh: () => ({ canvas: document.createElement("canvas") }),
       });
-      if (made.late) console.warn(`WebGPU: the engine was not ready within the switch's ${readyMaxMs} ms; drawing ${target} with WebGL2.`);
+      if (made.late) console.warn(`quality: the canvas was not ready within the switch's ${readyMaxMs} ms; building ${target} on a fresh one.`);
       const next = made.onCanvas;
       if (disposed || broken) return tier;
       // The canvas made for the switch is the first the swap takes.
