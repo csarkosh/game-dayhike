@@ -25,8 +25,8 @@ export function reportProgress(): LoadProgress | null {
 }
 
 /**
- * What a load tells the bar after its start. Both are quiet once the bar the
- * load started under is no longer the one up, so a load that outlives its
+ * What a load tells the bar after its start. Both are quiet unless the bar
+ * the load started under is still the one up, so a load that outlives its
  * hike tells nothing to the next hike's bar; and a load ended by its owner's
  * signal does not land: whoever asks for the same file again lands it.
  */

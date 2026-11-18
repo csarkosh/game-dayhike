@@ -6,8 +6,8 @@ import { TRAIL_BED_HALF } from "../sim/trail.js";
 /**
  * The trail bench's constants and the pure mirrors of its band, wear and
  * trample functions, Babylon-free so the tests and the clutter rebuild
- * share them with trailPaint.ts's mirror of the bands. Renderer-only: nothing
- * here may migrate into sim/.
+ * share them with trailPaint.ts's mirror. Renderer-only: nothing here may
+ * migrate into sim/.
  */
 
 /** Width factor at a node of degree three or more and at the trailhead. */
