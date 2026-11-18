@@ -1185,6 +1185,14 @@ export function createLiteRenderer(canvas: HTMLCanvasElement, level: Level, fore
       );
       if (options.deferClipmap !== true) finish(terrain.firstBuild());
     }
+    // The chain's pipelines, asked for as it was made and compiled while the ground's images loaded: in before the scene is
+    // registered, which records the chain's pass.
+    if (chain !== null) await chain.ready;
+    if (disposed) {
+      disposeScene(scene);
+      disposeEngine(engine);
+      return;
+    }
     enablePbrMaterialPluginVertexData();
     enableMaterialPlugins(scene);
     await registerScene(scene);

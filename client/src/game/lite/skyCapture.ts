@@ -44,6 +44,7 @@ import type { Vec3 } from "../sky.js";
 import type { SkyState } from "../skyState.js";
 import { SKY_RADIANCE_WGSL } from "./skyDome.js";
 import { wgslFloat } from "./forestPlugins.js";
+import { askRenderPipeline } from "./pipelineAsk.js";
 
 /** WebGPU's buffer usages the capture's buffers take (`GPUBufferUsage`), by their values. */
 const COPY_DST = 0x0008;
@@ -144,16 +145,19 @@ export type LiteSkyCapture = {
  * is lit by it until the first capture.
  */
 export async function createLiteSkyCapture(engine: EngineContext, scene: SceneContext, table: Texture2D): Promise<LiteSkyCapture> {
-  const environment = await createCustomEnvironment(scene, { size: SKY_PROBE_SIZE, brdfUrl: environmentBrdf, lodGenerationScale: 0, mipmaps: false });
-  // The capture's passes are drawn on the engine's device, as Lite's own are.
+  // The capture's passes are drawn on the engine's device, as Lite's own are; their pipeline is asked for off the page's
+  // thread with the environment (`pipelineAsk.ts`), and both are waited for together.
   const device = getGpuDevice(engine);
   const module = device.createShaderModule({ label: "sky capture", code: SKY_CAPTURE_WGSL });
-  const pipeline = device.createRenderPipeline({
-    label: "sky capture",
-    layout: "auto",
-    vertex: { module, entryPoint: "faceVertex" },
-    fragment: { module, entryPoint: "faceFragment", targets: [{ format: "rgba16float" }] },
-  });
+  const [environment, pipeline] = await Promise.all([
+    createCustomEnvironment(scene, { size: SKY_PROBE_SIZE, brdfUrl: environmentBrdf, lodGenerationScale: 0, mipmaps: false }),
+    askRenderPipeline(device, {
+      label: "sky capture",
+      layout: "auto",
+      vertex: { module, entryPoint: "faceVertex" },
+      fragment: { module, entryPoint: "faceFragment", targets: [{ format: "rgba16float" }] },
+    }),
+  ]);
   const values = new Float32Array(SKY_FLOATS);
   const skyBuffer = device.createBuffer({ label: "sky capture", size: SKY_CAPTURE_BYTES, usage: UNIFORM | COPY_DST });
   const groups = SKY_PROBE_FACES.map((_, face) => {
