@@ -37,6 +37,7 @@ import { glbEmissive } from "../glbParts.js";
 import { CLIP_FLOATS, SKIN_CLOCK_FOLD, type BakedClip } from "../skinInstances.js";
 import type { FrameUploads } from "./frameUploads.js";
 import { fetchRetried } from "../fetchRetry.js";
+import { modelLoadTold } from "../loadReport.js";
 import { MATRIX_BYTES } from "./listMeshes.js";
 
 /** The clock every baked mesh's rows are read by, seconds, folded. */
@@ -165,10 +166,18 @@ function texturesOf(material: PbrMaterialProps): Texture2D[] {
 /**
  * The model at `url`, standing in `scene` with no body shown. It throws
  * where the file cannot be fetched or read, or holds no skinned mesh or no
- * clip.
+ * clip. The loading bar is told of the download as it starts, as its bytes
+ * are in and as the model stands or fails (`modelLoadTold`).
  */
-export async function loadSkinnedModel(engine: EngineContext, scene: SceneContext, url: string, options: SkinnedModelOptions): Promise<SkinnedModel> {
+export function loadSkinnedModel(engine: EngineContext, scene: SceneContext, url: string, options: SkinnedModelOptions): Promise<SkinnedModel> {
+  return modelLoadTold(url, options.signal, (fetched) => makeSkinnedModel(engine, scene, url, options, fetched));
+}
+
+async function makeSkinnedModel(
+  engine: EngineContext, scene: SceneContext, url: string, options: SkinnedModelOptions, fetched: (bytes: number) => void,
+): Promise<SkinnedModel> {
   const file = await fetchRetried(url, options.signal, (response) => response.arrayBuffer());
+  fetched(file.byteLength);
   const emissive = glbEmissive(file);
   const container: AssetContainer = await loadGltf(engine, file);
   const meshes = getContainerMeshes(container);

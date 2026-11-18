@@ -17,6 +17,7 @@ import {
 } from "@babylonjs/lite";
 import { CLOUD_NOISE_SIZE, cloudNoiseMap, writeCloudGround, type CloudGround } from "../cloudParams.js";
 import { GROUND_ALBEDOS, GROUND_LAYER_URLS, GROUND_MAP_SIZE, decodeGroundLayer, interleaveLayers } from "../groundLayers.js";
+import { reportGroundImage } from "../loadReport.js";
 import type { FloatTable } from "../terrainTables.js";
 import type { TerrainTextures } from "./terrainPlugins.js";
 
@@ -29,15 +30,18 @@ export const GROUND_IMAGES = Object.keys(GROUND_ALBEDOS).length + GROUND_LAYER_U
 /**
  * The ground's arrays, once every image has been fetched and decoded.
  * `landed` is called as each image is in, for whoever counts the loads in
- * flight; `signal` ends the fetches of a renderer that has gone, and the
- * promise then rejects.
+ * flight, and the loading bar is told of each as it starts and as it is in
+ * (`reportGroundImage`); `signal` ends the fetches of a renderer that has
+ * gone, and the promise then rejects.
  */
 export async function loadGroundArrays(engine: EngineContext, signal: AbortSignal, landed: () => void): Promise<GroundArrays> {
   const decode = async (url: string): Promise<Uint8ClampedArray> => {
+    const told = reportGroundImage(url, signal);
     try {
       return await decodeGroundLayer(url, GROUND_MAP_SIZE, signal);
     } finally {
       landed();
+      told.landed();
     }
   };
   const albedo = async (url: string): Promise<Uint8Array> => {

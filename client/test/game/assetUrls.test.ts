@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { MODEL_COUNT, audioUrl, modelUrl } from "../../src/game/assetUrls.js";
+import { audioUrl, modelBytes, modelUrl } from "../../src/game/assetUrls.js";
 import catalog from "../../assets/catalog.json" with { type: "json" };
 
 /** Every model the catalog declares, by the `output` key callers pass. */
@@ -17,10 +17,15 @@ describe("modelUrl", () => {
     }
   });
 
-  it("counts toward a hike only the models a hike loads: the film's own are left out", () => {
-    const filmOnly = (catalog.assets as Array<{ id: string; scene?: string }>).filter((a) => a.scene !== undefined).map((a) => a.id);
-    expect(filmOnly).toEqual(["intro.car", "intro.ranger"]);
-    expect(MODEL_COUNT).toBe(42);
+  it("gives the catalog's bytes of every model by the URL it is served at, which is what a loader reports its download by", () => {
+    for (const asset of catalog.assets as Array<{ output: string; bytes?: number }>) {
+      expect(asset.bytes, asset.output).toBeGreaterThan(0);
+      expect(modelBytes(modelUrl(asset.output)), asset.output).toBe(asset.bytes);
+    }
+    // A URL that is no shipped model's has none, an inherited key among them.
+    expect(modelBytes("/assets/models/enemy.nonexistent.glb")).toBeUndefined();
+    expect(modelBytes("models/tree.giant_fir.glb")).toBeUndefined();
+    expect(modelBytes("toString")).toBeUndefined();
   });
 
   it("gives every model its own URL", () => {

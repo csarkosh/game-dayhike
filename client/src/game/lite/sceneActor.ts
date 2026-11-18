@@ -29,6 +29,7 @@ import {
 import type { ActorPose } from "../scene/timeline.js";
 import type { FrameUploads } from "./frameUploads.js";
 import { fetchRetried } from "../fetchRetry.js";
+import { modelLoadTold } from "../loadReport.js";
 
 /** How far (the largest float of a bone's sixteen) the rig's bones at rest may stand from the ones the loader made, in the mesh's own units. */
 export const REST_BONES_APART = 1e-2;
@@ -82,10 +83,20 @@ export function floatsApart(a: ArrayLike<number>, b: ArrayLike<number>): number 
 /**
  * The actor of the model at `url`, standing in `scene`, hidden until a pose
  * shows it. It throws where the file cannot be fetched or read, holds no
- * skinned mesh, or its skin as the loader made it is not the rig's.
+ * skinned mesh, or its skin as the loader made it is not the rig's. The
+ * loading bar is told of the download as it starts, as its bytes are in and
+ * as the actor stands or fails (`modelLoadTold`): one loaded while a bar is
+ * up is a model of the hike's load.
  */
-export async function loadSceneActor(engine: EngineContext, scene: SceneContext, url: string, options: SceneActorOptions): Promise<SceneActor> {
+export function loadSceneActor(engine: EngineContext, scene: SceneContext, url: string, options: SceneActorOptions): Promise<SceneActor> {
+  return modelLoadTold(url, options.signal, (fetched) => makeSceneActor(engine, scene, url, options, fetched));
+}
+
+async function makeSceneActor(
+  engine: EngineContext, scene: SceneContext, url: string, options: SceneActorOptions, fetched: (bytes: number) => void,
+): Promise<SceneActor> {
   const file = await fetchRetried(url, options.signal, (response) => response.arrayBuffer());
+  fetched(file.byteLength);
   const rig = readActorRig(file);
   const container: AssetContainer = await loadGltf(engine, file);
   const meshes = getContainerMeshes(container);

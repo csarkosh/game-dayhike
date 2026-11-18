@@ -1,23 +1,19 @@
 import { describe, expect, it, vi } from "vitest";
 import { createLoadProgress } from "../../src/game/loadProgress.js";
-import { MODEL_TOTAL, reportLayer, reportProgress, setLoadProgress } from "../../src/game/loadReport.js";
+import { reportLayer, reportProgress, setLoadProgress } from "../../src/game/loadReport.js";
 import { reportCall } from "../../src/game/wildlifeAudio.js";
 import { stepSlices } from "../../src/game/syncJobs.js";
 
-/** A progress model with every model landed, so the line reads the next stage. */
-function afterModels() {
+/** A progress model no model has been asked of, so the line reads the next stage. */
+function beforeModels() {
   const p = createLoadProgress();
   setLoadProgress(p);
-  for (let i = 0; i < MODEL_TOTAL; i++) {
-    p.start("models", `m${i}`);
-    p.done("models", `m${i}`);
-  }
   return p;
 }
 
 describe("the loading hooks", () => {
   it("count the ground maps and the calls as one stage of 24", () => {
-    const p = afterModels();
+    const p = beforeModels();
     reportLayer("start", "ground.grass.normal");
     reportLayer("done", "ground.grass.normal");
     reportCall("start", "call.elk_bark");

@@ -23,6 +23,7 @@ import { bakeGeometry, boundsOf, chainMatrix, type PlacedNode } from "../modelBa
 import type { Vec3 } from "../instancePose.js";
 import { BASE } from "../router.js";
 import { fetchRetried } from "../fetchRetry.js";
+import { modelLoadTold } from "../loadReport.js";
 
 /** One primitive of a LOD: its geometry at the origin, what its file says of its material, and the loader's textures of it. */
 export type ModelPart = {
@@ -81,9 +82,21 @@ export async function loadModel(engine: EngineContext, url: string, lods: readon
   return (await loadModelFile(engine, url, lods, signal)).model;
 }
 
-/** `loadModel`, with the file's own bytes beside the model, for whoever reads more of the file than its LODs. */
-export async function loadModelFile(engine: EngineContext, url: string, lods: readonly string[], signal: AbortSignal): Promise<{ model: LoadedModel; file: ArrayBuffer }> {
+/**
+ * `loadModel`, with the file's own bytes beside the model, for whoever reads
+ * more of the file than its LODs. The loading bar is told of the download as
+ * it starts, as its bytes are in and as the model is made or fails
+ * (`modelLoadTold`).
+ */
+export function loadModelFile(engine: EngineContext, url: string, lods: readonly string[], signal: AbortSignal): Promise<{ model: LoadedModel; file: ArrayBuffer }> {
+  return modelLoadTold(url, signal, (fetched) => readModelFile(engine, url, lods, signal, fetched));
+}
+
+async function readModelFile(
+  engine: EngineContext, url: string, lods: readonly string[], signal: AbortSignal, fetched: (bytes: number) => void,
+): Promise<{ model: LoadedModel; file: ArrayBuffer }> {
   const file = await fetchRetried(url, signal, (response) => response.arrayBuffer());
+  fetched(file.byteLength);
   const container = await loadGltf(engine, file);
   const all = getContainerMeshes(container);
   const meshes = new Set<SceneNode>(all);

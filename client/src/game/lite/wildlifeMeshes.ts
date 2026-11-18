@@ -38,6 +38,7 @@ import catalog from "../../../assets/catalog.json" with { type: "json" };
 import { modelUrl } from "../assetUrls.js";
 import { creatureRoleGroups, resolveCreatureAssets, type CreatureAsset } from "../creatureAssets.js";
 import { stepClip, type ClipClock } from "../entityPoses.js";
+import { expectModels } from "../loadReport.js";
 import type { FirstBuilds } from "../firstBuilds.js";
 import { composeInto, type Quat } from "../instancePose.js";
 import { writeClipParams, type BakedClip } from "../skinInstances.js";
@@ -185,6 +186,18 @@ export function createLiteWildlifeMeshes(engine: EngineContext, scene: SceneCont
       const id = BIRD_ASSET[s];
       if (id !== null && id !== undefined) wanted.add(id);
     }
+    // The birds are fetched one after another: the loading bar is told of them all before the first.
+    const fetched: string[] = [];
+    for (const assetId of wanted) {
+      const output = assetId === BIRD_ASSET[SPECIES_BUTTERFLY] ? null : outputFor(assetId);
+      if (output === null) continue;
+      try {
+        fetched.push(modelUrl(output));
+      } catch {
+        // A model the build does not ship: its own load says so below.
+      }
+    }
+    expectModels(fetched);
     for (const assetId of wanted) {
       if (disposed) return;
       if (assetId === BIRD_ASSET[SPECIES_BUTTERFLY]) {
