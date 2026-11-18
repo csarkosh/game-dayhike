@@ -1,6 +1,6 @@
 # Babylon Lite as the renderer: a spike
 
-**Status:** measured 2026-11-13 and 2026-11-14; nothing of it is in the game. The game draws with Babylon.js 9.18.
+**Status:** measured 2026-11-13 and 2026-11-14, when the game drew with Babylon.js 9.18 and nothing of this was in it. What was built is recorded in `2026-11-18-babylon-lite-renderer.md`.
 
 Babylon Lite (`@babylonjs/lite`, 1.39.3 here) is a second renderer from the Babylon.js team: WebGPU only,
 WGSL only, its scene plain objects and functions, its opaque draws kept in a cached render bundle. This
