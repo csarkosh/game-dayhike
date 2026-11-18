@@ -231,8 +231,10 @@
  * swell's phases, the wind sea's numbers as the sea follows its wind, the
  * clock) is the frame's; the swash's table is sent on a frame that shows
  * the sea. Its edge is stepped every frame, shown or not
- * (`seaEdge.ts`): the wet ground on the cove reads the swash's table, and
- * the surf is heard by it (`surfSound`, `hasSea`). On the tiers above low
+ * (`seaEdge.ts`): the wet ground on the cove reads the swash's table, a
+ * copy in the frame's block that is packed on the frames that show the sea
+ * and on no other, and the surf is heard by it (`surfSound`, `hasSea`).
+ * On the tiers above low
  * the wind sea is a field, moving the vertices and tilting the normal, and
  * the sea stands in the rain's cover map as open water at rest, by the
  * map's own word while its square reaches the sea's water. The field is the
@@ -1873,7 +1875,7 @@ export function createLiteRenderer(canvas: HTMLCanvasElement, level: Level, fore
         if (centre !== null) standing.bed?.step(centre.x, centre.z);
         // The sea: its rings round the world's centre, its swell and wind sea on the shared seconds, its edge on the
         // cove, and whether the view holds water. What moves it goes to the frame's block below; the wet ground
-        // reads the cove and the swash's table from the edge's first fill on, and the surf is heard by it.
+        // reads the cove and, on a frame that shows the sea, the swash's table, and the surf is heard by the edge.
         if (standing.sea !== null && centre !== null && waterLevel !== undefined) {
           const f = seaFrame;
           f.centreX = centre.x;
@@ -1896,7 +1898,13 @@ export function createLiteRenderer(canvas: HTMLCanvasElement, level: Level, fore
           if (standing.lakes === null) frameValues.water.waterRain[0] = weather.rain;
           const { edge } = standing.sea;
           setWetCove(edge.cove.z0, edge.cove.halfWidth, edge.cove.toeD, edge.cove.faceGrade);
-          setWetSwash(edge.table.data);
+          // The swash's table is packed for the wet ground only on a frame whose view holds the sea's water. Under
+          // the sea's wet line the band the swash wets lies on the cove's face no higher than the sheet climbs, which
+          // every ring counts as its water (`seaWetBounds`, `SWASH_FACE_LIFT_M`), and under a lake's wet line there
+          // is no cove (`wetUniforms`): with no ring's water in view no fragment of the frame's own pass reads the
+          // table, and the frame's block, whose ages would otherwise move on every frame, is not sent its 4 KB. The
+          // sea's own word comes first in the frame, so the first frame that shows the sea carries that frame's table.
+          if (standing.sea.shown) setWetSwash(edge.table.data);
           fillSurfSound(surf, pose, edge.tracker, edge.table, edge.cove, waterLevel, standing.sea.hs, canopyRead?.value ?? 0, frame.dt);
           surfStepped = true;
           // The spray: this frame's plunges near the world's centre throw their bursts, then every burst is aged, and

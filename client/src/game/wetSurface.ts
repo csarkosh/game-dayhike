@@ -93,10 +93,13 @@ export function setWetCove(z0: number, halfWidth: number, toeD: number, faceGrad
 }
 
 /**
- * Per frame: the swash's table (`SwashTable.data`, (front, thickness, reach,
- * age) a column), packed for every attached plugin into the one array they
- * bind: (reach, age) of columns 2i and 2i + 1 in `wetSwash[i]`. A reach that
- * is not a finite number reads as none, an age as dry; nothing is made.
+ * The swash's table (`SwashTable.data`, (front, thickness, reach, age) a
+ * column), packed for every attached plugin into the one array they bind:
+ * (reach, age) of columns 2i and 2i + 1 in `wetSwash[i]`. A reach that is
+ * not a finite number reads as none, an age as dry; nothing is made. The
+ * renderer packs it on the frames whose view holds the sea, the only ones
+ * on which a fragment reads it to any effect; on every other the array
+ * stands as it was last packed.
  */
 export function setWetSwash(data: Float32Array): void {
   for (let c = 0; c < SWASH_COLUMNS; c++) {
