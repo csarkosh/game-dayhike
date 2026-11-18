@@ -10,7 +10,7 @@ import { FixedStepAccumulator } from "./game/loop.js";
 import { capturedEye, type EyePose } from "./game/eyeBlend.js";
 import { createHud } from "./game/hud.js";
 import { RING_COUNT } from "./game/clipmap.js";
-import { reportCompile, reportProgress } from "./game/loadReport.js";
+import { reportProgress } from "./game/loadReport.js";
 import {
   endSceneRunner,
   END_FADE_AT_S, END_LANDING_AT_S, END_ROAD_AT_S, ESCAPE_FROM_M, ESCAPE_SETTLE_S, ESCAPE_WAIT_S, MASTER_FADE_S, PULL_AWAY_AT_S, RUN_MAX_S, TITLE_AT_S, WORLD_FADE_S, carHeard,
@@ -166,7 +166,7 @@ export type GameHandle = {
    */
   attachLobby(lobby: Lobby): void;
   /** The tier the running renderer was built at, and the engine it draws with. */
-  graphics(): { tier: QualityTier; engine: "webgl2" | "webgpu" };
+  graphics(): { tier: QualityTier; engine: Renderer["engineName"] };
   /** Shows a line on the HUD for a few seconds. */
   notify(line: string): void;
   /** The world ready to be looked at (`startReady`): the sky's first slices
@@ -511,17 +511,6 @@ function buildGame(
   }
   watchCompiles(renderer);
   made(() => unwatchCompiles?.());
-  /** Tells the loading bar each shader the WebGL2 engine compiles, one of a
-   * stage with no total; on WebGPU the pipelines stage counts instead. */
-  let untellCompiles: (() => void) | null = null;
-  function tellCompiles(r: Renderer): void {
-    untellCompiles?.();
-    untellCompiles = null;
-    if (r.engineName === "webgpu") return;
-    untellCompiles = r.onShaderCompiled(reportCompile);
-  }
-  tellCompiles(renderer);
-  made(() => untellCompiles?.());
   if (first.fellBack) options.onTierFallback({ attempted: options.tier, built: tier, source: options.tierSource });
   /** What the last switch of tier said, until the next choice: a fallback's line. */
   let swapError: string | null = null;
@@ -2448,7 +2437,6 @@ function buildGame(
     // The new camera is on no one until its first sync.
     cameraOnPlayer = false;
     watchCompiles(r);
-    tellCompiles(r);
   }
 
   const swapBindings: SwapBindings = {
@@ -2814,7 +2802,6 @@ function buildGame(
       input.dispose();
       if (!broken) {
         unwatchCompiles?.();
-        untellCompiles?.();
         // The renderer goes with its engine: none is kept for the next hike.
         renderer.dispose();
       }

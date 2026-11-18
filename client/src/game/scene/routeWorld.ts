@@ -40,7 +40,7 @@ export type DayhikeScene = {
    * car have loaded or failed, or the title's world is in around its first
    * camera: a recorder waits on it. */
   ready: Promise<void>;
-  engine(): "webgpu" | "webgl2";
+  engine(): "webgpu";
 };
 
 /** How dark the film car's patch is against the hike's parked car's (its alpha). */

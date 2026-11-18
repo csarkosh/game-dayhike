@@ -1145,7 +1145,7 @@ describe("layer boundaries", () => {
     expect(app).toContain("      await renderer.whenReady(made.leftMs);\n      return tier;\n    } finally {");
     // The hike's end lets its renderer go, engine and all.
     const dispose = app.slice(app.lastIndexOf("    dispose() {\n      disposed = true;"));
-    expect(dispose).toMatch(/untellCompiles\?\.\(\);\s+renderer\.dispose\(\);\s+\}/);
+    expect(dispose).toMatch(/unwatchCompiles\?\.\(\);\s+renderer\.dispose\(\);\s+\}/);
     // The page makes a canvas and nothing more, and the swap holds it as that.
     expect(code("main.ts")).toContain('  return Promise.resolve({ canvas: document.createElement("canvas") });');
     const swap = code("game/rendererSwap.ts");

@@ -19,4 +19,4 @@ export type EngineHandle = {
 
 /** Which engine a renderer draws with (`Renderer.engineName`): WebGPU for the
  * hike's renderer, which draws with nothing else. */
-export type EngineName = "webgl2" | "webgpu";
+export type EngineName = "webgpu";
