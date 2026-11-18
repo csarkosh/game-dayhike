@@ -3,52 +3,29 @@
  * again at the new tier on a fresh canvas, while the session, its
  * connections, the input and the HUD carry on (design §9).
  *
- * **The old renderer goes first.** The renderer is written for one live
- * instance per page: the atmosphere registers its material plugin globally by
- * name and keeps its record in module state, and the skin shading keeps
- * module switches, so building the new renderer beside the old one would have
- * the old one's dispose unregister the new one's plugin. Falling back
+ * **The old renderer goes first.** Each renderer makes a GPU device of its
+ * own and holds its scene on it; the old one is disposed before the new one
+ * is built, so the page never holds two scenes at once. Falling back
  * therefore means rebuilding the running tier, not keeping the old object.
  *
- * **Always a fresh canvas.** A canvas holds one kind of context for life, so
- * an engine change needs one anyway; taking it for every swap keeps one path,
- * and the old context, lost on dispose, takes every GPU object of the old
- * scene with it.
+ * **Always a fresh canvas.** A canvas leaves with the renderer whose device
+ * its context was configured for, and a rung that failed may leave one whose
+ * context is lost: every rung takes a canvas of its own.
  *
  * **A failure never leaves a renderer behind.** Each rung that fails is taken
  * down whole before the next is tried, and the ladder ends at low, the tier
  * least likely to fail; only then does the throw go up.
  *
- * **The engine is the caller's.** `target.engine` is an engine made for the new
- * tier before the swap starts (null: the renderer makes its own WebGL2 one).
- * Nothing here decides the engine: the WebGPU rule, where it applies, makes it
- * on a fresh canvas that `bindings.freshCanvas` then hands out first. A rung
- * on a given engine that fails may be that engine's fault: its tier is built
- * again on WebGL2 before the ladder goes down a tier, and only once it stands
- * there is the fault the engine's (`engineFailed`, which the caller remembers
- * so the rule gives WebGL2 from then on); a tier that fails on WebGL2 too is
- * the tier's fault, and nothing is held against the engine. Every later rung
- * is WebGL2, the last one always. That is the rule's engine for each of them
- * but two: the rule gives WebGL2 to a tier below one it gave WebGL2, and to
- * every tier once a failure is remembered (`engineChoice.test.ts`). One
- * exception is a switch down to low whose WebGL2 build fails: its ladder is
- * low, then the tier that was running, and that last rung, which the rule
- * may give WebGPU, is built on WebGL2, the engine least likely to fail and
- * one the swap need not wait for. The other is an Android phone, where the
- * rule gives WebGPU to low alone: a tier above it, which only the address
- * can ask for there, ladders down to low on WebGL2 for the same reason.
- * A hike hands its ladders no engine: its renderer makes its own from its
- * canvas, so every rung of a hike's ladder is built with none and is
- * listened to through the renderer's own watch.
+ * **The renderer makes its own engine** from the canvas it is built on and
+ * lets it go with itself. A ladder is handed tiers and no engine, and nothing
+ * here decides, remembers or disposes one.
  *
  * **Only a standing engine is listened to.** The old engine's watcher is
  * taken off before anything of it is disposed (`unwatch`), so a disposed
- * engine is never heard as a failing one, and the new engine's is put on only
- * once its rung stands (`watch`): a rung that failed is never watched. A
- * renderer that made its engine for itself is listened to through its own
- * watch (`Renderer.ownWatch`), on the same terms.
+ * engine is never heard as a failing one, and the new renderer's own watch
+ * (`Renderer.ownWatch`) is put on only once its rung stands (`watch`): a
+ * rung that failed is never watched.
  */
-import type { EngineHandle } from "./engineHandle.js";
 import type { WatchEngine } from "./engineWatch.js";
 import type { QualityTier } from "./quality.js";
 import type { Renderer } from "./rendererTypes.js";
@@ -128,33 +105,15 @@ export async function engineWithinBound(
   return { onCanvas: first, leftMs: Math.max(SWAP_SCENE_MIN_MS, boundMs - (deps.now() - from)), late: false };
 }
 
-/** One rung of a ladder: a tier, and the engine made for it (null: WebGL2). */
-type Rung = { tier: QualityTier; engine: EngineHandle | null; watch: WatchEngine | null };
-
-/** `first`, then its tier again on WebGL2 when `first` has an engine of its
- * own, then each of `later` on WebGL2, none twice. */
-function ladderOf(first: Rung, later: readonly QualityTier[]): Rung[] {
-  const rungs = [first];
-  const webgl2 = (tier: QualityTier): Rung => ({ tier, engine: null, watch: null });
-  if (first.engine !== null) rungs.push(webgl2(first.tier));
-  for (const tier of later) if (!rungs.some((r) => r.tier === tier && r.engine === null)) rungs.push(webgl2(tier));
-  return rungs;
-}
-
-/**
- * What listens to a rung's engine once the rung stands: the detector that
- * came with an engine made for it, or, where the renderer made its engine
- * for itself, the renderer's own (`Renderer.ownWatch`). Null where there is
- * neither: WebGL2, which the renderer makes and nothing watches.
- */
-function detectorOf(renderer: Renderer, engine: EngineHandle | null, watch: WatchEngine | null): WatchEngine | null {
-  return engine !== null ? watch : (renderer.ownWatch ?? null);
+/** A ladder's rungs: `first`, then each tier of `later`, none twice. */
+function ladderOf(first: QualityTier, later: readonly QualityTier[]): QualityTier[] {
+  return [...new Set<QualityTier>([first, ...later])];
 }
 
 /** What the game gives a swap: how to build, where, and what to put back. */
 export type SwapBindings<R extends Renderer = Renderer> = {
-  /** A renderer at `tier` on `canvas`, on `engine` when one is given. */
-  build(canvas: HTMLCanvasElement, tier: QualityTier, engine: EngineHandle | null): R;
+  /** A renderer at `tier` on `canvas`, which makes its own engine from it. */
+  build(canvas: HTMLCanvasElement, tier: QualityTier): R;
   /** A canvas not yet in the page. */
   freshCanvas(): HTMLCanvasElement;
   /** What the game builds into the scene outside the renderer (the signs, the
@@ -170,12 +129,9 @@ export type SwapBindings<R extends Renderer = Renderer> = {
   loop(): void;
   /** Stops listening to the running engine, before anything of it goes. */
   unwatch(): void;
-  /** Starts listening to a renderer's engine, given as its rung's, with that
-   * engine's own detector, once the rung stands. */
+  /** Starts listening to a renderer's engine with the renderer's own watch
+   * (`Renderer.ownWatch`), once its rung stands. */
   watch(renderer: R, detector: WatchEngine): void;
-  /** A rung on a given engine failed: the engine's fault, for the caller to
-   * remember. `error` is the rung's throw. */
-  engineFailed(error: unknown): void;
 };
 
 function replaceCanvas(old: HTMLCanvasElement, fresh: HTMLCanvasElement): HTMLCanvasElement {
@@ -189,69 +145,37 @@ const TIER_NAMES: Record<QualityTier, string> = { high: "High", medium: "Medium"
 
 /**
  * The swap, synchronously, in design §9.3's order: stop the loop; dispose the
- * scene extras while their scene lives; dispose the renderer (its engine loses
- * its context); then, on a fresh canvas in the old one's place, build at the
+ * scene extras while their scene lives; dispose the renderer (its engine goes
+ * with it); then, on a fresh canvas in the old one's place, build at the
  * target tier, put the view back, rebuild the extras, rebind the listeners and
  * run the loop once the new renderer's sky is held (`Renderer.skyReady`), so
- * no frame of it is drawn under Babylon's default lights.
+ * no frame of it is drawn under a sky it does not have yet.
  *
  * A rung that fails, in its build or in anything after it, is taken down
- * whole (the renderer it built, and with it the engine and the atmosphere's
- * registration; a build that threw has released its own) and the next rung is tried
- * on another fresh canvas (a failed one may hold a lost or a WebGPU context):
+ * whole (the renderer it built, and with it its engine; a build that threw
+ * has let go of its own) and the next rung is tried on another fresh canvas:
  * the target, then `fallbackTier` (the tier that was running), then low, the
- * tier least likely to fail, the last two on WebGL2. Only when every rung
- * fails does the last throw go up, with nothing of any of them left alive.
+ * tier least likely to fail. Only when every rung fails does the last throw
+ * go up, with nothing of any of them left alive.
  */
 export function swapRenderer<R extends Renderer>(
   current: Swappable<R>,
-  target: { tier: QualityTier; engine: EngineHandle | null; watch?: WatchEngine | null; fallbackTier: QualityTier },
+  target: { tier: QualityTier; fallbackTier: QualityTier },
   bindings: SwapBindings<R>,
-): Swappable<R> & { tier: QualityTier; fellBack: boolean; engineFellBack: boolean } {
-  // The engine made for the target is the swap's until its rung's build takes
-  // it (`createRenderer` releases it if that throws): a throw before then (the
-  // old renderer's dispose, a fresh canvas) disposes it here, once.
-  let unowned = target.engine;
-  try {
-    return climb(current, target, bindings, () => {
-      unowned = null;
-    });
-  } catch (error) {
-    try {
-      unowned?.dispose();
-    } catch {
-      /* the throw that matters goes up */
-    }
-    throw error;
-  }
-}
-
-/** `swapRenderer`'s steps; `taken` is called as the given engine's rung
- * hands it to the build. */
-function climb<R extends Renderer>(
-  current: Swappable<R>,
-  target: { tier: QualityTier; engine: EngineHandle | null; watch?: WatchEngine | null; fallbackTier: QualityTier },
-  bindings: SwapBindings<R>,
-  taken: () => void,
-): Swappable<R> & { tier: QualityTier; fellBack: boolean; engineFellBack: boolean } {
+): Swappable<R> & { tier: QualityTier; fellBack: boolean } {
   current.renderer.stopLoop(bindings.loop);
   bindings.unwatch();
   bindings.extras.dispose();
   current.renderer.dispose();
-  const ladder = ladderOf({ tier: target.tier, engine: target.engine, watch: target.watch ?? null }, [target.fallbackTier, "low"]);
   let canvas = current.canvas;
   let failure: unknown = new Error("no tier to build");
-  /** A given engine's rung's throw, held against the engine only once its
-   * tier stands on WebGL2 (`engineFaultShown`). */
-  let engineThrow: { tier: QualityTier; error: unknown } | null = null;
-  for (const { tier, engine, watch } of ladder) {
+  for (const tier of ladderOf(target.tier, [target.fallbackTier, "low"])) {
     canvas = replaceCanvas(canvas, bindings.freshCanvas());
     let renderer: R | null = null;
     /** Whether this rung stands: a throw after its loop is promised takes it down. */
     let stands = true;
     try {
-      if (engine !== null) taken();
-      renderer = bindings.build(canvas, tier, engine);
+      renderer = bindings.build(canvas, tier);
       bindings.restore(renderer);
       bindings.extras.build(renderer);
       bindings.rebind(canvas);
@@ -262,41 +186,22 @@ function climb<R extends Renderer>(
       void standing.skyReady().then(() => {
         if (stands && !standing.engine.isDisposed) standing.runLoop(bindings.loop);
       });
-      const detector = detectorOf(renderer, engine, watch);
-      if (detector !== null) bindings.watch(renderer, detector);
-      engineFaultShown(engineThrow, tier, bindings);
-      return { renderer, canvas, tier, fellBack: tier !== target.tier, engineFellBack: target.engine !== null && engine === null };
+      if (renderer.ownWatch != null) bindings.watch(renderer, renderer.ownWatch);
+      return { renderer, canvas, tier, fellBack: tier !== target.tier };
     } catch (error) {
       stands = false;
       failure = error;
       console.error(`quality: the ${tier} renderer could not be ${renderer === null ? "built" : "started"}.`, error);
       takeDown(renderer, bindings);
-      if (engine !== null) engineThrow = { tier, error };
     }
   }
   throw failure;
 }
 
-/**
- * Holds a given engine's rung's throw against the engine (`engineFailed`),
- * once, when the rung that stands is its tier on WebGL2: only then is the
- * fault known to be the engine's. Where the tier fails on WebGL2 too, the
- * fault is the tier's, and nothing is held against the engine.
- */
-function engineFaultShown(
-  engineThrow: { tier: QualityTier; error: unknown } | null,
-  standing: QualityTier,
-  bindings: Pick<SwapBindings, "engineFailed">,
-): void {
-  if (engineThrow !== null && engineThrow.tier === standing) bindings.engineFailed(engineThrow.error);
-}
-
 /** Disposes what a failed rung left: what was built into its scene and the
- * renderer (its engine and registration with it). A rung whose build threw
- * left nothing: `createRenderer` has already released the engine it was
- * given (`releaseEngine`, which waits for the scene's BRDF lookup texture), so
- * it is not disposed again here, which would be at once and bring back the
- * throw that wait prevents. Each on its own, so one failing keeps no other. */
+ * renderer (its engine with it). A rung whose build threw left nothing: a
+ * build that throws lets go of what it made. Each on its own, so one failing
+ * keeps no other. */
 function takeDown<R extends Renderer>(renderer: R | null, bindings: SwapBindings<R>): void {
   if (renderer === null) return;
   const steps = [() => bindings.extras.dispose(), () => renderer.dispose()];
@@ -328,38 +233,28 @@ export function switchOutcome(
 /**
  * The hike's first renderer: the tier asked for on the page's canvas, and on a
  * throw each later tier in `tiers` (the class's start tier, then low) on a
- * fresh canvas in the failed one's place. A renderer whose build throws
- * disposes its own engine and registration (`createRenderer`), so a failed
- * rung leaves nothing; the last throw goes up when every rung fails.
- * `first` is the engine made for `canvas` for the first tier, with its
- * detector: where its rung fails, that tier is built again on WebGL2 before
- * the ladder goes down, as in a swap, and the fault is held against the engine
- * (`engineFailed`) only once the tier stands there; where it stands, it is
- * listened to (`watch`).
+ * fresh canvas in the failed one's place. A renderer whose build throws lets
+ * go of what it made, so a failed rung leaves nothing; the last throw goes up
+ * when every rung fails. The rung that stands is listened to through the
+ * renderer's own watch (`watch`).
  */
 export function buildFirstRenderer<R extends Renderer>(
   canvas: HTMLCanvasElement,
   tiers: readonly QualityTier[],
-  bindings: Pick<SwapBindings<R>, "build" | "freshCanvas" | "watch" | "engineFailed">,
-  first: { engine: EngineHandle; watch: WatchEngine | null } | null = null,
-): Swappable<R> & { tier: QualityTier; fellBack: boolean; engineFellBack: boolean } {
+  bindings: Pick<SwapBindings<R>, "build" | "freshCanvas" | "watch">,
+): Swappable<R> & { tier: QualityTier; fellBack: boolean } {
   const [asked = "low", ...later] = tiers;
-  const ladder = ladderOf({ tier: asked, engine: first?.engine ?? null, watch: first?.watch ?? null }, later);
   let current = canvas;
   let failure: unknown = new Error("no tier to build");
-  let engineThrow: { tier: QualityTier; error: unknown } | null = null;
-  for (const [rung, { tier, engine, watch }] of ladder.entries()) {
+  for (const [rung, tier] of ladderOf(asked, later).entries()) {
     if (rung > 0) current = replaceCanvas(current, bindings.freshCanvas());
     try {
-      const renderer = bindings.build(current, tier, engine);
-      const detector = detectorOf(renderer, engine, watch);
-      if (detector !== null) bindings.watch(renderer, detector);
-      engineFaultShown(engineThrow, tier, bindings);
-      return { renderer, canvas: current, tier, fellBack: tier !== asked, engineFellBack: first !== null && engine === null };
+      const renderer = bindings.build(current, tier);
+      if (renderer.ownWatch != null) bindings.watch(renderer, renderer.ownWatch);
+      return { renderer, canvas: current, tier, fellBack: tier !== asked };
     } catch (error) {
       failure = error;
       console.error(`quality: the ${tier} renderer could not be built at the hike's start.`, error);
-      if (engine !== null) engineThrow = { tier, error };
     }
   }
   throw failure;
@@ -388,8 +283,8 @@ export async function whenStandingSkyHeld(standing: () => Renderer, swapped: () 
  * thing it makes. If `build` throws, everything registered is undone, newest
  * first, each undo in its own `try` so one that fails does not keep the rest,
  * and the throw goes up. A game that fails part-way through its start leaves
- * nothing behind: above all no engine and no global plugin registration, which
- * the next renderer (the landing's backdrop, say) would meet.
+ * nothing behind: above all no engine, whose device the page would go on
+ * holding beside the next renderer's.
  */
 export function buildOrUndo<T>(build: (made: (undo: () => void) => void) => T): T {
   const undo: (() => void)[] = [];

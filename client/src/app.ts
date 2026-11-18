@@ -392,9 +392,6 @@ function buildGame(
   made(() => skySource.dispose());
   /** Stops listening to the running renderer's engine for failures (`Renderer.ownWatch`). */
   let stopWatching = (): void => undefined;
-  /** The HUD's line for a renderer that fell back to WebGL2 when its WebGPU
-   * engine could not build it, shown once play can see it. */
-  let engineNotice: string | null = null;
   /** When the page was last shown (ms, the page's clock), whether the intro's film is over the hike, whether the
    * world is in, and whether a rebuild after a failure is under its cover: what a row about the GPU says was happening. */
   let shownAt = performance.now();
@@ -426,9 +423,9 @@ function buildGame(
     },
   });
   made(() => faults.dispose());
-  /** The ladders' hooks for the engine: listen to one that stands, take the
-   * old one's listener off before it goes, and remember one that failed. */
-  const engineBindings: Pick<SwapBindings, "watch" | "unwatch" | "engineFailed"> = {
+  /** The ladders' hooks for the engine: listen to one that stands, and take
+   * the old one's listener off before it goes. */
+  const engineBindings: Pick<SwapBindings, "watch" | "unwatch"> = {
     watch: (r, detector) => {
       stopWatching();
       // The renderer that stands is the one the hike's record of GPU faults hears.
@@ -439,10 +436,6 @@ function buildGame(
     unwatch: () => {
       stopWatching();
       stopWatching = () => undefined;
-    },
-    engineFailed: (error) => {
-      console.error("WebGPU: the renderer could not be built on it; building it on WebGL2.", error);
-      engineNotice = options.engineFailed("pipeline");
     },
   };
   // The tier asked for, and should it fail to build, the class's start tier
@@ -2326,11 +2319,6 @@ function buildGame(
     connectClient();
   }
 
-  // A start that fell back to WebGL2 from a WebGPU engine, the line saying
-  // so, once. Below the session's start, whose `setStatus(null)` would wipe it.
-  if (engineNotice !== null) hud.flash(engineNotice, FALLBACK_NOTICE_MS);
-  engineNotice = null;
-
   /** One frame. Named, so a live tier change can stop it on the old engine and
    * run it on the new one; it reads `renderer` when it runs. */
   function loop(): void {
@@ -2484,27 +2472,14 @@ function buildGame(
    * still draws, then the synchronous swap, then the wait for the new scene.
    * `save`, when given, is kept only when the switch reaches `target`; a
    * fallback keeps the choice as it was, says so, and reports the tier that
-   * failed so it is not tried again. A WebGPU engine that could not build
-   * `target` gives way to WebGL2 at `target`, remembered, with the HUD's line.
-   * When no tier builds at all, the Settings page and the landing say why,
+   * failed so it is not tried again. When no tier builds at all, the Settings page and the landing say why,
    * and the hike ends. The wait for the new scene is bounded by `readyMaxMs`,
    * which each caller passes for the cover it put up
    * (`APPLY_SWAP_READY_MAX_MS`, `GOVERNOR_SWAP_READY_MAX_MS`). Returns the
    * tier now running.
    */
   function switchTo(target: QualityTier, source: TierSource, save: TierChoice | null, readyMaxMs: number): Promise<QualityTier> {
-    return serial.track(
-      switchNow(target, source, save, readyMaxMs).then((reached) => {
-        flashEngineNotice();
-        return reached;
-      }),
-    );
-  }
-
-  /** The line of a WebGPU engine that could not build its tier, once. */
-  function flashEngineNotice(): void {
-    if (engineNotice !== null && !disposed && !broken) hud.flash(engineNotice, FALLBACK_NOTICE_MS);
-    engineNotice = null;
+    return serial.track(switchNow(target, source, save, readyMaxMs));
   }
 
   async function switchNow(target: QualityTier, source: TierSource, save: TierChoice | null, readyMaxMs: number): Promise<QualityTier> {
@@ -2542,7 +2517,7 @@ function buildGame(
         got = swapRenderer(
           { renderer, canvas },
           // The renderer makes its own engine and keeps its own watch on it: the ladder is handed neither.
-          { tier: target, engine: null, fallbackTier: tier },
+          { tier: target, fallbackTier: tier },
           bindings,
         );
       } catch (error) {
@@ -2632,11 +2607,8 @@ function buildGame(
       };
     },
     stopLoop: () => renderer.stopLoop(),
-    // The answer shows the line of a rebuild done; the swap's own is dropped,
-    // so it shows once.
-    rebuild: (readyMaxMs) => switchNow(tier, tierSource, null, readyMaxMs).then(() => {
-      engineNotice = null;
-    }),
+    // The swap shows no line of its own: the answer shows the one line of a rebuild done.
+    rebuild: (readyMaxMs) => switchNow(tier, tierSource, null, readyMaxMs).then(() => undefined),
     flash: (line) => hud.flash(line, FALLBACK_NOTICE_MS),
     log: (line) => console.error(line),
     // How the rebuild came out: whether the new renderer stands (or is still being made as the cover lifts), and the

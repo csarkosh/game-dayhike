@@ -221,17 +221,15 @@ describe("layer boundaries", () => {
     expect(app).not.toMatch(/\bgovernor\.(restart|stop)\(/);
   });
 
-  it("shows one line after a failure rebuild: the swap itself shows none, a switch its engine's, the answer its own", () => {
+  it("shows one line after a failure rebuild: the swap itself shows none, a switch none, the answer its own", () => {
     const app = stripComments(readFileSync(join(SRC, "app.ts"), "utf8"));
     const body = (from: string, to: string): string => app.slice(app.indexOf(from), app.indexOf(to, app.indexOf(from)));
-    // `switchNow` is the swap both paths run: it shows no line.
+    // `switchNow` is the swap both paths run, and `switchTo` a switch (Apply, the governor): neither shows a line.
     expect(body("  async function switchNow(", "\n  }\n")).not.toContain("hud.flash");
-    expect(body("  async function switchNow(", "\n  }\n")).not.toContain("flashEngineNotice");
-    // A switch (Apply, the governor) shows the line of an engine that could
-    // not build its tier…
-    expect(body("  function switchTo(", "\n  }\n")).toContain("flashEngineNotice");
-    // …and a failure's rebuild leaves the line to the answer (`answerFailures`).
-    expect(app).toContain("    rebuild: (readyMaxMs) => switchNow(tier, tierSource, null, readyMaxMs).then(() => {\n      engineNotice = null;\n    }),");
+    expect(body("  function switchTo(", "\n  }\n")).not.toContain("hud.flash");
+    // A failure's rebuild leaves the line to the answer (`answerFailures`), which shows it once.
+    expect(app).toContain("    rebuild: (readyMaxMs) => switchNow(tier, tierSource, null, readyMaxMs).then(() => undefined),");
+    expect(app).toContain("    flash: (line) => hud.flash(line, FALLBACK_NOTICE_MS),");
   });
 
   it("measures every step of the tier check on the hike's own renderer: the page makes no engine, for a step or for anything", () => {
@@ -1140,7 +1138,8 @@ describe("layer boundaries", () => {
     expect([...app.matchAll(/\bcreateHikeRenderer\(next, level, forest, \{ tier: (?:at|target), /g)].length).toBe(2);
     expect(app).not.toMatch(/engine: engine|pipelines:/);
     // A switch's ladder is handed a tier and no engine, and its cover waits for the new renderer's world alone.
-    expect(app).toContain("          { tier: target, engine: null, fallbackTier: tier },");
+    expect(app).toContain("          { tier: target, fallbackTier: tier },");
+    expect(code("game/rendererSwap.ts")).not.toMatch(/\bEngineHandle\b|engineFailed|engineFellBack/);
     expect(app).toContain("      await renderer.whenReady(made.leftMs);\n      return tier;\n    } finally {");
     // The hike's end lets its renderer go, engine and all.
     const dispose = app.slice(app.lastIndexOf("    dispose() {\n      disposed = true;"));
