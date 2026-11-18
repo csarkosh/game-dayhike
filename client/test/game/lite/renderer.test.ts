@@ -12,6 +12,7 @@ import { DEPTH_AHEAD_MAX_DEGREES, depthAheadPlugin } from "../../../src/game/lit
 import { createHikeRenderer } from "../../../src/game/hikeRenderer.js";
 import type { Renderer } from "../../../src/game/rendererTypes.js";
 import { createSkyTable, type SkyTable } from "../../../src/game/skyTable.js";
+import { SILENT_SURF_SOUND } from "../../../src/game/surfSound.js";
 import { SILENT_WATER_LIFE } from "../../../src/game/waterLifeInputs.js";
 import { WEATHER_PRESETS } from "../../../src/game/weather.js";
 import { windRecordUnder } from "../../../src/game/windParams.js";
@@ -425,6 +426,21 @@ describe("the hike's renderer on Babylon Lite, before its engine stands", () => 
     // Stepped in one place, by a frame that drew a lake's life; a frame that did not takes the word back.
     expect([...text.matchAll(/\bwaterLifeStepped = true;/g)].length).toBe(1);
     expect([...text.matchAll(/\bwaterLifeStepped = false;/g)].length).toBe(2);
+  });
+
+  it("says nothing of the surf until a frame of its own has stepped the sea: silence, never the last frame's record again", () => {
+    const r = make();
+    const silent = r.surfSound();
+    expect(silent).toBe(SILENT_SURF_SOUND);
+    expect(silent.present).toBe(false);
+    r.setFreecam({ x: 0, y: 10, z: 0, yaw: 0, pitch: 0 });
+    r.sync(windTestState(), -1, 0);
+    expect(r.surfSound()).toBe(silent);
+    const text = readFileSync(fileURLToPath(new URL("../../../src/game/lite/renderer.ts", import.meta.url)), "utf8");
+    expect(text).toContain("      return surfStepped ? surf : SILENT_SURF_SOUND;");
+    // Stepped in one place, by a frame that stepped the sea's edge; every frame takes the word back first.
+    expect([...text.matchAll(/\bsurfStepped = true;/g)].length).toBe(1);
+    expect([...text.matchAll(/\bsurfStepped = false;/g)].length).toBe(2);
   });
 
   it("lets its engine go once, by dispose, and resolves what waited on its first frame", async () => {
