@@ -83,10 +83,11 @@
  * and the shader materials' alike, whenever a material joins
  * (`enableAsyncPbrPipelines`, `enableAsyncShaderMaterialPipelines`), a mesh
  * joining the pass on the frame after its pipeline is ready, under the
- * film, whose frames no one sees; the passes
- * whose pictures are kept (a far tree's bake, the rain's cover map, the
- * shore's panorama, the haunt's mask) make theirs at once (`syncPipelines`),
- * so no kept picture is short of a mesh. The world is in only once a frame
+ * film, whose frames no one sees. The passes whose pictures are kept (a
+ * far tree's bake, the rain's cover map, the shore's panorama, the haunt's
+ * mask) ask for theirs the same way and draw whole or not at all
+ * (`drawWhole`): each is drawn, or asked for again, once its pipelines are
+ * in, so no kept picture is short of a mesh. The world is in only once a frame
  * has been drawn that asked for nothing and no pipeline is compiling
  * (`drawnSettle.ts`), so the first frame a player sees is whole. From the
  * world's coming in on (`whenReady`) every pass makes its pipelines at once
@@ -1028,7 +1029,7 @@ export function createLiteRenderer(canvas: HTMLCanvasElement, level: Level, fore
     // records the frame's passes again as a hike loads and when a hiker's lamp joins the scene's lights, and its own
     // pass's target was destroyed and made at each recording.
     // The hike's own pass makes its pipelines off the page's thread, PBR and shader materials alike, a mesh joining it on the
-    // frame after its pipeline is ready; the passes whose pictures are kept make theirs at once (`syncPipelines`).
+    // frame after its pipeline is ready; the passes whose pictures are kept draw whole or not at all (`drawWhole`).
     enableAsyncPbrPipelines();
     enableAsyncShaderMaterialPipelines();
     const scene = createSceneContext(engine, { defaultRenderTask: false });

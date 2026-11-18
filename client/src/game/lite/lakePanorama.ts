@@ -40,7 +40,7 @@
  */
 import {
   addMeshToTask, addTaskAtStart, addToScene, createBankedFreeCamera, createMeshFromData, createPbrMaterial, createRenderTargetTexture, createRenderTask,
-  disposeMeshGpu, getGpuDevice, markMaterialUboDirty, removeFromScene, removeMeshFromTask, setMeshVisible, setTaskMeshVisible, setThinInstances, vec3,
+  disposeMeshGpu, getGpuDevice, isRenderTaskHeld, markMaterialUboDirty, removeFromScene, removeMeshFromTask, setMeshVisible, setTaskMeshVisible, setThinInstances, vec3,
   type EngineContext, type MaterialPlugin, type Mesh, type PluginUniformBlock, type RenderTaskConfig, type SceneContext, type Texture2D,
 } from "@babylonjs/lite";
 import type { LakeSource } from "../../sim/terrain.js";
@@ -205,8 +205,9 @@ export function createLitePanorama(engine: EngineContext, scene: SceneContext, l
   // clears the whole picture instead.
   const config: RenderTaskConfig = {
     name: "lake_panorama", rt: target.rt, cam: camera, clr: true, clrColor: { r: 0, g: 0, b: 0, a: 0 }, autoMirror: false, clearViewport: true, alphaWhereDrawn: true,
-    // A sector's column is kept: its pipelines are made at once, whatever the hike's own pass waits for.
-    syncPipelines: true,
+    // A sector's column is kept: while a hike loads the pass draws whole or not at all (`drawWhole`), and a sector not
+    // drawn for a pipeline still compiling stays owed (`frameDrawn`).
+    drawWhole: true,
   };
   const task = createRenderTask(config, engine, scene);
   task.enabled = false;
@@ -300,7 +301,8 @@ export function createLitePanorama(engine: EngineContext, scene: SceneContext, l
       return true;
     },
     frameDrawn() {
-      if (column >= 0) {
+      // A sector the frame drew nothing of, a pipeline of the pass still compiling, stays held for the next frame that reads.
+      if (column >= 0 && !isRenderTaskHeld(task)) {
         held = -1;
         counts.sectors++;
         if (clearDue) counts.clears++;

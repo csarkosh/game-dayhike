@@ -302,7 +302,8 @@ export function createForestMeshes(engine: EngineContext, scene: SceneContext, s
   let far: { lattice: TreeInstance[][]; fill: TreeInstance[][]; x: number; z: number } | null = null;
   /** The bakes' maps: the forest's own, let go with it. */
   const baked: Texture2D[] = [];
-  const baker = createImpostorBaker(engine);
+  // A bake's scene makes its pipelines at once when the hike's own does (`syncPipelines`, once the world is in).
+  const baker = createImpostorBaker(engine, () => scene.syncPipelines === true);
   // One maker of distance fields for the forest's bakes: a worker, started at the first.
   const fieldMaker = createFieldMaker();
   let abandoned = false;

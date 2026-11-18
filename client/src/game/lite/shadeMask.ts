@@ -303,8 +303,9 @@ export function createLiteShadeMask(
 
   // The frame's own shape whatever the target's, as the game's mask camera has it. Lite keeps this record and reads
   // the pass's target from it at each recording, which is how the pass is given another.
-  // Its pipelines are made at once, whatever the hike's own pass waits for (`syncPipelines`): the grade reads the mask whole.
-  const config: RenderTaskConfig = { name: "shade_mask", rt: targets.current.rt, cam: camera, cs: true, clr: true, clrColor: { r: 0, g: 0, b: 0, a: 0 }, autoMirror: false, syncPipelines: true };
+  // While a hike loads the mask draws whole or not at all (`drawWhole`): a frame whose figure's pipeline is still compiling
+  // leaves the target as it stood, and the mask is drawn again on every frame with a figure.
+  const config: RenderTaskConfig = { name: "shade_mask", rt: targets.current.rt, cam: camera, cs: true, clr: true, clrColor: { r: 0, g: 0, b: 0, a: 0 }, autoMirror: false, drawWhole: true };
   // The mask's size follows the frame's: read again whenever the frame's passes are recorded, ahead of the pass,
   // which draws into the target as it then stands.
   const sizer = createCustomTask(engine, scene, {

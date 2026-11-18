@@ -17,9 +17,13 @@
  * nothing: where no tree is drawn the alpha stays 0. Every mesh is drawn as
  * one thin instance at the bake's pose, so a model whose rest is not how it
  * stands (the snag, modelled lying down) is turned by its draw and keeps its
- * own coordinates for its material. The scene is registered, which builds
+ * own coordinates for its material. The scene is registered, which asks for
  * its pipelines, drawn at the first picture's mode and read, drawn again at
- * the second's and read, and let go with its meshes and its target.
+ * the second's and read, and let go with its meshes and its target. While a
+ * hike loads the pipelines are asked for off the page's thread and the pass
+ * draws whole or not at all (`drawWhole`): each picture is drawn once they
+ * are in, and drawn again where a frame drew nothing. Once the hike's own
+ * scene makes its pipelines at once (`atOnce`), so does a bake's.
  *
  * **The pixels are the picture's rows from its foot up**, four bytes a texel
  * as the draw wrote them, the colour in gamma space. The distance field
@@ -28,8 +32,8 @@
  */
 import {
   addTask, addToScene, createFreeCamera, createRenderTargetTexture, createRenderTask, createSceneContext, createSurface, disposeMeshGpu,
-  disposeScene, disposeSurface, enableMaterialPlugins, enableOrthographicCamera, markMaterialUboDirty, readTexturePixelsRGBA8, registerScene,
-  renderFrame, setThinInstances, vec3,
+  disposeScene, disposeSurface, enableMaterialPlugins, enableOrthographicCamera, isRenderTaskHeld, markMaterialUboDirty, readTexturePixelsRGBA8, registerScene,
+  renderFrame, setThinInstances, vec3, whenRenderTaskPipelinesIdle,
   type EngineContext, type Mesh, type PbrMaterialProps, type SceneContext, type SurfaceContext,
 } from "@babylonjs/lite";
 import { IMPOSTOR_BAKE_SIZE, type ImpostorBakeFrame, type ImpostorBakeMode } from "../impostorBake.js";
@@ -55,8 +59,12 @@ export type ImpostorBaker = {
   dispose(): void;
 };
 
-/** The bakes of `engine`, each drawn on a surface of the baker's own, made at the first. */
-export function createImpostorBaker(engine: EngineContext): ImpostorBaker {
+/**
+ * The bakes of `engine`, each drawn on a surface of the baker's own, made at
+ * the first. `atOnce`: whether the hike's own scene makes its pipelines at
+ * once now, as a bake's scene then does too.
+ */
+export function createImpostorBaker(engine: EngineContext, atOnce: () => boolean = () => false): ImpostorBaker {
   const picture: { mode: ImpostorBakeMode } = { mode: 1 };
   let surface: SurfaceContext | null = null;
   let disposed = false;
@@ -78,6 +86,7 @@ export function createImpostorBaker(engine: EngineContext): ImpostorBaker {
       surface ??= createSurface(engine, new OffscreenCanvas(1, 1), { msaaSamples: 1 });
       const drawn = surface;
       scene = createSceneContext(drawn, { defaultRenderTask: false });
+      if (atOnce()) scene.syncPipelines = true;
       enableMaterialPlugins(scene);
       // Side-on and orthographic: the picture's square is the frame's extent across and up.
       const camera = createFreeCamera(vec3(frame.eye.x, frame.eye.y, frame.eye.z), vec3(frame.centre.x, frame.centre.y, frame.centre.z));
@@ -100,14 +109,24 @@ export function createImpostorBaker(engine: EngineContext): ImpostorBaker {
         size: { width: IMPOSTOR_BAKE_SIZE, height: IMPOSTOR_BAKE_SIZE },
       });
       // The task owns the target: it goes with the scene.
-      // Its picture is kept: its pipelines are made at once, whatever the hike's own pass waits for (`syncPipelines`).
-      addTask(scene, createRenderTask({ name: "forest_impostor_bake", rt: target.rt, clr: true, clrColor: { r: 0, g: 0, b: 0, a: 0 }, syncPipelines: true }, engine, scene));
+      // Its picture is kept and read back: it draws whole or not at all (`drawWhole`), and is drawn once its pipelines are in.
+      const task = createRenderTask({ name: "forest_impostor_bake", rt: target.rt, clr: true, clrColor: { r: 0, g: 0, b: 0, a: 0 }, drawWhole: true }, engine, scene);
+      addTask(scene, task);
       await registerScene(scene);
+      await whenRenderTaskPipelinesIdle(task);
       const draw = async (mode: ImpostorBakeMode): Promise<Uint8Array | null> => {
         if (disposed) return null;
         picture.mode = mode;
         for (const material of materials) markMaterialUboDirty(material);
         renderFrame(engine, 0, [drawn]);
+        // A frame that drew nothing, a pipeline still compiling, is drawn again once those its draws waited for are in: each
+        // wait ends only when a pipeline lands, and a bake that never ends is given up by its own bound
+        // (`IMPOSTOR_BAKE_FAIL_MS`, `forestMeshes.ts`), as one whose read never comes back is.
+        while (isRenderTaskHeld(task)) {
+          await whenRenderTaskPipelinesIdle(task);
+          if (disposed) return null;
+          renderFrame(engine, 0, [drawn]);
+        }
         // The target's first row is the picture's top: read from the last.
         const read = await readTexturePixelsRGBA8(engine, target.texture, { flipY: true });
         return disposed ? null : read.pixels;
