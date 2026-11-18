@@ -10,6 +10,7 @@
  */
 import { createIntroPlayback, type IntroPlayback } from "./introPlayback.js";
 import { createLoadProgress, type LoadProgress } from "./loadProgress.js";
+import type { FilmState } from "./downloadTurns.js";
 
 import type { Caption } from "./scene/timeline.js";
 export type { Caption } from "./scene/timeline.js";
@@ -30,6 +31,12 @@ export type IntroOverlay = {
   play(): Promise<void>;
   /** Seconds of video buffered past the current time. */
   bufferedAhead(): number;
+  /**
+   * The film as the hike's downloads take turns behind it (`downloadTurns.ts`):
+   * playing while it plays and could still use the link (not paused, ended,
+   * failed, stopped or wholly buffered), and its seconds buffered ahead.
+   */
+  film(): FilmState;
   /** The world is ready: `hold to skip` may show, and the held last frame may be stepped out of. */
   ready(): void;
   /** Draws the models' state; `now` in ms on the page's clock, as an animation frame gives it. */
@@ -47,6 +54,17 @@ export type IntroOverlayDeps = {
   /** The page's clock (ms), the one animation frames are stamped with. */
   now(): number;
 };
+
+/** A film buffered to within this of its end, its fetch idle, is wholly buffered: the browser's last range can stop short of the duration it reports. */
+const FILM_WHOLE_SLACK_S = 0.25;
+
+/**
+ * `HTMLMediaElement.NETWORK_IDLE`: the element is fetching nothing. Its
+ * buffered range reaches the film's end while the file's last bytes are still
+ * arriving (a third of a megabyte of the intro's), so a range to the end alone
+ * does not make a film wholly buffered.
+ */
+const MEDIA_NETWORK_IDLE = 1;
 
 /** The video above the pause menu, the roster and the probe's screen, which
  * all belong to the hike it covers. */
@@ -202,6 +220,15 @@ export function createIntroOverlay(
   document.addEventListener("visibilitychange", onVisibility);
   video.addEventListener("error", onError);
 
+  function bufferedAhead(): number {
+    const t = video.currentTime;
+    const ranges = video.buffered;
+    for (let i = 0; i < ranges.length; i++) {
+      if (ranges.start(i) <= t && t <= ranges.end(i)) return ranges.end(i) - t;
+    }
+    return 0;
+  }
+
   let stopped = false;
   function stop(): void {
     if (stopped) return;
@@ -221,13 +248,12 @@ export function createIntroOverlay(
       if (!stopped) next.append(style, root);
     },
     play: () => video.play(),
-    bufferedAhead() {
-      const t = video.currentTime;
-      const ranges = video.buffered;
-      for (let i = 0; i < ranges.length; i++) {
-        if (ranges.start(i) <= t && t <= ranges.end(i)) return ranges.end(i) - t;
-      }
-      return 0;
+    bufferedAhead,
+    film() {
+      const ahead = bufferedAhead();
+      const whole = Number.isFinite(video.duration) && video.currentTime + ahead >= video.duration - FILM_WHOLE_SLACK_S && video.networkState === MEDIA_NETWORK_IDLE;
+      const playing = !stopped && !video.paused && !video.ended && !video.error && !whole;
+      return { playing, ahead };
     },
     ready: () => playback.ready(),
     render(now = deps.now()) {
