@@ -58,15 +58,15 @@ describe("markedProgress", () => {
     p.start("models", "a");
     p.start("models", "b");
     p.done("models", "a");
-    p.start("shaders", "c0");
+    p.start("ground", "c0");
     p.gate();
-    expect(marks).toEqual(["models", "shaders"]);
-    expect(calls).toEqual(["total models 3", "start models a", "start models b", "done models a", "start shaders c0", "gate"]);
+    expect(marks).toEqual(["models", "ground"]);
+    expect(calls).toEqual(["total models 3", "start models a", "start models b", "done models a", "start ground c0", "gate"]);
     expect(p.view()).toEqual({ bar: 0.5, lines: ["x"], ready: false });
 
     const bare = markedProgress(null, (s) => marks.push(s));
     bare.start("world", "ring0");
-    expect(marks).toEqual(["models", "shaders", "world"]);
+    expect(marks).toEqual(["models", "ground", "world"]);
     expect(bare.view()).toEqual({ bar: 0, lines: [], ready: false });
   });
 });
