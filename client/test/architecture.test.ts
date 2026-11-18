@@ -78,7 +78,7 @@ describe("layer boundaries", () => {
     for (const pure of ["timeline.ts", "shots.ts", "roadPath.ts", "sceneClock.ts", "intro.ts", "scenePlayer.ts", "routeWorld.ts", "cord.ts", "cordTubeGeometry.ts", "actorPose.ts", "stageParts.ts"]) {
       expect(readFileSync(join(dir, pure), "utf8"), pure).not.toMatch(/from "@babylonjs/);
     }
-    // The route's world is made in one place, with no local player, and is only ever read: by the route on Babylon.js and by the one on Babylon Lite.
+    // The route's world is made in one place, with no local player, and is only ever read by the route.
     const world = readFileSync(join(dir, "routeWorld.ts"), "utf8");
     expect(world).toContain("createWorld(level, seed, false)");
     expect(world).not.toMatch(/world\.(step|apply|input)/);
@@ -120,31 +120,6 @@ describe("layer boundaries", () => {
       expect(code, top).not.toMatch(/\.(?:scene|camera|shadows|views)\b(?!\()/);
       expect(code, top).not.toMatch(/\b(?:isWebGPU|runRenderLoop|stopRenderLoop|getWaitingItemsCount|on\w+Observable)\b/);
     }
-  });
-
-  it("reaches the WebGPU engine from main.ts only through a dynamic import", () => {
-    const staticImports = (file: string): string[] =>
-      [...readFileSync(file, "utf8").matchAll(/^\s*import\s+(?!type\s)(?:[^"'();]*?\s+from\s+)?["']([^"']+)["']/gm)].map((m) => m[1] as string);
-    const seen = new Set<string>();
-    const stack = [join(SRC, "main.ts")];
-    const bad: string[] = [];
-    while (stack.length > 0) {
-      const file = stack.pop() as string;
-      if (seen.has(file)) continue;
-      seen.add(file);
-      for (const spec of staticImports(file)) {
-        if (/^@babylonjs\/core\/Engines\/(?:webgpuEngine|WebGPU\/)/.test(spec)) bad.push(`${file} imports ${spec}`);
-        if (spec.startsWith(".") && spec.endsWith(".js")) stack.push(join(file, "..", spec.replace(/\.js$/, ".ts")));
-      }
-    }
-    expect(seen.size).toBeGreaterThan(20);
-    expect(bad).toEqual([]);
-  });
-
-  it("keeps the engine choice out of sim/ and net/", () => {
-    const named = [/engineChoice/, /gpuEngine/, /webgpuVertexBuffer/];
-    expect(violations(join(SRC, "sim"), named)).toEqual([]);
-    expect(violations(join(SRC, "net"), named)).toEqual([]);
   });
 
   it("defines each helper the tier and engine code share once: the tier override, the browser's version, the storage accessors", () => {
@@ -209,8 +184,7 @@ describe("layer boundaries", () => {
     expect(app).toContain('    runningOnWebGpu: () => renderer.engineName === "webgpu",');
     // The game records every failure of its engine through the page's one recorder, handed to its start as it
     // is: the start is given no engine that could fail apart from the hike's renderer, so there is no start's
-    // fault to tell from the hike's, and no second start on another engine (`startOnEngine`, which the
-    // engine's rule keeps with its tests in `engineChoice.ts`, is called by no page).
+    // fault to tell from the hike's, and no second start on another engine.
     const main = stripComments(readFileSync(join(SRC, "main.ts"), "utf8"));
     expect(main).toContain("  const handle = startGame(onCanvas.canvas, worldToken, {");
     expect([...main.matchAll(/^ {4}engineFailed,$/gm)].length).toBe(1);
@@ -219,8 +193,8 @@ describe("layer boundaries", () => {
     // for a later hike and pins nothing in the address.
     expect(main).toContain('function engineFailed(reason: "pipeline" | "lost"): string {\n  telemetry.event("engine_failed", { reason });\n  return NOTICE_RESTARTED;\n}');
     expect(main).not.toMatch(/\b(?:recordEngineFailure|parseEngineOverride|withEngine|engineEnv|replaceState)\b/);
-    // The answer's own module holds the answer and no more: what remembered a failure against an engine, and
-    // started a hike again on another, is the rule's, and the hike names neither.
+    // The answer's own module holds the answer and no more: nothing remembers a failure against an engine or
+    // starts a hike again on another.
     expect(stripComments(readFileSync(join(SRC, "game/engineFailure.ts"), "utf8"))).not.toMatch(/\b(?:recordEngineFailure|recordStartFailure|startOnEngine|failureSwap|writeFallback)\b/);
     expect(app).not.toMatch(/\b(?:recordEngineFailure|recordStartFailure|startOnEngine)\b/);
   });
@@ -289,8 +263,7 @@ describe("layer boundaries", () => {
 
   it("starts no engine, so the page has no failed start to record: a step of the tier check that fails is the step's own to end", () => {
     const main = stripComments(readFileSync(join(SRC, "main.ts"), "utf8"));
-    // A WebGPU start that failed (the first load's, a switch's, a retry's, a probe step's) was remembered through
-    // `recordStartFailure`, which the engine's rule keeps with its tests (`engineChoice.ts`): no page has such a start now.
+    // No page has a start of its own that could fail and be remembered: the hike's renderer makes its engine.
     expect(main).not.toMatch(/\b(?:rememberFailure|recordStartFailure)\b/);
     expect(main).not.toContain("webgpu_start_failed");
     // A step that fails ends with no reading (`lite/probeScene.ts`): nothing of it is recorded against the engine.
@@ -300,9 +273,9 @@ describe("layer boundaries", () => {
   });
 
   it("loads no Babylon.js with the page: nothing main.ts imports for itself reaches it, by an import or a dynamic one", () => {
-    // What the page still reaches of Babylon.js it reaches through the hike (`app.ts`, which has its own test
-    // above and is left out here): the page's own imports, each followed through everything it loads, static
-    // or dynamic, name no module of it. Babylon Lite, which the hike is drawn with, is another library.
+    // The page's own imports, each followed through everything it loads, static or dynamic, name no module of
+    // Babylon.js (the hike, `app.ts`, has its own test below and is left out here). Babylon Lite, which the hike
+    // is drawn with, is another library.
     const code = (file: string): string => stripComments(readFileSync(file, "utf8"));
     const loads = (file: string): string[] => [
       ...[...code(file).matchAll(/^\s*(?:import|export)\s+(?!type\s)(?:[^"'();]*?\s+from\s+)?["']([^"']+)["']/gm)].map((m) => m[1] as string),
@@ -334,27 +307,18 @@ describe("layer boundaries", () => {
     expect(seen.size).toBeGreaterThan(300);
     expect([...seen.keys()].map((file) => relative(SRC, file))).toContain("game/lite/renderer.ts");
     expect(bad).toEqual([]);
-    // What served the engines of Babylon.js is named by the page no more: an engine let go or kept between
-    // hikes, the library's version and its log, and the rule that chose between two engines, with its record
-    // of an engine that failed and its start made again on another (`engineChoice.ts`). The modules stand,
-    // with their tests, until the renderer on Babylon.js goes.
-    for (const gone of ["renderer", "keptEngine", "engineVersion", "engineLog", "engineChoice", "gpuEngine"]) {
-      expect(own, gone).not.toContain(`./game/${gone}.js`);
-    }
+    // The page keeps no engine between hikes, reads no library's version and hears no library's log.
     expect(code(main)).not.toMatch(/\b(?:releaseEngine|adoptEngine|dropEngine|keepEngine|engineVersion|hearEngineLog|tellEngineLog)\b/);
-    // The engine's rule is read for nothing, and the address's `?engine=` by nothing: the line of a renderer
-    // built again is the failure answer's own (`engineFailure.ts`), which holds no rule and no record.
-    expect(code(main)).not.toContain("engineChoice");
+    // The line of a renderer built again is the failure answer's own (`engineFailure.ts`), which holds no
+    // rule and no record.
     expect([...code(main).matchAll(/from "\.\/game\/engineFailure\.js"/g)].length).toBe(1);
     expect(code(main)).toContain('import { NOTICE_RESTARTED } from "./game/engineFailure.js";');
-    // Nor does the hike read it: how long the line shows is the answer's too, and the measurement mode's flag
-    // is the measurement's (`gpuTimeReport.ts`).
+    // How long the line shows is the answer's too, and the measurement mode's flag is the measurement's
+    // (`gpuTimeReport.ts`).
     const hike = importsOf(join(SRC, "app.ts"));
-    expect(hike).not.toContain("./game/engineChoice.js");
     expect(hike).toContain("./game/engineFailure.js");
     expect(hike).toContain("./game/gpuTimeReport.js");
     expect(importsOf(join(SRC, "game/engineFailure.ts"))).toEqual(["./rendererSwap.js"]);
-    expect(importsOf(join(SRC, "game/rendererTypes.ts"))).not.toContain("./engineChoice.js");
   });
 
   it("decides once whether the browser can play, with no engine and no request of its own, and starts nothing of a hike where it cannot", () => {
@@ -474,23 +438,21 @@ describe("layer boundaries", () => {
   });
 
   /**
-   * `game/` is deliberately split: `colour.ts`, `sky.ts`, `quality.ts` and
-   * `terrainSurface.ts` are pure arithmetic, tested under
-   * `environment: "node"`, while `lighting.ts` and `renderer.ts` are the only
-   * modules allowed to touch Babylon. Nothing enforced that split before this
-   * test — Babylon imports fine under `NullEngine`, so a stray `@babylonjs`
-   * import in `sky.ts` would build and pass every other test today.
+   * `game/` is deliberately split: `colour.ts`, `sky.ts`, `quality.ts`,
+   * `terrainSurface.ts` and the rest of this list are pure arithmetic, tested
+   * under `environment: "node"`, while the modules under `game/lite/` are the
+   * ones that draw, with Babylon Lite. A stray import of the engine in
+   * `sky.ts` would build, and would pass every other test.
    *
-   * Per-file, not per-directory: `game/` as a whole also contains the Babylon
-   * shells, so a directory-wide check here would fail on files that are
-   * supposed to import Babylon.
+   * Per-file, not per-directory: `game/` as a whole also contains the
+   * modules that draw, so a directory-wide check here would fail on files
+   * that are supposed to import the engine.
    */
   it("the pure game/ arithmetic modules stay Babylon-free", () => {
     const BABYLON_FREE_FILES = [
       join(SRC, "game", "colour.ts"),
       join(SRC, "game", "sky.ts"),
       join(SRC, "game", "quality.ts"),
-      join(SRC, "game", "engineChoice.ts"),
       join(SRC, "game", "terrainSurface.ts"),
       join(SRC, "game", "waterGround.ts"),
       join(SRC, "game", "panoramaTurn.ts"),
@@ -708,8 +670,8 @@ describe("layer boundaries", () => {
    * lists and their per-instance attributes as typed arrays, the fade bands,
    * the bark's dressing and the trees' share of the sky, the pose math the
    * lists are composed with, how a far tree's bake is posed and framed, and
-   * what is read of a model's file and baked into its vertices. The shell that draws them on Babylon.js
-   * (`forestMeshes.ts`) and its plugins take their values from these.
+   * what is read of a model's file and baked into its vertices. The meshes that draw them
+   * (`lite/forestMeshes.ts`) and their plugins take their values from these.
    */
   it("what the forest is drawn with is computed without loading Babylon, whatever it imports", () => {
     const ENGINE_FREE = [
@@ -741,7 +703,7 @@ describe("layer boundaries", () => {
    * modules that load no Babylon either: which model and LOD a clutter class draws, an instance's
    * matrix and ground tint, the lists a bucket is drawn from and their cut to
    * the view, the fields that place the cover, the geometry of the clumps
-   * built in code, and a prop's box and colour. The shells that draw them on Babylon.js
+   * built in code, and a prop's box and colour. The meshes that draw them
    * take their values from these.
    */
   it("what the ground cover, the cliffs and the chunk props are drawn with is computed without loading Babylon, whatever it imports", () => {
@@ -770,11 +732,11 @@ describe("layer boundaries", () => {
 
   /**
    * What the hikers, the Hollows, the dropped cap and the animals are drawn
-   * with, for a renderer that is not Babylon.js to draw them by: where each
+   * with: where each
    * body stands and how (the poses), which file and which clip it is, a
    * lamp's state, the cap's place and shape, and the wildlife a frame at a
-   * time with its field, its behaviour and its director. The shells that
-   * draw them on Babylon.js take their values from these.
+   * time with its field, its behaviour and its director. The meshes that
+   * draw them take their values from these.
    */
   it("what the hikers, the Hollows, the cap and the animals are drawn with is computed without loading Babylon, whatever it imports", () => {
     const ENGINE_FREE = [
@@ -801,14 +763,13 @@ describe("layer boundaries", () => {
   });
 
   /**
-   * What the lakes' water is drawn with, for a renderer that is not
-   * Babylon.js to draw it by: a surface's numbers and its uniforms by name,
+   * What the lakes' water is drawn with: a surface's numbers and its uniforms by name,
    * the bed's square following the camera, a lake's calm through the
    * weather's fade, whether a view holds a lake, its surface's grid, its
    * skyline, the ripple bump and the rows it is shaded by; its plants as
    * shapes and lists; and its life a frame at a time, with the midges' and
-   * the dragonflies' draws as numbers. The shells that draw them on
-   * Babylon.js take their values from these.
+   * the dragonflies' draws as numbers. The meshes that draw them take
+   * their values from these.
    */
   it("what the lakes' water, plants and life are drawn with is computed without loading Babylon, whatever it imports", () => {
     const ENGINE_FREE = [
@@ -837,13 +798,12 @@ describe("layer boundaries", () => {
   });
 
   /**
-   * What the sea is drawn with, for a renderer that is not Babylon.js to
-   * draw it by: the swell and the wind sea as numbers, the sea following its
+   * What the sea is drawn with: the swell and the wind sea as numbers, the sea following its
    * wind, the wind sea's loop asked of its worker, which field draws the wind sea and the passes of the one that
    * is computed each frame, its edge on the cove with the swash's table and the breaker's
    * tracker, the strips of the plunging lip's curl and the spray's bursts, the rings as one lattice, their samples and the box each has
-   * water in, the sea's uniforms by name, and the surf as heard. The shell
-   * that draws it on Babylon.js takes its values from these.
+   * water in, the sea's uniforms by name, and the surf as heard. The meshes
+   * that draw it take their values from these.
    */
   it("what the sea is drawn with is computed without loading Babylon, whatever it imports", () => {
     const ENGINE_FREE = [
@@ -873,13 +833,11 @@ describe("layer boundaries", () => {
   });
 
   /**
-   * What a scene and an ending are played with, for a renderer that is not
-   * Babylon.js to play them by: the summit's shots and the cap's, the death's
+   * What a scene and an ending are played with: the summit's shots and the cap's, the death's
    * fall and its closing dark, the end scene's four shots, its car along the
    * road and its lamps, and the state that runs between them from frame to
    * frame (whose camera the frame has, the local body in a shot, who is in
-   * the car, where the one lamp is worn). The renderer on Babylon.js steps
-   * the same play.
+   * the car, where the one lamp is worn). The renderer steps the play.
    */
   it("what the scenes and the endings are played with is computed without loading Babylon, whatever it imports", () => {
     const ENGINE_FREE = [
@@ -912,9 +870,9 @@ describe("layer boundaries", () => {
    * own arithmetic too: the frame's size from the canvas's box, the tier's
    * scaling and the render scale under the paint, the watch a renderer
    * keeps on an engine it made for itself, the count of what a device is
-   * asked to make of shaders, and the measurement mode's report. Both
-   * renderers read the rule that says where the render scale runs, and both
-   * answer the one type a renderer is held by (`rendererTypes.ts`). The
+   * asked to make of shaders, and the measurement mode's report. The
+   * renderer reads the rule that says where the render scale runs, and
+   * answers the one type a renderer is held by (`rendererTypes.ts`). The
    * hike's renderer's wait for its world is of the same kind (`worldWait.ts`),
    * and so are the swap of one renderer for another, the answer to an engine
    * that fails and the start's gate.
@@ -946,9 +904,9 @@ describe("layer boundaries", () => {
     expect(lite).toContain('engineWatch.fail("lost");');
     expect(lite).toContain("ownWatch: engineWatch.watch,");
     expect(lite).not.toContain("enableDeviceLostSceneRecovery");
-    // What the engine tells on Babylon.js is told from the device's own calls, and timed by Lite's own timers.
+    // What the engine tells is told from the device's own calls, and timed by Lite's own timers.
     expect(lite).toContain("onShaderCompiled: (fn) => makes.onMade(fn),");
-    // Its world is waited for by the bound of whoever asks, with no scene of Babylon.js to walk: the swap's module names none.
+    // Its world is waited for by the bound of whoever asks: the swap's module walks no scene.
     expect(lite).toContain("    whenReady(maxMs) {\n      return whenWorldIn(sceneryReady, maxMs);\n    },");
     expect(readFileSync(join(SRC, "game/rendererSwap.ts"), "utf8")).not.toMatch(/whenSceneReady|walkSceneReady|@babylonjs/);
     expect(readFileSync(join(SRC, "game/lite/gpuTimeReadout.ts"), "utf8")).toContain("taskTimeReport({");
@@ -1003,8 +961,8 @@ describe("layer boundaries", () => {
   /**
    * The hike's renderer is drawn with Babylon Lite, and nothing of it is
    * Babylon.js: not a module under `game/lite/`, and not anything one of
-   * them loads. What it shares with the renderer on Babylon.js is the game's
-   * own arithmetic, which loads no engine, and types, which load nothing.
+   * them loads. What it is made with beside Lite is the game's own
+   * arithmetic, which loads no engine, and types, which load nothing.
    */
   it("draws the hike with Babylon Lite alone: nothing under game/lite/ loads Babylon.js, whatever it imports", () => {
     const loaded = (file: string): string[] =>
@@ -1036,18 +994,14 @@ describe("layer boundaries", () => {
     // And the hike is handed that renderer by a module that loads it and nothing else that draws.
     expect(readFileSync(join(SRC, "game/hikeRenderer.ts"), "utf8")).toContain("  return createLiteRenderer(canvas, level, forest, options);");
     expect(loaded(join(SRC, "game/hikeRenderer.ts"))).toEqual(["./lite/renderer.js"]);
-    // Nothing under game/lite/ names the module of the renderer on Babylon.js, for a value or for a type.
-    expect(own.filter((file) => importsOf(file).includes("../renderer.js")).map((file) => relative(SRC, file))).toEqual([]);
   });
 
   /**
    * A renderer is held by types alone (`rendererTypes.ts`): the hike, the
    * ladders that swap one renderer for another, the staged scenes and the
    * renderer on Babylon Lite name them there, and naming them loads nothing.
-   * The renderer on Babylon.js answers the same type, which it takes from
-   * there too, and does not load the hike's renderer.
    */
-  it("holds a renderer by types that load nothing: the hike's, the swap's, the staged scenes' and both renderers' name them in one module", () => {
+  it("holds a renderer by types that load nothing: the hike's, the swap's, the staged scenes' and the renderer's name them in one module", () => {
     const loaded = (file: string): string[] =>
       [...readFileSync(file, "utf8").matchAll(/^\s*(?:import|export)\s+(?!type\s)(?:[^"'();]*?\s+from\s+)?["']([^"']+)["']/gm)].map((m) => m[1] as string);
     const types = join(SRC, "game/rendererTypes.ts");
@@ -1075,9 +1029,8 @@ describe("layer boundaries", () => {
    * one, however deep. What it loads of an engine is Babylon Lite, through
    * the renderer it is handed (`hikeRenderer.ts`). So what it is told by
    * comes from the modules that compute it with no engine (`skyWait.ts`,
-   * `droppedCap.ts`, `loadReport.ts`), never from the shell on Babylon.js
-   * that names them on, and the scenery it places once is asked of its
-   * renderer (`hikeScenery.ts`), which builds into no Babylon scene.
+   * `droppedCap.ts`, `loadReport.ts`), and the scenery it places once is
+   * asked of its renderer (`hikeScenery.ts`).
    */
   it("loads no Babylon.js under a hike: nothing app.ts imports, by an import or a dynamic one, reaches a module that loads it", () => {
     const loads = (file: string): string[] => {
@@ -1120,100 +1073,52 @@ describe("layer boundaries", () => {
     // What the hike is told by is taken where it is computed, and its scenery is asked of its renderer alone.
     const app = importsOf(join(SRC, "app.ts"));
     for (const home of ["./game/skyWait.js", "./game/droppedCap.js", "./game/loadReport.js", "./game/hikeRenderer.js", "./game/hikeScenery.js"]) expect(app, home).toContain(home);
-    for (const shell of ["./game/renderer.js", "./game/lighting.js", "./game/droppedItem.js", "./game/modelLoad.js", "./game/atmosphere.js", "./game/webgl2Shaders.js"]) expect(app, shell).not.toContain(shell);
     expect(loads(join(SRC, "game/hikeScenery.ts")).filter((spec) => spec.startsWith("./"))).toEqual(["./boardImages.js", "./boardDraw.js", "./posterPanel.js", "./lite/sceneryMeshes.js"]);
-    expect(importsOf(join(SRC, "game/clutterField.ts"))).not.toContain("./distanceFadePlugin.js");
   });
 
   /**
-   * The line Babylon.js stands behind. The renderer on it, its shells and
-   * what only they import are named here, file by file: nothing else in
-   * `src/` imports a module of Babylon.js or one of these files, for a
-   * value or for a type, and nothing crosses the line, so the list is what
-   * goes when that renderer does. Two modules that served its engines and
-   * load none stand outside it for their tests' sake, named beside it:
-   * nothing a hike or the page loads, or names, imports either.
+   * The game is drawn with Babylon Lite and names no other library of that
+   * family: no file of `src/` or `test/` imports a package under
+   * `@babylonjs/` but `@babylonjs/lite`, for a value or for a type, by an
+   * import or a dynamic one, and no file of `src/` spells such a package any
+   * other way. What Babylon.js once gave the tests is a record on disk
+   * (`test/fixtures/babylon/`), read as text and numbers by a helper that
+   * loads nothing.
    */
-  it("keeps Babylon.js behind one line: the renderer on it, its shells and what only they import, named file by file", () => {
-    const BABYLON_SIDE = [
-      "game/asyncPipelines.ts", "game/atmosphere.ts", "game/barkShadePlugin.ts", "game/bladeMeshes.ts", "game/boardPaint.ts", "game/bodyMesh.ts",
-      "game/cascadeFrustum.ts", "game/characterModel.ts", "game/cliffMeshes.ts", "game/cliffTintPlugin.ts", "game/clutterMeshes.ts",
-      "game/creatureModel.ts", "game/deadwoodPlugin.ts", "game/distanceFadePlugin.ts", "game/dragonflies.ts", "game/droppedItem.ts",
-      "game/duffMeshes.ts", "game/effectTurns.ts", "game/engineLog.ts", "game/engineOf.ts", "game/enginePipelines.ts", "game/engineVersion.ts", "game/entityViews.ts",
-      "game/facePatchMeshes.ts", "game/featurePaint.ts", "game/foliageLightPlugin.ts", "game/foliagePlugin.ts", "game/forestMeshes.ts",
-      "game/gpuEngine.ts", "game/gpuTime.ts", "game/groundConformPlugin.ts", "game/groundMaps.ts", "game/headlamp.ts", "game/impostorBakePlugin.ts",
-      "game/keptEngine.ts", "game/ktx2.ts", "game/lakeMirror.ts", "game/lakePanorama.ts", "game/lakeView.ts", "game/lighting.ts",
-      "game/midgeSwarms.ts", "game/mistMeshes.ts", "game/modelLoad.ts", "game/mossPlugin.ts", "game/motes.ts", "game/oceanGpuFft.ts",
-      "game/oceanLip.ts", "game/oceanRender.ts", "game/oceanWindSource.ts", "game/pluginNumbers.ts", "game/post.ts", "game/probeScene.ts",
-      "game/propMeshes.ts", "game/rain.ts", "game/rainMap.ts", "game/rainPlugin.ts", "game/rainSplash.ts", "game/renderer.ts",
-      "game/scene/cordTube.ts", "game/scene/sceneRoute.ts", "game/scene/sceneStage.ts", "game/sceneReady.ts", "game/sha256.ts", "game/shadeSilhouette.ts",
-      "game/shadeSmoke.ts", "game/shadeVeil.ts", "game/shaderLookup.ts", "game/signMeshes.ts", "game/skin.ts", "game/skyDome.ts",
-      "game/softShadowInclude.ts", "game/staticModel.ts", "game/surfSpray.ts", "game/swashTexture.ts", "game/terrainTexture.ts",
-      "game/trailheadMeshes.ts", "game/waterFrame.ts", "game/waterLife.ts", "game/waterPlants.ts", "game/waterPlugin.ts", "game/webgl2Shaders.ts",
-      "game/webgpuDrawCache.ts", "game/webgpuVertexBuffer.ts", "game/wetPlugin.ts", "game/wgslFormat.ts", "game/wgslMap.ts", "game/wgslStore.ts",
-      "game/wildlifeMeshes.ts", "game/wingPlugin.ts",
-    ];
+  it("names no Babylon.js: no file of src/ or test/ imports a package under @babylonjs/ but Babylon Lite, and the record of what it gave is read with none", () => {
     const everyImport = (file: string): string[] => {
       const asked = [...stripComments(readFileSync(file, "utf8")).matchAll(/\bimport\(\s*["']([^"']+)["']\s*\)/g)].map((m) => m[1] as string);
       return [...new Set([...importsOf(file), ...asked])];
     };
-    const ofBabylon = (spec: string): boolean => spec.startsWith("@babylonjs/") && spec !== "@babylonjs/lite";
-    const side = new Set(BABYLON_SIDE.map((name) => join(SRC, name)));
-    expect(side.size).toBe(BABYLON_SIDE.length);
-    for (const file of side) expect(existsSync(file), relative(SRC, file)).toBe(true);
-    const crossing: string[] = [];
-    const importedBy = new Map<string, string[]>();
-    for (const file of sourceFiles(SRC)) {
-      for (const spec of everyImport(file)) {
-        if (ofBabylon(spec)) {
-          if (!side.has(file)) crossing.push(`${relative(SRC, file)} names ${spec}`);
-          continue;
-        }
-        const path = spec.split("?")[0] as string;
-        if (!path.startsWith(".") || !path.endsWith(".js")) continue;
-        const target = join(file, "..", `${path.slice(0, -3)}.ts`);
-        importedBy.set(target, [...(importedBy.get(target) ?? []), file]);
-        if (side.has(target) && !side.has(file)) crossing.push(`${relative(SRC, file)} imports ${relative(SRC, target)}`);
-      }
+    // A package's name or a path into it: what an import can ask for (this file's own rules spell the family in
+    // patterns, which are no imports).
+    const ofBabylon = (spec: string): boolean => /^@babylonjs\/[\w.@/-]+$/.test(spec) && spec !== "@babylonjs/lite";
+    expect(["@babylonjs/core", "@babylonjs/core/Engines/engine.js", "@babylonjs/loaders/glTF/index.js", "@babylonjs/lite"].map(ofBabylon)).toEqual([true, true, true, false]);
+    const files = [...sourceFiles(SRC), ...sourceFiles(TESTS)];
+    const named: string[] = [];
+    let lite = 0;
+    for (const file of files) {
+      const specs = everyImport(file);
+      if (specs.includes("@babylonjs/lite")) lite++;
+      for (const spec of specs) if (ofBabylon(spec)) named.push(`${relative(join(SRC, ".."), file)} names ${spec}`);
     }
-    // Guards against the guard: the walk reads the whole of src/ and finds the library where it is named.
-    expect(importedBy.size).toBeGreaterThan(400);
-    expect([...side].filter((file) => everyImport(file).some(ofBabylon)).length).toBeGreaterThan(75);
-    // Nothing crosses the line, for a value or for a type: not the hike, not the swap, not the renderer's types.
-    expect(crossing.sort()).toEqual([]);
+    // Guards against the guard: the walk reads the whole of src/ and test/ and finds the library where it is named.
+    expect(sourceFiles(SRC).length).toBeGreaterThan(400);
+    expect(sourceFiles(TESTS).length).toBeGreaterThan(400);
+    expect(lite).toBeGreaterThan(40);
+    expect(named).toEqual([]);
+    // Nor is such a package spelt in src/ outside an import: a path into it, a `require`, a URL.
+    const spelt = sourceFiles(SRC)
+      .filter((file) => /@babylonjs\/(?!lite\b)/.test(stripComments(readFileSync(file, "utf8"))))
+      .map((file) => relative(SRC, file));
+    expect(spelt).toEqual([]);
+    // The record's reader loads the file system and nothing else.
+    expect(importsOf(join(TESTS, "helpers/babylonFixture.ts"))).toEqual(["node:fs"]);
+    // And the swap and the renderer's types load nothing at all.
     const loaded = (file: string): string[] =>
       [...readFileSync(file, "utf8").matchAll(/^\s*(?:import|export)\s+(?!type\s)(?:[^"'();]*?\s+from\s+)?["']([^"']+)["']/gm)].map((m) => m[1] as string);
-    for (const shared of ["app.ts", "game/rendererSwap.ts", "game/rendererTypes.ts"]) {
-      expect(importsOf(join(SRC, shared)).filter((spec) => /asyncPipelines|keptEngine|gpuEngine|sceneReady|effectTurns|@babylonjs\/(?!lite$)/.test(spec)), shared).toEqual([]);
-    }
     expect(loaded(join(SRC, "game/rendererSwap.ts"))).toEqual([]);
     expect(loaded(join(SRC, "game/rendererTypes.ts"))).toEqual([]);
-    // The list is no longer than it need be: a file on it names Babylon.js, or is imported by files on it alone.
-    for (const file of side) {
-      if (everyImport(file).some(ofBabylon)) continue;
-      const importers = importedBy.get(file) ?? [];
-      expect(importers.length, relative(SRC, file)).toBeGreaterThan(0);
-      expect(importers.filter((from) => !side.has(from)).map((from) => relative(SRC, from)), relative(SRC, file)).toEqual([]);
-    }
-    // What is left of the engines' rule, with no engine, kept for its tests: the rule that chose between
-    // Babylon.js's two engines, with its record of a failure and its second start, and the hold on a start's
-    // world until such an engine had drawn a whole frame. Neither names Babylon.js or a file behind the line,
-    // and nothing off the line imports either: no hike and no page reads them.
-    const RULE_LEFT = ["game/engineChoice.ts", "game/revealHold.ts"];
-    for (const name of RULE_LEFT) {
-      const file = join(SRC, name);
-      expect(existsSync(file), name).toBe(true);
-      expect(everyImport(file).filter(ofBabylon), name).toEqual([]);
-      expect((importedBy.get(file) ?? []).filter((from) => !side.has(from)).map((from) => relative(SRC, from)), name).toEqual([]);
-    }
-    expect(importedBy.has(join(SRC, "game/revealHold.ts"))).toBe(false);
-    // And the list is whole: no other file of src/ is imported by files on it alone, but the rule above and the
-    // skin's look in numbers (`skinParams.ts`), which the hike's renderer does not draw yet.
-    const onlyBehind = [...importedBy]
-      .filter(([target, from]) => !side.has(target) && from.every((file) => side.has(file)))
-      .map(([target]) => relative(SRC, target))
-      .sort();
-    expect(onlyBehind).toEqual(["game/engineChoice.ts", "game/skinParams.ts"]);
   });
 
   /**
@@ -1490,242 +1395,5 @@ describe("wall-clock tests", () => {
     expect(named).toEqual(holding);
     expect(script).toMatch(/--maxWorkers=1\b/);
     expect(script).toMatch(/--tags-filter=wall-clock\b/);
-  });
-});
-
-/**
- * What these rules hold of the renderer on Babylon.js itself: where its
- * shells read what is computed with no engine, what its engines load, and
- * that its modules stand. Each reads its file inside the test. It goes,
- * whole, with that renderer.
- */
-describe("the renderer on Babylon.js: where it reads the game's own arithmetic, and what its engines load", () => {
-  it("keeps the scene player pure of Babylon but its stage, and out of the sim's writes", () => {
-    const dir = join(SRC, "game/scene");
-    const route = readFileSync(join(dir, "sceneRoute.ts"), "utf8");
-    expect(route).toContain("= routeWorld(name);");
-    expect(route).toContain("renderer.sync(world.state, -1, 0)");
-    expect(route).not.toMatch(/world\.(step|apply|input)/);
-  });
-
-  it("loads no Babylon.js with the page: nothing main.ts imports for itself reaches it, by an import or a dynamic one", () => {
-    // The modules stand, with their tests, until the renderer on Babylon.js goes.
-    for (const gone of ["renderer", "keptEngine", "engineVersion", "engineLog", "engineChoice", "gpuEngine"]) {
-      expect(existsSync(join(SRC, "game", `${gone}.ts`)), gone).toBe(true);
-    }
-  });
-
-  it("bounds the cover over every switch by what its caller passes: no path picks its own bound", () => {
-    // The renderer's wait is its scene's and its forest's layers', bounded by what it is passed alone.
-    expect(stripComments(readFileSync(join(SRC, "game/renderer.ts"), "utf8"))).toContain(
-      "    whenReady(maxMs) {\n      return whenSceneReady(scene, maxMs, renderer.forestReady);\n    },",
-    );
-  });
-
-  it("what the sea is drawn with is computed without loading Babylon, whatever it imports", () => {
-    // And the shells on Babylon.js read them: the sea's numbers, its wind's lag and its edge are made in one place.
-    expect(readFileSync(join(SRC, "game/oceanRender.ts"), "utf8")).toContain("createOceanFrame(seed, tier, made)");
-    expect(readFileSync(join(SRC, "game/oceanWindSource.ts"), "utf8")).toContain("createWindSeaField<BaseTexture>(seed, tier, {");
-    expect(readFileSync(join(SRC, "game/renderer.ts"), "utf8")).toContain("createSeaEdgeStep(seed, ocean.field)");
-    // The FFT's passes, the curl's strips and the spray's bursts likewise.
-    expect(readFileSync(join(SRC, "game/oceanGpuFft.ts"), "utf8")).toContain('from "./oceanFftPasses.js";');
-    expect(readFileSync(join(SRC, "game/oceanLip.ts"), "utf8")).toContain("lipReach(cove, level)");
-    expect(readFileSync(join(SRC, "game/surfSpray.ts"), "utf8")).toContain("createSprayBursts(plugin.bursts)");
-    expect(readFileSync(join(SRC, "game/renderer.ts"), "utf8")).toContain("createSprayThrow(tracker, cove, waterLevel)");
-  });
-
-  it("what the scenes and the endings are played with is computed without loading Babylon, whatever it imports", () => {
-    // And the shells on Babylon.js read them: the scenes' state is kept in one place, and the car's parts are turned by one rule.
-    expect(readFileSync(join(SRC, "game/renderer.ts"), "utf8")).toContain("const play = createScenePlay({");
-    expect(readFileSync(join(SRC, "game/scene/sceneStage.ts"), "utf8")).toContain("wheel.node.rotation.z = wheelSpinTurn(pose);");
-    // The handset's grip and the cord's ends, the cord's tube and the route's world likewise.
-    expect(readFileSync(join(SRC, "game/scene/sceneStage.ts"), "utf8")).toContain("new Vector3(GRIP_OFFSET[0], GRIP_OFFSET[1], GRIP_OFFSET[2])");
-    expect(readFileSync(join(SRC, "game/scene/cordTube.ts"), "utf8")).toContain("radius: CORD_TUBE_RADIUS, tessellation: CORD_TUBE_SIDES");
-  });
-
-  it("what a renderer is sized and started by is computed without loading Babylon, whatever it imports", () => {
-    expect(readFileSync(join(SRC, "game/renderer.ts"), "utf8")).toContain("renderScaleRuns(postFeatures.paint, options.gpuTime === true)");
-    // The renderer on Babylon.js is watched by whoever made its engine.
-    expect(readFileSync(join(SRC, "game/renderer.ts"), "utf8")).toContain("ownWatch: null,");
-  });
-
-  it("holds a renderer by types that load nothing: the hike's, the swap's, the staged scenes' and both renderers' name them in one module", () => {
-    // Who holds a renderer takes the types from there: the staged scenes' stage on Babylon.js.
-    for (const holder of ["game/scene/sceneStage.ts"]) {
-      const specs = importsOf(join(SRC, holder));
-      expect(specs.some((spec) => spec.endsWith("/rendererTypes.js")), holder).toBe(true);
-    }
-    // The renderer on Babylon.js takes them from there and names them on for what builds on it; it loads no renderer but itself.
-    const babylon = readFileSync(join(SRC, "game/renderer.ts"), "utf8");
-    expect(babylon).toContain('import type { FrameView, FreecamView, Renderer, RendererOptions } from "./rendererTypes.js";');
-    expect(babylon).toContain("export type { FrameView, FreecamView, Renderer, RendererOptions };");
-    expect(importsOf(join(SRC, "game/renderer.ts"))).not.toContain("./lite/renderer.js");
-  });
-
-  it("loads no Babylon.js under a hike: nothing app.ts imports, by an import or a dynamic one, reaches a module that loads it", () => {
-    const loads = (file: string): string[] => {
-      const text = readFileSync(file, "utf8");
-      const imported = [...text.matchAll(/^\s*(?:import|export)\s+(?!type\s)(?:[^"'();]*?\s+from\s+)?["']([^"']+)["']/gm)].map((m) => m[1] as string);
-      const asked = [...stripComments(text).matchAll(/\bimport\(\s*["']([^"']+)["']\s*\)/g)].map((m) => m[1] as string);
-      return [...imported, ...asked];
-    };
-    /** Every module `entry` loads, with the Babylon.js each loads (and the chain it is reached by) and the modules that load Babylon Lite. */
-    const reach = (entry: string): { seen: number; babylon: string[]; lite: string[] } => {
-      const from = new Map<string, string | null>([[entry, null]]);
-      const queue = [entry];
-      const babylon: string[] = [];
-      const lite: string[] = [];
-      for (let at = 0; at < queue.length; at++) {
-        const file = queue[at] as string;
-        if (!existsSync(file)) continue;
-        for (const spec of loads(file)) {
-          if (spec === "@babylonjs/lite") lite.push(relative(SRC, file));
-          else if (spec.startsWith("@babylonjs")) {
-            const chain: string[] = [];
-            for (let f: string | null = file; f !== null; f = from.get(f) ?? null) chain.unshift(relative(SRC, f));
-            babylon.push(`${chain.join(" > ")} loads ${spec}`);
-          }
-          if (!spec.startsWith(".") || !spec.endsWith(".js")) continue;
-          const next = join(file, "..", spec.replace(/\.js$/, ".ts"));
-          if (!from.has(next)) {
-            from.set(next, file);
-            queue.push(next);
-          }
-        }
-      }
-      return { seen: from.size, babylon, lite: [...new Set(lite)] };
-    };
-    // Guards against the guard: the walk finds Babylon.js where it is loaded (the renderer on Babylon.js, which no hike reaches).
-    expect(reach(join(SRC, "game/renderer.ts")).babylon.length).toBeGreaterThan(50);
-    expect(reach(join(SRC, "game/webgl2Shaders.ts")).babylon.length).toBeGreaterThan(10);
-  });
-
-  it("loads the WebGPU engine's extensions with the engine, and only there", () => {
-    // The dynamic texture the fingerposts paint, the compute and multi-render
-    // paths: the WebGPU engine's own versions, which no WebGL2 import reaches.
-    // In `gpuEngine.ts`, so the dynamic chunk carries them; the static-graph
-    // test above keeps them out of the page's first load.
-    expect(readFileSync(join(SRC, "game/gpuEngine.ts"), "utf8")).toContain(
-      'import "@babylonjs/core/Engines/WebGPU/Extensions/index.js";',
-    );
-  });
-
-  it("never turns WebGPU's uniformity analysis off for every shader", () => {
-    // The terrain's material turns it off for itself (`TERRAIN_UNIFORMITY_OFF`); replacing
-    // the engine's stage-descriptor method would hide every other shader's
-    // uniformity fault too. The shader lookup calls it, with WGSL already
-    // translated (each stage's switch read as Babylon reads it), and nothing
-    // replaces it.
-    const found = sourceFiles(SRC).filter((f) => readFileSync(f, "utf8").includes("_createPipelineStageDescriptor"));
-    expect(found.map((f) => relative(SRC, f))).toEqual(["game/shaderLookup.ts"]);
-    const lookup = readFileSync(join(SRC, "game/shaderLookup.ts"), "utf8");
-    expect(lookup).not.toMatch(/_createPipelineStageDescriptor\s*=[^=]/);
-    expect([...lookup.matchAll(/own\._createPipelineStageDescriptor\(([^)]*)\)/g)].map((m) => m[1])).toEqual([
-      "vertexStage.wgsl, fragmentStage.wgsl, WGSL, false, false",
-    ]);
-  });
-
-  it("keeps `forgetTranslators` for tests: nothing in src/ but its definition names it", () => {
-    // A page keeps its started translators for its life (`loadTranslators`);
-    // dropping them is only for tests, which start them afresh each time.
-    const named = sourceFiles(SRC).flatMap((file) =>
-      [...stripComments(readFileSync(file, "utf8")).matchAll(/\bforgetTranslators\b/g)].map(() => relative(SRC, file)),
-    );
-    expect(named).toEqual(["game/gpuEngine.ts"]);
-    expect(readFileSync(join(SRC, "game/gpuEngine.ts"), "utf8")).toContain("export function forgetTranslators(): void {");
-  });
-
-  it("loads nothing with the WebGPU engine that registers what the WebGL2 path does not, but the engine's own", () => {
-    // A module that registers something on load (a getter on a texture, a
-    // fallback image, an audio engine) changes what every engine of the page
-    // does once the WebGPU chunk has loaded. The spherical harmonics registered
-    // by the non-pure PBR module lit WebGPU's frame 1.23 times brighter.
-    const NODE_MODULES = fileURLToPath(new URL("../../node_modules", import.meta.url));
-    const runtimeImports = (file: string): string[] =>
-      [...readFileSync(file, "utf8").matchAll(/^\s*(?:import|export)\s+(?!type\s)(?:[^"'();]*?\s+from\s+)?["']([^"'?]+)["']/gm)].map((m) => m[1] as string);
-    const resolveIn = (from: string, spec: string): string | null => {
-      // Babylon Lite is a library of its own, imported whole by its package's name: it holds no
-      // module of Babylon.js and registers nothing on Babylon.js's classes.
-      if (spec === "@babylonjs/lite") return null;
-      if (spec.startsWith("@babylonjs/")) return join(NODE_MODULES, spec);
-      if (!spec.startsWith(".")) return null;
-      const path = join(from, "..", spec);
-      return from.includes("node_modules") ? path : path.replace(/\.js$/, ".ts");
-    };
-    const graph = (entry: string): Set<string> => {
-      const seen = new Set<string>();
-      const stack = [entry];
-      while (stack.length > 0) {
-        const file = stack.pop() as string;
-        if (seen.has(file) || !existsSync(file)) continue;
-        seen.add(file);
-        for (const spec of runtimeImports(file)) {
-          const next = resolveIn(file, spec);
-          if (next !== null) stack.push(next);
-        }
-      }
-      return seen;
-    };
-    // The page loads no module of Babylon.js any more, with the hike under it or without: the WebGL2 path
-    // is what the renderer on Babylon.js loads, and the two engines now meet only where that renderer is built.
-    expect([...graph(join(SRC, "main.ts"))].filter((f) => f.includes("@babylonjs"))).toEqual([]);
-    const webgl2 = graph(join(SRC, "game/renderer.ts"));
-    const webgpu = [...graph(join(SRC, "game/gpuEngine.ts"))].filter((f) => f.includes("@babylonjs") && !webgl2.has(f));
-    // What registers on load, at the top level of a module: a call such as
-    // `RegisterTools();`, a bare import, a class registered by name, a
-    // prototype assigned to, or a property defined.
-    const REGISTRATIONS = [
-      /^[A-Z][A-Za-z]*\(\);$/m,
-      /^import\s+["'][^"']+["'];$/m,
-      /^RegisterClass\(/m,
-      /^[A-Za-z_$][\w$.]*\.prototype\.[\w$]+\s*=[^=]/m,
-      /^Object\.defineProperty\(/m,
-    ];
-    const registers = (text: string): boolean => REGISTRATIONS.some((pattern) => pattern.test(text));
-    // The shapes a later Babylon might write a registration in, each caught.
-    expect(
-      [
-        "RegisterTools();",
-        'import "./engine.alpha.js";',
-        'RegisterClass("BABYLON.PBRMaterial", PBRMaterial);',
-        "ThinEngine.prototype.createDynamicTexture = function () {};",
-        'Object.defineProperty(BaseTexture.prototype, "sphericalPolynomial", {',
-        "    Engine.prototype.inside = function () {};",
-        'import { Engine } from "./engine.js";',
-      ].map(registers),
-    ).toEqual([true, true, true, true, true, false, false]);
-    const registering = webgpu
-      .filter((f) => registers(readFileSync(f, "utf8")))
-      .map((f) => f.slice(f.indexOf("@babylonjs/core/") + "@babylonjs/core/".length))
-      .sort();
-    expect(registering).toEqual([
-      // A vertex buffer's realignment, which only an engine asking for
-      // 4-byte-aligned strides and offsets (WebGPU's) calls.
-      "Buffers/buffer.align.js",
-      // The WebGPU engine's own extensions: methods on its prototype, which no
-      // WebGL2 engine has.
-      "Engines/WebGPU/Extensions/engine.alpha.js",
-      "Engines/WebGPU/Extensions/engine.computeShader.js",
-      "Engines/WebGPU/Extensions/engine.cubeTexture.js",
-      "Engines/WebGPU/Extensions/engine.debugging.js",
-      "Engines/WebGPU/Extensions/engine.dynamicTexture.js",
-      "Engines/WebGPU/Extensions/engine.multiRender.js",
-      "Engines/WebGPU/Extensions/engine.query.js",
-      "Engines/WebGPU/Extensions/engine.rawTexture.js",
-      "Engines/WebGPU/Extensions/engine.readTexture.js",
-      "Engines/WebGPU/Extensions/engine.renderTarget.js",
-      "Engines/WebGPU/Extensions/engine.renderTargetCube.js",
-      "Engines/WebGPU/Extensions/engine.renderTargetTexture.js",
-      "Engines/WebGPU/Extensions/engine.videoTexture.js",
-      "Engines/WebGPU/Extensions/index.js",
-    ]);
-    // And the game's own WebGPU module takes every Babylon class it names from
-    // the pure form of its module, where there is one (a bare import is a
-    // registration, held by the list above).
-    const own = [...readFileSync(join(SRC, "game/gpuEngine.ts"), "utf8").matchAll(/^import\s+(?!type\s)[^"';]+\s+from\s+["']([^"'?]+)["']/gm)]
-      .map((m) => m[1] as string)
-      .filter((spec) => spec.startsWith("@babylonjs/"));
-    const impure = own.filter((spec) => spec.endsWith(".js") && !spec.endsWith(".pure.js") && existsSync(join(NODE_MODULES, spec.replace(/\.js$/, ".pure.js"))));
-    expect(impure).toEqual([]);
   });
 });
