@@ -2,14 +2,21 @@
  * The atmosphere as a material plugin on Babylon Lite: the air between the
  * eye and a surface, drawn by the surface's own material (`atmosphereParams.ts`
  * has the arithmetic and says what the air is; `cloudParams.ts` the ground
- * cloud). Statement for statement GLSL written for Babylon.js's PBR
- * material; what differs is where it goes in:
+ * cloud). Where it goes in:
  *
  * - The fog is applied to the lit colour at the point before the final
- *   colour is composed, ahead of the display curve, where the GLSL edits
- *   Babylon's own fog line. Lite's scene fog stays off.
+ *   colour is composed, ahead of the display curve. Lite's scene fog stays
+ *   off.
  * - The distance fog's density is a uniform of the plugin's
- *   (`atmBaseDensity`), where Babylon hands its scene's to the GLSL.
+ *   (`atmBaseDensity`).
+ * - With `atmOn` under a half the lit colour passes as it is, with no air at
+ *   all. `atmOn` is 0 only while there is no record to draw the air by
+ *   (`atmosphereUniforms`): before the sky's first slices are held
+ *   (`lite/worldLight.ts`), or before the renderer's first frame is
+ *   written. The hike's loop starts only once the sky is held
+ *   (`Renderer.skyReady`), so no frame a player sees is drawn that way.
+ *   The record's numbers are all 0 then, and the haze, whose constants are
+ *   not, would darken the colour were it not for the early return.
  * - The uniforms are read as `material.<name>`, under the names
  *   `atmosphereUniforms` gives them; or, given the frame's block
  *   (`frameBlock.ts`), from the block, for the air is the same for every
@@ -113,7 +120,7 @@ export const ATMOSPHERE_PRIORITY = 900;
  * grades its own colour as Babylon.js's image processing does there
  * (`displayCurve.ts`): the vignette on the fogged colour ahead of the tone
  * map, the colour curves and the dither after Lite's display curve.
- * `curve`: Lite's materials no longer end with that curve (the page has
+ * `curve`: Lite's materials do not end with that curve (the page has
  * drawn a tier with a chain, and Lite's linear output is the whole page's
  * from then), so the plugin encodes the colour for the display itself,
  * ahead of the curves.
