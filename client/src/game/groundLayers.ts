@@ -67,9 +67,9 @@ export const NEUTRAL_NORMAL: Uint8ClampedArray = Uint8ClampedArray.from([128, 12
 /** Mid roughness, AO's own neutral, mid height. All three RAH channels are
  * packed with their own mean centred on 0.5, so 128 raw is the shared
  * neutral byte for R, G and B alike: the
- * shader divides the blended AO (G) back by 0.5 (`terrainTexture.ts`,
- * `roadPaint.ts`), turning 128/255 ≈ 0.502 into ≈1.0 — a no-op multiplier,
- * not literally "no occlusion" as a flat 255 byte used to mean. */
+ * shader divides the blended AO (G) back by 0.5 (`lite/terrainPlugins.ts`),
+ * turning 128/255 ≈ 0.502 into ≈1.0 — a no-op multiplier, not literally
+ * "no occlusion", which a flat 255 byte would be. */
 export const NEUTRAL_RAH: Uint8ClampedArray = Uint8ClampedArray.from([128, 128, 128, 255]);
 
 export function interleaveLayers(layers: readonly Uint8ClampedArray[], size: number): Uint8Array {
@@ -99,11 +99,9 @@ export function flipRowsY(data: Uint8ClampedArray, size: number): Uint8ClampedAr
 
 /** Browser decode: bytes → RGBA at `size`, no colour management — these are
  * data. Flips rows on the CPU (`flipRowsY`) rather than asking the GPU
- * texture to invert Y: WebGL rejects `UNPACK_FLIP_Y_WEBGL` for 3D/array
- * uploads (`texImage3D`: "FLIP_Y or PREMULTIPLY_ALPHA isn't allowed for
- * uploading 3D textures"), so the array texture is made with no flip and the
- * flip has to happen before the data ever reaches the GPU, so
- * the array still agrees with the albedo textures' own flip on
+ * texture to invert Y: the array texture is made with no flip, so the
+ * flip has to happen before the data ever reaches the GPU, for
+ * the array to agree with the albedo textures' own flip on
  * which way v runs over the same planar world-XZ UV. */
 export async function decodeGroundLayer(url: string, size: number, signal?: AbortSignal): Promise<Uint8ClampedArray> {
   const blob = await fetchRetried(url, signal, (response) => response.blob());

@@ -235,7 +235,7 @@ describe("ring edges (real field data)", () => {
     // below the current NEAR_RADIUS again, restoring the original intent
     // (this is a generic
     // test of the `nearRadius` parameter, not tied to any specific quality
-    // tier's own constant — renderer.ts's own "low" tier value is untouched
+    // tier's own constant — forestField.ts's own "low" tier value is untouched
     // here).
     const { x: ax, z: az } = bandsOrigin(1, 1);
     const b = collectBands(SEED, 1, 1, 80);

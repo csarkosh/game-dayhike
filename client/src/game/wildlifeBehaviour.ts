@@ -8,7 +8,7 @@
  * schedule, which is keyed on the ABSOLUTE tick slot instead (like
  * rest wander), because a call must land on the same tick for every peer
  * regardless of when each one's UnitState was created.
- * Renderer-only; the foliagePlugin.ts rule on constants applies.
+ * Renderer-only.
  */
 import { hash3 } from "../sim/field.js";
 import { elevationAt } from "../sim/terrain.js";

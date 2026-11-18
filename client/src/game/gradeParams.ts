@@ -168,8 +168,8 @@ export function mulMat3(m: Mat3, v: Rgb): Rgb {
 
 /**
  * The AgX contrast sigmoid's seven coefficients, x^6 down to x^0, mirrored
- * verbatim in the GLSL `agxContrast` and pinned there by a lockstep test —
- * this was duplicated with no such test until the final review.
+ * verbatim in the WGSL `agxContrast` (`lite/postWgsl.ts`) and pinned there by a
+ * lockstep test (`gradeShader.test.ts`).
  */
 export const AGX_CONTRAST: readonly [number, number, number, number, number, number, number] =
   [15.5, -40.14, 31.96, -6.868, 0.4298, 0.1191, -0.00232];

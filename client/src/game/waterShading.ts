@@ -1,8 +1,8 @@
 /**
  * The water material's maths, Babylon-free and testable under Node, the way
- * `water.ts` and `sky.ts` are. Every constant here that the GLSL in
- * shaders/water*.fx repeats is pinned by the lockstep test in
- * waterPlugin.test.ts; tune them here and there together.
+ * `water.ts` and `sky.ts` are. Every constant here that the WGSL in
+ * `lite/waterWgsl.ts` repeats is pinned by the lockstep test in
+ * `lite/waterWgsl.test.ts`; tune them here and there together.
  *
  * Trigonometry and exp are fine here (renderer-only; nothing crosses the
  * wire). See docs/rendering/2026-09-29-water-material-design.md §5.

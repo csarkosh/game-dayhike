@@ -211,14 +211,12 @@ export function paintUniforms(strokes: number, width: number, height: number, ou
 }
 
 /**
- * The paint's uniforms as the game's chain draws them on a frame `width` by
- * `height`. While a pass applies, Babylon.js's engine reports the size of
- * the target the pass is writing, and the paint writes its own half-size
- * target: so the shell hands `paintUniforms` that size where it means the
- * frame's, and the strokes are laid out by it. A texel is then two of the
+ * The paint's uniforms as the chain draws them on a frame `width` by
+ * `height`. The paint writes its own half-size target and lays its strokes
+ * out by that target's size, so this hands `paintUniforms` that size where
+ * the frame's is given (`lite/postChain.ts`). A texel is then two of the
  * half-size target's own on each axis, and the radius is that of a frame
- * half as tall. A renderer that knows the frame's size draws the same
- * strokes by handing on the paint's target's.
+ * half as tall.
  */
 export function paintUniformsDrawn(strokes: number, width: number, height: number, out?: PaintUniforms): PaintUniforms {
   const own = paintTargetSize(width, height);

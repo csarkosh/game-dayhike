@@ -1258,9 +1258,8 @@ function buildGame(
    * the hike's scenery is built, and again into one built anew with the
    * extras, so its textures, its shaders and its pipelines are made while the
    * hike starts. Until 2026-11-09 it was fetched at the find, and landed in
-   * the summit scene's first shots: on WebGPU the page held its frames for
-   * the car's pipelines, on WebGL2 it stopped for the car's textures and
-   * programs. A fetch that fails says so once and leaves the parked car.
+   * the summit scene's first shots: the page held its frames for the car's
+   * pipelines. A fetch that fails says so once and leaves the parked car.
    */
   let filmCarLoad: AbortController | null = null;
   /** The film's car, if it is not already here or on its way (the end's own asks: a look at the end before the scenery's fetch began). */

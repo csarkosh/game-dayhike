@@ -27,8 +27,7 @@ import { timeLimit } from "../helpers/timeLimit.js";
  *
  * The arrays are the ones the cut was handed on Babylon.js, recorded whole:
  * each model through its glTF loader into a `NullEngine` scene, then the LOD
- * root's world matrix baked into the vertices, exactly as `clutterMeshes.ts`'s
- * `lodMeshes` does before handing them to `reliefMesh`. That matters: the
+ * root's world matrix baked into the vertices before the cut. That matters: the
  * loader mirrors a glTF model on z for a left-handed scene, so the arrays a
  * hand-rolled GLB reader would produce are not the arrays the cut saw.
  */

@@ -2,9 +2,9 @@
  * How the trees take the sky's image-based light. Babylon-free and on the
  * architecture test's BABYLON_FREE_FILES list; `lite/forestMeshes.ts` sets them on
  * every tree, sapling and snag material and on the billboards. All four are
- * material values Babylon binds as uniforms (`environmentIntensity` into the
- * lighting infos, `metallicF0Factor` into the reflectance factors), not
- * mirrored GLSL literals, so no shader text carries them.
+ * material values (`environmentIntensity` on the material's props, the
+ * specular weight as the `f0Factor` of `setPbrMetallicReflectance`), not
+ * shader literals, so no shader text carries them.
  *
  * The scene's image-based light is a probe of the sky dome alone, and nothing
  * occludes it: every PBR material takes the diffuse irradiance and the grazing

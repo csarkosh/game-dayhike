@@ -683,10 +683,10 @@ export function ringGeometry(
 
   const quadCount = RING_CELLS * RING_CELLS - (hole === null ? 0 : HOLE_CELLS * HOLE_CELLS);
   // 16-bit, not 32: the largest index is SIDE² − 1 = 16640, so Uint16Array has
-  // 3.9× headroom and Babylon's IndicesArray accepts it. Halves index memory
-  // (~2.16 MB → ~1.08 MB over seven rings) and halves the upload on the ring-0
-  // re-emit path, which at a 144 m/s boost against ring 0's 2 m snap step can
-  // run on essentially every frame.
+  // 3.9× headroom. Halves index memory (~2.16 MB → ~1.08 MB over seven rings)
+  // and halves the bytes written on the ring-0 re-emit path, which at a 144 m/s
+  // boost against ring 0's 2 m snap step can run on essentially every frame.
+  // `lite/terrainMeshes.ts` copies what is drawn into a Uint32Array for the mesh.
   const all = new Uint16Array(quadCount * 6);
   const indexCount = writeRingIndices(ring, hole, covered, all);
   // A fresh build allocates anyway: the drawn indices alone.

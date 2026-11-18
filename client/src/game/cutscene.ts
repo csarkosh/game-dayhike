@@ -129,7 +129,7 @@ export const REVEAL_PAN_S = 0.8;
 export const SUMMIT_RISE_AT_S = 4 + 4 + REVEAL_PAN_S;
 /** The Hollow's head over its feet, drawn at HOLLOW_SCALE. */
 export const HOLLOW_HEAD_M = 4.5;
-/** The hiker on the pole, over its foot: the body is the top of a 4.3 m stake (bodyMesh.ts). */
+/** The hiker on the pole, over its foot: how high the shots aim at the body (`BODY_OUTPUT`, `sceneryParts.ts`). */
 export const BODY_TOP_M = 3.6;
 
 function unit(dx: number, dz: number): { x: number; z: number } {

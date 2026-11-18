@@ -170,7 +170,7 @@ export type TerrainUniformInputs = {
   seconds: number;
   /** Whether the sward floor is pulled: only where the blade field is drawn. */
   sward: boolean;
-  /** Whether the decoded relief maps are the ones bound (`groundMaps.ts`'s placeholders are not). */
+  /** Whether the decoded relief maps are the ones bound. */
   relief: boolean;
   /** The world's tables (`terrainTables.ts`), null where the world has none. */
   road: RoadCentreTable | null;

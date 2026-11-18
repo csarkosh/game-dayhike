@@ -111,10 +111,9 @@ export const WILDLIFE_D: readonly number[] = [0.35, 0.5, 0.6, 0.5, 0.25, 0.4, 0.
  * three 8 cm cards in a bucket that already exists.
  *
  * The entry also has to stay non-zero for as long as the species can be cued at all: while
- * `lite/wildlifeMeshes.ts` shipped it no asset this held at 0, so `poolSlotFor` never handed out
- * a slot for an animal nothing could render. `wildlifeMeshes.test.ts`'s asset/pool
- * consistency check holds the two facts (asset shipped, pool slot given) to changing
- * together in either direction.
+ * the species has no asset this holds at 0, and `poolSlotFor` hands out
+ * no slot for an animal nothing could render. The two facts (asset shipped,
+ * pool slot given) are to change together in either direction.
  */
 export const DIRECTOR_POOL: readonly number[] = [1, 1, 2, 2, 2, 2, 2, 2, 3];
 /**
@@ -251,9 +250,9 @@ export type WildlifeUnit = {
  * changed `i * SPECIES_COUNT + species` for every (species, i) pair with i ≥ 1, across every
  * species already shipped: elk, deer, rabbit, squirrel, both ravens, gulls and eagles all
  * silently drew a DIFFERENT cell for the same seed the moment the butterfly raised the
- * count — caught only because three tests happened to pin exact numbers to a specific unit
- * for this seed (`wildlifeBehaviour.test.ts`'s elk alert range, two hand-picked cameras in
- * `wildlifeMeshes.test.ts`) and started finding a different one. A species this cosmetic is
+ * count — caught only because tests happened to pin exact numbers to a specific unit
+ * for this seed (`wildlifeBehaviour.test.ts`'s elk alert range among them) and started
+ * finding a different one. A species this cosmetic is
  * allowed to look different after a balance change; it must not look different after one
  * that has nothing to do with it.
  */

@@ -1,7 +1,7 @@
 /**
  * The world the tests that build a whole renderer hand it: a hand-authored
  * level with nothing in it, and a state of players standing in it. Made for
- * the wind test in `renderer.test.ts`; the files beside it that build
+ * the wind test in `lite/renderer.test.ts`; the files beside it that build
  * renderers by the lake and the sea read the same.
  */
 import type { Level } from "../../../src/sim/level.js";

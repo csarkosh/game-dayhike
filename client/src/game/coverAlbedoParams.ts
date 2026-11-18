@@ -57,16 +57,13 @@ export const COVER_GREEN: Rgb = { r: 0.0791, g: 0.0815, b: 0.0328 };
 export const FOLIAGE_ALBEDO_FLOOR: Rgb = { r: 0.0494, g: 0.0509, b: 0.0205 };
 
 /** The least of the sun's light a ground-cover fragment keeps in a cast
- * shadow, 0 to 1: the shadow generator's darkness applies to every receiver,
- * and on the cover the blades' and cards' own shade stacks on top of it, so
- * the cover's shadows are held above this where the floor's keep the
- * weather's darkness (`foliageLightPlugin.ts`). It applies to every material
- * the foliage light plugin is on. The ones that receive cast shadows (the
- * blade clumps, the duff, the reeds) bind `foliageCanopySun` 0, because the
- * cast shadow carries the canopy's cut of the sun for them, so the floor
- * holds that cut at three quarters too: under a closed canopy they keep at
- * least 0.75 of the sun, more than the cards, which keep
- * 1 − `FOLIAGE_CANOPY_SUN` · ρ (0.64 at ρ 0.9). That is the look as built. */
+ * shadow, 0 to 1: three quarters, so under a closed canopy the materials
+ * that receive cast shadows (the blade clumps, the duff, the reeds, which
+ * bind `foliageCanopySun` 0) keep at least 0.75 of the sun, more than the
+ * cards, which keep 1 − `FOLIAGE_CANOPY_SUN` · ρ (0.64 at ρ 0.9). No tier
+ * has a shadow map (`quality.ts`) and no material reads this: `coverAlbedoParams.test.ts`
+ * holds the number, and `groundHexParams.ts` cites it where it explains the
+ * far cover's fit. */
 export const FOLIAGE_SHADOW_FLOOR = 0.75;
 
 /** Mean linear luminance of each card model's base colour texture over the

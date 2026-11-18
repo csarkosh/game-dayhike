@@ -43,7 +43,7 @@ export type OceanNumbers = {
   /** What the shaders normalise the drawn wind sea by: its height's standard
    * deviation (m) at the wind, fully developed, before its share near shore,
    * then each field's slope variance (the loop's alone, or the FFT's three
-   * cascades'); zeros where none is drawn (`oceanWindSource.ts`). */
+   * cascades'); zeros where none is drawn (`windSeaField.ts`). */
   windStats: [number, number, number, number];
   /** The point the wind sea's fields turn about as the wind turns, (x, z, 0, 0): the cove's waterline centre,
    * where the sea is seen up close, so nothing slides there (`oceanWindFrame`). */
@@ -80,7 +80,7 @@ export function oceanComponentsFor(components: readonly SwellComponent[]): Float
   return out;
 }
 
-/** The wind sea as it is drawn this frame, which whoever makes its field says (`oceanWindSource.ts`). */
+/** The wind sea as it is drawn this frame, which whoever makes its field says (`windSeaField.ts`, as `lite/seaMeshes.ts` hands it on). */
 export type WindSeaDrawn = {
   /** The sea's own state, at the speed it follows its wind. */
   sea: WindSeaState;

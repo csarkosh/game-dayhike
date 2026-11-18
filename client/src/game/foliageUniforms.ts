@@ -24,10 +24,9 @@ export const FOLIAGE_CLUMP_CELL = 1.5;
 export const FOLIAGE_CANOPY_SKY = 0.4;
 /** The share of the sun's light the canopy takes, under full density, from a
  * card that receives no cast shadow: it stands in for the shadow the trees
- * would cast on it. A shadowed receiver keeps 0.45 of the sun under the
- * "bright" weather (`lighting.ts`); a card is taller than the floor and
- * catches the gaps, so it keeps 0.6. Bound as the `foliageCanopySun` uniform,
- * 0 for a material whose meshes receive cast shadows (`attachFoliage`). */
+ * would cast on it. A card is taller than the floor and catches the gaps,
+ * so it keeps 0.6. Bound as the `foliageCanopySun` uniform, 0 for a material
+ * whose meshes receive cast shadows (`sunShadowed` of `foliageLook`). */
 export const FOLIAGE_CANOPY_SUN = 0.4;
 export const FOLIAGE_PLAYERS = 5;
 /** XZ magnitude a parked (absent) player slot sits at. The bend reads only
@@ -83,7 +82,7 @@ export const FOLIAGE_PROFILES = {
    * ground tint, no root darkening (rootAO 1) and keeps its own normals to
    * the root (normalRoot 1), and is too small to need the wind (amp 0, no
    * tilt, no bend). It wears the plugin for the cards' contrast
-   * (`attachFoliage`'s `contrast`), which lives in the fragment block. */
+   * (`foliageLook`'s `contrast`), which lives in the fragment block. */
   NURSE: { amp: 0, groundTint: 0, rootAO: 1, normalRoot: 1, tilt: false, bend: false, blades: false, normalUp: 0 },
 } as const satisfies Record<string, FoliageProfile>;
 
@@ -91,8 +90,7 @@ export const FOLIAGE_PROFILES = {
  * The cover that is matched to the ground (2026-10-27): the grass, the
  * meadow and the blades, and the ferns of the understory. A matched card
  * is drawn most of the way to the ground's own colour at its root
- * (`vFoliage`, the ground tint; `FOLIAGE_MATCH_WEIGHT` in
- * foliageLights.fragment.fx) over its whole height, is matte, and receives
+ * (`vFoliage`, the ground tint) over its whole height, is matte, and receives
  * the trees' cast shadows as the ground does (its canopy cut is the shadow's,
  * so `foliageCanopySun` binds 0, and the shadow floor is not held); it keeps
  * its own texture and normal. The cover read lighter than the terrain it

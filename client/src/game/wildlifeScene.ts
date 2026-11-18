@@ -44,10 +44,8 @@ import {
 
 /**
  * Catalog ids per species; null for the four bird species, which are drawn
- * as thin instances rather than as bodies of their own. Indexed by species;
- * wildlifeMeshes.test.ts holds it to SPECIES_COUNT entries, so a species added
- * to wildlifeField.ts without an entry here fails a test rather than silently
- * rendering nothing.
+ * as thin instances rather than as bodies of their own. Indexed by species: a
+ * species added to wildlifeField.ts needs an entry here, or nothing draws it.
  */
 export const SPECIES_ASSET: readonly (string | null)[] = [
   "wildlife.elk", "wildlife.deer", "wildlife.rabbit", "wildlife.squirrel", null, null, null, null, null,
@@ -82,7 +80,7 @@ const RAVEN_WING_OMEGA = (2 * Math.PI * 900) / WING_TIME_WRAP; // 3 Hz
 const GULL_WING_OMEGA = (2 * Math.PI * 750) / WING_TIME_WRAP;  // 2.5 Hz
 /**
  * The butterfly's wing rate (rad/s), exported rather than kept as a private local like the
- * two above — `wildlifeMeshes.test.ts` checks the wing plugin receives exactly this value.
+ * two above — `birdBucketOmega` hands the wing plugin (`lite/wildlifeMeshes.ts`) exactly this value.
  * 12 Hz: a butterfly's wings beat far faster than any bird's, which is most of what makes
  * the card read as a different kind of motion at a glance, before its small size even
  * registers.
@@ -228,17 +226,12 @@ export type BirdBucket = {
    *
    * Only the butterfly carries one, and it is what makes its three colourways reachable at
    * all: the geometry is shared by every instance, so a colour baked into the vertices
-   * would be the colour of every butterfly in the world. On Babylon.js it is uploaded under
-   * the engine's own `color` thin-instance kind, which becomes the `instanceColor` attribute and
-   * multiplies the vertex colour the pattern is in — so pattern × colourway is what lands on
-   * screen, with no plugin of ours in the path.
+   * would be the colour of every butterfly in the world. `lite/wildlifeMeshes.ts` turns each
+   * instance's tint into the colourway's place in `BUTTERFLY_COLOURWAYS` (`colourwayOf`) and
+   * writes it in the matrix's last row, where the wing plugin (`lite/wingPlugin.ts`) reads it
+   * and tints the pattern by that colourway: pattern × colourway is what lands on screen.
    *
-   * The ALPHA must stay 1, and that is load-bearing rather than tidy. Declaring this
-   * attribute is what turns on PBR's `INSTANCESCOLOR`, and under that define the fragment
-   * stage starts reading `vColor.a` into the surface alpha — a channel this material never
-   * consulted before the tint existed. Both alphas are exactly 1 (the pattern's and this
-   * one's), so the product is 1 and nothing changes; a colourway given a fractional alpha
-   * would quietly turn every butterfly wearing it translucent.
+   * The alpha is 1: `colourwayOf` reads the three colour floats only.
    */
   tint: Float32Array | null;
   /** Instances this frame — counted in pass 1, reused as the write cursor in pass 2. */
