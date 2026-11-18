@@ -57,8 +57,10 @@ describe("creditsModel", () => {
       expect(said[0]!.modified, word).toBe(true);
     }
   });
-  it("says of the real file's works that one alone is shipped as it came: the environment BRDF table", () => {
-    expect(creditsModel(REAL).filter((e) => !e.modified).map((e) => e.id)).toEqual(["render.environment_brdf"]);
+  it("says which of the real file's works are shipped as they came: the environment BRDF table and the KTX2 transcoders", () => {
+    expect(creditsModel(REAL).filter((e) => !e.modified).map((e) => e.id)).toEqual([
+      "render.environment_brdf", "render.ktx2_basis_transcoder", "render.ktx2_uastc_transcoders", "render.ktx2_zstd",
+    ]);
   });
   it("drops UNLICENSED (own-authored) entries", () => {
     expect(creditsModel(SAMPLE).some((e) => e.id === "enemy.grunt")).toBe(false);
@@ -148,6 +150,17 @@ describe("creditsModel", () => {
     };
     expect(Object.keys(named)).toEqual(code.map((e) => e.id));
     expect(Object.values(named).flat().sort()).toEqual(served);
+    // A row that says its work is unchanged names files that are the package's own, byte for byte; the
+    // decoder is bundled from the package's modules (`tools/vendor-ktx2.mjs`), so its row says nothing of the kind.
+    const shipped = join(dirname(createRequire(import.meta.url).resolve("@babylonjs/ktx2decoder/package.json")), "wasm");
+    for (const e of code) {
+      expect(e.modified, e.id).toBe(e.id === "render.ktx2_decoder");
+      if (e.modified) continue;
+      for (const file of named[e.id]!) {
+        const ours = readFileSync(new URL(`../../public/libs/ktx2/${file}`, import.meta.url));
+        expect(ours.equals(readFileSync(join(shipped, file))), file).toBe(true);
+      }
+    }
     // The package the files are vendored from says who made them, in its own notice.
     const notice = readFileSync(join(dirname(createRequire(import.meta.url).resolve("@babylonjs/ktx2decoder/package.json")), "NOTICE.md"), "utf8");
     for (const words of ["Copyright 2024 The Babylon.js team", "Copyright 2024 The Khronos Group", "github.com/KhronosGroup/Basis-Universal-Transcoders", "https://github.com/donmccurdy/zstddec by Don McCurdy", "Yann Collet, Facebook, Inc.", "BSD 3-Clause"]) {

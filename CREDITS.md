@@ -695,6 +695,7 @@ Everything not listed below is original work by Cyrus Sarkosh.
 - **Author:** The Khronos Group
 - **Licence:** Apache-2.0
 - **URL:** https://www.khronos.org/ktx/
+- **Modified:** no
 
 ## render.ktx2_decoder
 
@@ -709,6 +710,7 @@ Everything not listed below is original work by Cyrus Sarkosh.
 - **Author:** The Khronos Group
 - **Licence:** Apache-2.0
 - **URL:** https://github.com/KhronosGroup/Basis-Universal-Transcoders
+- **Modified:** no
 
 ## render.ktx2_zstd
 
@@ -716,6 +718,7 @@ Everything not listed below is original work by Cyrus Sarkosh.
 - **Author:** Yann Collet, Facebook, Inc.
 - **Licence:** BSD-3-Clause
 - **URL:** https://github.com/donmccurdy/zstddec
+- **Modified:** no
 
 ## sign.arm
 
