@@ -115,6 +115,9 @@ describe("the page for those turned away, as data", () => {
   it("names no browser in the desktop app, and offers neither a list nor a download there", () => {
     for (const reason of TURNED_AWAY_REASONS) {
       const view = turnedAwayModel(input({ reason, desktop: true, userAgent: SHELL_WIN }));
+      // The reason itself rides the view, in the app and in a browser: the page carries it as data.
+      expect(view.reason, reason).toBe(reason);
+      expect(turnedAwayModel(input({ reason })).reason, reason).toBe(reason);
       expect(view.headline, reason).toBe(words.TURNED_AWAY_HEADLINE_APP[reason]);
       expect(view.advice).toBe(words.TURNED_AWAY_ADVICE_APP);
       expect(view.browsers).toBeNull();

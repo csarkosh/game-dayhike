@@ -145,8 +145,20 @@ function finishSmoke(code) {
  * Smoke mode (DAYHIKE_SMOKE=1): the app checks itself and exits. One JSON line
  * per check on stdout; exit 0 when all pass, 1 when any fails, 2 on timeout.
  * Read-only page queries plus two synthesized clicks — no preload, no IPC.
+ *
+ * The app has loaded the site when the page is one of two (smokePage.cjs): a
+ * hike's, reached from the desktop landing by Play, or the page the site shows
+ * a visitor who cannot play, which is what a machine with no graphics card is
+ * shown. The summary says which was seen (`saw`), and for the second why the
+ * site turned the app away (`reason`). The site decides that once the GPU has
+ * answered it, which can be after the landing is up or a hike has started: a
+ * check of the landing or of the hike that finds that page in their place is
+ * not counted, and that page is judged instead.
  */
 async function runSmoke(win) {
+  // Required here and by nothing else: a launch that is no smoke never loads it.
+  const { PAGE_READING, exitCodeOf, pageSeen, settled, summaryOf } = require('./smokePage.cjs');
+  const site = { origin: SITE_ORIGIN, base: SITE_BASE, offline: pathToFileURL(OFFLINE_PAGE).href };
   const out = (o) => process.stdout.write(`${JSON.stringify(o)}\n`);
   const timer = setTimeout(() => {
     out({ check: 'timeout', ok: false });
@@ -198,8 +210,28 @@ async function runSmoke(win) {
       await sleep(100);
     }
   }
+  /** What the page shows now (`pageSeen`); a renderer that does not answer reads as no page. */
+  const look = async () => pageSeen(await jsTimed(PAGE_READING), site);
+  /** Looks until the page is one the smoke can judge and `want` takes it, or `ms` have passed: the last look either way. */
+  async function lookUntil(want, ms) {
+    const deadline = Date.now() + ms;
+    let last = await look();
+    while (!(settled(last) && want(last)) && Date.now() < deadline) {
+      await sleep(200);
+      last = await look();
+    }
+    return last;
+  }
+  /** The page the load is judged by: the last one a check looked at. */
+  let seen = { page: 'none', ok: false, why: 'the page was never looked at' };
   const results = [];
-  async function check(name, fn) {
+  /**
+   * One check. `gives`, where given, adds to its line what the check saw. With
+   * `yields`, a check that fails because the page for those turned away has
+   * taken the page over is not counted: its line says so, and false is
+   * returned.
+   */
+  async function check(name, fn, { gives = null, yields = false } = {}) {
     let ok = false;
     let detail = null;
     try {
@@ -208,16 +240,17 @@ async function runSmoke(win) {
     } catch (error) {
       detail = String(error);
     }
-    results.push(ok);
-    out({ check: name, ok, detail: ok ? undefined : detail });
-  }
-  async function until(code, ms) {
-    const deadline = Date.now() + ms;
-    while (Date.now() < deadline) {
-      if (await jsTimed(code)) return true;
-      await sleep(100);
+    if (!ok && yields) {
+      const now = seen.page === 'turned-away' ? seen : await look();
+      if (now.page === 'turned-away') {
+        seen = now;
+        out({ check: name, skipped: 'the page for those turned away has taken the page over' });
+        return false;
+      }
     }
-    return `timed out waiting for ${code}`;
+    results.push(ok);
+    out({ check: name, ok, detail: ok ? undefined : detail, ...(gives === null ? {} : gives()) });
+    return true;
   }
   function click(rect) {
     const ev = { x: Math.round(rect.x + rect.width / 2), y: Math.round(rect.y + rect.height / 2), button: 'left', clickCount: 1 };
@@ -230,51 +263,71 @@ async function runSmoke(win) {
   await sleep(500);
 
   await check('origin is the site', async () => (await js('location.origin')) === SITE_ORIGIN || `got ${await js('location.origin')}`);
-  await check('landing is the desktop landing', async () => {
-    const join = await js('!!document.querySelector(".landing form.join input")');
-    const download = await js('!!document.querySelector(".landing a.download")');
-    return (join && !download) || `join=${join} download=${download}`;
-  });
-  await check('version label matches package.json', async () => {
-    const expected = `v${version}`;
-    const got = await js('document.querySelector(".landing .version")?.textContent ?? null');
-    return got === expected || `got ${JSON.stringify(got)}, expected ${JSON.stringify(expected)}`;
-  });
-  await check('Play navigates to a game route with a canvas', async () => {
-    const rect = await rectOf('#create');
-    if (!rect) return 'no Play button';
-    click(rect);
-    // 12 s, not 5: the first frame of the scene is the heaviest thing the app
-    // does, and a cold runner has come in over 5 s while still being perfectly
-    // healthy a beat later.
-    const game = `^${SITE_BASE.replace(/[/]/g, '\\/')}game\\/[0-9a-f-]{36}$`;
-    return until(`new RegExp(${JSON.stringify(game)}).test(location.pathname) && !!document.querySelector("canvas")`, 12000);
-  });
-  await check('a click on the canvas locks the pointer', async () => {
-    await sleep(1500); // let the scene come up before asking for the lock
-    const rect = await rectOf('canvas');
-    if (!rect) return 'no canvas';
-    // One synthesized click is not a reliable request: it can land while the
-    // scene is still settling, or while the window is not foreground, and the
-    // browser simply drops it — half the Windows runs failed here. Keep
-    // clicking every 500 ms for 6 s instead, taking the foreground first, and
-    // poll through jsTimed so a wedged renderer costs one poll, not the run.
-    const deadline = Date.now() + 6000;
-    while (Date.now() < deadline) {
-      foreground();
+  // The site's first page: its landing, or the page for those turned away.
+  // 15 s for the page's script to arrive and paint on a cold runner.
+  seen = await lookUntil(() => true, 15000);
+  await check('the site shows its landing or the page for those turned away', async () => seen.ok || seen.why, { gives: () => ({ saw: seen.page }) });
+
+  // From the landing to a hike, in order, until one of them finds the page
+  // for those turned away in its place.
+  const toAHike = [
+    ['landing is the desktop landing', async () => {
+      const join = await js('!!document.querySelector(".landing form.join input")');
+      const download = await js('!!document.querySelector(".landing a.download")');
+      return (join && !download) || `join=${join} download=${download}`;
+    }],
+    ['version label matches package.json', async () => {
+      const expected = `v${version}`;
+      const got = await js('document.querySelector(".landing .version")?.textContent ?? null');
+      return got === expected || `got ${JSON.stringify(got)}, expected ${JSON.stringify(expected)}`;
+    }],
+    ['Play navigates to a game route with a canvas', async () => {
+      const rect = await rectOf('#create');
+      if (!rect) return 'no Play button';
       click(rect);
-      for (let i = 0; i < 5 && Date.now() < deadline; i++) {
-        if ((await jsTimed('!!document.pointerLockElement')) === true) return true;
-        await sleep(100);
+      // 12 s, not 5: the first frame of the scene is the heaviest thing the app
+      // does, and a cold runner has come in over 5 s while still being perfectly
+      // healthy a beat later.
+      seen = await lookUntil((now) => now.page !== 'landing', 12000);
+      return (seen.page === 'hike' && seen.ok) || seen.why || `timed out waiting for a game route with a canvas: still the ${seen.page} page`;
+    }],
+    ['a click on the canvas locks the pointer', async () => {
+      await sleep(1500); // let the scene come up before asking for the lock
+      const rect = await rectOf('canvas');
+      if (!rect) return 'no canvas';
+      // One synthesized click is not a reliable request: it can land while the
+      // scene is still settling, or while the window is not foreground, and the
+      // browser simply drops it — half the Windows runs failed here. Keep
+      // clicking every 500 ms for 6 s instead, taking the foreground first, and
+      // poll through jsTimed so a wedged renderer costs one poll, not the run.
+      const deadline = Date.now() + 6000;
+      while (Date.now() < deadline) {
+        foreground();
+        click(rect);
+        for (let i = 0; i < 5 && Date.now() < deadline; i++) {
+          if ((await jsTimed('!!document.pointerLockElement')) === true) return true;
+          await sleep(100);
+        }
       }
+      return 'timed out waiting for document.pointerLockElement';
+    }],
+  ];
+  if (seen.page === 'landing' && seen.ok) {
+    for (const [name, fn] of toAHike) {
+      if (!(await check(name, fn, { yields: true }))) break;
     }
-    return 'timed out waiting for document.pointerLockElement';
-  });
+  }
+
+  if (seen.page === 'turned-away') {
+    await check('the page for those turned away says why', async () => seen.ok || seen.why, {
+      gives: () => ({ reason: seen.reason, headline: seen.headline, detail: seen.detail }),
+    });
+  }
 
   clearTimeout(timer);
   await exitPointerLock();
-  out({ summary: { passed: results.filter(Boolean).length, failed: results.filter((r) => !r).length } });
-  finishSmoke(results.every(Boolean) ? 0 : 1);
+  out({ summary: summaryOf(results, seen) });
+  finishSmoke(exitCodeOf(results, seen));
 }
 
 app.whenReady().then(() => {

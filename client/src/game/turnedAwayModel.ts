@@ -58,6 +58,8 @@ export type TurnedAwayInput = {
 };
 
 export type TurnedAwayView = {
+  /** Why the visitor is turned away (`loadCheck.ts`): no word of the page, but carried by it as data, for a program that reads the page (the desktop app's own check of itself). */
+  reason: TurnedAwayReason;
   title: string;
   /** What is wrong, in one sentence. */
   headline: string;
@@ -99,6 +101,7 @@ export function appWouldRun(input: Pick<TurnedAwayInput, "reason" | "desktop" | 
 export function turnedAwayModel(input: TurnedAwayInput): TurnedAwayView {
   if (input.desktop) {
     return {
+      reason: input.reason,
       title: TURNED_AWAY_TITLE,
       headline: TURNED_AWAY_HEADLINE_APP[input.reason],
       advice: TURNED_AWAY_ADVICE_APP,
@@ -110,6 +113,7 @@ export function turnedAwayModel(input: TurnedAwayInput): TurnedAwayView {
   }
   const card = appWouldRun(input) && input.latest !== null && input.host !== "other" ? downloadCard(input.latest, input.host) : null;
   return {
+    reason: input.reason,
     title: TURNED_AWAY_TITLE,
     headline: TURNED_AWAY_HEADLINE[input.reason],
     // A phone or a tablet has no setting for graphics acceleration and no driver to update.

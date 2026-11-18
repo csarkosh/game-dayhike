@@ -134,6 +134,8 @@ export function renderTurnedAway(
   };
 
   function paint(v: TurnedAwayView): void {
+    // The reason as data on the landmark (`data-reason`): shown nowhere, read by the desktop app's check of itself.
+    root.dataset.reason = v.reason;
     title.textContent = v.title;
     creditsWord.textContent = v.credits;
     const parts: Node[] = [line("headline", v.headline), ...v.advice.map((text) => line("", text))];
