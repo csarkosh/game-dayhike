@@ -205,6 +205,8 @@ export function createLitePanorama(engine: EngineContext, scene: SceneContext, l
   // clears the whole picture instead.
   const config: RenderTaskConfig = {
     name: "lake_panorama", rt: target.rt, cam: camera, clr: true, clrColor: { r: 0, g: 0, b: 0, a: 0 }, autoMirror: false, clearViewport: true, alphaWhereDrawn: true,
+    // A sector's column is kept: its pipelines are made at once, whatever the hike's own pass waits for.
+    syncPipelines: true,
   };
   const task = createRenderTask(config, engine, scene);
   task.enabled = false;

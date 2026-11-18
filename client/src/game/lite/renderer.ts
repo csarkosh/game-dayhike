@@ -73,7 +73,20 @@
  * synchronous way holds the frame that asked. So `onShaderCompiled` tells
  * of each frame that asked the device for a shader module or a pipeline
  * (`deviceMakes.ts`, counted at the device's own calls), which is what the
- * hike voids when it judges the frame rate. Nothing of a shader is kept
+ * hike voids when it judges the frame rate.
+ *
+ * **A hike loads with its pipelines made off the page's thread.** A
+ * pipeline made the synchronous way holds the browser's GPU thread while it
+ * compiles, and that thread presents the intro's film, which stands still
+ * meanwhile on a first visit, when no cache holds the shaders. So the hike's
+ * own pass asks for its pipelines with `createRenderPipelineAsync`
+ * (`enableAsyncPbrPipelines`), a mesh joining it on the frame after its
+ * pipeline is ready, under the film, whose frames no one sees; the passes
+ * whose pictures are kept (a far tree's bake, the rain's cover map, the
+ * shore's panorama, the haunt's mask) make theirs at once (`syncPipelines`),
+ * so no kept picture is short of a mesh. The world is in only once a frame
+ * has been drawn that asked for nothing and no pipeline is compiling
+ * (`drawnSettle.ts`), so the first frame a player sees is whole. Nothing of a shader is kept
  * past the renderer: the device goes with it. In the measurement mode `gpuTime`
  * reads the GPU's own time for the frame and for each of its tasks from
  * Lite's timers (`gpuTimeReadout.ts`), as `window.__gpuTime()` and the
@@ -343,10 +356,10 @@
  */
 import {
   NeutralToneMapping, addTask, addToScene, createBankedFreeCamera, createTexture2DFromPixels, createDirectionalLight, createEngine, createHemisphericLight, createPbrMaterial, createSpotLight,
-  createPluginUniformBlock, createRenderTarget, createRenderTask, createSceneContext, disposeEngine, disposeScene, enableMaterialPlugins, enablePbrLinearOutput, enablePbrMaterialPluginVertexData,
-  getGpuDevice, getProjectionMatrix,
+  createPluginUniformBlock, createRenderTarget, createRenderTask, createSceneContext, disposeEngine, disposeScene, enableAsyncPbrPipelines, enableMaterialPlugins, enablePbrLinearOutput,
+  enablePbrMaterialPluginVertexData, getGpuDevice, getProjectionMatrix,
   markLightDirty, markMaterialUboDirty, onEngineDeviceLost, onEngineGpuError, registerScene, renderFrame, setSurfaceSize, vec3,
-  writePluginUniformBlock,
+  whenPbrPipelinesIdle, writePluginUniformBlock,
   type BankedFreeCamera, type DirectionalLight, type EngineContext, type HemisphericLight, type MaterialPlugin, type Mesh, type PbrMaterialProps,
   type PluginUniformBlock, type SceneContext, type SpotLight,
 } from "@babylonjs/lite";
@@ -363,6 +376,7 @@ import { cloudDensityNow, cloudFor, cloudGroundDue, cloudGroundMap, cloudMarchSt
 import type { EngineHandle } from "../engineHandle.js";
 import { createDeviceHeld, type HeldDevice } from "../deviceHeld.js";
 import { createDeviceMakes, type MakesDevice } from "../deviceMakes.js";
+import { createDrawnFrames, whenDrawnSettled } from "../drawnSettle.js";
 import { createEngineWatch } from "../engineWatch.js";
 import { HEADLAMP_CONE, HEADLAMP_INTENSITY, HEADLAMP_RANGE } from "../endScene.js";
 import { createEntityPoses, type EntityFrame } from "../entityPoses.js";
@@ -864,6 +878,8 @@ export function createLiteRenderer(canvas: HTMLCanvasElement, level: Level, fore
    * pipeline is told to whoever hears a shader compile (`onShaderCompiled`).
    */
   const makes = createDeviceMakes();
+  /** The frames drawn, for the wait for the pipelines to settle as the world comes in (`drawnSettle.ts`). */
+  const drawnFrames = createDrawnFrames();
   /** The measurement mode's readout of the GPU's own time (`gpuTimeReadout.ts`); none outside it. */
   const gpuTime = options.gpuTime === true ? createLiteGpuTime(canvas, import.meta.env.VITE_BUILD_SHA || "dev") : null;
   /** The watch on the renderer's own engine (`engineWatch.ts`): the hike is told when the device is lost under it. */
@@ -1003,6 +1019,9 @@ export function createLiteRenderer(canvas: HTMLCanvasElement, level: Level, fore
     // canvas's format resolved into the canvas, into a target that stands while the frame's size does (`keep`). Lite
     // records the frame's passes again as a hike loads and when a hiker's lamp joins the scene's lights, and its own
     // pass's target was destroyed and made at each recording.
+    // The hike's own pass makes its PBR pipelines off the page's thread, a mesh joining it on the frame after its pipeline
+    // is ready; the passes whose pictures are kept make theirs at once (`syncPipelines`).
+    enableAsyncPbrPipelines();
     const scene = createSceneContext(engine, { defaultRenderTask: false });
     if (!chained) {
       const samples = createRenderTarget({ lbl: "scene-color", format: engine.format, dFormat: "depth24plus-stencil8", samples: FRAME_SAMPLES, size: engine, keep: true });
@@ -1584,8 +1603,10 @@ export function createLiteRenderer(canvas: HTMLCanvasElement, level: Level, fore
 
   /** The forest's first lists drawn, once the renderer stands; at once where it cannot, or in a world with no forest. */
   const forestReady: Promise<void> = made.then(() => standing?.forest?.ready);
-  /** Everything that lands as its models do, drawn: the forest, the ground clutter and the cliffs. */
-  const sceneryReady: Promise<void> = made.then(() => Promise.all([standing?.forest?.ready, standing?.clutter?.ready, standing?.cliffs?.ready, standing?.entities?.ready])).then(() => undefined);
+  /** Everything that lands as its models do, drawn: the forest, the ground clutter and the cliffs; then a frame drawn whole, no pipeline compiling. */
+  const sceneryReady: Promise<void> = made
+    .then(() => Promise.all([standing?.forest?.ready, standing?.clutter?.ready, standing?.cliffs?.ready, standing?.entities?.ready]))
+    .then(() => (standing === null ? undefined : whenDrawnSettled(drawnFrames, () => makes.pending, whenPbrPipelinesIdle)));
 
   const renderer: Renderer & { scenery: SceneryHost; gpuFaults: FaultSource } = {
     ...absent,
@@ -2079,8 +2100,9 @@ export function createLiteRenderer(canvas: HTMLCanvasElement, level: Level, fore
       standing.mirror?.frameDrawn();
       // And the wind sea's cascades with the frame that asked for them.
       standing.sea?.frameDrawn();
-      // A frame that asked the device for a shader module or a pipeline is told of, and the measurement mode's line written.
-      makes.frameEnd();
+      // A frame that asked the device for a shader module or a pipeline is told of, and the measurement mode's line written;
+      // and whoever waits for the pipelines to settle hears of the frame.
+      drawnFrames.drawn(makes.frameEnd());
       gpuTime?.frameEnd();
     },
     runLoop(frame) {

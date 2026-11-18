@@ -877,7 +877,7 @@ describe("layer boundaries", () => {
    * that fails and the start's gate.
    */
   it("what a renderer is sized and started by is computed without loading Babylon, whatever it imports", () => {
-    const ENGINE_FREE = ["frameSize.ts", "renderScale.ts", "quality.ts", "engineWatch.ts", "deviceMakes.ts", "gpuTimeTasks.ts", "gpuTimeReport.ts", "gpuFaults.ts", "deviceHeld.ts", "lossBound.ts", "rendererTypes.ts", "worldWait.ts", "rendererSwap.ts", "engineFailure.ts", "startReady.ts"];
+    const ENGINE_FREE = ["frameSize.ts", "renderScale.ts", "quality.ts", "engineWatch.ts", "deviceMakes.ts", "gpuTimeTasks.ts", "gpuTimeReport.ts", "gpuFaults.ts", "deviceHeld.ts", "lossBound.ts", "rendererTypes.ts", "worldWait.ts", "rendererSwap.ts", "engineFailure.ts", "startReady.ts", "drawnSettle.ts"];
     const loaded = (file: string): string[] =>
       [...readFileSync(file, "utf8").matchAll(/^\s*(?:import|export)\s+(?!type\s)(?:[^"'();]*?\s+from\s+)?["']([^"']+)["']/gm)].map((m) => m[1] as string);
     const seen = new Set<string>();

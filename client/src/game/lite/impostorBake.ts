@@ -100,7 +100,8 @@ export function createImpostorBaker(engine: EngineContext): ImpostorBaker {
         size: { width: IMPOSTOR_BAKE_SIZE, height: IMPOSTOR_BAKE_SIZE },
       });
       // The task owns the target: it goes with the scene.
-      addTask(scene, createRenderTask({ name: "forest_impostor_bake", rt: target.rt, clr: true, clrColor: { r: 0, g: 0, b: 0, a: 0 } }, engine, scene));
+      // Its picture is kept: its pipelines are made at once, whatever the hike's own pass waits for (`syncPipelines`).
+      addTask(scene, createRenderTask({ name: "forest_impostor_bake", rt: target.rt, clr: true, clrColor: { r: 0, g: 0, b: 0, a: 0 }, syncPipelines: true }, engine, scene));
       await registerScene(scene);
       const draw = async (mode: ImpostorBakeMode): Promise<Uint8Array | null> => {
         if (disposed) return null;

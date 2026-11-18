@@ -155,6 +155,8 @@ export function createLiteRainMap(engine: EngineContext, scene: SceneContext, ti
     {
       name: "rain_map", rt: target.rt, cam: camera, clr: true,
       clrColor: { r: RAIN_MAP_CLEAR.height, g: RAIN_MAP_CLEAR.transmission, b: RAIN_MAP_CLEAR.lift, a: 1 }, autoMirror: false,
+      // The map is kept until it is drawn again: its pipelines are made at once, whatever the hike's own pass waits for.
+      syncPipelines: true,
     },
     engine, scene,
   );
