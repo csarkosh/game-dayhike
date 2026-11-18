@@ -138,9 +138,10 @@ export function mixPalette(a: PaintPalette, b: PaintPalette, t: number): PaintPa
   };
 }
 
-// ---- AgX (three.js port, MIT). Column-major, mirrored in grade.fragment.fx. ----
-// Constants are copied verbatim from three.js `tonemapping_pars_fragment.glsl.js`
-// (src/renderers/shaders/ShaderChunk); the lockstep test pins the GLSL to these.
+// ---- AgX. Column-major, mirrored in the grade's stage (`lite/postWgsl.ts`). ----
+// The AgX tone map is ported from three.js, MIT License, Copyright 2010-2024 three.js authors
+// (src/renderers/shaders/ShaderChunk/tonemapping_pars_fragment.glsl.js): its
+// constants are copied verbatim, and the lockstep test pins the stage to these.
 export const SRGB_TO_REC2020: Mat3 = [0.6274, 0.0691, 0.0164, 0.3293, 0.9195, 0.0880, 0.0433, 0.0113, 0.8956];
 export const REC2020_TO_SRGB: Mat3 = [1.6605, -0.1246, -0.0182, -0.5876, 1.1329, -0.1006, -0.0728, -0.0083, 1.1187];
 export const AGX_INSET: Mat3 = [
