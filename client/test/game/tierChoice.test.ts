@@ -139,6 +139,31 @@ describe("the Auto record's storage", () => {
       verdict: { tier: "medium", source: "probe", pixels: 2_073_600, at: 1_790_000_000_000 },
     });
   });
+
+  it("reads what a browser may hold from a release that drew with WebGL2 without a throw, and Auto then checks afresh or keeps a tier it may take", () => {
+    const s = memoryStorage();
+    const at = { cls: "apple-unknown" as const, cores: 8, memoryGb: null, gpu: "Apple GPU", browser: 26, pixels: 2_073_600, now: 1_790_000_000_000, engine: "webgpu" as const };
+    // As that release wrote it: version 1, no engine on the verdict, readings that name WebGL2.
+    const live = {
+      v: 1, gpu: "Apple GPU", cls: "apple-unknown", browser: 26, attempts: 0,
+      verdict: { tier: "high", source: "probe", pixels: 2_073_600, at: 1_790_000_000_000 - 1,
+        readings: [{ tier: "high", frames: 120, meanMs: 16.7, p95Ms: 17.4, pixels: 2_073_600, engine: "webgl2" }] },
+    };
+    s.setItem("dayhike.quality.auto", JSON.stringify(live));
+    // Read whole, its readings with it, and taken for nothing: another version's record. The machine is measured again.
+    expect(readAutoRecord(s)).toEqual(live);
+    expect(autoTier({ ...at, record: readAutoRecord(s) })).toEqual({ tier: "medium", probeFrom: "high" });
+    // A verdict whose own engine names WebGL2, which no release wrote, is no record: measured again too.
+    s.setItem("dayhike.quality.auto", JSON.stringify({ ...live, v: DETECT_VERSION, verdict: { ...live.verdict, engine: "webgl2" } }));
+    expect(readAutoRecord(s)).toBe(null);
+    expect(autoTier({ ...at, record: readAutoRecord(s) })).toEqual({ tier: "medium", probeFrom: "high" });
+    // A reading that names an engine nobody knows is dropped, the verdict kept.
+    s.setItem("dayhike.quality.auto", JSON.stringify({ ...live, verdict: { ...live.verdict, readings: [{ ...live.verdict.readings[0], engine: "webgl1" }] } }));
+    expect(readAutoRecord(s)?.verdict?.readings).toEqual([]);
+    // This version's record with no engine on its verdict stands as a floor: a tier the class may take.
+    s.setItem("dayhike.quality.auto", JSON.stringify({ ...live, v: DETECT_VERSION }));
+    expect(autoTier({ ...at, record: readAutoRecord(s) })).toEqual({ tier: "high", probeFrom: null });
+  });
 });
 
 describe("pageStorage", () => {

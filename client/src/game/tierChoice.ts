@@ -171,6 +171,9 @@ function asReading(value: unknown): ProbeReading | null {
   if (!isObject(value)) return null;
   const { tier, frames, meanMs, p95Ms, pixels, engine, early, stalls } = value;
   if (!isTier(tier) || !isNumber(frames) || !isNumber(meanMs) || !isNumber(p95Ms) || !isNumber(pixels)) return null;
+  // A reading that names WebGL2 is one a browser kept from a release that
+  // drew with it: read as it stands, in a record of that release's version,
+  // which decides nothing (`recordMatches`).
   if (engine !== "webgl2" && engine !== "webgpu") return null;
   const reading: ProbeReading = { tier, frames, meanMs, p95Ms, pixels, engine };
   if (early === true) reading.early = true;
