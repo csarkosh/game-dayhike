@@ -128,11 +128,13 @@ export function findTextureUrls(source, ids) {
  * preload map alike. The model map lives in whichever chunk the build put
  * the asset urls in (`client/src/game/assetUrls.ts`), which moved out of the
  * entry once the title page stopped building a scene; a check that reads the
- * entry alone would then miss every model.
+ * entry alone would then miss every model. A chunk's own name may hold
+ * hyphens (`pbr-renderable-<hash>.js`): the hash is the eight characters
+ * before `.js`, whatever stands before them.
  */
 export function findChunkNames(source) {
   const names = [];
-  for (const match of source.matchAll(new RegExp(`[/"'\`]([A-Za-z0-9_.]+-[A-Za-z0-9_-]{${HASH_LENGTH}}\\.js)["'\`]`, 'g'))) {
+  for (const match of source.matchAll(new RegExp(`[/"'\`]([A-Za-z0-9_.-]+-[A-Za-z0-9_-]{${HASH_LENGTH}}\\.js)["'\`]`, 'g'))) {
     const name = match[1];
     if (!names.includes(name)) names.push(name);
   }

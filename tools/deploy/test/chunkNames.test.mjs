@@ -14,6 +14,11 @@ describe('findChunkNames', () => {
     expect(findChunkNames(ENTRY)).toEqual(['runtime-C-SPe7lC.js', 'logger-CuBYPcDK.js', 'renderer-Ab12Cd34.js']);
   });
 
+  it('lists a chunk whose own name holds hyphens, by the eight characters before .js', () => {
+    const entry = 'import{a}from"./pbr-renderable-bKjoH0NY.js";import("./gltf-feature-interactivity-CWPDPR0s.js");import{b}from"./runtime-C-SPe7lC.js"';
+    expect(findChunkNames(entry)).toEqual(['pbr-renderable-bKjoH0NY.js', 'gltf-feature-interactivity-CWPDPR0s.js', 'runtime-C-SPe7lC.js']);
+  });
+
   it('names no chunk in an entry that imports none, and never a model', () => {
     expect(findChunkNames('x="/dayhike/assets/ranger.nathan-CMRxslGv.glb"')).toEqual([]);
   });
