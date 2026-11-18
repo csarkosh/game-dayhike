@@ -1,7 +1,9 @@
 /**
  * The Credits screen. CC-BY-4.0 requires the credit to be reasonably visible to the people
  * receiving the work, and a file in the repository is not that; this screen is. It renders
- * CREDITS.md, imported at build time.
+ * CREDITS.md, imported at build time: the models, textures and recordings the catalog ships,
+ * and the code of others the game carries (the library it is drawn with, a table and a tone
+ * map), each under its licence.
  *
  * `creditsModel` parses that file's fixed shape only: an `## <id>` heading followed by
  * `- **Field:** value` lines. It is not a markdown renderer and must not grow into one.
@@ -15,7 +17,7 @@ export type CreditEntry = {
   license: string;
   licenseUrl: string;
   url: string;
-  /** CC-BY asks for a note when the work was changed; every third-party asset here was adapted for the game (resized, re-meshed, re-encoded), so this is always true. */
+  /** CC-BY and Apache-2.0 ask for a note when the work was changed; every third-party asset here was adapted for the game (resized, re-meshed, re-encoded), so this is always true. */
   modified: boolean;
 };
 
@@ -24,6 +26,9 @@ const LICENSE_URLS: Record<string, string> = {
   "CC-BY-4.0": "https://creativecommons.org/licenses/by/4.0/",
   // A work of the US government, free of copyright (17 U.S.C. § 105): marked as the Public Domain Mark marks it.
   "Public domain": "https://creativecommons.org/publicdomain/mark/1.0/",
+  // The licences of the code the game carries: each asks that its notice go with the work.
+  "Apache-2.0": "https://www.apache.org/licenses/LICENSE-2.0",
+  MIT: "https://opensource.org/license/mit",
 };
 
 export function creditsModel(markdown: string): CreditEntry[] {
@@ -88,7 +93,7 @@ export function requiresAttribution(license: string): boolean {
 /**
  * What the screen actually shows: the same entries, ordered and deduped.
  *
- * ORDER — attribution-REQUIRED licences (today: CC-BY-4.0) first, then CC0, each group
+ * ORDER — attribution-REQUIRED licences (today: CC-BY-4.0, Apache-2.0, MIT) first, then CC0, each group
  * in catalog order. The list scrolls, and at 1080p its `max-height: 60vh` showed half
  * of it; with the catalog's own ordering the only three rows the licences legally
  * require were the last three, below the fold behind a macOS

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { readFileSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import { creditsModel, creditsRows, requiresAttribution, safeHref } from "../../src/game/credits.js";
 import catalog from "../../assets/catalog.json" with { type: "json" };
 
@@ -23,6 +23,9 @@ Everything not listed below is original work by the author.
 `;
 
 const REAL = readFileSync(new URL("../../../CREDITS.md", import.meta.url), "utf8");
+
+/** The code of others the game carries, credited beside the catalog's assets: the id of each credit. */
+const CODE = ["render.agx_tone_map", "render.babylon_lite", "render.environment_brdf"];
 
 describe("creditsModel", () => {
   it("parses one entry per section with the four fields", () => {
@@ -70,11 +73,36 @@ describe("creditsModel", () => {
       ],
     ]);
   });
-  it("credits only ids the catalog ships, and at least one", () => {
+  it("links Apache-2.0 and MIT to their texts, and asks for the credit of both", () => {
+    const apache = creditsModel(SAMPLE.replace("CC0-1.0", "Apache-2.0"));
+    expect(apache[0]!.licenseUrl).toBe("https://www.apache.org/licenses/LICENSE-2.0");
+    const mit = creditsModel(SAMPLE.replace("CC0-1.0", "MIT"));
+    expect(mit[0]!.licenseUrl).toBe("https://opensource.org/license/mit");
+    expect([requiresAttribution("Apache-2.0"), requiresAttribution("MIT")]).toEqual([true, true]);
+  });
+  it("credits only ids the catalog ships and the code of others the game carries, and at least one", () => {
     const shipped = new Set([...catalog.assets, ...catalog.textures, ...catalog.audio].map((a) => a.id));
     const entries = creditsModel(REAL);
     expect(entries.length).toBeGreaterThan(0);
-    for (const e of entries) expect(shipped.has(e.id), `${e.id} is credited but not in the catalog`).toBe(true);
+    for (const e of entries) expect(shipped.has(e.id) || CODE.includes(e.id), `${e.id} is credited but neither in the catalog nor code the game carries`).toBe(true);
+    for (const id of CODE) expect(shipped.has(id), id).toBe(false);
+  });
+  it("credits the library the game is drawn with, its environment BRDF table and its tone map, each under its licence and each for something the tree holds", () => {
+    const code = creditsModel(REAL).filter((e) => CODE.includes(e.id));
+    expect(code.map((e) => [e.id, e.source, e.author, e.license, e.url])).toEqual([
+      ["render.agx_tone_map", "three.js: AgX tone mapping", "three.js authors", "MIT", "https://github.com/mrdoob/three.js"],
+      ["render.babylon_lite", "Babylon Lite (a patched build), which the game is drawn with", "BabylonJS", "Apache-2.0", "https://github.com/csarkosh/babylon-lite"],
+      ["render.environment_brdf", "Babylon.js 9.18.0: environment BRDF table", "The Babylon.js team", "Apache-2.0", "https://github.com/BabylonJS/Babylon.js"],
+    ]);
+    // The screen shows all three among the rows a licence asks for, above the CC0 ones.
+    const rows = creditsRows(creditsModel(REAL));
+    const firstOptional = rows.findIndex((r) => !requiresAttribution(r.license));
+    for (const id of CODE) expect(rows.findIndex((r) => r.id === id), id).toBeLessThan(firstOptional);
+    // What each names: the dependency pinned to that source, the table as a file of the game's, and the tone map's notice beside its numbers.
+    const client = JSON.parse(readFileSync(new URL("../../package.json", import.meta.url), "utf8")) as { dependencies: Record<string, string> };
+    expect(client.dependencies["@babylonjs/lite"]).toMatch(/^github:csarkosh\/babylon-lite#/);
+    expect(existsSync(new URL("../../src/game/lite/environmentBrdf.png", import.meta.url))).toBe(true);
+    expect(readFileSync(new URL("../../src/game/gradeParams.ts", import.meta.url), "utf8")).toContain("ported from three.js, MIT License, Copyright 2010-2024 three.js authors");
   });
   // LICENSE_URLS is a hand-kept map, so a licence it has never seen resolves to "" and would ship an
   // unlinked deed. This fails the moment a new licence appears in CREDITS.md.
@@ -138,8 +166,8 @@ describe("creditsRows", () => {
     // (work, author, licence, URL) in the file still has exactly one row.
     const key = (e: (typeof parsed)[number]) => JSON.stringify([e.source, e.author, e.url, e.license]);
     expect(rows.map(key).sort()).toEqual([...new Set(parsed.map(key))].sort());
-    // And the required ones are the top of the list, which is the half of the
-    // box that is on screen at 1080p.
+    // And the required ones (CC-BY, Apache-2.0, MIT) are the top of the list, which is
+    // the half of the box that is on screen at 1080p.
     const required = rows.filter((r) => requiresAttribution(r.license));
     expect(required.length).toBeGreaterThan(0);
     expect(rows.slice(0, required.length)).toEqual(required);

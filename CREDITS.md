@@ -667,6 +667,27 @@ Everything not listed below is original work by Cyrus Sarkosh.
 - **Licence:** CC-BY-4.0
 - **URL:** https://sketchfab.com/3d-models/psp-campaign-hat-18dd6e95ffb5402a80113c3e00d1228e
 
+## render.agx_tone_map
+
+- **Source:** three.js: AgX tone mapping
+- **Author:** three.js authors
+- **Licence:** MIT
+- **URL:** https://github.com/mrdoob/three.js
+
+## render.babylon_lite
+
+- **Source:** Babylon Lite (a patched build), which the game is drawn with
+- **Author:** BabylonJS
+- **Licence:** Apache-2.0
+- **URL:** https://github.com/csarkosh/babylon-lite
+
+## render.environment_brdf
+
+- **Source:** Babylon.js 9.18.0: environment BRDF table
+- **Author:** The Babylon.js team
+- **Licence:** Apache-2.0
+- **URL:** https://github.com/BabylonJS/Babylon.js
+
 ## sign.arm
 
 - **Source:** Sketchfab: Modular Medieval Signposts
