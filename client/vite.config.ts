@@ -4,22 +4,10 @@ import { fileURLToPath } from "node:url";
 import { defineConfig } from "vitest/config";
 import { environmentBrdfPlugin } from "../tools/vite/environmentBrdf.mjs";
 import { liteVersion } from "../tools/vite/liteVersion.mjs";
-import { wgslMapPlugin } from "../tools/wgsl/lib/mapPlugin.mjs";
-import { translatorDigests } from "../tools/wgsl/lib/translators.mjs";
 import { timeLimit } from "./test/helpers/timeLimit.js";
-
-/** This package's directory, where its imports resolve from. */
-const CLIENT = fileURLToPath(new URL(".", import.meta.url));
 
 export default defineConfig({
   plugins: [
-    // The WGSL maps of the shader corpus, one a quality tier, the WebGPU
-    // shader lookup's first source: hashed assets of the WebGPU chunk in the
-    // build, made on the dev server as it starts (`tools/wgsl/lib/mapPlugin.mjs`).
-    wgslMapPlugin({
-      mapDir: fileURLToPath(new URL("shaders/map/", import.meta.url)),
-      tool: fileURLToPath(new URL("../tools/wgsl/build-map.mjs", import.meta.url)),
-    }),
     // The table of the environment's reflectance Babylon.js's PBR reads,
     // from its installed package, for the renderer on Babylon Lite to light
     // its materials with the same (`tools/vite/environmentBrdf.mjs`).
@@ -39,14 +27,6 @@ export default defineConfig({
     },
   ],
   define: {
-    // The SHA-256 of each shader translator as Babylon ships it, its
-    // WebAssembly and its JavaScript loader, `glslang=<hex>|twgsl=<hex>|
-    // glslang.js=<hex>|twgsl.js=<hex>`: part of the salt of every key the
-    // WebGPU shader lookup makes (`shaderLookup.ts`), so a translator that
-    // changes makes every stored translation unreachable. Computed here, once
-    // a build, so the page never hashes 2.7 MB; by the function the build's
-    // translation of the corpus computes its salt with (`tools/wgsl/`).
-    __WGSL_TRANSLATORS__: JSON.stringify(translatorDigests(CLIENT)),
     // The version of Babylon Lite the hike is drawn with, as this package
     // pins it: the fork's tag, which names its patches, where the installed
     // package's own version says only which release they stand on. Every

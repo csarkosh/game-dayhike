@@ -200,8 +200,6 @@ jobs:
   # The real client, built as the deploy builds it (`npm run build`, under the
   # production base `tools/deploy/lib/buildClient.mjs` sets). The suites build
   # only fixtures; this is the one place the real build runs before a deploy.
-  # The page draws with Babylon Lite and makes no engine that fetches the WGSL
-  # maps, so the built page names none of them and none is looked for here.
   build:
     needs: lfs
     runs-on: ubuntu-latest

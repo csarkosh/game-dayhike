@@ -5,8 +5,8 @@
 //   light  only the repository's tooling, docs, branding and agent files changed: lint and the tools
 //          suite, here. Neither has a time limit or a bar on elapsed time, so load cannot fail them,
 //          and nothing the game ships or the client and server suites test is touched.
-//   cloud  anything else (the game, the server, the build, the shader corpus or the WGSL tools that
-//          make its maps, dependencies, CI): the whole gate, on the cloud, never here.
+//   cloud  anything else (the game, the server, the build, the tools that make a module the build
+//          ships, dependencies, CI): the whole gate, on the cloud, never here.
 
 /** Paths outside the game: a change confined to these is gated `light`. A directory ends in `/`. */
 export const LIGHT_PATHS = Object.freeze([
@@ -22,8 +22,8 @@ export const LIGHT_PATHS = Object.freeze([
   'LICENSE',
 ]);
 
-/** Under a light path, but feeding the shipped build (the WGSL maps; the field kernel's committed module): gated as the game is. */
-export const HEAVY_UNDER_LIGHT = Object.freeze(['tools/wgsl/', 'tools/rust/']);
+/** Under a light path, but feeding the shipped build (the field kernel's committed module): gated as the game is. */
+export const HEAVY_UNDER_LIGHT = Object.freeze(['tools/rust/']);
 
 const under = (path, prefix) => (prefix.endsWith('/') ? path.startsWith(prefix) : path === prefix);
 
