@@ -71,7 +71,7 @@ legitimate choice when only one changed — a server-only fix does not need the 
 rebuilt. What is *not* legitimate is assuming which changed. Check the diff.
 
 **3. Verify is not optional.** A client change can break production without any test
-failing: nothing in the suite runs Babylon or loads a real bundle. `deploy:verify` catches
+failing: nothing in the suite draws a frame or loads a real bundle. `deploy:verify` catches
 a bundle built without the signaling URL, an LFS pointer shipped in place of a model, and
 a signaling server that answers HTTP but refuses a real WebSocket join.
 
