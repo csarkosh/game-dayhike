@@ -28,6 +28,7 @@ import {
 } from "../scene/actorPose.js";
 import type { ActorPose } from "../scene/timeline.js";
 import type { FrameUploads } from "./frameUploads.js";
+import { fetchRetried } from "../fetchRetry.js";
 
 /** How far (the largest float of a bone's sixteen) the rig's bones at rest may stand from the ones the loader made, in the mesh's own units. */
 export const REST_BONES_APART = 1e-2;
@@ -84,9 +85,7 @@ export function floatsApart(a: ArrayLike<number>, b: ArrayLike<number>): number 
  * skinned mesh, or its skin as the loader made it is not the rig's.
  */
 export async function loadSceneActor(engine: EngineContext, scene: SceneContext, url: string, options: SceneActorOptions): Promise<SceneActor> {
-  const response = await fetch(url, { signal: options.signal });
-  if (!response.ok) throw new Error(`${url}: ${response.status}`);
-  const file = await response.arrayBuffer();
+  const file = await fetchRetried(url, options.signal, (response) => response.arrayBuffer());
   const rig = readActorRig(file);
   const container: AssetContainer = await loadGltf(engine, file);
   const meshes = getContainerMeshes(container);

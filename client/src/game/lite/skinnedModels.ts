@@ -36,6 +36,7 @@ import {
 import { glbEmissive } from "../glbParts.js";
 import { CLIP_FLOATS, SKIN_CLOCK_FOLD, type BakedClip } from "../skinInstances.js";
 import type { FrameUploads } from "./frameUploads.js";
+import { fetchRetried } from "../fetchRetry.js";
 import { MATRIX_BYTES } from "./listMeshes.js";
 
 /** The clock every baked mesh's rows are read by, seconds, folded. */
@@ -167,9 +168,7 @@ function texturesOf(material: PbrMaterialProps): Texture2D[] {
  * clip.
  */
 export async function loadSkinnedModel(engine: EngineContext, scene: SceneContext, url: string, options: SkinnedModelOptions): Promise<SkinnedModel> {
-  const response = await fetch(url, { signal: options.signal });
-  if (!response.ok) throw new Error(`${url}: ${response.status}`);
-  const file = await response.arrayBuffer();
+  const file = await fetchRetried(url, options.signal, (response) => response.arrayBuffer());
   const emissive = glbEmissive(file);
   const container: AssetContainer = await loadGltf(engine, file);
   const meshes = getContainerMeshes(container);

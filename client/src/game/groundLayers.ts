@@ -39,6 +39,7 @@ import rockR from "../../assets/textures/ground.rock.rah.webp?url";
 import sandR from "../../assets/textures/ground.sand.rah.webp?url";
 import pebbleR from "../../assets/textures/ground.pebble.rah.webp?url";
 import asphaltR from "../../assets/textures/ground.asphalt.rah.webp?url";
+import { fetchRetried } from "./fetchRetry.js";
 
 export const GROUND_LAYERS = 6;
 export const GROUND_MAP_SIZE = 512;
@@ -105,9 +106,7 @@ export function flipRowsY(data: Uint8ClampedArray, size: number): Uint8ClampedAr
  * the array still agrees with the albedo textures' own flip on
  * which way v runs over the same planar world-XZ UV. */
 export async function decodeGroundLayer(url: string, size: number, signal?: AbortSignal): Promise<Uint8ClampedArray> {
-  const res = await fetch(url, { signal });
-  if (!res.ok) throw new Error(`${url}: HTTP ${res.status}`);
-  const blob = await res.blob();
+  const blob = await fetchRetried(url, signal, (response) => response.blob());
   // The decode itself cannot be stopped once begun; this is the last point
   // before it where a teardown still saves the work.
   signal?.throwIfAborted();

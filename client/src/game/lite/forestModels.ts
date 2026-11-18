@@ -22,6 +22,7 @@ import { glbParts, type GlbPart } from "../glbParts.js";
 import { bakeGeometry, boundsOf, chainMatrix, type PlacedNode } from "../modelBake.js";
 import type { Vec3 } from "../instancePose.js";
 import { BASE } from "../router.js";
+import { fetchRetried } from "../fetchRetry.js";
 
 /** One primitive of a LOD: its geometry at the origin, what its file says of its material, and the loader's textures of it. */
 export type ModelPart = {
@@ -73,7 +74,7 @@ function meshesUnder(node: SceneNode, above: readonly SceneNode[], meshes: Reado
 /**
  * The model at `url`, the LODs under its nodes named `lods`. A node the file
  * does not name is a LOD of no parts. It throws where the file cannot be
- * fetched or read, or where the loader's meshes are not the file's
+ * fetched (after `fetchRetried`'s tries) or read, or where the loader's meshes are not the file's
  * primitives vertex for vertex.
  */
 export async function loadModel(engine: EngineContext, url: string, lods: readonly string[], signal: AbortSignal): Promise<LoadedModel> {
@@ -82,9 +83,7 @@ export async function loadModel(engine: EngineContext, url: string, lods: readon
 
 /** `loadModel`, with the file's own bytes beside the model, for whoever reads more of the file than its LODs. */
 export async function loadModelFile(engine: EngineContext, url: string, lods: readonly string[], signal: AbortSignal): Promise<{ model: LoadedModel; file: ArrayBuffer }> {
-  const response = await fetch(url, { signal });
-  if (!response.ok) throw new Error(`${url}: ${response.status}`);
-  const file = await response.arrayBuffer();
+  const file = await fetchRetried(url, signal, (response) => response.arrayBuffer());
   const container = await loadGltf(engine, file);
   const all = getContainerMeshes(container);
   const meshes = new Set<SceneNode>(all);
