@@ -159,8 +159,8 @@ describe("describe", () => {
     expect(describeEvent("engine_rebuilt", { reason: "lost", ok: true, ms: 10_050, tier: "high", engine: "webgpu", r: 2, state: "making", frames: 0 })).toBe(
       "still being made as the cover lifted after lost, high on webgpu renderer 2, 0 frames under the cover, in 10.1 s",
     );
-    expect(describeEvent("session_end", { msg: "The hike ended because the graphics kept failing.", p: 0.52, why: "device_lost", losses: 3, recent: 3 })).toBe(
-      "The hike ended because the graphics kept failing., ended by lost devices: 3 this page, 3 within the bound, 52% up",
+    expect(describeEvent("session_end", { msg: "The hike ended: this device's graphics keep resetting. Restarting the browser may help.", p: 0.52, why: "device_lost", losses: 3, recent: 3 })).toBe(
+      "The hike ended: this device's graphics keep resetting. Restarting the browser may help., ended by lost devices: 3 this page, 3 within the bound, 52% up",
     );
     // An older page's rows read as they did, the climb beside them.
     expect(describeEvent("session_end", { msg: "The host ended this session.", p: 0.4 })).toBe("The host ended this session., 40% up");

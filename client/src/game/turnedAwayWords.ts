@@ -23,7 +23,7 @@ export const TURNED_AWAY_TITLE = "Day Hike";
 export const TURNED_AWAY_HEADLINE: Readonly<Record<TurnedAwayReason, string>> = {
   "no-webgpu": "This browser cannot run Day Hike.",
   "no-adapter": "This browser could not reach the graphics card, so Day Hike cannot run in it.",
-  software: "This browser is not using the graphics card, so Day Hike cannot run in it.",
+  software: "This browser has graphics acceleration turned off, so Day Hike cannot run in it.",
   short: "The graphics card in this device cannot run Day Hike.",
 };
 

@@ -189,7 +189,7 @@ describe("the rows of a GPU error and of a lost device", () => {
     bufs: 1807, bufMB: 96, texs: 275, texMB: 540.3, heapMB: 311,
   };
   const rebuilt = { n: "engine_rebuilt", t: 94_000, ...context, reason: "lost", ok: true, ms: 3900, tier: "medium", engine: "webgpu", r: 3, state: "standing", frames: 12 };
-  const ended = { n: "session_end", t: 95_000, ...context, msg: "The hike ended because the graphics kept failing.", p: 0.312, why: "device_lost", losses: 3, recent: 3 };
+  const ended = { n: "session_end", t: 95_000, ...context, msg: "The hike ended: this device's graphics keep resetting. Restarting the browser may help.", p: 0.312, why: "device_lost", losses: 3, recent: 3 };
 
   it("takes each whole: no field of it is past what a row may carry", () => {
     const parsed = parseBatch(batch([gpuError, gpuWindow, deviceLost, rebuilt, ended], { st: 95_500 }));
