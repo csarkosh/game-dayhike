@@ -1,17 +1,11 @@
 import { readFileSync } from "node:fs";
-import { createRequire } from "node:module";
 import { fileURLToPath } from "node:url";
 import { defineConfig } from "vitest/config";
-import { environmentBrdfPlugin } from "../tools/vite/environmentBrdf.mjs";
 import { liteVersion } from "../tools/vite/liteVersion.mjs";
 import { timeLimit } from "./test/helpers/timeLimit.js";
 
 export default defineConfig({
   plugins: [
-    // The table of the environment's reflectance Babylon.js's PBR reads,
-    // from its installed package, for the renderer on Babylon Lite to light
-    // its materials with the same (`tools/vite/environmentBrdf.mjs`).
-    environmentBrdfPlugin({ from: createRequire(import.meta.url).resolve("@babylonjs/core/Misc/brdfTextureTools.js") }),
     {
       // The admin host's token module (`src/admin/auth.ts` imports `/auth.js`)
       // is no file of this package: in the build it is external

@@ -30,11 +30,14 @@
  *   alone, so the scene's is drawn into the cube: the same product, and no
  *   material is written when it moves.
  *
- * The reflectance table the materials weigh the cube by is Babylon.js's own
- * (`virtual:dayhike-environment-brdf`). The cube goes with the scene.
+ * The reflectance table the materials weigh the cube by is a file of the
+ * game's (`environmentBrdf.png`). The cube goes with the scene.
  */
 import { createCustomEnvironment, getGpuDevice, type CustomEnvironment, type EngineContext, type SceneContext, type Texture2D } from "@babylonjs/lite";
-import environmentBrdf from "virtual:dayhike-environment-brdf";
+// The environment BRDF table of Babylon.js 9.18.0 (Apache-2.0), as that library ships it: the split sum of the
+// reflectance over the view's angle and the roughness, 256 by 256, a PNG. Lite reads it from a URL: its bytes are
+// carried in the page's chunk as a data URL.
+import environmentBrdf from "./environmentBrdf.png?inline";
 import { SKY_DOME_SIZE } from "../skyDomeParams.js";
 import { SKY_PROBE_FACES, SKY_PROBE_SIZE } from "../skyProbeParams.js";
 import type { Vec3 } from "../sky.js";
