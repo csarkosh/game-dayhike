@@ -14,8 +14,7 @@
 import { readFileSync } from 'node:fs';
 import { fail, tfOutput } from './lib/preconditions.mjs';
 import { validateLatest } from './lib/desktopRelease.mjs';
-import { filmUrls, findChunkName, findChunkNames, findMapUrl, findModelUrls, findTextureUrls, findWasmUrls, isWasm } from './lib/modelUrls.mjs';
-import { bundleMapProblems } from './lib/bundle.mjs';
+import { filmUrls, findChunkNames, findModelUrls, findTextureUrls } from './lib/modelUrls.mjs';
 import { reach } from './lib/reach.mjs';
 import { checkQueries, dryRunQuery, QUERIES_DIR, savedQueries } from '../telemetry/lib/checkQueries.mjs';
 import { GAMES_INDEX } from './lib/redirectPage.mjs';
@@ -309,123 +308,6 @@ async function verify() {
     check(total < TITLE_PAGE_MAX_BYTES, `the title page's first load is under ${TITLE_PAGE_MAX_BYTES} bytes`, `${total} bytes over ${named.length + 1} files`);
     // The loop is fetched after the page's load, never with it.
     check(!/\.mp4\b/.test(html), "the title page's html names no film", 'a film is named in the html');
-  }
-
-  // 4c. The WebGPU engine's translators shipped whole and are served as
-  // WebAssembly. `client/src/game/gpuEngine.ts` imports glslang and twgsl with
-  // `?url`, so, like the models, their names are hashed and have to be read
-  // out of the build: here out of the WebGPU chunk, which only a dynamic
-  // import reaches, so the entry chunk is read for that chunk's name first.
-  // The MIME type is checked, not just the bytes: a browser compiles a
-  // WebAssembly response while it streams only when it is `application/wasm`.
-  // A broken translator fails no WebGL2 page, which every tier but high and
-  // every browser but Chrome and Edge on macOS and Windows draws with
-  // (`client/src/game/engineChoice.ts`), so it would go unnoticed there.
-  const translatorIds = ['glslang', 'twgsl'];
-  const gpuChunk = bundleSource ? findChunkName(bundleSource, 'gpuEngine') : null;
-  if (!bundleSource) {
-    failures.push('skipped the WebGPU translator checks — no bundle source to find the WebGPU chunk in');
-  } else if (!gpuChunk) {
-    failures.push('the bundle does not reference the gpuEngine chunk — was the WebGPU engine split out?');
-  } else {
-    const chunkUrl = new URL(gpuChunk, `${siteOrigin}${bundle}`).href;
-    const chunk = await reach(chunkUrl);
-    const chunkSource = chunk.status === 200 ? await chunk.text() : '';
-    if (!chunkSource) failures.push(`${chunkUrl} — got ${chunk.status}`);
-    const wasmUrls = findWasmUrls(chunkSource, translatorIds);
-    for (const id of chunkSource ? translatorIds : []) {
-      const url = wasmUrls[id];
-      if (!url) {
-        failures.push(`the WebGPU chunk does not reference ${id}.wasm — was it inlined, or not imported with ?url?`);
-        continue;
-      }
-      const res = await reach(`${siteOrigin}${url}`);
-      if (res.status !== 200) {
-        failures.push(`${url} — got ${res.status}`);
-        continue;
-      }
-      const type = res.headers.get('content-type') ?? '';
-      check(type.startsWith('application/wasm'), `${id}.wasm is served as application/wasm`, `content-type: ${type}`);
-      const bytes = Buffer.from(await res.arrayBuffer());
-      check(isWasm(bytes), `${id}.wasm is a real WebAssembly module`, `magic was ${bytes.subarray(0, 4).toString('hex')}`);
-      check(
-        (res.headers.get('cache-control') ?? '').includes('immutable'),
-        `${id}.wasm is served immutable`,
-        `cache-control: ${res.headers.get('cache-control')}`,
-      );
-    }
-
-    // 4d. The WGSL maps, one a quality tier: the translations the build made
-    // of the shader corpus's stages recorded on that tier
-    // (`tools/wgsl/build-map.mjs`), which a WebGPU page asks for its tier
-    // before it translates a shader itself. Each named by the same chunk as a
-    // hashed asset. A map that does not come, or is not this build's (its
-    // salt against the translators' digests the chunk carries), costs nothing
-    // but speed on the page, which translates every stage as if there were
-    // none: exactly what would go unnoticed without this check. A tier's map
-    // may be empty while another's holds translations (a tier not yet
-    // recorded), so every map is fetched before any is checked.
-    const tiers = ['low', 'medium', 'high'];
-    const maps = [];
-    for (const tier of tiers) {
-      const mapUrl = chunkSource ? findMapUrl(chunkSource, tier) : null;
-      if (chunkSource && !mapUrl) {
-        failures.push(`the WebGPU chunk does not reference the ${tier} tier's WGSL map — was it built (tools/wgsl/build-map.mjs) and imported?`);
-      } else if (mapUrl) {
-        // One failure line for this map whatever goes wrong (a body cut
-        // short), and the checks after it run.
-        try {
-          const res = await reach(`${siteOrigin}${mapUrl}`);
-          if (res.status !== 200) {
-            failures.push(`${mapUrl} — got ${res.status}`);
-          } else {
-            check(
-              (res.headers.get('cache-control') ?? '').includes('immutable'),
-              `the ${tier} tier's WGSL map is served immutable`,
-              `cache-control: ${res.headers.get('cache-control')}`,
-            );
-            maps.push({ tier, text: await res.text() });
-          }
-        } catch (err) {
-          failures.push(`the ${tier} tier's WGSL map could not be fetched — ${err instanceof Error ? err.message : String(err)}`);
-        }
-      }
-    }
-    const entriesOf = (text) => {
-      try {
-        const entries = JSON.parse(text)?.entries;
-        return typeof entries === 'object' && entries !== null ? Object.keys(entries).length : 0;
-      } catch {
-        return 0;
-      }
-    };
-    for (const { tier, text } of maps) {
-      // Against the chunks the entry loads with it, as the build's check
-      // reads them: Babylon's version may be in any of them. The entry's
-      // text is check 3's; each chunk's path is resolved against the chunk
-      // that names it, under the entry's `assets/`.
-      try {
-        const entryUrl = `${siteOrigin}${bundle}`;
-        const assetsUrl = entryUrl.slice(0, entryUrl.lastIndexOf('/assets/') + '/assets/'.length);
-        const checked = await bundleMapProblems({
-          entry: entryUrl.slice(assetsUrl.length),
-          entryText: bundleSource,
-          // A fetch that throws is the walk's to name, with the chunk.
-          read: async (path) => {
-            const chunkRes = await fetch(new URL(path, assetsUrl).href);
-            return chunkRes.status === 200 ? chunkRes.text() : null;
-          },
-          mapText: text,
-          chunkSource,
-          tier,
-          mayBeEmpty: maps.some((other) => other.tier !== tier && entriesOf(other.text) > 0),
-        });
-        check(checked.problems.length === 0, `the ${tier} tier's WGSL map parses, is this build's and its tier's, and holds translations, or none while another tier's does`, checked.problems.join('; '));
-        if (tier === maps[0].tier) for (const name of checked.carriers) console.log(`  · Babylon's version ${checked.babylon} is in ${name}`);
-      } catch (err) {
-        failures.push(`the ${tier} tier's WGSL map check could not finish — ${err instanceof Error ? err.message : String(err)}`);
-      }
-    }
   }
 
   // 5. Signaling is healthy. Not /healthz: Google's frontend on *.run.app

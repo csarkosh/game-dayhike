@@ -17,12 +17,12 @@ describe('findAssetUrl', () => {
 
 describe('filmUrls', () => {
   it('reads the films and the title still from the entry and the chunks it names, read together', () => {
-    const built = 'import("./engineChoice-A1.js")\nx="/dayhike/assets/title-Ab12Cd34.mp4";y="/dayhike/assets/title.still-Zz99Yy88.webp";z="/dayhike/assets/intro-Qq11Ww22.mp4"';
+    const built = 'import("./runtime-A1.js")\nx="/dayhike/assets/title-Ab12Cd34.mp4";y="/dayhike/assets/title.still-Zz99Yy88.webp";z="/dayhike/assets/intro-Qq11Ww22.mp4"';
     expect(filmUrls(built)).toEqual({
       introFilm: '/dayhike/assets/intro-Qq11Ww22.mp4',
       titleFilm: '/dayhike/assets/title-Ab12Cd34.mp4',
       titleStill: '/dayhike/assets/title.still-Zz99Yy88.webp',
     });
-    expect(filmUrls('import("./engineChoice-A1.js")')).toEqual({ introFilm: null, titleFilm: null, titleStill: null });
+    expect(filmUrls('import("./runtime-A1.js")')).toEqual({ introFilm: null, titleFilm: null, titleStill: null });
   });
 });
