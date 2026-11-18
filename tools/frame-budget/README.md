@@ -55,8 +55,8 @@ forward in step 4 runs through.
    tools/rig/session.sh up 1 --channel <name>
    ```
 
-   It applies the rig from the main checkout's root (about 8 minutes to Chrome), builds the WGSL
-   maps meanwhile, publishes the channel, opens the forward on 9333 and prints when Chrome
+   It applies the rig from the main checkout's root (about 8 minutes to Chrome), publishes the
+   channel meanwhile, opens the forward on 9333 and prints when Chrome
    answers: steps 2 to 4 below, done. Its logs go under `rig-sessions/<date>/` on the lab disk.
    The steps are kept here for doing them by hand; `terraform output instance_id` names the
    machine.
@@ -262,7 +262,7 @@ same verdict for an intro run, with every stop over 0.25 s and when it came.
 
 For an intro run with a profile (`--profile` at the run), the report also names the stops by
 cause (`lib/causes.mjs`): the seconds inside the stops over 0.1 s spent sampling the world (the
-simulation's code), linking shaders, uploading textures, in Babylon, collecting garbage, in the
+simulation's code), linking shaders, uploading textures, in Babylon Lite, collecting garbage, in the
 game's builders. A native call is named by what it is; a script's frame by where its source
 lives, so the table needs `--maps` at the report (without it script time reads as "other").
 
