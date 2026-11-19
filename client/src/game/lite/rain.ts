@@ -57,12 +57,18 @@ import { wgslFloat } from "./forestPlugins.js";
 import { FRAME_CONTRAST_NAME, FRAME_EXPOSURE_NAME, stageClocks, stageOwn, stageReads, type StageRecord } from "./frameBlock.js";
 import type { FrameUploads } from "./frameUploads.js";
 import { shaderUniformDecls, shaderUniformWriter } from "./shaderUniforms.js";
+import varyingsSource from "../shaders/rain/varyings.wgsl?raw";
+import coveredSource from "../shaders/rain/covered.wgsl?raw";
+import openSource from "../shaders/rain/open.wgsl?raw";
+import rainVertexSource from "../shaders/rain/rain.vertex.wgsl?raw";
+import rainFragmentSource from "../shaders/rain/rain.fragment.wgsl?raw";
+import { fill, wgsl } from "../shaders/shaderText.js";
 
 const f = wgslFloat;
 
 /** What the two stages hand each other. */
 const VARYINGS =
-  "struct RainOut{@builtin(position)position:vec4<f32>,@location(0)uv:vec2<f32>,@location(1)fogDistance:vec3<f32>,@location(2)rainAlpha:f32,@location(3)rainLamp:f32}";
+  wgsl(varyingsSource);
 
 /**
  * The cover's lines: the plugin's under `RAIN_OCCLUSION` for a map, a drop
@@ -70,14 +76,8 @@ const VARYINGS =
  * drop's texel, as the game's sampler reads it: the nearest, at the base
  * level.
  */
-const COVERED = /* wgsl */ `
-  let rMu=(rp.xz-u.rainMapCentre)/u.rainMapExtent+0.5;
-  let rMap=textureLoad(rainMap,vec2<i32>(clamp(rMu*${f(RAIN_MAP.texels)},vec2<f32>(0.0),vec2<f32>(${f(RAIN_MAP.texels - 1)}))),0);
-  let rInMap=step(0.0,rMu.x)*step(rMu.x,1.0)*step(0.0,rMu.y)*step(rMu.y,1.0);
-  let rCovered=rInMap*step(rp.y,rMap.r+rMap.b);
-  let rCover=select(mix(1.0,max(rMap.g,step(0.5,rMap.b)),rCovered),rCovered*(1.0-rMap.g)*u.rainCanopyWater,drip);`;
-const OPEN = /* wgsl */ `
-  let rCover=select(1.0,0.0,drip);`;
+const COVERED = fill(wgsl(coveredSource), { rainMapTexels: f(RAIN_MAP.texels), rainMapLast: f(RAIN_MAP.texels - 1) });
+const OPEN = wgsl(openSource);
 
 /**
  * The vertex stage: the streak plugin's placement (`rain.vertexUpdatePosition.glsl`), each
@@ -87,46 +87,7 @@ const OPEN = /* wgsl */ `
  * and the fog's distance in the view's space. A drip past the share shown
  * is put outside the view.
  */
-const vertex = (covered: boolean): string => /* wgsl */ `
-${VARYINGS}
-@vertex fn mainVertex(input:VertexInput)->RainOut{
-  var out:RainOut;
-  let u=shaderUniforms;
-  let rainSeed=input.world0;
-  let drip=input.world1.x>0.5;
-  let rainBoxMin=select(u.rainBoxMin,u.dripBoxMin,drip);
-  let rainBoxSize=select(u.rainBoxSize,u.dripBoxSize,drip);
-  let rkI=floor(rainSeed.w*3.0+0.5);
-  let rkSel=vec4<f32>(vec4<f32>(rkI)==vec4<f32>(0.0,1.0,2.0,3.0));
-  let rSpeed=select(dot(u.rainSpeeds,rkSel),${f(DRIP.speed)},drip);
-  let rWidth=select(dot(u.rainWidths,rkSel),${f(DRIP.width)},drip);
-  let rClassAlpha=select(dot(u.rainAlphas,rkSel),1.0,drip);
-  let rDrift=select(vec3<f32>(u.rainDrift.x,-rSpeed*u.rainFold/rainBoxSize.y,u.rainDrift.y),vec3<f32>(0.0,-rSpeed*u.rainFold/rainBoxSize.y,0.0),drip);
-  let rq=fract(rainSeed.xyz+rDrift-rainBoxMin/rainBoxSize);
-  let rp=rainBoxMin+rq*rainBoxSize;
-  let rAlong=select(normalize(vec3<f32>(u.rainWind.x,-rSpeed,u.rainWind.y)),vec3<f32>(0.0,-1.0,0.0),drip);
-  let rToCam=u.rainCam-rp;
-  let rDist=max(length(rToCam),0.001);
-  let rView=rToCam/rDist;
-  let rSide=cross(rAlong,rView);
-  let rRight=rSide/max(length(rSide),0.001);
-  let rLen=select(clamp(rSpeed*u.rainDt*${f(RAIN_STRETCH)},${f(RAIN_LENGTH[0])},${f(RAIN_LENGTH[1])}),${f(DRIP.length)},drip);
-  let positionUpdated=rp+rRight*(input.position.x*rWidth)+rAlong*(input.position.y*rLen);
-  let rFade=smoothstep(${f(RAIN_FADE_NEAR[0])},${f(RAIN_FADE_NEAR[1])},rDist)*(1.0-smoothstep(${f(RAIN_FADE_FAR[0])},${f(RAIN_FADE_FAR[1])},rDist));
-  let rSky=1.0-${f(RAIN_SKY_FADE)}*smoothstep(0.0,${f(RAIN_SKY_RAMP)},-rView.y);
-  let rToLamp=rp-u.rainLampPos;
-  let rLampD2=dot(rToLamp,rToLamp);
-  let rCos=dot(rToLamp,u.rainLampDir)/sqrt(max(rLampD2,0.0001));
-  let rCone=smoothstep(u.rainLamp.y,0.5+0.5*u.rainLamp.y,rCos);
-  let rLampT=u.rainLamp.x*rCone/(1.0+rLampD2);${covered ? COVERED : OPEN}
-  out.rainAlpha=min(rFade*rCover*(rSky*rClassAlpha+rLampT),1.0);
-  out.rainLamp=min(rLampT,1.0);
-  let worldPos=vec4<f32>(positionUpdated,1.0);
-  out.position=select(scene.viewProjection*worldPos,vec4<f32>(2.0,2.0,2.0,1.0),drip&&input.world1.y>=u.rainDripShown);
-  out.fogDistance=(scene.view*worldPos).xyz;
-  out.uv=input.uv;
-  return out;
-}`;
+const vertex = (covered: boolean): string => fill(wgsl(rainVertexSource), { varyings: VARYINGS, dripSpeed: f(DRIP.speed), dripWidth: f(DRIP.width), rainStretch: f(RAIN_STRETCH), rainLength0: f(RAIN_LENGTH[0]), rainLength1: f(RAIN_LENGTH[1]), dripLength: f(DRIP.length), rainFadeNear0: f(RAIN_FADE_NEAR[0]), rainFadeNear1: f(RAIN_FADE_NEAR[1]), rainFadeFar0: f(RAIN_FADE_FAR[0]), rainFadeFar1: f(RAIN_FADE_FAR[1]), rainSkyFade: f(RAIN_SKY_FADE), rainSkyRamp: f(RAIN_SKY_RAMP), cover: covered ? COVERED : OPEN });
 
 /**
  * The fragment stage: the Standard material's, with no light, an emissive
@@ -134,32 +95,7 @@ ${VARYINGS}
  * fog (`CalcFogFactor` at `FOGMODE_EXP2`), in Babylon.js's order, and the
  * streak plugin's two lines before the colour is written.
  */
-const FRAGMENT = /* wgsl */ `
-${VARYINGS}
-${DISPLAY_CURVE_WGSL}
-const RAIN_E:f32=2.71828;
-fn rainFogFactor(vFogDistance:vec3<f32>,fogDensity:f32)->f32{
-  let fogDistance=length(vFogDistance);
-  let fogCoeff=1.0/pow(RAIN_E,fogDistance*fogDistance*fogDensity*fogDensity);
-  return clamp(fogCoeff,0.0,1.0);
-}
-@fragment fn mainFragment(input:RainOut)->@location(0)vec4<f32>{
-  let u=shaderUniforms;
-  var alpha=1.0;
-  let baseColor=textureSample(rainStreak,rainStreakSampler,input.uv);
-  alpha*=baseColor.a;
-  let emissiveColor=u.rainEmissive;
-  let finalDiffuse=clamp(emissiveColor,vec3<f32>(0.0),vec3<f32>(1.0))*baseColor.rgb;
-  var color=vec4<f32>(finalDiffuse,alpha);
-  color=vec4<f32>(max(color.rgb,vec3<f32>(0.0)),color.a);
-  let fog=rainFogFactor(input.fogDistance,u.rainFogDensity);
-  color=vec4<f32>(mix(u.rainFogColour,color.rgb,fog),color.a);
-  color=vec4<f32>(pow(color.rgb,vec3<f32>(2.2)),color.a);
-  color=vec4<f32>(displayColour(color.rgb,u.rainExposure,u.rainContrast),color.a);
-  color=vec4<f32>(mix(color.rgb,u.rainLampColour,input.rainLamp),color.a);
-  color.a*=input.rainAlpha;
-  return color;
-}`;
+const FRAGMENT = fill(wgsl(rainFragmentSource), { varyings: VARYINGS, displayCurve: DISPLAY_CURVE_WGSL });
 
 /** The stages' text, under a cover map and without one, for the tests that hold it to the game's. */
 export const RAIN_WGSL = { vertex: vertex(false), vertexCovered: vertex(true), fragment: FRAGMENT } as const;

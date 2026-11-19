@@ -41,55 +41,24 @@ import { SEE_THROUGH_ORDER } from "./drawOrder.js";
 import { FRAME_CONTRAST_NAME, FRAME_EXPOSURE_NAME, stageOwn, stageReads } from "./frameBlock.js";
 import type { FrameUploads } from "./frameUploads.js";
 import { shaderUniformDecls, shaderUniformWriter } from "./shaderUniforms.js";
+import varyingsSource from "../shaders/mist/varyings.wgsl?raw";
+import mistVertexSource from "../shaders/mist/mist.vertex.wgsl?raw";
+import mistFragmentSource from "../shaders/mist/mist.fragment.wgsl?raw";
+import { fill, wgsl } from "../shaders/shaderText.js";
 
 /** What the two stages hand each other. */
-const VARYINGS = "struct MistOut{@builtin(position)position:vec4<f32>,@location(0)uv:vec2<f32>,@location(1)fogDistance:vec3<f32>,@location(2)visibility:f32}";
+const VARYINGS = wgsl(varyingsSource);
 
 /** The vertex stage: a corner of the quad through its instance's matrix, whose last float is the bank's visibility, and
  * the fog's distance in the view's space. */
-const VERTEX = /* wgsl */ `
-${VARYINGS}
-@vertex fn mainVertex(input:VertexInput)->MistOut{
-  var out:MistOut;
-  let world=mat4x4<f32>(input.world0,input.world1,input.world2,vec4<f32>(input.world3.xyz,1.0));
-  let worldPos=world*vec4<f32>(input.position,1.0);
-  out.position=scene.viewProjection*worldPos;
-  out.fogDistance=(scene.view*worldPos).xyz;
-  out.uv=input.uv;
-  out.visibility=input.world3.w;
-  return out;
-}`;
+const VERTEX = fill(wgsl(mistVertexSource), { varyings: VARYINGS });
 
 /**
  * The fragment stage: the Standard material's, with no light, an emissive
  * colour, an opacity texture and the scene's fog (`CalcFogFactor` at
  * `FOGMODE_EXP2`), in Babylon.js's order.
  */
-const FRAGMENT = /* wgsl */ `
-${VARYINGS}
-${DISPLAY_CURVE_WGSL}
-const MIST_E:f32=2.71828;
-fn mistFogFactor(vFogDistance:vec3<f32>,fogDensity:f32)->f32{
-  let fogDistance=length(vFogDistance);
-  let fogCoeff=1.0/pow(MIST_E,fogDistance*fogDistance*fogDensity*fogDensity);
-  return clamp(fogCoeff,0.0,1.0);
-}
-@fragment fn mainFragment(input:MistOut)->@location(0)vec4<f32>{
-  let u=shaderUniforms;
-  var alpha=1.0;
-  let opacityMap=textureSample(mistSprite,mistSpriteSampler,input.uv);
-  alpha*=opacityMap.a;
-  let emissiveColor=u.mistEmissive;
-  let finalDiffuse=clamp(emissiveColor,vec3<f32>(0.0),vec3<f32>(1.0));
-  var color=vec4<f32>(finalDiffuse,alpha);
-  color=vec4<f32>(max(color.rgb,vec3<f32>(0.0)),color.a);
-  let fog=mistFogFactor(input.fogDistance,u.mistFogDensity);
-  color=vec4<f32>(mix(u.mistFogColour,color.rgb,fog),color.a);
-  color=vec4<f32>(pow(color.rgb,vec3<f32>(2.2)),color.a);
-  color=vec4<f32>(displayColour(color.rgb,u.mistExposure,u.mistContrast),color.a);
-  color.a*=input.visibility;
-  return color;
-}`;
+const FRAGMENT = fill(wgsl(mistFragmentSource), { varyings: VARYINGS, displayCurve: DISPLAY_CURVE_WGSL });
 
 /** The stages' text, for the tests that hold it to the game's. */
 export const MIST_WGSL = { vertex: VERTEX, fragment: FRAGMENT } as const;
