@@ -1290,7 +1290,7 @@ export function createLiteRenderer(canvas: HTMLCanvasElement, level: Level, fore
       // Every chunk prop the simulation collides with that no other mesh draws, as its box. A world as the game makes
       // it today has none, and none is made.
       props = createPropMeshes(engine, scene, forest.grid, {
-        wet: wetAt(WET_CAP.prop), air, shared, firstBuilds: options.firstBuilds, uploads,
+        wet: wetAt(WET_CAP.prop), air, shared, firstBuilds: options.firstBuilds, jobs, uploads,
         // The shore's props stand in a lake's reflections as they are.
         cover: both(coverAs("hard"), reflectedAs(false)),
       });
