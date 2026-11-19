@@ -2,7 +2,8 @@
  * The wet look in WGSL, for the materials Babylon Lite draws: what water and
  * weather do to a surface (`wetSurface.ts` has the numbers and says what the
  * look is). Its uniforms are read as `material.<name>` under the names
- * `wetUniforms` gives them.
+ * `wetUniforms` gives them. The text is in `shaders/wet/`, imported with
+ * `?raw`.
  *
  * The swash's table is 256 vec4s of floats. Lite lays out a plugin's array
  * only as `array<vec4<u32>, N>`, so the floats ride as their bits and the

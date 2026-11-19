@@ -4,7 +4,8 @@
  * features and the trail painted over them, the far cover, and the wet
  * surfaces (`terrainUniforms.ts` has the numbers each is drawn with,
  * `terrainTables.ts` the float tables, `groundLayers.ts` the layers' images,
- * `terrainVertices.ts` what a terrain mesh carries a vertex).
+ * `terrainVertices.ts` what a terrain mesh carries a vertex). The WGSL is in
+ * `shaders/terrain/`, imported with `?raw`.
  *
  * Where the WGSL goes into the material:
  *

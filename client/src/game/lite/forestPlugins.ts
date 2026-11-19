@@ -9,7 +9,7 @@
  * numbers each is drawn with are the game's own, computed with no engine
  * (`foliageUniforms.ts`, `distanceFade.ts`, `groundConform.ts`,
  * `deadwoodParams.ts`, `mossParams.ts`, `cliffInstances.ts`,
- * `wetSurface.ts`).
+ * `wetSurface.ts`). The WGSL is in `shaders/forest/`, imported with `?raw`.
  *
  * The WGSL is, statement for statement, GLSL written for Babylon.js's PBR
  * material, of which the tests read a record

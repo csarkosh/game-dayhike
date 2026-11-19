@@ -5,6 +5,7 @@
  * `waterCompose.fragment.glsl` say of a lake on the tiers that blend their
  * water over what lies under it (`lakePlugin.ts` hands these to Lite's PBR
  * material; the stages named are the recorded ones the tests hold them to).
+ * The text is in `shaders/water/`, imported with `?raw`.
  *
  * What is written differently, and why:
  *

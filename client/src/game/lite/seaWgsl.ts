@@ -7,6 +7,7 @@
  * water over what lies under it (`seaPlugin.ts` hands these to Lite's PBR
  * material; the stages named are the recorded ones the tests hold them to).
  * The water's own definitions are `waterWgsl.ts`'s, which a lake reads too.
+ * The text is in `shaders/sea/`, imported with `?raw`.
  *
  * What is written differently, and why:
  *

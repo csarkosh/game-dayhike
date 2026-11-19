@@ -4,7 +4,9 @@
  * `taaSharpen.fragment.glsl`, `paint.fragment.glsl`, `paintCompose.fragment.glsl`,
  * `halationExtract.fragment.glsl`, `grade.fragment.glsl`, `lens.fragment.glsl`)
  * statement for statement, and how a pass's uniforms are laid out from the
- * record `postFrame.ts` makes of them.
+ * record `postFrame.ts` makes of them. The text of the passes is in
+ * `shaders/post/`, imported with `?raw`, with a slot (`${name}`) where a
+ * number or a piece is written in (`shaders/shaderText.ts`).
  *
  * What differs from the GLSL is where a pass reads and writes, never what
  * it computes:

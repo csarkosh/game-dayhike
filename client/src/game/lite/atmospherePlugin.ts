@@ -2,7 +2,8 @@
  * The atmosphere as a material plugin on Babylon Lite: the air between the
  * eye and a surface, drawn by the surface's own material (`atmosphereParams.ts`
  * has the arithmetic and says what the air is; `cloudParams.ts` the ground
- * cloud). Where it goes in:
+ * cloud). The WGSL is in `shaders/atmosphere/`, imported with `?raw`. Where
+ * it goes in:
  *
  * - The fog is applied to the lit colour at the point before the final
  *   colour is composed, ahead of the display curve. Lite's scene fog stays
