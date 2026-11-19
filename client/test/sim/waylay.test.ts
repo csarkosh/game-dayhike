@@ -142,6 +142,25 @@ describe("the way's lungers, on a real world", SUITE, () => {
     expect(e.seen).toBe(false);
   });
 
+  it("never stands two within a gap of each other, whoever leads: a second runner who takes the lead is not given one beside the first's", () => {
+    const { w, p } = chase();
+    const q = spawnPlayer(w);
+    q.out = true;
+    p.heldFor = 1e9;
+    q.heldFor = 1e9;
+    stand(w, p, 200);
+    stand(w, q, 150);
+    ticks(w, 2);
+    expect(waylayers(w).length).toBe(1);
+    // The second runner comes past the first and leads.
+    stand(w, q, 215);
+    ticks(w, 2);
+    stand(w, q, 222);
+    ticks(w, 2);
+    const at = waylayers(w).map((e) => wayProject(w.way!, e.pos.x, e.pos.z).s).sort((a, b) => a - b);
+    for (let i = 1; i < at.length; i++) expect(at[i]! - at[i - 1]!, `lunges at ${at.map((s) => s.toFixed(0)).join(", ")}`).toBeGreaterThanOrEqual(WAYLAY_GAP_M[0] - 2);
+  });
+
   it("none stands in the way's first 110 m, and none for a player who has left the way", () => {
     const { w, p } = chase();
     p.heldFor = 1e9;

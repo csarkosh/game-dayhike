@@ -530,6 +530,21 @@ function stepWaylay(world: World, record: HauntRecord): void {
       record.waylay.set(p.id, next);
       continue;
     }
+    // Never within a gap of one that stands already, whoever it stands for: a runner who takes the lead is not
+    // given one beside the last leader's, on the path's other half.
+    let crowded = false;
+    for (const e of world.state.enemies.values()) {
+      if (e.waylay === 0) continue;
+      const es = wayProject(way, e.pos.x, e.pos.z).s;
+      if (es > next - WAYLAY_GAP_M[0] && es < next + WAYLAY_GAP_M[0]) {
+        next = es + WAYLAY_GAP_M[0];
+        crowded = true;
+      }
+    }
+    if (crowded) {
+      record.waylay.set(p.id, next);
+      continue;
+    }
     const side = nextRandom(record.rng) < 0.5 ? -1 : 1;
     const off = between(record.rng, WAYLAY_OFF_M);
     const on = wayPoint(way, next, { x: 0, z: 0 }), along = wayDirection(way, next, { x: 0, z: 0 });
