@@ -58,8 +58,11 @@
  * the rebuild of a shell whose meshes draw the last set it applied, whole and
  * correct, until the next set is applied, so waiting costs detail and never
  * shows a hole — the face patches', whose crossing builds far more than six
- * frames' share. It runs after every other job, with the share they leave;
- * idle work runs while only patient jobs are pending, with what they leave.
+ * frames' share. It runs after every other job, with the share they leave, and
+ * a frame whose share the other jobs took whole gives the first patient job one
+ * slice all the same (`SYNC_PATIENT_MAX_MS`): a walk replaces the job at every
+ * crossing, and a job that is never run is never shown. Idle work runs while
+ * only patient jobs are pending, with what they leave.
  *
  * Pure and Babylon-free: time is the clock handed in, so a test drives it.
  */
@@ -118,6 +121,19 @@ export const SYNC_LATE_BUDGET_MS = 8;
  * at 5.25 m/s), so no walk meets it unless the device cannot keep up.
  */
 export const SYNC_OVERDUE_MS = 1000;
+
+/**
+ * The most a frame has spent (ms) when a patient job's one slice a frame may still start: the late share and a slice.
+ * A patient job runs after every other, with what they leave, and the late jobs of a walk on a slow device leave
+ * nothing for frames at a stretch; so a frame in which no patient job ran gives the first of them one slice, past
+ * the ordinary budget and inside this, where its next slice fits in what is left (a first slice of a frame
+ * starts whatever it says). A walk's every crossing replaces the face patches' job, and a job that is never run is
+ * never shown: one slice a frame, 1.5 ms of a phone's 12 to spare, keeps it moving.
+ */
+export const SYNC_PATIENT_MAX_MS = SYNC_LATE_BUDGET_MS + 1.5;
+
+/** The frames a patient job's slice may be left out of the floor for not fitting before it is given it whatever it says: its apply step, which says what it takes, is not held for ever behind other jobs. */
+export const SYNC_PATIENT_WAIT_FRAMES = 30;
 
 /**
  * The longest a builder holds the thread in one slice (ms): the time since the
@@ -283,6 +299,8 @@ export type SyncJobsLast = {
   readonly overdueJobs: number;
   /** The jobs completed, and the idle slices run. */
   readonly completed: number;
+  /** The slices of a patient job run for the floor a frame has no other of (0 or 1). */
+  readonly floor: number;
   readonly idle: number;
   /** The milliseconds the slices took, how many of those a late or overdue run took, and the milliseconds by the jobs' names. */
   readonly ms: number;
@@ -328,7 +346,7 @@ export type SyncJobs = {
 /** A queued job: its slices, the frame whose crossing began it and the
  * clock then, what its next slice is expected to take (ms), and whether it
  * is never late. */
-type Job = { owner: object; slices: Slices; begun: number; begunAt: number; next: number; patient: boolean; name: string };
+type Job = { owner: object; slices: Slices; begun: number; begunAt: number; next: number; patient: boolean; name: string; starved: number };
 
 /** The weight of the newest apply slice in an owner's learned cost. */
 const LEARN_RATE = 0.25;
@@ -345,7 +363,7 @@ export function createSyncJobs(clock: () => number): SyncJobs {
   let frame = 0;
   let startedAt = Number.NaN;
   const last = {
-    slices: 0, late: 0, lateJobs: 0, overdue: 0, overdueJobs: 0, completed: 0, idle: 0, ms: 0, lateMs: 0,
+    slices: 0, late: 0, lateJobs: 0, overdue: 0, overdueJobs: 0, completed: 0, floor: 0, idle: 0, ms: 0, lateMs: 0,
     owners: {} as Record<string, number>, longest: {} as Record<string, number>, learned: {} as Record<string, number>,
   };
   /** The slice the clock's next reading is charged to: the one that just ran
@@ -356,6 +374,8 @@ export function createSyncJobs(clock: () => number): SyncJobs {
    * reading. */
   let charging: { name: string; late: boolean; announced: boolean } | null = null;
   let at = 0;
+  /** Whether a patient job ran a slice this frame. */
+  let patientRan = false;
   /** The clock, read: the time since the last reading goes to the slice that ran in it. */
   function tick(): number {
     const now = clock();
@@ -411,6 +431,8 @@ export function createSyncJobs(clock: () => number): SyncJobs {
       if (done !== false) remove(job);
     }
     last.slices++;
+    if (job.patient) patientRan = true;
+    job.starved = 0;
     if (done === true) last.completed++;
     return done === true;
   }
@@ -419,7 +441,7 @@ export function createSyncJobs(clock: () => number): SyncJobs {
     begin(owner, slices, patient = false, name = "other") {
       const held = queue.find((job) => job.owner === owner);
       if (held === undefined) {
-        enqueue({ owner, slices, begun: frame, begunAt: clock(), next: 0, patient, name });
+        enqueue({ owner, slices, begun: frame, begunAt: clock(), next: 0, patient, name, starved: 0 });
         return;
       }
       held.name = name;
@@ -459,6 +481,8 @@ export function createSyncJobs(clock: () => number): SyncJobs {
       last.overdue = 0;
       last.overdueJobs = 0;
       last.completed = 0;
+      last.floor = 0;
+      patientRan = false;
       last.idle = 0;
       last.ms = 0;
       last.lateMs = 0;
@@ -521,6 +545,20 @@ export function createSyncJobs(clock: () => number): SyncJobs {
         }
         slice(job);
         // A job done has left the queue, and the next has moved up to `i`.
+      }
+      // A patient job is not starved: with no slice of its own this frame it is given one, the first of them.
+      if (!patientRan) {
+        for (let i = 0; i < queue.length; i++) {
+          const job = queue[i] as Job;
+          if (!job.patient) continue;
+          const spent = tick() - start;
+          const fits = spent < SYNC_PATIENT_MAX_MS && (last.slices === 0 || spent + expected(job) <= SYNC_PATIENT_MAX_MS);
+          if (fits || job.starved >= SYNC_PATIENT_WAIT_FRAMES) {
+            slice(job);
+            last.floor++;
+          } else job.starved++;
+          break;
+        }
       }
       // Then idle work, with what is left, while nothing is pending: a slice
       // of each owner's in turn, so none waits on another's.

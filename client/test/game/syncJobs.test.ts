@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { runBySlices } from "../helpers/sliceRun.js";
 import {
-  SLICE_READ_UNITS, SLICE_TARGET_MS, SYNC_BUDGET_MS, SYNC_LATE_BUDGET_MS, SYNC_LATE_FRAMES_MAX, SYNC_LATE_MS_MAX, SYNC_OVERDUE_MS,
+  SLICE_READ_UNITS, SLICE_TARGET_MS, SYNC_BUDGET_MS, SYNC_PATIENT_MAX_MS, SYNC_PATIENT_WAIT_FRAMES, SYNC_LATE_BUDGET_MS, SYNC_LATE_FRAMES_MAX, SYNC_LATE_MS_MAX, SYNC_OVERDUE_MS,
   createCrossing, createSyncJobs, crossingAt, finish, nextCrossing, sliceDue, sortSlices, turn,
   type Slices,
 } from "../../src/game/syncJobs.js";
@@ -32,7 +32,7 @@ function job(clock: { advance(ms: number): void }, slices: number, ms: number, d
 
 describe("the scheduler", () => {
   it("names its budget and its lateness bounds", () => {
-    expect([SYNC_BUDGET_MS, SYNC_LATE_FRAMES_MAX, SYNC_LATE_MS_MAX, SYNC_LATE_BUDGET_MS, SYNC_OVERDUE_MS]).toEqual([4, 6, 100, 8, 1000]);
+    expect([SYNC_BUDGET_MS, SYNC_LATE_FRAMES_MAX, SYNC_LATE_MS_MAX, SYNC_LATE_BUDGET_MS, SYNC_OVERDUE_MS, SYNC_PATIENT_MAX_MS]).toEqual([4, 6, 100, 8, 1000, 9.5]);
     expect([SLICE_TARGET_MS, SLICE_READ_UNITS]).toEqual([1.5, 8]);
   });
 
@@ -382,11 +382,12 @@ describe("the scheduler", () => {
     jobs.run();
     // Its slice, then idle work with the 2 ms left.
     expect([jobs.last.slices, jobs.last.idle]).toEqual([1, 2]);
-    // An ordinary job besides, ten slices of 0.5 ms: eight fill the share,
-    // and while it is pending no idle work runs.
+    // An ordinary job besides, ten slices of 0.5 ms: eight fill the share, the
+    // patient job's slice (the floor's, which its 3 ms fit in the 9.5) makes nine,
+    // and while the ordinary one is pending no idle work runs.
     jobs.begin({}, job(t, 10, 0.5, quick, () => jobs.frame));
     jobs.run();
-    expect([quick.at, jobs.last.slices, jobs.last.idle]).toEqual([null, 8, 0]);
+    expect([quick.at, jobs.last.slices, jobs.last.idle, jobs.last.floor]).toEqual([null, 9, 0, 1]);
     // Its last two slices, the patient one's, and idle work again.
     jobs.run();
     expect([quick.at, jobs.last.slices, jobs.last.idle]).toEqual([2, 3, 1]);
@@ -929,5 +930,82 @@ describe("the longest slice an owner ran", () => {
     jobs.begin({}, job(t, 1, 0.5, { at: null }, () => jobs.frame), false, "clipmap");
     jobs.run();
     expect(jobs.last.longest.clipmap).toBe(0.5);
+  });
+});
+
+describe("a patient job under busy jobs", () => {
+  it("is given one slice a frame the other jobs' share left none for, and no more than the late share and a slice is spent", () => {
+    const t = testClock();
+    const jobs = createSyncJobs(t.clock);
+    const patches = {};
+    const patchesDone = { at: null as number | null };
+    // The ordinary jobs take the whole share for ever: a new one of 50 slices of 1 ms whenever the last ends.
+    const busy = {};
+    const keepBusy = (): Slices => (function* () {
+      for (let i = 0; i < 50; i++) {
+        t.advance(1);
+        yield;
+      }
+    })();
+    jobs.begin(busy, keepBusy());
+    jobs.begin(patches, job(t, 20, 1, patchesDone, () => jobs.frame), true);
+    const spent: number[] = [];
+    let floors = 0;
+    for (let f = 0; f < 60 && patchesDone.at === null; f++) {
+      if (!jobs.pending(busy)) jobs.begin(busy, keepBusy());
+      const before = t.clock();
+      jobs.run();
+      spent.push(t.clock() - before);
+      floors += jobs.last.floor;
+    }
+    // Four slices of the busy job take the ordinary share, and the patient job's slice is the fifth: 5 ms a frame, and it ends.
+    expect(patchesDone.at).not.toBeNull();
+    expect(floors).toBeGreaterThan(15);
+    expect(Math.max(...spent)).toBeLessThanOrEqual(SYNC_LATE_BUDGET_MS + 1.5);
+    expect(jobs.pending(patches)).toBe(false);
+  });
+
+  it("holds a patient apply that does not fit to the next frames, and gives it a slice once it has waited for the floor", () => {
+    const t = testClock();
+    const jobs = createSyncJobs(t.clock);
+    const done = { at: null as number | null };
+    // The ordinary jobs take the whole share for ever.
+    const busy = {};
+    const keepBusy = (): Slices => (function* () {
+      for (let i = 0; i < 400; i++) {
+        t.advance(1);
+        yield;
+      }
+    })();
+    jobs.begin(busy, keepBusy());
+    // A patient job whose apply says it takes 6 ms, after a first slice that takes nothing.
+    jobs.begin({}, (function* () {
+      yield;
+      yield 6;
+      t.advance(6);
+      done.at = jobs.frame;
+    })(), true);
+    jobs.run();
+    // The first slice is the floor's; the apply would end at 4 + 6, past 9.5, so it waits.
+    expect(jobs.last.floor).toBe(1);
+    let waited = 0;
+    while (done.at === null && waited < 100) {
+      jobs.run();
+      waited++;
+    }
+    // The second slice (which says what the apply takes) is the next frame's floor; the apply then waits the frames it is given, and starts whatever it says.
+    expect(waited).toBe(SYNC_PATIENT_WAIT_FRAMES + 2);
+    expect(done.at).not.toBeNull();
+  });
+
+  it("changes nothing for a frame in which a patient job already ran, or where there is none", () => {
+    const t = testClock();
+    const jobs = createSyncJobs(t.clock);
+    jobs.begin({}, job(t, 3, 1, { at: null }, () => jobs.frame), true);
+    jobs.run();
+    expect(jobs.last.floor).toBe(0);
+    jobs.begin({}, job(t, 3, 1, { at: null }, () => jobs.frame));
+    jobs.run();
+    expect(jobs.last.floor).toBe(0);
   });
 });
