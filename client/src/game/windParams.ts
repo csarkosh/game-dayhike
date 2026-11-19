@@ -3,7 +3,7 @@ import type { WeatherParams } from "./weather.js";
 
 /**
  * The one wind field every moving thing reads: grass, carpet, flowers, bushes,
- * understory, the near tree LODs (foliagePlugin.ts), the motes, the mist banks,
+ * understory, the near tree LODs (lite/forestPlugins.ts), the motes, the mist banks,
  * the rain and the ambient wind bed. Babylon-free and on BABYLON_FREE_FILES.
  * Renderer-only by design: nothing here may migrate into sim/ or a tunables
  * registry — sway is cosmetic, and a wind constant in the level id would break
@@ -78,7 +78,7 @@ export function windRecordUnder(w: WeatherParams, seconds: number, override?: nu
   };
 }
 
-/** The gust the shader evaluates (foliage.vertex.fx `foliageGust`), in [-1.5, 1.5].
+/** The gust the shader evaluates (foliage.vertex.glsl `foliageGust`), in [-1.5, 1.5].
  * The front travels downwind (toward +direction) at Ω1/K1 = 1.5 m/s.
  * The ragged term is a golden-ratio lattice hash: multiply-add-fract on cell
  * indices, which GPU and CPU compute to the same 1e-3, unlike a sin() hash. */

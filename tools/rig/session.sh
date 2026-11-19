@@ -5,12 +5,11 @@
 # all, when the session is done or fifteen minutes after the last harness left it (its idle
 # watchdog); only the image survives.
 #
-#   tools/rig/session.sh up [N] [--channel <name>] [--no-maps]   N rigs (1 by default) from the image,
-#                                                                 the WGSL maps built meanwhile, and a
-#                                                                 preview channel published if named;
-#                                                                 a forward a rig on 9333, 9334, ...
-#   tools/rig/session.sh status                                   each rig's state and whether its Chrome answers
-#   tools/rig/session.sh down                                     ends every rig and its forward
+#   tools/rig/session.sh up [N] [--channel <name>]   N rigs (1 by default) from the image, and a
+#                                                    preview channel published meanwhile if named;
+#                                                    a forward a rig on 9333, 9334, ...
+#   tools/rig/session.sh status                      each rig's state and whether its Chrome answers
+#   tools/rig/session.sh down                        ends every rig and its forward
 #
 # Run from any checkout: the rigs are applied from the main checkout's root, as `round.sh` does.
 # Logs go on the lab disk (`DAYHIKE_LAB`, `/Volumes/CyrusExtSSD/dayhike-lab` by default), under
@@ -54,11 +53,10 @@ chrome_version() {
 }
 
 up() {
-  local count=1 channel="" maps=1 dir started apply_pid
+  local count=1 channel="" dir started apply_pid
   while [ $# -gt 0 ]; do
     case "$1" in
       --channel) channel="$2"; shift 2 ;;
-      --no-maps) maps=0; shift ;;
       -*) echo "unknown option $1" >&2; exit 2 ;;
       *) count="$1"; shift ;;
     esac
@@ -71,16 +69,7 @@ up() {
   (cd "$root" && terraform apply -input=false -auto-approve -var running=true -var rig_count="$count") > "$dir/apply.log" 2>&1 &
   apply_pid=$!
 
-  # Meanwhile, what the work needs on this side: the maps (nothing when the corpus is unchanged,
-  # about a minute when it is not) and, if asked, a channel to measure or record from.
-  if [ "$maps" = 1 ]; then
-    say "building the WGSL maps (log: $dir/build-map.log)"
-    if (cd "$here" && node tools/wgsl/build-map.mjs --reuse) > "$dir/build-map.log" 2>&1; then
-      grep -E "up to date|ceiling:" "$dir/build-map.log" | sed 's/^/  /'
-    else
-      say "the maps did not build: see $dir/build-map.log"; tail -5 "$dir/build-map.log" | sed 's/^/  /'
-    fi
-  fi
+  # Meanwhile, what the work needs on this side: if asked, a channel to measure or record from.
   if [ -n "$channel" ]; then
     say "publishing the preview channel $channel (log: $dir/channel.log)"
     if (cd "$here" && npm run preview:channel -- "$channel") > "$dir/channel.log" 2>&1; then

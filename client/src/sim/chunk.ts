@@ -25,7 +25,7 @@ export type Chunk = {
    *
    * `Brush`, not `Aabb`: the renderer needs to tell a trunk from a boulder to
    * colour it, and `Brush` is the existing `{ box, material }` pair that
-   * `game/renderer.ts` already keys `MATERIAL_COLORS` on.
+   * the renderer already keys a prop's colour on (`game/propBoxes.ts`, `propColour`).
    */
   props: Brush[];
 };

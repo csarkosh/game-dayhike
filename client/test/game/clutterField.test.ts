@@ -1,11 +1,12 @@
-import type { FadeBands } from "../../src/game/distanceFadePlugin.js";
+import type { FadeBands } from "../../src/game/distanceFade.js";
 import { describe, expect, it } from "vitest";
 import "../../src/sim/olympic.js";
 import {
   CLUTTER_BLADE_HANDOFF, CLUTTER_BUDGETS, CLUTTER_FADE_FRACTION, CLUTTER_MEADOW_NEAR_IN,
   CLUTTER_FADE_MIN_RAMP, CLUTTER_FAR_SPLIT, CLUTTER_RADII, COLLECTOR_SWEEP_SIZE, COVER_FAR_FROM, COVER_FAR_KEEP, COVER_FAR_RAMP,
   COVER_WIDEN, COVER_WIDEN_RAMP, clutterFadeEdges, clutterNearRadius, coverBands, coverFarBand, coverWiden, farKeep,
-  clutterSeamEdges, collectClutter, collectClutterWithBudgets, createClutterCollector, rampBands, COVER_RAMP_CLASSES, COVER_RAMP_WIDTH } from "../../src/game/clutterField.js";
+  clutterSeamEdges, collectClutter, collectClutterWithBudgets, createClutterCollector, rampBands, COVER_RAMP_CLASSES, COVER_RAMP_WIDTH,
+  CLUTTER_REACH, CLUTTER_REACH_LOW, clutterReachFor } from "../../src/game/clutterField.js";
 import {
   CLUTTER_CLASS_COUNT, clutterCell, CLUTTER_DRIFTWOOD, CLUTTER_GRASS, CLUTTER_GRASS_CELL, CLUTTER_JITTER,
   CLUTTER_MEADOW, CLUTTER_FERN, CLUTTER_SHRUB, CLUTTER_BUSH, CLUTTER_ROCK, CLUTTER_BOULDER, CLUTTER_FUNGUS, CLUTTER_DRIFTLOG } from "../../src/sim/clutter.js";
@@ -458,5 +459,15 @@ describe("clutter bands", () => {
   it("carries only the near and far lists per class", () => {
     const bands = collectClutter(SEED, CAM.x, CAM.z);
     for (const band of bands) expect(Object.keys(band).sort()).toEqual(["far", "near"]);
+  });
+});
+
+describe("clutterReachFor", () => {
+  it("draws the low tier's clutter at six tenths of every radius and the tiers with the blade field at seven", () => {
+    expect(clutterReachFor("low")).toBe(CLUTTER_REACH_LOW);
+    expect(clutterReachFor("low")).toBe(0.6);
+    expect(clutterReachFor("medium")).toBe(CLUTTER_REACH);
+    expect(clutterReachFor("high")).toBe(CLUTTER_REACH);
+    expect(clutterReachFor("low")).toBeLessThan(clutterReachFor("medium"));
   });
 });

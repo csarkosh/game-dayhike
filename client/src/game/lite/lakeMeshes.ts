@@ -1,0 +1,404 @@
+/**
+ * The lakes' water on Babylon Lite: one surface a lake, from what the game
+ * draws them with, computed with no engine: the surface's grid and the
+ * bed's depth under each vertex (`lakeSurfaceGrid.ts`), the bed's square
+ * following the camera (`bedFollow.ts`, in `waterBed.ts`), the ripple bump and its drift
+ * (`waterBump.ts`, `waterSurface.ts`), each lake's numbers
+ * (`waterSurface.ts`), its calm by the hour and the weather's name
+ * (`lakeCalmFrame.ts`), its skyline (`lakeSkyline.ts`) and whether a view
+ * holds it (`lakeSeen.ts`). The shading is `lakePlugin.ts`'s.
+ *
+ * - **A lake is one draw, and none out of view.** Blended over what lies
+ *   under it on the tiers that blend their water; on the tier that reads
+ *   through it (`behind`), opaque over the frame the opaque draws left,
+ *   after the scene's pass is broken for it, which Lite does only on a
+ *   frame that shows a mesh so marked: the view's word, never the cover
+ *   map's, so a lake out of view breaks no pass. Lite culls no
+ *   mesh, so each surface is shown only while the view holds its lake
+ *   (`lakeDrawnFrom`: its square in the view's planes, and then its shore,
+ *   or the eye beside it). The rain's cover map has its own word on it:
+ *   drawn there while the lake reaches into the map's square, whatever the
+ *   view holds.
+ * - **A lake writes nothing while nothing of its own moves.** What moves
+ *   every frame (the lakes' time, the wind's integral, the bump's drift) is
+ *   the frame's block, which is written once a frame whatever is drawn. A
+ *   lake's own buffer is written when its calm, its cat's-paws, its
+ *   roughness, its shade or the bed's square has moved, and only while it
+ *   is shown: one that moved out of view is written when it comes back.
+ * - **On the tier with a mirror the lake it serves reflects its shore in
+ *   it** (`lakeMirror.ts`, `mirror`): the lake hands the mirror each frame
+ *   whether its water is in the view and how much of it is glass, reads the
+ *   picture while the mirror is armed, by the view it was last drawn
+ *   through, smeared by the eye's travel over the frames it is held, and
+ *   shows the sky's sheen alone otherwise, as every other lake does there:
+ *   that tier has no skyline's shade.
+ * - **The bed's square is one texture**, the sea's too (`waterBed.ts`),
+ *   which the renderer steps once a frame before the lakes read where it
+ *   stands.
+ * - **Among the see-through draws it stands where the game's does**: after
+ *   the rain (`drawOrder.ts`); read through, it is drawn before every one
+ *   of them, as the game draws its water's group. Its vertices are laid in the world's own
+ *   coordinates, so the mesh stands at the origin as the others do and its
+ *   place alone orders it.
+ *
+ * The surface stands 2 cm over the lake's level, as the game's does.
+ */
+import {
+  addToScene, createMeshFromData, createPbrMaterial, createRenderTexture2D, createTexture2DFromPixels, disposeMeshGpu, markMaterialUboDirty,
+  removeFromScene, setMeshVisible, updateTextureRegion,
+  type EngineContext, type MaterialPlugin, type Mesh, type PbrMaterialProps, type PluginUniformBlock, type SceneContext, type Texture2D,
+} from "@babylonjs/lite";
+import type { LakeSource } from "../../sim/terrain.js";
+import { LAKE_SURFACE_REACH } from "../bedHeight.js";
+import { lakeCalmUnder, type CalmFade, type LakeCalmFrame } from "../lakeCalmFrame.js";
+import { lakeSunShare } from "../lakeRipples.js";
+import { lakeDrawnFrom, lakeInViewFrom, lakeViewPoints, type ViewPlane } from "../lakeSeen.js";
+import { MIRROR_MOTION_SMEAR, mirrorMotion } from "../mirrorPass.js";
+import { SKYLINE_SHADE, SKYLINE_TEXELS, skylineElevations, skylineTexels, skylineTrees } from "../lakeSkyline.js";
+import { LAKE_SURFACE_SPACING, lakeSurfaceDepths, lakeSurfaceGrid } from "../lakeSurfaceGrid.js";
+import type { PreparedLakeSurface } from "../preparedScene.js";
+import type { QualityTier } from "../quality.js";
+import { SUN_PEAK } from "../sky.js";
+import type { SkyState } from "../skyState.js";
+import { WATER_BUMP_SIZE, waterBumpData } from "../waterBump.js";
+import { lakeSkin, lakeWaterRow, roughnessFor, waterSkinOffset } from "../waterShading.js";
+import {
+  advanceWater, createBumpDrift, createWaterSurface, emptyLakeMirrorUniforms, emptyLakeUniforms, emptyWaterFrameUniforms, lakeMirrorUniforms, lakeUniforms,
+  setWaterCalm, setWaterLakeBody, setWaterLakeTime, setWaterMirrorMotion, setWaterPawCover, setWaterShade, setWaterWind, waterFrameUniforms, waterRoughnessDue,
+  type LakeMirrorUniforms, type LakeUniforms, type WaterFrameUniforms, type WaterSurface,
+} from "../waterSurface.js";
+import type { WeatherParams } from "../weather.js";
+import type { WindRecord } from "../windParams.js";
+import { SEE_THROUGH_ORDER } from "./drawOrder.js";
+import type { FrameUploads } from "./frameUploads.js";
+import type { LiteLakeMirror, MirrorFrame } from "./lakeMirror.js";
+import { lakePlugin } from "./lakePlugin.js";
+import type { CoverRegistry } from "./rainMap.js";
+import type { WaterBehind } from "./waterBehind.js";
+import type { LiteWaterBed } from "./waterBed.js";
+
+/** How far over its lake's level a surface stands, metres. */
+export const LAKE_SURFACE_LIFT = 0.02;
+
+/** What is made ahead of a lake, where the world's worker made it: its surface and its skyline. */
+export type LakeMade = { surface?: PreparedLakeSurface | null; skyline?: Float32Array | null };
+
+/** What the lakes are made with. */
+export type LakeOptions = {
+  /** The bed's square, which the renderer steps before each `update`. */
+  bed: LiteWaterBed;
+  /** The air's plugin, one a material. */
+  air: () => MaterialPlugin;
+  /** The frame's block. */
+  shared: PluginUniformBlock;
+  /** The weather's preset as the calm follows it: the renderer's, which names it; stepped here, a frame at a time. */
+  calm: CalmFade;
+  /** The rain's cover map, which every surface stands in as open water, each by the map's own word (`show`). */
+  cover?: CoverRegistry;
+  /** Each lake's pieces made ahead, by its place in the list. */
+  made?: readonly (LakeMade | null)[];
+  /** The bump's picture made ahead. */
+  bump?: Uint8Array | null;
+  /** The shore's panorama, on the tier that draws one (`lakePanorama.ts`): every lake's material carries its read, and the lake it is of reads it. */
+  panorama?: Texture2D;
+  /** The frame behind the water, on the tier that reads through it: every surface is then opaque, drawn after the scene's pass is broken. */
+  behind?: WaterBehind;
+  /** The mirror, on the tier that draws one (`lakeMirror.ts`): every lake's material carries its read, and the lake it serves reads it while it is armed. */
+  mirror?: LiteLakeMirror;
+  uploads?: FrameUploads;
+};
+
+/** A frame as the lakes read it. */
+export type LakeFrame = {
+  /** The eye and the way it looks. */
+  eye: { readonly x: number; readonly y: number; readonly z: number };
+  forward: { readonly fx: number; readonly fy: number; readonly fz: number };
+  /** The eye's up, where a mirror is drawn. */
+  up?: { readonly ux: number; readonly uy: number; readonly uz: number };
+  /** The view's planes. */
+  planes: readonly ViewPlane[];
+  /** The shared seconds the water moves on, and the frame's length on the renderer's clock. */
+  seconds: number;
+  dt: number;
+  weather: WeatherParams;
+  wind: WindRecord;
+  hour: number;
+  /** The sky's state and the scene's share of the image-based light; null before the sky's first slices. */
+  sky: SkyState | null;
+  environmentIntensity: number;
+  /** The frame's height in pixels and the lens's vertical field of view; its width where a mirror is drawn. */
+  frameHeight: number;
+  frameWidth?: number;
+  fov: number;
+  /**
+   * The square (its centre and half its side, metres) the rain's cover map is drawn over with this frame; null on a
+   * frame that does not draw it. A lake that reaches into it is drawn in the map whatever the view holds, and one
+   * that does not is left out of it.
+   */
+  cover: { x: number; z: number; half: number } | null;
+  /** The lake the shore's panorama, or the mirror, is of, by its place in the list; -1 where there is none. */
+  served?: number;
+};
+
+export type LiteLakes = {
+  /** Each lake's surface, by its place in the list. */
+  readonly meshes: readonly Mesh[];
+  /** What every lake reads alike, as the last `update` left it: the frame's block is written from it. */
+  readonly frame: WaterFrameUniforms;
+  /** A frame: where the bed stands, the calm, each lake's numbers and whether it is shown. */
+  update(frame: LakeFrame): void;
+  /** Lakes shown by the last `update`. */
+  readonly shown: number;
+  /** Whether the lake at `index` read its shore in the last `update`: its water in the view, with glass on it. */
+  readsShore(index: number): boolean;
+  /** Times a lake's own buffer was marked to be written. */
+  readonly marks: number;
+  dispose(): void;
+};
+
+type Lake = {
+  source: LakeSource;
+  surface: WaterSurface;
+  uniforms: LakeUniforms;
+  /** Its numbers of the mirror, on the tier that draws one. */
+  mirror: LakeMirrorUniforms | null;
+  material: PbrMaterialProps;
+  mesh: Mesh;
+  /** Half the side of the surface's square, and the shore's points a view is tested against. */
+  half: number;
+  points: Float32Array;
+  shown: boolean;
+  /** The view holds its water and the water has glass on it: its shore is read. */
+  reads: boolean;
+  /** The lake's own buffer stands behind its record: marked when it is next shown. */
+  stale: boolean;
+};
+
+/** A table of one 32-bit float a texel, read at a whole texel. */
+function floatTable(engine: EngineContext, width: number, height: number): Texture2D {
+  return createRenderTexture2D(engine, width, height, { format: "r32float", minFilter: "nearest", magFilter: "nearest" });
+}
+
+/**
+ * The surfaces of `lakes` in world `seed` on `tier`, made after the scene
+ * is registered. A world with no lake makes nothing and is not handed here.
+ */
+export function createLiteLakes(
+  engine: EngineContext, scene: SceneContext, seed: number, lakes: readonly LakeSource[], tier: QualityTier, options: LakeOptions,
+): LiteLakes {
+  const { uploads } = options;
+  // The ripple's picture is a constant: every lake's first octave and, on the tiers with two, its second.
+  const bumpData = options.bump ?? waterBumpData();
+  const bump = createTexture2DFromPixels(engine, bumpData, WATER_BUMP_SIZE, WATER_BUMP_SIZE, {
+    addressModeU: "repeat", addressModeV: "repeat", minFilter: "linear", magFilter: "linear", mipMaps: true,
+  });
+  uploads?.count("textures", bumpData.byteLength);
+  const { bed } = options;
+  /** The bed's square the lakes' records were last written for. */
+  let bedSeen = -1;
+  const drift = createBumpDrift();
+  const { calm } = options;
+  const calmFrame: LakeCalmFrame = { share: 0, rough: false, roughShare: 0, cover: 0, smearPx: 0 };
+  const frameValues = emptyWaterFrameUniforms();
+  const shade: [number, number, number] = [0, 0, 0];
+  let marks = 0;
+  let shownCount = 0;
+  let disposed = false;
+  const { mirror } = options;
+  /** What a frame hands the mirror, filled in place, and the eye's travel its held picture lags by, metres, smoothed. */
+  const mirrorAxes = { fx: 0, fy: 0, fz: 1, ux: 0, uy: 1, uz: 0 };
+  let mirrorFrame: MirrorFrame | null = null;
+  const lastEye = { x: 0, y: 0, z: 0 };
+  let eyeSeen = false;
+  let motion = 0;
+
+  const made: Lake[] = lakes.map((source, index) => {
+    const row = lakeWaterRow(source.murk);
+    const surface = createWaterSurface(row);
+    surface.octaves = tier === "low" ? 1 : 2;
+    surface.skin = [lakeSkin(source.murk), waterSkinOffset(seed)];
+    surface.bedTexels = bed.texels;
+    surface.bedSpacing = bed.spacing;
+    setWaterLakeBody(surface, source.x, source.level, source.z, source.shape.meanRadius);
+    const uniforms = emptyLakeUniforms();
+    const mirrorUniforms = mirror === undefined ? null : emptyLakeMirrorUniforms();
+    // The skyline's elevations from the lake's centre, one row.
+    const ahead = options.made?.[index] ?? null;
+    const elevations = skylineTexels(ahead?.skyline ?? skylineElevations(source, seed, skylineTrees(source, seed)));
+    const skyline = floatTable(engine, SKYLINE_TEXELS, 1);
+    updateTextureRegion(engine, skyline, elevations, { width: SKYLINE_TEXELS, height: 1, bytesPerRow: SKYLINE_TEXELS * 4 });
+    uploads?.count("textures", elevations.byteLength);
+    const material = createPbrMaterial({
+      baseColorFactor: [row.lInf[0], row.lInf[1], row.lInf[2], 1], metallicFactor: 0, roughnessFactor: roughnessFor(0, row.shelter),
+      // One alpha blends it over what lies under it, or, read through, it is opaque over the kept frame; seen from
+      // either side, as the game leaves it unculled.
+      alphaBlend: options.behind === undefined, doubleSided: true, usePhysicalLightFalloff: true,
+    });
+    material.plugins = [
+      lakePlugin(uniforms, {
+        bump, bed: bed.texture, skyline, panorama: options.panorama, behind: options.behind,
+        mirror: mirror === undefined || mirrorUniforms === null ? undefined : { picture: () => mirror.texture(), uniforms: mirrorUniforms },
+      }, options.shared),
+      options.air(),
+    ];
+    // The surface's grid about the lake's centre, laid in the world's coordinates: the mesh stands at the origin.
+    const grid = ahead?.surface ?? lakeSurfaceGrid(source.shape);
+    const depths = ahead?.surface?.depths ?? lakeSurfaceDepths(seed, source, grid.positions);
+    const positions = new Float32Array(grid.positions.length);
+    for (let v = 0; v < positions.length; v += 3) {
+      positions[v] = (grid.positions[v] as number) + source.shape.cx;
+      positions[v + 1] = (grid.positions[v + 1] as number) + source.level + LAKE_SURFACE_LIFT;
+      positions[v + 2] = (grid.positions[v + 2] as number) + source.shape.cz;
+    }
+    const mesh = createMeshFromData(engine, `pond_${index}`, positions, grid.normals, grid.indices, grid.uvs);
+    mesh.material = material;
+    mesh.pluginVertexData = depths;
+    mesh.renderOrder = SEE_THROUGH_ORDER.water;
+    // Read through, it is drawn after the pass's break, which is made only on a frame that shows it.
+    if (options.behind !== undefined) mesh.afterBreak = true;
+    uploads?.count("geometry", positions.byteLength + grid.normals.byteLength + grid.uvs.byteLength + grid.indices.byteLength, 4);
+    uploads?.count("pluginVertices", depths.byteLength);
+    uploads?.made();
+    // Hidden until a view holds it.
+    setMeshVisible(mesh, false);
+    addToScene(scene, mesh);
+    options.cover?.add(mesh);
+    return {
+      source, surface, uniforms, mirror: mirrorUniforms, material, mesh,
+      half: source.shape.shoreMax + LAKE_SURFACE_REACH + LAKE_SURFACE_SPACING,
+      points: lakeViewPoints(source.shape, source.level),
+      shown: false, reads: false, stale: true,
+    };
+  });
+
+  /** Where the bed's square now stands, to every lake's record. */
+  function readBed(): void {
+    if (bedSeen === bed.sent) return;
+    bedSeen = bed.sent;
+    for (const lake of made) lake.surface.bedOrigin = [bed.originX, bed.originZ];
+  }
+  readBed();
+
+  return {
+    meshes: made.map((lake) => lake.mesh),
+    frame: frameValues,
+    get shown() {
+      return shownCount;
+    },
+    get marks() {
+      return marks;
+    },
+    readsShore(index) {
+      return made[index]?.reads === true;
+    },
+    update(f) {
+      if (disposed) return;
+      readBed();
+      calm.step(f.dt);
+      // The lakes' bump drifts downwind at the wind's speed.
+      const windDir: [number, number] = [f.wind.dirX, f.wind.dirZ];
+      drift.step(f.dt, f.wind.speed, windDir, false, true);
+      // The forest's shade under the skyline: the sky's horizon away from the sun, by the scene's share of the sky's light.
+      if (f.sky !== null) {
+        shade[0] = f.sky.horizonAway.r * SKYLINE_SHADE * f.environmentIntensity;
+        shade[1] = f.sky.horizonAway.g * SKYLINE_SHADE * f.environmentIntensity;
+        shade[2] = f.sky.horizonAway.b * SKYLINE_SHADE * f.environmentIntensity;
+      }
+      const sun = f.sky === null ? 0 : lakeSunShare(f.sky.sunIntensity, f.sky.sunDir.y, SUN_PEAK);
+      shownCount = 0;
+      for (let index = 0; index < made.length; index++) {
+        const lake = made[index] as Lake;
+        const { surface, source } = lake;
+        setWaterWind(surface, f.wind.speed, windDir);
+        surface.rain = f.weather.rain;
+        surface.sun = sun;
+        advanceWater(surface, f.seconds, false);
+        const c = lakeCalmUnder(f.hour, calm.from, calm.to, calm.progress, f.weather, f.wind.speed, surface.row.shelter, f.frameHeight, f.fov, calmFrame);
+        setWaterLakeTime(surface, f.wind.time);
+        setWaterPawCover(surface, c.cover);
+        const seen = lakeDrawnFrom(
+          source.shape, source.level, lake.half, lake.points, f.planes, f.eye.x, f.eye.y, f.eye.z, f.forward.fx, f.forward.fy, f.forward.fz,
+        );
+        // With no mirror the shore's weight is 1 until the surface is rough all over, where the share has already reached 0.
+        let weight = c.roughShare < 1 ? 1 : 0;
+        if (mirror !== undefined && lake.mirror !== null) {
+          // With one, the lake it serves reads it while it is armed (drawn this frame, or holding its last picture), and
+          // every other lake keeps the sky's sheen alone.
+          let armed = false;
+          if (f.served === index && f.up !== undefined) {
+            const m = (mirrorFrame ??= { eye: f.eye, axes: mirrorAxes, frameWidth: 1, frameHeight: 1, sky: null, weather: f.weather });
+            m.eye = f.eye;
+            mirrorAxes.fx = f.forward.fx;
+            mirrorAxes.fy = f.forward.fy;
+            mirrorAxes.fz = f.forward.fz;
+            mirrorAxes.ux = f.up.ux;
+            mirrorAxes.uy = f.up.uy;
+            mirrorAxes.uz = f.up.uz;
+            m.frameWidth = f.frameWidth ?? f.frameHeight;
+            m.frameHeight = f.frameHeight;
+            m.sky = f.sky;
+            m.weather = f.weather;
+            // Armed by the water in the view, as the game arms it: not by the bank alone, where the surface is drawn
+            // for the strip of water that may cross a corner of the view.
+            const inView = seen && lakeInViewFrom(
+              source.shape, source.level, lake.half, lake.points, f.planes, f.eye.x, f.eye.y, f.eye.z, f.forward.fx, f.forward.fy, f.forward.fz,
+            );
+            armed = mirror.update(inView, c.share, m);
+            surface.mirrorViewProjection.set(mirror.viewProjection);
+            // The held frames' lag as the eye's travel over them, smoothed: none while the eye is still.
+            const step = eyeSeen ? Math.hypot(f.eye.x - lastEye.x, f.eye.y - lastEye.y, f.eye.z - lastEye.z) : 0;
+            lastEye.x = f.eye.x;
+            lastEye.y = f.eye.y;
+            lastEye.z = f.eye.z;
+            eyeSeen = true;
+            motion = mirrorMotion(motion, step);
+            setWaterMirrorMotion(surface, MIRROR_MOTION_SMEAR * motion * f.frameHeight);
+          }
+          weight = armed ? 1 : 0;
+        }
+        setWaterCalm(surface, c.share, weight, c.smearPx);
+        if (lake.mirror !== null && lakeMirrorUniforms(surface, weight === 1, lake.mirror)) lake.stale = true;
+        if (f.sky !== null) setWaterShade(surface, shade);
+        const roughness = waterRoughnessDue(surface, lake.material.roughnessFactor ?? null, f.wind.speed);
+        if (roughness !== null) {
+          lake.material.roughnessFactor = roughness;
+          lake.stale = true;
+        }
+        // The skyline's shade is the shore of the tiers with no mirror.
+        if (lakeUniforms(surface, source.level, { panorama: options.panorama !== undefined && f.served === index, skyline: f.sky !== null && mirror === undefined }, lake.uniforms)) lake.stale = true;
+        // The cover map's own word, said on each frame that draws the map: whether its square reaches the lake.
+        if (f.cover !== null) {
+          options.cover?.show?.(lake.mesh, Math.abs(source.shape.cx - f.cover.x) < lake.half + f.cover.half && Math.abs(source.shape.cz - f.cover.z) < lake.half + f.cover.half);
+        }
+        lake.reads = seen && surface.mirrorWeight * surface.calmShare > 0;
+        const shown = seen;
+        if (shown !== lake.shown) {
+          lake.shown = shown;
+          setMeshVisible(lake.mesh, shown);
+        }
+        if (shown) {
+          shownCount++;
+          if (lake.stale) {
+            lake.stale = false;
+            markMaterialUboDirty(lake.material);
+            uploads?.marked();
+            marks++;
+          }
+        }
+      }
+      // Every lake's frame values are one lake's: the wind, the clock and the rain are the page's.
+      const first = made[0];
+      if (first !== undefined) waterFrameUniforms(first.surface, drift, frameValues);
+    },
+    dispose() {
+      if (disposed) return;
+      disposed = true;
+      for (const lake of made) {
+        options.cover?.remove(lake.mesh);
+        removeFromScene(scene, lake.mesh);
+        disposeMeshGpu(lake.mesh);
+        uploads?.dropped();
+      }
+    },
+  };
+}

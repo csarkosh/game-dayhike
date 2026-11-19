@@ -1,8 +1,8 @@
 /**
  * The water material's maths, Babylon-free and testable under Node, the way
- * `water.ts` and `sky.ts` are. Every constant here that the GLSL in
- * shaders/water*.fx repeats is pinned by the lockstep test in
- * waterPlugin.test.ts; tune them here and there together.
+ * `water.ts` and `sky.ts` are. Every constant here that the WGSL in
+ * `lite/waterWgsl.ts` repeats is pinned by the lockstep test in
+ * `lite/waterWgsl.test.ts`; tune them here and there together.
  *
  * Trigonometry and exp are fine here (renderer-only; nothing crosses the
  * wire). See docs/rendering/2026-09-29-water-material-design.md §5.
@@ -72,24 +72,24 @@ export function waterSkinOffset(seed: number): number {
   return ((seed >>> 0) % 4096) * 0.731;
 }
 
-/** Fresnel reflectance of water at normal incidence, n = 1.33. Mirrored in shaders/water.fragment.fx. */
+/** Fresnel reflectance of water at normal incidence, n = 1.33. Mirrored in water.fragment.glsl. */
 export const WATER_F0 = 0.02;
-/** The reflected ray's least y (spec §5.1). Mirrored in shaders/water.fragment.fx. */
+/** The reflected ray's least y (spec §5.1). Mirrored in water.fragment.glsl. */
 export const WATER_HORIZON = 0.02;
 /** Metres per second the game's wind of 1 stands for (spec §5.1). */
 export const WATER_WIND_MAX = 12;
 /**
  * Metres per second the murky lakes' skin slides along the wind, per unit of the wind's direction: duckweed
- * pushed over the surface, its rafts keeping their shape. Mirrored in shaders/water.fragment.fx. The offset is
+ * pushed over the surface, its rafts keeping their shape. Mirrored in water.fragment.glsl. The offset is
  * the wind's integral over the run, a few thousand metres after a day, the order of the world coordinates
  * the skin's hash already takes, so no fold is added.
  */
 export const WATER_SKIN_DRIFT = 0.04;
-/** Screen-space refraction offset per unit of ripple slope, in uv, at 1 m of depth. Mirrored in shaders/water.fragment.fx. */
+/** Screen-space refraction offset per unit of ripple slope, in uv, at 1 m of depth. Mirrored in water.fragment.glsl. */
 export const WATER_REFRACT = 0.02;
-/** Depth at which the refraction offset stops growing (spec §5.2). Mirrored in shaders/water.fragment.fx. */
+/** Depth at which the refraction offset stops growing (spec §5.2). Mirrored in water.fragment.glsl. */
 export const WATER_REFRACT_DEPTH = 1;
-/** The least depth the refraction offset is scaled by on the high tier, so the ripples still bend the bed under a shallow shelf (0 where the surface meets the bed). Mirrored in shaders/water.fragment.fx. */
+/** The least depth the refraction offset is scaled by on the high tier, so the ripples still bend the bed under a shallow shelf (0 where the surface meets the bed). Mirrored in water.fragment.glsl. */
 export const WATER_REFRACT_MIN = 0.3;
 
 /** Schlick's approximation to Fresnel reflectance; stays within 6 % absolute of the exact unpolarised curve for n = 1.33 (the worst is 0.058 at 85°). */
@@ -130,7 +130,7 @@ export function alphaFor(kd: readonly [number, number, number], depth: number, c
   return 1 - (1 - fresnelSchlick(cosTheta)) * Math.exp(-2 * meanKd(kd) * Math.max(0, depth));
 }
 
-/** Cox and Munk's slope variance for a wind of U m/s: σ² = A + B·U. Mirrored in shaders/oceanShade.fragment.fx. */
+/** Cox and Munk's slope variance for a wind of U m/s: σ² = A + B·U. Mirrored in oceanShade.fragment.glsl. */
 export const WATER_COX_MUNK_A = 0.003;
 export const WATER_COX_MUNK_B = 0.00512;
 
@@ -153,7 +153,7 @@ export function roughnessFor(wind01: number, shelter: number): number {
 
 /**
  * The sea's roughness from the slope variance its normal leaves undrawn, per pixel in the shader (the
- * roughness line `waterPlugin.ts` rewrites): √√(2σ²) as `roughnessFor`, at most 1.
+ * roughness line in `lite/seaWgsl.ts`): √√(2σ²) as `roughnessFor`, at most 1.
  */
 export function roughnessFromVariance(variance: number): number {
   return Math.min(Math.sqrt(Math.sqrt(2 * Math.max(0, variance))), 1);
@@ -162,14 +162,14 @@ export function roughnessFromVariance(variance: number): number {
 /**
  * The least slope variance the sea's roughness keeps however much of Cox and Munk's the drawn waves carry:
  * half their calm intercept, so a glassy sea's glint stays wider than a pixel. Mirrored in
- * shaders/oceanShade.fragment.fx.
+ * oceanShade.fragment.glsl.
  */
 export const OCEAN_SLOPE_VAR_FLOOR = 0.0015;
 
 /**
  * The slope variance left to the sea's roughness (spec §7.3): Cox and Munk's for the wind sea's wind
  * `u10` (m/s), scaled by the shelter, less `drawn`, the variance the drawn waves already put in the
- * normal; never under OCEAN_SLOPE_VAR_FLOOR. `oceanUndrawnVariance` in shaders/oceanShade.fragment.fx.
+ * normal; never under OCEAN_SLOPE_VAR_FLOOR. `oceanUndrawnVariance` in oceanShade.fragment.glsl.
  */
 export function undrawnSlopeVariance(u10: number, shelter: number, drawn: number): number {
   return Math.max(coxMunkVariance(u10) * shelter - drawn, OCEAN_SLOPE_VAR_FLOOR);
@@ -178,7 +178,7 @@ export function undrawnSlopeVariance(u10: number, shelter: number, drawn: number
 /**
  * A drawn wave keeps all of its share while its phase turns by at most a quarter turn over one step of the
  * drawing (a pixel, or a ring's cells): four steps a wavelength; none from a half turn, two steps, where it
- * would alias. Mirrored in shaders/oceanSurface.fx.
+ * would alias. Mirrored in oceanSurface.glsl.
  */
 export const OCEAN_RESOLVE_PHASE_LO = Math.PI / 2;
 export const OCEAN_RESOLVE_PHASE_HI = Math.PI;
@@ -209,7 +209,7 @@ export function resolvedSlopeVariance(waves: readonly { amplitude: number; k: nu
 
 /**
  * The share of the swell's interpolated normal a pixel keeps (`oceanSwellPixelKeep` in
- * shaders/oceanSurface.fx), `dpx` and `dpy` how far the pixel's undisplaced point moves across one pixel
+ * oceanSurface.glsl), `dpx` and `dpy` how far the pixel's undisplaced point moves across one pixel
  * of the screen in x and in y: `resolvedShare` of the phase's turn over the larger of the two steps along
  * the swell's travel (`travelX`, `travelZ`, a unit vector), at the deep-water wavenumber of the peak
  * period `tp` (s), 4π²/(g·tp²). Where a pixel spans more than the ring's cells, the vertex's normal still
@@ -234,7 +234,7 @@ export function swellPixelKeep(
 export const OCEAN_RING_REACH = WATER_RING_CELLS / 4;
 
 /**
- * The cove's end fade (m), `OCEAN_COVE_END` in oceanSwash.fx: the
+ * The cove's end fade (m), `OCEAN_COVE_END` in oceanSwash.glsl: the
  * sea's cove share (`oceanCoveShare`) is 1 across the cove and falls to 0
  * this far past either end, as the wet ground's does (`WET_COVE_END`). Outside
  * the bed's square the sea's depth takes the profile's only by that share.
@@ -254,7 +254,7 @@ export function oceanRingCell(dx: number, dz: number): number {
  * period, OCEAN_INNER_COVER of the surface stays in foam, weighted by the breaking weight B (spec §5: foam
  * over 0.35 to 0.55 of the surf zone on average, nearly all of its inner part) (`foamShare`). The lace's
  * cell (m), its drift along the swell's travel (m/s) and its edge's softness. Mirrored in
- * shaders/oceanShade.fragment.fx.
+ * oceanShade.fragment.glsl.
  */
 export const OCEAN_FOAM_ALBEDO = 0.4;
 export const OCEAN_FOAM_ALBEDO_OLD = 0.06;
@@ -273,7 +273,7 @@ export const OCEAN_LACE_SOFT = 0.06;
  * points of a square kilometre (`laceLevel`, which gives the mean cover within 0.002 of the share with the
  * soft edge centred on it). OCEAN_LACE_ONSET: the share under which the lace is held back. OCEAN_DETAIL_LO and
  * HI: a pattern is drawn whole while a pixel spans under the first of its size and has faded to its mean by
- * the second. Mirrored in shaders/oceanShade.fragment.fx.
+ * the second. Mirrored in oceanShade.fragment.glsl.
  */
 export const OCEAN_LACE_WEIGHT = 0.65;
 export const OCEAN_LACE_FINE = 0.37;
@@ -296,7 +296,7 @@ export const OCEAN_DETAIL_HI = 0.4;
  * cover is Callaghan's coverage by construction. OCEAN_CAP_CYCLES: the cycles after which the hashed
  * pattern of which caps fire repeats, the clock folded by that many periods. And OCEAN_CAP_SOFT, the soft
  * edge (in standard deviations of its height) of the caps on a drawn wind sea (`oceanWhitecap`). Mirrored
- * in shaders/oceanShade.fragment.fx.
+ * in oceanShade.fragment.glsl.
  */
 export const OCEAN_CAP_CELL = 5;
 export const OCEAN_CAP_PERIOD = 5;
@@ -321,7 +321,7 @@ function mix(a: number, b: number, t: number): number {
 }
 
 /**
- * The water's sine-free hash of a lattice point (`waterSkinHash`, shaders/water.fragment.fx), in doubles:
+ * The water's sine-free hash of a lattice point (`waterSkinHash`, water.fragment.glsl), in doubles:
  * the GPU's floats differ in the last bits and no more.
  */
 export function waterSkinHash(x: number, z: number): number {
@@ -335,7 +335,7 @@ export function waterSkinHash(x: number, z: number): number {
   return fract((a + b) * c);
 }
 
-/** The water's value noise (`waterSkinNoise`, shaders/water.fragment.fx): the hash on the unit lattice, smoothly interpolated. */
+/** The water's value noise (`waterSkinNoise`, water.fragment.glsl): the hash on the unit lattice, smoothly interpolated. */
 export function waterSkinNoise(x: number, z: number): number {
   const ix = Math.floor(x);
   const iz = Math.floor(z);
@@ -440,7 +440,7 @@ export function capProfile(r: number): number {
  * are at most 1/OCEAN_WIND_TILE_CELLS of the field's tile, and none of it from twice that; the medium loop's
  * least scale is the wind's floor's, (WIND_SEA_U_FLOOR / WIND_SEA_U_REF)²; the low tier's bump draws its
  * slope at OCEAN_BUMP_HS metres of the wind sea's height, scaled with it to at most OCEAN_BUMP_MAX. Mirrored in
- * shaders/oceanSurface.fx and shaders/oceanShade.fragment.fx.
+ * oceanSurface.glsl and oceanShade.fragment.glsl.
  */
 export const OCEAN_WIND_TILE_CELLS = 16;
 export const OCEAN_LOOP_SCALE_MIN = 0.0025;
@@ -557,7 +557,7 @@ export function oceanCapCells(
  * reflection r is lifted to y = WATER_HORIZON (its xz shortened to keep it
  * unit), and the normal that reflects `view` exactly onto that ray is the
  * half-vector normalize(view + r). One step, no iteration; mirrors
- * waterHorizonNormal in shaders/water.fragment.fx exactly. `view` points
+ * waterHorizonNormal in water.fragment.glsl exactly. `view` points
  * from the surface to the eye, above the water.
  */
 export function horizonSafeNormal(

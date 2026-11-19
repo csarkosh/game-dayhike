@@ -5,13 +5,13 @@ const frame = (id, functionName, url = "") => ({ id, callFrame: { functionName, 
 const NODES = {
   root: frame(1, "(root)"),
   olympic: frame(2, "a", "https://x/assets/index-abc.js"),
-  babylon: frame(3, "b", "https://x/assets/thinEngine.pure-def.js"),
+  babylon: frame(3, "b", "https://x/assets/pbr-renderable-def.js"),
   link: frame(4, "getProgramParameter"),
   tex: frame(5, "texImage2D"),
   idle: frame(6, "(idle)"),
 };
 // What the report's maps would say of a frame: its name and source, or null for a native call.
-const SOURCES = new Map([[NODES.olympic.callFrame, "olympicSample src/sim/olympic.ts:778"], [NODES.babylon.callFrame, "createShaderProgram bjs/Engines/thinEngine.pure.js:1718"]]);
+const SOURCES = new Map([[NODES.olympic.callFrame, "olympicSample src/sim/olympic.ts:778"], [NODES.babylon.callFrame, "buildPipeline babylon-lite/index.js:1718"]]);
 const sourceOf = (c) => SOURCES.get(c) ?? null;
 // 40 ms sampling the world, 30 ms in a link, 20 ms in an upload, 50 ms idle, then 10 ms more sampling.
 const SAMPLES = {
@@ -33,18 +33,20 @@ describe("a page stop's causes", () => {
     const named = (source) => causeOf({ functionName: "f", url: "u" }, [], () => source);
     expect(named("r src/game/forestField.ts:498")).toBe("forest and ground cover (src/game)");
     expect(named("update src/game/clipmap.ts:261")).toBe("terrain and water (src/game)");
-    expect(named("sync src/game/renderer.ts:3160")).toBe("other game code");
-    expect(named("V bjs/Engines/Processors/shaderProcessor.js:308")).toBe("shader text processing");
-    expect(named("render bjs/scene.pure.js:3806")).toBe("Babylon");
+    expect(named("sync src/game/lite/renderer.ts:3160")).toBe("other game code");
+    expect(named("fill src/game/lite/terrainMeshes.ts:508")).toBe("terrain and water (src/game)");
+    expect(named("cut src/game/lite/bladeMeshes.ts:120")).toBe("forest and ground cover (src/game)");
+    expect(named("renderFrame babylon-lite/index.js:3806")).toBe("Babylon Lite");
+    expect(named("renderFrame ../node_modules/@babylonjs/lite/index.js:3806")).toBe("Babylon Lite");
   });
   it("gives an unknown native call its nearest caller's cause", () => {
-    expect(causeOf({ functionName: "getError", url: "" }, [NODES.babylon.callFrame], sourceOf)).toBe("Babylon");
+    expect(causeOf({ functionName: "getError", url: "" }, [NODES.babylon.callFrame], sourceOf)).toBe("Babylon Lite");
   });
   it("falls back to other when there are no maps", () => {
     expect(causeOf(NODES.olympic.callFrame, [], () => null)).toBe("other");
   });
   it("only names causes it lists", () => {
-    for (const c of ["world sampling (src/sim)", "shader links", "texture uploads", "Babylon", "garbage collection", "other"]) expect(CAUSES).toContain(c);
+    for (const c of ["world sampling (src/sim)", "shader links", "texture uploads", "Babylon Lite", "garbage collection", "other"]) expect(CAUSES).toContain(c);
   });
   it("sums the time inside the stops by cause, leaving out idle and what is outside them", () => {
     const { ms, total } = stopsByCause(SAMPLES, [[1000, 1140]], sourceOf);

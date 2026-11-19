@@ -55,7 +55,7 @@ renderer, which is what makes the netcode testable headless and a replay bit-ide
 runs peer to peer over WebRTC; a small signaling server introduces the party and steps out, so
 the game costs nothing to keep online. Solo play is a host with no peers, the same code path.
 
-Built with TypeScript, Babylon.js 9, Vite, Vitest and WebRTC. The details, from the world's
+Built with TypeScript, Babylon Lite 1, Vite, Vitest and WebRTC. The details, from the world's
 generation to the rendering to the hosting, are in [`ARCHITECTURE.md`](ARCHITECTURE.md) and
 [`docs/`](docs/).
 

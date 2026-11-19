@@ -5,7 +5,7 @@
 // could fetch `/assets/models/<id>.glb` by name. They now go through
 // Vite's `?url` pipeline (client/src/game/assetUrls.ts) and land at
 // `/assets/<id>-<hash>.glb`, where the hash changes whenever the bytes do.
-// Ground textures (`client/src/game/groundMaps.ts`, `terrainTexture.ts`) are
+// Ground textures (`client/src/game/groundLayers.ts`) are
 // imported with `?url` the same way and land at `/assets/<id>-<hash>.webp`.
 //
 // The URL is therefore discovered the way check #3 already discovers the
@@ -94,7 +94,7 @@ export function findAssetUrl(source, id, ext) {
 }
 
 /** The films and the title still a built site references: read from the entry and every chunk it
- * names together, since the asset-url map is in a chunk (`engineChoice-*.js`), not the entry. */
+ * names together, since the asset-url map is in a chunk, not the entry. */
 export function filmUrls(source) {
   return {
     introFilm: findAssetUrl(source, 'intro', 'mp4'),
@@ -123,63 +123,20 @@ export function findTextureUrls(source, ids) {
 }
 
 /**
- * The URLs a built chunk references for the WebGPU engine's translators
- * (`.wasm`): `glslang` and `twgsl`, the builds `@babylonjs/core` ships, which
- * `client/src/game/gpuEngine.ts` imports with `?url`. Same matching rules as
- * `findModelUrls`. They are named by the WebGPU chunk, not the entry chunk:
- * `findChunkName` finds that first.
- */
-export function findWasmUrls(source, ids) {
-  return findAssetUrls(source, ids, 'wasm');
-}
-
-/**
- * The URL a built chunk references for `tier`'s WGSL map
- * (`wgsl-map-<tier>-<hash>.json`), the translations the build made of the
- * shader corpus's stages recorded on that tier, which
- * `client/src/game/gpuEngine.ts` imports from `virtual:dayhike-wgsl-map`, or
- * null. Same matching rules as `findModelUrls`; named by the WebGPU chunk.
- */
-export function findMapUrl(source, tier) {
-  const id = `wgsl-map-${tier}`;
-  return findAssetUrls(source, [id], 'json')[id] ?? null;
-}
-
-/**
- * The file name (`<name>-<hash>.js`) of a chunk the entry chunk splits out, or
- * null. Only the file name: the entry names a dynamic chunk both as
- * `./gpuEngine-<hash>.js` (the import itself) and as
- * `assets/gpuEngine-<hash>.js` (Vite's preload map, relative to the base), so
- * the caller resolves the name against the entry chunk's own URL, which sits
- * in the same directory. The character before the name must be a `/` or a
- * quote, so `gpuEngine` cannot match inside a longer chunk's name.
- */
-export function findChunkName(source, name) {
-  const escaped = name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-  const match = source.match(
-    new RegExp(`[/"'\`](${escaped}-[A-Za-z0-9_-]{${HASH_LENGTH}}\\.js)["'\`]`),
-  );
-  return match ? match[1] : null;
-}
-
-/**
  * Every chunk file (`<name>-<hash>.js`) the entry chunk names, once each, in
  * the order first met: its static imports, its dynamic imports and Vite's
  * preload map alike. The model map lives in whichever chunk the build put
  * the asset urls in (`client/src/game/assetUrls.ts`), which moved out of the
  * entry once the title page stopped building a scene; a check that reads the
- * entry alone would then miss every model.
+ * entry alone would then miss every model. A chunk's own name may hold
+ * hyphens (`pbr-renderable-<hash>.js`): the hash is the eight characters
+ * before `.js`, whatever stands before them.
  */
 export function findChunkNames(source) {
   const names = [];
-  for (const match of source.matchAll(new RegExp(`[/"'\`]([A-Za-z0-9_.]+-[A-Za-z0-9_-]{${HASH_LENGTH}}\\.js)["'\`]`, 'g'))) {
+  for (const match of source.matchAll(new RegExp(`[/"'\`]([A-Za-z0-9_.-]+-[A-Za-z0-9_-]{${HASH_LENGTH}}\\.js)["'\`]`, 'g'))) {
     const name = match[1];
     if (!names.includes(name)) names.push(name);
   }
   return names;
-}
-
-/** Whether `bytes` begin with the WebAssembly magic, `00 61 73 6d` (`\0asm`). */
-export function isWasm(bytes) {
-  return bytes.length >= 4 && bytes[0] === 0x00 && bytes[1] === 0x61 && bytes[2] === 0x73 && bytes[3] === 0x6d;
 }

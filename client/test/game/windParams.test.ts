@@ -14,7 +14,7 @@ describe("wind frequencies", () => {
     }
     expect(WIND_TIME_WRAP).toBe(300);
   });
-  it("keep the gust ω values foliagePlugin.ts's GLSL inlines", () => {
+  it("keep the gust ω values the foliage's stage is written with", () => {
     expect(WIND_OMEGA_GUST).toBe(0.3769911184);
     expect(WIND_OMEGA_GUST2).toBe(0.879645943);
   });

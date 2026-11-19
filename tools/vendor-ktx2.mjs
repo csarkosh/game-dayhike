@@ -5,10 +5,10 @@
 //
 // Package-layout note (@babylonjs/ktx2decoder@9.18.0): the published npm
 // package is ESM-only, meant for bundler consumption — it does NOT ship the
-// prebuilt UMD "babylon.ktx2Decoder.js" that KhronosTextureContainer2 (in
-// @babylonjs/core) expects to fetch as `URLConfig.jsDecoderModule`. That URL
-// is loaded via a classic <script src> on the main thread, or `importScripts`
-// inside the KTX2 worker — both require plain, non-module script syntax that
+// prebuilt UMD "babylon.ktx2Decoder.js" that Babylon Lite's KTX2 loader is
+// pointed at (`setKtx2DecoderUrl`, `client/src/game/lite/forestModels.ts`).
+// That URL is loaded as a classic script, on the main thread or by
+// `importScripts` inside the KTX2 worker — both require plain, non-module script syntax that
 // sets a global `KTX2DECODER`, which is exactly what the CDN's prebuilt file
 // does. Rather than reach for the CDN (even once), we bundle that global
 // script ourselves from the installed ESM sources with esbuild, which is
@@ -49,9 +49,9 @@ for (const src of wanted) {
 }
 
 // 2. Bundle the ESM entry point into a global-exposing IIFE standing in for
-//    the CDN's babylon.ktx2Decoder.js. KhronosTextureContainer2 does
-//    `KTX2DecoderModule = KTX2DECODER` (a bare global read) after loading
-//    this script, so every class the config code touches
+//    the CDN's babylon.ktx2Decoder.js. The loader reads the global
+//    `KTX2DECODER` after loading this script, so every class its
+//    configuration touches
 //    (LiteTranscoder_UASTC_*, MSCTranscoder, ZSTDDecoder, KTX2Decoder,
 //    Transcoder, WASMMemoryManager) must be a named export reachable off the
 //    IIFE's global — esbuild's `globalName` option does exactly that.

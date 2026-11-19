@@ -341,15 +341,15 @@ export class SwashTable {
 }
 
 /** The sheet's floor (m), thinner being no sheet, and the least front its
- * taper divides by: `SWASH_SHEET_MIN` in oceanSwash.fx. */
+ * taper divides by: `SWASH_SHEET_MIN` in `lite/seaWgsl.ts`. */
 export const SWASH_SHEET_MIN = 0.001;
 
 /** The depth (m) under which the sea's fragment stage takes the sea as
  * resting on the ground, a hundredth of a millimetre: `OCEAN_REST_EPS` in
- * oceanSwash.fx, as waterLights.fragment.fx holds the depth to it. */
+ * `lite/seaWgsl.ts`, to which the sea's fragment stage holds the depth. */
 export const SWASH_REST_EPS = 1e-5;
 
-/** The column `oceanSwash.fx` reads at world z: the row's nearest texel, the
+/** The column the sea's WGSL (`lite/seaWgsl.ts`) reads at world z: the row's nearest texel, the
  * cove's centre z0 at column SWASH_COLUMNS / 2, held to the table; 0 for a z
  * that is not a number, as `columnOf` has it. */
 export function swashColumnAt(z: number, z0: number): number {
@@ -360,7 +360,7 @@ export function swashColumnAt(z: number, z0: number): number {
 /**
  * The sheet's thickness (m) at d, metres up the face from the still
  * waterline (negative seaward), and world z, read from the table's data as
- * `swashSheet` in oceanSwash.fx reads its texture: the column's thickness
+ * `swashSheet` in `lite/seaWgsl.ts` reads its texture: the column's thickness
  * at the waterline, thinning to nothing at its front, held to it seaward,
  * none past the front or seaward of the face's toe.
  */
@@ -372,8 +372,8 @@ export function sheetAt(d: number, z: number, data: Float32Array, cove: SwashCov
   return cover * thickness * Math.min(1, Math.max(0, 1 - d / Math.max(front, SWASH_SHEET_MIN)));
 }
 
-/** The cove's end fade (m): `OCEAN_COVE_END` in oceanSwash.fx, as the wet
- * ground's (`WET_COVE_END`, wet.fragment.fx). */
+/** The cove's end fade (m): `OCEAN_COVE_END` in `lite/seaWgsl.ts`, as the wet
+ * ground's (`WET_COVE_END`, `lite/wetWgsl.ts`). */
 export const SWASH_COVE_END = 30;
 
 /** GLSL's smoothstep: x held to the edges, then 3t² − 2t³. */
@@ -382,8 +382,8 @@ function smoothstep(e0: number, e1: number, x: number): number {
   return t * t * (3 - 2 * t);
 }
 
-/** The cove's share at world z, as `oceanCoveShare` (oceanSwash.fx) and the
- * wet ground's (wet.fragment.fx) make it: 1 across the cove, 0 past
+/** The cove's share at world z, as `oceanCoveShare` (`lite/seaWgsl.ts`) and the
+ * wet ground's (`wetCoveShare`, `lite/wetWgsl.ts`) make it: 1 across the cove, 0 past
  * SWASH_COVE_END beyond either end. */
 export function coveShareAt(z: number, cove: SwashCove): number {
   return 1 - smoothstep(cove.halfWidth - SWASH_COVE_END, cove.halfWidth + SWASH_COVE_END, Math.abs(z - cove.z0));
@@ -391,9 +391,9 @@ export function coveShareAt(z: number, cove: SwashCove): number {
 
 /** How far the sheet lifts the sea over ground `depth` metres below the
  * level (negative above it), the swell's height `swell` already on the
- * surface, as `swashLift` in oceanSwash.fx does: to the sheet's top where it
+ * surface, as `swashLift` in `lite/seaWgsl.ts` does: to the sheet's top where it
  * stands higher than the still sea, and wherever the cove has any share, its
- * ends' fades whole (GLSL's `step(1.0e-6, share)`), up to the ground wherever
+ * ends' fades whole (`step(1.0e-6, share)` in `swashLift`), up to the ground wherever
  * the surface would lie under it, so the sea rests on the pebbles between
  * sheets, its depth there 0. */
 export function sheetLiftAt(

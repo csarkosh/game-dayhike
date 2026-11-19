@@ -1,0 +1,5 @@
+// The game's shell on Babylon.js 9.18.0: the ground's rings the renderer hands the lake's mirror and its shore panorama (client/src/game/renderer.ts), a run of its lines
+  for (const mesh of clipmap?.meshes.slice(0, 5) ?? []) {
+    lakeMirror?.register(mesh, mirrorTerrain);
+    lakePanorama?.register(mesh, mirrorTerrain);
+  }

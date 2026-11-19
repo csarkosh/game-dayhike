@@ -78,7 +78,7 @@ export const CLIFF_BURY_MAX = 16;
 export const CLIFF_BURY_SAMPLE = 1;
 /** The material the cliff boxes carry: the renderer leaves them undrawn, as
  * it does trunks and boulders, because the cliff meshes draw the module
- * itself (`game/propMeshes.ts`). */
+ * itself (`game/lite/propMeshes.ts`). */
 export const CLIFF_MATERIAL = "cliff";
 
 /**

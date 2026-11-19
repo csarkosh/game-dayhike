@@ -1,6 +1,6 @@
 /**
  * The wind sea's FFT on the CPU, Babylon-free and tested under Node: the
- * reference the high tier's WebGPU passes are held to (`oceanGpuFft.ts`), and
+ * reference the high tier's WebGPU passes are held to (`lite/seaFft.ts`), and
  * the engine of the medium tier's loop, baked on a worker.
  *
  * Conventions, shared with the WGSL in shaders/oceanFft*.compute.wgsl:
@@ -69,8 +69,8 @@ export function fftWaveIndex(m: number, n: number): number {
  * log2(n) stages each read one half of the scratch and write the other,
  * invocation j of n/2 taking the butterfly of elements j and j + n/2. The
  * lines marked `stockham:` are the pass's own, token for token but for
- * WGSL's casts, its unsigned literals and its constant N for n
- * (`oceanGpuFft.test.ts` compares them). `scratchRe` and `scratchIm` hold at
+ * WGSL's casts, its unsigned literals and its constant N for n.
+ * `scratchRe` and `scratchIm` hold at
  * least 2n values.
  */
 export function fftInverseLine(

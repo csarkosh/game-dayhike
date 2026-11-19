@@ -1,6 +1,6 @@
 // What a page's stops were spent on: each profile sample inside a stop named by its cause. A
 // native call is named by what it is (a shader link, a texture upload); a script's frame by where
-// its source lives (the simulation's sampling, the game's builders, Babylon). `sourceOf` is the
+// its source lives (the simulation's sampling, the game's builders, Babylon Lite). `sourceOf` is the
 // report's: a frame's name and source path from the build's maps, or null without them.
 
 /** The causes, in the order they print. */
@@ -8,9 +8,8 @@ export const CAUSES = [
   "world sampling (src/sim)",
   "shader links",
   "texture uploads",
-  "Babylon",
+  "Babylon Lite",
   "garbage collection",
-  "shader text processing",
   "forest and ground cover (src/game)",
   "terrain and water (src/game)",
   "other game code",
@@ -27,10 +26,10 @@ const BUFFERS = /^(bufferData|bufferSubData)$/;
 /** A sourced frame's cause, from its source path. */
 function ofSource(source) {
   if (/(^|[\s/])src\/sim\//.test(source)) return "world sampling (src/sim)";
-  if (/Engines\/Processors\//.test(source)) return "shader text processing";
-  if (/@babylonjs|(^|[\s/])bjs\//.test(source)) return "Babylon";
-  if (/src\/game\/(clipmap|terrain|facePatch|water|lake|ocean|swash|bedHeight|rockRelief)/.test(source)) return "terrain and water (src/game)";
-  if (/src\/game\/(forest|clutter|impostor|blades|duff)/.test(source)) return "forest and ground cover (src/game)";
+  // The library the game is drawn with, by its package's path or the report's short form of it.
+  if (/@babylonjs\/lite\/|(^|[\s/])babylon-lite\//.test(source)) return "Babylon Lite";
+  if (/src\/game\/(?:lite\/)?(clipmap|terrain|facePatch|water|lake|ocean|sea|swash|bedHeight|rockRelief)/.test(source)) return "terrain and water (src/game)";
+  if (/src\/game\/(?:lite\/)?(forest|clutter|impostor|blade|duff)/.test(source)) return "forest and ground cover (src/game)";
   if (/(^|[\s/])src\//.test(source)) return "other game code";
   return "other";
 }

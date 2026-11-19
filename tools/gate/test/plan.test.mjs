@@ -7,11 +7,11 @@ describe('isLight', () => {
       expect(isLight(path)).toBe(true);
     }
   });
-  it('takes the WGSL tools as the game, since they make the maps the build ships', () => {
-    expect(isLight('tools/wgsl/build-map.mjs')).toBe(false);
+  it('takes the kernel\'s tools as the game, since they make the module the build ships', () => {
+    expect(isLight('tools/rust/build.mjs')).toBe(false);
   });
   it('takes the game, the server, the build, dependencies, CI and the credits the game renders as the game', () => {
-    for (const path of ['client/src/game/app.ts', 'server/src/index.ts', 'package.json', 'package-lock.json', '.github/workflows/test.yml', 'CREDITS.md', 'client/shaders/corpus/ab/1.vertex.glsl', 'eslint.config.js']) {
+    for (const path of ['client/src/game/app.ts', 'server/src/index.ts', 'package.json', 'package-lock.json', '.github/workflows/test.yml', 'CREDITS.md', 'client/vite.config.ts', 'eslint.config.js']) {
       expect(isLight(path)).toBe(false);
     }
   });

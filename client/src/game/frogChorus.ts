@@ -30,7 +30,7 @@
  *
  * After each step the chorus tells how much of it a player's nearness holds
  * silent (`hushedShare`) and whether the Hollow does (`stopped`), for the far
- * chorus under the voices (`waterLife.ts`).
+ * chorus under the voices (`waterLifeScene.ts`).
  *
  * Timings are drawn from `random`, each player's own; a voice's rank and
  * loudness come from the world's seed. Nothing is allocated per step: the

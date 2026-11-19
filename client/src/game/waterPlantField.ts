@@ -1,6 +1,6 @@
 /**
  * Where a lake's plants stand, as the sim's clutter places them: the sampling
- * half of `waterPlants.ts`, Babylon-free so the world's worker can do it
+ * half of `lite/waterPlantMeshes.ts`, Babylon-free so the world's worker can do it
  * ahead of the build (`preparedScene.ts`).
  */
 import { CLUTTER_LILY, CLUTTER_REED, clutterInRect, type ClutterInstance } from "../sim/clutter.js";

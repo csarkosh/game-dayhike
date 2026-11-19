@@ -3,7 +3,7 @@ import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 
 /**
- * `app.ts` builds the peer-to-peer networking and a WebGL renderer, so nothing
+ * `app.ts` builds the peer-to-peer networking and a WebGPU renderer, so nothing
  * here can start a hike under Node: the surf is wired as the lake's life is,
  * and read from the source as `appWaterLife.test.ts` reads that. The failure
  * it guards is the silent one: a shell built and never fed sounds nothing,

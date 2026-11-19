@@ -1,65 +1,39 @@
-import { afterEach, describe, expect, it } from "vitest";
-import { NullEngine } from "@babylonjs/core/Engines/nullEngine.js";
-import { Scene } from "@babylonjs/core/scene.js";
-import { Vector3 } from "@babylonjs/core/Maths/math.vector.js";
-import { ShaderMaterial } from "@babylonjs/core/Materials/shaderMaterial.js";
-import { Constants } from "@babylonjs/core/Engines/constants.js";
-import { CROWD_CARDS_NAME, CROWD_CARD_WIDE, createCrowdCards } from "../../src/game/crowdCards.js";
-import { CROWD_RISE_S, figureOf, type CrowdFigure } from "../../src/game/crowdField.js";
-import { SHADE_FAR_M, SHADE_FAR_SHARE, SHADE_NEAR_M } from "../../src/game/entityViews.js";
+import { describe, expect, it } from "vitest";
+import {
+  CROWD_CARDS_TO_M, CROWD_CARD_FLOATS, CROWD_CARD_FOLD_S, CROWD_CARD_VERTICES, CROWD_CARD_WIDE, crowdCardIndices, crowdCardTime, crowdCardVertices, writeCrowdCards,
+} from "../../src/game/crowdCards.js";
+import { CROWD_MIST_M, CROWD_RISE_S, figureOf, type CrowdFigure } from "../../src/game/crowdField.js";
+import { SHADE_FAR_M, SHADE_FAR_SHARE, SHADE_NEAR_M } from "../../src/game/entityPoses.js";
 import { HOLLOW_FIGURE_M } from "../../src/game/hollowLook.js";
-import { MAIN_LAYER, SHADE_LAYER } from "../../src/game/shadeSilhouette.js";
 
-const EYE = new Vector3(0, 11.7, 0);
-const TINT: readonly [number, number, number] = [0.3, 0.3, 0.3];
+const EYE = { x: 0, y: 11.7, z: 0 };
 const figure = (id: number, x: number, z: number, over: Partial<CrowdFigure> = {}): CrowdFigure => ({ id, x, z, born: 0, gone: -1, rise: 0, ...figureOf(id, 1), ...over });
 
 describe("the crowd's cards", () => {
-  let engine: NullEngine | undefined, scene: Scene | undefined;
-  const make = (most = 4) => {
-    engine = new NullEngine();
-    scene = new Scene(engine);
-    return createCrowdCards(scene, most);
-  };
-  afterEach(() => { scene?.dispose(); engine?.dispose(); scene = undefined; engine = undefined; });
-
-  it("is one mesh with two materials: in the frame a dark body with a rim the mist lights, in the shade mask a shade", () => {
-    const cards = make(4);
-    const m = scene!.getMaterialByName(CROWD_CARDS_NAME) as ShaderMaterial;
-    // In the frame: premultiplied, as the way's mist is, so the body hides what is behind it and its rim is added.
-    expect(m.alphaMode).toBe(Constants.ALPHA_PREMULTIPLIED);
-    expect(m.disableDepthWrite).toBe(true);
-    expect(m.backFaceCulling).toBe(false);
-    expect(m.options.attributes).toEqual(["position", "crowdCard", "crowdStir"]);
-    expect(m.options.uniforms).toEqual(["view", "viewProjection", "crowdTime", "crowdPass", "crowdTint"]);
-    expect((m as unknown as { _floats: Record<string, number> })._floats.crowdPass).toBe(1);
-    // In the mask: the same shape, written as a shade is.
-    const mask = cards.maskMaterial as ShaderMaterial;
-    expect(mask.name).toBe(`${CROWD_CARDS_NAME}Mask`);
-    expect(mask.alphaMode).toBe(Constants.ALPHA_COMBINE);
-    expect((mask as unknown as { _floats: Record<string, number> })._floats.crowdPass).toBe(0);
-    expect(scene!.meshes.length).toBe(1);
-    expect(cards.mesh).toBe(scene!.meshes[0]);
-    expect(cards.mesh.material).toBe(m);
-    expect(cards.mesh.layerMask).toBe(SHADE_LAYER | MAIN_LAYER);
-    // Before the mist in the frame's blended draws, so the mist veils it and it stands in the mist, never on it.
-    expect(cards.mesh.alphaIndex).toBe(0);
-    expect(cards.mesh.isPickable).toBe(false);
-    expect(cards.mesh.getTotalVertices()).toBe(4 * 4);
-    expect(cards.mesh.getTotalIndices()).toBe(4 * 6);
+  it("have room for every card there may be: a quad a figure, half as wide as it is tall, out past the mist's reach", () => {
+    const v = crowdCardVertices(4);
+    expect(CROWD_CARD_VERTICES).toBe(4);
+    expect(v.positions.length).toBe(4 * CROWD_CARD_VERTICES * CROWD_CARD_FLOATS.position);
+    expect(v.cards.length).toBe(4 * CROWD_CARD_VERTICES * CROWD_CARD_FLOATS.card);
+    expect(v.stirs.length).toBe(4 * CROWD_CARD_VERTICES * CROWD_CARD_FLOATS.stir);
+    const indices = crowdCardIndices(4);
+    expect(indices.length).toBe(4 * 6);
+    expect([...indices.subarray(0, 6)]).toEqual([0, 2, 1, 1, 2, 3]);
     expect(CROWD_CARD_WIDE).toBe(0.5);
+    // The body is gone into the mist before the card is.
+    expect(CROWD_CARDS_TO_M).toBe(36);
+    expect(CROWD_CARDS_TO_M).toBeGreaterThan(CROWD_MIST_M);
   });
 
   it("stands a card on each figure's ground, as tall as the figure, whole within 20 m and fainter beyond, by how much of it is there", () => {
-    const cards = make(4);
+    const out = crowdCardVertices(4);
     const a = figure(1, 15, 0, { size: 1 }), b = figure(2, 0, -35, { size: 1.5, born: 100 });
-    expect(cards.sync([a, b], [3, 7], EYE, 100 + CROWD_RISE_S / 2, new Set(), 0, 60, [0.3, 0.2, 0.25])).toBe(2);
-    expect((scene!.getMaterialByName(CROWD_CARDS_NAME) as unknown as { _vectors3: Record<string, Vector3> })._vectors3.crowdTint!.asArray()).toEqual([0.3, 0.2, 0.25]);
-    const at = cards.mesh.getVerticesData("position")!, card = cards.mesh.getVerticesData("crowdCard")!, stir = cards.mesh.getVerticesData("crowdStir")!;
+    expect(writeCrowdCards(out, 4, [a, b], [3, 7], EYE, 100 + CROWD_RISE_S / 2, new Set(), 0, 60)).toBe(2);
+    const at = out.positions, card = out.cards, stir = out.stirs;
     for (let v = 0; v < 4; v++) {
       expect([at[v * 3], at[v * 3 + 1], at[v * 3 + 2]]).toEqual([15, 3, 0]);
       expect(card[v * 4 + 2]).toBeCloseTo(HOLLOW_FIGURE_M, 5);
-      // Wholly there and within 20 m: whole in the mask.
+      // Wholly there and within 20 m: whole.
       expect(card[v * 4 + 3]).toBeCloseTo(1, 5);
     }
     expect([0, 1, 2, 3].map((v) => [card[v * 4], card[v * 4 + 1]])).toEqual([[-1, 0], [1, 0], [-1, 1], [1, 1]]);
@@ -75,34 +49,23 @@ describe("the crowd's cards", () => {
     expect(card[8 * 4 + 3]).toBe(0);
   });
 
-  it("draws only the figures in its band of distance that no other drawer holds, and says how many", () => {
-    const cards = make(4);
+  it("writes only the figures in its band of distance that no other drawer holds, and says how many", () => {
+    const out = crowdCardVertices(4);
     const figures = [figure(1, 5, 0), figure(2, 15, 0), figure(3, 25, 0), figure(4, 45, 0)];
     const heights = [11.7, 11.7, 11.7, 11.7];
-    expect(cards.sync(figures, heights, EYE, 50, new Set(), 10, 30, TINT)).toBe(2);
-    const at = cards.mesh.getVerticesData("position")!;
-    expect([at[0], at[4 * 3]]).toEqual([15, 25]);
-    expect(cards.sync(figures, heights, EYE, 50, new Set([2]), 10, 30, TINT)).toBe(1);
-    expect(cards.sync(figures, heights, EYE, 50, new Set(), 0, 1000, TINT)).toBe(4);
-    expect(cards.sync([], [], EYE, 50, new Set(), 0, 1000, TINT)).toBe(0);
-    // With none to draw it is not drawn in the frame either.
-    expect(cards.mesh.isEnabled()).toBe(false);
+    expect(writeCrowdCards(out, 4, figures, heights, EYE, 50, new Set(), 10, 30)).toBe(2);
+    expect([out.positions[0], out.positions[4 * 3]]).toEqual([15, 25]);
+    expect(writeCrowdCards(out, 4, figures, heights, EYE, 50, new Set([2]), 10, 30)).toBe(1);
+    expect(writeCrowdCards(out, 4, figures, heights, EYE, 50, new Set(), 0, 1000)).toBe(4);
+    expect(writeCrowdCards(out, 2, figures, heights, EYE, 50, new Set(), 0, 1000)).toBe(2);
+    expect(writeCrowdCards(out, 4, [], [], EYE, 50, new Set(), 0, 1000)).toBe(0);
+    expect(out.cards.every((v) => v === 0)).toBe(true);
   });
 
   it("gives the shader the seconds, folded so they never lose their precision", () => {
-    const cards = make(1);
-    cards.sync([figure(1, 5, 0)], [0], EYE, 12345.5, new Set(), 0, 100, TINT);
-    for (const held of [scene!.getMaterialByName(CROWD_CARDS_NAME), cards.maskMaterial] as unknown as { _floats: Record<string, number> }[]) {
-      expect(held._floats.crowdTime).toBeGreaterThanOrEqual(0);
-      expect(held._floats.crowdTime).toBeLessThan(1000);
-    }
-  });
-
-  it("disposes its mesh and its material", () => {
-    const cards = make();
-    cards.dispose();
-    expect(scene!.meshes.length).toBe(0);
-    expect(scene!.getMaterialByName(CROWD_CARDS_NAME)).toBeNull();
-    expect(scene!.getMaterialByName(`${CROWD_CARDS_NAME}Mask`)).toBeNull();
+    expect(CROWD_CARD_FOLD_S).toBe(1000);
+    expect(crowdCardTime(12345.5)).toBeCloseTo(345.5, 6);
+    expect(crowdCardTime(999.9)).toBeCloseTo(999.9, 6);
+    expect(crowdCardTime(1000)).toBe(0);
   });
 });

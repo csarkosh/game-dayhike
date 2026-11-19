@@ -2,8 +2,8 @@
  * The bed height texture's contents: a square of terrain heights around the
  * camera, sampled from `elevationAt` (the same function the water rings and
  * the terrain clipmap sample, so the three agree), that the water material
- * reads per pixel for its depth (spec §4.1). Pure and Babylon-free; the
- * water shell uploads `heights` as one R32F texture.
+ * reads per pixel for its depth (spec §4.1). Pure and Babylon-free;
+ * `lite/waterBed.ts` uploads `heights` as one texture of 32-bit floats.
  *
  * Re-centred when the camera leaves the inner half of the square, snapped
  * to a quarter of the extent so consecutive bakes share their alignment.
@@ -124,7 +124,7 @@ export function bakeBed(grid: BedGrid, seed: number, camX: number, camZ: number)
 /** A lake as the bed needs it: its centre, its shape and how far its ground reaches. */
 export type BedPond = { x: number; z: number; bound: number; shape: LakeShape };
 
-/** How far past a lake's shore its surface reaches, metres (renderer.ts `lakeSurface`). */
+/** How far past a lake's shore its surface reaches, metres (`lakeSurfaceGrid.ts`). */
 export const LAKE_SURFACE_REACH = 3;
 /** The lattice a lake's part of a square is read on (m), and the shore distance past the surface's reach a lattice point may stand and still answer for the square about it (m): 2√2 m to the nearest lattice point at a stretch of up to 1.6. */
 const BED_LAKE_STEP = 4;

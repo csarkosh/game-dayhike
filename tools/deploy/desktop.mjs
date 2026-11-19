@@ -305,7 +305,9 @@ try {
   requirePatched(packagedFramework, macPatches, `the Electron Framework inside ${dmgName(version)}`);
 
   runLoud('node', [path.join(DESKTOP, 'test', 'gatekeeper.mjs'), app]);
-  runLoud('node', [path.join(DESKTOP, 'test', 'smoke.mjs'), app]);
+  // This Mac has a graphics card: the app must reach a hike on it, and the
+  // page for those who cannot play fails the release.
+  runLoud('node', [path.join(DESKTOP, 'test', 'smoke.mjs'), app, '--needs-hike']);
 } finally {
   if (mounted) run('hdiutil', ['detach', mount, '-force']);
   rmSync(mount, { recursive: true, force: true });

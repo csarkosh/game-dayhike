@@ -80,6 +80,7 @@ Every row carries the envelope the page sent:
 | `sid` | The session: one a page load. |
 | `vid` | The visitor: one a browser, kept in localStorage, so a returning player counts once. Empty where storage refuses. |
 | `build` | The client's git short sha, `-dirty` where the tree was, baked in by the deploy's build (`VITE_BUILD_SHA`); `dev` in development. |
+| `lite` | The version of Babylon Lite the hike is drawn with, as the client's package pins it: the tag of its repository, which names its patches (`v1.39.3-dayhike.7`), read from `client/package.json` as the page is built (`tools/vite/liteVersion.mjs`). The installed package's own version says only the release the tag stands on. |
 | `proto`, `gen` | `PROTOCOL_VERSION` and `GEN_VERSION`, the two constants that decide whether two pages can play together. |
 | `desktop`, `shell`, `os`, `browser`, `touch` | The platform, from `game/platform.ts`. |
 | `ref` | The referrer's origin and path, 200 characters at most; "" for none (`referrerOf`). |
@@ -122,6 +123,7 @@ The events, in the order a session makes them:
 | `lobby_end` | `reason`, `members` | `host_gone` or `left` |
 | `load` | `decideMs`, `introMs`, `engineMs`, `filmMs`, `worldMs`, `sceneMs`, `buildMs`, `tier`, `source`, `engine`, `prep`, `prepMs`, `scene` | the start chain finished (`startHike`); `worldMs` is what the start still waited for the world's worker once the film had its top-up, `prep` how that worker ended (`done`, `cached`, `no-worker`, `failed`, `timeout`) and `prepMs` how long it ran; `sceneMs` is what the start then still waited for the worker's first scene, and `scene` whether the worker sent one (`made`) or none came (`none`); a renderer made at a fallback tier or again on WebGL2 samples the ground itself either way |
 | `start_fail` | the laps so far, `msg` | it did not |
+| `turned_away` | `reason`: `no-webgpu`, `no-adapter`, `software`, `short`; `short`, what the adapter is short of, for that reason | the load check's verdict is that this browser and GPU cannot play (`game/loadCheck.ts`): once a page, sent once the GPU's signals are in, so the row carries `gpu` and `adapter`; the visitor sees the page for those turned away and no hike is started. A warning |
 | `ready` | `ms` | the world ready to be looked at, from the launch |
 | `match_start` | `role`, `party`, `lobby` | the host session, or a follower's once connected |
 | `act` | `act`: wet, dusk, mist; `p`; `tick` | the climb's ratchet passed the mark (`sim/acts.ts`) |
@@ -132,11 +134,15 @@ The events, in the order a session makes them:
 | `death` | `tick`, `p`, `phase`, `cause`, `near`, `x`, `z` | this player died: the Hollow's reach is the one cause |
 | `outcome` | `result`, `self`, `alive`, `players`, `tick`, `p` | the match ended |
 | `hb` | `fps`, `worst`, `stalls`, `rtt`, `pe`, `p`, `dropped`, `failed` | every flush while a match runs |
-| `session_end`, `host_session_end` | `msg` or `kind` | the session ended short of an outcome |
+| `session_end`, `host_session_end` | `msg` or `kind`; `why`, `losses`, `recent` where the hike's lost devices ended it | the session ended short of an outcome |
 | `connect_fail`, `reconnect` | `msg` | a follower's handshake failed, or its channel dropped |
 | `tier_fallback`, `governor_drop`, `engine_failed`, `webgpu_start_failed` | the reason | the graphics ladders |
+| `gpu_error` | `kind`, `src`, `msg`, `labels`, `nth`, `w`, and what was happening (below) | a hike's renderer heard a GPU error (`game/gpuFaults.ts`): at once, for each distinct error up to six a hike |
+| `gpu_window` | `w`, `nth`, `errors`, `distinct`, `total`, `totalDistinct`, `frames`, `ms`, `picture`, `read`, `luma`, `black`, `spread`, `unread` | five seconds after a GPU error that opened a window, three a hike: what followed, and the picture read small |
+| `device_lost` | `reason`, `msg`, `losses`, `recent`, `sinceMs`, `verdict`, `errors`, `bufs`, `bufMB`, `texs`, `texMB`, `heapMB`, and what was happening | a hike's renderer lost its GPU device, not by the game's own letting go |
+| `engine_rebuilt` | `reason`, `ok`, `state`, `frames`, `ms`, `tier`, `engine`, `r`, `why` | the hike's rebuild after a failed engine came out |
 | `exit`, `continue_offline`, `match_end` | | leaving |
-| `error`, `warn` | `kind`, `msg`, `stack`, `where` | an uncaught throw, an unhandled rejection, the page's own `console.error`/`warn`, or Babylon's own logged warning or error (`kind: babylon`, §8) |
+| `error`, `warn` | `kind`, `msg`, `stack`, `where` | an uncaught throw, an unhandled rejection, the page's own `console.error`/`warn`, which what the hike's renderer and its library print pass through too (§8) |
 | `end` | `reason`, `dropped`, `trouble`, `suppressed`, `sent`, `failed`, `dur` | the page is leaving |
 
 "Did it run without errors" is answered by the last row of a session: an `end` with
@@ -146,6 +152,20 @@ set: the route, `start` while loading, `game` once running.
 
 The `p` on every match row is the party's climb, 0 at the trailhead and 1 at the crest, the
 same ratchet the acts and the sky read, so "how far did they get" is one number.
+
+What was happening, on the rows about the GPU (`gpu_error`, `device_lost`, and the hike's
+part on `gpu_window`): from the renderer, `r` (which of the hike's renderers, 1 the first),
+`tier`, `state` (`making`, `standing`, `lost`, `failed`, `gone`), `frames` it has drawn,
+`stoodMs` since it stood, `scene`, `ending`, `dark` (a death's closing dark, 0 to 1), `rain`,
+`wet`, `night`, `hour`, `lakes` shown and `sea`; from the hike, `ready` (the world is in),
+`busy` (`switch`, `drop` or `rebuild` under way), `film` (the intro's film is over the hike),
+`hidden`, `shownMs` since the page was last shown, `p` and `tick`. Each is read when the row
+is made and kept by no frame: a hike with no error makes none of these rows, sets no timer
+and reads nothing back; one count of frames drawn is all a frame adds. The rows are bounded
+for a hike (six `gpu_error`, three `gpu_window`), so a broken shader that reports every frame
+is a handful of rows, and its console lines are the first eight as before. With telemetry
+off no row is made, no picture read and what the device holds is not counted; the bound on
+rebuilds after lost devices (`game/lossBound.ts`) holds all the same.
 
 ## 3. What it costs the page
 
@@ -157,6 +177,10 @@ same ratchet the acts and the sky read, so "how far did they get" is one number.
 - About 2 KB of code and no library. One 200-byte request at page load, a few KB every
   30 s, nothing on the WebRTC channels.
 - Bounded memory: 500 events at most, errors capped at 20.
+- For the rows about the GPU, a frame the hike's renderer draws adds one to a count of frames
+  drawn and nothing else: the timer, the read of the picture and the rows come only once a
+  GPU error has (`game/gpuFaults.ts`), and what the device holds is counted where a buffer
+  or a texture is made or let go (`game/deviceHeld.ts`), never a frame.
 
 ## 4. Reading it
 
@@ -251,6 +275,10 @@ world, the platform and the GPU from the first day; four things were missing for
   `watchWebGpu`). A batch is also cut at 40,000 characters of events (`MAX_BATCH_CHARS`):
   the server refuses a body over 64 KiB, and a refused batch is put back and sent again, so a
   session's twenty long errors in one batch would have held up every batch after them.
+  *(Amended 2026-11-17.)* The page loads nothing of Babylon.js any more and hands the capture
+  no logger: a hike is drawn by the renderer on Babylon Lite, and what it and the library
+  print goes through the console, which the capture wraps, so those rows are `kind: console`.
+  `installErrorCapture` still takes a logger from a page that hands one in.
 - **The session timeline.** `tools/telemetry/queries/session.sql`, every row a session sent
   and its lobby's signaling rows in order; the admin page opens it as a drawer from any
   session id.

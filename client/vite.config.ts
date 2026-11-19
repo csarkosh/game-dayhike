@@ -1,21 +1,11 @@
+import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { defineConfig } from "vitest/config";
-import { wgslMapPlugin } from "../tools/wgsl/lib/mapPlugin.mjs";
-import { translatorDigests } from "../tools/wgsl/lib/translators.mjs";
+import { liteVersion } from "../tools/vite/liteVersion.mjs";
 import { timeLimit } from "./test/helpers/timeLimit.js";
-
-/** This package's directory, where its imports resolve from. */
-const CLIENT = fileURLToPath(new URL(".", import.meta.url));
 
 export default defineConfig({
   plugins: [
-    // The WGSL maps of the shader corpus, one a quality tier, the WebGPU
-    // shader lookup's first source: hashed assets of the WebGPU chunk in the
-    // build, made on the dev server as it starts (`tools/wgsl/lib/mapPlugin.mjs`).
-    wgslMapPlugin({
-      mapDir: fileURLToPath(new URL("shaders/map/", import.meta.url)),
-      tool: fileURLToPath(new URL("../tools/wgsl/build-map.mjs", import.meta.url)),
-    }),
     {
       // The admin host's token module (`src/admin/auth.ts` imports `/auth.js`)
       // is no file of this package: in the build it is external
@@ -31,14 +21,11 @@ export default defineConfig({
     },
   ],
   define: {
-    // The SHA-256 of each shader translator as Babylon ships it, its
-    // WebAssembly and its JavaScript loader, `glslang=<hex>|twgsl=<hex>|
-    // glslang.js=<hex>|twgsl.js=<hex>`: part of the salt of every key the
-    // WebGPU shader lookup makes (`shaderLookup.ts`), so a translator that
-    // changes makes every stored translation unreachable. Computed here, once
-    // a build, so the page never hashes 2.7 MB; by the function the build's
-    // translation of the corpus computes its salt with (`tools/wgsl/`).
-    __WGSL_TRANSLATORS__: JSON.stringify(translatorDigests(CLIENT)),
+    // The version of Babylon Lite the hike is drawn with, as this package
+    // pins it: the fork's tag, which names its patches, where the installed
+    // package's own version says only which release they stand on. Every
+    // telemetry row carries it (`main.ts`).
+    __LITE_VERSION__: JSON.stringify(liteVersion(readFileSync(new URL("package.json", import.meta.url), "utf8"))),
   },
   // The web build lives under games.csarko.sh/dayhike; the desktop shell serves
   // from its own origin at /. The deploy scripts set DAYHIKE_BASE per build and
@@ -80,8 +67,8 @@ export default defineConfig({
       input: fileURLToPath(new URL("index.html", import.meta.url)),
     },
     // Never inline a model, and never inline a ground texture. `game/assetUrls.ts`
-    // imports every shipped .glb with `?url`, and `groundMaps.ts`/`terrainTexture.ts`
-    // import every `client/assets/textures/ground.*.webp` the same way, so Vite
+    // imports every shipped .glb with `?url`, and `groundLayers.ts`
+    // imports every `client/assets/textures/ground.*.webp` the same way, so Vite
     // content-hashes them — but Vite turns a `?url` asset under `assetsInlineLimit`
     // (4096 bytes by default) into a base64 `data:` URI instead, no separate
     // request and no cacheable URL either. That is not a hypothetical margin on
@@ -103,8 +90,6 @@ export default defineConfig({
   test: {
     environment: "node",
     include: ["test/**/*.test.ts"],
-    // NullEngine given a raw 2D array texture maker (the file says why).
-    setupFiles: ["test/setup/nullEngineArrays.ts"],
     // vitest's own defaults (5 s a test, 10 s a hook), scaled like every
     // explicit limit. Only under vitest, which sets VITEST before it loads this
     // file: `vite dev` and `vite build` load it too, and must not read or

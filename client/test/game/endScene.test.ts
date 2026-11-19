@@ -273,18 +273,16 @@ describe("the runner a screen's end scene is stepped on", () => {
 
 describe("the end scene on another player's run", () => {
   it("judges the arrival by the runner's own place, and builds the world round them, not round this screen's player far up the mountain", () => {
-    const renderer = readFileSync(new URL("../../src/game/renderer.ts", import.meta.url), "utf8");
-    expect(renderer).toContain("if (ctx.arrival === null && arrived(runner.at, ctx.door, t)) ctx.arrival = t;");
-    expect(renderer).toContain("clipmap?.update(centre.x, centre.z);");
-    expect(renderer).toContain("forestMeshes?.update(centre.x, centre.z);");
-    expect(renderer).not.toContain("clipmap?.update(local.pos.x, local.pos.z);");
+    // The arrival is judged where the end scene is stepped (`scenePlay.ts`).
+    const play = readFileSync(new URL("../../src/game/scenePlay.ts", import.meta.url), "utf8");
+    expect(play).toContain("if (ctx.arrival === null && arrived(runner.at, ctx.door, t)) ctx.arrival = t;");
   });
 
 
   it("is stepped on the runner the setup names, drawn where their body is, with this screen's own body left out", () => {
-    const renderer = readFileSync(new URL("../../src/game/renderer.ts", import.meta.url), "utf8");
-    expect(renderer).toContain("if (endRun !== null) stepEndScene(endRun, endRunner(endRun, state, local), seconds);");
-    expect(renderer).toContain("views.showLocal = ctx.arrival === null && e.setup.runner === undefined;");
+    const play = readFileSync(new URL("../../src/game/scenePlay.ts", import.meta.url), "utf8");
+    expect(play).toContain("stepEndScene(endRun, runnerPose(runnerNow, local, other, other === undefined || id === undefined ? null : drawnAt(id), PLAYER_HALF.y), seconds, camera);");
+    expect(play).toContain("now.showLocal = ctx.arrival === null && e.setup.runner === undefined;");
   });
 
   it("lets the `escape` look win as a match does: its player, stood at the car by hand, counts as one who was out", () => {

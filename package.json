@@ -19,7 +19,7 @@
     "test": "vitest run --root client && vitest run --root server && vitest run --root tools",
     "test:client": "vitest run --root client",
     "test:server": "vitest run --root server",
-    "test:wall-clock": "vitest run --root client --tags-filter=wall-clock --maxWorkers=1 test/game/facePatchMeshes.test.ts test/game/forestField.test.ts test/game/oceanBreaker.test.ts test/game/swashTable.test.ts test/sim/trailSystem.test.ts",
+    "test:wall-clock": "vitest run --root client --tags-filter=wall-clock --maxWorkers=1 test/game/forestField.test.ts test/game/oceanBreaker.test.ts test/game/swashTable.test.ts test/sim/trailSystem.test.ts",
     "test:watch": "vitest --root client",
     "gate": "node tools/gate.mjs",
     "bench": "vitest bench --root client",
@@ -27,6 +27,8 @@
     "lint": "eslint .",
     "vendor:ktx2": "node tools/vendor-ktx2.mjs",
     "vendor:visits": "node tools/vendor-visits.mjs",
+    "kernel:build": "node tools/rust/build.mjs",
+    "kernel:check": "node tools/rust/build.mjs --check",
     "infra:check": "terraform -chdir=_infra fmt -check -recursive && terraform -chdir=_infra validate",
     "deploy": "node tools/deploy/server.mjs && node tools/deploy/client.mjs",
     "deploy:server": "node tools/deploy/server.mjs",
@@ -40,6 +42,7 @@
     "frame-budget": "node tools/frame-budget/measure.mjs",
     "frame-budget:phone": "node tools/frame-budget/phone.mjs",
     "frame-budget:verdict": "node tools/frame-budget/timeline-verdict.mjs",
+    "compare": "node tools/compare/compare.mjs",
     "preview:channel": "node tools/deploy/channel.mjs"
   },
   "devDependencies": {

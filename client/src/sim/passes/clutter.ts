@@ -33,8 +33,7 @@ import { clutterInRect, CLUTTER_BOULDER, CLUTTER_TUNABLES } from "../clutter.js"
  * 1.2398356… → floored 1.239. Height y = 1.890428… → floored 1.89.
  *
  * BOULDER_SINK: unchanged at 0.25, shared across both variants — it depends
- * only on BASE_H and itself (see the embedding-depth argument in
- * clutterMeshes.ts `writeInstanceMatrix`), never on a mesh's small negative
+ * only on BASE_H and itself, never on a mesh's small negative
  * minY, so there is no per-variant reason to split it. */
 export const BOULDER_A_BASE_HALF = 0.633;
 export const BOULDER_A_BASE_H = 1.002;

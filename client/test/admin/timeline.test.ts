@@ -114,6 +114,88 @@ describe("describe", () => {
     expect(toneOf("end", { trouble: 0 })).toBe("");
     expect(toneOf("hb", {})).toBe("");
   });
+
+  it("names a GPU error, its window, a lost device, its rebuild and a hike its lost devices ended", () => {
+    const now = { ready: true, busy: "", film: false, hidden: false, shownMs: 41_000, scene: false, ending: false, dark: 0, rain: 0, wet: 0.15, night: 0, hour: 12, lakes: 0, sea: false, p: 0.312, tick: 4810 };
+    expect(
+      describeEvent("gpu_error", {
+        ...now, tier: "medium", state: "standing", frames: 600, stoodMs: 20_000, r: 1, nth: 1, kind: "validation", src: "uncaptured",
+        msg: "Buffer usages must not be 0.\n", labels: 'BufferDescriptor "forced-buffer"',
+      }),
+    ).toBe('validation, Buffer usages must not be 0., names BufferDescriptor "forced-buffer", medium renderer 1, stood 20.0 s, 600 frames, 31% up');
+    // What was out of the ordinary is said, and only that.
+    expect(
+      describeEvent("gpu_error", {
+        ...now, ready: false, busy: "switch", film: true, shownMs: 1200, scene: true, rain: 0.6, night: 0.9, lakes: 2, sea: true,
+        tier: "high", state: "making", frames: 0, r: 2, nth: 3, kind: "out-of-memory", src: "scope", msg: "Out of memory", labels: "",
+      }),
+    ).toBe("out-of-memory (caught by a scope), Out of memory, high renderer 2, the renderer making, 0 frames, the world still loading, a switch under way, under the intro's film, the page shown 1.2 s before, a scene playing, rain, night, a lake in view, the sea in view, 31% up");
+    expect(describeEvent("gpu_window", { ...now, r: 1, nth: 1, tier: "medium", state: "standing", ms: 5066, errors: 50, distinct: 1, total: 51, totalDistinct: 2, frames: 301, picture: "held", read: true, luma: 31, black: 0, spread: 14.8 })).toBe(
+      "picture held, luminance 31 of 255, 0% black, spread 14.8, 301 frames drawn in 5.1 s, 50 errors, 1 distinct, 51 this hike",
+    );
+    expect(describeEvent("gpu_window", { ...now, r: 1, nth: 1, tier: "low", state: "standing", ms: 5000, errors: 300, distinct: 1, total: 300, totalDistinct: 1, frames: 300, picture: "broke", read: true, luma: 0, black: 1, spread: 0 })).toBe(
+      "picture broke, luminance 0 of 255, 100% black, spread 0, 300 frames drawn in 5.0 s, 300 errors, 1 distinct",
+    );
+    expect(describeEvent("gpu_window", { ...now, hidden: true, r: 1, nth: 1, tier: "low", state: "lost", ms: 5000, errors: 1, distinct: 1, total: 1, totalDistinct: 1, frames: 0, picture: "unknown", read: false, unread: "the renderer is lost" })).toBe(
+      "picture unknown, not read: the renderer is lost, 0 frames drawn in 5.0 s, 1 errors, 1 distinct, the page hidden, the renderer lost",
+    );
+    expect(
+      describeEvent("device_lost", {
+        ...now, tier: "medium", state: "standing", frames: 7100, stoodMs: 121_000, r: 2, reason: "unknown", msg: "The GPU process exited unexpectedly.", losses: 3, recent: 3, sinceMs: 107_000,
+        verdict: "end", errors: 2, bufs: 1807, bufMB: 96.2, texs: 275, texMB: 540.3, heapMB: 311.4,
+      }),
+    ).toBe(
+      "unknown: The GPU process exited unexpectedly., loss 3 of this page, 3 within the bound, 1 min 47 s after the last, the hike ends, medium renderer 2, stood 2 min 1 s, 7100 frames, 31% up, held 1807 buffers (96.2 MB) and 275 textures (540.3 MB), heap 311.4 MB, 2 GPU errors before it",
+    );
+    // The first loss of a page, on a device the page did not count, in a browser with no heap to read.
+    expect(describeEvent("device_lost", { ...now, tier: "low", state: "making", frames: 0, r: 2, reason: "", msg: "", losses: 1, recent: 1, verdict: "rebuild", errors: 0 })).toBe(
+      "no reason given, loss 1 of this page, 1 within the bound, rebuilt, low renderer 2, the renderer making, 0 frames, 31% up",
+    );
+    expect(describeEvent("engine_rebuilt", { reason: "lost", ok: true, ms: 4080, tier: "medium", engine: "webgpu", r: 3, state: "standing", frames: 96 })).toBe("stood again after lost, medium on webgpu renderer 3, 96 frames under the cover, in 4.1 s");
+    expect(describeEvent("engine_rebuilt", { reason: "lost", ok: "false", ms: 10_400, tier: "medium", engine: "webgpu", r: 3, state: "failed", frames: 0 })).toBe(
+      "did not stand (failed) after lost, medium on webgpu renderer 3, 0 frames under the cover, in 10.4 s",
+    );
+    expect(describeEvent("engine_rebuilt", { reason: "pipeline", ok: false, ms: 900, tier: "high", why: "Error: no tier builds" })).toBe("did not stand after pipeline, high, in 0.9 s, Error: no tier builds");
+    expect(describeEvent("engine_rebuilt", { reason: "lost", ok: true, ms: 10_050, tier: "high", engine: "webgpu", r: 2, state: "making", frames: 0 })).toBe(
+      "still being made as the cover lifted after lost, high on webgpu renderer 2, 0 frames under the cover, in 10.1 s",
+    );
+    expect(describeEvent("session_end", { msg: "The hike ended: this device's graphics keep resetting. Restarting the browser may help.", p: 0.52, why: "device_lost", losses: 3, recent: 3 })).toBe(
+      "The hike ended: this device's graphics keep resetting. Restarting the browser may help., ended by lost devices: 3 this page, 3 within the bound, 52% up",
+    );
+    // An older page's rows read as they did, the climb beside them.
+    expect(describeEvent("session_end", { msg: "The host ended this session.", p: 0.4 })).toBe("The host ended this session., 40% up");
+    expect(describeEvent("session_end", { msg: "Lost connection to the host." })).toBe("Lost connection to the host.");
+    expect(describeEvent("engine_failed", { reason: "lost" })).toBe("lost");
+  });
+
+  it("reads a lost device, a rebuild that did not stand and a hike its losses ended as errors, and a GPU error's window by its picture", () => {
+    expect(toneOf("device_lost", {})).toBe("error");
+    expect(toneOf("engine_failed", { reason: "lost" })).toBe("error");
+    expect(toneOf("engine_rebuilt", { ok: true })).toBe("");
+    expect(toneOf("engine_rebuilt", { ok: "true" })).toBe("");
+    expect(toneOf("engine_rebuilt", { ok: false })).toBe("error");
+    expect(toneOf("engine_rebuilt", { ok: "false" })).toBe("error");
+    expect(toneOf("session_end", { msg: "any words", why: "device_lost" })).toBe("error");
+    expect(toneOf("session_end", { msg: "The host ended this session." })).toBe("");
+    expect(toneOf("gpu_window", { picture: "held" })).toBe("warn");
+    expect(toneOf("gpu_window", { picture: "unknown" })).toBe("warn");
+    expect(toneOf("gpu_window", { picture: "broke" })).toBe("error");
+    // By itself a GPU error is a warning: its window says the rest (`trailOf`).
+    expect(toneOf("gpu_error", { kind: "validation" })).toBe("warn");
+  });
+
+  it("names a visitor the load check turned away by the reason, in words, and marks it a warning", () => {
+    expect(describeEvent("turned_away", { reason: "no-webgpu", adapter: "none" })).toBe("the browser has no WebGPU, adapter none");
+    expect(describeEvent("turned_away", { reason: "no-adapter", adapter: "rejected" })).toBe("the browser gave no adapter, adapter rejected");
+    expect(describeEvent("turned_away", { reason: "software", adapter: "ok" })).toBe("a software adapter, adapter ok");
+    expect(describeEvent("turned_away", { reason: "short", short: "maxTextureDimension2D 4096 < 8192", adapter: "ok" })).toBe(
+      "the adapter is short of what the game needs, short of maxTextureDimension2D 4096 < 8192, adapter ok",
+    );
+    // A reason this page does not know is said as it came, and a row with none says nothing.
+    expect(describeEvent("turned_away", { reason: "novel" })).toBe("novel");
+    expect(describeEvent("turned_away", {})).toBe("");
+    for (const reason of ["no-webgpu", "no-adapter", "software", "short"]) expect(toneOf("turned_away", { reason })).toBe("warn");
+  });
 });
 
 const row = (ms: number, n: string, fields: Record<string, unknown> = {}, sid = "s1"): Row => ({
@@ -161,6 +243,40 @@ describe("trailOf", () => {
     expect(envelopeLine(trail.first)).toBe("darwin-arm64 155 · America/New_York");
   });
 
+  it("reads a GPU error by how its picture came out: an error where the window it fell in says it broke, a warning where it held or was never judged", () => {
+    const trail = trailOf([
+      row(0, "page", { kind: "game" }),
+      row(1_000, "gpu_error", { game: "G1", w: 1, r: 1, nth: 1, kind: "validation", msg: "one bad draw" }),
+      row(6_000, "gpu_window", { game: "G1", w: 1, r: 1, nth: 1, picture: "held", errors: 1, distinct: 1, frames: 300 }),
+      row(20_000, "tier_change", { from: "medium", to: "low", source: "choice" }),
+      // The same renderer, a later window: each error is read by its own.
+      row(30_000, "gpu_error", { game: "G1", w: 2, r: 1, nth: 2, kind: "validation", msg: "the frame's target is gone" }),
+      row(30_001, "gpu_error", { game: "G1", w: 2, r: 1, nth: 3, kind: "internal", msg: "and another" }),
+      row(35_000, "gpu_window", { game: "G1", w: 2, r: 1, nth: 2, picture: "broke", errors: 300, distinct: 2, frames: 300, luma: 0, black: 1 }),
+      row(40_000, "device_lost", { r: 1, reason: "unknown", msg: "gone", losses: 1, recent: 1, verdict: "rebuild" }),
+      row(44_000, "engine_rebuilt", { reason: "lost", ok: true, r: 2, ms: 4000, frames: 90 }),
+      // An error whose window was never sent (the page left first), one that fell in no window, and the next
+      // hike's first, whose window has the broken one's number: none is judged by another's picture.
+      row(50_000, "gpu_error", { game: "G1", w: 3, r: 2, nth: 4, kind: "validation", msg: "a last one" }),
+      row(51_000, "gpu_error", { game: "G1", r: 2, nth: 5, kind: "validation", msg: "past the windows" }),
+      row(90_000, "gpu_error", { game: "G2", w: 2, r: 1, nth: 1, kind: "validation", msg: "another hike's" }),
+    ]);
+    expect(trail.steps.map((s) => [s.n, s.tone])).toEqual([
+      ["page", ""],
+      ["gpu_error", "warn"],
+      ["gpu_window", "warn"],
+      ["tier_change", ""],
+      ["gpu_error", "error"],
+      ["gpu_error", "error"],
+      ["gpu_window", "error"],
+      ["device_lost", "error"],
+      ["engine_rebuilt", ""],
+      ["gpu_error", "warn"],
+      ["gpu_error", "warn"],
+      ["gpu_error", "warn"],
+    ]);
+  });
+
   it("falls back on the row's columns where there is no row_json", () => {
     const p = payloadOf({ n: "outcome", result: "lost", row_json: null });
     expect(describeEvent("outcome", p)).toBe("lost");
@@ -185,5 +301,18 @@ describe("sessionsOf", () => {
     expect(lines[0]).toMatchObject({ role: "host", game: "G1", end: "won", tone: "won", rows: 3, startedAt: T0 - 5_000, endedAt: T0 - 1_000 });
     expect(lines[1]).toMatchObject({ role: "client", end: "left (pagehide)", tone: "" });
     expect(lines[2]).toMatchObject({ end: "no goodbye", tone: "warn", errors: 1 });
+  });
+
+  it("counts a lost device and a window whose picture broke among a session's errors, and no other GPU row", () => {
+    const lines = sessionsOf([
+      row(0, "page", { kind: "game" }, "s1"),
+      row(1_000, "gpu_error", { r: 1, kind: "validation" }, "s1"),
+      row(6_000, "gpu_window", { r: 1, picture: "held" }, "s1"),
+      row(7_000, "gpu_error", { r: 1, kind: "validation" }, "s1"),
+      row(12_000, "gpu_window", { r: 1, picture: "broke" }, "s1"),
+      row(13_000, "device_lost", { r: 1, reason: "unknown" }, "s1"),
+      row(17_000, "engine_rebuilt", { ok: true }, "s1"),
+    ]);
+    expect(lines[0]).toMatchObject({ rows: 7, errors: 2 });
   });
 });

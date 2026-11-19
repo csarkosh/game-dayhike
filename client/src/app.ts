@@ -1,26 +1,22 @@
 import { parseLevel } from "./sim/level.js";
 import { createForest } from "./sim/forest.js";
-import { createRenderer, terrainMaterialFor, type EndSceneSetup, type FreecamView, type Renderer } from "./game/renderer.js";
-import type { AbstractEngine } from "@babylonjs/core/Engines/abstractEngine.js";
-import type { AsyncPipelines } from "./game/asyncPipelines.js";
-import { FALLBACK_NOTICE_MS, parseGpuTime } from "./game/engineChoice.js";
+import { createHikeRenderer } from "./game/hikeRenderer.js";
+import type { FreecamView, Renderer } from "./game/rendererTypes.js";
+import type { EndSceneSetup } from "./game/scenePlay.js";
+import { parseGpuTime } from "./game/gpuTimeReport.js";
 import { createInputSampler } from "./game/input.js";
 import { createTouchModel, createTouchLayer } from "./game/touchControls.js";
 import { FixedStepAccumulator } from "./game/loop.js";
 import { capturedEye, type EyePose } from "./game/eyeBlend.js";
 import { createHud } from "./game/hud.js";
-import { LOADING_LINE } from "./game/frameProbe.js";
-import { holdReveal, whenFrameWhole } from "./game/revealHold.js";
 import { RING_COUNT } from "./game/clipmap.js";
-import { loadUntilAborted, reportCompile, reportProgress } from "./game/modelLoad.js";
-import { defaultModelLoader, placeStaticModel } from "./game/staticModel.js";
+import { reportProgress } from "./game/loadReport.js";
 import {
   endSceneRunner,
   END_FADE_AT_S, END_LANDING_AT_S, END_ROAD_AT_S, ESCAPE_FROM_M, ESCAPE_SETTLE_S, ESCAPE_WAIT_S, MASTER_FADE_S, PULL_AWAY_AT_S, RUN_MAX_S, TITLE_AT_S, WORLD_FADE_S, carHeard,
   endMistShare,
 } from "./game/endScene.js";
 import { READY_MAX_MS, startReady } from "./game/startReady.js";
-import { loadWebGl2Shaders, pageIdle, prefetchWebGl2Shaders } from "./game/webgl2Shaders.js";
 import { ENGAGE_MAX_MS, whenEngaged } from "./game/engageWait.js";
 import { createNetgraph, RateCounter } from "./game/netgraph.js";
 import { navigateToLanding } from "./game/router.js";
@@ -42,7 +38,7 @@ import {
   type ScriptEntry,
 } from "./game/script.js";
 import { aimAt, stepFreecam, type FreecamState } from "./game/freecam.js";
-import { DEFAULT_HOUR, sunAltitudeDeg } from "./game/lighting.js";
+import { DEFAULT_HOUR, sunAltitudeDeg } from "./game/skyWait.js";
 import { startSkySource } from "./game/skyWorker.js";
 import { worldInputs } from "./game/worldInputs.js";
 import { createAmbientAudio } from "./game/ambientAudio.js";
@@ -76,20 +72,16 @@ import { createClientSession } from "./net/clientSession.js";
 import { degradeTransport, parseNetConditions } from "./net/channels.js";
 import type { Transport } from "./net/transport.js";
 import { isTouchDevice } from "./game/platform.js";
+import { isMobile } from "./game/gpuSignals.js";
 import { createInteractPrompt, promptModel } from "./game/interactPrompt.js";
-import { POSTER_LAST_SEEN, createPosterPanel, posterModel } from "./game/posterPanel.js";
-import { createBodyMesh } from "./game/bodyMesh.js";
+import { createPosterPanel, posterModel } from "./game/posterPanel.js";
 import { DEATH_LINE, DEATH_TITLE, DEATH_FADE_AFTER_MS, DEATH_SOUND_FADE_S, END_LANDING_MS, WON_LINE, WON_TITLE, atRoadWall } from "./game/passages.js";
 import { InteractKind } from "./sim/search.js";
-import { SUMMIT_LABEL, TRAIL_NAME, signPosts } from "./sim/signs.js";
 import { trailheadStart } from "./sim/spawn.js";
 import type { PreparedScene } from "./game/preparedScene.js";
-import { createSignMeshes, type SignMeshes } from "./game/signMeshes.js";
+import { createHikeBody, createHikeSigns, loadFilmCar, type HikeSigns } from "./game/hikeScenery.js";
 import { carDirection, doorSpot, trailEntrance, trailheadPlaces } from "./sim/trailhead.js";
-import { BOARD_IMAGE_URLS } from "./game/boardImages.js";
-import { boardDrawingOf } from "./game/boardPaint.js";
-import { FILM_CAR_NAME, FILM_CAR_OUTPUT, createTrailheadMeshes, type TrailheadMeshes } from "./game/trailheadMeshes.js";
-import { placeNames, signSites } from "./sim/placeNames.js";
+import { placeNames } from "./sim/placeNames.js";
 import { createTrace, type Trace } from "./game/trace.js";
 import { afterNextPaint } from "./game/paint.js";
 import type { QualityTier } from "./game/quality.js";
@@ -100,18 +92,15 @@ import { resolveTier, type TierChoice, type TierSource } from "./game/tierChoice
 import {
   buildFirstRenderer,
   buildOrUndo,
-  engineWithinBound,
   swapRenderer,
   switchOutcome,
-  whenSceneReady,
   whenStandingSkyHeld,
   type EngineOnCanvas,
-  type EngineWatchers,
   type SwapBindings,
 } from "./game/rendererSwap.js";
-import { pinShaders, type KeptEngine } from "./game/keptEngine.js";
-import { releaseAtmosphere } from "./game/atmosphere.js";
-import { answerFailures, coverWith, createSerial } from "./game/engineFailure.js";
+import { FALLBACK_NOTICE_MS, answerFailures, coverWith, createSerial } from "./game/engineFailure.js";
+import { createGpuFaults } from "./game/gpuFaults.js";
+import { LOSS_ENDED_LINE, type LossNote } from "./game/lossBound.js";
 import { GOVERNOR_IDLE_MAX_MS, actOnDrop, governHike, governorDecision, steadyFrame } from "./game/governor.js";
 import { OVER_PLAY_Z, showProbeScreen, timeIdleCadence } from "./game/probeScreen.js";
 import { createCoveredDraw } from "./game/coveredDraw.js";
@@ -134,7 +123,7 @@ import { isHollowState, playerSees } from "./sim/hollow.js";
 import { chaseLineDistance, chaseLinePoint } from "./sim/chaseLine.js";
 import { AiState } from "./sim/types.js";
 import { stepInnerVoice, voiceRest, VOICE_LINE_MS, type VoiceState, type VoiceScene } from "./game/innerVoice.js";
-import { CAP_NEAR_M, droppedCapAt, type DroppedCap } from "./game/droppedItem.js";
+import { CAP_NEAR_M, droppedCapAt, type DroppedCap } from "./game/droppedCap.js";
 import { createVoiceClips } from "./game/voiceClips.js";
 import { CAP_SCENE_S, SHOTS, SUMMIT_SCENE_S, THRESHOLD_AT_S, thresholdAt, thresholdLook } from "./game/cutscene.js";
 import { DIED_CLOSE_FROM_S } from "./game/ending.js";
@@ -162,7 +151,7 @@ import { loadBirdBed } from "./game/birdBed.js";
 import { stepWoodsSounds, WOODS_SOUNDS_REST, woodsSoundsFrom, type WoodsSoundsState } from "./game/woodsSounds.js";
 import type { World } from "./sim/world.js";
 import type { Lobby } from "./net/lobby.js";
-import { worldVersionOf, type Telemetry } from "./net/telemetry.js";
+import { worldVersionOf, type Fields, type Telemetry } from "./net/telemetry.js";
 import { DUSK_AT, MIST_AT, WET_AT } from "./sim/acts.js";
 import sandbox01 from "../levels/sandbox01.json" with { type: "json" };
 
@@ -193,13 +182,13 @@ export type GameHandle = {
    */
   attachLobby(lobby: Lobby): void;
   /** The tier the running renderer was built at, and the engine it draws with. */
-  graphics(): { tier: QualityTier; engine: "webgl2" | "webgpu" };
+  graphics(): { tier: QualityTier; engine: Renderer["engineName"] };
   /** Shows a line on the HUD for a few seconds. */
   notify(line: string): void;
   /** The world ready to be looked at (`startReady`): the sky's first slices
-   * in and the first frame drawn, then the scene ready, the forest's
-   * billboards in, on WebGPU a whole frame drawn; a minute after that first
-   * frame at the latest. The loading bar reads ready with it. */
+   * in and the first frame drawn, then the renderer's world in
+   * (`Renderer.whenReady`); a minute after that first frame at the latest.
+   * The loading bar reads ready with it. */
   ready: Promise<void>;
   /** Covers play as the probe's screen does (the controls held, the pause
    * menu kept), until the function returned is called: what an intro playing
@@ -243,24 +232,19 @@ export type GameOptions = {
    * every renderer made after the first. Absent, or with none to give, the
    * renderer samples the ground itself, as always. */
   takePrepared?: () => PreparedScene | null;
-  /** An engine already made for the canvas (WebGPU, where `main.ts` chose
-   * it) for the first renderer at `tier`; absent, the renderer makes the
-   * WebGL2 one. */
-  engine?: AbstractEngine;
-  /** The WebGPU module's watchers, given with a WebGPU engine. */
-  watchers?: EngineWatchers;
-  /** At the hike's end, the engine standing, its scene gone, for the next
-   * hike on the page (`keptEngine.ts`); absent, the engine is disposed. */
-  keepEngine?(kept: KeptEngine): void;
-  /** The engine the WebGPU rule gives `tier` now, made on a fresh canvas
-   * (`main.ts`'s `engineFor`): what a switch of tier, and a rebuild after a
-   * failure, builds on. */
-  engineFor(tier: QualityTier, wanted: () => boolean): Promise<EngineOnCanvas>;
-  /** A failure of the running WebGPU engine, or a renderer that could not be
-   * built on one (`"pipeline"`): the page remembers it (`failureSwap`), so the
-   * WebGPU rule gives the rebuild its engine. The HUD's line for once the
-   * rebuild is done. */
-  engineFailed(reason: "pipeline" | "lost"): string;
+  /** A fresh canvas for a renderer at `tier` (`main.ts`'s `hikeCanvasNow`):
+   * what a switch of tier, and a rebuild after a failure, builds on. It
+   * carries no engine: the renderer makes its own from it. It throws where
+   * the page lets no hike be drawn. */
+  engineFor(tier: QualityTier): EngineOnCanvas;
+  /** A failure of the running WebGPU engine, a GPU error (`"pipeline"`) or a
+   * lost device: the page sends its row. */
+  engineFailed(reason: "pipeline" | "lost"): void;
+  /** The page's record of lost devices (`lossBound.ts`): `note` takes one
+   * down as the hike's renderer loses its device and says what the bound on
+   * rebuilds makes of it; `ended` is called as the hike ends by that bound,
+   * for the landing page's line. */
+  losses: { note(): LossNote; ended(): void };
   /** The tier `main.ts` decided (`startupTier`): `?tier=`, the player's
    * choice, or Auto. The hike starts at it; the pause screen's Settings can
    * change it while the hike runs. */
@@ -338,10 +322,6 @@ function buildGame(
   // The renderer and its canvas are replaced when the tier changes mid-hike
   // (`applyTier`); everything reads them through these bindings when it runs.
   let canvas = firstCanvas;
-  // The WebGPU engine made for this hike belongs to no renderer until the
-  // first one is built: a start that throws before then disposes it here.
-  let unowned: AbstractEngine | undefined = options.engine;
-  made(() => unowned?.dispose());
   // The sim registry is the source of truth for variant names; the command
   // layer only validates against them. This MUST run before `parseScript`
   // below: `parseScript` validates every entry as it parses, so a `terrain`
@@ -353,7 +333,7 @@ function buildGame(
   // re-initialisation validates against the same list it will resolve from.
   registerTerrainVariants(terrainVariantNames());
 
-  // sandbox01 stays imported as the fallback and as the shape `renderer.ts` and
+  // sandbox01 stays imported as the fallback and as the shape `lite/renderer.ts` and
   // both sessions expect. A forest world carries a stub level with no brushes, so
   // the brush-mesh path is simply a no-op rather than a second code path.
   const level = parseLevel(sandbox01);
@@ -425,18 +405,46 @@ function buildGame(
   const startHour = typeof timeValue === "number" ? timeValue : DEFAULT_HOUR;
   const skySource = startSkySource(sunAltitudeDeg(startHour));
   made(() => skySource.dispose());
-  /** The WebGPU module's watchers, once a WebGPU engine has been made. */
-  let watchers: EngineWatchers | null = options.watchers ?? null;
-  /** Stops listening to the running engine for failures (`watchWebGpu`). */
+  /** Stops listening to the running renderer's engine for failures (`Renderer.ownWatch`). */
   let stopWatching = (): void => undefined;
-  /** The HUD's line for a renderer that fell back to WebGL2 when its WebGPU
-   * engine could not build it, shown once play can see it. */
-  let engineNotice: string | null = null;
-  /** The ladders' hooks for the engine: listen to one that stands, take the
-   * old one's listener off before it goes, and remember one that failed. */
-  const engineBindings: Pick<SwapBindings, "watch" | "unwatch" | "engineFailed"> = {
+  /** When the page was last shown (ms, the page's clock), whether the intro's film is over the hike, whether the
+   * world is in, and whether a rebuild after a failure is under its cover: what a row about the GPU says was happening. */
+  let shownAt = performance.now();
+  let filmOver = false;
+  let worldIn = false;
+  let rebuilding = false;
+  /** When the failure being answered came (ms). */
+  let failedAt = 0;
+  /**
+   * What the GPU says went wrong under this hike (`gpuFaults.ts`): every
+   * renderer the hike builds tells it of its device's errors and of a loss
+   * it did not ask for, and the rows it sends are bounded for the hike. A
+   * loss is noted on the page's record whatever is sent: the bound on
+   * rebuilds reads it (`answerFailure`).
+   */
+  const faults = createGpuFaults({
+    enabled: telemetry?.enabled ?? false,
+    send: (name, fields) => telemetry?.event(name, fields),
+    hike: hikeNow,
+    loss: () => options.losses.note(),
+    heapMb: () => {
+      const used = (performance as { memory?: { usedJSHeapSize?: number } }).memory?.usedJSHeapSize;
+      return typeof used === "number" ? used / 1_048_576 : null;
+    },
+    now: () => performance.now(),
+    setTimer: (fn, ms) => {
+      const id = setTimeout(fn, ms);
+      return () => clearTimeout(id);
+    },
+  });
+  made(() => faults.dispose());
+  /** The ladders' hooks for the engine: listen to one that stands, and take
+   * the old one's listener off before it goes. */
+  const engineBindings: Pick<SwapBindings, "watch" | "unwatch"> = {
     watch: (r, detector) => {
       stopWatching();
+      // The renderer that stands is the one the hike's record of GPU faults hears.
+      faults.attach(r);
       const engine = r.engine;
       stopWatching = detector(engine, (reason) => void answerFailure(engine, reason));
     },
@@ -444,22 +452,11 @@ function buildGame(
       stopWatching();
       stopWatching = () => undefined;
     },
-    engineFailed: (error) => {
-      console.error("WebGPU: the renderer could not be built on it; building it on WebGL2.", error);
-      engineNotice = options.engineFailed("pipeline");
-    },
   };
-  /** The pipelines a WebGPU engine made here makes asynchronously
-   * (`asyncPipelines.ts`), for the renderer built on it; none on WebGL2. */
-  const pipelinesFor = (engine: AbstractEngine | null): AsyncPipelines | undefined =>
-    engine !== null && watchers !== null ? (watchers.asyncPipelines(engine) ?? undefined) : undefined;
   // The tier asked for, and should it fail to build, the class's start tier
   // and then low, each on a fresh canvas: only the renderer is retried, not
-  // the world, which is built once. A WebGPU engine that cannot build the
-  // tier is its own fault: that tier is built again on WebGL2 first.
-  // From here the ladder's renderers own it: `createRenderer` releases the
-  // engine it was given if its build throws, and the renderer disposes it.
-  unowned = undefined;
+  // the world, which is built once. Each renderer makes its own engine from
+  // its canvas and lets it go with itself: the hike is handed none.
   // A start under the intro's film steps its first builds rather than running each whole
   // (`firstBuilds.ts`): the film's captions and bar keep moving while the forest, the ground cover
   // and the props fill. With no film there is nothing to keep moving, and they build as always.
@@ -467,18 +464,17 @@ function buildGame(
   made(() => firstBuilds?.dispose());
   // The scene the world's worker sampled goes to the first renderer made, the ladder's first
   // attempt at the tier it was sampled for, which takes it as it is built: a renderer made after
-  // it (a lower tier, WebGL2 after WebGPU, a switch from Settings) finds none and samples the
+  // it (a lower tier, a switch from Settings) finds none and samples the
   // ground for itself.
   const first = buildFirstRenderer(
     canvas,
     [options.tier, ...options.fallbackTiers],
     {
-      build: (next, at, engine) =>
-        createRenderer(next, level, forest, { tier: at, engine: engine ?? undefined, pipelines: pipelinesFor(engine), deferClipmap: options.deferClipmap, start, prepared: options.takePrepared?.() ?? null, firstBuilds, skyTable: skySource.table, gpuTime: parseGpuTime(location.search) }),
+      build: (next, at) =>
+        createHikeRenderer(next, level, forest, { tier: at, deferClipmap: options.deferClipmap, start, prepared: options.takePrepared?.() ?? null, firstBuilds, skyTable: skySource.table, gpuTime: parseGpuTime(location.search), paced: isMobile(navigator) }),
       freshCanvas: () => document.createElement("canvas"),
       ...engineBindings,
     },
-    options.engine === undefined ? null : { engine: options.engine, watch: watchers?.failures ?? null },
   );
   let renderer: Renderer = first.renderer;
   /** Told once at the next swap of the renderer (`switchTo`), then let go. */
@@ -507,58 +503,22 @@ function buildGame(
   /** The switch, the governor's drop or the rebuild after a failure under
    * way: one at a time. */
   const serial = createSerial();
-  /** A shader compiled since the last frame, or on WebGPU a render pipeline
-   * was made: that frame is a known hitch. */
+  /** A shader compiled since the last frame: that frame is a known hitch. */
   let compiledSinceFrame = false;
   let unwatchCompiles: (() => void) | null = null;
-  /** Marks the frames a shader compiled in, on the renderer now running: the
-   * engine's compile observable, which both engines fire, and on WebGPU the
-   * frames that made a render pipeline (`watchPipelines`), which WebGPU makes
-   * at an effect's first draw, after its compile. */
+  /** Marks the frames a shader compiled in, on the renderer now running
+   * (`onShaderCompiled`: on the hike's renderer, each frame that asked its
+   * device for a shader module or a pipeline). */
   function watchCompiles(r: Renderer): void {
     unwatchCompiles?.();
     // Only the governor reads the marks.
     if (governor === null) return;
-    const mark = (): void => {
+    unwatchCompiles = r.onShaderCompiled(() => {
       compiledSinceFrame = true;
-    };
-    const observer = r.engine.onAfterShaderCompilationObservable.add(mark);
-    const stopPipelines = r.engine.isWebGPU && watchers !== null ? watchers.pipelines(r.engine, mark) : () => undefined;
-    unwatchCompiles = () => {
-      r.engine.onAfterShaderCompilationObservable.remove(observer);
-      stopPipelines();
-    };
+    });
   }
   watchCompiles(renderer);
   made(() => unwatchCompiles?.());
-  /** Tells the loading bar each shader the WebGL2 engine compiles, one of a
-   * stage with no total; on WebGPU the pipelines stage counts instead. */
-  let untellCompiles: (() => void) | null = null;
-  function tellCompiles(r: Renderer): void {
-    untellCompiles?.();
-    untellCompiles = null;
-    if (r.engine.isWebGPU) return;
-    const told = r.engine.onAfterShaderCompilationObservable.add(reportCompile);
-    untellCompiles = () => r.engine.onAfterShaderCompilationObservable.remove(told);
-  }
-  tellCompiles(renderer);
-  made(() => untellCompiles?.());
-  /** Holds each shader as it compiles, on an engine that will outlive the
-   * hike (`keepEngine`): a material let go mid-hike (a billboard bake's
-   * clone, say) would otherwise take its program with it, and the next hike
-   * would compile it again. Swept on the compile observable, which both
-   * engines fire; `pinShaders` takes only what is ready and clean, so an
-   * effect still compiling is picked up by a later sweep or at the retire. */
-  let unpinCompiles: (() => void) | null = null;
-  function pinCompiles(r: Renderer): void {
-    unpinCompiles?.();
-    unpinCompiles = null;
-    if (options.keepEngine === undefined) return;
-    const pinned = r.engine.onAfterShaderCompilationObservable.add(() => pinShaders(r.engine));
-    unpinCompiles = () => r.engine.onAfterShaderCompilationObservable.remove(pinned);
-  }
-  pinCompiles(renderer);
-  made(() => unpinCompiles?.());
   if (first.fellBack) options.onTierFallback({ attempted: options.tier, built: tier, source: options.tierSource });
   /** What the last switch of tier said, until the next choice: a fallback's line. */
   let swapError: string | null = null;
@@ -774,6 +734,7 @@ function buildGame(
   // pause menu, not mid-walk. Desktop already gets this from pointer lock.
   const onVisibility = () => {
     if (document.visibilityState === "hidden" && !disposed) input.disengage();
+    else shownAt = performance.now();
   };
   document.addEventListener("visibilitychange", onVisibility);
   made(() => document.removeEventListener("visibilitychange", onVisibility));
@@ -782,7 +743,7 @@ function buildGame(
   /**
    * Freecam is enabled but has no position yet. It cannot be given one at the
    * moment it is enabled: a script is applied before the first frame, when
-   * `renderer.camera` still holds the `UniversalCamera` constructor value
+   * the renderer's camera still stands where it was made, at
    * (0, 2, 0) — underground on any seed whose ground at the origin is above 2 m,
    * which shows as a black screen. `stepFreecamView` seeds it once the renderer
    * has actually put the camera on the local player.
@@ -808,7 +769,7 @@ function buildGame(
   /** Turns the view to face `pendingAim`, once the camera stands somewhere: the free camera's place, or the player's eye. */
   function tryAim(): void {
     if (pendingAim === null) return;
-    const from = freecam ?? (cameraOnPlayer ? renderer.camera.position : null);
+    const from = freecam ?? (cameraOnPlayer ? renderer.cameraPosition() : null);
     if (from === null) return;
     const { yaw, pitch } = aimAt(from, pendingAim);
     pendingAim = null;
@@ -1402,75 +1363,25 @@ function buildGame(
     ambient.setWeather(settled.weather);
   }
 
-  let signs: { trailhead: TrailheadMeshes; dispose(): void } | null = null;
+  /**
+   * The junction posts, and the trailhead's car and board (`hikeScenery.ts`),
+   * in the scene of the renderer they were built for; null until they are
+   * built, between a swap's two scenes, and on a world without them.
+   */
+  let signs: HikeSigns | null = null;
   /**
    * The crucified hiker at the crest, or null without a summit site. Lives and
    * dies with the signs: both are seeded scenery placed once and never moved.
    */
   let body: { dispose(): void } | null = null;
   /**
-   * Junction posts, and the trailhead's car and board, from the same seed
-   * the sim used, in `r`'s
-   * scene: the renderer being built, which during a live tier change is not
-   * yet `renderer`.
-   */
-  function createSigns(world: World, r: Renderer): { trailhead: TrailheadMeshes; dispose(): void } | null {
-    const search = world.search;
-    const variant = activeTerrainVariant();
-    const graph = variant.trailGraph?.(seed);
-    const roadCenterX = variant.roadCenterX;
-    if (search === null || graph === undefined || roadCenterX === undefined) return null;
-    const places = trailheadPlaces(graph, roadCenterX, seed);
-    const groundH = (x: number, z: number): number => elevationAt(seed, x, z);
-    // The places the posts name: the summit where the body lies, and every
-    // pond and meadow, never under the missing hiker's own first name.
-    const hikerFirst = search.hiker.name.split(" ")[0] as string;
-    const sites = signSites(seed, graph.features, hikerFirst, search.body.pos);
-    const posts: SignMeshes = createSignMeshes(
-      r.scene,
-      signPosts(graph, sites),
-      groundH,
-      { materialFor: (name) => terrainMaterialFor(r.scene, name), shadows: r.shadows, cover: r.cover },
-    );
-    const trailhead = createTrailheadMeshes(
-      r.scene,
-      { car: { site: places.car, trailhead: graph.trailhead }, board: places.board },
-      groundH,
-      {
-        materialFor: (name) => terrainMaterialFor(r.scene, name),
-        board: boardDrawingOf({
-          seed,
-          trailName: TRAIL_NAME,
-          hikerName: search.hiker.name,
-          lastSeen: POSTER_LAST_SEEN,
-          graph,
-          places: sites,
-          summitName: SUMMIT_LABEL,
-          roadCenterX,
-          urls: BOARD_IMAGE_URLS,
-        }),
-        shadows: r.shadows,
-        cover: r.cover,
-      },
-    );
-    return {
-      trailhead,
-      dispose() {
-        posts.dispose();
-        trailhead.dispose();
-      },
-    };
-  }
-
-  /**
-   * The film's car (`trailheadMeshes.ts` `swapCar`), the parked car's double
+   * The film's car (`loadFilmCar`, `hikeScenery.ts`), the parked car's double
    * with wheels and a door, for the end scene: fetched into the trailhead as
    * the hike's scenery is built, and again into one built anew with the
    * extras, so its textures, its shaders and its pipelines are made while the
    * hike starts. Until 2026-11-09 it was fetched at the find, and landed in
-   * the summit scene's first shots: on WebGPU the page held its frames for
-   * the car's pipelines, on WebGL2 it stopped for the car's textures and
-   * programs. A fetch that fails says so once and leaves the parked car.
+   * the summit scene's first shots: the page held its frames for the car's
+   * pipelines. A fetch that fails says so once and leaves the parked car.
    */
   let filmCarLoad: AbortController | null = null;
   /** The film's car, if it is not already here or on its way (the end's own asks: a look at the end before the scenery's fetch began). */
@@ -1479,25 +1390,9 @@ function buildGame(
   }
   function fetchFilmCar(r: Renderer): void {
     if (filmCarLoad !== null || signs === null) return;
-    const trailhead = signs.trailhead;
     const loads = new AbortController();
     filmCarLoad = loads;
-    loadUntilAborted(() => defaultModelLoader(r.scene)(FILM_CAR_OUTPUT), loads.signal).then(
-      (container) => {
-        if (loads.signal.aborted) {
-          container.dispose();
-          return;
-        }
-        try {
-          trailhead.swapCar(placeStaticModel(container, FILM_CAR_NAME, 0, 0, 0, 0));
-        } catch (error) {
-          console.warn(`end: the film's car could not be placed (${error instanceof Error ? error.message : String(error)}); the parked car stays`);
-        }
-      },
-      (error: unknown) => {
-        if (!loads.signal.aborted) console.warn(`end: the film's car did not load (${error instanceof Error ? error.message : String(error)}); the parked car stays`);
-      },
-    );
+    loadFilmCar(r, signs, loads.signal);
   }
 
   /** What the end scene is played over: the car's site and heading, the road, the door, and the trailhead's car as it stands; null on a world with no road. */
@@ -1513,7 +1408,7 @@ function buildGame(
       direction,
       road: { centerX: (z) => roadCenterX(seed, z), groundY: (x, z) => elevationAt(seed, x, z) },
       door: doorSpot(site, direction),
-      car: () => signs?.trailhead.car() ?? null,
+      car: () => signs?.car() ?? null,
     };
   }
 
@@ -1526,9 +1421,9 @@ function buildGame(
    * body at the crest, from the session's world, in `r`'s scene. */
   function buildExtras(r: Renderer): void {
     if (activeWorld === null) return;
-    signs = createSigns(activeWorld, r);
+    signs = createHikeSigns(r, activeWorld, seed);
     fetchFilmCar(r);
-    body = activeWorld.search === null ? null : createBodyMesh(r.scene, activeWorld.search.body, { shadows: r.shadows });
+    body = activeWorld.search === null ? null : createHikeBody(r, activeWorld.search.body);
   }
 
   function disposeExtras(): void {
@@ -1827,7 +1722,7 @@ function buildGame(
       // corrected for: freecam flies at 12-144 m/s, so paying for exactness
       // here would mean new renderer API for an error no one can perceive.
       if (!cameraOnPlayer) return;
-      const p = renderer.camera.position;
+      const p = renderer.cameraPosition();
       freecam = { x: p.x, y: p.y, z: p.z };
       freecamPending = false;
     }
@@ -2053,7 +1948,7 @@ function buildGame(
   /** The frame's draw: every frame, or one every `COVERED_DRAW_MS` while the intro's film covers the hike. */
   const filmDraw = createCoveredDraw();
   function drawHike(): void {
-    if (filmDraw.due(performance.now())) renderer.scene.render();
+    if (filmDraw.due(performance.now())) renderer.drawFrame();
   }
 
   let last = performance.now();
@@ -2133,11 +2028,11 @@ function buildGame(
   // the player is doing by then, which for a follower is the host's next game.
   let landingTimer: ReturnType<typeof setTimeout> | null = null;
 
-  function endSession(message: string): void {
+  function endSession(message: string, why: Fields = {}): void {
     // A disposed game has no HUD to write to and no business steering the
     // page: whoever disposed it decided where the player goes next.
     if (disposed) return;
-    telemetry?.event("session_end", { msg: message, p: progressRounded() });
+    telemetry?.event("session_end", { msg: message, p: progressRounded(), ...why });
     hud.setStatus(message);
     // One timer, not one per call: two ends in the same session (a session-end
     // event and a lost transport, say) would otherwise push two history
@@ -2145,6 +2040,22 @@ function buildGame(
     if (landingTimer !== null) clearTimeout(landingTimer);
     landingTimer = setTimeout(navigateToLanding, 2000);
     sessionOver();
+  }
+
+  /**
+   * What was happening in the hike, for a row about a GPU error or a lost
+   * device (`gpuFaults.ts`): read when a row is made, and kept by no frame.
+   */
+  function hikeNow(): Fields & { hidden: boolean } {
+    return {
+      ready: worldIn,
+      busy: rebuilding ? "rebuild" : lowering ? "drop" : switching ? "switch" : "",
+      film: filmOver,
+      hidden: document.visibilityState !== "visible",
+      shownMs: Math.round(performance.now() - shownAt),
+      p: progressRounded(),
+      tick: activeWorld?.state.tick ?? 0,
+    };
   }
 
   /** The session has ended, or the match has: its last seconds are not play,
@@ -2215,16 +2126,14 @@ function buildGame(
         return;
       }
       const now = performance.now();
-      const carIn = (signs?.trailhead.car()?.model ?? null) !== null;
+      const carIn = signs?.filmCarIn() ?? false;
       // A car that never lands: the scene on the parked one after ESCAPE_WAIT_S.
       if (!carIn && now - escapeFrom < ESCAPE_WAIT_S * 1000) return;
       if (carIn) {
-        // Past its first frames, then its pipelines in flight landed (or, with none counted,
-        // ESCAPE_SETTLE_S), at most ESCAPE_WAIT_S after those frames.
-        if (signs?.trailhead.warm() ?? false) return;
+        // Past its first frames, then ESCAPE_SETTLE_S on, at most ESCAPE_WAIT_S after those frames.
+        if (signs?.warm() ?? false) return;
         escapeWarmed ??= now;
-        const pipelines = pipelinesFor(renderer.engine);
-        const settled = pipelines !== undefined ? pipelines.pending() === 0 : now - escapeWarmed >= ESCAPE_SETTLE_S * 1000;
+        const settled = now - escapeWarmed >= ESCAPE_SETTLE_S * 1000;
         if (!settled && now - escapeWarmed < ESCAPE_WAIT_S * 1000) return;
       }
       escapeFrom = null;
@@ -2325,7 +2234,7 @@ function buildGame(
       syncEndScene();
       syncTelemetry(host.world, state, self, input.sprinting);
       // True exactly when `sync` took its player-following branch, which is
-      // the only case in which `renderer.camera.position` is an eye position
+      // the only case in which `renderer.cameraPosition()` is an eye position
       // a pending freecam can adopt.
       cameraOnPlayer = self !== undefined && freecam === null;
       drawHike();
@@ -2534,11 +2443,6 @@ function buildGame(
     connectClient();
   }
 
-  // A start that fell back to WebGL2 from a WebGPU engine, the line saying
-  // so, once. Below the session's start, whose `setStatus(null)` would wipe it.
-  if (engineNotice !== null) hud.flash(engineNotice, FALLBACK_NOTICE_MS);
-  engineNotice = null;
-
   /** One frame. Named, so a live tier change can stop it on the old engine and
    * run it on the new one; it reads `renderer` when it runs. */
   function loop(): void {
@@ -2552,38 +2456,6 @@ function buildGame(
     stepAndRender();
   }
 
-  // On WebGPU a draw may be left out while its pipeline is made
-  // (`asyncPipelines.ts`), so the first frames can show a world with holes:
-  // the world stays hidden until a frame leaves nothing out, 10 s after the
-  // first frame at most (`revealWhenWhole`), under "Loading…" while the HUD
-  // says nothing of its own (`holdReveal`). A switch or the game's end lifts
-  // it at once. WebGL2 shows its first frame as always.
-  /** Lifts the start's hold, once, and stops waiting for a whole frame. */
-  let endRevealHold = (): void => undefined;
-  /** On WebGPU, the first frame that left no draw out; never, on WebGL2. */
-  let firstWholeFrame: Promise<void> | null = null;
-  if (renderer.engine.isWebGPU && watchers !== null) {
-    const held = canvas;
-    const engine = renderer.engine;
-    const gpu = watchers;
-    const line = createHud(container);
-    firstWholeFrame = new Promise<void>((resolve) => made(gpu.reveal(engine, resolve)));
-    const lift = holdReveal({
-      hideWorld: (hidden) => {
-        held.style.visibility = hidden ? "hidden" : "";
-      },
-      showLine: (shown) => line.setStatus(shown ? LOADING_LINE : null),
-      releaseLine: () => line.dispose(),
-      status: () => hud.status(),
-      eachFrame: (fn) => {
-        const observer = engine.onEndFrameObservable.add(fn);
-        return () => engine.onEndFrameObservable.remove(observer);
-      },
-      reveal: (fn) => gpu.reveal(engine, fn),
-    });
-    endRevealHold = lift;
-    made(() => endRevealHold());
-  }
   // The world stage of the loading bar: the clipmap's rings, then the
   // forest's billboards. With the build deferred, the rings are made a slice
   // at a time with a paint between (`FIRST_BUILD_SLICE_MS`); otherwise they
@@ -2610,7 +2482,7 @@ function buildGame(
   // renderer swapped in meanwhile takes the wait over (`whenStandingSkyHeld`),
   // since the one it replaced never resolves its own, and starts its own loop.
   const firstBuild = Promise.all([clipmapBuilt, whenStandingSkyHeld(() => renderer, nextSwap)]).then(() => {
-    if (!disposed && !broken && renderer === built) built.engine.runRenderLoop(loop);
+    if (!disposed && !broken && renderer === built) built.runLoop(loop);
   });
   progress?.start("world", "bakes");
   void renderer.forestReady.then(
@@ -2623,9 +2495,7 @@ function buildGame(
   }
   const ready = firstBuild.then(() =>
     startReady({
-      scene: renderer.scene,
-      forestReady: renderer.forestReady,
-      reveal: firstWholeFrame,
+      renderer,
       progress,
       maxMs: READY_MAX_MS,
       // Stepped first builds are done once a frame has shown the shells the player's place and the
@@ -2634,21 +2504,12 @@ function buildGame(
       firstBuilds: firstBuilds === undefined ? null : () => built.firstSynced.then(() => firstBuilds.drained()),
     }),
   );
-  // On a WebGPU engine, the GLSL shaders the WebGL2 renderer loads lazily are
-  // fetched ahead once the world is in, at idle, so a rebuild on WebGL2 after
-  // a failure of the engine (`answerFailure`) needs no network
-  // (`webgl2Shaders.ts`: on 2026-10-19 the network was down when one ran).
-  /** Stops the fetch ahead where the hike ends first. */
-  let stopPrefetch = (): void => undefined;
-  void ready.then(() => {
-    if (disposed || broken || !renderer.engine.isWebGPU) return;
-    stopPrefetch = prefetchWebGl2Shaders({ idle: pageIdle, load: () => loadWebGl2Shaders(), log: (line) => console.info(line) });
-  });
   // A look named in the URL (`?cmd=seed hollow;time 22;escape`) is called once the world is in,
   // so a link opens on its scene; on a client it says whose it is to call, as the typed one does.
   void ready.then(() => {
     if (disposed || broken) return;
     for (const entry of view) if (isLook(entry.name)) applyView(entry.name, entry.args);
+    worldIn = true;
     // The world is in and the URL's looks applied: tools that time or shoot the page wait for this class.
     document.body.classList.add("world-ready");
   });
@@ -2688,15 +2549,13 @@ function buildGame(
     // The new camera is on no one until its first sync.
     cameraOnPlayer = false;
     watchCompiles(r);
-    tellCompiles(r);
-    pinCompiles(r);
   }
 
   const swapBindings: SwapBindings = {
-    // The target's engine is made before the swap by the WebGPU rule
-    // (`options.engineFor`), on the canvas `freshCanvas` hands out first;
-    // null, the renderer makes WebGL2's.
-    build: (next, target, engine) => createRenderer(next, level, forest, { tier: target, engine: engine ?? undefined, pipelines: pipelinesFor(engine), skyTable: skySource.table, gpuTime: parseGpuTime(location.search) }),
+    // The renderer makes its own engine from the canvas it is built on: the
+    // one made for the switch (`options.engineFor`), which `freshCanvas`
+    // hands out first.
+    build: (next, target) => createHikeRenderer(next, level, forest, { tier: target, skyTable: skySource.table, gpuTime: parseGpuTime(location.search), paced: isMobile(navigator) }),
     freshCanvas: () => document.createElement("canvas"),
     extras: { dispose: disposeExtras, build: buildExtras },
     rebind: (next) => {
@@ -2732,32 +2591,19 @@ function buildGame(
 
   /**
    * Switches the running hike to `target`: the page paints first (the pause
-   * screen's opaque ground, or a cover over play), then the engine the WebGPU
-   * rule gives `target` is made (`options.engineFor`) while the old renderer
+   * screen's opaque ground, or a cover over play), then the canvas the new
+   * renderer is built on is made (`options.engineFor`) while the old renderer
    * still draws, then the synchronous swap, then the wait for the new scene.
    * `save`, when given, is kept only when the switch reaches `target`; a
    * fallback keeps the choice as it was, says so, and reports the tier that
-   * failed so it is not tried again. A WebGPU engine that could not build
-   * `target` gives way to WebGL2 at `target`, remembered, with the HUD's line.
-   * When no tier builds at all, the Settings page and the landing say why,
+   * failed so it is not tried again. When no tier builds at all, the Settings page and the landing say why,
    * and the hike ends. The wait for the new scene is bounded by `readyMaxMs`,
    * which each caller passes for the cover it put up
    * (`APPLY_SWAP_READY_MAX_MS`, `GOVERNOR_SWAP_READY_MAX_MS`). Returns the
    * tier now running.
    */
   function switchTo(target: QualityTier, source: TierSource, save: TierChoice | null, readyMaxMs: number): Promise<QualityTier> {
-    return serial.track(
-      switchNow(target, source, save, readyMaxMs).then((reached) => {
-        flashEngineNotice();
-        return reached;
-      }),
-    );
-  }
-
-  /** The line of a WebGPU engine that could not build its tier, once. */
-  function flashEngineNotice(): void {
-    if (engineNotice !== null && !disposed && !broken) hud.flash(engineNotice, FALLBACK_NOTICE_MS);
-    engineNotice = null;
+    return serial.track(switchNow(target, source, save, readyMaxMs));
   }
 
   async function switchNow(target: QualityTier, source: TierSource, save: TierChoice | null, readyMaxMs: number): Promise<QualityTier> {
@@ -2766,25 +2612,10 @@ function buildGame(
     try {
       await new Promise<void>((resolve) => afterNextPaint(resolve));
       if (disposed) return tier;
-      // The engine's making counts against the cover's bound; the scene waits
-      // on what is left of it. An engine too slow for the bound gives way to
-      // WebGL2 at `target`, remembered against nothing.
-      const made = await engineWithinBound((wanted) => options.engineFor(target, wanted), readyMaxMs, {
-        now: () => performance.now(),
-        setTimer: (fn, ms) => {
-          const id = setTimeout(fn, ms);
-          return () => clearTimeout(id);
-        },
-        webgl2: () => ({ canvas: document.createElement("canvas"), engine: null, watchers: null }),
-      });
-      if (made.late) console.warn(`WebGPU: the engine was not ready within the switch's ${readyMaxMs} ms; drawing ${target} with WebGL2.`);
-      const next = made.onCanvas;
-      if (disposed || broken) {
-        next.engine?.dispose();
-        return tier;
-      }
-      if (next.watchers !== null) watchers = next.watchers;
-      // The canvas the engine was made on is the first the swap takes.
+      // The page's canvas, made at once: the cover's bound is the scene's whole.
+      const next = options.engineFor(target);
+      if (broken) return tier;
+      // The canvas made for the switch is the first the swap takes.
       let engineCanvas: HTMLCanvasElement | null = next.canvas;
       const bindings: SwapBindings = {
         ...swapBindings,
@@ -2794,20 +2625,19 @@ function buildGame(
           return fresh;
         },
       };
-      // The start's hold on its world, if still up, gives way to the switch's own cover.
-      endRevealHold();
       let got: ReturnType<typeof swapRenderer>;
       try {
         got = swapRenderer(
           { renderer, canvas },
-          { tier: target, engine: next.engine, watch: next.watchers?.failures ?? null, fallbackTier: tier },
+          // The renderer makes its own engine and keeps its own watch on it: the ladder is handed neither.
+          { tier: target, fallbackTier: tier },
           bindings,
         );
       } catch (error) {
         broken = true;
-        // Each failed rung has taken itself down; this is for a throw from the
-        // old renderer's own dispose, which would leave its registration behind.
-        releaseAtmosphere();
+        // Each failed rung has taken itself down, and the hike's renderer
+        // registers nothing outside itself: a throw from the old one's own
+        // dispose leaves nothing to take back.
         console.error("quality: the renderer could not be rebuilt at any tier.", error);
         swapError = "The graphics could not be restarted; returning to the title screen.";
         options.onTierFallback({ attempted: target, built: null, source });
@@ -2826,19 +2656,10 @@ function buildGame(
       if (got.fellBack) options.onTierFallback({ attempted: target, built: tier, source });
       else tierSource = source;
       governor?.restart(performance.now());
-      console.info(`quality: ${tier} (${got.fellBack ? "fallback" : source}), engine ${renderer.engine.isWebGPU ? "webgpu" : "webgl2"}`);
+      console.info(`quality: ${tier} (${got.fellBack ? "fallback" : source}), engine ${renderer.engineName}`);
       // The forest's billboards too: they bake outside what the scene
       // counts, and would otherwise fill in after the cover has lifted.
-      const sceneFrom = performance.now();
-      await whenSceneReady(renderer.scene, made.leftMs, renderer.forestReady);
-      // On WebGPU, then a frame that left no draw out while its pipeline was
-      // made, within what is left of the same bound: the cover lasts no
-      // longer, and meshes do not appear after it lifts.
-      const gpu = watchers;
-      if (renderer.engine.isWebGPU && gpu !== null) {
-        const engine = renderer.engine;
-        await whenFrameWhole((lift) => gpu.reveal(engine, lift), made.leftMs - (performance.now() - sceneFrom));
-      }
+      await renderer.whenReady(readyMaxMs);
       return tier;
     } finally {
       switching = false;
@@ -2867,28 +2688,56 @@ function buildGame(
   }
 
   /**
-   * A failure of the running WebGPU engine (`watchWebGpu`), answered live,
-   * never by a reload, which would end a party (`answerFailures`): the page
-   * remembers it, and the renderer is rebuilt at the running tier on the
-   * engine the WebGPU rule now gives it, under a cover over play.
+   * A failure of the running WebGPU engine (`Renderer.ownWatch`), answered
+   * live, never by a reload, which would end a party (`answerFailures`): the
+   * page is told of it, and the renderer is rebuilt at the running tier on a
+   * new engine of its own, under a cover over play.
    */
   const answerFailure = answerFailures({
     serial,
     alive: () => !disposed && !broken && landingTimer === null,
     running: () => renderer.engine,
-    runningOnWebGpu: () => renderer.engine.isWebGPU,
     unwatch: () => engineBindings.unwatch(),
     abandon: () => renderer.abandon(),
-    record: (reason) => options.engineFailed(reason),
-    cover: coverPlay,
-    stopLoop: () => renderer.engine.stopRenderLoop(),
-    // The answer shows the line for what the rebuild ended on; the swap's
-    // own is dropped, so it shows once.
-    rebuild: (readyMaxMs) => switchNow(tier, tierSource, null, readyMaxMs).then(() => {
-      engineNotice = null;
-    }),
+    record: (reason) => {
+      failedAt = performance.now();
+      options.engineFailed(reason);
+    },
+    // The loss that is one too many in too short a time is not answered by another renderer (`lossBound.ts`): the
+    // hike ends as one whose graphics could not be restarted does, with its line here and on the landing page.
+    ends: (reason) => reason === "lost" && faults.lastLoss?.end === true,
+    end: () => {
+      const loss = faults.lastLoss;
+      options.losses.ended();
+      endSession(LOSS_ENDED_LINE, { why: "device_lost", losses: loss?.losses ?? 0, recent: loss?.recent ?? 0 });
+    },
+    cover: () => {
+      const lift = coverPlay();
+      rebuilding = true;
+      return () => {
+        rebuilding = false;
+        lift();
+      };
+    },
+    stopLoop: () => renderer.stopLoop(),
+    // The swap shows no line of its own: the answer shows the one line of a rebuild done.
+    rebuild: (readyMaxMs) => switchNow(tier, tierSource, null, readyMaxMs).then(() => undefined),
     flash: (line) => hud.flash(line, FALLBACK_NOTICE_MS),
     log: (line) => console.error(line),
+    // How the rebuild came out: whether the new renderer stands (or is still being made as the cover lifts), and the
+    // frames it has drawn under the cover. A renderer that could not be made, or lost its device in turn, did not.
+    rebuilt: (reason, failure) => {
+      const now = failure === null ? faults.current() : null;
+      const fields: Fields = { reason, ok: failure === null && (now === null || now.facts.state === "standing" || now.facts.state === "making"), ms: Math.round(performance.now() - failedAt), tier };
+      if (failure !== null) fields.why = failure.slice(0, 300);
+      else fields.engine = renderer.engineName;
+      if (now !== null) {
+        fields.r = now.r;
+        fields.state = now.facts.state;
+        fields.frames = now.facts.frames;
+      }
+      telemetry?.event("engine_rebuilt", fields);
+    },
   });
 
   /** Feeds the governor one frame of play, which acts on its verdict once
@@ -2900,7 +2749,7 @@ function buildGame(
       menuOpen: menu.isOpen,
       barOpen: bar.isOpen,
       visible: document.visibilityState === "visible",
-      waitingItems: renderer.scene.getWaitingItemsCount(),
+      waitingItems: renderer.waitingItems(),
       compiled: compiledSinceFrame,
       switching,
       freecam: freecam !== null || freecamPending,
@@ -2933,9 +2782,9 @@ function buildGame(
         cover: coverPlay,
         stopLoop: () => {
           const stopped = renderer;
-          stopped.engine.stopRenderLoop();
+          stopped.stopLoop();
           return () => {
-            if (!disposed && !broken && renderer === stopped) stopped.engine.runRenderLoop(loop);
+            if (!disposed && !broken && renderer === stopped) stopped.runLoop(loop);
           };
         },
         idleCadence: () => timeIdleCadence(AbortSignal.timeout(GOVERNOR_IDLE_MAX_MS)),
@@ -2964,7 +2813,9 @@ function buildGame(
       const release = gate.cover();
       // The intro's film is over the hike: drawn slowly until the cut (`coveredDraw.ts`).
       const lift = filmDraw.cover();
+      filmOver = true;
       return () => {
+        filmOver = false;
         lift();
         // The film is gone: what is left of the first builds runs to its end here, behind the cut's
         // veil, and from now on a build that cannot wait runs whole, as in any play.
@@ -2990,7 +2841,7 @@ function buildGame(
       admission.attach(next);
     },
     graphics() {
-      return { tier, engine: renderer.engine.isWebGPU ? "webgpu" : "webgl2" };
+      return { tier, engine: renderer.engineName };
     },
     notify(line) {
       if (!disposed) hud.flash(line, FALLBACK_NOTICE_MS);
@@ -3013,12 +2864,10 @@ function buildGame(
       document.removeEventListener("visibilitychange", onVisibility);
       netgraph.dispose();
       if (landingTimer !== null) clearTimeout(landingTimer);
-      endRevealHold();
-      stopPrefetch();
       // Before anything of the engine goes: a disposed engine is not a
       // failing one.
       engineBindings.unwatch();
-      if (!broken) renderer.engine.stopRenderLoop();
+      if (!broken) renderer.stopLoop();
       session?.dispose();
       admission?.dispose();
       for (const off of unsubscribe) off();
@@ -3036,12 +2885,9 @@ function buildGame(
       prompt.dispose();
       input.dispose();
       if (!broken) {
-        // Off an engine that may outlive the hike.
         unwatchCompiles?.();
-        untellCompiles?.();
-        unpinCompiles?.();
-        if (options.keepEngine === undefined) renderer.dispose();
-        else options.keepEngine({ canvas, engine: renderer.retire(), watchers, tier });
+        // The renderer goes with its engine: none is kept for the next hike.
+        renderer.dispose();
       }
       skySource.dispose();
       wildlifeAudio?.dispose();

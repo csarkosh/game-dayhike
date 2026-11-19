@@ -130,7 +130,7 @@ before. The chase's first episode also comes at once: the rest it began under (u
 minute late in a climb, a minute and more for a find that came early) is cut to the chase's own
 2 s as the chase begins (`summit.ts`).
 
-## 3. The light (`game/wayLightGeometry.ts`, `game/wayLight.ts`, `game/wayLevel.ts`)
+## 3. The light (`game/wayLightGeometry.ts`, `game/wayLight.ts`, `game/lite/wayLightMeshes.ts`, `game/wayLevel.ts`)
 
 **The shape.** Taller ground mist, not a wall. Across the way the mist is thin on the path
 (`WAY_PATH_SHARE`, 0.3 of the banks', standing to 1.3 m; 0.55 and 1.7 m until the owner asked
@@ -153,7 +153,12 @@ a point is taken over four points either side of it (`WAY_ACROSS_POINTS`): the d
 kinks, and a way across taken at the point alone folds the mist over itself inside a bend. One
 material of its own (`wayLight`), a mesh every 64 m of way, built a chunk a slice, 23 of the
 ground's heights a point. No other material's shader knows of it, so it costs geometry and its
-own pixels rather than work on every lit pixel, on every tier.
+own pixels rather than work on every lit pixel, on every tier. Its stages are WGSL
+(`shaders/wayLight/`), a vertex's four numbers ride in its mesh's colour, and a mesh of no size
+wears the material from the renderer's start, so the pipeline every stretch draws with is made
+while the hike loads and not as the chase begins. Among the frame's see-through draws the
+chase's own stand between the valley's mist banks and the rain: the crowd's bodies, this mist,
+the mist beyond its banks, then the crowd's eyes.
 
 **Its colour.** The ground mist's own (`cloudColourUnder` of the air's near colour, which every
 tier has), a quarter of the way toward a cold tint and lit to 8 times it before the tone map
@@ -171,8 +176,9 @@ three tenths of their height (`WAY_HEAVE`) on two crossed waves, a turn every 7 
 and the shader holds the mist under that head, so a bank never shows a cut edge along its top. Near the eye the shapes smooth out and the mist thins, so it hangs round a runner and
 does not rush past.
 
-**The mist beyond the banks** (`wayMistFieldGeometry.ts`, `wayMistField.ts`). On the tiers with
-no marched ground mist (the material path: phones) the way's banks stood alone in dark woods.
+**The mist beyond the banks** (`wayMistFieldGeometry.ts`, `wayMistField.ts`,
+`lite/wayFieldMesh.ts`). On the tiers with no marched ground mist (the tiers with no post chain:
+phones) the way's banks stood alone in dark woods.
 There the mist goes on past them over all the ground round the eye, thicker than the banks
 themselves (a sheet's strength 0.8 and a fin's 0.6, against the banks' 0.28 and 0.21), so the
 way is the thinner, darker lane through it. It is one mesh: a square of 25 by 25 cells of 3 m
@@ -184,15 +190,15 @@ from the eye. The ground under it is asked for forty cells a frame, the nearest 
 and kept by the cell's place in the world, so a step asks for one new row. The tiers that march
 the night's ground mist have that beyond the banks already.
 
-**The chase's red on the material path.** No pass grades the frame there and Babylon's image
-processing never touches a material of the mist's kind, so the mist takes the chase's cast
-itself: its colour times the cast's tint over the tint's own weight on a grey
+**The chase's red on the material path.** No pass grades the frame there, and the grade the
+tier's other materials lay on themselves is not in a stage of the mist's kind, which writes its
+colour as it is, so the mist takes the chase's cast itself: its colour times the cast's tint over the tint's own weight on a grey
 (`wayCastOnMaterial`: for (0.9, 0.64, 0.7), about (1.29, 0.92, 1.0)), mixed in as the cast comes
 in. The hue is the desktop's and the mist is as bright as it was.
 
 **The dark round it.** While the light is up the rest of the frame is dimmed to half
-(`WAY_DIM`) through the frame's exposure, beside the stare's dimming: the lighting's on the tiers
-with no post chain, the grade's on the others. The way's mist itself is exempt.
+(`WAY_DIM`) through the frame's exposure, beside the stare's dimming: the exposure every material
+ends with on the tiers with no post chain, the grade's on the others. The way's mist itself is exempt.
 
 **The mist.** Where the tier has ground mist, its map of "how far off the trail" is built over
 the way instead while the light is up: thin from the line to where the way's banks begin, whole
@@ -215,7 +221,7 @@ trail's.
 **What is reported.** Each page sends one `way` telemetry event as its way settles: its length,
 its straight line, and whether it is the fallback.
 
-## 3a. The crowd (`game/crowdField.ts`, `game/crowdEyes.ts`, `game/crowdCards.ts`)
+## 3a. The crowd (`game/crowdField.ts`, `game/crowdEyes.ts`, `game/crowdCards.ts`, `game/lite/crowdEyeMeshes.ts`, `game/lite/crowdCardMeshes.ts`)
 
 In the chase the woods beside the way are full of shades, and all of them are coming for the
 player. They are dressing: each screen makes and moves its own round its own player, from its
@@ -263,8 +269,9 @@ being those, and a standing shade does not close the dark (`2026-10-06-the-haunt
 **What is drawn.** A figure's eyes are two small additive quads (`crowdEyes.ts`), seen through
 the mist at any distance and dimming from 40 to 120 m, so the eyes far down the way are what
 make the crowd deep. Inside 36 m its body is a card facing the eye (`crowdCards.ts`): an
-antlered figure drawn in the fragment stage, written into the shades' silhouette mask
-(`shadeSilhouette.ts`) as a darkness in the mist, and into the frame as a dark body with a
+antlered figure drawn in the fragment stage, written into the shades' mask
+(`lite/shadeMask.ts`, whose pass draws the cards' mesh with a material of the cards' own in place
+of the one it wears) as a darkness in the mist, and into the frame as a dark body with a
 faint rim the mist lights, so it shows against black woods as well as pale mist. Both are one
 mesh each, rewritten every frame. The ground under a figure is asked for a few figures a frame
 and again only once one has moved a metre (`crowdHeights`), and whether the ground admits a
@@ -295,10 +302,14 @@ until they are made again.
   (`helpers/wayRunner.ts`), the crest's Hollow hunting behind. The runner reaches the road
   without stalling or leaving the channel, and the Hollow never comes within 3 m.
 - `test/sim/summitRun.test.ts`: one whole match on one world, the climb included.
-- `test/game/wayLightGeometry.test.ts`, `wayLight.test.ts`, `wayShow.test.ts`: the mist's
-  sheets, veils and fins, that it never folds at a kink, its colour, drift and heave, the mesh and
-  its material, the level, the dim on both colour paths, the
-  mist's map, and the renderer's and the app's wiring.
+- `test/game/wayLightGeometry.test.ts`, `wayLight.test.ts`, `wayMistFieldGeometry.test.ts`,
+  `wayMistField.test.ts`, `wayShow.test.ts`: the mist's sheets, veils and fins, that it never
+  folds at a kink, its colour, drift and heave, a stretch stood on the ground in slices, the
+  field's cells round the eye, the level, the dim on both colour paths, the mist's map, and the
+  renderer's and the app's wiring.
+- `test/game/lite/wayLightMeshes.test.ts`, `wayFieldMesh.test.ts`, `crowdEyeMeshes.test.ts`,
+  `crowdCardMeshes.test.ts`: each drawer's stages, its blend and its place among the draws, and
+  the cards in the shades' mask.
 - `test/game/crowdField.test.ts`, `crowdEyes.test.ts`, `crowdCards.test.ts`, `crowdShow.test.ts`:
   the crowd's numbers, where a figure may stand, a crowd stepped round a player who stands,
   runs and leaves the way, how it closes (the speed's shape, the pack and its cap, figures

@@ -11,7 +11,7 @@ import {
 
 /**
  * The pure arithmetic of the grade pass. Babylon-free and on the architecture
- * test's BABYLON_FREE_FILES list; `post.ts` binds it. Matrices are
+ * test's BABYLON_FREE_FILES list; `lite/postChain.ts` binds it. Matrices are
  * column-major in GLSL order, so a `Mat3` uploads with setMatrix3x3 unchanged.
  */
 
@@ -138,9 +138,10 @@ export function mixPalette(a: PaintPalette, b: PaintPalette, t: number): PaintPa
   };
 }
 
-// ---- AgX (three.js port, MIT). Column-major, mirrored in grade.fragment.fx. ----
-// Constants are copied verbatim from three.js `tonemapping_pars_fragment.glsl.js`
-// (src/renderers/shaders/ShaderChunk); the lockstep test pins the GLSL to these.
+// ---- AgX. Column-major, mirrored in the grade's stage (`lite/postWgsl.ts`). ----
+// The AgX tone map is ported from three.js, MIT License, Copyright 2010-2024 three.js authors
+// (src/renderers/shaders/ShaderChunk/tonemapping_pars_fragment.glsl.js): its
+// constants are copied verbatim, and the lockstep test pins the stage to these.
 export const SRGB_TO_REC2020: Mat3 = [0.6274, 0.0691, 0.0164, 0.3293, 0.9195, 0.0880, 0.0433, 0.0113, 0.8956];
 export const REC2020_TO_SRGB: Mat3 = [1.6605, -0.1246, -0.0182, -0.5876, 1.1329, -0.1006, -0.0728, -0.0083, 1.1187];
 export const AGX_INSET: Mat3 = [
@@ -167,8 +168,8 @@ export function mulMat3(m: Mat3, v: Rgb): Rgb {
 
 /**
  * The AgX contrast sigmoid's seven coefficients, x^6 down to x^0, mirrored
- * verbatim in the GLSL `agxContrast` and pinned there by a lockstep test —
- * this was duplicated with no such test until the final review.
+ * verbatim in the WGSL `agxContrast` (`lite/postWgsl.ts`) and pinned there by a
+ * lockstep test (`gradeShader.test.ts`).
  */
 export const AGX_CONTRAST: readonly [number, number, number, number, number, number, number] =
   [15.5, -40.14, 31.96, -6.868, 0.4298, 0.1191, -0.00232];
@@ -180,7 +181,7 @@ function agxContrast(x: number): number {
   return c6 * x4 * x2 + c5 * x4 * x + c4 * x4 + c3 * x2 * x + c2 * x2 + c1 * x + c0;
 }
 
-/** The TS reference of `agxToneMap` in grade.fragment.fx. Input linear sRGB with exposure already applied; output linear sRGB in [0, 1]. */
+/** The TS reference of `agxToneMap` in grade.fragment.glsl. Input linear sRGB with exposure already applied; output linear sRGB in [0, 1]. */
 export function agx(c: Rgb): Rgb {
   let v = mulMat3(AGX_INSET, mulMat3(SRGB_TO_REC2020, c));
   const enc = (x: number) => clamp01((Math.log2(Math.max(x, 1e-10)) - AGX_MIN_EV) / (AGX_MAX_EV - AGX_MIN_EV));

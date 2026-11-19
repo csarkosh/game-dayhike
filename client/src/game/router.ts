@@ -124,15 +124,17 @@ export function sameFollowPlace(target: string, current: string): boolean {
 }
 
 /**
- * The query parameters that belong to this page alone: `?engine=`, `?tier=`,
- * `?probe=` and `?wgsl=`, a tester's overrides. One set: carried across the page's own
+ * The query parameters that belong to this page alone: `?tier=` and
+ * `?probe=`, a tester's overrides. One set: carried across the page's own
  * navigation (`keepOverrides`), so an address that sets the tier on the title
  * still sets it in the hike Play starts, and stripped from the route a lobby
  * host announces (`stripOverrides`), so none of them follows a host onto a
  * follower's machine, and from a route a follower is sent to, for a host that
- * still announces them.
+ * still announces them. `?engine=` and `?wgsl=`, which chose an engine and
+ * its shader lookup, are read by nothing and are no longer of the set: a
+ * route that carries one carries it as any other parameter.
  */
-const OVERRIDES = ["engine", "tier", "probe", "wgsl"] as const;
+const OVERRIDES = ["tier", "probe"] as const;
 
 /**
  * `route` (a path and query, as a lobby host announces it) without the

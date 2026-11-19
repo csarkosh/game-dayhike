@@ -1,7 +1,7 @@
 import { describe, it, expect } from "vitest";
 import { BODY_TOP_M, CAP_SCENE_IN_S, CAP_SCENE_OUT_FROM_S, CAP_SCENE_OUT_S, CAP_SCENE_S, CAP_SCENE_STEP_M, capPose, capStand, HOLLOW_HEAD_M, LENS_24, LENS_32, LENS_GAME, SCENE_IN_S, SCENE_OUT_FROM_S, SCENE_OUT_S, SCENE_STAND_M, SCENE_EYE_HEIGHT, SCENE_PITCH, sceneStand, REVEAL_PAN_S, SCENE_LOOK_S, SCENE_TURN_S, SHOTS, shotAt, SUMMIT_RISE_AT_S, SUMMIT_SCENE_S, summitPose, summitShot, THRESHOLD_AT_S, thresholdLook, thresholdAt, type SceneContext } from "../../src/game/cutscene.js";
 import { SUMMIT_REVEAL_S } from "../../src/sim/hollow.js";
-import { SUMMIT_RISE_DELAY_S } from "../../src/game/entityViews.js";
+import { SUMMIT_RISE_DELAY_S } from "../../src/game/entityPoses.js";
 
 describe("the summit scene", () => {
   const base = { x: 10, y: 1.7, z: 0, yaw: Math.PI / 2, pitch: -0.1 };

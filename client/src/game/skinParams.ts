@@ -1,10 +1,9 @@
 /**
- * Skin-shading constants. Babylon-free and on the
- * architecture test's BABYLON_FREE_FILES list; `skin.ts` is the plugin that
- * binds them. `SKIN_WRAP` and `SKIN_SCATTER` are runtime uniforms in
- * `shaders/skinDiffuse.fragment.fx`, not mirrored GLSL literals; only
- * `SKIN_SCATTER_TINT` is a GLSL const there, and a lockstep test asserts it
- * agrees with this file — tune them together.
+ * Skin-shading constants. Engine-free and on the architecture test's
+ * BABYLON_FREE_FILES list. The hike's renderer does not draw the skin's
+ * shading (`lite/notDrawn.ts`): these are the look in numbers, for the
+ * plugin that will, with `SKIN_WRAP` and `SKIN_SCATTER` as its uniforms and
+ * `SKIN_SCATTER_TINT` as a constant of its shader.
  */
 
 /** Wrap width: how far past the terminator diffuse keeps receiving light. */

@@ -2,13 +2,17 @@
  * A fixed data set in the shape the queries return, for the page's preview:
  * a week around a test party, two builds, a handful of errors, a few
  * visitors, one world's paths, and one session's trail (which also stands in
- * for a visitor's sessions and a match's). Seeded, so the preview is the same
- * every time.
+ * for a visitor's sessions and a match's). The trail carries one of each
+ * thing the GPU can do under a hike: an error whose picture held, one whose
+ * picture broke, and a lost device with its rebuild; the session `ENDED_SID`
+ * is one whose hike was ended by its lost devices. Seeded, so the preview is
+ * the same every time.
  */
 
 import type { Live, QueryName, Range, Row, Source } from "./source.js";
 import { calendarDate } from "./timeline.js";
 import { buildTrailFor, type DrawableTrail } from "./trail.js";
+import { LOSS_ENDED_LINE } from "../game/lossBound.js";
 import { GEN_VERSION } from "../sim/forest.js";
 import { DEFAULT_TERRAIN_VARIANT } from "../sim/terrain.js";
 
@@ -37,9 +41,9 @@ const day = (ms: number): string => calendarDate(ms);
 
 function funnel(): Row[] {
   return [
-    { build: "all", landed: 181, pressed_play: 78, started: 69, finished: 40, sessions: 191, first_seen: iso(NOW - 5 * DAY), last_seen: iso(NOW - 600_000) },
-    { build: "9557492d", landed: 143, pressed_play: 61, started: 54, finished: 31, sessions: 151, first_seen: iso(NOW - 2 * DAY), last_seen: iso(NOW - 600_000) },
-    { build: "5759b340", landed: 38, pressed_play: 17, started: 15, finished: 9, sessions: 40, first_seen: iso(NOW - 5 * DAY), last_seen: iso(NOW - 2 * DAY) },
+    { build: "all", landed: 181, turned_away: 6, pressed_play: 78, started: 69, finished: 40, sessions: 191, first_seen: iso(NOW - 5 * DAY), last_seen: iso(NOW - 600_000) },
+    { build: "9557492d", landed: 143, turned_away: 6, pressed_play: 61, started: 54, finished: 31, sessions: 151, first_seen: iso(NOW - 2 * DAY), last_seen: iso(NOW - 600_000) },
+    { build: "5759b340", landed: 38, turned_away: 0, pressed_play: 17, started: 15, finished: 9, sessions: 40, first_seen: iso(NOW - 5 * DAY), last_seen: iso(NOW - 2 * DAY) },
   ];
 }
 
@@ -142,14 +146,21 @@ function progress(): Row[] {
 
 function errors(): Row[] {
   // The totals are distinct over the range and the same on every row.
-  const totals = { sessions_with_errors: 5, sessions_with_warnings: 7 };
+  const totals = { sessions_with_errors: 7, sessions_with_warnings: 14 };
   return [
     { whose: "players", level: "error", n: "error", kind: "console", at_page: "game", msg: "WebGPU: the renderer could not be built on it; building it on WebGL2.", build: "9557492d", times: 4, sessions: 3, a_session: "s3f8a", a_machine: "win32-x64 141 ANGLE (NVIDIA, NVIDIA GeForce RTX 3060)", last_seen: iso(NOW - 2_400_000), ...totals },
     { whose: "players", level: "error", n: "connect_fail", kind: null, at_page: "game", msg: "ice_failed", build: "9557492d", times: 2, sessions: 2, a_machine: "win32-x64 141 ANGLE (Intel, Intel(R) Iris(R) Xe)", last_seen: iso(NOW - 7_200_000), ...totals },
     { whose: "players", level: "error", n: "error", kind: "unhandled", at_page: "landing", msg: "TypeError: Failed to fetch", build: "5759b340", times: 1, sessions: 1, a_machine: "other 0 null", last_seen: iso(NOW - 3 * DAY), ...totals },
     { whose: "you", level: "error", n: "error", kind: "uncaught", at_page: "game", msg: "RangeError: offset is out of bounds (trail chunk 14)", build: "9557492d", times: 1, sessions: 1, a_session: "s9c01", a_machine: "darwin-arm64 26 Apple M3 Max", last_seen: iso(NOW - 1_500_000), ...totals },
+    { whose: "players", level: "error", n: "gpu_error", kind: "validation", at_page: null, msg: "[Texture \"post_scene_resolved\"] used in submit while destroyed.", build: "9557492d", times: 1, sessions: 1, a_session: "s3f8a", a_machine: "darwin-arm64 155 Apple M2", last_seen: iso(NOW - 1_600_000), ...totals },
+    { whose: "players", level: "error", n: "device_lost", kind: null, at_page: null, msg: "The GPU process exited unexpectedly.", build: "9557492d", times: 4, sessions: 2, a_session: ENDED_SID, a_machine: "win32-x64 141 ANGLE (AMD, Radeon RX 580)", last_seen: iso(NOW - 1_800_000), ...totals },
+    { whose: "players", level: "error", n: "session_end", kind: null, at_page: null, msg: LOSS_ENDED_LINE, build: "9557492d", times: 1, sessions: 1, a_session: ENDED_SID, a_machine: "win32-x64 141 ANGLE (AMD, Radeon RX 580)", last_seen: iso(NOW - 1_800_000), ...totals },
+    { whose: "players", level: "warning", n: "gpu_error", kind: "validation", at_page: null, msg: "Vertex range (first: 0, count: 2616) requires a larger buffer (62784) than the bound buffer size (3139", build: "9557492d", times: 3, sessions: 2, a_session: "s3f8a", a_machine: "darwin-arm64 155 Apple M2", last_seen: iso(NOW - 1_700_000), ...totals },
     { whose: "players", level: "warning", n: "warn", kind: "console", at_page: "game", msg: "forest impostor: bake retried once for clutter.fungus_b", build: "9557492d", times: 9, sessions: 6, a_machine: "darwin-arm64 26 Apple M2", last_seen: iso(NOW - 900_000), ...totals },
     { whose: "players", level: "warning", n: "tier_fallback", kind: null, at_page: "start", msg: null, build: "9557492d", times: 2, sessions: 2, a_session: "s41b2", a_machine: "darwin-arm64 26 Apple M1", last_seen: iso(NOW - 5_000_000), ...totals },
+    // Visitors the load check turned away, by the reason: the browser has no WebGPU, or the GPU behind it cannot play.
+    { whose: "players", level: "warning", n: "turned_away", kind: "no-webgpu", at_page: null, msg: null, build: "9557492d", times: 4, sessions: 4, a_machine: "darwin-arm64 18 Apple GPU", last_seen: iso(NOW - 4_000_000), ...totals },
+    { whose: "players", level: "warning", n: "turned_away", kind: "software", at_page: null, msg: null, build: "9557492d", times: 2, sessions: 2, a_machine: "win32-x64 141 ANGLE (Microsoft, Microsoft Basic Render Driver Direct3D11 vs_5_0 ps_5_0, D3D11)", last_seen: iso(NOW - 6_000_000), ...totals },
   ];
 }
 
@@ -306,12 +317,20 @@ function live(): Live {
 const LOBBY = "3f2504e0-4f89-41d3-9a0c-0305e82c3301";
 const GAME = "g1388";
 const VID = "v7a10-1000";
+/** The session whose hike was ended by three lost devices in ten minutes. */
+const ENDED_SID = "s41b2";
+
+/** What a hike says was happening beside a row about the GPU (`game/gpuFaults.ts`). */
+const HIKE_NOW = { ready: true, busy: "", film: false, hidden: false, shownMs: 345_000, scene: false, ending: false, dark: 0, rain: 0.2, wet: 0.5, night: 0.4, hour: 18.6, lakes: 0, sea: false };
 
 /**
  * One session's trail: a session that landed, made a lobby, was joined,
- * loaded, played, hit a shader failure mid-climb, died and said goodbye.
- * Each row carries `row_json` as the query does, with the envelope's facts
- * the drawer reads from the first.
+ * loaded, played, hit a shader failure mid-climb, then a GPU error that
+ * left the picture whole, one that left it black, and a lost device that
+ * was rebuilt, died and said goodbye. `ENDED_SID`'s lost its device three
+ * times in ten minutes and its hike was ended. Each row carries `row_json`
+ * as the query does, with the envelope's facts the drawer reads from the
+ * first.
  */
 function session(sid: string, offsetMs = 0): Row[] {
   const t0 = NOW - 40 * 60_000 - offsetMs;
@@ -371,6 +390,58 @@ function session(sid: string, offsetMs = 0): Row[] {
     row_json: JSON.stringify({ n, room: LOBBY, sbuild: "4580155c", ...fields }),
   });
   const inMatch = { game: GAME, lobby: LOBBY, world: WORLD, seed: SEED };
+  const drawing = (r: number, frames: number, stoodMs: number, more: Record<string, unknown> = {}): Record<string, unknown> => ({ ...HIKE_NOW, r, tier: "medium", state: "standing", frames, stoodMs, ...more, ...inMatch });
+  const loss = (ms: number, r: number, losses: number, sinceMs: number | null, verdict: "rebuild" | "end"): Row =>
+    row(ms, "device_lost", {
+      ...drawing(r, 7_100, 121_000, { p: 0.52, tick: 14_000 + losses * 900 }), reason: "unknown", msg: "The GPU process exited unexpectedly.", losses, recent: losses, verdict, errors: 0,
+      ...(sinceMs === null ? {} : { sinceMs }), bufs: 1807, bufMB: 96.2, texs: 275, texMB: 540.3, heapMB: 311.4,
+    });
+  /** The rows after the climb's first acts: this session's own, or the one whose hike its lost devices ended. */
+  const rest: Row[] =
+    sid === ENDED_SID
+      ? [
+          loss(760_000, 2, 1, null, "rebuild"),
+          row(760_010, "error", { where: "game", kind: "console", msg: "the hike's renderer lost its device (unknown): The GPU process exited unexpectedly.", ...inMatch }),
+          row(760_020, "engine_failed", { reason: "lost", ...inMatch }),
+          row(764_100, "engine_rebuilt", { reason: "lost", ok: true, ms: 4080, tier: "medium", engine: "webgpu", r: 3, state: "standing", frames: 96, ...inMatch }),
+          loss(905_000, 3, 2, 145_000, "rebuild"),
+          row(905_020, "engine_failed", { reason: "lost", ...inMatch }),
+          row(909_300, "engine_rebuilt", { reason: "lost", ok: true, ms: 4280, tier: "medium", engine: "webgpu", r: 4, state: "standing", frames: 88, ...inMatch }),
+          loss(1_012_000, 4, 3, 107_000, "end"),
+          row(1_012_020, "engine_failed", { reason: "lost", ...inMatch }),
+          row(1_012_030, "session_end", { msg: LOSS_ENDED_LINE, p: 0.52, why: "device_lost", losses: 3, recent: 3, ...inMatch }),
+          row(1_014_000, "match_end", { p: 0.52, ended: false, dead: false, ...inMatch }),
+          row(1_014_500, "page", { kind: "landing", lobby: LOBBY }),
+          row(1_100_000, "end", { reason: "pagehide", dur: 1_100_000, trouble: 4, failed: 0, dropped: 0, sent: 49 }),
+        ]
+      : [
+          // A GPU error that left the picture whole: one bad draw, said once.
+          row(700_000, "gpu_error", {
+            ...drawing(2, 5_420, 98_000, { p: 0.43, tick: 12_400 }), w: 1, nth: 1, kind: "validation", src: "uncaptured", labels: 'RenderPassEncoder "post_scene"; RenderPipeline "clutter-fern"',
+            msg: 'Vertex range (first: 0, count: 2616) requires a larger buffer (62784) than the bound buffer size (31392) of the vertex buffer at slot 2 with stride 12.\n - While encoding [RenderPassEncoder "post_scene"].Draw(2616, 1, 0, 0).\n [RenderPipeline "clutter-fern"]',
+          }),
+          row(705_020, "gpu_window", { ...HIKE_NOW, ...inMatch, w: 1, r: 2, nth: 1, tier: "medium", state: "standing", ms: 5020, errors: 3, distinct: 1, total: 3, totalDistinct: 1, frames: 297, picture: "held", read: true, luma: 41.2, black: 0.012, spread: 22.6, p: 0.43, tick: 12_700 }),
+          // And one that left it black: the chain's own target gone, an error every frame after.
+          row(900_000, "gpu_error", {
+            ...drawing(2, 17_300, 298_000, { p: 0.61, tick: 24_300 }), w: 2, nth: 2, kind: "validation", src: "uncaptured", labels: 'Texture "post_scene_resolved"; CommandBuffer (unlabeled)',
+            msg: '[Texture "post_scene_resolved"] used in submit while destroyed.\n - While calling [Queue].Submit([[CommandBuffer (unlabeled)]])',
+          }),
+          row(905_030, "gpu_window", { ...HIKE_NOW, ...inMatch, w: 2, r: 2, nth: 2, tier: "medium", state: "standing", ms: 5030, errors: 301, distinct: 1, total: 304, totalDistinct: 2, frames: 301, picture: "broke", read: true, luma: 0, black: 1, spread: 0, p: 0.61, tick: 24_600 }),
+          // A lost device, and the renderer built again on a new one.
+          loss(1_000_000, 2, 1, null, "rebuild"),
+          row(1_000_010, "error", { where: "game", kind: "console", msg: "the hike's renderer lost its device (unknown): The GPU process exited unexpectedly.", ...inMatch }),
+          row(1_000_020, "engine_failed", { reason: "lost", ...inMatch }),
+          row(1_004_300, "engine_rebuilt", { reason: "lost", ok: true, ms: 4280, tier: "medium", engine: "webgpu", r: 3, state: "standing", frames: 104, ...inMatch }),
+          row(1_250_000, "hollow_seen", { p: 0.88, tick: 16_878, ...inMatch }),
+          row(1_310_000, "death", { cause: "hollow", p: 0.925, phase: "climb", near: 1, x: 652.3, z: 322.1, tick: 19_453, ...inMatch }),
+          row(1_530_000, "outcome", { result: "lost", self: "dead", alive: 0, players: 2, p: 0.93, tick: 31_552, ...inMatch }),
+          row(1_545_000, "match_end", { p: 0.93, ended: true, dead: true, ...inMatch }),
+          row(1_545_500, "page", { kind: "landing", lobby: LOBBY }),
+          row(1_545_800, "lobby_end", { reason: "left", members: 2 }),
+          row(1_546_000, "end", { reason: "pagehide", dur: 1_546_000, trouble: 3, failed: 0, dropped: 0, sent: 60 }),
+          signal(1_546_200, "room_leave", { host: true, peers: 1 }),
+          signal(1_546_300, "room_end", { reason: "host_left", lifeMs: 1_543_800, peers: 1 }),
+        ];
   return [
     row(0, "page", { kind: "landing" }),
     row(1_900, "invite"),
@@ -398,15 +469,7 @@ function session(sid: string, offsetMs = 0): Row[] {
     row(601_100, "engine_failed", { reason: "pipeline", ...inMatch }),
     row(601_300, "tier_change", { from: "high", to: "medium", source: "fallback", fellBack: true, ...inMatch }),
     row(640_000, "act", { act: "mist", p: 0.4, tick: 11_600, ...inMatch }),
-    row(1_250_000, "hollow_seen", { p: 0.88, tick: 16_878, ...inMatch }),
-    row(1_310_000, "death", { cause: "hollow", p: 0.925, phase: "climb", near: 1, x: 652.3, z: 322.1, tick: 19_453, ...inMatch }),
-    row(1_530_000, "outcome", { result: "lost", self: "dead", alive: 0, players: 2, p: 0.93, tick: 31_552, ...inMatch }),
-    row(1_545_000, "match_end", { p: 0.93, ended: true, dead: true, ...inMatch }),
-    row(1_545_500, "page", { kind: "landing", lobby: LOBBY }),
-    row(1_545_800, "lobby_end", { reason: "left", members: 2 }),
-    row(1_546_000, "end", { reason: "pagehide", dur: 1_546_000, trouble: 1, failed: 0, dropped: 0, sent: 52 }),
-    signal(1_546_200, "room_leave", { host: true, peers: 1 }),
-    signal(1_546_300, "room_end", { reason: "host_left", lifeMs: 1_543_800, peers: 1 }),
+    ...rest,
   ];
 }
 

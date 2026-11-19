@@ -1,5 +1,4 @@
 import { describe, it, expect } from "vitest";
-import gradeFragment from "../../src/game/shaders/grade.fragment.fx?raw";
 import {
   WEATHER_PRESETS, fogDensityUnder, saturationUnder, ambientCollapseUnder,
   FOG_DREAD_GAIN, FOG_MIST_GAIN, AMBIENT_COLLAPSE, DREAD_SATURATION_DROP, DREAD_FOG_PULL,
@@ -9,7 +8,11 @@ import { skyStateFor } from "../../src/game/skyState.js";
 import {
   gradeRecordUnder, LIFT_DREAD, VIGNETTE_PULSE, VIGNETTE_PULSE_PERIOD, PURKINJE_MAX,
 } from "../../src/game/gradeParams.js";
+import { babylonText } from "../helpers/babylonFixture.js";
 import { skyFixture } from "./helpers/skyFixture.js";
+
+/** The grade's fragment stage on Babylon.js (`grade.fragment.glsl`), its text recorded. */
+const gradeFragment = babylonText("stages/grade.fragment.glsl");
 
 const CLEAR = WEATHER_PRESETS.clear;
 const EERIE = WEATHER_PRESETS.eerie;

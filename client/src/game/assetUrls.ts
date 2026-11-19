@@ -95,7 +95,7 @@ const GLOB_PREFIX = "../../assets/";
  * typed as a string instead of throwing. `resolveCharacterAssets` accepts any
  * `output` that is merely a non-empty string, so the throw below is the only
  * thing standing between a malformed catalog entry and a function object handed
- * to Babylon as a URL.
+ * to the loader as a URL.
  */
 function urlMap(glob: Record<string, string>): Record<string, string> {
   const map: Record<string, string> = Object.create(null) as Record<string, string>;
@@ -124,13 +124,8 @@ const VIDEO_URLS = urlMap(VIDEO_GLOB_URLS);
 const IMAGE_URLS = urlMap(IMAGE_GLOB_URLS);
 const TEXTURE_URLS = urlMap(TEXTURE_GLOB_URLS);
 
-/** The film's own models (the catalog's `scene`): the scene route loads them, a hike never does. */
-const SCENE_ONLY = new Set(
-  (catalog as { assets: Array<{ output: string; scene?: string }> }).assets.filter((a) => a.scene !== undefined).map((a) => a.output),
-);
-
-/** How many models a hike loads: every one the build ships but the film's own. */
-export const MODEL_COUNT: number = Object.keys(MODEL_URLS).filter((output) => !SCENE_ONLY.has(output)).length;
+/** Each model's catalog `output` by the URL it is served at. */
+const MODEL_OUTPUTS = new Map(Object.entries(MODEL_URLS).map(([output, url]) => [url, output]));
 
 /** The intro film's hashed url, or null until it ships. */
 export function videoUrl(): string | null {
@@ -154,7 +149,7 @@ export function titleStillUrl(): string | null {
  *
  * Throws on an unknown key rather than returning it. A typo or a catalog entry
  * whose file has not shipped would otherwise become a 404 at load time, which
- * Babylon reports by leaving the mesh absent — enemies silently fall back to
+ * the renderer meets by leaving the mesh absent — enemies silently fall back to
  * capsules and clutter silently disappears. Failing here makes it a startup
  * error naming both places the model has to exist.
  */
@@ -166,6 +161,12 @@ export function titleStillUrl(): string | null {
 export function assetBytes(output: string): number | undefined {
   const entry = (catalog as { assets: Array<{ output: string; bytes?: number }> }).assets.find((a) => a.output === output);
   return entry?.bytes;
+}
+
+/** The same bytes for the model served at `url` (`modelUrl`'s answer); undefined for a URL that is no shipped model's. */
+export function modelBytes(url: string): number | undefined {
+  const output = MODEL_OUTPUTS.get(url);
+  return output === undefined ? undefined : assetBytes(output);
 }
 
 export function modelUrl(output: string): string {

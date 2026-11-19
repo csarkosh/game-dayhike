@@ -77,42 +77,43 @@ describe("the mist over the way", () => {
 });
 
 describe("the renderer and the app", () => {
-  const renderer = readFileSync(clientFile("src/game/renderer.ts"), "utf8");
+  const renderer = readFileSync(clientFile("src/game/lite/renderer.ts"), "utf8");
+  const chain = readFileSync(clientFile("src/game/lite/postChain.ts"), "utf8");
   const app = readFileSync(clientFile("src/app.ts"), "utf8");
 
-  it("the renderer makes the light once, for a forest, registers it, and disposes it", () => {
-    expect(renderer.match(/createWayLight\(/g)).toHaveLength(1);
-    expect(renderer).toContain("partOf(wayLight);");
-    expect(renderer).toContain("wayLight?.dispose();");
+  it("the renderer makes the way's mist once, for a forest, toned for the tier's colour path, and disposes it", () => {
+    expect(renderer.match(/createLiteWayLight\(/g)).toHaveLength(1);
+    expect(renderer).toContain("const wayLight = forest === null ? null : createLiteWayLight(engine, scene, wayPath, jobs, uploads);");
+    expect(renderer).toContain('const wayPath: WayColourPath = chained ? "post" : "material";');
+    expect(renderer).toContain("made.wayLight?.dispose();");
   });
 
-  it("the renderer dims the frame by the light's level on both colour paths and gives the light the dim to undo", () => {
-    expect(renderer).toContain("const wayDim = wayDimAt(wayLevel);");
-    expect(renderer).toContain("lighting.setDim(wayDim);");
-    expect(renderer).toContain("post.setDim(wayDim);");
-    // The way's mist is a shade of the ground mist's own colour, which every tier has (the low tier never sets the cloud's), and drifts on its clock.
-    expect(renderer).toContain("const wayMistNow = cloudColourUnder(atmosphere.nearColour());");
-    expect(renderer).toContain("wayLight?.update(camera.position, wayLevel, 1 / wayDim, wayMistNow, seconds, chaseCast);");
-    // Beyond the way's banks the mist goes on, on the tiers with no marched ground mist of their own (the material path).
-    expect(renderer).toContain("wayField?.update(camera.position, wayLevel, wayMistNow, seconds, chaseCast, way, wayHeightAt);");
-    expect(renderer).toContain('const wayField = forest === null || postFeatures.colourPath !== "material" ? null : createWayMistField(scene);');
-    expect(renderer).toContain("partOf(wayField);");
+  it("the renderer dims the frame by the mist's level on both colour paths and gives the mist the dim to undo", () => {
+    // With no chain the exposure every material ends with carries it, beside the stare's.
+    expect(renderer).toContain("(chained ? light.exposure : light.exposure * sightUnder(shownStare.level) * wayDimAt(wayLevel))");
+    // With one the grade's does.
+    expect(renderer).toContain("standing.chain?.setDim(wayDimAt(wayLevel));\n        standing.chain?.update(");
+    expect(chain).toContain("if (dim !== 1) record = { ...record, exposure: record.exposure * dim };");
+    // The way's mist is a shade of the ground mist's own colour, which every tier has, and drifts on the frame's clock.
+    expect(renderer).toContain("const wayMist = cloudColourUnder(nearColour);");
+    expect(renderer).toContain("standing.wayLight.update(wayLevel, 1 / wayDimAt(wayLevel), wayMist, seconds, chaseCast);");
   });
 
-  it("the renderer feeds the mist's ground map the way in place of the trail while the light is up", () => {
-    expect(renderer).toContain("const wayMist = way !== null && wayLevel > 0;");
-    expect(renderer).toContain("const over = wayMist ? way : null;");
+  it("the renderer feeds the ground cloud's map the way in place of the trail while the mist is up, and builds it again when that changes", () => {
+    expect(renderer).toContain("const over = way !== null && wayLevel > 0 ? way : null;");
+    expect(renderer).toContain("if (cloudGroundDue(cloudGroundAt, pose.x, pose.z) || (over !== null) !== wayMistBuilt) {");
     // Only as far as the mist's fade reaches: 4,096 places a rebuild, most of them far from the way.
     expect(renderer).toContain("(x, z) => wayDistanceWithin(over, x, z, WAY_MIST_FADE_M), CLOUD_GROUND_SIZE, CLOUD_GROUND_SPAN, WAY_MIST_EDGE_M, WAY_MIST_FADE_M)");
   });
 
-  it("the app gives every renderer the world's way, and the level every frame", () => {
+  it("the app gives every renderer the world's way, and the level every frame; a renderer still being made takes the way when it stands", () => {
     expect(app).toContain("if (wayGivenTo !== renderer || wayGiven !== world.way) {");
     // With the ground the players stand on (the sim's field, the walkable rock in it), not the bare elevation.
     expect(app).toContain("renderer.setWay(world.way, (x, z) => ground.heightAt(x, z));");
-    expect(renderer).not.toContain("createWayLight(scene, postFeatures.colourPath, (x, z) => elevationAt");
     expect(app).toContain("renderer.setWayLevel(wayShown);");
     expect(app).toContain("wayShown = wayHeld ?? wayLevelFor(world, sceneInto, wayShown, dt);");
+    expect(renderer).toContain("standing?.wayLight?.setWay(next, heightAt);");
+    expect(renderer).toContain("if (way !== null && wayHeightAt !== null) wayLight?.setWay(way, wayHeightAt);\n    standing = made;");
   });
 
   it("the app reports the way once it is settled: its length, its straight line and whether it is the fallback", () => {

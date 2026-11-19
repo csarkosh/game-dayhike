@@ -1,94 +1,75 @@
-import { afterEach, describe, expect, it } from "vitest";
-import { NullEngine } from "@babylonjs/core/Engines/nullEngine.js";
-import { Scene } from "@babylonjs/core/scene.js";
-import { Vector3 } from "@babylonjs/core/Maths/math.vector.js";
-import { ShaderMaterial } from "@babylonjs/core/Materials/shaderMaterial.js";
-import { Constants } from "@babylonjs/core/Engines/constants.js";
-import { WAY_FIELD_NAME, WAY_FIELD_SAMPLERS, WAY_FIELD_UNIFORMS, createWayMistField } from "../../src/game/wayMistField.js";
-import { FIELD_FIN_STRENGTH, FIELD_FLOATS, FIELD_FROM_M, FIELD_RIM_M, FIELD_SHEET_STRENGTH, FIELD_TOP_M, FIELD_VERTICES, FIELD_WHOLE_M } from "../../src/game/wayMistFieldGeometry.js";
-import { WAY_HEAD, WAY_HIDE_SHARE, wayTint } from "../../src/game/wayLightGeometry.js";
-import { WAY_WARM_FRAMES } from "../../src/game/wayLight.js";
+import { describe, expect, it } from "vitest";
+import { createWayFieldFollow, emptyWayFieldUniforms } from "../../src/game/wayMistField.js";
+import { FIELD_FILL_A_FRAME, FIELD_FIN_STRENGTH, FIELD_FLOATS, FIELD_FROM_M, FIELD_RIM_M, FIELD_SHEET_STRENGTH, FIELD_TOP_M, FIELD_VERTICES, FIELD_WHOLE_M } from "../../src/game/wayMistFieldGeometry.js";
+import { WAY_CURL, WAY_HEAD, WAY_HEAVE, WAY_HIDE_SHARE, wayTint } from "../../src/game/wayLightGeometry.js";
+import { wayMistFrame } from "../../src/game/wayLight.js";
 import { CHASE_TINT } from "../../src/game/gradeParams.js";
 import { makeWay } from "../../src/sim/wayDown.js";
 
-const EYE = new Vector3(30, 12, 0);
+const EYE = { x: 30, y: 12, z: 0 };
 const MIST = { r: 0.032, g: 0.035, b: 0.033 };
-const GROUND = (): number => 10;
 const way = makeWay(Array.from({ length: 60 }, (_, i) => ({ x: i * 2, z: 0 })), 118, false);
-type V4 = { x: number; y: number; z: number; w: number };
-type Held = { _floats: Record<string, number>; _vectors3: Record<string, Vector3>; _vectors4: Record<string, V4> };
 
-describe("the mist beyond the way", () => {
-  let engine: NullEngine, scene: Scene;
-  const make = () => {
-    engine = new NullEngine();
-    scene = new Scene(engine);
-    return createWayMistField(scene);
-  };
-  const held = (): Held => scene.getMaterialByName(WAY_FIELD_NAME) as unknown as Held;
-  afterEach(() => { scene.dispose(); engine.dispose(); });
-
-  it("is one mesh and one material that veils what is behind it, given the field's numbers", () => {
-    make();
-    const m = scene.getMaterialByName(WAY_FIELD_NAME) as ShaderMaterial;
-    expect(m.alphaMode).toBe(Constants.ALPHA_PREMULTIPLIED);
-    expect(m.disableDepthWrite).toBe(true);
-    expect(m.backFaceCulling).toBe(false);
-    expect(m.options.attributes).toEqual(["position", "wayField"]);
-    expect(m.options.uniforms).toEqual([...WAY_FIELD_UNIFORMS]);
-    expect([...WAY_FIELD_UNIFORMS]).toEqual(["viewProjection", "wayDrift", "wayEye", "wayFieldMist", "wayFieldReach", "wayGain", "wayHead", "wayMove", "wayTint"]);
-    expect(m.options.samplers).toEqual([...WAY_FIELD_SAMPLERS]);
-    const h = held();
-    expect([h._vectors4.wayFieldMist!.x, h._vectors4.wayFieldMist!.y, h._vectors4.wayFieldMist!.z, h._vectors4.wayFieldMist!.w]).toEqual([FIELD_SHEET_STRENGTH, FIELD_FIN_STRENGTH, FIELD_TOP_M, WAY_HIDE_SHARE]);
-    expect([h._vectors4.wayFieldReach!.x, h._vectors4.wayFieldReach!.y, h._vectors4.wayFieldReach!.z, h._vectors4.wayFieldReach!.w]).toEqual([FIELD_FROM_M, FIELD_WHOLE_M, FIELD_RIM_M[0], FIELD_RIM_M[1]]);
-    expect(h._floats.wayHead).toBe(WAY_HEAD);
-    expect(scene.meshes.length).toBe(1);
-    const mesh = scene.meshes[0]!;
-    expect(mesh.getTotalVertices()).toBe(FIELD_VERTICES);
-    expect(mesh.getVertexBuffer("wayField")!.getSize()).toBe(FIELD_FLOATS);
-    expect(mesh.isPickable).toBe(false);
+describe("the mist beyond the way: what its material is drawn with", () => {
+  it("is given the field's numbers, and no mist until a frame has some", () => {
+    const u = emptyWayFieldUniforms();
+    expect(u.wayFieldMist).toEqual([FIELD_SHEET_STRENGTH, FIELD_FIN_STRENGTH, FIELD_TOP_M, WAY_HIDE_SHARE]);
+    expect(u.wayFieldReach).toEqual([FIELD_FROM_M, FIELD_WHOLE_M, FIELD_RIM_M[0], FIELD_RIM_M[1]]);
+    expect(u.wayHead).toEqual([WAY_HEAD]);
+    expect(u.wayGain).toEqual([0]);
+    expect(u.wayMove).toEqual([WAY_HEAVE, WAY_CURL, 0, 0]);
+    expect(Object.keys(u).sort()).toEqual(["wayDrift", "wayFieldMist", "wayFieldReach", "wayGain", "wayHead", "wayMove", "wayTint"]);
   });
 
-  it("draws for its first frames at nothing, then only while the way's mist is up and there is a way", () => {
-    const field = make();
-    const mesh = scene.meshes[0]!;
-    for (let i = 0; i < WAY_WARM_FRAMES; i++) {
-      field.update(EYE, 0, MIST, 0, 0, null, null);
-      expect(mesh.isEnabled()).toBe(true);
-      expect(held()._floats.wayGain).toBe(0);
-    }
-    field.update(EYE, 0, MIST, 0, 0, way, GROUND);
-    expect(mesh.isEnabled()).toBe(false);
-    field.update(EYE, 1, MIST, 0, 0, null, null);
-    expect(mesh.isEnabled()).toBe(false);
-    field.update(EYE, 0.5, MIST, 0, 0, way, GROUND);
-    expect(mesh.isEnabled()).toBe(true);
-    expect(held()._floats.wayGain).toBe(0.5);
+  it("takes the way's mist's level, drift and colour, with the chase's cast, as the way's own mist does on the material path", () => {
+    const u = emptyWayFieldUniforms();
+    wayMistFrame("material", 0.5, 1, MIST, 3, 1, u);
+    expect(u.wayGain).toEqual([0.5]);
+    const want = wayTint("material", MIST, 1, 1, CHASE_TINT);
+    for (let i = 0; i < 3; i++) expect(u.wayTint[i]).toBeCloseTo(want[i]!, 6);
+    expect(u.wayDrift.some((v) => v !== 0)).toBe(true);
+  });
+});
+
+describe("the mist beyond the way: its vertices round the eye", () => {
+  it("has room for every vertex, each saying it is under nothing from the way until its ground is known", () => {
+    const follow = createWayFieldFollow();
+    expect(follow.positions.length).toBe(FIELD_VERTICES * 3);
+    expect(follow.field.length).toBe(FIELD_VERTICES * FIELD_FLOATS);
+    expect(follow.field.every((v) => v === -1)).toBe(true);
   });
 
-  it("stands on the ground a few cells a frame, and takes the mist's colour with the chase's cast", () => {
-    const field = make();
+  it("stands on the ground a few cells a frame, the eye's own first, and says when its vertices have changed", () => {
+    const follow = createWayFieldFollow();
     let asked = 0;
     const ground = (): number => { asked++; return 10; };
-    for (let i = 0; i <= WAY_WARM_FRAMES; i++) field.update(EYE, 1, MIST, 3, 1, way, ground);
-    expect(asked).toBeGreaterThan(0);
-    expect(asked).toBeLessThanOrEqual(40 * (WAY_WARM_FRAMES + 1));
-    const want = wayTint("material", MIST, 1, 1, CHASE_TINT);
-    const got = held()._vectors3.wayTint!.asArray();
-    for (let i = 0; i < 3; i++) expect(got[i]).toBeCloseTo(want[i]!, 6);
-    expect(held()._vectors3.wayEye!.asArray()).toEqual([30, 12, 0]);
-    // The eye's own cell is on the ground by now: the lowest sheet's middle vertex.
-    const positions = scene.meshes[0]!.getVerticesData("position")!;
+    expect(follow.step(EYE, way, ground)).toBe(true);
+    expect(asked).toBe(FIELD_FILL_A_FRAME);
+    expect(FIELD_FILL_A_FRAME).toBe(40);
+    // The eye's own cell is on the ground at once: the lowest sheet's middle vertex.
     const centre = 12 * 25 + 12;
-    expect(positions[centre * 3 + 1]).toBeCloseTo(10 + 0.08 + 0.25, 4);
+    expect(follow.positions[centre * 3 + 1]).toBeCloseTo(10 + 0.08 + 0.25, 4);
+    expect(follow.field[centre * FIELD_FLOATS]).toBeGreaterThanOrEqual(0);
+    // Until the square is whole every frame learns more; then a frame in the same cell changes nothing.
+    let frames = 1;
+    while (follow.step(EYE, way, ground)) frames++;
+    expect(frames).toBe(Math.ceil((25 * 25) / FIELD_FILL_A_FRAME));
+    expect(asked).toBe(25 * 25);
+    expect(follow.step({ x: 30.4, y: 12, z: 0.3 }, way, ground)).toBe(false);
+    expect(asked).toBe(25 * 25);
   });
 
-  it("disposes its mesh, its material and its noise", () => {
-    const field = make();
-    expect(scene.textures.length).toBe(1);
-    field.dispose();
-    expect(scene.meshes.length).toBe(0);
-    expect(scene.getMaterialByName(WAY_FIELD_NAME)).toBeNull();
-    expect(scene.textures.length).toBe(0);
+  it("asks for one new row when the eye crosses into another cell, and for the whole square again over another way", () => {
+    const follow = createWayFieldFollow();
+    let asked = 0;
+    const ground = (): number => { asked++; return 10; };
+    while (follow.step(EYE, way, ground)) { /* fill */ }
+    asked = 0;
+    expect(follow.step({ x: 33, y: 12, z: 0 }, way, ground)).toBe(true);
+    expect(asked).toBe(25);
+    const other = makeWay(Array.from({ length: 60 }, (_, i) => ({ x: i * 2, z: 9 })), 118, false);
+    asked = 0;
+    expect(follow.step({ x: 33, y: 12, z: 0 }, other, ground)).toBe(true);
+    expect(asked).toBe(FIELD_FILL_A_FRAME);
   });
 });

@@ -1,0 +1,4 @@
+{"from":"The game's shell on Babylon.js 9.18.0: panoramaProjection(radius, true, new Matrix()).m (client/src/game/lakePanorama.ts) for each radius: the projection the shore panorama's camera is frozen at, in [0, 1] depth",
+"radii":[25,40,61.5,120],
+"matrices":[[5.0273395,0,0,0,0,0.78125,0,0,0,-0.9875,1.0002,1,0,0,-0.5001,0],[5.0273395,0,0,0,0,1.25,0,0,0,-0.9875,1.0002,1,0,0,-0.5001,0],[5.0273395,0,0,0,0,1.921875,0,0,0,-0.9875,1.0002,1,0,0,-0.5001,0],[5.0273395,0,0,0,0,3.75,0,0,0,-0.9875,1.0002,1,0,0,-0.5001,0]]
+}

@@ -1,19 +1,12 @@
-import { readFileSync } from "node:fs";
 import { beforeAll, describe, expect, it } from "vitest";
-import { NullEngine } from "@babylonjs/core/Engines/nullEngine.js";
-import { Scene } from "@babylonjs/core/scene.js";
-import { VertexBuffer } from "@babylonjs/core/Buffers/buffer.js";
-import { Mesh } from "@babylonjs/core/Meshes/mesh.js";
-import type { Matrix } from "@babylonjs/core/Maths/math.vector.js";
-import { loadAssetContainerAsync } from "@babylonjs/core/Loading/sceneLoader.js";
-import { registerBuiltInLoaders } from "@babylonjs/loaders/dynamic.js";
 import {
   ROCK_CAP_SHARE, ROCK_CUTS, ROCK_DEPTH, ROCK_PLANES,
   rockPlaneCandidates, rockPlanes, rockRelief, type RockArrays, type RockPlane,
 } from "../../src/game/rockRelief.js";
-import { CLUTTER_SINK } from "../../src/game/clutterMeshes.js";
+import { CLUTTER_SINK } from "../../src/game/clutterInstances.js";
 import { CLUTTER_BOULDER_SCALE_MAX, CLUTTER_ROCK_SCALE_MAX } from "../../src/sim/clutter.js";
 import { BOULDER_A_BASE_H, BOULDER_B_BASE_H, BOULDER_SINK } from "../../src/sim/passes/clutter.js";
+import { babylonValues } from "../helpers/babylonFixture.js";
 import { timeLimit } from "../helpers/timeLimit.js";
 
 /**
@@ -32,16 +25,12 @@ import { timeLimit } from "../helpers/timeLimit.js";
  * Nothing short of the shipped geometry can hold the cut to what the design
  * promises, so this file asserts those promises on the shipped geometry.
  *
- * The arrays come through the same path production uses — the glTF loader into
- * a `NullEngine` scene, then the LOD root's world matrix baked into the
- * vertices, exactly as `clutterMeshes.ts`'s `lodMeshes` does before handing
- * them to `reliefMesh`. That matters: the loader mirrors a glTF model on z for
- * a left-handed scene, so the arrays a hand-rolled GLB reader would produce
- * are not the arrays the cut sees. `catalogModels.test.ts` reads the same
- * bytes the same way.
+ * The arrays are the ones the cut was handed on Babylon.js, recorded whole:
+ * each model through its glTF loader into a `NullEngine` scene, then the LOD
+ * root's world matrix baked into the vertices before the cut. That matters: the
+ * loader mirrors a glTF model on z for a left-handed scene, so the arrays a
+ * hand-rolled GLB reader would produce are not the arrays the cut saw.
  */
-
-registerBuiltInLoaders();
 
 /**
  * The four cut models, with the class index the shell keys their planes on
@@ -65,34 +54,40 @@ type Loaded = { name: string; model: number; lod: string; arrays: RockArrays };
 
 const loaded: Loaded[] = [];
 
-/** `lodMeshes`' own idiom: the geometry mesh under the named LOD root, with
- * its world matrix (the loader's handedness mirror included) baked in. */
-async function loadLod(file: string, lodName: string): Promise<RockArrays> {
-  const bytes = readFileSync(new URL(`../../assets/models/${file}`, import.meta.url));
-  const engine = new NullEngine();
-  try {
-    const scene = new Scene(engine);
-    const container = await loadAssetContainerAsync(new Uint8Array(bytes), scene, { pluginExtension: ".glb" });
-    container.addAllToScene();
-    const root = [...container.transformNodes, ...container.meshes].find((node) => node.name === lodName);
-    expect(root, `${file} has no ${lodName} root`).toBeDefined();
-    const mesh = container.meshes.find((m): m is Mesh => m instanceof Mesh && m.getTotalVertices() > 0 && m.isDescendantOf(root!));
-    expect(mesh, `${file} ${lodName} has no geometry mesh`).toBeDefined();
-    mesh!.bakeTransformIntoVertices(mesh!.computeWorldMatrix(true) as Matrix);
-    return {
-      positions: mesh!.getVerticesData(VertexBuffer.PositionKind) as Float32Array,
-      normals: mesh!.getVerticesData(VertexBuffer.NormalKind) as Float32Array,
-      uvs: mesh!.getVerticesData(VertexBuffer.UVKind) as Float32Array | null,
-      indices: Uint32Array.from(mesh!.getIndices() as ArrayLike<number>),
-    };
-  } finally {
-    engine.dispose();
-  }
+/** The vertices and the indices of the four models at both levels, in all. */
+const RECORDED_VERTICES = 7949;
+const RECORDED_INDICES = 25656;
+/**
+ * Each kind of array summed over the eight records as they were written, every value times one to seven by its
+ * place: a record that is no longer what Babylon.js gave, by one value anywhere, is no longer these.
+ */
+const RECORDED_SUMS = [16820.716819492383, 3105.3032313532894, 31836.95485362028, 68030070];
+
+/** One model at one level as recorded: its vertices' count, then its arrays, which the largest level lays over two records. */
+type Recorded = { vertices: number; positions?: number[]; normals?: number[]; uvs?: number[]; indices?: number[] };
+
+/** The record that is laid over two files: its texture coordinates and indices are in a second. */
+const IN_TWO = "boulder_a.LOD0";
+
+/**
+ * `lodMeshes`' own idiom, as Babylon.js gave it: the geometry mesh under the
+ * named LOD root, with its world matrix (the loader's handedness mirror
+ * included) baked in, read from the record of it.
+ */
+function loadLod(name: string, lodName: string): RockArrays {
+  const at = `${name}.${lodName}`;
+  const first = babylonValues<Recorded>(`numbers/rockModels.${at}.json`);
+  const rest = at === IN_TWO ? babylonValues<Recorded>(`numbers/rockModels.${at}.rest.json`) : first;
+  const { positions, normals } = first;
+  const { uvs, indices } = rest;
+  if (positions === undefined || normals === undefined || uvs === undefined || indices === undefined) throw new Error(`${at} is not recorded whole`);
+  expect([rest.vertices, positions.length, normals.length, uvs.length], at).toEqual([first.vertices, first.vertices * 3, first.vertices * 3, first.vertices * 2]);
+  return { positions: new Float32Array(positions), normals: new Float32Array(normals), uvs: new Float32Array(uvs), indices: Uint32Array.from(indices) };
 }
 
-beforeAll(async () => {
+beforeAll(() => {
   for (const m of MODELS) {
-    for (const lod of LODS) loaded.push({ name: m.name, model: m.model, lod, arrays: await loadLod(m.file, lod) });
+    for (const lod of LODS) loaded.push({ name: m.name, model: m.model, lod, arrays: loadLod(m.name, lod) });
   }
 }, timeLimit(120000));
 
@@ -148,6 +143,29 @@ const PROBE_DIRS: [number, number, number][] = Array.from({ length: 128 }, (_, i
   const r = Math.sqrt(Math.max(0, 1 - z * z));
   const phi = i * Math.PI * (3 - Math.sqrt(5));
   return [r * Math.cos(phi), r * Math.sin(phi), z];
+});
+
+describe("the shipped rock and boulder models as recorded", () => {
+  it("are the four models at both levels, whole: every vertex its position, normal and texture coordinate, every triangle its three indices", () => {
+    expect(loaded.map((l) => `${l.name} ${l.lod}`)).toEqual(MODELS.flatMap((m) => LODS.map((lod) => `${m.name} ${lod}`)));
+    let vertices = 0, indices = 0;
+    const sums = [0, 0, 0, 0];
+    for (const { name, lod, arrays } of loaded) {
+      const n = arrays.positions.length / 3;
+      expect(n, `${name} ${lod}`).toBeGreaterThan(100);
+      expect([arrays.normals.length, (arrays.uvs as Float32Array).length, arrays.indices.length % 3], `${name} ${lod}`).toEqual([n * 3, n * 2, 0]);
+      // Every index names a vertex, and every normal is a unit vector.
+      expect(arrays.indices.every((i) => i < n), `${name} ${lod}`).toBe(true);
+      for (let v = 0; v < n; v += 37) expect(Math.hypot(arrays.normals[v * 3]!, arrays.normals[v * 3 + 1]!, arrays.normals[v * 3 + 2]!), `${name} ${lod} normal ${v}`).toBeCloseTo(1, 3);
+      vertices += n;
+      indices += arrays.indices.length;
+      [arrays.positions, arrays.normals, arrays.uvs as Float32Array, arrays.indices].forEach((array, kind) => {
+        for (let i = 0; i < array.length; i++) sums[kind] = (sums[kind] as number) + (array[i] as number) * ((i % 7) + 1);
+      });
+    }
+    expect([vertices, indices]).toEqual([RECORDED_VERTICES, RECORDED_INDICES]);
+    expect(sums).toEqual(RECORDED_SUMS);
+  });
 });
 
 describe("the cut on the shipped rock and boulder models", () => {

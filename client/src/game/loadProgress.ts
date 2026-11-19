@@ -5,9 +5,9 @@
  *
  * Stages are weighed by bytes where bytes are known (the downloads, the
  * only part that scales with the connection) and by count where they are
- * not. A stage with no total (shader compiles on WebGL2) counts up in its
- * line and adds nothing to the bar until the gate says the world is ready,
- * so the bar never shows a percentage it made up. The bar never moves
+ * not. A stage with no total counts up in its line and adds nothing to the
+ * bar until the gate says the world is ready, so the bar never shows a
+ * percentage it made up. The bar never moves
  * backward: a stage whose total grows keeps the value it had until the
  * new work catches up.
  *
@@ -17,7 +17,7 @@
  * model's bytes are all in but its parse (the glTF, the texture transcode)
  * has not settled, the decode, which is the gap between the two counts.
  */
-export type Stage = "models" | "ground" | "shaders" | "pipelines" | "world";
+export type Stage = "models" | "ground" | "world";
 
 export type ProgressView = { bar: number; lines: string[]; ready: boolean };
 
@@ -39,14 +39,19 @@ export type LoadProgress = {
  * A progress model that names each stage as its first item starts — the
  * telemetry's breadcrumb — and forwards everything to `inner` where there is
  * one (the intro's bar). With no inner, the loads still report here, and the
- * view is empty.
+ * view is empty. A stage is named at the first of its items to start while
+ * `naming()` says the breadcrumb is the loads' to set, which is while the
+ * hike is being built: a renderer measured before that (the tier check's)
+ * loads under the start's own breadcrumb, and a hike's renderer makes its
+ * device before it asks for its models, so their stage starts after the
+ * start has named the game, whose place its name must not take.
  */
-export function markedProgress(inner: LoadProgress | null, mark: (stage: Stage) => void): LoadProgress {
+export function markedProgress(inner: LoadProgress | null, mark: (stage: Stage) => void, naming: () => boolean = () => true): LoadProgress {
   const marked = new Set<Stage>();
   return {
     total: (stage, n) => inner?.total(stage, n),
     start(stage, id, bytes) {
-      if (!marked.has(stage)) {
+      if (!marked.has(stage) && naming()) {
         marked.add(stage);
         mark(stage);
       }
@@ -59,9 +64,10 @@ export function markedProgress(inner: LoadProgress | null, mark: (stage: Stage) 
   };
 }
 
-/** The bar's share of each stage. They sum to 1. */
-const WEIGHT: Record<Stage, number> = { models: 0.6, ground: 0.1, shaders: 0.1, pipelines: 0.1, world: 0.1 };
-const ORDER: Stage[] = ["models", "ground", "shaders", "pipelines", "world"];
+/** The bar's share of each stage. They sum to 0.8: the rest is the gate's,
+ * so the bar reads full only once the world is ready. */
+const WEIGHT: Record<Stage, number> = { models: 0.6, ground: 0.1, world: 0.1 };
+const ORDER: Stage[] = ["models", "ground", "world"];
 
 type Item = { loaded: number; total: number | null; done: boolean };
 type StageState = { total: number | null; items: Map<string, Item> };
@@ -135,12 +141,6 @@ export function createLoadProgress(): LoadProgress {
         }
         case "ground":
           out.push(`ground and sound ${done} of ${s.total ?? "?"}`);
-          break;
-        case "shaders":
-          out.push(s.total === null ? `compiling shaders ${done}` : `shaders ${done} of ${s.total}`);
-          break;
-        case "pipelines":
-          out.push(`pipelines ${done} of ${s.total ?? s.items.size}`);
           break;
         case "world":
           out.push(`building the world ${done} of ${s.total ?? "?"}`);

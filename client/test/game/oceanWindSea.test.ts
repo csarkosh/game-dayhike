@@ -1,8 +1,10 @@
 import { describe, it, expect } from "vitest";
 import {
   WIND_SEA_AFTERNOON, WIND_SEA_DAWN, WIND_SEA_FETCH_COEFF, WIND_SEA_GAMMA, WIND_SEA_HS_COEFF, WIND_SEA_SPREAD,
-  WIND_SEA_U_PER_WIND, WIND_SEA_U_REF, fetchShare, hourFactor, sharedSeconds, windSeaShare, windSeaStateFor,
+  WIND_SEA_U_PER_WIND, WIND_SEA_U_REF, createSeaWindLag, fetchShare, hourFactor, lagSeaWind, loopTimeAfter, sharedSeconds, windSeaAtSpeed, windSeaShare,
+  windSeaStateFor,
 } from "../../src/game/oceanWindSea.js";
+import { LOOP_SECONDS } from "../../src/game/oceanSpectrum.js";
 import { whitecapCoverage } from "../../src/game/oceanPhysics.js";
 import { FixedStepAccumulator } from "../../src/game/loop.js";
 import { TICK_DT } from "../../src/sim/constants.js";
@@ -167,5 +169,38 @@ describe("sharedSeconds", () => {
     const after = sharedSeconds(tick, acc.alpha);
     expect(after - prev).toBeGreaterThan(14 * TICK_DT);
     expect(after - prev).toBeLessThanOrEqual(15 * TICK_DT + 1e-12);
+  });
+
+  it("follows its wind a minute behind: the wind's own speed on the first frame, lagged after, and held through a step back of the seconds", () => {
+    const lag = createSeaWindLag();
+    const calm = windSeaStateFor(0.1, [1, 0], 12);
+    const blowing = windSeaStateFor(0.8, [0.6, 0.8], 12);
+    // The first frame takes the wind as it is.
+    expect(lag.step(calm, 50)).toEqual(windSeaAtSpeed(calm, calm.u10));
+    expect(lag.dt).toBe(0);
+    // Then the speed moves toward the wind's by the lag, the heading the wind's own.
+    const sea = lag.step(blowing, 52);
+    expect(lag.dt).toBe(2);
+    expect(sea).toEqual(windSeaAtSpeed(blowing, lagSeaWind(calm.u10, blowing.u10, 2)));
+    expect(sea.dir).toEqual(blowing.dir);
+    expect(sea.u10).toBeGreaterThan(calm.u10);
+    expect(sea.u10).toBeLessThan(blowing.u10);
+    // A step back counts no time, and the seconds it stepped over are not counted twice.
+    const back = lag.step(blowing, 51);
+    expect(lag.dt).toBe(0);
+    expect(back.u10).toBe(sea.u10);
+    lag.step(blowing, 52);
+    expect(lag.dt).toBe(0);
+    lag.step(blowing, 53);
+    expect(lag.dt).toBe(1);
+  });
+
+  it("runs the loop's time at the sea's rate and folds it into the loop's length", () => {
+    const sea = windSeaStateFor(0.5, [1, 0], 12);
+    expect(loopTimeAfter(3, 2, sea)).toBeCloseTo(3 + 2 * sea.loopRate, 12);
+    const far = loopTimeAfter(LOOP_SECONDS - 0.5, 4, sea);
+    expect(far).toBeGreaterThanOrEqual(0);
+    expect(far).toBeLessThan(LOOP_SECONDS);
+    expect(far).toBeCloseTo((LOOP_SECONDS - 0.5 + 4 * sea.loopRate) % LOOP_SECONDS, 9);
   });
 });

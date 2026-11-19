@@ -48,9 +48,9 @@ export const CLUTTER_WETPLANT = 12;
 export const CLUTTER_HIGHPLANT = 13;
 export const CLUTTER_CLASS_COUNT = 14;
 /** Reeds and cattails at a murky lake's margin and on its marsh. Placed here
- * like every class; drawn by `waterPlants.ts`, not the model-drawn clutter. */
+ * like every class; drawn by `game/lite/waterPlantMeshes.ts`, not the model-drawn clutter. */
 export const CLUTTER_REED = 14;
-/** Yellow pond-lily pads on a murky lake's shallows; drawn by `waterPlants.ts`. */
+/** Yellow pond-lily pads on a murky lake's shallows; drawn by `game/lite/waterPlantMeshes.ts`. */
 export const CLUTTER_LILY = 15;
 
 // ---- Tunables (every one appears in CLUTTER_TUNABLES) ------------

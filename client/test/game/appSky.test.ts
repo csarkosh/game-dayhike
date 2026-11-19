@@ -3,7 +3,7 @@ import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 
 /**
- * `app.ts` builds the peer-to-peer networking and a WebGL renderer, so nothing
+ * `app.ts` builds the peer-to-peer networking and a WebGPU renderer, so nothing
  * here can start a hike under Node: the sky's wiring is read from the source, as
  * `wildlifeAudio.test.ts` reads the audio's.
  */
@@ -20,19 +20,22 @@ describe("the hike's sky", () => {
   it("stops it with a start that throws, and on dispose after the renderer", () => {
     expect(src).toContain("  made(() => skySource.dispose());");
     const dispose = src.slice(src.lastIndexOf("    dispose() {\n      disposed = true;"));
-    expect(dispose.indexOf("skySource.dispose();")).toBeGreaterThan(dispose.indexOf("if (!broken) renderer.dispose();"));
+    expect(dispose.indexOf("renderer.dispose();")).toBeGreaterThan(0);
+    expect(dispose.indexOf("skySource.dispose();")).toBeGreaterThan(dispose.indexOf("renderer.dispose();"));
   });
 
   it("hands its table to every renderer it builds: the first, and a swap's", () => {
-    expect(src.match(/\bcreateRenderer\(/g)).toHaveLength(2);
+    // Through the one way the hike has to a renderer (`createHikeRenderer`), which hands it over as the hike holds it.
+    expect(src.match(/\bcreateHikeRenderer\(/g)).toHaveLength(2);
+    expect(src).not.toMatch(/\bcreateRenderer\(/);
     expect(src).toContain(
       // The first renderer is also told where the hike starts (`start`), so its first terrain and water are built
       // there, handed what the world's worker sampled there (`prepared`, taken once), and given the loader of first
       // builds a start under a film has (`firstBuilds`).
-      "createRenderer(next, level, forest, { tier: at, engine: engine ?? undefined, pipelines: pipelinesFor(engine), deferClipmap: options.deferClipmap, start, prepared: options.takePrepared?.() ?? null, firstBuilds, skyTable: skySource.table, gpuTime: parseGpuTime(location.search) }),",
+      "createHikeRenderer(next, level, forest, { tier: at, deferClipmap: options.deferClipmap, start, prepared: options.takePrepared?.() ?? null, firstBuilds, skyTable: skySource.table, gpuTime: parseGpuTime(location.search), paced: isMobile(navigator) }),",
     );
     expect(src).toContain(
-      "build: (next, target, engine) => createRenderer(next, level, forest, { tier: target, engine: engine ?? undefined, pipelines: pipelinesFor(engine), skyTable: skySource.table, gpuTime: parseGpuTime(location.search) }),",
+      "build: (next, target) => createHikeRenderer(next, level, forest, { tier: target, skyTable: skySource.table, gpuTime: parseGpuTime(location.search), paced: isMobile(navigator) }),",
     );
   });
 
@@ -51,14 +54,14 @@ describe("the hike's sky", () => {
 
   it("starts the loop, and so shows the world, only once the clipmap stands and the sky's first slices are in, on either start", () => {
     expect(src).toContain(
-      "  const firstBuild = Promise.all([clipmapBuilt, whenStandingSkyHeld(() => renderer, nextSwap)]).then(() => {\n    if (!disposed && !broken && renderer === built) built.engine.runRenderLoop(loop);\n  });",
+      "  const firstBuild = Promise.all([clipmapBuilt, whenStandingSkyHeld(() => renderer, nextSwap)]).then(() => {\n    if (!disposed && !broken && renderer === built) built.runLoop(loop);\n  });",
     );
     // A swap meanwhile hands the wait to the renderer it builds: it is told, once, as the renderer changes.
     expect(src).toContain("      renderer = got.renderer;\n      for (const tell of swapListeners) tell();\n      swapListeners.clear();");
     expect(src.match(/\brenderer = got\.renderer;/g)).toHaveLength(1);
     // The first build's, and the governor's restart after it times the idle
     // frames; a swap's own runs in `rendererSwap.ts`.
-    expect(src.match(/\.runRenderLoop\(loop\)/g)).toHaveLength(2);
+    expect(src.match(/\.runLoop\(loop\)/g)).toHaveLength(2);
     expect(src).toContain("  const ready = firstBuild.then(() =>");
   });
 });

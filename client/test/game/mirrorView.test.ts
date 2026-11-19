@@ -1,49 +1,90 @@
-import { describe, it, expect, afterEach } from "vitest";
-import { NullEngine } from "@babylonjs/core/Engines/nullEngine.js";
-import { Scene } from "@babylonjs/core/scene.js";
-import { UniversalCamera } from "@babylonjs/core/Cameras/universalCamera.js";
-import { TargetCamera } from "@babylonjs/core/Cameras/targetCamera.js";
-import { Matrix, Vector3 } from "@babylonjs/core/Maths/math.vector.js";
-import { Plane } from "@babylonjs/core/Maths/math.plane.js";
+import { describe, it, expect } from "vitest";
 import { cameraSpacePlane, obliqueProjection, reflectionMatrix } from "../../src/game/mirrorView.js";
-
-let engine: NullEngine | null = null;
-afterEach(() => { engine?.dispose(); engine = null; });
+import { babylonValues } from "../helpers/babylonFixture.js";
+import { carried, determinant, inverse, product } from "../helpers/ruler.js";
 
 /** The murky lake's level (room-3) and a standing eye 1.7 m over it. */
 const LEVEL = 50.79;
 const EYE_Y = 52.49;
 
-/** Babylon's own perspective at the game's lens: fov 1.4, 16:9, near 0.05, far 10000. */
+/**
+ * What Babylon.js gave these tests, recorded. The matrices it made as their inputs: its own perspective at the
+ * game's lens in both depth ranges, its look-at views for the eye level and pitched down 0.3, its reflection in the
+ * lake's level, and a camera's own view and projection under a `NullEngine`. And every answer of its arithmetic the
+ * tests measured with, in their order: each product of two matrices, each point carried by a matrix, each
+ * determinant and the one inverse, with what each was asked.
+ */
+const BABYLON = babylonValues<{
+  projection: { half: number[]; full: number[] };
+  look: { pitch: number; view: number[] }[];
+  reflection: number[];
+  camera: { view: number[]; projection: number[]; halfZ: boolean };
+  products: { a: number[]; b: number[]; out: number[] }[];
+  carried: { m: number[]; p: number[]; out: number[] }[];
+  determinants: { m: number[]; out: number }[];
+  inverses: { m: number[]; out: number[] }[];
+}>("numbers/mirrorView.json");
+
+const floats = (values: readonly number[]): Float32Array => new Float32Array(values);
+
+/** Babylon's own perspective at the game's lens: fov 1.4, 16:9, near 0.05, far 10000, as recorded. */
 function babylonProjection(halfZ: boolean): Float32Array {
-  const p = new Matrix();
-  Matrix.PerspectiveFovLHToRef(1.4, 16 / 9, 0.05, 10000, p, true, halfZ);
-  return new Float32Array(p.m);
+  return floats(halfZ ? BABYLON.projection.half : BABYLON.projection.full);
 }
 
 /** A camera-space point's NDC (x, y, depth) under a projection in Babylon's layout. */
 function ndc(projection: Float32Array, x: number, y: number, z: number): [number, number, number] {
-  const c = Vector3.TransformCoordinates(new Vector3(x, y, z), Matrix.FromArray(projection));
+  const c = carried(projection, { x, y, z });
   return [c.x, c.y, c.z];
 }
 
-/** The mirrored camera's view, `reflection · view`, for an eye at (0, EYE_Y, 0) looking along +z, pitched down by `pitch`. */
+/** The mirrored camera's view, `reflection · view`, for an eye at (0, EYE_Y, 0) looking along +z, pitched down by `pitch`: Babylon's look-at view as recorded. */
 function mirroredView(pitch: number): Float32Array {
-  const view = new Matrix();
-  const ahead = new Vector3(0, -Math.sin(pitch), Math.cos(pitch));
-  const eye = new Vector3(0, EYE_Y, 0);
-  Matrix.LookAtLHToRef(eye, eye.add(ahead), Vector3.Up(), view);
-  return new Float32Array(Matrix.FromArray(reflectionMatrix(LEVEL, new Float32Array(16))).multiply(view).m);
+  const look = BABYLON.look.find((l) => l.pitch === pitch);
+  if (look === undefined) throw new Error(`no view recorded at pitch ${pitch}`);
+  return product(reflectionMatrix(LEVEL, new Float32Array(16)), floats(look.view));
 }
 
 /** A world point's depth under the mirrored view and a projection. */
 function worldDepth(view: Float32Array, projection: Float32Array, x: number, y: number, z: number): number {
-  const vp = Matrix.FromArray(view).multiply(Matrix.FromArray(projection));
-  return Vector3.TransformCoordinates(new Vector3(x, y, z), vp).z;
+  return carried(product(view, projection), { x, y, z }).z;
 }
 
 /** The plane 1.7 m under the eye in the mirrored camera's space: the kept half is below it, the eye above. */
 const UNDER_EYE = [0, -1, 0, -1.7] as const;
+
+describe("the ruler these tests measure with", () => {
+  const same = (got: ArrayLike<number>, want: readonly number[]): boolean => want.every((v, i) => Object.is(got[i], Math.fround(v)));
+
+  it("multiplies two matrices, carries a point, and takes a determinant and an inverse as Babylon.js did for every case below, bit for bit", () => {
+    // Products: 2 mirrored views for the eye, 2 for the plane, 2 more and the 12 depths under them, 2 for the camera.
+    // Points: 2 mirrored, 8 through each depth range's projection, the 12 depths, 1 under the camera.
+    expect([BABYLON.products.length, BABYLON.carried.length, BABYLON.determinants.length, BABYLON.inverses.length]).toEqual([2 + 2 + 2 + 12 + 2, 2 + 2 * 8 + 12 + 1, 2, 1]);
+    expect(BABYLON.products.filter(({ a, b, out }) => same(product(floats(a), floats(b)), out))).toHaveLength(BABYLON.products.length);
+    for (const { m, p, out } of BABYLON.carried) {
+      const got = carried(floats(m), { x: p[0] as number, y: p[1] as number, z: p[2] as number });
+      expect([Object.is(got.x, out[0]), Object.is(got.y, out[1]), Object.is(got.z, out[2])]).toEqual([true, true, true]);
+    }
+    for (const { m, out } of BABYLON.determinants) expect(Object.is(determinant(floats(m)), out)).toBe(true);
+    for (const { m, out } of BABYLON.inverses) {
+      const got = inverse(floats(m));
+      expect(got !== null && same(got, out)).toBe(true);
+    }
+    // Not a ruler that agrees because nothing moves: the recorded points land elsewhere than they started.
+    expect(BABYLON.carried.filter(({ p, out }) => Math.hypot((out[0] as number) - (p[0] as number), (out[1] as number) - (p[1] as number), (out[2] as number) - (p[2] as number)) > 0.01).length).toBeGreaterThan(25);
+  });
+
+  it("is handed the matrices Babylon.js made at the game's lens, and the views it looked along", () => {
+    expect(BABYLON.look.map((l) => l.pitch)).toEqual([0, 0.3]);
+    for (const m of [BABYLON.projection.half, BABYLON.projection.full, BABYLON.reflection, BABYLON.camera.view, BABYLON.camera.projection, ...BABYLON.look.map((l) => l.view)]) expect(m).toHaveLength(16);
+    // The lens: 1 / tan(0.7) up and down, over 16:9 across; the far plane's share of depth in each range.
+    const half = babylonProjection(true);
+    expect(half[5]).toBe(Math.fround(1 / Math.tan(0.7)));
+    expect(babylonProjection(false)[5]).toBe(half[5]);
+    expect(half[0]).toBe(Math.fround(1 / Math.tan(0.7) / (16 / 9)));
+    expect(half[11]).toBe(1);
+  });
+});
 
 describe("reflectionMatrix", () => {
   it("is the reflection in y = level, in Babylon's layout", () => {
@@ -54,28 +95,28 @@ describe("reflectionMatrix", () => {
 
   it("is Babylon's own ReflectionToRef for the plane y = level", () => {
     const ours = reflectionMatrix(LEVEL, new Float32Array(16));
-    const theirs = new Matrix();
-    Matrix.ReflectionToRef(new Plane(0, 1, 0, -LEVEL), theirs);
-    for (let i = 0; i < 16; i++) expect(ours[i]!, `m[${i}]`).toBeCloseTo(theirs.m[i]!, 5);
+    const theirs = floats(BABYLON.reflection);
+    for (let i = 0; i < 16; i++) expect(ours[i]!, `m[${i}]`).toBeCloseTo(theirs[i]!, 5);
   });
 
   it("fixes a point on the plane and has determinant −1", () => {
-    const m = Matrix.FromArray(reflectionMatrix(LEVEL, new Float32Array(16)));
-    const p = Vector3.TransformCoordinates(new Vector3(-97.4, LEVEL, 324), m);
+    const m = reflectionMatrix(LEVEL, new Float32Array(16));
+    const p = carried(m, { x: -97.4, y: LEVEL, z: 324 });
     expect(p.x).toBeCloseTo(-97.4, 4);
     expect(p.y).toBeCloseTo(50.79, 4);
     expect(p.z).toBeCloseTo(324, 4);
-    expect(m.determinant()).toBe(-1);
+    expect(determinant(m)).toBe(-1);
   });
 
   it("puts a standing eye 1.7 m over the level 1.7 m under it", () => {
-    const m = Matrix.FromArray(reflectionMatrix(LEVEL, new Float32Array(16)));
-    const eye = Vector3.TransformCoordinates(new Vector3(-97.4, EYE_Y, 324), m);
+    const m = reflectionMatrix(LEVEL, new Float32Array(16));
+    const eye = carried(m, { x: -97.4, y: EYE_Y, z: 324 });
     expect(eye.y).toBeCloseTo(49.09, 4);
     // The mirrored view's own eye: the origin of its camera space, back in the world.
-    const inv = Matrix.FromArray(mirroredView(0)).invert();
-    expect(inv.m[13]!).toBeCloseTo(49.09, 4);
-    expect(Matrix.FromArray(mirroredView(0)).determinant()).toBeCloseTo(-1, 6);
+    const inv = inverse(mirroredView(0));
+    if (inv === null) throw new Error("the mirrored view has no inverse");
+    expect(inv[13]!).toBeCloseTo(49.09, 4);
+    expect(determinant(mirroredView(0))).toBeCloseTo(-1, 6);
   });
 });
 
@@ -184,25 +225,21 @@ describe("obliqueProjection", () => {
   });
 });
 
-describe("the mirrored camera in Babylon", () => {
-  it("freezes the oblique projection and draws the water at the near depth", () => {
-    engine = new NullEngine();
-    const scene = new Scene(engine);
-    const player = new UniversalCamera("player", new Vector3(0, EYE_Y, 0), scene);
-    player.fov = 1.4;
-    player.minZ = 0.05;
-    player.maxZ = 10000;
-    player.setTarget(new Vector3(0, EYE_Y - 3, 10));
-    scene.activeCamera = player;
-    const view = new Float32Array(16);
-    Matrix.FromArray(reflectionMatrix(LEVEL, new Float32Array(16))).multiplyToArray(player.getViewMatrix(true), view, 0);
+describe("the mirrored camera's projection from a camera's own matrices", () => {
+  it("draws the water at the near depth under the view and projection a camera of Babylon.js had at the game's lens", () => {
+    // The player's camera at (0, EYE_Y, 0), fov 1.4, near 0.05, far 10000, turned to a point 3 m down and 10 m ahead:
+    // the recorded view has that eye at its origin and that point straight ahead of it.
+    const eye = carried(floats(BABYLON.camera.view), { x: 0, y: EYE_Y, z: 0 });
+    expect(Math.hypot(eye.x, eye.y, eye.z)).toBeLessThan(1e-4);
+    const ahead = carried(floats(BABYLON.camera.view), { x: 0, y: EYE_Y - 3, z: 10 });
+    expect(Math.hypot(ahead.x, ahead.y)).toBeLessThan(1e-4);
+    expect(ahead.z).toBeCloseTo(Math.hypot(3, 10), 4);
+    expect(BABYLON.camera.projection[5]).toBe(BABYLON.projection.full[5]);
+    const view = product(reflectionMatrix(LEVEL, new Float32Array(16)), floats(BABYLON.camera.view));
     const plane = cameraSpacePlane(view, LEVEL, new Float32Array(4));
-    const halfZ = engine.isNDCHalfZRange;
+    const halfZ = BABYLON.camera.halfZ;
     expect(halfZ).toBe(false);
-    const oblique = obliqueProjection(new Float32Array(player.getProjectionMatrix(true).m), plane, halfZ, new Float32Array(16));
-    const mirror = new TargetCamera("lake_mirror_cam_probe", Vector3.Zero(), scene);
-    mirror.freezeProjectionMatrix(Matrix.FromArray(oblique));
-    expect(Array.from(mirror.getProjectionMatrix().m)).toEqual(Array.from(oblique));
-    expect(worldDepth(view, new Float32Array(mirror.getProjectionMatrix().m), 1, LEVEL, 8)).toBeCloseTo(-1, 4);
+    const oblique = obliqueProjection(floats(BABYLON.camera.projection), plane, halfZ, new Float32Array(16));
+    expect(worldDepth(view, oblique, 1, LEVEL, 8)).toBeCloseTo(-1, 4);
   });
 });

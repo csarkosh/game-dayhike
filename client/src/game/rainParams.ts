@@ -190,7 +190,7 @@ export function rainCountUnder(rain: number, tier: QualityTier): number {
 }
 
 /**
- * The splashes (`rainSplash.ts`): short-lived rings on the cover map's
+ * The splashes (`lite/rainSplash.ts`): short-lived rings on the cover map's
  * surface in a disc of `radius` metres around the eye, each living `life`
  * seconds and `size[0]` to `size[1]` metres wide. None on low, which has no
  * map to land them on.
@@ -217,7 +217,7 @@ export function splashCountUnder(rain: number, tier: QualityTier): number {
 }
 
 /**
- * The drips (`rain.ts`, the streak plugin under `RAIN_DRIP`): large, slow
+ * The drips (`lite/rain.ts`, the streak plugin under `RAIN_DRIP`): large, slow
  * drops falling straight down under the canopy, in a box of their own
  * (shorter than the streaks': they start at branch height) placed as the
  * streak box is. `speed` times RAIN_FOLD_S must be a whole number of box
@@ -227,7 +227,7 @@ export const DRIP_TIERS: Record<QualityTier, number> = { low: 0, medium: 600, hi
 export const DRIP = { speed: 6, width: 0.04, length: 0.12, box: { x: 24, y: 12, z: 24 } } as const;
 
 /** The drips drawn at a canopy water (`canopyWaterStep` in `weather.ts`,
- * stepped by `rain.ts`): `round(water × tier)`. */
+ * stepped by `lite/rain.ts`): `round(water × tier)`. */
 export function dripCountUnder(water: number, tier: QualityTier): number {
   return Math.round(clamp01(water) * DRIP_TIERS[tier]);
 }
@@ -237,9 +237,9 @@ export function dripCountUnder(water: number, tier: QualityTier): number {
  * `scale`, and each cell holds one ring, its centre, its radius' share and
  * its phase hashed from the cell (the hex include's `latticeHash`, in the
  * shader). The rings are made in the fragment rather than read from a
- * texture: on the high tier the terrain's fragment stage already samples the
- * sixteen textures WebGPU's default per-stage limit allows, which the engine
- * keeps at the default on purpose (`stageBindings.test.ts`). `RIPPLE_RADIUS` is a
+ * texture: the terrain's plugin already binds eleven of the sixteen textures
+ * WebGPU's default per-stage limit allows (`lite/terrainPlugins.ts`).
+ * `RIPPLE_RADIUS` is a
  * ring's radius as a share of its cell, and `RIPPLE_INSET` how far from the
  * cell's edges, in cells, its centre sits at least: the ring never leaves
  * its cell.
@@ -269,7 +269,7 @@ export function rippleTime(seconds: number): number {
 }
 
 /**
- * The cover map (`rainMap.ts`): a top-down render target of `texels` a side
+ * The cover map (`lite/rainMap.ts`): a top-down render target of `texels` a side
  * over `extent` metres around the player, looked down on from `height` metres
  * above them, re-rendered once they have moved `step` metres from the centre
  * it was last drawn at. Terrain under canopy writes a transmission of

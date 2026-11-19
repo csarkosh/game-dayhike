@@ -129,7 +129,7 @@ export function stemProgress(graph: TrailGraph, x: number, z: number): number {
  * The point `progress` of the way up the stem (0 the pad's end, 1 the crest),
  * by arc length, with the stem's unit direction there (up the stem) for a
  * side to stand off it; null when the stem has no length. The dropped cap
- * lies beside it (game/droppedItem.ts).
+ * lies beside it (game/droppedCap.ts).
  */
 export function stemPointAt(graph: TrailGraph, progress: number): { x: number; z: number; dx: number; dz: number } | null {
   const chain = stemNodes(graph);

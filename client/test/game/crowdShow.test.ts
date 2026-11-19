@@ -95,7 +95,7 @@ describe("the crowd's cost in the ground's admissions", () => {
 });
 
 describe("the renderer and the app", () => {
-  const renderer = readFileSync(clientFile("src/game/renderer.ts"), "utf8");
+  const renderer = readFileSync(clientFile("src/game/lite/renderer.ts"), "utf8");
   const app = readFileSync(clientFile("src/app.ts"), "utf8");
   const commands = readFileSync(clientFile("src/game/commands.ts"), "utf8");
 
@@ -108,14 +108,15 @@ describe("the renderer and the app", () => {
     expect(app).toContain("newCrowd((seed ^ Math.imul(localId + 1, 0x9e3779b1)) >>> 0)");
   });
 
-  it("the renderer draws the crowd as cards in the shade mask and as eyes, on a forest's renderer alone, and disposes both", () => {
-    for (const part of ["crowdCards", "crowdEyes"]) {
-      expect(renderer).toContain(`partOf(${part});`);
-      expect(renderer).toContain(`${part}?.dispose();`);
-    }
-    expect(renderer).toContain("silhouette.setCards(crowdCards.mesh, crowdCards.sync(figures, heights, camera.position, seconds, CROWD_NONE_HELD, 0, CROWD_CARDS_TO_M, crowdTint), crowdCards.maskMaterial);");
-    expect(renderer).toContain("crowdEyes.sync(figures, heights, camera.position, seconds, CROWD_NONE_HELD);");
-    expect(renderer).toContain("const CROWD_CARDS_TO_M = 36;");
+  it("the renderer draws the crowd as cards, in the frame and in the shade mask, and as eyes, where there is a mask, and disposes both", () => {
+    expect(renderer).toContain("const crowdCards = mask === null ? null : createLiteCrowdCards(engine, scene, CROWD_MOST_ANY, uploads);");
+    expect(renderer).toContain("const crowdEyes = mask === null ? null : createLiteCrowdEyes(engine, scene, CROWD_MOST_ANY, uploads);");
+    expect(renderer).toContain("if (mask !== null && crowdCards !== null) mask.addCards(crowdCards.mesh, crowdCards.maskMaterial);");
+    for (const part of ["crowdCards", "crowdEyes"]) expect(renderer).toContain(`made.${part}?.dispose();`);
+    expect(renderer).toContain("const cards = standing.crowdCards.sync(figures, heights, pose, seconds, CROWD_NONE_HELD, 0, CROWD_CARDS_TO_M, tint);\n      standing.mask?.cards(cards > 0);");
+    expect(renderer).toContain("standing.crowdEyes.sync(figures, heights, pose, seconds, CROWD_NONE_HELD);");
+    // A figure's rim is lit by the way's mist, toned for the tier's path as the mist is.
+    expect(renderer).toContain("const tint = wayTint(wayPath, cloudColourUnder(nearColour), 1 / wayDimAt(wayLevel), chaseCast, CHASE_TINT);");
   });
 
   it("the console holds the crowd on, off or at a count, as it holds the way's mist", () => {

@@ -37,7 +37,7 @@ module.exports = {
   // Proves the packaged Electron against the mirror, then (macOS) ad-hoc seals
   // the bundle. Without the seal Gatekeeper calls the download "damaged".
   afterPack: './afterPack.cjs',
-  files: ['main.cjs', 'offline.html', 'package.json'],
+  files: ['main.cjs', 'smokePage.cjs', 'offline.html', 'package.json'],
   mac: {
     target: [{ target: 'dmg', arch: ['arm64'] }],
     // No Developer ID yet, so electron-builder signs nothing; afterPack.cjs

@@ -55,8 +55,8 @@ forward in step 4 runs through.
    tools/rig/session.sh up 1 --channel <name>
    ```
 
-   It applies the rig from the main checkout's root (about 8 minutes to Chrome), builds the WGSL
-   maps meanwhile, publishes the channel, opens the forward on 9333 and prints when Chrome
+   It applies the rig from the main checkout's root (about 8 minutes to Chrome), publishes the
+   channel meanwhile, opens the forward on 9333 and prints when Chrome
    answers: steps 2 to 4 below, done. Its logs go under `rig-sessions/<date>/` on the lab disk.
    The steps are kept here for doing them by hand; `terraform output instance_id` names the
    machine.
@@ -262,7 +262,7 @@ same verdict for an intro run, with every stop over 0.25 s and when it came.
 
 For an intro run with a profile (`--profile` at the run), the report also names the stops by
 cause (`lib/causes.mjs`): the seconds inside the stops over 0.1 s spent sampling the world (the
-simulation's code), linking shaders, uploading textures, in Babylon, collecting garbage, in the
+simulation's code), linking shaders, uploading textures, in Babylon Lite, collecting garbage, in the
 game's builders. A native call is named by what it is; a script's frame by where its source
 lives, so the table needs `--maps` at the report (without it script time reads as "other").
 
@@ -407,7 +407,11 @@ What a phone run is, against the Mac's and the rig's:
 - Whole frames only. The GPU readout (`?gpuTime`) is WebGPU's, and on the Pixel's Mali it gives
   the main pass alone (`gpu n/a`), nothing on WebGL2;
   the measurement mode is still asked for, so the page exposes `window.__syncJobs()`, the
-  streaming jobs' milliseconds a frame by owner, which each window sums into its row's `jobs`.
+  streaming jobs' milliseconds a frame by owner, which each window sums into its row's `jobs`: the
+  slices and idle slices run, the jobs late as a frame began (`lateJobs`) and the slices run under
+  the late share (`late`), the jobs run to their end by the hard bound (`overdueJobs`, the slices
+  `overdue`, the frames `overdueFrames`), the longest single slice by owner (`longest`, counted from
+  the window's own start) and the apply cost the scheduler has learned on the phone (`learned`).
 - Windows, not a settle and one sample: `--windows 3` times three consecutive 10 s windows from
   the first, so a moment that passes (the summit scene, the reveal, the death) is seen in turn. A
   `check` view's `extraSettleS` is skipped with more than one window.
@@ -416,9 +420,26 @@ What a phone run is, against the Mac's and the rig's:
   and `pipes` (pipelines asked for and landed, those made while a frame waited, the frames held
   and the draws left out). A stage translated in the page is a long frame on a phone: one cost
   0.88 s in a start.
-- `walk-night` walks: the joystick's base is found in the page (`.touch .stick`) and held forward
-  by synthetic touches (`Input.dispatchTouchEvent`) for every window; `reveal` is the chase view
-  timed from world-ready (the standing player is dead by 40 s, so it cannot be settled into).
+- `walk-night` and `walk-day` (the same walk by day, from the trailhead, with no lamp) walk: the
+  joystick's base is found in the page (`.touch .stick`) and held forward by synthetic touches
+  (`Input.dispatchTouchEvent`) for every window; `reveal` is the chase view timed from world-ready
+  (the standing player is dead by 40 s, so it cannot be settled into).
+- `--steer` keeps a walk walking. The joystick holds the heading the view started with, so a walk
+  ends against a tree or a slope within 10 to 20 s, and every window after it is a standing view.
+  With `--steer` the page counts the streaming slices it sees each frame (`window.__act`, from
+  `__syncJobs()`), the harness reads the count once a second, and after 3 s with none (a walker
+  that moves crosses a cell every two to three seconds) it makes a look swipe on a second touch,
+  from x 340 to x 80 at y 300 in eight moves with the joystick's finger held, which turns the
+  view. Use it for any walk of more than the first window, when the question is what a crossing
+  costs and not how a standing view holds:
+
+  ```bash
+  npm run frame-budget:phone -- --base <build> --tier low --views walk-day,walk-night \
+    --windows 6 --steer --label pixel9 --tag steer --out <dir>
+  ```
+
+  A window of a steered walk with no streaming at all is a walker that was turned too late; read
+  the row's `jobs.slices` before the frames.
 - `--profile` saves a CPU profile of the view (`Profiler.start/stop`); its minified frames read
   back to source with `node tools/telemetry/symbolicate.mjs <build sha> <stack.txt>`.
 - A JPEG at each window's end beside the rows, and the phone's battery temperature and thermal

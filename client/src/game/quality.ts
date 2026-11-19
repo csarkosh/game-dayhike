@@ -11,7 +11,7 @@
  * tier and a ceiling, a stored verdict (a probe's measurement, or a drop after
  * a sustained low frame rate) moves the tier within them, and two cores or two
  * gigabytes cap it at low. `tierFor` is the older rule, from cores and memory
- * alone, which `renderer.ts` applies through `detectTier` when it is given no
+ * alone, which `lite/renderer.ts` applies through `detectTier` when it is given no
  * tier.
  */
 import { CLASS_TIERS, type GpuClass } from "./gpuClass.js";
@@ -149,8 +149,14 @@ export function detectTier(
  * moves enough, or when `CLASS_TIERS` moves a class's start or ceiling. A
  * classifier change that moves a GPU to another class needs no bump, since
  * the record carries the class its verdict was made for (`verdictFor`).
+ *
+ * 2: a hike is drawn by its own renderer on Babylon Lite and the probe
+ * measures on it (`lite/probeScene.ts`). Every record of version 1 was made
+ * on the renderer on Babylon.js, a probe's on WebGL2 at that, which no hike
+ * draws with: none says what the hike's own renderer holds, and a WebGL2
+ * verdict would be read as a floor for WebGPU (`verdictRead`).
  */
-export const DETECT_VERSION = 1;
+export const DETECT_VERSION = 2;
 /** How long a probe's or a build verdict holds, in days. */
 export const VERDICT_DAYS = 30;
 /** How long a governor's verdict holds, in days: slowness from load outside
@@ -165,7 +171,7 @@ export const PROBE_ATTEMPTS = 3;
 const DAY_MS = 86_400_000;
 const RANK: Readonly<Record<QualityTier, number>> = { low: 0, medium: 1, high: 2 };
 
-/** The engine a tier is drawn with (`engineChoice.ts`'s `EngineName`). */
+/** The engine a tier is drawn with (`engineHandle.ts`'s `EngineName`). */
 export type VerdictEngine = "webgl2" | "webgpu";
 
 /** One tier measured by the startup probe; `early` when its step ended as a

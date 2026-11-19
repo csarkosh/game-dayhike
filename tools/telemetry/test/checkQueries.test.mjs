@@ -20,7 +20,8 @@ describe('checkQueries', () => {
       expect(sql).not.toContain("'VID'");
       expect(sql).not.toContain("'GAME'");
     }
-    expect(problems).toEqual(['match.sql: Syntax error at [1:1]', 'session.sql: Syntax error at [1:1]', 'visitor.sql: Syntax error at [1:1]']);
+    // The lookups by id: the three the page's routes run, and the GPU query, which is pasted.
+    expect(problems).toEqual(['gpu.sql: Syntax error at [1:1]', 'match.sql: Syntax error at [1:1]', 'session.sql: Syntax error at [1:1]', 'visitor.sql: Syntax error at [1:1]']);
     // Every query over a range reads its days in the zone given, not New York.
     expect(seen.filter((q) => q.params.days !== undefined).every((q) => q.params.tz === CHECK_ZONE)).toBe(true);
   });

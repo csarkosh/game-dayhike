@@ -3,7 +3,7 @@ import type { QualityTier } from "./quality.js";
 /**
  * The pure arithmetic of the post chain: which passes a tier gets, and the
  * finish pass's record. Babylon-free and on the architecture test's
- * BABYLON_FREE_FILES list; `post.ts` is the shell.
+ * BABYLON_FREE_FILES list; `lite/postChain.ts` draws the chain.
  */
 
 export type PostFeatures = {
@@ -18,8 +18,7 @@ export type PostFeatures = {
 };
 
 /**
- * The tier ladder as data. Without float render targets (NullEngine, weak
- * WebGL) nothing HDR can run, so every tier falls to the material path: an
+ * The tier ladder as data. Without float render targets nothing HDR can run, so every tier falls to the material path: an
  * 8-bit chain would band the very frames this restyle exists for. The lens
  * (rain on the glass) rides the pipeline: every tier with the chain has it.
  */
@@ -119,7 +118,7 @@ export function paintRadiusFor(base: number, rows: number): number {
  * each read a 2 by 2 average of the frame. A laptop's 1512 by 982 window on
  * the medium tier drew at 32 to 37 frames a second with the strokes at full
  * resolution and 51 at half, on an Apple M4. The compose
- * (`paintCompose.fragment.fx`) brings them back to full. */
+ * (`paintCompose.fragment.glsl`) brings them back to full. */
 export const PAINT_SCALE = 0.5;
 /** How sharply the compose prefers, of the four painted texels round a
  * pixel, those whose scene is like the pixel's own (a joint bilateral

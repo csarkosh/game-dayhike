@@ -1,7 +1,7 @@
 /**
  * Rain on the lens: the droplet texture the pass refracts the frame through,
  * generated here, and the gating that decides how strong it is. Babylon-free
- * and on BABYLON_FREE_FILES; `post.ts` owns the pass.
+ * and on BABYLON_FREE_FILES; `lite/postChain.ts` owns the pass.
  *
  * The map is `LENS.size` texels square, RGBA. RG hold a spherical-cap normal
  * packed around 128, B the drop's coverage with a soft edge one texel wide,

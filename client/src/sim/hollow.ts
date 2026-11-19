@@ -78,7 +78,7 @@ export const HOLLOW_WAYPOINT_RADIUS = 1.5;
 export const HOLLOW_APPROACH_RANGE = 25;
 /** Off the graph and blind to its target this long, it re-routes. */
 export const HOLLOW_LOST_SIGHT_S = 3;
-/** The placeholder's height, metres (entityViews.ts). */
+/** The Hollow's height, metres: `entityPoses.ts` centres its body at half of it. */
 export const HOLLOW_HEIGHT = 2.6;
 /**
  * Metres past the corridor's edge a Hollow inside it walks for. The margin

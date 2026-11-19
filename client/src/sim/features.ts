@@ -142,7 +142,7 @@ export const TREELINE_BAND = 35;
  * metres of the dome: a radial
  * `1 - smoothstep(R - PEAK_RIM_FADE, R, d)` multiplying the height ramp's own
  * THINNING, so the peak's term reaches the rim already at nothing and the
- * `d >= f.radius` clip is a formality rather than a cliff. `featurePaint.ts`
+ * `d >= f.radius` clip is a formality rather than a cliff. `game/lite/terrainPlugins.ts`
  * multiplies its rock term by the SAME fade from the same table — the
  * paint used to be a bare height test with no distance
  * gate at all, so the whole inland range above the treeline read as rock
@@ -813,7 +813,7 @@ export function featureMaskAt(features: readonly Feature[], x: number, z: number
         // PEAK_RIM_FADE. It is the THINNING that fades, not the
         // ramp: at the rim the fade is 0, so the multiplier is 1 and the mask
         // meets the untouched forest outside the disc continuously instead of
-        // jumping the whole amplitude at `d = f.radius`. `featurePaint.ts`'s
+        // jumping the whole amplitude at `d = f.radius`. `game/lite/terrainPlugins.ts`'s
         // rock term is the same product, from the same table.
         const crest = f.crestH ?? Number.POSITIVE_INFINITY;
         const below = crest - h;

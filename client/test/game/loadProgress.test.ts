@@ -23,11 +23,11 @@ describe("the loading bar's model", () => {
 
   it("reports a count and no percentage where there is no total", () => {
     const p = createLoadProgress();
-    p.start("shaders", "x");
-    p.done("shaders", "x");
-    p.start("shaders", "y");
-    p.done("shaders", "y");
-    expect(p.view().lines).toEqual(["compiling shaders 2"]);
+    p.start("world", "x");
+    p.done("world", "x");
+    p.start("world", "y");
+    p.done("world", "y");
+    expect(p.view().lines).toEqual(["building the world 2 of ?"]);
     expect(p.view().lines.join(" ")).not.toContain("%");
     // A stage with no total contributes nothing to the bar until the gate.
     expect(p.view().bar).toBe(0);
@@ -79,6 +79,19 @@ describe("the loading bar's model", () => {
     const before = p.view().bar;
     p.start("models", "b", 100_000);
     expect(p.view().bar).toBeGreaterThanOrEqual(before);
+  });
+
+  it("stands at four fifths with every stage done, and is full only at the gate", () => {
+    const p = createLoadProgress();
+    for (const stage of ["models", "ground", "world"] as const) {
+      p.total(stage, 1);
+      p.start(stage, "a");
+      p.done(stage, "a");
+    }
+    // The stages' shares: the models' 0.6, the ground's and the world's 0.1 each.
+    expect(p.view()).toEqual({ bar: expect.closeTo(0.8, 9), lines: [], ready: false });
+    p.gate();
+    expect(p.view().bar).toBe(1);
   });
 
   it("is ready only when the gate says so, and then reads ready with a full bar", () => {

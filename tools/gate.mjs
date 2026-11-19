@@ -1,7 +1,6 @@
 #!/usr/bin/env node
-// The push gate (`npm run gate`): typecheck, lint, the client, server and tools suites, and the
-// WGSL maps built from the corpus with their ceiling, run where load cannot fail them. The
-// development machine is never quiet (Cyrus, 2026-10-31: other work always runs on it), so the
+// The push gate (`npm run gate`): typecheck, lint and the client, server and tools suites, run
+// where load cannot fail them. The development machine is never quiet (Cyrus, 2026-10-31: other work always runs on it), so the
 // load-sensitive part, the client suite with its time limits and its wall-clock tests, is never
 // gated on it except when asked for by name (`--local`).
 //
@@ -51,11 +50,9 @@ if (unknown.length > 0) {
 }
 const files = args.filter((a) => !a.startsWith('-'));
 
-/** The whole gate, here: the maps, then typecheck, lint and every suite. */
+/** The whole gate, here: typecheck, lint and every suite. */
 function local() {
   say('--local: the whole gate on this machine. Its time limits and wall-clock tests assume a quiet machine, which this one rarely is; a timing failure here says nothing about the change.');
-  const maps = run(process.execPath, ['tools/wgsl/build-map.mjs', '--reuse']);
-  if (maps !== 0) return maps;
   for (const script of ['typecheck', 'lint', 'test']) {
     const code = run('npm', ['run', script]);
     if (code !== 0) return code;

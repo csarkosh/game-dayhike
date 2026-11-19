@@ -40,10 +40,10 @@ export type AdapterInfo = { vendor: string; architecture: string; device: string
  * How the adapter request ended: `"ok"`, an adapter read; `"none"`, no
  * `navigator.gpu` or an answer with no adapter; `"rejected"`, the request
  * threw, rejected, or answered with an adapter that could not be read;
- * `"timed-out"`, no answer within `ADAPTER_TIMEOUT_MS`. The WebGPU engine rule
- * reads the difference: `"timed-out"` means not known yet, never a failure,
- * and the rule waits on the same request with its own budget (`readSignals`);
- * a browser without an adapter is WebGL2 and nothing is remembered.
+ * `"timed-out"`, no answer within `ADAPTER_TIMEOUT_MS`. The load check
+ * (`loadCheck.ts`) reads the difference: `"timed-out"` means not known yet,
+ * never a failure, and the page asks `adapterVerdict` of the same request's
+ * later answer (`readSignals`); `"none"` and `"rejected"` are turned away.
  */
 export type AdapterStatus = "ok" | "none" | "rejected" | "timed-out";
 
@@ -153,12 +153,11 @@ const CHROME_OR_EDGE_BRANDS: readonly string[] = ["Google Chrome", "Microsoft Ed
 const OTHER_CHROMIUM_AGENT = /\bElectron\/|\bOPR\/|\bBrave\b|\bVivaldi\/|\bSamsungBrowser\/|\bYaBrowser\//;
 
 /**
- * Whether the browser is Google Chrome or Microsoft Edge by name, the one
- * browser the WebGPU engine rule (`engineChoice.ts`) was measured in and the
- * one that shares its engine. Other browsers built on Chromium are not, where
+ * Whether the browser is Google Chrome or Microsoft Edge by name, which
+ * share an engine. Other browsers built on Chromium are not, where
  * they can be told apart: the desktop launcher (an Electron build, whose
  * brands name no product and whose user agent carries `Electron/`), Brave and
- * Opera by their brands, none of them measured. A browser that sends Chrome's
+ * Opera by their brands. A browser that sends Chrome's
  * user agent (Brave, Vivaldi) is told apart only by its brands, and one whose
  * brands name Google Chrome is taken for Chrome. The client hint's brands where it lists any: `Google Chrome` or
  * `Microsoft Edge` among them. Else the user agent: `Chrome/` and none of the
@@ -220,6 +219,20 @@ export function browserMajor(userAgent: string): number {
   return 0;
 }
 
+/**
+ * Whether the browser offers WebGPU at all: a `navigator.gpu` that can be
+ * asked for an adapter. Known at once, with no request made, and what tells
+ * a browser with no WebGPU from one that has it and gives no adapter, which
+ * `adapterStatus` calls `"none"` alike (`loadCheck.ts` reads both).
+ */
+export function offersWebGpu(nav: NavigatorLike | undefined): boolean {
+  try {
+    return typeof nav?.gpu?.requestAdapter === "function";
+  } catch {
+    return false;
+  }
+}
+
 /** The adapter as the WebGPU engine rule reads it: its limits, whether it is a
  * fallback (software) adapter, and its optional features. */
 export type AdapterReading = { limits: Readonly<Record<string, number>>; isFallbackAdapter: boolean; features: readonly string[] };
@@ -228,11 +241,10 @@ export type AdapterReading = { limits: Readonly<Record<string, number>>; isFallb
  * Every signal, each on its own guard, and the page's one adapter request.
  * The request starts first and runs beside the WebGL read; `signals` gives up
  * on it at `ADAPTER_TIMEOUT_MS` (`"timed-out"`), while `adapter` is the same
- * request's own answer, however long it takes: what the WebGPU engine rule
- * waits on, with its own budget, when the signals went without it. Null there
- * for no WebGPU, no adapter, a request that failed or an adapter that could
- * not be read. Nothing else asks for an adapter: Babylon's
- * `WebGPUEngine.IsSupportedAsync` is itself a `requestAdapter`.
+ * request's own answer, however long it takes: what `adapterVerdict` reads
+ * when the signals went without it. Null there for no WebGPU, no adapter, a
+ * request that failed or an adapter that could not be read. The renderer's
+ * own request is made later (`loadCheck.ts`).
  */
 export function readSignals(env: SignalEnv): { signals: Promise<GpuSignals>; adapter: Promise<AdapterReading | null> } {
   const nav = env.navigator;
@@ -310,7 +322,7 @@ function requestAdapter(nav: NavigatorLike | undefined): { whole: Promise<Adapte
   let timer: ReturnType<typeof setTimeout> | undefined;
   try {
     const gpu = nav?.gpu;
-    if (typeof gpu?.requestAdapter !== "function") {
+    if (gpu === undefined || !offersWebGpu(nav)) {
       const none = Promise.resolve<AdapterAnswer>({ status: "none", adapter: null });
       return { whole: none, bounded: none };
     }

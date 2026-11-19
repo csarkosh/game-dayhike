@@ -3,15 +3,16 @@
  * on the tiers with no marched ground mist, the chase's mist goes on past the
  * way's own banks over all the ground round the eye, thicker than the banks,
  * so the way is the thinner lane through it. This file is its geometry and
- * its numbers, free of Babylon so it is tested as arithmetic; wayMistField.ts
- * makes the mesh and the material from it.
+ * its numbers, computed with no engine so it is tested as arithmetic;
+ * wayMistField.ts follows the eye with it and `lite/wayFieldMesh.ts` makes the
+ * mesh and the material.
  *
  * It is a square of FIELD_CELLS cells of FIELD_CELL_M round the eye, moved a
  * cell at a time as the eye moves, never by less, so nothing of it swims:
  * every vertex is a place in the world. On it lie sheets that follow the
  * ground (FIELD_SHEETS_M over it) and stand fins, on every FIELD_FIN_EVERY-th
  * line of the lattice both ways, which are what an eye looking level sees.
- * All of them read the way's own field of noise (wayLight.fragment.fx).
+ * All of them read the way's own field of noise (wayLight.ts).
  *
  * The ground's height and the metres to the way are asked for a cell at a
  * time, a few a frame, the nearest the eye first, and kept by the cell's

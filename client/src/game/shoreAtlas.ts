@@ -9,10 +9,10 @@
  * centre at (k + ½) of 2 · bound / SHORE_ATLAS_TILE. Every texel no lake
  * reaches holds SHORE_ATLAS_FAR, as does a lake's square past its bound.
  *
- * The terrain's fragment stage binds WebGPU's default 16 textures already
- * (`stageBindings.test.ts`), so the atlas has no texture of its own: it rides
+ * The terrain's plugin binds eleven of WebGPU's default 16 textures a stage
+ * already, and the atlas has no texture of its own: it rides
  * in the feature table's float texture below the table's two rows
- * (`featurePaint.ts`), read texel by texel with the bilinear blend done by
+ * (`lite/terrainPlugins.ts`), read texel by texel with the bilinear blend done by
  * hand. `shoreAtlasRead` is the TypeScript twin of the shader's
  * `featureShoreAt`: inside the tile, its texel coordinate held half a texel
  * in from the tile's edges so no neighbour's texel enters, and

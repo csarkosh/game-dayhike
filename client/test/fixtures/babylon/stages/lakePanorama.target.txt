@@ -1,0 +1,2 @@
+// The game's shell on Babylon.js 9.18.0: the type of the texels the shore panorama's target holds as createLakePanorama makes it (client/src/game/lakePanorama.ts), a line of it
+      type: Constants.TEXTURETYPE_HALF_FLOAT,

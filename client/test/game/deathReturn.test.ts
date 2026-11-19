@@ -45,17 +45,16 @@ describe("a screen's death and return", () => {
 });
 
 describe("the renderer, for a return", () => {
-  const renderer = readFileSync(new URL("../../src/game/renderer.ts", import.meta.url), "utf8");
+  // The scenes' and the endings' state from frame to frame, which the renderer steps (`scenePlay.ts`).
+  const play = readFileSync(new URL("../../src/game/scenePlay.ts", import.meta.url), "utf8");
 
   it("begins a scene part-way: the threshold alone, from its seventeenth second", () => {
-    expect(renderer).toContain("setScene(kind, at, more, fromS = 0) {");
-    expect(renderer).toContain("summitScene = { kind, since: clock() / 1000 - fromS, base: null,");
+    expect(play).toContain("summitScene = { kind, since: seconds - fromS, base: null,");
   });
 
   it("undoes a death's ending, so a scene's camera runs again, and leaves the won scene alone", () => {
-    expect(renderer).toContain("clearEnding(liftS = 0) {");
     // The dark and the blur go over the seconds given, from what they were (ending.ts `liftShare`), not in one frame.
-    expect(renderer).toMatch(/const share = liftShare\(seconds - lift\.since, lift\.forS\);\s*endClose = lift\.close \* share;\s*endBlur = lift\.blur \* share;/);
+    expect(play).toMatch(/const share = liftShare\(seconds - lift\.since, lift\.forS\);\s*endClose = lift\.close \* share;\s*endBlur = lift\.blur \* share;/);
   });
 });
 

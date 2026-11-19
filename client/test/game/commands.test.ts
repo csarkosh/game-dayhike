@@ -316,9 +316,9 @@ describe("/lamp", () => {
 describe("time command", () => {
   it("keeps its default in step with the renderer's", async () => {
     // Two defaults that must agree: `commands.ts` omits `time` from the URL at
-    // this value, and `lighting.ts` starts there. If they drift, a fresh URL and
-    // an explicit `time 12` produce different scenes.
-    const { DEFAULT_HOUR } = await import("../../src/game/lighting.js");
+    // this value, and the light starts there (`skyWait.ts`). If they drift, a fresh URL
+    // and an explicit `time 12` produce different scenes.
+    const { DEFAULT_HOUR } = await import("../../src/game/skyWait.js");
     expect(findCommand("time")?.defaultValue).toBe(DEFAULT_HOUR);
   });
 

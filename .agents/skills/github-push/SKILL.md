@@ -109,11 +109,11 @@ npm run gate              # run it
 The gate (`tools/gate.mjs`) reads what the branch changes against `origin/main`, committed or
 not, and picks one of two plans (`tools/gate/plan.mjs`):
 
-- **light**: only tooling, docs, branding or agent files changed (`tools/` except `tools/wgsl/`,
+- **light**: only tooling, docs, branding or agent files changed (`tools/` except `tools/rust/`,
   `docs/`, `branding/`, `.agents/`, `.claude/`, `README.md`, `AGENTS.md`, `ARCHITECTURE.md`).
   Lint and the tools suite, here, in seconds: neither has a time limit, so load cannot fail
   them, and nothing the client or server suites test was touched.
-- **cloud**: anything else (the game, the server, the build, the shader corpus, the WGSL tools,
+- **cloud**: anything else (the game, the server, the build, the field kernel's tools,
   dependencies, CI, `CREDITS.md`). The gate dispatches the `test` workflow on GitHub's runners
   for this branch and follows it to its end; its exit is the run's. It runs what is pushed, so
   push the work branch first (never `main`); the gate refuses, saying what to do, while the

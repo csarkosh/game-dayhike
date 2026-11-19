@@ -43,6 +43,7 @@
 import { hash3 } from "../sim/field.js";
 import { LOOP_GAIN_RAMP_S, type AmbientAudio, type LoopEmitter, type VoiceSource } from "./ambientAudio.js";
 import { audioUrl } from "./assetUrls.js";
+import { pageTurns } from "./downloadTurns.js";
 import type { FrogCall } from "./frogChorus.js";
 import {
   FROG_CALL_S, FROG_CARRIER_HZ, RUSTLE_LOUD_S, RUSTLE_S, frogCallVoice, humVoice, rustleVoice,
@@ -75,7 +76,7 @@ export const FROG_BED_REF = 30;
  * one's: the far frogs, the chorus that sits beneath the voices, carried
  * across the water at a level a player hears from the shore and never lost
  * beneath the ambience. Around a player it falls quiet as the voices there
- * do (`bed.duck`, `waterLife.ts`).
+ * do (`bed.duck`, `waterLifeScene.ts`).
  */
 export const FROG_BED_GAIN: readonly [number, number] = [0.5, 0.35];
 /** A chorus loop whose level has been nothing this long stops. */
@@ -245,11 +246,12 @@ export function createWaterLifeAudio(
     unlocked = true;
   });
 
-  const fetchClip = options.fetchClip ?? (async (id: string) => {
+  // In a turn of the page's downloads, behind the intro's film while it plays (`downloadTurns.ts`).
+  const fetchClip = options.fetchClip ?? ((id: string) => pageTurns.run(async () => {
     const response = await fetch(audioUrl(`audio/${id}.mp3`));
     if (!response.ok) throw new Error(`HTTP ${response.status}`);
     return response.arrayBuffer();
-  });
+  }));
   /** Fetches clip `id` now and decodes it once the context exists, into `into[k]`. */
   function load(id: string, into: (AudioBuffer | undefined)[], k: number): void {
     const warn = (reason: string): void => console.warn(`water life clip "${id}" will not play: ${reason}`);

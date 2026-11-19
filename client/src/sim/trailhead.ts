@@ -101,7 +101,7 @@ export function carSite(
  * toward −z. It stands at the pad's own place along the road on most worlds,
  * and there its nose points toward +z; where it has slid along the road to
  * clear the trail, its nose points back toward the pad. The drawn car's yaw
- * (`carYaw`, game/trailheadMeshes.ts) is 0 for 1 and π for −1.
+ * (`carYaw`, game/sceneryParts.ts) is 0 for 1 and π for −1.
  */
 export function carDirection(site: Ground, trailhead: Ground): 1 | -1 {
   return trailhead.z >= site.z ? 1 : -1;

@@ -1,6 +1,8 @@
 import { describe, it, expect } from "vitest";
 import "../../src/sim/olympic.js";
 import { setActiveTerrainVariant } from "../../src/sim/terrain.js";
+import { runBySlices } from "../helpers/sliceRun.js";
+import { timeLimit } from "../helpers/timeLimit.js";
 import {
   treeInCell,
   TREE_CELL,
@@ -33,6 +35,7 @@ import {
   SEAM_PAD,
   SEAM_LOD0,
   SEAM_LOD1,
+  nearRadiusFor,
   seamNear,
   type ForestBands,
 } from "../../src/game/forestField.js";
@@ -234,7 +237,7 @@ describe("ring edges (real field data)", () => {
     // below the current NEAR_RADIUS again, restoring the original intent
     // (this is a generic
     // test of the `nearRadius` parameter, not tied to any specific quality
-    // tier's own constant — renderer.ts's own "low" tier value is untouched
+    // tier's own constant — forestField.ts's own "low" tier value is untouched
     // here).
     const { x: ax, z: az } = bandsOrigin(1, 1);
     const b = collectBands(SEED, 1, 1, 80);
@@ -586,6 +589,17 @@ describe("understory membership is padded by SEAM_PAD", () => {
   });
 });
 
+describe("nearRadiusFor", () => {
+  it("is the near radius on the medium and high tiers, and seven twelfths of it on low", () => {
+    expect(nearRadiusFor("high")).toBe(NEAR_RADIUS);
+    expect(nearRadiusFor("medium")).toBe(NEAR_RADIUS);
+    expect(nearRadiusFor("low")).toBe(Math.round((NEAR_RADIUS * 140) / 240));
+    expect(nearRadiusFor("low")).toBe(70);
+    // The low tier's band is the shorter: the billboards take over nearer.
+    expect(nearRadiusFor("low")).toBeLessThan(NEAR_RADIUS);
+  });
+});
+
 describe("farTreeScale", () => {
   it("grows a lattice billboard across the fill's seam to the far scale, and not before", () => {
     expect(FAR_TREE_SCALE).toEqual({ across: 1.4, up: 1.1 });
@@ -598,4 +612,24 @@ describe("farTreeScale", () => {
     expect(farTreeScale(1000)).toEqual([1.4, 1.1]);
     expect(farTreeScale(1900)).toEqual([1.4, 1.1]);
   });
+});
+
+describe("the band collector cut at every reading of the scheduler's clock", () => {
+  it("collects the bands a collect at once collects, over three crossings", () => {
+    const whole = createBandCollector(SEED);
+    const sliced = createBandCollector(SEED);
+    let cut = 0;
+    for (const [x, z] of [[1, 1], [1 + TREE_CELL, 1], [1 + TREE_CELL, 1 + TREE_CELL]] as const) {
+      const expected = whole.collect(x, z);
+      const run = runBySlices(sliced.collectSlices(x, z));
+      cut += run.slices;
+      expect(Object.keys(run.value).sort()).toEqual(Object.keys(expected).sort());
+      for (const key of Object.keys(expected) as (keyof typeof expected)[]) {
+        // The same trees, in the same order.
+        expect(run.value[key].length, key).toBe(expected[key].length);
+        expect(run.value[key], key).toEqual(expected[key]);
+      }
+    }
+    expect(cut).toBeGreaterThan(100);
+  }, timeLimit(120_000));
 });

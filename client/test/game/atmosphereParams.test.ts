@@ -1,5 +1,8 @@
 import { describe, it, expect } from "vitest";
-import { atmosphereUnder, fogGradientUnder, heightFogAmount, GRADIENT_STEPS } from "../../src/game/atmosphereParams.js";
+import {
+  atmosphereUnder, atmosphereUniforms, emptyAtmosphereUniforms, fogGradientAt, fogGradientUnder, heightFogAmount, GRADIENT_MID_STEP, GRADIENT_STEPS,
+} from "../../src/game/atmosphereParams.js";
+import { cloudFor, cloudUniforms, noCloud } from "../../src/game/cloudParams.js";
 import { WEATHER_PRESETS, airColourUnder, fogDensityUnder } from "../../src/game/weather.js";
 import { skyStateFor } from "../../src/game/skyState.js";
 import { skyFixture } from "./helpers/skyFixture.js";
@@ -20,6 +23,15 @@ describe("the fog gradient", () => {
     expect(g[0]!.r).toBeCloseTo(sky.mistAir.r * 0.85, 12);
     expect(g[0]!.g).toBeCloseTo(sky.mistAir.g * 0.85, 12);
     expect(g[0]!.b).toBeCloseTo(sky.mistAir.b * 0.85, 12);
+  });
+
+  it("reads one step as the list holds it: the middle the mist banks take, the near end the motes take", () => {
+    expect(GRADIENT_MID_STEP).toBe(128);
+    for (const [hour, weather] of [[12, MIST], [18.25, CLEAR], [22, EERIE]] as const) {
+      const sky = skyStateFor(table, hour, weather);
+      const g = fogGradientUnder(weather, sky);
+      for (const step of [0, 1, GRADIENT_MID_STEP, 254, 255]) expect(fogGradientAt(sky, step), `hour ${hour} step ${step}`).toEqual(g[step]);
+    }
   });
 
   it("at clear ends exactly on the dome's horizon away from the sun, at every hour the sky is read at", () => {
@@ -91,5 +103,57 @@ describe("heightFogAmount — the TS mirror of the GLSL", () => {
 
   it("a camera higher above the level sees thinner fog", () => {
     expect(heightFogAmount(200, 0, 100, 0.02, 0.05, 0)).toBeLessThan(heightFogAmount(20, 0, 100, 0.02, 0.05, 0));
+  });
+});
+
+describe("the atmosphere's uniforms", () => {
+  const VIEW = 4000;
+
+  it("are, for an hour and a weather, the record's numbers by name over the cloud's, made with no engine", () => {
+    const sky = skyStateFor(table, 17.5, MIST);
+    const r = atmosphereUnder(MIST, sky, VIEW);
+    const cloud = cloudFor(noCloud(), 0.4, 8, 30, 0, fogGradientUnder(MIST, sky)[0]!);
+    const u = atmosphereUniforms(r, cloud, 8);
+    expect(u).toEqual({
+      atmOn: [1],
+      atmBaseDensity: [fogDensityUnder(MIST, VIEW)],
+      atmHeightDensity: [r.heightDensity],
+      atmHeightFalloff: [r.heightFalloff],
+      atmReferenceLevel: [r.referenceLevel],
+      atmGradientScale: [1 / VIEW],
+      atmSunPower: [sky.glowPower],
+      atmSunWeight: [sky.glowWeight],
+      atmSunDir: [sky.glowDir.x, sky.glowDir.y, sky.glowDir.z],
+      atmSunColour: [r.sunColour.r, r.sunColour.g, r.sunColour.b],
+      atmFarColour: [sky.mistAir.r, sky.mistAir.g, sky.mistAir.b],
+      ...cloudUniforms(cloud, 8),
+    });
+  });
+
+  it("name the air's uniforms first, in the order the material declares them, then the cloud's", () => {
+    expect(Object.keys(emptyAtmosphereUniforms())).toEqual([
+      "atmOn", "atmBaseDensity", "atmHeightDensity", "atmHeightFalloff", "atmReferenceLevel", "atmGradientScale", "atmSunPower",
+      "atmSunWeight", "atmSunDir", "atmSunColour", "atmFarColour",
+      "atmCloudDensity", "atmCloudSteps", "atmCloudRange", "atmCloudFalloff", "atmCloudSeat", "atmCloudGroundRange", "atmCloudNear",
+      "atmCloudTrail", "atmCloudNoiseScale", "atmCloudWind", "atmCloudGlow", "atmCloudColour", "atmCloudGroundRect",
+    ]);
+  });
+
+  it("are off with no record: the air's zero, and the cloud not marched", () => {
+    const cloud = cloudFor(noCloud(), 0.4, 8, 30, 0, { r: 0.1, g: 0.1, b: 0.1 });
+    const off = atmosphereUniforms(null, cloud, 8);
+    expect(off.atmOn).toEqual([0]);
+    expect(off.atmCloudSteps).toEqual([0]);
+    expect([off.atmBaseDensity, off.atmHeightDensity, off.atmSunDir, off.atmFarColour]).toEqual([[0], [0], [0, 0, 0], [0, 0, 0]]);
+  });
+
+  it("fill the record handed in, on and then off again", () => {
+    const sky = skyStateFor(table, 12, CLEAR);
+    const r = atmosphereUnder(CLEAR, sky, VIEW);
+    const out = emptyAtmosphereUniforms();
+    expect(atmosphereUniforms(r, noCloud(), 0, out)).toBe(out);
+    expect(out).toEqual(atmosphereUniforms(r, noCloud(), 0));
+    atmosphereUniforms(null, noCloud(), 0, out);
+    expect(out).toEqual(atmosphereUniforms(null, noCloud(), 0));
   });
 });

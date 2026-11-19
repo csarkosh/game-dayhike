@@ -1,5 +1,5 @@
 // The wind sea's fields out of the transformed spectra, one invocation a
-// texel of each cascade (oceanGpuFft.ts): disp holds (height, dx, dz,
+// texel of each cascade (`lite/seaFft.ts`): disp holds (height, dx, dz,
 // Jacobian) with the displacement scaled by the choppiness, slope holds
 // (slopeX, slopeZ, 0, 0), a layer a cascade. It mirrors windSeaFields in
 // oceanFft.ts.

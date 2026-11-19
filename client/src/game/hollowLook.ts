@@ -2,7 +2,7 @@ import type { Rgb } from "./colour.js";
 
 /**
  * How the Hollow is drawn. Babylon-free so the numbers can be read and tested
- * on their own; `entityViews.ts` builds from them.
+ * on their own; `lite/entityMeshes.ts` and `lite/shadeMask.ts` build from them.
  *
  * The model keeps its own maps and takes the atmosphere like any other lit
  * surface; only its eyes are recoloured here. The capsule knobs below apply

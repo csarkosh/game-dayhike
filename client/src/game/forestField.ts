@@ -10,8 +10,9 @@
  * it instead of popping. All comparisons are on squared distances: cheap,
  * exact, trig-free.
  *
- * Output is a pure function of the cell-snapped `bandsOrigin`, so the Babylon
- * shell rebuilds only when the camera crosses a tree-cell boundary.
+ * Output is a pure function of the cell-snapped `bandsOrigin`, so the
+ * forest's meshes are rebuilt only when the camera crosses a tree-cell
+ * boundary (`lite/forestMeshes.ts`).
  * Pure and Babylon-free, like `clipmap.ts` and `water.ts`. `collectBands` is
  * the pure one-shot; `createBandCollector` is the renderer's hot path — same
  * loop, with per-cell `treeInCell` results memoized across rebuilds so a
@@ -25,7 +26,7 @@ import {
   COHORT_LOG,
   type TreeInstance,
 } from "../sim/vegetation.js";
-import { finish, sortSlices, type Slices } from "./syncJobs.js";
+import { finish, sliceDue, sortSlices, type Slices } from "./syncJobs.js";
 
 /** Near band radius (m) — full-geometry trees; quality tiers may shrink it
  * via `collectBands`' `nearRadius` parameter (low runs 140 m).
@@ -177,6 +178,18 @@ export type ForestBands = {
 };
 
 /**
+ * Where the near band ends on a quality tier (m): `NEAR_RADIUS`, and on the
+ * low tier seven twelfths of it, 70 m at a radius of 120. A share of the
+ * radius and not a number of its own, so a retune of the radius carries the
+ * low tier's with it: a fixed 140 once drifted to sit above the default it
+ * was meant to shrink, and the low tier drew its trees farther than the full
+ * one.
+ */
+export function nearRadiusFor(tier: "low" | "medium" | "high"): number {
+  return tier === "low" ? Math.round(NEAR_RADIUS * (140 / 240)) : NEAR_RADIUS;
+}
+
+/**
  * The band a squared camera distance earns: 0..2 = near LOD ring,
  * BAND_IMPOSTOR, or BAND_BEYOND. Every ring edge is half-open — a tree
  * exactly on an edge belongs to the farther band — and this is the ONLY
@@ -247,6 +260,9 @@ export function collectBands(
  * millisecond. */
 const BAND_SLICE = 1280;
 const BAND_FRESH_COST = 64;
+/** Work (in those units) that counts as one unit of the scheduler's clock (`sliceDue`): a tree sampled fresh is eight,
+ * a cell looked up an eighth. A slice ends by the clock as well as by the count. */
+const BAND_CLOCK_WORK = 8;
 
 /**
  * The band walk itself, parameterised over the cell sampler so the memoizing
@@ -353,9 +369,12 @@ function* collectBandsSlices(
   let freshSeen = fresh.count;
   /** Counts a visit, and whether the slice has done its share. */
   const due = (): boolean => {
-    work += 1 + (fresh.count - freshSeen) * BAND_FRESH_COST;
+    const spent = 1 + (fresh.count - freshSeen) * BAND_FRESH_COST;
+    work += spent;
     freshSeen = fresh.count;
-    if (work < BAND_SLICE) return false;
+    // Asked of every visit, so the clock's count goes on whether or not the count here has.
+    const ended = sliceDue(spent / BAND_CLOCK_WORK);
+    if (work < BAND_SLICE && !ended) return false;
     work = 0;
     return true;
   };

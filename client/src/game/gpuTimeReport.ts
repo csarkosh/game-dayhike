@@ -1,16 +1,18 @@
 /**
  * The measurement mode's readout (`?gpuTime`), as arithmetic: the GPU's own
  * timings of the frame, of its main pass and of each render target and post
- * pass, in milliseconds, from the nanoseconds Babylon's timestamp queries
- * count (`gpuTime.ts` gathers them). Babylon-free, so it is tested with plain
+ * pass, in milliseconds, from the nanoseconds the timestamp queries
+ * count (`lite/gpuTimeReadout.ts` gathers them). Babylon-free, so it is tested with plain
  * objects.
  *
- * Each counter is Babylon's average over the last second. A target that drew
- * in neither the latest frame timed nor the one before (a lake's mirror drawn every third
- * frame, a shadow cascade refreshed now and then) still shows its last
- * second's time, marked `drewLastFrame: false`. A target with no counter at
- * all was made before the timing was turned on, so nothing of its time is
- * known: it is named in `missed`, never counted as nothing.
+ * `gpuTimeReport` makes the report from raw counters (`RawGpuTime`): each
+ * target's nanoseconds and the last frame it drew in. A target that drew in
+ * neither the latest frame timed nor the one before (a lake's mirror drawn
+ * every third frame) still shows its last time, marked `drewLastFrame: false`.
+ * A target with no counter at all was made before the timing was turned on,
+ * so nothing of its time is known: it is named in `missed`, never counted as
+ * nothing. Only the tests make a report this way; the readout Lite's timers
+ * feed is made by `gpuTimeTasks.ts`.
  */
 
 export type GpuTarget = { name: string; ms: number | null; width: number; height: number; drewLastFrame: boolean };
@@ -65,8 +67,14 @@ export function gpuTimeReport(raw: RawGpuTime): GpuTimeReport {
   };
 }
 
+/** `?gpuTime`, with any value: the measurement mode, which asks the device
+ * for timestamp queries and times the frame from creation. */
+export function parseGpuTime(search: string): boolean {
+  return new URLSearchParams(search).has("gpuTime");
+}
+
 /** The corner's line: the frame and the main pass, or that there is no
- * timing here. A frame with no reading (Chrome's, `gpuTime.ts`) is `n/a`. */
+ * timing here. A frame with no reading is `n/a`. */
 export function gpuTimeLine(report: GpuTimeReport): string {
   if (!report.supported) return "gpu time: unsupported";
   const ms = (v: number | null): string => (v === null ? "n/a" : `${v.toFixed(3)} ms`);

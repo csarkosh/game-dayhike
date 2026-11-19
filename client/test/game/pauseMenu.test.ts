@@ -1,15 +1,11 @@
 import { describe, it, expect, afterEach, vi } from "vitest";
-import type { Scene } from "@babylonjs/core/scene.js";
 import {
   PAUSE_START, createPauseMenu, createPlayGate, pauseMenuModel, pauseStep, type PauseSettings, type PauseState,
 } from "../../src/game/pauseMenu.js";
-import { whenSceneReady } from "../../src/game/rendererSwap.js";
 import { settingsModel } from "../../src/game/settings.js";
 import type { TierChoice } from "../../src/game/tierChoice.js";
+import { whenWorldIn } from "../../src/game/worldWait.js";
 import { StandInSelect, asHtml, installStandInDom } from "./helpers/standInDom.js";
-
-/** A scene that is ready, with nothing waiting to load. */
-const readyScene = { isDisposed: false, meshes: [], isReady: () => true, getWaitingItemsCount: () => 0 } as unknown as Scene;
 
 describe("pauseMenuModel", () => {
   it("offers Resume, Settings and Exit, in that order", () => {
@@ -272,11 +268,11 @@ describe("the pause screen's Settings page", () => {
     vi.useFakeTimers();
     try {
       const bounds: number[] = [];
-      // The switch's wait as the game's Apply runs it: the bound it is
-      // handed, on a ready scene whose forest never settles.
+      // The switch's wait as the game's Apply runs it (`Renderer.whenReady`):
+      // the bound it is handed, for a world that never comes in.
       const page = opened(async (_choice, readyMaxMs) => {
         bounds.push(readyMaxMs);
-        await whenSceneReady(readyScene, readyMaxMs, new Promise(() => undefined));
+        await whenWorldIn(new Promise(() => undefined), readyMaxMs);
       });
       page.button("Settings").press();
       page.select.choose("low");

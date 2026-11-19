@@ -1,25 +1,17 @@
 /**
- * What the page does when the engine drawing a hike fails, and when a hike
- * cannot be started on its WebGPU engine: always a live rebuild of the
- * renderer or a start on WebGL2, never a reload, which would end a party (a
- * host's reload ends the room). Babylon-free and page-free: the renderer,
- * the cover, the storage and the URL come in as dependencies, as the
- * governor's `actOnDrop` takes them, so every sequence is tested with plain
- * objects (`engineFailure.test.ts`).
+ * What the page does when the engine drawing a hike fails: always a live
+ * rebuild of the renderer, never a reload, which would end a party (a host's
+ * reload ends the room). No engine and no page: the renderer and the cover
+ * come in as dependencies, as the governor's `actOnDrop` takes them, so
+ * every sequence is tested with plain objects (`engineFailure.test.ts`).
  */
-import {
-  NOTICE_RESTARTED,
-  NOTICE_SWITCHED,
-  failureSwap,
-  pinsAfterFailure,
-  fallbackHolds,
-  readFallback,
-  recordFailure,
-  writeFallback,
-  type EngineEnv,
-  type EngineName,
-} from "./engineChoice.js";
-import { GOVERNOR_SWAP_READY_MAX_MS, type EngineOnCanvas } from "./rendererSwap.js";
+import { GOVERNOR_SWAP_READY_MAX_MS } from "./rendererSwap.js";
+
+/** How long the HUD shows the line after a swap that answered a failure. */
+export const FALLBACK_NOTICE_MS = 6_000;
+
+/** The HUD's line once a rebuild has answered a failure. */
+export const NOTICE_RESTARTED = "Graphics restarted after a GPU error.";
 
 /** The work under way on a hike's renderer (a switch of tier, the
  * governor's drop, a rebuild after a failure): one at a time. */
@@ -84,8 +76,6 @@ export type FailureDeps = {
   alive(): boolean;
   /** The engine the running renderer draws with. */
   running(): unknown;
-  /** Whether the running renderer draws with WebGPU. */
-  runningOnWebGpu(): boolean;
   /** Stops listening to the running engine. */
   unwatch(): void;
   /** Ends the running renderer's asynchronous work on the failed engine at
@@ -93,38 +83,43 @@ export type FailureDeps = {
    * pipelines being made, which would otherwise poll the dead engine until
    * the rebuild disposes the renderer and report failures of their own. */
   abandon(): void;
-  /** Remembers the failure for the next engine the rule gives (the page's
-   * record, and the URL's pin where needed: `recordEngineFailure`). Its line
-   * is the one that engine would earn; the line shown is chosen from the
-   * engine the rebuild ends on. */
-  record(reason: "pipeline" | "lost"): string;
+  /** Tells the page of the failure (its row; `main.ts`'s `engineFailed`). */
+  record(reason: "pipeline" | "lost"): void;
   /** Covers play; the function returned lifts it. */
   cover(): () => void;
   /** Stops the render loop on the failed engine. */
   stopLoop(): void;
-  /** Rebuilds the renderer at the running tier on the engine the rule now
-   * gives it (the live switch), waiting at most `readyMaxMs` for its new
-   * scene; rejects when no tier builds. */
+  /** Rebuilds the renderer at the running tier on a new engine of its own
+   * (the live switch), waiting at most `readyMaxMs` for its new scene;
+   * rejects when no tier builds. */
   rebuild(readyMaxMs: number): Promise<void>;
   flash(line: string): void;
   log(line: string): void;
+  /** Whether the hike is to end and build no renderer again: a lost device
+   * that is one too many in too short a time (`lossBound.ts`). Absent: never. */
+  ends?(reason: "pipeline" | "lost"): boolean;
+  /** Ends the hike with its line, where `ends` said so. */
+  end?(): void;
+  /** How a rebuild came out, once it has: `failure` is null where it ran to
+   * its end, else the throw's text where no tier could be built. */
+  rebuilt?(reason: "pipeline" | "lost", failure: string | null): void;
 };
 
 /**
  * The hike's answer to a failure of its running WebGPU engine, reported by
- * its watcher (`watchWebGpu`): the watcher comes off first (the rebuild then
- * disposes the engine, and a disposed engine is not a failing one), the
+ * its watcher (`Renderer.ownWatch`): the watcher comes off first (the rebuild
+ * then disposes the engine, and a disposed engine is not a failing one), the
  * renderer's work still in flight on the engine ends (`abandon`, so one
- * failure is one report: a bake polling the dead engine meanwhile logged a
- * failure of its own for each billboard, 2026-10-19), the failure is
- * remembered, and once any switch under way has settled, the
- * renderer is rebuilt at the running tier on the engine the rule now gives
- * it, under a cover over play, with the loop stopped on the failed engine.
- * A report from an engine that is no longer the running one, or one already
- * answered, changes nothing more; so does one whose engine a switch already
- * left while it waited. The HUD's line says what the rebuild ended on:
- * restarted on WebGPU, switched to WebGL2. The cover lifts on every outcome;
- * a rebuild that throws shows no line.
+ * failure is one report), the failure is told to the page, and once any
+ * switch under way has settled, the renderer is rebuilt at the running tier
+ * on a new engine of its own, under a cover over play, with the loop stopped
+ * on the failed engine. A report from an engine that is not the running
+ * one, or one already answered, changes nothing more; so does one whose
+ * engine a switch already left while it waited. The HUD then says the
+ * graphics restarted (`NOTICE_RESTARTED`). The cover lifts on every outcome;
+ * a rebuild that throws shows no line. Where the failure is one too many
+ * (`ends`), it is remembered and the hike ends with its line (`end`): no
+ * cover, no rebuild. How each rebuild came out is told (`rebuilt`).
  */
 export function answerFailures(deps: FailureDeps): (engine: unknown, reason: "pipeline" | "lost") => Promise<void> {
   const answered = new Set<unknown>();
@@ -134,6 +129,12 @@ export function answerFailures(deps: FailureDeps): (engine: unknown, reason: "pi
     deps.unwatch();
     deps.abandon();
     if (!deps.alive()) return;
+    if (deps.ends?.(reason) === true) {
+      deps.log("WebGPU: the device was lost once too often; ending the hike.");
+      deps.record(reason);
+      deps.end?.();
+      return;
+    }
     deps.log(`WebGPU: ${reason === "lost" ? "the device was lost" : "a GPU error"}; rebuilding the renderer.`);
     deps.record(reason);
     await deps.serial.settled();
@@ -149,108 +150,14 @@ export function answerFailures(deps: FailureDeps): (engine: unknown, reason: "pi
           await deps.rebuild(GOVERNOR_SWAP_READY_MAX_MS);
         } catch (error) {
           deps.log(`WebGPU: the renderer could not be rebuilt after a failure: ${String(error)}`);
+          deps.rebuilt?.(reason, String(error));
           return;
         } finally {
           lift();
         }
-        if (deps.alive()) deps.flash(deps.runningOnWebGpu() ? NOTICE_RESTARTED : NOTICE_SWITCHED);
+        deps.rebuilt?.(reason, null);
+        if (deps.alive()) deps.flash(NOTICE_RESTARTED);
       })(),
     );
   };
-}
-
-/**
- * Remembers a failure of a WebGPU engine for this browser and Babylon version
- * (`recordFailure`) and, where the rule would otherwise give WebGPU again
- * (storage refused the record, or `?engine=webgpu` outranks it), pins
- * `engine=webgl2` in this tab's URL (`failureSwap`). The HUD's line for the
- * engine the rule now gives.
- */
-export function recordEngineFailure(
-  reason: "pipeline" | "lost",
-  page: { storage: Storage | null; env: EngineEnv; now: number; override: EngineName | null; pin(): void },
-): string {
-  const record = recordFailure(readFallback(page.storage), reason, page.env, page.now);
-  const stored = writeFallback(page.storage, record);
-  const act = failureSwap({ stored, holds: fallbackHolds(record, page.env, page.now), reason, override: page.override });
-  if (act.pin) page.pin();
-  return act.notice;
-}
-
-/**
- * Remembers a WebGPU start that ended on WebGL2: `timeout` where it ran out of
- * the GPU's budget (an adapter that does not answer, an engine not ready),
- * `init` where it failed (an engine that does not start, a probe step's WebGPU
- * engine that fails in its build or frames). Pins `engine=webgl2` in this
- * tab's address by the same rule as a failure of a running engine
- * (`pinsAfterFailure`): where storage refused the record, or the address's
- * `?engine=webgpu` outranks it; but not for a lone timeout that was stored,
- * which, as a first lost device, tries WebGPU again. `page.pin` is not called
- * where the page no longer wants the engine. What was stored, and whether the
- * record holds.
- */
-export function recordStartFailure(reason: "init" | "timeout", page: {
-  storage: Storage | null;
-  env: EngineEnv;
-  now: number;
-  override: EngineName | null;
-  /** Whether the page still wants the engine whose start failed. */
-  current: boolean;
-  pin(): void;
-}): { stored: boolean; holds: boolean } {
-  const record = recordFailure(readFallback(page.storage), reason, page.env, page.now);
-  const stored = writeFallback(page.storage, record);
-  const holds = fallbackHolds(record, page.env, page.now);
-  const retry = reason === "timeout" && stored && !holds;
-  if (page.current && !retry && pinsAfterFailure({ stored, override: page.override })) page.pin();
-  return { stored, holds };
-}
-
-/**
- * Starts a hike on `first`, and where it throws on a WebGPU engine, starts it
- * again on WebGL2 on a fresh canvas that takes the place of every canvas the
- * first start left (`place`). The game is handed one recorder of WebGPU
- * failures for its life (`start`'s `engineFailed`). While a start is under
- * way, a fault its ladder finds is the start's: held against the engine
- * once, and only once the WebGL2 start stands, and the game then shows the
- * line. Once the start has returned, every failure of the hike is recorded
- * as it comes (`deps.engineFailed`). A throw on WebGL2, or from the WebGL2
- * start, goes up: the fault is not the engine's.
- */
-export function startOnEngine<G extends { notify(line: string): void }>(
-  first: EngineOnCanvas,
-  deps: {
-    /** Starts the game on `onCanvas`, handing it `engineFailed` for every
-     * WebGPU failure it meets. */
-    start(onCanvas: EngineOnCanvas, engineFailed: (reason: "pipeline" | "lost") => string): G;
-    engineFailed(reason: "pipeline" | "lost"): string;
-    freshCanvas(): HTMLCanvasElement;
-    place(canvas: HTMLCanvasElement): void;
-    log(message: string, error: unknown): void;
-  },
-): G {
-  let line: string | null = null;
-  const once = (): string => (line ??= deps.engineFailed("pipeline"));
-  let starting = false;
-  const record = (reason: "pipeline" | "lost"): string =>
-    starting && reason === "pipeline" ? once() : deps.engineFailed(reason);
-  const start = (onCanvas: EngineOnCanvas): G => {
-    starting = true;
-    try {
-      return deps.start(onCanvas, record);
-    } finally {
-      starting = false;
-    }
-  };
-  try {
-    return start(first);
-  } catch (error) {
-    if (first.engine === null) throw error;
-    deps.log("WebGPU: the game could not be started on it; starting it on WebGL2.", error);
-    const fresh = deps.freshCanvas();
-    deps.place(fresh);
-    const game = start({ canvas: fresh, engine: null, watchers: null });
-    game.notify(once());
-    return game;
-  }
 }

@@ -29,7 +29,7 @@ const SEEDS = [1, 388817, -1117907922];
  */
 describe("the canopy table the roost altitude is derived from", () => {
   it("carries the shipped heights, fir first, as forestMeshes maps the species", () => {
-    // tree.giant_fir 14.70 m, tree.giant_pine 17.18 m, in the species order forestMeshes.ts maps to
+    // tree.giant_fir 14.70 m, tree.giant_pine 17.18 m, in the species order lite/forestMeshes.ts maps to
     // those two models (0 fir, 1 pine). Pinned as VALUES because every other roost-altitude test
     // re-derives the canopy from this same table.
     expect(GIANT_MODEL_HEIGHT).toEqual([14.70, 17.18]);
@@ -371,7 +371,7 @@ describe("wildlife placement census", () => {
   });
 
   it("gives every unit an id unique across all species and cells", () => {
-    // The id names a unit everywhere downstream: `wildlifeMeshes.ts` keys its
+    // The id names a unit everywhere downstream: `lite/wildlifeMeshes.ts` keys its
     // state and pool slots on it, and every per-unit random in
     // `wildlifeBehaviour.ts` is drawn from `hash3(unit.id, ...)`. Two live
     // units sharing one meant a missing animal and a shared dwell, wander and

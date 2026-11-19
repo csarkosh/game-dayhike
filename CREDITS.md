@@ -667,6 +667,59 @@ Everything not listed below is original work by Cyrus Sarkosh.
 - **Licence:** CC-BY-4.0
 - **URL:** https://sketchfab.com/3d-models/psp-campaign-hat-18dd6e95ffb5402a80113c3e00d1228e
 
+## render.agx_tone_map
+
+- **Source:** three.js: AgX tone mapping
+- **Author:** three.js authors
+- **Licence:** MIT
+- **URL:** https://github.com/mrdoob/three.js
+
+## render.babylon_lite
+
+- **Source:** Babylon Lite (a patched build), which the game is drawn with
+- **Author:** BabylonJS
+- **Licence:** Apache-2.0
+- **URL:** https://github.com/csarkosh/babylon-lite
+
+## render.environment_brdf
+
+- **Source:** Babylon.js 9.18.0: environment BRDF table
+- **Author:** The Babylon.js team
+- **Licence:** Apache-2.0
+- **URL:** https://github.com/BabylonJS/Babylon.js
+- **Modified:** no
+
+## render.ktx2_basis_transcoder
+
+- **Source:** Khronos KTX: Basis Universal transcoder
+- **Author:** The Khronos Group
+- **Licence:** Apache-2.0
+- **URL:** https://www.khronos.org/ktx/
+- **Modified:** no
+
+## render.ktx2_decoder
+
+- **Source:** Babylon.js 9.18.0: KTX2 decoder
+- **Author:** The Babylon.js team
+- **Licence:** Apache-2.0
+- **URL:** https://github.com/BabylonJS/Babylon.js
+
+## render.ktx2_uastc_transcoders
+
+- **Source:** Basis Universal Transcoders: UASTC to ASTC, BC7 and uncompressed
+- **Author:** The Khronos Group
+- **Licence:** Apache-2.0
+- **URL:** https://github.com/KhronosGroup/Basis-Universal-Transcoders
+- **Modified:** no
+
+## render.ktx2_zstd
+
+- **Source:** zstddec (Don McCurdy): Zstandard decompression library
+- **Author:** Yann Collet, Facebook, Inc.
+- **Licence:** BSD-3-Clause
+- **URL:** https://github.com/donmccurdy/zstddec
+- **Modified:** no
+
 ## sign.arm
 
 - **Source:** Sketchfab: Modular Medieval Signposts

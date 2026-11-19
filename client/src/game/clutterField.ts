@@ -15,11 +15,11 @@
  * across rebuilds so a camera move re-samples only the cells newly inside
  * some class's disc. Pure and Babylon-free, like `forestField.ts`.
  */
-import type { FadeBands } from "./distanceFadePlugin.js";
+import type { FadeBands } from "./distanceFade.js";
 import {
   clutterInCell, clutterCell, CLUTTER_CLASS_COUNT, CLUTTER_GRASS_CELL, CLUTTER_MEADOW, type ClutterInstance, CLUTTER_GRASS, CLUTTER_BUSH, CLUTTER_FLOWER, CLUTTER_LITTER, CLUTTER_FERN, CLUTTER_SHRUB, CLUTTER_WETPLANT, CLUTTER_HIGHPLANT,
 } from "../sim/clutter.js";
-import { finish, nextCrossing, type Slices } from "./syncJobs.js";
+import { finish, nextCrossing, sliceDue, type Slices } from "./syncJobs.js";
 import {
   createCellWindow, inWindow, moveWindow, prefetchWindow, walkEveryCell, type CellRows, type CellWindow,
 } from "./cellWindow.js";
@@ -77,6 +77,14 @@ export const CLUTTER_RADII: readonly number[] = [110, 110, 400, 110, 70, 110, 10
  * class's fades, seams and far band (`clutterFadeEdges`, `clutterSeamEdges`,
  * `coverFarBand`, `coverWiden`) as the low tier's is. */
 export const CLUTTER_REACH = 0.7;
+/** The share of every class's radius the low tier draws: the clutter's
+ * analogue of the forest's near band on that tier. */
+export const CLUTTER_REACH_LOW = 0.6;
+
+/** The share of every class's radius a quality tier draws (`radiusScale`). */
+export function clutterReachFor(tier: "low" | "medium" | "high"): number {
+  return tier === "low" ? CLUTTER_REACH_LOW : CLUTTER_REACH;
+}
 
 /**
  * Where a class's far band begins (m, at radiusScale 1; none for a class at
@@ -84,7 +92,7 @@ export const CLUTTER_REACH = 0.7;
  * 1 / COVER_FAR_KEEP by its hash, the rest fading out over COVER_FAR_RAMP,
  * and the survivors widen about their origin to COVER_WIDEN times their
  * width across COVER_WIDEN_RAMP of eye distance in the vertex stage
- * (`distanceFadePlugin.ts`), so the ground keeps silhouettes to the class's
+ * (`lite/forestPlugins.ts`), so the ground keeps silhouettes to the class's
  * radius at half the instances: the tile doubling a far grass field is
  * drawn with elsewhere. The meadow's: its cards ended at 40 m and the
  * ground past them read bare to the tree line; they now reach 100 m, the
@@ -272,10 +280,9 @@ export const CLUTTER_FAR_SPLIT = 0.45;
 export const CLUTTER_BUDGETS: readonly number[] = [4400, 550, 260, 700, 500, 2500, 43000, 3650, 5200, 4000, 2950, 620, 5200, 5200];
 
 /**
- * Edge-fade ramp per class, as a fraction of the effective radius (this
- * used to describe the deleted clutterFadePlugin.ts shrink-toward-the-base
- * mechanism): the width of the
- * dither dissolve band — `distanceFadePlugin.ts`'s `fadeBands` out-band —
+ * Edge-fade ramp per class, as a fraction of the effective radius: the
+ * width of the
+ * dither dissolve band — the `fadeBands` out-band (`distanceFade.ts`) —
  * as a fraction of the disc radius. An instance dissolves from full
  * visibility to fully discarded across the last `fraction × radius` metres
  * of the disc; nothing shrinks. Renderer-side, never a tunable. Meadow's
@@ -400,8 +407,10 @@ function clutterOrigin(camX: number, camZ: number, cell: number): { x: number; z
   };
 }
 
-/** Listed instances a slice of the band walk classifies before it yields. */
+/** Listed instances a slice of the band walk classifies before it yields. A slice also ends by the scheduler's clock
+ * (`sliceDue`), which counts `LIST_UNITS` listed instances as one unit of work. */
 const BAND_SLICE = 6144;
+const LIST_UNITS = 128;
 
 /**
  * The band walk itself, parameterised over where the cells come from and the
@@ -470,7 +479,8 @@ function* collectClutterSlices(
         }
       }
       listed += row.length;
-      if (listed >= BAND_SLICE) {
+      const ended = sliceDue(row.length / LIST_UNITS);
+      if (listed >= BAND_SLICE || ended) {
         listed = 0;
         yield;
       }

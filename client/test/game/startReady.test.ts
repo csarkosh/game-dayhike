@@ -1,40 +1,52 @@
 import { describe, expect, it } from "vitest";
 import { READY_MAX_MS, startReady } from "../../src/game/startReady.js";
 import { createLoadProgress } from "../../src/game/loadProgress.js";
+import { whenWorldIn } from "../../src/game/worldWait.js";
 import { timeLimit } from "../helpers/timeLimit.js";
 
+/** A renderer whose world is in when `worldIn` resolves, as the hike's renderer answers `Renderer.whenReady`. */
+const readyWith = (worldIn: Promise<unknown>): { whenReady(maxMs: number): Promise<void> } => ({
+  whenReady: (maxMs) => whenWorldIn(worldIn, maxMs),
+});
+
+/** A world that is in already, and one that comes in `ms` later, telling `then` as it does. */
+const worldIn = (): Promise<void> => Promise.resolve();
+const worldInAfter = (ms: number, then: () => void = () => undefined): Promise<void> => new Promise((resolve) => setTimeout(() => { then(); resolve(); }, ms));
+
 describe("the start-time gate", () => {
-  it("resolves when the scene is ready and the forest's layers are in, then gates the bar", async () => {
+  it("resolves when the renderer's world is in, then gates the bar", async () => {
     const p = createLoadProgress();
-    let readyCalls = 0;
-    const scene = { isDisposed: false, meshes: [], isReady: () => ++readyCalls > 2, getWaitingItemsCount: () => 0 };
-    await startReady({ scene: scene as never, forestReady: Promise.resolve(), reveal: null, progress: p, maxMs: 5000 });
+    let cameIn = false;
+    let readyAtIn: boolean | null = null;
+    await startReady({ renderer: readyWith(worldInAfter(200, () => { cameIn = true; readyAtIn = p.view().ready; })), progress: p, maxMs: 5000 });
     expect(p.view().ready).toBe(true);
-    expect(readyCalls).toBeGreaterThan(2);
+    // Not before the world was in.
+    expect(cameIn).toBe(true);
+    expect(readyAtIn).toBe(false);
   }, timeLimit(10_000));
 
-  it("waits for the whole-frame reveal on WebGPU before it gates", async () => {
+  it("waits on no frame to come whole: it is handed no reveal, and gates as the world comes in", async () => {
     const p = createLoadProgress();
     let lifted = false;
-    const scene = { isDisposed: false, meshes: [], isReady: () => true, getWaitingItemsCount: () => 0 };
     const reveal = new Promise<void>((r) => setTimeout(() => { lifted = true; r(); }, 50));
-    await startReady({ scene: scene as never, forestReady: Promise.resolve(), reveal, progress: p, maxMs: 5000 });
-    expect(lifted).toBe(true);
+    // @ts-expect-error the gate's input names no reveal: no engine a hike draws with leaves a draw out of a frame.
+    const withReveal: Parameters<typeof startReady>[0] = { renderer: readyWith(worldIn()), reveal, progress: p, maxMs: 5000 };
+    await startReady(withReveal);
     expect(p.view().ready).toBe(true);
+    // What was slipped in was not waited for.
+    expect(lifted).toBe(false);
   }, timeLimit(10_000));
 
   it("gates without a bar, and waits at most a minute for the world", async () => {
-    const scene = { isDisposed: false, meshes: [], isReady: () => true, getWaitingItemsCount: () => 0 };
-    await expect(startReady({ scene: scene as never, forestReady: Promise.resolve(), reveal: null, progress: null, maxMs: 5000 })).resolves.toBeUndefined();
+    await expect(startReady({ renderer: readyWith(worldIn()), progress: null, maxMs: 5000 })).resolves.toBeUndefined();
     expect(READY_MAX_MS).toBe(60_000);
   }, timeLimit(10_000));
 
   it("is not ready while a first build is still being stepped, and is when it ends", async () => {
-    const scene = { isDisposed: false, meshes: [], isReady: () => true, getWaitingItemsCount: () => 0 };
     let built!: () => void;
     const firstBuilds = new Promise<void>((resolve) => { built = resolve; });
     let ready = false;
-    void startReady({ scene: scene as never, forestReady: Promise.resolve(), reveal: null, progress: null, maxMs: 60_000, firstBuilds: () => firstBuilds }).then(() => { ready = true; });
+    void startReady({ renderer: readyWith(worldIn()), progress: null, maxMs: 60_000, firstBuilds: () => firstBuilds }).then(() => { ready = true; });
     await new Promise((r) => setTimeout(r, 250));
     expect(ready).toBe(false);
     built();
@@ -42,21 +54,18 @@ describe("the start-time gate", () => {
     expect(ready).toBe(true);
   }, timeLimit(10_000));
 
-  it("asks for the first builds only once the scene is ready: a fill queued when the models land is not missed", async () => {
+  it("asks for the first builds only once the world is in: a fill queued when the models land is not missed", async () => {
     const order: string[] = [];
-    let readyCalls = 0;
-    const scene = { isDisposed: false, meshes: [], isReady: () => { if (++readyCalls > 2) { order.push("scene"); return true; } return false; }, getWaitingItemsCount: () => 0 };
-    await startReady({ scene: scene as never, forestReady: Promise.resolve(), reveal: null, progress: null, maxMs: 5000, firstBuilds: () => { order.push("fills"); return Promise.resolve(); } });
+    await startReady({ renderer: readyWith(worldInAfter(200, () => order.push("scene"))), progress: null, maxMs: 5000, firstBuilds: () => { order.push("fills"); return Promise.resolve(); } });
     expect(order[0]).toBe("scene");
     expect(order.at(-1)).toBe("fills");
     expect(order.filter((x) => x === "fills")).toHaveLength(1);
   }, timeLimit(10_000));
 
   it("calls the world ready at maxMs though a first build never ends", async () => {
-    const scene = { isDisposed: false, meshes: [], isReady: () => true, getWaitingItemsCount: () => 0 };
     const p = createLoadProgress();
     // The limit is the gate's own (300 ms here): the test's is ten seconds, and this would never resolve without one.
-    await startReady({ scene: scene as never, forestReady: Promise.resolve(), reveal: null, progress: p, maxMs: 300, firstBuilds: () => new Promise(() => undefined) });
+    await startReady({ renderer: readyWith(worldIn()), progress: p, maxMs: 300, firstBuilds: () => new Promise(() => undefined) });
     expect(p.view().ready).toBe(true);
   }, timeLimit(10_000));
 });

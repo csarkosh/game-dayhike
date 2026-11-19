@@ -3,7 +3,7 @@
  * two decades and carries several times the seedlings of the floor beside
  * it: the next trees start on it. Here a share of the logs are nurse logs,
  * each with a few ferns and conifer seedlings along its top; the moss over
- * every log is the deadwood plugin's (`deadwoodPlugin.ts`).
+ * every log is the dead trees' dressing's (`lite/forestPlugins.ts`).
  *
  * Pure and Babylon-free; a pure function of the log's own `hash`, so the same
  * log carries the same plants on every rebuild and on every peer's screen.

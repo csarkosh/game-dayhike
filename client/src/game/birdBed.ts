@@ -6,6 +6,7 @@
  */
 import type { AmbientAudio } from "./ambientAudio.js";
 import { audioUrl } from "./assetUrls.js";
+import { pageTurns } from "./downloadTurns.js";
 
 export const BIRD_BED_CLIP = "audio/ambience.forest_birds.mp3";
 
@@ -19,11 +20,12 @@ export function loadBirdBed(
   ambient: Pick<AmbientAudio, "decode" | "onUnlock" | "setBirdBed">,
   options: BirdBedOptions = {},
 ): Promise<void> {
-  const fetchBed = options.fetchBed ?? (async () => {
+  // In a turn of the page's downloads, behind the intro's film while it plays (`downloadTurns.ts`).
+  const fetchBed = options.fetchBed ?? (() => pageTurns.run(async () => {
     const response = await fetch(audioUrl(BIRD_BED_CLIP));
     if (!response.ok) throw new Error(`HTTP ${response.status}`);
     return response.arrayBuffer();
-  });
+  }));
   return new Promise((resolve) => {
     fetchBed().then(
       (bytes) => ambient.onUnlock(() => {

@@ -71,7 +71,7 @@ legitimate choice when only one changed — a server-only fix does not need the 
 rebuilt. What is *not* legitimate is assuming which changed. Check the diff.
 
 **3. Verify is not optional.** A client change can break production without any test
-failing: nothing in the suite runs Babylon or loads a real bundle. `deploy:verify` catches
+failing: nothing in the suite draws a frame or loads a real bundle. `deploy:verify` catches
 a bundle built without the signaling URL, an LFS pointer shipped in place of a model, and
 a signaling server that answers HTTP but refuses a real WebSocket join.
 
@@ -203,3 +203,10 @@ apps pick up the new client on their next launch.
 The Windows CI smoke now loads the client over the network from Firebase on a GPU-less
 runner; on the first release after the thin launcher a timeout there is more likely a slow
 first load than an artifact defect — the script's single automatic re-dispatch is the net.
+
+A runner with no GPU cannot draw a hike, and the site shows it the page for those who
+cannot play. The smoke takes either page as proof the app loaded the site: a hike reached
+from the landing, or that page. Its last line says which (`"saw":"hike"` or
+`"saw":"turned-away"` with the `reason`). The release's own Mac has a graphics card, so the
+script runs the smoke there with `--needs-hike`: only a hike passes, and the page for those
+who cannot play fails the release, since it means the site turned a real card away.

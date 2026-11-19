@@ -1,0 +1,1 @@
+if(fHas>0.5){surfaceAlbedo=mix(surfaceAlbedo,input.vFoliage.rgb*mix(material.foliageRootAO,1.0,input.vFoliageH)/(0.5*(material.foliageRootAO+1.0))*(1.0+${foliageClumpLuma}*(input.vFoliageClump-0.5)),0.7);}

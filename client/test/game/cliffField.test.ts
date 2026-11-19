@@ -1,5 +1,4 @@
 import { describe, it, expect } from "vitest";
-import { Quaternion, Vector3 } from "@babylonjs/core/Maths/math.vector.js";
 import "../../src/sim/passes/index.js";
 import { GROUND_NORMAL_Y } from "../../src/sim/constants.js";
 import { groundCover, rockSlopeBand, type ClutterInstance } from "../../src/sim/clutter.js";
@@ -7,16 +6,16 @@ import { hash3 } from "../../src/sim/field.js";
 import { elevationSampleAt } from "../../src/sim/terrain.js";
 import { forestDensity } from "../../src/sim/vegetation.js";
 import {
-  CLIFF_CELL, CLIFF_MODEL_WIDTH, CLIFF_RUN_REACH, CLIFF_TILT_MAX, CLIFF_WALL_A, CLIFF_WALL_B,
+  CLIFF_CELL, CLIFF_MODEL_WIDTH, CLIFF_RUN_REACH, CLIFF_TILT_MAX,
   cliffCellPoint, cliffCellRuns, cliffFacing, leanPoint, type CliffPoint,
 } from "../../src/sim/cliffField.js";
 import {
   CLIFF_BUDGET, CLIFF_PAD, CLIFF_RINGS, cliffBands, cliffOrigin, collectCliffs, createCliffCollector,
 } from "../../src/game/cliffField.js";
-import { cliffSeat } from "../../src/game/cliffMeshes.js";
 import { seatOnGroundCapped } from "../../src/game/groundTilt.js";
 import { classifySurface } from "../../src/game/terrainSurface.js";
 import { CLIFF_LAID } from "../sim/helpers/cliffLaid.js";
+import { babylonValues } from "../helpers/babylonFixture.js";
 import { timeLimit } from "../helpers/timeLimit.js";
 
 /** Seed 1's worst 400 m disc for steep rock (5,549 four-metre cells), from
@@ -198,11 +197,14 @@ describe("collectCliffs and the collector", () => {
   }, timeLimit(300_000));
 });
 
-describe("the shell seats what the field probed", () => {
-  it("turns a point by the shell's quaternion exactly as leanPoint turns the faced point, to 1e-9", () => {
-    const q = new Quaternion();
-    const ref = new Quaternion();
-    const turned = new Vector3();
+describe("the drawn seat is what the field probed", () => {
+  it("turns a point by the recorded seat's quaternion exactly as leanPoint turns the faced point, to 1e-9", () => {
+    // What the shell on Babylon.js gave, recorded: for each of the five hundred modules below, the quaternion its
+    // seat wrote (`cliffSeat`) and the module's four points turned by it with Babylon.js's own
+    // `applyRotationQuaternionToRef`.
+    const shell = babylonValues<{ seats: { q: number[]; turned: number[] }[] }>("numbers/cliffSeat.json").seats;
+    expect(shell).toHaveLength(500);
+    const ref = { x: 0, y: 0, z: 0, w: 1 };
     const p: CliffPoint = { x: 0, y: 0, z: 0 };
     let n = 0, worst = 0;
     for (let i = 0; i < 500; i++) {
@@ -211,20 +213,17 @@ describe("the shell seats what the field probed", () => {
       const a = 2 * Math.PI * hash3(i, 0, 2, 99);
       const dx = g * Math.cos(a), dz = g * Math.sin(a);
       const jitter = hash3(i, 0, 3, 99);
-      const m: ClutterInstance = {
-        cls: 0, x: 0, z: 0, groundH: 0, groundDx: dx, groundDz: dz,
-        scale: 1, variant: i % 2 === 0 ? CLIFF_WALL_A : CLIFF_WALL_B, hash: jitter,
-      };
-      cliffSeat(m, q);
+      // The module the shell seated stood at the origin on that gradient, its hash that jitter, wall A and wall B by turns.
+      const { q, turned: points } = shell[i] as (typeof shell)[number];
       // The shell's seat is `seatOnGroundCapped` at the facing's own yaw.
       const f = cliffFacing(dx, dz, jitter);
       seatOnGroundCapped(Math.atan2(f.fx, f.fz), dx, dz, CLIFF_TILT_MAX, ref);
-      expect(q.equalsWithEpsilon(ref, 1e-12)).toBe(true);
+      expect([ref.x, ref.y, ref.z, ref.w].every((v, c) => Math.abs((q[c] as number) - v) <= 1e-12)).toBe(true);
       for (let k = 0; k < 4; k++) {
         const lx = 20 * hash3(i, k, 4, 99) - 10;
         const ly = 8 * hash3(i, k, 5, 99);
         const lz = 8 * hash3(i, k, 6, 99) - 4;
-        new Vector3(lx, ly, lz).applyRotationQuaternionToRef(q, turned);
+        const turned = { x: points[k * 3] as number, y: points[k * 3 + 1] as number, z: points[k * 3 + 2] as number };
         leanPoint(lx * f.rx + lz * f.fx, ly, lx * f.rz + lz * f.fz, dx, dz, p);
         worst = Math.max(worst, Math.abs(turned.x - p.x), Math.abs(turned.y - p.y), Math.abs(turned.z - p.z));
         n++;

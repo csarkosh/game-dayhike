@@ -221,25 +221,30 @@ describe("where a lobby host is, for its followers", () => {
 
 describe("the overrides stay on this page", () => {
   it("are taken off the route a host announces, and nothing else is touched", () => {
-    expect(stripOverrides("/game/abc?engine=webgpu&tier=high")).toBe("/game/abc");
-    expect(stripOverrides("/game/abc?cmd=seed%20atmo&engine=webgl2")).toBe("/game/abc?cmd=seed+atmo");
+    expect(stripOverrides("/game/abc?probe=medium&tier=high")).toBe("/game/abc");
+    expect(stripOverrides("/game/abc?cmd=seed%20atmo&tier=low")).toBe("/game/abc?cmd=seed+atmo");
     // No override: the route goes out byte for byte as before.
     expect(stripOverrides("/game/abc?cmd=seed%20atmo")).toBe("/game/abc?cmd=seed%20atmo");
     expect(stripOverrides("/game/abc")).toBe("/game/abc");
     expect(stripOverrides("")).toBe("");
-    // The probe override is the third of the set.
+    // The probe override is the second of the set.
     expect(stripOverrides("/game/abc?probe=high&cmd=x&tier=low")).toBe("/game/abc?cmd=x");
-    // The WebGPU shader lookup's, the fourth: a measurement's, never a follower's.
-    expect(stripOverrides("/game/abc?wgsl=record&cmd=x")).toBe("/game/abc?cmd=x");
-    expect(sameRoute("/game/abc?cmd=x&wgsl=off", "/game/abc?cmd=x")).toBe(true);
+    // The engine's and its shader lookup's are of the set no more: nothing reads them, and a route keeps them as
+    // it keeps any parameter, byte for byte.
+    expect(stripOverrides("/game/abc?engine=webgpu&wgsl=record&cmd=x")).toBe("/game/abc?engine=webgpu&wgsl=record&cmd=x");
+    expect(stripOverrides("/game/abc?wgsl=record&cmd=x&tier=high")).toBe("/game/abc?wgsl=record&cmd=x");
+    expect(sameRoute("/game/abc?cmd=x&wgsl=off", "/game/abc?cmd=x")).toBe(false);
+    expect(sameRoute("/game/abc?cmd=x&engine=webgl2", "/game/abc?cmd=x")).toBe(false);
   });
 
   it("are carried onto the route a follower is sent to, from its own URL", () => {
-    expect(keepOverrides("/game/abc?cmd=x", "?engine=webgl2&tier=medium&cmd=y")).toBe("/game/abc?cmd=x&engine=webgl2&tier=medium");
+    expect(keepOverrides("/game/abc?cmd=x", "?probe=high&tier=medium&cmd=y")).toBe("/game/abc?cmd=x&tier=medium&probe=high");
     expect(keepOverrides("/game/abc", "?tier=high")).toBe("/game/abc?tier=high");
     expect(keepOverrides("/game/abc?cmd=x", "")).toBe("/game/abc?cmd=x");
-    expect(keepOverrides("/game/abc", "?probe=medium&engine=webgpu")).toBe("/game/abc?engine=webgpu&probe=medium");
-    expect(keepOverrides("/game/abc", "?wgsl=verify&engine=webgpu")).toBe("/game/abc?engine=webgpu&wgsl=verify");
+    expect(keepOverrides("/game/abc", "?probe=medium&tier=low")).toBe("/game/abc?tier=low&probe=medium");
+    // The engine's and its shader lookup's are not carried: a page that has only those gets the route back unchanged.
+    expect(keepOverrides("/game/abc", "?probe=medium&engine=webgpu")).toBe("/game/abc?probe=medium");
+    expect(keepOverrides("/game/abc?cmd=x", "?wgsl=verify&engine=webgpu")).toBe("/game/abc?cmd=x");
   });
 });
 
@@ -256,7 +261,7 @@ describe("sameRoute", () => {
     // follower navigated and rebuilt its game on every lobby change.
     expect(stripOverrides(host) === stripOverrides(follower)).toBe(false);
     expect(sameRoute(host, follower)).toBe(true);
-    expect(sameRoute(`${host}&engine=webgl2`, follower)).toBe(true);
+    expect(sameRoute(`${host}&probe=medium`, follower)).toBe(true);
     expect(sameRoute("/game/abc?b=2&a=1", "/game/abc?a=1&b=2")).toBe(true);
     expect(sameRoute("/game/abc", "/game/abc?tier=medium")).toBe(true);
     expect(sameRoute("/game/abc?probe=high", "/game/abc")).toBe(true);
@@ -266,7 +271,7 @@ describe("sameRoute", () => {
     // URLSearchParams.get takes the first value, so these build different worlds.
     expect(sameRoute("/game/abc?cmd=a&cmd=b", "/game/abc?cmd=b&cmd=a")).toBe(false);
     expect(sameRoute("/game/abc?cmd=a&x=1&cmd=b", "/game/abc?x=1&cmd=a&cmd=b")).toBe(true);
-    expect(sameRoute("/game/abc?cmd=a&cmd=b&tier=high", "/game/abc?cmd=a&engine=webgl2&cmd=b")).toBe(true);
+    expect(sameRoute("/game/abc?cmd=a&cmd=b&tier=high", "/game/abc?cmd=a&probe=medium&cmd=b")).toBe(true);
   });
 
   it("still sees a real change", () => {
@@ -302,18 +307,18 @@ describe("the overrides across the page's own navigation", () => {
     vi.unstubAllGlobals();
   });
 
-  it("carries tier=, engine= and probe= onto every route the page moves to, and nothing else", () => {
-    const record = stubPage("?tier=high&engine=webgl2&probe=medium&cmd=seed%20x");
+  it("carries tier= and probe= onto every route the page moves to, and nothing else", () => {
+    const record = stubPage("?tier=high&engine=webgl2&probe=medium&wgsl=off&cmd=seed%20x");
     navigateToGame("epic-panda-fun");
     navigateToLanding();
     navigateToPanel("settings");
     replaceWithLanding();
     expect(record.pushed).toEqual([
-      withBase("/game/epic-panda-fun?engine=webgl2&tier=high&probe=medium"),
-      withBase("/?engine=webgl2&tier=high&probe=medium"),
-      withBase("/settings?engine=webgl2&tier=high&probe=medium"),
+      withBase("/game/epic-panda-fun?tier=high&probe=medium"),
+      withBase("/?tier=high&probe=medium"),
+      withBase("/settings?tier=high&probe=medium"),
     ]);
-    expect(record.replaced).toEqual([withBase("/?engine=webgl2&tier=high&probe=medium")]);
+    expect(record.replaced).toEqual([withBase("/?tier=high&probe=medium")]);
   });
 
   it("moves a page with no override exactly as before", () => {
@@ -351,7 +356,8 @@ describe("a follower and its host, with the overrides", () => {
 
   it("announces the host's route with its overrides stripped and a panel as the home route", () => {
     expect(hostRoute("/settings?tier=high")).toBe("/");
-    expect(hostRoute("/game/abc?tier=high&engine=webgpu&probe=medium&cmd=x")).toBe("/game/abc?cmd=x");
+    expect(hostRoute("/game/abc?tier=high&probe=medium&cmd=x")).toBe("/game/abc?cmd=x");
+    expect(hostRoute("/game/abc?tier=high&engine=webgpu&cmd=x")).toBe("/game/abc?engine=webgpu&cmd=x");
     expect(hostRoute("/game/abc?cmd=seed%20x")).toBe("/game/abc?cmd=seed%20x");
   });
 });

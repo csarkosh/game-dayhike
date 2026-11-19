@@ -2,8 +2,9 @@
  * The way down's mist (docs/gameplay/2026-11-13-the-way-down.md): the way as
  * the player sees it in the chase, a channel of pale ground mist that lies
  * thin and low on the path and stands in tall banks either side of it. This
- * file is the geometry and its numbers, free of Babylon so it is tested as
- * arithmetic; wayLight.ts makes the meshes and the material from it.
+ * file is the geometry and its numbers, computed with no engine so it is
+ * tested as arithmetic; wayLight.ts stands it on the ground and
+ * `lite/wayLightMeshes.ts` makes the meshes and the material.
  *
  * The mist is drawn as sheets that all read one field of noise in the
  * world, so together they look like a volume and never like a surface:
@@ -127,8 +128,8 @@ export function wayMistColour(mist: Rgb, lift: number): [number, number, number]
 
 /**
  * The chase's cast for a mist nothing grades (the material path: there is no
- * grade pass, and the mist is a material of its own that Babylon's image
- * processing never touches): the cast's tint over its own weight on a grey,
+ * grade pass, and the mist's stage writes its colour as it is, with none of
+ * the grade the tier's other materials lay on themselves): the cast's tint over its own weight on a grey,
  * so the mist takes the cast's hue and loses none of its brightness.
  */
 export function wayCastOnMaterial(tint: Rgb): [number, number, number] {

@@ -5,8 +5,8 @@ import { BLADE_TRIS, BLADE_VERTS, createStripWriter, type StripArrays } from "./
 /**
  * The duff clumps: dead leaves, twigs and small branches lying on the forest
  * floor, built from the blade strip writer so they shade and collapse like
- * the blades, on a lattice hash so they need no asset. Babylon-free; the
- * shell (duffMeshes.ts) wraps the arrays in meshes. The trail's own litter
+ * the blades, on a lattice hash so they need no asset. Babylon-free;
+ * `lite/duffMeshes.ts` wraps the arrays in meshes. The trail's own litter
  * (a separate piece of work) calls `duffClumpGeometry` with its own strength.
  *
  * A piece is a strip written upright by the writer, then laid down: rotated

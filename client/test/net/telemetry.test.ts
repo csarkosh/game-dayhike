@@ -438,33 +438,6 @@ describe("installErrorCapture", () => {
     expect(f.sent).toHaveLength(1);
   });
 
-  it("hears Babylon's logger at its warning and error levels, without its clock, and puts them back", () => {
-    const f = fakeDeps({ ok: true });
-    const t = createTelemetry("u", ENVELOPE, f.deps);
-    const printed: string[] = [];
-    const levels = [
-      {},
-      { name: "Log", logFunc: (...a: unknown[]) => void printed.push(`L ${textOf(a)}`) },
-      { name: "Warn", logFunc: (...a: unknown[]) => void printed.push(`W ${textOf(a)}`) },
-      {},
-      { name: "Error", logFunc: (...a: unknown[]) => void printed.push(`E ${textOf(a)}`) },
-    ];
-    const originalWarn = levels[2]!.logFunc;
-    const con = { error: () => undefined, warn: () => undefined };
-    const uninstall = installErrorCapture(t, { addEventListener: () => undefined }, con, undefined, levels);
-    levels[1]!.logFunc!("BJS - [10:58:23]: a log line");
-    levels[2]!.logFunc!("BJS - [10:58:23]: [Frame 2707] WebGPU uncaptured error (1): [object GPUValidationError] - Binding type");
-    levels[4]!.logFunc!("BJS - [10:58:24]: Unable to compile effect:");
-    t.flush();
-    expect(f.sent[0]!.batch.events.map((e) => [e.n, e.kind, e.msg])).toEqual([
-      ["warn", "babylon", "[Frame 2707] WebGPU uncaptured error (1): [object GPUValidationError] - Binding type"],
-      ["error", "babylon", "Unable to compile effect:"],
-    ]);
-    expect(printed).toHaveLength(3);
-    uninstall();
-    expect(levels[2]!.logFunc).toBe(originalWarn);
-  });
-
   it("keeps a GPU error's text to its end, where it names the shader module", () => {
     const f = fakeDeps({ ok: true });
     const t = createTelemetry("u", ENVELOPE, f.deps);
@@ -478,7 +451,7 @@ describe("installErrorCapture", () => {
   it("installs nothing when telemetry is off", () => {
     const con = { error: () => undefined, warn: () => undefined };
     const original = con.error;
-    installErrorCapture(createTelemetry(null, ENVELOPE, fakeDeps().deps), { addEventListener: () => undefined }, con);
+    installErrorCapture(createTelemetry(null, ENVELOPE, fakeDeps().deps), { addEventListener: () => undefined }, con, undefined);
     expect(con.error).toBe(original);
   });
 });

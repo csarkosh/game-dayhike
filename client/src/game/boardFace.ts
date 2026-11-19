@@ -1,7 +1,7 @@
 /**
  * The trailhead board's face as data: where each part lies on the face's
- * texture, and every word on it. Pure: no canvas, no Babylon. The painter
- * (`boardPaint.ts`) draws what this says.
+ * texture, and every word on it. Pure: no canvas, no engine. The painter
+ * (`boardDraw.ts`) draws what this says.
  */
 
 /** The face's texture: the face is 2 m by 1 m, so twice as wide as tall, about a pixel a millimetre. */

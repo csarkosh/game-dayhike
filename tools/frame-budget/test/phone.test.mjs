@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { isAndroid, isCool, jobsOf, parseArgs, phoneState, rowOf, stickTouches, waitUntilCool } from "../lib/phone.mjs";
+import { ACT_SCRIPT, STEER_STILL_S, STEER_SWIPE, createSteering, isAndroid, isCool, jobsOf, parseArgs, phoneState, rowOf, stickTouches, swipeTouches, waitUntilCool } from "../lib/phone.mjs";
 
 const PIXEL_UA = "Mozilla/5.0 (Linux; Android 10; K) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/156.0.0.0 Mobile Safari/537.36";
 const RIG_UA = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/154.0.0.0 Safari/537.36";
@@ -15,6 +15,10 @@ describe("the phone harness's arguments", () => {
     expect(() => parseArgs(["--base", "b"])).toThrow(/--out/);
     expect(() => parseArgs(["--base", "b", "--out", "o", "--rotate", "1"])).toThrow(/unknown option --rotate/);
   });
+  it("steers a walk only when asked", () => {
+    expect(parseArgs(["--base", "b", "--out", "o"]).steer).toBe(false);
+    expect(parseArgs(["--base", "b", "--out", "o", "--steer"]).steer).toBe(true);
+  });
   it("forces an engine when asked, and only one the game knows", () => {
     expect(parseArgs(["--base", "b", "--out", "o"]).engine).toBeUndefined();
     expect(parseArgs(["--base", "b", "--out", "o", "--engine", "webgpu"]).engine).toBe("webgpu");
@@ -29,6 +33,45 @@ describe("the joystick's touches", () => {
     expect(points[0]).toEqual({ x: 81, y: 598 });
     expect(points[6]).toEqual({ x: 81, y: 538 });
     expect(points.map((p) => p.y)).toEqual([598, 588, 578, 568, 558, 548, 538]);
+  });
+});
+
+describe("steering a walk", () => {
+  it("counts the page's streaming slices and idle slices a frame, from the measurement mode's readout", () => {
+    expect(ACT_SCRIPT).toContain("window.__syncJobs()");
+    expect(ACT_SCRIPT).toContain("j.slices + j.idle");
+    // Run against a page whose readout says two slices and one idle slice, over three frames.
+    const frames = [];
+    const window = { __syncJobs: () => ({ slices: 2, idle: 1 }), __act: -1 };
+    const requestAnimationFrame = (f) => void frames.push(f);
+    new Function("window", "requestAnimationFrame", ACT_SCRIPT)(window, requestAnimationFrame);
+    expect(window.__act).toBe(0);
+    for (let i = 0; i < 3; i++) frames.shift()?.();
+    expect(window.__act).toBe(9);
+  });
+  it("turns the walker after three seconds with no streaming, and starts counting again", () => {
+    const steering = createSteering();
+    expect(STEER_STILL_S).toBe(3);
+    // The count moves while the walker walks.
+    expect([4, 9, 15, 21].map((n) => steering.feed(n))).toEqual([false, false, false, false]);
+    // Then stands: three readings that equal the last make the turn, and the next three another.
+    expect([21, 21, 21].map((n) => steering.feed(n))).toEqual([false, false, true]);
+    expect([21, 21, 21].map((n) => steering.feed(n))).toEqual([false, false, true]);
+    // A walker that moves again is not turned.
+    expect([21, 21, 30, 30, 30].map((n) => steering.feed(n))).toEqual([false, false, false, false, false]);
+  });
+  it("swipes on a second touch, the joystick's finger held in every event, from the right half of the screen leftwards", () => {
+    const held = { x: 81, y: 538 };
+    const frames = swipeTouches(held);
+    expect(frames).toHaveLength(STEER_SWIPE.steps + 1);
+    for (const points of frames) {
+      expect(points).toHaveLength(2);
+      expect(points[0]).toEqual({ x: 81, y: 538, id: 1 });
+      expect(points[1]?.id).toBe(2);
+    }
+    expect(frames[0]?.[1]).toEqual({ x: 340, y: 300, id: 2 });
+    expect(frames[8]?.[1]).toEqual({ x: 80, y: 300, id: 2 });
+    expect(frames.map((f) => f[1]?.x)).toEqual([340, 307.5, 275, 242.5, 210, 177.5, 145, 112.5, 80]);
   });
 });
 
@@ -74,8 +117,21 @@ describe("a window's jobs", () => {
       { jobs: null },
       { jobs: { ms: 0.5, lateMs: 0, owners: { forest: 0.5 } } },
     ];
-    expect(jobsOf(frames)).toEqual({ ms: 6, lateMs: 2, frames: 4, lateFrames: 1, owners: { clipmap: 4.5, forest: 1.5 } });
+    expect(jobsOf(frames)).toMatchObject({ ms: 6, lateMs: 2, frames: 4, lateFrames: 1, owners: { clipmap: 4.5, forest: 1.5 } });
     expect(jobsOf([{ jobs: null }, {}])).toBeNull();
+  });
+  it("carries what the late share and the overdue bound did: slices, jobs, the longest slice and the learned apply cost", () => {
+    const frames = [
+      { jobs: { ms: 3, lateMs: 0, slices: 3, idle: 0, late: 0, lateJobs: 0, overdue: 0, overdueJobs: 0, owners: { clipmap: 3 }, longest: { clipmap: 1.2 }, learned: { clipmap: 1 } } },
+      { jobs: { ms: 8, lateMs: 8, slices: 6, idle: 0, late: 6, lateJobs: 2, overdue: 0, overdueJobs: 0, owners: { clipmap: 5, forest: 3 }, longest: { clipmap: 1.5, forest: 2.8 }, learned: { clipmap: 1.2, forest: 2.8 } } },
+      { jobs: { ms: 44.123, lateMs: 44.123, slices: 30, idle: 1, late: 0, lateJobs: 1, overdue: 30, overdueJobs: 1, owners: { clipmap: 44.123 }, longest: { clipmap: 12.345, forest: 2.8 }, learned: { clipmap: 1.5, forest: 2.8 } } },
+    ];
+    expect(jobsOf(frames)).toEqual({
+      ms: 55.12, lateMs: 52.12, frames: 3, lateFrames: 2, owners: { clipmap: 52.12, forest: 3 },
+      slices: 39, idle: 1, late: 6, lateJobs: 3, overdue: 30, overdueJobs: 1, overdueFrames: 1,
+      // The last reading's: counted from the window's own start, and the cost the scheduler had learned by its end.
+      longest: { clipmap: 12.35, forest: 2.8 }, learned: { clipmap: 1.5, forest: 2.8 },
+    });
   });
   it("refuses a window whose readings are all one and the same, which is a readout that aliased the scheduler's record", () => {
     const same = { ms: 7.3, lateMs: 0, owners: { idle: 7.3 } };

@@ -1,28 +1,16 @@
-import { afterEach, describe, expect, it } from "vitest";
-import { NullEngine } from "@babylonjs/core/Engines/nullEngine.js";
-import { Scene } from "@babylonjs/core/scene.js";
-import { Vector3 } from "@babylonjs/core/Maths/math.vector.js";
-import { ShaderMaterial } from "@babylonjs/core/Materials/shaderMaterial.js";
-import { Constants } from "@babylonjs/core/Engines/constants.js";
+import { describe, expect, it } from "vitest";
 import {
-  CROWD_EYES_NAME, CROWD_EYE_APART_M, CROWD_EYE_DIM_M, CROWD_EYE_EMBER, CROWD_EYE_GAIN, CROWD_EYE_HEIGHT, CROWD_EYE_M, CROWD_EYE_PALE, crowdEyeColour, createCrowdEyes,
+  CROWD_EYE_APART_M, CROWD_EYE_DIM_M, CROWD_EYE_EMBER, CROWD_EYE_FLOATS, CROWD_EYE_GAIN, CROWD_EYE_HEIGHT, CROWD_EYE_M, CROWD_EYE_PALE, CROWD_EYE_VERTICES,
+  crowdEyeColour, crowdEyeIndices, crowdEyeVertices, writeCrowdEyes,
 } from "../../src/game/crowdEyes.js";
 import { CROWD_RISE_S, figureOf, type CrowdFigure } from "../../src/game/crowdField.js";
 import { HOLLOW_EYE_COLOR, HOLLOW_FIGURE_M } from "../../src/game/hollowLook.js";
 
-const EYE = new Vector3(0, 11.7, 0);
+const EYE = { x: 0, y: 11.7, z: 0 };
 const figure = (id: number, x: number, z: number, over: Partial<CrowdFigure> = {}): CrowdFigure => ({ id, x, z, born: 0, gone: -1, rise: 0, ...figureOf(id, 1), ...over });
 const share = (c: { r: number; g: number; b: number }): number[] => { const sum = c.r + c.g + c.b; return [c.r / sum, c.g / sum, c.b / sum]; };
 
 describe("the crowd's eyes", () => {
-  let engine: NullEngine | undefined, scene: Scene | undefined;
-  const make = (most = 4) => {
-    engine = new NullEngine();
-    scene = new Scene(engine);
-    return createCrowdEyes(scene, most);
-  };
-  afterEach(() => { scene?.dispose(); engine?.dispose(); scene = undefined; engine = undefined; });
-
   it("are never the Hollow's red: a dull ember to pale, each far from it in hue", () => {
     const red = share(HOLLOW_EYE_COLOR);
     for (const c of [CROWD_EYE_EMBER, CROWD_EYE_PALE, crowdEyeColour(0.5)]) {
@@ -37,29 +25,23 @@ describe("the crowd's eyes", () => {
     expect(CROWD_EYE_DIM_M).toEqual([40, 120]);
   });
 
-  it("is one mesh and one additive material that writes no depth, for every pair there may be", () => {
-    make(4);
-    const m = scene!.getMaterialByName(CROWD_EYES_NAME) as ShaderMaterial;
-    expect(m.alphaMode).toBe(Constants.ALPHA_ADD);
-    expect(m.disableDepthWrite).toBe(true);
-    expect(m.options.attributes).toEqual(["position", "crowdEye", "crowdColour"]);
-    expect(m.options.uniforms).toEqual(["view", "projection"]);
-    expect(scene!.meshes.length).toBe(1);
-    const mesh = scene!.meshes[0]!;
-    // Two eyes a figure, a quad an eye.
-    expect(mesh.getTotalVertices()).toBe(4 * 2 * 4);
-    expect(mesh.getTotalIndices()).toBe(4 * 2 * 6);
-    expect(mesh.isPickable).toBe(false);
-    expect(mesh.isEnabled()).toBe(false);
+  it("have room for every pair there may be: two eyes a figure, a quad an eye", () => {
+    const v = crowdEyeVertices(4);
+    expect(CROWD_EYE_VERTICES).toBe(8);
+    expect(v.positions.length).toBe(4 * CROWD_EYE_VERTICES * CROWD_EYE_FLOATS.position);
+    expect(v.eyes.length).toBe(4 * CROWD_EYE_VERTICES * CROWD_EYE_FLOATS.eye);
+    expect(v.colours.length).toBe(4 * CROWD_EYE_VERTICES * CROWD_EYE_FLOATS.colour);
+    const indices = crowdEyeIndices(4);
+    expect(indices.length).toBe(4 * 2 * 6);
+    expect([...indices.subarray(0, 6)]).toEqual([0, 2, 1, 1, 2, 3]);
+    expect(Math.max(...indices)).toBe(4 * CROWD_EYE_VERTICES - 1);
   });
 
   it("puts each figure's two eyes at its head, either side of its middle, in its own colour, by how much of it is there", () => {
-    const eyes = make(4);
+    const out = crowdEyeVertices(4);
     const a = figure(1, 10, 0, { size: 1, eyes: 0.8, warm: 1 }), b = figure(2, -20, 5, { size: 0.5, eyes: 1, warm: 0, born: 100 });
-    expect(eyes.sync([a, b], [3, 7], EYE, 100 + CROWD_RISE_S / 2, new Set())).toBe(2);
-    const mesh = scene!.meshes[0]!;
-    expect(mesh.isEnabled()).toBe(true);
-    const at = mesh.getVerticesData("position")!, eye = mesh.getVerticesData("crowdEye")!, colour = mesh.getVerticesData("crowdColour")!;
+    expect(writeCrowdEyes(out, 4, [a, b], [3, 7], EYE, 100 + CROWD_RISE_S / 2, new Set())).toBe(2);
+    const at = out.positions, eye = out.eyes, colour = out.colours;
     // Figure a: eight vertices, all at its head; the first quad one side of its middle, the second the other.
     for (let v = 0; v < 8; v++) {
       expect([at[v * 3], at[v * 3 + 1], at[v * 3 + 2]]).toEqual([10, Math.fround(3 + HOLLOW_FIGURE_M * CROWD_EYE_HEIGHT), 0]);
@@ -81,28 +63,22 @@ describe("the crowd's eyes", () => {
   });
 
   it("dims with the metres from the eye and never goes out: eyes carry through the mist", () => {
-    const eyes = make(2);
-    eyes.sync([figure(1, 0, 40, { eyes: 1 }), figure(2, 0, 200, { eyes: 1 })], [0, 0], new Vector3(0, 0, 0), 50, new Set());
-    const colour = scene!.meshes[0]!.getVerticesData("crowdColour")!;
-    expect(colour[3]).toBeCloseTo(CROWD_EYE_GAIN, 2);
-    expect(colour[8 * 4 + 3]).toBeGreaterThan(0.3 * CROWD_EYE_GAIN);
-    expect(colour[8 * 4 + 3]).toBeLessThan(0.7 * CROWD_EYE_GAIN);
+    const out = crowdEyeVertices(2);
+    writeCrowdEyes(out, 2, [figure(1, 0, 40, { eyes: 1 }), figure(2, 0, 200, { eyes: 1 })], [0, 0], { x: 0, y: 0, z: 0 }, 50, new Set());
+    expect(out.colours[3]).toBeCloseTo(CROWD_EYE_GAIN, 2);
+    expect(out.colours[8 * 4 + 3]).toBeGreaterThan(0.3 * CROWD_EYE_GAIN);
+    expect(out.colours[8 * 4 + 3]).toBeLessThan(0.7 * CROWD_EYE_GAIN);
   });
 
-  it("leaves out the figures another drawer holds, draws nothing with none, and never more than it was made for", () => {
-    const eyes = make(2);
-    expect(eyes.sync([figure(1, 5, 0), figure(2, 6, 0), figure(3, 7, 0)], [0, 0, 0], EYE, 50, new Set([2]))).toBe(2);
-    const at = scene!.meshes[0]!.getVerticesData("position")!;
-    expect([at[0], at[8 * 3]]).toEqual([5, 7]);
-    expect(eyes.sync([figure(1, 5, 0), figure(2, 6, 0), figure(3, 7, 0)], [0, 0, 0], EYE, 50, new Set())).toBe(2);
-    expect(eyes.sync([], [], EYE, 50, new Set())).toBe(0);
-    expect(scene!.meshes[0]!.isEnabled()).toBe(false);
-  });
-
-  it("disposes its mesh and its material", () => {
-    const eyes = make();
-    eyes.dispose();
-    expect(scene!.meshes.length).toBe(0);
-    expect(scene!.getMaterialByName(CROWD_EYES_NAME)).toBeNull();
+  it("leaves out the figures another drawer holds, writes nothing with none, and never more than there is room for", () => {
+    const out = crowdEyeVertices(2);
+    const three = [figure(1, 5, 0), figure(2, 6, 0), figure(3, 7, 0)];
+    expect(writeCrowdEyes(out, 2, three, [0, 0, 0], EYE, 50, new Set([2]))).toBe(2);
+    expect([out.positions[0], out.positions[8 * 3]]).toEqual([5, 7]);
+    expect(writeCrowdEyes(out, 2, three, [0, 0, 0], EYE, 50, new Set())).toBe(2);
+    expect(writeCrowdEyes(out, 2, [], [], EYE, 50, new Set())).toBe(0);
+    // Every pair is nothing again.
+    expect(out.eyes.every((v) => v === 0)).toBe(true);
+    expect(out.colours.every((v) => v === 0)).toBe(true);
   });
 });

@@ -138,12 +138,12 @@ export function thresholdLook(stage: Threshold, held: Look, down: Look): Look {
 /** The seconds into the scene at which the threshold begins. */
 export const THRESHOLD_AT_S = SHOTS.slice(0, -1).reduce((a, b) => a + b, 0);
 
-/** The reveal's first beat: the pan from the hiker to the Hollow's spot, after which it rises (entityViews.ts SUMMIT_RISE_DELAY_S). */
+/** The reveal's first beat: the pan from the hiker to the Hollow's spot, after which it rises (entityPoses.ts SUMMIT_RISE_DELAY_S). */
 export const REVEAL_PAN_S = 0.8;
 export const SUMMIT_RISE_AT_S = 4 + 4 + REVEAL_PAN_S;
 /** The Hollow's head over its feet, drawn at HOLLOW_SCALE. */
 export const HOLLOW_HEAD_M = 4.5;
-/** The hiker on the pole, over its foot: the body is the top of a 4.3 m stake (bodyMesh.ts). */
+/** The hiker on the pole, over its foot: how high the shots aim at the body (`BODY_OUTPUT`, `sceneryParts.ts`). */
 export const BODY_TOP_M = 3.6;
 
 function unit(dx: number, dz: number): { x: number; z: number } {

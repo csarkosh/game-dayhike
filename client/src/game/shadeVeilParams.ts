@@ -1,15 +1,15 @@
 /**
- * The shade veil's pure numbers (shadeVeil.ts is the Babylon shell): the
+ * The shade veil's pure numbers (`lite/shadeVeil.ts` draws it): the
  * quad the material path draws over the frame after the scene, on the
  * tiers with no post chain, to darken it by the haunt's shades and the
  * stare as the grade pass does on the post tiers
  * (docs/rendering/2026-11-05-low-tier-material-path.md).
  *
- * The veil's fragment shader carries two blocks of grade.fragment.fx
- * verbatim, the shades' taps and the stare's crawl, and the grade's text is
- * recorded in the WGSL corpus and never edited for it: `shadeVeilShader.test.ts`
- * reads both files and holds the blocks the same, line for line, by the
- * first and last lines named here.
+ * The veil's fragment shader carries the grade's two blocks, the shades'
+ * taps and the stare's crawl, as the grade's own pass runs them
+ * (`lite/postWgsl.ts`): `lite/shadeVeil.test.ts` holds that, and finds each
+ * block's first and last lines, named here, in the recorded
+ * grade.fragment.glsl.
  */
 
 /** The grade's shade block: from the taps' step to the frame darkened by the figure. */

@@ -150,7 +150,7 @@ export function createWorld(level: Level, seed: number, authoritative = true): W
  *
  * The `level` it carries is a stub with no brushes: `hostSession` sends
  * `level.id` in Welcome, which is how the generator version and seed reach the
- * client, and `renderer.ts` iterates `level.brushes`, which is correctly empty.
+ * client, and `lite/renderer.ts` iterates `level.brushes`, which is correctly empty.
  */
 export function createForestWorld(forest: Forest, authoritative = true, peaceful = false): World {
   const variant = activeTerrainVariant();

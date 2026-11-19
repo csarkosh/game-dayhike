@@ -1,8 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 import { createSceneClock } from "../../../src/game/scene/sceneClock.js";
-import { createScenePlayer } from "../../../src/game/scene/scenePlayer.js";
-import type { Scene } from "../../../src/game/scene/timeline.js";
-import type { StageDeps } from "../../../src/game/scene/sceneStage.js";
+import { createScenePlayer, type SceneStage } from "../../../src/game/scene/scenePlayer.js";
+import type { Frame, Scene } from "../../../src/game/scene/timeline.js";
 
 const scene: Scene = {
   duration: 10,
@@ -13,9 +12,19 @@ const scene: Scene = {
   black: () => 0,
 };
 
-function deps(): StageDeps & { cams: number[] } {
+/** A stage that keeps what it is handed: every frame, where each frame's camera stands along x, and how often it was let go. */
+function deps(): SceneStage & { frames: Frame[]; cams: number[]; disposed: number } {
+  const frames: Frame[] = [];
   const cams: number[] = [];
-  return { cams, setFreecam: (v) => void cams.push(v.x), setDepthOfField() {}, actor: () => null, car: null, captions: { set() {}, dispose() {} }, black() {}, warn() {} };
+  const out = {
+    frames, cams, disposed: 0,
+    frame: (frame: Frame) => {
+      frames.push(frame);
+      cams.push(frame.camera.x);
+    },
+    dispose: () => void (out.disposed += 1),
+  };
+  return out;
 }
 
 describe("the scene player", () => {
@@ -33,6 +42,10 @@ describe("the scene player", () => {
     expect(p.tick().t).toBe(10);
     expect(onEnd).toHaveBeenCalledTimes(1);
     expect(d.cams).toEqual([2.5, 10, 10]);
+    // The stage is handed the frame the tick returns, whole.
+    expect(d.frames).toHaveLength(3);
+    expect(p.tick()).toBe(d.frames[3]);
+    expect(d.frames[3]).toEqual({ t: 10, camera: { x: 10, y: 0, z: 0, yaw: 0, pitch: 0, fov: 0.43, roll: 0, dof: false }, actors: [], car: null, caption: null, black: 0 });
   });
 
   it("seeks and steps, a seek after the end playing on from there", () => {
@@ -59,5 +72,12 @@ describe("the scene player", () => {
     p.hidden(false);
     ms = 6000;
     expect(p.tick().t).toBe(2);
+  });
+
+  it("lets go of its stage with itself", () => {
+    const d = deps();
+    const p = createScenePlayer(scene, createSceneClock(() => 0), d);
+    p.dispose();
+    expect(d.disposed).toBe(1);
   });
 });

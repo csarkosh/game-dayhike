@@ -8,7 +8,7 @@
  * schedule, which is keyed on the ABSOLUTE tick slot instead (like
  * rest wander), because a call must land on the same tick for every peer
  * regardless of when each one's UnitState was created.
- * Renderer-only; the foliagePlugin.ts rule on constants applies.
+ * Renderer-only.
  */
 import { hash3 } from "../sim/field.js";
 import { elevationAt } from "../sim/terrain.js";
@@ -22,8 +22,8 @@ import {
 } from "./wildlifeField.js";
 
 /**
- * Which animation clip a creature's model plays. Defined here, not in
- * creatureModel.ts (which re-exports it), because wildlifeBehaviour.ts is the
+ * Which animation clip a creature's model plays. Defined here because
+ * wildlifeBehaviour.ts is the
  * pure state machine that decides it; the model just plays what it is told.
  */
 export type ClipRole = "graze" | "idle" | "walk" | "run" | "alert";
@@ -963,7 +963,7 @@ function poseButterfly(u: UnitState, tick: number, seed: number): void {
   pose.clip = "idle";
   pose.wing = 1;
   // The director's non-flier candidate reads this field directly (`Candidate.y` off
-  // `UnitState.y`, not off a pose) — see `pushCandidateFor` in wildlifeMeshes.ts.
+  // `UnitState.y`, not off a pose) — see `pushCandidateFor` in `wildlifeScene.ts`.
   u.y = pose.y;
 }
 
@@ -1068,7 +1068,7 @@ export function stepUnit(u: UnitState, tick: number, players: readonly PlayerPoi
 export type Presence = { ground: number; aloft: number; raven: number; butterfly: number; callGain: readonly number[] };
 
 /** Hermite ramp, flat at both ends — the repo's own file-local `smoothstep` (trailPaint.ts,
- * mistMeshes.ts, distanceFadePlugin.ts and the rest each carry their own copy). */
+ * distanceFade.ts and the rest each carry their own copy). */
 function smoothstep(e0: number, e1: number, x: number): number {
   const t = clamp01((x - e0) / (e1 - e0));
   return t * t * (3 - 2 * t);
@@ -1085,7 +1085,7 @@ function smoothstep(e0: number, e1: number, x: number): number {
  * Daylight and rain are two independent factors multiplied together, each of them a RAMP:
  * night and full rain both reach 0, but neither gets there in one step. A threshold on the
  * clock would empty the air of butterflies between one frame and the next at a fixed time
- * of day — the shared `PRESENCE_RAMP_SECONDS` fade in `wildlifeMeshes.ts` would only turn
+ * of day — the shared `PRESENCE_RAMP_SECONDS` fade in `wildlifeScene.ts` would only turn
  * that into a three-second population-wide shrink, which is a different artefact rather
  * than a fix. Every transition here is a smoothstep for that reason.
  */

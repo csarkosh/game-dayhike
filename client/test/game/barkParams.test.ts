@@ -3,9 +3,11 @@ import {
   ALDER_BARK,
   BARK_FOOTPRINT,
   BARK_TONE,
+  barkLook,
   barkOutputs,
   barkSize,
   barkTransform,
+  barkUv,
   CONIFER_A_BARK,
   CONIFER_B_BARK,
   GIANT_FIR_BARK,
@@ -100,5 +102,49 @@ describe("the giants' bucket sets", () => {
 
   it("the saplings wear one bark each: the conifers their giants' sets, the alder its own", () => {
     expect(SAPLING_BARKS).toEqual([CONIFER_A_BARK, CONIFER_B_BARK, ALDER_BARK]);
+  });
+});
+
+describe("a bark's look", () => {
+  it("is the set's three maps at the size, its transform, the living trunks' tone and the ARM map's own values", () => {
+    expect(barkLook(GIANT_PINE_CEDAR_BARK, "1k")).toEqual({
+      maps: barkOutputs("cedar", "1k"),
+      transform: barkTransform(GIANT_PINE_CEDAR_BARK),
+      tone: BARK_TONE,
+      metallic: 1,
+      roughness: 1,
+      normalLevel: 1,
+    });
+  });
+
+  it("takes another tone where it is given one", () => {
+    const tone = { r: 0.5, g: 0.5, b: 0.53 };
+    expect(barkLook(GIANT_FIR_BARK, "2k", tone).tone).toBe(tone);
+    expect(barkLook(GIANT_FIR_BARK, "2k", tone).maps).toEqual(barkOutputs("pine", "2k"));
+  });
+});
+
+describe("a bark's coordinates under its transform", () => {
+  it("are the primitive's own scaled, where the trunk runs along v", () => {
+    const out = [0, 0, 0, 0];
+    barkUv({ uScale: 1.7, vScale: 6.3, wAng: 0 }, 0.5, 2, out, 2);
+    expect(out[0]).toBe(0);
+    expect(out[2]).toBeCloseTo(0.5 * 1.7, 12);
+    expect(out[3]).toBeCloseTo(2 * 6.3, 12);
+  });
+
+  it("are turned a quarter about the scaled square's centre, where the trunk runs along u", () => {
+    const transform = barkTransform(GIANT_PINE_METASEQUOIA_BARK);
+    expect(transform.wAng).toBe(QUARTER_TURN);
+    const out = new Float32Array(2);
+    // A step along the primitive's u moves the set's v, and a step along its v moves the set's u back.
+    barkUv(transform, 0, 0, out, 0);
+    const [u0, v0] = out;
+    barkUv(transform, 1, 0, out, 0);
+    expect((out[0] as number) - (u0 as number)).toBeCloseTo(0, 5);
+    expect((out[1] as number) - (v0 as number)).toBeCloseTo(transform.uScale, 5);
+    barkUv(transform, 0, 1, out, 0);
+    expect((out[0] as number) - (u0 as number)).toBeCloseTo(-transform.vScale, 5);
+    expect((out[1] as number) - (v0 as number)).toBeCloseTo(0, 5);
   });
 });

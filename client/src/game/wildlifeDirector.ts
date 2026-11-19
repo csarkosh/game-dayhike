@@ -651,7 +651,7 @@ export function observe(
  * of the large group goes to the elk and the deer.
  *
  * The BUTTERFLY was a third, briefly, for exactly as long as nothing could render one:
- * `wildlifeMeshes.ts`'s `SPECIES_ASSET` and `BIRD_ASSET` both stopped short of it, and
+ * `wildlifeScene.ts`'s `SPECIES_ASSET` and `BIRD_ASSET` both stopped short of it, and
  * `DIRECTOR_POOL[SPECIES_BUTTERFLY]` held at 0 for the same reason. Weighting it here
  * anyway once cost the beat itself: `placeable()` still let a butterfly be drawn,
  * `poolSlotFor` then always declined it, and `applyPlace` returned having done nothing —
@@ -670,8 +670,8 @@ const CUE_SMALL: readonly number[] = [SPECIES_RABBIT, SPECIES_SQUIRREL, SPECIES_
  * Sized by `SPECIES_COUNT`, and that is the whole point: `pickSpecies` walks this array's
  * own length, so a table pinned to whichever species happened to be last when it was
  * written would silently stop drawing the next one added — no throw, no failing test, just
- * a species the woods never show. It is held to `SPECIES_COUNT` by the same
- * per-species-table check in `wildlifeMeshes.test.ts` that holds the other nine. */
+ * a species the woods never show. It is built to `SPECIES_COUNT`
+ * entries (`buildCueWeights`). */
 export const CUE_WEIGHT: readonly number[] = buildCueWeights();
 function buildCueWeights(): number[] {
   const w = new Array<number>(SPECIES_COUNT).fill(0);

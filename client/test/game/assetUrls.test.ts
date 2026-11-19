@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { MODEL_COUNT, audioUrl, modelUrl } from "../../src/game/assetUrls.js";
+import { audioUrl, modelBytes, modelUrl } from "../../src/game/assetUrls.js";
 import catalog from "../../assets/catalog.json" with { type: "json" };
 
 /** Every model the catalog declares, by the `output` key callers pass. */
@@ -17,10 +17,15 @@ describe("modelUrl", () => {
     }
   });
 
-  it("counts toward a hike only the models a hike loads: the film's own are left out", () => {
-    const filmOnly = (catalog.assets as Array<{ id: string; scene?: string }>).filter((a) => a.scene !== undefined).map((a) => a.id);
-    expect(filmOnly).toEqual(["intro.car", "intro.ranger"]);
-    expect(MODEL_COUNT).toBe(42);
+  it("gives the catalog's bytes of every model by the URL it is served at, which is what a loader reports its download by", () => {
+    for (const asset of catalog.assets as Array<{ output: string; bytes?: number }>) {
+      expect(asset.bytes, asset.output).toBeGreaterThan(0);
+      expect(modelBytes(modelUrl(asset.output)), asset.output).toBe(asset.bytes);
+    }
+    // A URL that is no shipped model's has none, an inherited key among them.
+    expect(modelBytes("/assets/models/enemy.nonexistent.glb")).toBeUndefined();
+    expect(modelBytes("models/tree.giant_fir.glb")).toBeUndefined();
+    expect(modelBytes("toString")).toBeUndefined();
   });
 
   it("gives every model its own URL", () => {
@@ -51,7 +56,7 @@ describe("modelUrl", () => {
 
   it("throws on an output it does not know, naming both places it must exist", () => {
     // A typo must fail at startup. Returning the key unresolved would make it a
-    // 404, and Babylon answers a failed load by leaving the mesh out — enemies
+    // 404, and the renderer answers a failed load by leaving the mesh out — enemies
     // fall back to capsules and clutter disappears, with nothing in the console
     // pointing at the cause.
     expect(() => modelUrl("models/enemy.nonexistent.glb")).toThrow(
@@ -64,7 +69,7 @@ describe("modelUrl", () => {
   it("throws on an inherited Object.prototype key instead of returning a function", () => {
     // `resolveCharacterAssets` admits any non-empty string as an `output`, so a
     // malformed catalog can reach here with "toString". On a plain object that
-    // resolves to an inherited FUNCTION typed as a string, which Babylon would be
+    // resolves to an inherited FUNCTION typed as a string, which the loader would be
     // handed as a URL — the exact silent failure the throw exists to prevent.
     for (const key of ["toString", "constructor", "valueOf", "hasOwnProperty", "__proto__"]) {
       expect(() => modelUrl(key)).toThrow(/unknown model/);

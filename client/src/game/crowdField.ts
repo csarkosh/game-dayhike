@@ -6,8 +6,8 @@
  * not see the same ones. What can kill is the host's, as it was (a Hollow, a
  * shade's lunge), and is told apart by its red eyes.
  *
- * This file is the rules and their numbers, free of Babylon so they are
- * tested as arithmetic: how many the way wants, what each figure is, where
+ * This file is the rules and their numbers, computed with no engine so they
+ * are tested as arithmetic: how many the way wants, what each figure is, where
  * one may stand. The renderer draws what it holds.
  */
 import type { QualityTier } from "./quality.js";
