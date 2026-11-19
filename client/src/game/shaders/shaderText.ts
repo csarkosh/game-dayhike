@@ -17,19 +17,20 @@ export function wgsl(raw: string): string {
 const SLOT = /\$\{([A-Za-z_][A-Za-z0-9_]*)\}/g;
 
 /**
- * `text` with every slot `${name}` replaced by `slots[name]`. A value may be
- * filled text itself (a file included in another). Throws, saying which side
+ * `text` with every slot `${name}` replaced by `slots[name]`, a number as a
+ * template literal would write it. A value may be filled text itself (a file
+ * included in another). Throws, saying which side
  * is wrong, for a slot with no value, a value with no slot, and any `${` left
  * in the result (a slot written in a way that is not one, or a value that
  * carries an unfilled slot of its own).
  */
-export function fill(text: string, slots: Readonly<Record<string, string>>): string {
+export function fill(text: string, slots: Readonly<Record<string, string | number>>): string {
   const used = new Set<string>();
   const filled = text.replace(SLOT, (_, name: string) => {
     const value = slots[name];
     if (value === undefined) throw new Error(`the shader text has a slot \${${name}} that the module gives no value`);
     used.add(name);
-    return value;
+    return String(value);
   });
   for (const name of Object.keys(slots)) {
     if (!used.has(name)) throw new Error(`the module gives a value for \${${name}}, which the shader text does not have`);

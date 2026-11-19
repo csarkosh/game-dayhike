@@ -16,6 +16,11 @@ describe("a shader file's slots", () => {
     expect(fill("no slots", {})).toBe("no slots");
   });
 
+  it("take a number as a template literal writes it", () => {
+    expect(fill("array<vec4<u32>,${n}>;let h=${h}.0;", { n: 18, h: 128 / 2 })).toBe("array<vec4<u32>,18>;let h=64.0;");
+    expect(fill("a=${x};", { x: 1e-7 })).toBe("a=1e-7;");
+  });
+
   it("take a value that is filled text itself", () => {
     const inner = fill("let k=${n};", { n: "2.0" });
     expect(fill("{${inner}}", { inner })).toBe("{let k=2.0;}");
