@@ -95,6 +95,15 @@ const EASE_MARGIN = 0.05;
 const FINE_M = 0.5;
 /** Cells priced between two yields: a cell is five to nine reads of the ground (the walkable rock's layer), some 50 µs on a laptop, so a slice is well under a millisecond there. */
 const SLICE_CELLS = 8;
+/**
+ * And a slice ends on work that prices nothing new: a search over ground
+ * already priced takes this many cells off its heap, and the easing makes
+ * this many passes. Counted by priced ground alone, a round's second search
+ * and the whole of the easing ran in one slice, ten milliseconds and more of
+ * a frame on a laptop (2026-11-19).
+ */
+const SLICE_POPS = 96;
+const SLICE_PASSES = 2;
 /** Samples of the meander its length is measured by. */
 const MEANDER_SAMPLES = 400;
 
@@ -359,6 +368,7 @@ export function* drawWay(world: World): Generator<void, WayDown | null, void> {
         return Math.sqrt((i - ti) * (i - ti) + (j - tj) * (j - tj)) * WAY_CELL_M * TRAIL_COST;
       };
       let found = false;
+      let popped = 0;
       // The start's and the pad's own cells are never refused: the way starts and ends there whatever the ground.
       if (price(from) === Infinity) cost[from] = 1;
       if (price(to) === Infinity) cost[to] = 1;
@@ -392,8 +402,9 @@ export function* drawWay(world: World): Generator<void, WayDown | null, void> {
             }
           }
         }
-        if (priced - sliced >= SLICE_CELLS) {
+        if (priced - sliced >= SLICE_CELLS || ++popped >= SLICE_POPS) {
           sliced = priced;
+          popped = 0;
           yield;
         }
       }
@@ -462,10 +473,8 @@ export function* drawWay(world: World): Generator<void, WayDown | null, void> {
         while (j > k + 1 && !clearBetween(raw[k] as { x: number; z: number }, raw[j] as { x: number; z: number })) j--;
         taut.push(raw[j] as { x: number; z: number });
         k = j;
-        if (priced - sliced >= SLICE_CELLS) {
-          sliced = priced;
-          yield;
-        }
+        sliced = priced;
+        yield;
       }
       // A point every cell's width of it again, and eased: a point stays where the place it would move to is not clear.
       const eased: { x: number; z: number }[] = [{ x: S.x, z: S.z }];
@@ -489,7 +498,7 @@ export function* drawWay(world: World): Generator<void, WayDown | null, void> {
           p.x = ex[k] as number;
           p.z = ez[k] as number;
         }
-        if (priced - sliced >= SLICE_CELLS) {
+        if (priced - sliced >= SLICE_CELLS || pass % SLICE_PASSES === SLICE_PASSES - 1) {
           sliced = priced;
           yield;
         }

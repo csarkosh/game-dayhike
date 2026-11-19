@@ -112,6 +112,9 @@ describe("drawing the way down", SUITE, () => {
       slices++;
     }
     expect(slices).toBeGreaterThan(3);
+    // And a slice ends on work that prices no new ground too (a search over priced cells, the easing's passes):
+    // counted by priced ground alone this way was 1,337 slices, a few of them ten milliseconds long; it is 1,931.
+    expect(slices).toBeGreaterThan(1700);
     const again = r.value as WayDown;
     expect(Array.from(again.xs)).toEqual(Array.from(way.xs));
     expect(Array.from(again.zs)).toEqual(Array.from(way.zs));
