@@ -91,6 +91,7 @@ import splitDrySource from "../shaders/forest/splitDry.wgsl?raw";
 import baseColourSource from "../shaders/forest/baseColour.wgsl?raw";
 import bakePicturesSource from "../shaders/forest/bakePictures.wgsl?raw";
 import { fill, wgsl } from "../shaders/shaderText.js";
+import directOcclusionSource from "../shaders/forest/directOcclusion.wgsl?raw";
 
 /**
  * The eye the foliage and the fade measure from, as the scene's own uniforms hold it for the pass being drawn. The
@@ -405,7 +406,7 @@ export function directOcclusionPlugin(): MaterialPlugin {
   return {
     name: "DirectOcclusion",
     priority: 150,
-    getCustomCode: (stage) => (stage === "fragment" ? { CUSTOM_FRAGMENT_BEFORE_FINALCOLORCOMPOSITION: `{color-=directDiffuse*(1.0-occlusion);}` } : null),
+    getCustomCode: (stage) => (stage === "fragment" ? { CUSTOM_FRAGMENT_BEFORE_FINALCOLORCOMPOSITION: wgsl(directOcclusionSource) } : null),
   };
 }
 

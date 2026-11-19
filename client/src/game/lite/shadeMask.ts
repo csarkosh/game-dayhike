@@ -73,6 +73,7 @@ import smokeNoiseSource from "../shaders/shadeMask/smokeNoise.wgsl?raw";
 import smokeVertexSource from "../shaders/shadeMask/smokeVertex.wgsl?raw";
 import smokeFragmentSource from "../shaders/shadeMask/smokeFragment.wgsl?raw";
 import { fill, wgsl } from "../shaders/shaderText.js";
+import colourCurveSource from "../shaders/shadeMask/colourCurve.wgsl?raw";
 
 const f = wgslFloat;
 
@@ -100,7 +101,7 @@ export const SHADE_SMOKE_VERTEX_WGSL = fill(wgsl(smokeVertexSource), { frameBloc
  * through the material colour path, as every Standard material's does there.
  */
 export function shadeMaskFragmentWgsl(linear: boolean): string {
-  return fill(wgsl(smokeFragmentSource), { frameBlock: FRAME_BLOCK, smokeTimeName: SHADE_SMOKE_TIME_NAME, colourCurve: linear ? "" : `shadeColour=gradeCurves(displayColour(shadeColour,${FRAME_BLOCK}.${FRAME_EXPOSURE_NAME},${FRAME_BLOCK}.${FRAME_CONTRAST_NAME}));`, shadeSmokeFray: f(SHADE_SMOKE_FRAY) });
+  return fill(wgsl(smokeFragmentSource), { frameBlock: FRAME_BLOCK, smokeTimeName: SHADE_SMOKE_TIME_NAME, colourCurve: linear ? "" : fill(wgsl(colourCurveSource), { frameBlock: FRAME_BLOCK, frameExposureName: FRAME_EXPOSURE_NAME, frameContrastName: FRAME_CONTRAST_NAME }), shadeSmokeFray: f(SHADE_SMOKE_FRAY) });
 }
 
 /** The mask's material's plugin: the smoke at its points, the figure's own values an instance's, the clock the frame's block's. */

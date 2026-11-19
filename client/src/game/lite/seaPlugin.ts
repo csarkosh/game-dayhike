@@ -45,6 +45,8 @@ import {
 } from "./seaWgsl.js";
 import type { WaterBehind } from "./waterBehind.js";
 import { WATER_DEFS_WGSL, WATER_SPLIT_WGSL, WATER_THROUGH_DEFS_WGSL, WATER_THROUGH_FINAL_WGSL } from "./waterWgsl.js";
+import derivativeUniformitySource from "../shaders/diagnostic/derivativeUniformity.wgsl?raw";
+import { wgsl } from "../shaders/shaderText.js";
 
 /** The pictures and tables the sea's material reads. */
 export type SeaTextures = {
@@ -104,7 +106,7 @@ export function seaPlugin(uniforms: SeaUniforms, textures: SeaTextures, shared: 
     priority: WATER_PRIORITY,
     // A tier below the cascades' keeps the two it had.
     defines: { loop: look.loop, bump: look.bump, ...(fft ? { fft } : {}), ...(lip !== null ? { lip: true } : {}), ...(behind !== null ? { through: true } : {}) },
-    getFragmentDirectives: () => "diagnostic(off,derivative_uniformity);",
+    getFragmentDirectives: () => wgsl(derivativeUniformitySource),
     getCustomCode: (stage) =>
       stage === "fragment"
         ? {

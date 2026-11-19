@@ -84,6 +84,7 @@ import splitSource from "../shaders/water/split.wgsl?raw";
 import lakeMirrorReadSource from "../shaders/water/lakeMirrorRead.wgsl?raw";
 import lakeComposeSource from "../shaders/water/lakeCompose.wgsl?raw";
 import { fill, wgsl } from "../shaders/shaderText.js";
+import throughFinalSource from "../shaders/water/throughFinal.wgsl?raw";
 
 /** Babylon.js's dielectric F0 at an F0 factor of 1: water's F0 is the factor's share of it. */
 const PBR_DIELECTRIC_F0 = 0.04;
@@ -114,7 +115,7 @@ export function waterThroughWgsl(lake: boolean): string {
 }
 
 /** `waterFinal.fragment.glsl`: the bed's light, added past the surface's own haze, since the frame it is read from is hazed already. */
-export const WATER_THROUGH_FINAL_WGSL = "color+=wTransmit;";
+export const WATER_THROUGH_FINAL_WGSL = wgsl(throughFinalSource);
 
 /** `lakeRipples.fragment.glsl`: the breeze's field, the octaves' amplitude, the rain's rings and the second octave. */
 export const LAKE_RIPPLES_WGSL = wgsl(lakeRipplesSource);

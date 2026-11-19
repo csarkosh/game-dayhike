@@ -41,6 +41,7 @@ import sunSource from "../shaders/terrain/sun.wgsl?raw";
 import wetLightsSource from "../shaders/terrain/wetLights.wgsl?raw";
 import splitSource from "../shaders/terrain/split.wgsl?raw";
 import { fill, wgsl } from "../shaders/shaderText.js";
+import derivativeUniformitySource from "../shaders/diagnostic/derivativeUniformity.wgsl?raw";
 
 /**
  * The material's uniforms: the terrain's own by name (`terrainUniforms`),
@@ -188,7 +189,7 @@ export function terrainPlugin(
     name: "TerrainTexture",
     priority: 200,
     defines: { farLow, road: paints.road, trail: paints.trail, features: paints.features },
-    getFragmentDirectives: () => "diagnostic(off,derivative_uniformity);",
+    getFragmentDirectives: () => wgsl(derivativeUniformitySource),
     getCustomCode: (stage) =>
       stage === "fragment"
         ? {
