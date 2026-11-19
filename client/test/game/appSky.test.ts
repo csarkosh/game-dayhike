@@ -32,10 +32,10 @@ describe("the hike's sky", () => {
       // The first renderer is also told where the hike starts (`start`), so its first terrain and water are built
       // there, handed what the world's worker sampled there (`prepared`, taken once), and given the loader of first
       // builds a start under a film has (`firstBuilds`).
-      "createHikeRenderer(next, level, forest, { tier: at, deferClipmap: options.deferClipmap, start, prepared: options.takePrepared?.() ?? null, firstBuilds, skyTable: skySource.table, gpuTime: parseGpuTime(location.search) }),",
+      "createHikeRenderer(next, level, forest, { tier: at, deferClipmap: options.deferClipmap, start, prepared: options.takePrepared?.() ?? null, firstBuilds, skyTable: skySource.table, gpuTime: parseGpuTime(location.search), paced: isMobile(navigator) }),",
     );
     expect(src).toContain(
-      "build: (next, target) => createHikeRenderer(next, level, forest, { tier: target, skyTable: skySource.table, gpuTime: parseGpuTime(location.search) }),",
+      "build: (next, target) => createHikeRenderer(next, level, forest, { tier: target, skyTable: skySource.table, gpuTime: parseGpuTime(location.search), paced: isMobile(navigator) }),",
     );
   });
 
