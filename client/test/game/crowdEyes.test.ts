@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
-  CROWD_EYE_APART_M, CROWD_EYE_DIM_M, CROWD_EYE_EMBER, CROWD_EYE_FLOATS, CROWD_EYE_GAIN, CROWD_EYE_HEIGHT, CROWD_EYE_M, CROWD_EYE_PALE, CROWD_EYE_VERTICES,
+  CROWD_EYE_APART_M, CROWD_EYE_DIM_M, CROWD_EYE_EMBER, CROWD_EYE_FLOATS, CROWD_EYE_GAIN, CROWD_EYE_HEIGHT, CROWD_EYE_KILLS_GAIN, CROWD_EYE_KILLS_SIZE, CROWD_EYE_M, CROWD_EYE_PALE,
+  CROWD_EYE_VERTICES,
   crowdEyeColour, crowdEyeIndices, crowdEyeVertices, writeCrowdEyes,
 } from "../../src/game/crowdEyes.js";
 import { CROWD_RISE_S, figureOf, type CrowdFigure } from "../../src/game/crowdField.js";
@@ -23,6 +24,19 @@ describe("the crowd's eyes", () => {
     }
     expect([CROWD_EYE_M, CROWD_EYE_APART_M, CROWD_EYE_HEIGHT, CROWD_EYE_GAIN]).toEqual([0.09, 0.34, 0.72, 1.6]);
     expect(CROWD_EYE_DIM_M).toEqual([40, 120]);
+  });
+
+  it("gives a figure that kills the Hollow's own red, brighter and larger than any of the crowd's: that is what tells it", () => {
+    expect([CROWD_EYE_KILLS_GAIN, CROWD_EYE_KILLS_SIZE]).toEqual([2, 1.7]);
+    const out = crowdEyeVertices(2);
+    const crowd = figure(1, 10, 0, { size: 1, eyes: 1, warm: 1 }), killer = figure(2, 12, 0, { size: 1, eyes: 1, warm: 1, kills: true });
+    expect(writeCrowdEyes(out, 2, [crowd, killer], [3, 3], EYE, 100, new Set())).toBe(2);
+    const eye = out.eyes, colour = out.colours;
+    expect([colour[8 * 4], colour[8 * 4 + 1], colour[8 * 4 + 2]]).toEqual([HOLLOW_EYE_COLOR.r, HOLLOW_EYE_COLOR.g, HOLLOW_EYE_COLOR.b].map(Math.fround));
+    expect(colour[8 * 4 + 3]).toBeCloseTo(colour[3]! * CROWD_EYE_KILLS_GAIN, 5);
+    expect(eye[8 * 4 + 2]).toBeCloseTo(eye[2]! * CROWD_EYE_KILLS_SIZE, 6);
+    // Its pair is as far apart as any figure's of its size.
+    expect(eye[8 * 4 + 3]).toBeCloseTo(eye[3]!, 6);
   });
 
   it("have room for every pair there may be: two eyes a figure, a quad an eye", () => {

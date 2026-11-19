@@ -1168,7 +1168,7 @@ function buildGame(
       known.shade = isShadeState(e.ai);
     }
     stepCrowd(crowd, up ? crowdWorld : null, me === undefined ? CROWD_NOWHERE : { x: me.pos.x, z: me.pos.z, yaw: me.yaw }, crowdHeld ?? CROWD_MOST[tier], seconds, dt);
-    renderer.setCrowd(crowd.figures, seconds);
+    renderer.setCrowd(crowd.figures, seconds, up);
   }
   function syncWayLight(world: World, dt: number): void {
     if (wayGivenTo !== renderer || wayGiven !== world.way) {

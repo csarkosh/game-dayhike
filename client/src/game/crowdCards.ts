@@ -36,6 +36,8 @@ export const CROWD_CARD_FOLD_S = 1000;
 /** Metres from the eye a crowd shade is still a card: past the mist's reach (crowdField.ts CROWD_MIST_M, 30) by enough that the body is gone before the card is. */
 export const CROWD_CARDS_TO_M = 36;
 /** Vertices a card (one quad), and the floats of each of a vertex's three attributes: its place, its corner and height and level, its stir. */
+/** How much more of itself a figure that kills (`CrowdFigure.kills`) is than one of the crowd's: a body nothing shows through (the frame draws a card at three quarters of its level). */
+export const CROWD_CARD_KILLS = 1.3;
 export const CROWD_CARD_VERTICES = 4;
 export const CROWD_CARD_FLOATS = { position: 3, card: 4, stir: 2 } as const;
 
@@ -84,7 +86,7 @@ export function writeCrowdCards(
     const d = Math.sqrt(dx * dx + dy * dy + dz * dz);
     if (d < from || d >= to) continue;
     const t = Math.max(0, Math.min(1, (d - SHADE_NEAR_M) / (SHADE_FAR_M - SHADE_NEAR_M)));
-    const level = presenceOf(f, seconds) * (1 - (1 - SHADE_FAR_SHARE) * t);
+    const level = presenceOf(f, seconds) * (1 - (1 - SHADE_FAR_SHARE) * t) * (f.kills === true ? CROWD_CARD_KILLS : 1);
     const phase = hash2(f.id, 6, 0) * 2 * Math.PI, rate = 0.5 + f.pace * 0.5;
     for (let c = 0; c < 4; c++) {
       const v = drawn * 4 + c, corner = CORNERS[c] as [number, number];

@@ -18,7 +18,7 @@
  */
 import type { Rgb } from "./colour.js";
 import { presenceOf, type CrowdFigure } from "./crowdField.js";
-import { HOLLOW_FIGURE_M } from "./hollowLook.js";
+import { HOLLOW_EYE_COLOR, HOLLOW_FIGURE_M } from "./hollowLook.js";
 
 /** The crowd's eyes run from pale to a dull ember by a figure's `warm`: never the Hollow's red, which is what tells a figure that kills from the crowd. */
 export const CROWD_EYE_PALE: Rgb = { r: 0.78, g: 0.82, b: 0.74 };
@@ -28,6 +28,9 @@ export const CROWD_EYE_M = 0.09;
 export const CROWD_EYE_APART_M = 0.34;
 export const CROWD_EYE_HEIGHT = 0.72;
 export const CROWD_EYE_GAIN = 1.6;
+/** A figure that kills (`CrowdFigure.kills`) has the Hollow's red, this many times as bright and as large as a figure of the crowd's: red eyes in the mist are what a runner reads. */
+export const CROWD_EYE_KILLS_GAIN = 2;
+export const CROWD_EYE_KILLS_SIZE = 1.7;
 /** Metres from the eye over which a pair dims to half and no further: it carries through the mist. */
 export const CROWD_EYE_DIM_M: readonly [number, number] = [40, 120];
 /** Vertices a pair (two quads), and the floats of each of a vertex's three attributes: its place, its corner and size, its colour. */
@@ -80,8 +83,9 @@ export function writeCrowdEyes(
     const dx = f.x - eye.x, dy = y - eye.y, dz = f.z - eye.z;
     const far = (Math.sqrt(dx * dx + dy * dy + dz * dz) - CROWD_EYE_DIM_M[0]) / (CROWD_EYE_DIM_M[1] - CROWD_EYE_DIM_M[0]);
     const t = far <= 0 ? 0 : far >= 1 ? 1 : far * far * (3 - 2 * far);
-    const level = f.eyes * presenceOf(f, seconds) * CROWD_EYE_GAIN * (1 - 0.5 * t);
-    const colour = crowdEyeColour(f.warm);
+    const kills = f.kills === true;
+    const level = f.eyes * presenceOf(f, seconds) * CROWD_EYE_GAIN * (1 - 0.5 * t) * (kills ? CROWD_EYE_KILLS_GAIN : 1);
+    const colour = kills ? HOLLOW_EYE_COLOR : crowdEyeColour(f.warm);
     for (let e = 0; e < 2; e++) {
       for (let c = 0; c < 4; c++) {
         const v = (drawn * 2 + e) * 4 + c, corner = CORNERS[c] as [number, number];
@@ -90,7 +94,7 @@ export function writeCrowdEyes(
         positions[v * 3 + 2] = f.z;
         eyes[v * 4] = corner[0];
         eyes[v * 4 + 1] = corner[1];
-        eyes[v * 4 + 2] = CROWD_EYE_M * f.size;
+        eyes[v * 4 + 2] = CROWD_EYE_M * f.size * (kills ? CROWD_EYE_KILLS_SIZE : 1);
         eyes[v * 4 + 3] = (e === 0 ? -0.5 : 0.5) * CROWD_EYE_APART_M * f.size;
         colours[v * 4] = colour.r;
         colours[v * 4 + 1] = colour.g;

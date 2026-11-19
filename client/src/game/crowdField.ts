@@ -60,9 +60,11 @@ export function crowdTarget(progress: number, most: number): number {
  * player at over the last metres (crowdSpeed: it runs in from further off);
  * `born` the seconds it began to rise at, and `gone` the seconds it began to
  * go at, or -1; `rise` how it came, 0 out of the mist or 1 as a pair of eyes
- * opening far off.
+ * opening far off. `kills` marks a figure that is no part of this crowd: one
+ * of the host's that can kill, drawn among it (crowdKillers.ts), with the
+ * Hollow's red eyes.
  */
-export type CrowdFigure = { id: number; x: number; z: number; size: number; eyes: number; warm: number; pace: number; born: number; gone: number; rise: 0 | 1; /** Whether the ground last refused its step on: it stands until it is asked again. */ held?: boolean };
+export type CrowdFigure = { id: number; x: number; z: number; size: number; eyes: number; warm: number; pace: number; born: number; gone: number; rise: 0 | 1; /** Whether the ground last refused its step on: it stands until it is asked again. */ held?: boolean; kills?: boolean };
 
 /**
  * The lunge: a figure waiting at the path's edge comes onto the path at a

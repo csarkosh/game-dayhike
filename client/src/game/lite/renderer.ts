@@ -414,7 +414,8 @@ import { createDeviceMakes, type MakesDevice } from "../deviceMakes.js";
 import { createDrawnFrames, whenDrawnSettled } from "../drawnSettle.js";
 import { createEngineWatch } from "../engineWatch.js";
 import { HEADLAMP_CONE, HEADLAMP_INTENSITY, HEADLAMP_RANGE } from "../endScene.js";
-import { createEntityPoses, type EntityFrame } from "../entityPoses.js";
+import { createEntityPoses, type EntityFrame, type HollowPose } from "../entityPoses.js";
+import { KILLERS_MOST, createKillerShadows } from "../crowdKillers.js";
 import { blendedEye, type EyePose } from "../eyeBlend.js";
 import { FACE_PATCH_Z_OFFSET, FACE_PATCH_Z_UNITS } from "../facePatches.js";
 import { featureTableFor } from "../featureTable.js";
@@ -545,7 +546,9 @@ const LOOK_AHEAD = 10;
 const FRAME_SAMPLES = 4;
 
 /** The most figures of the crowd any tier keeps: what its drawers are made for. */
-const CROWD_MOST_ANY = Math.max(CROWD_MOST.low, CROWD_MOST.medium, CROWD_MOST.high);
+const CROWD_MOST_ANY = Math.max(CROWD_MOST.low, CROWD_MOST.medium, CROWD_MOST.high) + KILLERS_MOST;
+/** A frame with no bodies in it. */
+const NO_BODIES: readonly HollowPose[] = [];
 /** No figure of the crowd is held by a model. */
 const CROWD_NONE_HELD: ReadonlySet<number> = new Set();
 /** Metres under the eye the ground is taken to lie where it has not been asked for yet. */
@@ -766,6 +769,9 @@ export function createLiteRenderer(canvas: HTMLCanvasElement, level: Level, fore
   /** The ground under the crowd's figures, kept between frames (`crowdHeights`), and the frame's heights. */
   const crowdGround: CrowdGround = new Map();
   const crowdHeightsOut: number[] = [];
+  /** The chase's killers drawn among the crowd (crowdKillers.ts), and the screen's seconds the crowd was last told at, which their figures come and go by. */
+  const killers = createKillerShadows();
+  let crowdSeconds = 0;
   /**
    * The frame's exposure as shown: the weather's and the hour's, less what the stare takes of it (`sightUnder`) and
    * what the chase's dim does (`wayDimAt`) where no chain's grade does.
@@ -1819,6 +1825,8 @@ export function createLiteRenderer(canvas: HTMLCanvasElement, level: Level, fore
       // Where every body stands this frame, before the frame's scene is stepped, which reads where the others are
       // drawn. Who the scene then shows or hides is taken up below, in this same frame.
       let bodies: EntityFrame | null = standing !== null && standing.entities !== null ? poses.step(state, localId, alpha, frame.dt, standing.entities.models) : null;
+      // The chase's killers that are drawn as shadows this frame: figures among the crowd's, where their bodies stand.
+      killers.step(bodies === null ? NO_BODIES : bodies.hollows, crowdSeconds);
       // The death's dark as the last frame posed it: the passes read it a frame late.
       const darkWas = play.close;
       playNow = null;
@@ -2345,15 +2353,22 @@ export function createLiteRenderer(canvas: HTMLCanvasElement, level: Level, fore
     setWayLevel(level) {
       wayLevel = Math.max(0, Math.min(1, level));
     },
-    setCrowd(figures, seconds) {
-      if (standing === null || standing.crowdCards === null || standing.crowdEyes === null) return;
+    setCrowd(figures, seconds, shadows) {
+      crowdSeconds = seconds;
+      // The killers are shadows only where there are cards to draw them as: without, the model stands.
+      if (standing === null || standing.crowdCards === null || standing.crowdEyes === null) {
+        poses.shadows = false;
+        return;
+      }
+      poses.shadows = shadows;
+      const shown = killers.shown(figures);
       const under = pose.y - CROWD_EYE_OVER_GROUND_M;
-      const heights = crowdHeights(crowdGround, figures, wayHeightAt ?? (() => under), under, crowdHeightsOut);
+      const heights = crowdHeights(crowdGround, shown, wayHeightAt ?? (() => under), under, crowdHeightsOut);
       // A figure's rim is lit by the way's mist: its colour this frame, as the mist itself is given it.
       const tint = wayTint(wayPath, cloudColourUnder(nearColour), 1 / wayDimAt(wayLevel), chaseCast, CHASE_TINT);
-      const cards = standing.crowdCards.sync(figures, heights, pose, seconds, CROWD_NONE_HELD, 0, CROWD_CARDS_TO_M, tint);
+      const cards = standing.crowdCards.sync(shown, heights, pose, seconds, CROWD_NONE_HELD, 0, CROWD_CARDS_TO_M, tint);
       standing.mask?.cards(cards > 0);
-      standing.crowdEyes.sync(figures, heights, pose, seconds, CROWD_NONE_HELD);
+      standing.crowdEyes.sync(shown, heights, pose, seconds, CROWD_NONE_HELD);
     },
     wind() {
       return wind;

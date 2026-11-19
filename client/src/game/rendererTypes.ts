@@ -179,8 +179,12 @@ export type Renderer = {
    * mist has a ground map it thins over the way in place of the trail.
    */
   setWayLevel(level: number): void;
-  /** This screen's crowd for the frame (crowdField.ts), told before `sync`: its figures are drawn as cards, in the frame and in the shade mask, and as eyes. */
-  setCrowd(figures: readonly CrowdFigure[], seconds: number): void;
+  /**
+   * This screen's crowd for the frame (crowdField.ts), told before `sync`: its figures are drawn as cards, in the
+   * frame and in the shade mask, and as eyes. While `shadows`, the chase's killers are drawn among them, as
+   * shadows with the Hollow's red eyes, and not as the model (crowdKillers.ts).
+   */
+  setCrowd(figures: readonly CrowdFigure[], seconds: number, shadows: boolean): void;
   /**
    * The end for this player, once; a second call changes nothing. Died: the
    * camera is the death's from now (ending.ts). Won: the end scene plays

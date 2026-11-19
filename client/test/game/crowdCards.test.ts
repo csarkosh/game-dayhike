@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
-  CROWD_CARDS_TO_M, CROWD_CARD_FLOATS, CROWD_CARD_FOLD_S, CROWD_CARD_VERTICES, CROWD_CARD_WIDE, crowdCardIndices, crowdCardTime, crowdCardVertices, writeCrowdCards,
+  CROWD_CARDS_TO_M, CROWD_CARD_FLOATS, CROWD_CARD_FOLD_S, CROWD_CARD_VERTICES, CROWD_CARD_WIDE, crowdCardIndices, crowdCardTime, crowdCardVertices, writeCrowdCards, CROWD_CARD_KILLS,
 } from "../../src/game/crowdCards.js";
 import { CROWD_MIST_M, CROWD_RISE_S, figureOf, type CrowdFigure } from "../../src/game/crowdField.js";
 import { SHADE_FAR_M, SHADE_FAR_SHARE, SHADE_NEAR_M } from "../../src/game/entityPoses.js";
@@ -47,6 +47,14 @@ describe("the crowd's cards", () => {
     // The cards not used are nothing.
     expect(card[8 * 4 + 2]).toBe(0);
     expect(card[8 * 4 + 3]).toBe(0);
+  });
+
+  it("draws a figure that kills darker than the crowd's: a solid body where theirs is a veil", () => {
+    expect(CROWD_CARD_KILLS).toBe(1.3);
+    const out = crowdCardVertices(2);
+    const crowd = figure(1, 15, 0, { size: 1 }), killer = figure(2, 0, 15, { size: 1, kills: true });
+    expect(writeCrowdCards(out, 2, [crowd, killer], [3, 3], EYE, 100, new Set(), 0, 60)).toBe(2);
+    expect(out.cards[4 * 4 + 3]).toBeCloseTo(out.cards[3]! * CROWD_CARD_KILLS, 5);
   });
 
   it("writes only the figures in its band of distance that no other drawer holds, and says how many", () => {

@@ -18,7 +18,7 @@ function hollow(id: number, x: number, z: number, ai: AiState = AiState.Stand): 
   return {
     id, pos: { x, y: 0.9, z }, vel: { x: 0, y: 0, z: 0 }, yaw: 0.25, health: 40, ai,
     targetId: 0, stateTimer: 0, attackCooldown: 0, lastDistSq: Infinity, stuckTimer: 0, unstickTimer: 0,
-    route: [], routeAt: 0, approach: false, seen: false, emergeTo: null, stalks: false,
+    route: [], routeAt: 0, approach: false, seen: false, emergeTo: null, stalks: false, waylay: 0,
   };
 }
 function state(players: PlayerState[], enemies: EnemyState[] = [], phase: Phase = Phase.Climb): WorldState {
@@ -125,6 +125,35 @@ describe("the hikers in a frame", () => {
     expect(poses.drawnAt(1)).toEqual({ x: 1, y: -40, z: 0 });
     poses.forgetModel(1);
     expect(poses.drawnAt(1)).toBeNull();
+  });
+});
+
+describe("the chase's killers drawn as shadows", () => {
+  it("says of every enemy in the chase that it is a shadow, once the renderer has said they are: none before the chase, none unless asked", () => {
+    const poses = createEntityPoses();
+    const hunting = [hollow(5, 10, 0, AiState.Hunt), hollow(6, 12, 0, AiState.Lunge)];
+    expect(poses.shadows).toBe(false);
+    expect(poses.step(state([player(1)], hunting, Phase.Chase), 1, 1, 0.016, MODELS).hollows.map((h) => h.shadow)).toEqual([false, false]);
+    poses.shadows = true;
+    const frame = poses.step(state([player(1)], hunting, Phase.Chase), 1, 1, 0.016, MODELS);
+    expect(frame.hollows.map((h) => h.shadow)).toEqual([true, true]);
+    // Where it is drawn is still its track's, between its last two places, on its feet.
+    expect(frame.hollows[0]).toMatchObject({ x: 10, z: 0 });
+    // The summit scene's Hollow steps out as the model, whatever the renderer has said.
+    expect(poses.step(state([player(1)], [hollow(5, 10, 0, AiState.Emerge)], Phase.Scene), 1, 1, 0.016, MODELS).hollows.map((h) => h.shadow)).toEqual([false]);
+  });
+
+  it("a lunge drawn as a shadow, gone from the state, is not left going out as the model", () => {
+    const poses = createEntityPoses();
+    poses.shadows = true;
+    poses.step(state([player(1)], [hollow(6, 12, 0, AiState.Lunge)], Phase.Chase), 1, 1, 0.5, MODELS);
+    const frame = poses.step(state([player(1)], [], Phase.Chase), 1, 1, 0.016, MODELS);
+    expect(frame.fading.length).toBe(0);
+    expect(poses.fadingOut()).toBe(0);
+    // One drawn as the model still goes out as it.
+    const plain = createEntityPoses();
+    plain.step(state([player(1)], [hollow(6, 12, 0, AiState.Lunge)], Phase.Chase), 1, 1, 0.5, MODELS);
+    expect(plain.step(state([player(1)], [], Phase.Chase), 1, 1, 0.016, MODELS).fading.length).toBe(1);
   });
 });
 

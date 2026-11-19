@@ -102,7 +102,8 @@ describe("the renderer and the app", () => {
   it("the app steps this screen's crowd every frame on the host and on a client, before the renderer's own sync", () => {
     expect(app).toContain("      syncCrowd(host.world, state, host.localEntityId, dt);\n      syncWayDraw(host.world, state);");
     expect(app).toContain("      syncCrowd(client.world, state, client.localEntityId, dt);\n      syncWayDraw(client.world, state);");
-    expect(app).toContain("renderer.setCrowd(crowd.figures, seconds);");
+    // And says whether the crowd is up: while it is, the chase's killers are drawn among it, as shadows.
+    expect(app).toContain("renderer.setCrowd(crowd.figures, seconds, up);");
     expect(app).toContain("crowdHeld !== null ? crowdHeld > 0 : crowdOn(state.phase, state.outcome, wayShown)");
     // Each screen's own: its stream is seeded from the world's seed and whose screen it is, never the sim's.
     expect(app).toContain("newCrowd((seed ^ Math.imul(localId + 1, 0x9e3779b1)) >>> 0)");
@@ -113,10 +114,21 @@ describe("the renderer and the app", () => {
     expect(renderer).toContain("const crowdEyes = mask === null ? null : createLiteCrowdEyes(engine, scene, CROWD_MOST_ANY, uploads);");
     expect(renderer).toContain("if (mask !== null && crowdCards !== null) mask.addCards(crowdCards.mesh, crowdCards.maskMaterial);");
     for (const part of ["crowdCards", "crowdEyes"]) expect(renderer).toContain(`made.${part}?.dispose();`);
-    expect(renderer).toContain("const cards = standing.crowdCards.sync(figures, heights, pose, seconds, CROWD_NONE_HELD, 0, CROWD_CARDS_TO_M, tint);\n      standing.mask?.cards(cards > 0);");
-    expect(renderer).toContain("standing.crowdEyes.sync(figures, heights, pose, seconds, CROWD_NONE_HELD);");
+    expect(renderer).toContain("const cards = standing.crowdCards.sync(shown, heights, pose, seconds, CROWD_NONE_HELD, 0, CROWD_CARDS_TO_M, tint);\n      standing.mask?.cards(cards > 0);");
+    expect(renderer).toContain("standing.crowdEyes.sync(shown, heights, pose, seconds, CROWD_NONE_HELD);");
     // A figure's rim is lit by the way's mist, toned for the tier's path as the mist is.
     expect(renderer).toContain("const tint = wayTint(wayPath, cloudColourUnder(nearColour), 1 / wayDimAt(wayLevel), chaseCast, CHASE_TINT);");
+  });
+
+  it("the renderer draws the chase's killers among the crowd while it is up, and not as the model: first in what is shown, from where their bodies stand each frame", () => {
+    const meshes = readFileSync(clientFile("src/game/lite/entityMeshes.ts"), "utf8");
+    expect(renderer).toContain("poses.shadows = shadows;");
+    expect(renderer).toContain("killers.step(bodies === null ? NO_BODIES : bodies.hollows, crowdSeconds);");
+    expect(renderer).toContain("const shown = killers.shown(figures);");
+    // Room for them beside the crowd's most.
+    expect(renderer).toContain("const CROWD_MOST_ANY = Math.max(CROWD_MOST.low, CROWD_MOST.medium, CROWD_MOST.high) + KILLERS_MOST;");
+    // The model is not drawn for one that is a shadow.
+    expect(meshes).toContain("for (const pose of frame.hollows) if (pose.modelled && !pose.shadow) figure(");
   });
 
   it("the console holds the crowd on, off or at a count, as it holds the way's mist", () => {
