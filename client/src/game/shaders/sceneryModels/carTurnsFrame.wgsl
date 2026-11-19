@@ -1,0 +1,1 @@
+let ctTangent=${tangentRows};let ctNl=normalize(ctNormal);let ctTl=normalize(ctTangent);let ctBl=cross(ctNl,ctTl)*tangent.w;out.worldTangent=(finalWorld*vec4<f32>(ctTl,0.0)).xyz;out.worldBitangent=(finalWorld*vec4<f32>(ctBl,0.0)).xyz;

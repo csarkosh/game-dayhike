@@ -2,6 +2,7 @@ import { describe, it, expect } from "vitest";
 import { readdirSync, readFileSync, existsSync } from "node:fs";
 import { join, relative } from "node:path";
 import { fileURLToPath } from "node:url";
+import ts from "typescript";
 import { limitOffenders, scanTestSource, wallClockOffenders, type ScannedFile } from "./helpers/testCalls.js";
 
 // Resolve against this file, never process.cwd(). Vitest is launched from the
@@ -17,6 +18,16 @@ function sourceFiles(dir: string): string[] {
     const full = join(dir, entry.name);
     if (entry.isDirectory()) out.push(...sourceFiles(full));
     else if (entry.name.endsWith(".ts")) out.push(full);
+  }
+  return out;
+}
+
+function walkFiles(dir: string, ext: string): string[] {
+  const out: string[] = [];
+  for (const entry of readdirSync(dir, { withFileTypes: true })) {
+    const full = join(dir, entry.name);
+    if (entry.isDirectory()) out.push(...walkFiles(full, ext));
+    else if (entry.name.endsWith(ext)) out.push(full);
   }
   return out;
 }
@@ -1285,6 +1296,105 @@ describe("layer boundaries", () => {
     }
     expect(mentions).toEqual({ "app.ts": 2, "game/input.ts": 2, "game/pauseMenu.ts": 2 });
     expect(readFileSync(join(SRC, "app.ts"), "utf8")).toContain("setSuppressed: (on) => input.setSuppressed(on),");
+  });
+});
+
+/**
+ * The game's WGSL is kept in `.wgsl` files under `game/shaders/`, each imported where it is used with `?raw`, and
+ * not written out in a TypeScript module. What stays in a module is what code makes at run time: a number
+ * formatted in, lines written by a loop, a binding made from a layout, and the choice between pieces.
+ */
+describe("the game's WGSL is kept in files", () => {
+  /** What WGSL is told by: a stage's entry point, a binding, a built-in, a sampling call, a function's return type, the tag. */
+  const TOKENS: readonly RegExp[] = [
+    /@vertex/, /@fragment/, /@compute/, /@group\(/, /@binding\(/, /@location\(/, /@builtin\(/,
+    /\bfn\s+\w+\s*\([^)]*\)\s*->/, /textureSample/, /var<uniform>/, /\/\*\s*wgsl\s*\*\//,
+  ];
+  /** The lines of a module that carry such a token and are not static shader text, each with why. A line is named by a piece of its text. */
+  const ALLOWED: readonly { file: string; text: string; why: string }[] = [
+    { file: "game/lite/postWgsl.ts", text: "const taps = offsets.map(", why: "one blur tap for each of the kernel's taps, with its two numbers formatted in: lines made by a loop" },
+    { file: "game/lite/postWgsl.ts", text: "halation ? \"@group(0)@binding(5)var halationSampler", why: "one declaration under 120 characters that the grade's halation switches on" },
+  ];
+  const wgslFiles = walkFiles(SRC, ".wgsl");
+  const modules = sourceFiles(SRC);
+
+  it("can actually see the files and the modules", () => {
+    expect(wgslFiles.length).toBeGreaterThan(100);
+    expect(modules.length).toBeGreaterThan(100);
+  });
+
+  it("holds no static WGSL in a TypeScript module but the lines it lists, each with its reason", () => {
+    const found: string[] = [];
+    const used = new Set<number>();
+    for (const file of modules) {
+      const name = relative(SRC, file).split("\\").join("/");
+      stripComments(readFileSync(file, "utf8")).split("\n").forEach((line, i) => {
+        if (!TOKENS.some((token) => token.test(line))) return;
+        const at = ALLOWED.findIndex((a) => a.file === name && line.includes(a.text));
+        if (at >= 0) used.add(at);
+        else found.push(`${name}:${i + 1}: ${line.trim().slice(0, 100)}`);
+      });
+    }
+    expect(found, "shader text belongs in a .wgsl file under game/shaders/, imported with ?raw").toEqual([]);
+    expect(ALLOWED.filter((_, at) => !used.has(at)).map((a) => `${a.file}: ${a.text}`), "an allowance no line needs: remove it").toEqual([]);
+  });
+
+  /** For each module, the `.wgsl` files it imports with `?raw` (by the name it gives them) and the slots each `fill(wgsl(name), {...})` gives. */
+  const readImports = (file: string): { imported: Map<string, string>; fills: Map<string, string[]> } => {
+    const source = ts.createSourceFile(file, readFileSync(file, "utf8"), ts.ScriptTarget.Latest, true);
+    const imported = new Map<string, string>();
+    const fills = new Map<string, string[]>();
+    const visit = (node: ts.Node): void => {
+      if (ts.isImportDeclaration(node) && ts.isStringLiteral(node.moduleSpecifier) && node.moduleSpecifier.text.endsWith(".wgsl?raw") && node.importClause?.name !== undefined) {
+        imported.set(node.importClause.name.text, join(file, "..", node.moduleSpecifier.text.slice(0, -"?raw".length)));
+      }
+      if (ts.isCallExpression(node) && ts.isIdentifier(node.expression)) {
+        const named = (call: ts.Node): string | null =>
+          ts.isCallExpression(call) && ts.isIdentifier(call.expression) && call.expression.text === "wgsl" && call.arguments[0] !== undefined && ts.isIdentifier(call.arguments[0]) ? call.arguments[0].text : null;
+        if (node.expression.text === "fill" && node.arguments[0] !== undefined) {
+          const name = named(node.arguments[0]);
+          const slots = node.arguments[1];
+          if (name !== null && slots !== undefined && ts.isObjectLiteralExpression(slots)) {
+            fills.set(name, slots.properties.map((property) => (ts.isShorthandPropertyAssignment(property) || ts.isPropertyAssignment(property) ? property.name.getText() : "?")));
+          }
+        }
+      }
+      ts.forEachChild(node, visit);
+    };
+    visit(source);
+    return { imported, fills };
+  };
+  const slotsOf = (file: string): string[] => [...new Set([...readFileSync(file, "utf8").matchAll(/\$\{([^}]*)\}/g)].map((m) => m[1] as string))];
+
+  it("has every file imported by some module", () => {
+    const imported = new Set<string>();
+    for (const file of modules) for (const path of readImports(file).imported.values()) imported.add(path);
+    for (const path of imported) expect(existsSync(path), `${path} is imported and is not there`).toBe(true);
+    expect(wgslFiles.filter((file) => !imported.has(file)).map((file) => relative(SRC, file))).toEqual([]);
+  });
+
+  it("has every slot of a file filled by the module that imports it, and no value for a slot the file does not have", () => {
+    const wrong: string[] = [];
+    for (const file of modules) {
+      const { imported, fills } = readImports(file);
+      for (const [name, path] of imported) {
+        const slots = slotsOf(path);
+        for (const slot of slots) if (!/^[A-Za-z_][A-Za-z0-9_]*$/.test(slot)) wrong.push(`${relative(SRC, path)}: \${${slot}} is not a slot name`);
+        const given = fills.get(name);
+        const where = `${relative(SRC, file)} imports ${relative(SRC, path)}`;
+        if (given === undefined) {
+          if (slots.length > 0) wrong.push(`${where} and does not fill ${slots.join(", ")}`);
+        } else {
+          for (const slot of slots) if (!given.includes(slot)) wrong.push(`${where} and gives no value for \${${slot}}`);
+          for (const key of given) if (!slots.includes(key)) wrong.push(`${where} and gives a value for ${key}, which the file does not have`);
+        }
+      }
+    }
+    expect(wrong).toEqual([]);
+  });
+
+  it("is told by the one helper, which imports nothing", () => {
+    expect(importsOf(join(SRC, "game/shaders/shaderText.ts"))).toEqual([]);
   });
 });
 

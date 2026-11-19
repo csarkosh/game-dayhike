@@ -1,3 +1,10 @@
+import curveSource from "../shaders/displayCurve/curve.wgsl?raw";
+import linearColourSource from "../shaders/displayCurve/linearColour.wgsl?raw";
+import materialGradeSource from "../shaders/displayCurve/materialGrade.wgsl?raw";
+import shownSource from "../shaders/displayCurve/shown.wgsl?raw";
+import encodeSource from "../shaders/displayCurve/encode.wgsl?raw";
+import { fill, wgsl } from "../shaders/shaderText.js";
+
 /**
  * The material colour path in WGSL, for a stage of the hike's own on Babylon
  * Lite: what Babylon.js's image processing does to a linear colour in a
@@ -22,37 +29,10 @@
  * display shows it. Babylon.js's `applyImageProcessing` with its tone map at
  * Khronos PBR Neutral, statement for statement.
  */
-export const DISPLAY_CURVE_WGSL = /* wgsl */ `
-fn displayNeutral(input:vec3<f32>)->vec3<f32>{
-  let x=min(input.r,min(input.g,input.b));
-  let offset=select(0.04,x-6.25*x*x,x<0.08);
-  let color=input-offset;
-  let peak=max(color.r,max(color.g,color.b));
-  let d=1.0-0.76;
-  let newPeak=1.0-d*d/(peak+d-0.76);
-  let g=1.0-1.0/(0.15*(peak-newPeak)+1.0);
-  let compressed=mix(color*(newPeak/max(peak,1.0e-6)),vec3<f32>(newPeak),g);
-  return select(compressed,color,peak<0.76);
-}
-fn displayContrastOf(c:vec3<f32>,contrast:f32)->vec3<f32>{
-  let high=c*c*(3.0-2.0*c);
-  let shaped=select(mix(c,high,contrast-1.0),mix(vec3<f32>(0.5),c,contrast),contrast<1.0);
-  return max(shaped,vec3<f32>(0.0));
-}
-fn displayColour(linear:vec3<f32>,exposure:f32,contrast:f32)->vec3<f32>{
-  var result=linear*exposure;
-  result=displayNeutral(result);
-  result=pow(max(result,vec3<f32>(0.0)),vec3<f32>(1.0/2.2));
-  result=clamp(result,vec3<f32>(0.0),vec3<f32>(1.0));
-  result=displayContrastOf(result,contrast);
-  return clamp(result,vec3<f32>(0.0),vec3<f32>(1.0));
-}`;
+export const DISPLAY_CURVE_WGSL = wgsl(curveSource);
 
 /** `displayColour` on a tier with a post chain: the linear colour, which the chain's grade exposes and shows. */
-export const LINEAR_COLOUR_WGSL = /* wgsl */ `
-fn displayColour(linear:vec3<f32>,exposure:f32,contrast:f32)->vec3<f32>{
-  return linear;
-}`;
+export const LINEAR_COLOUR_WGSL = wgsl(linearColourSource);
 
 /**
  * `wgsl`, a stage that ends with `displayColour`, for the tier's colour
@@ -90,37 +70,7 @@ export const GRADE_BLOCK = "hikeFrame";
  * keeps a fragment's coordinates so), so
  * `gradeAt` turns the rows over first.
  */
-export const MATERIAL_GRADE_WGSL = /* wgsl */ `
-fn gradeAt(at:vec2<f32>)->vec2<f32>{
-  return vec2<f32>(at.x,1.0/${GRADE_BLOCK}.gradeScreen.y-at.y);
-}
-fn gradeVignette(color:vec3<f32>,at:vec2<f32>)->vec3<f32>{
-  var viewportXY=gradeAt(at)*${GRADE_BLOCK}.gradeScreen.xy;
-  viewportXY=viewportXY*2.0-1.0;
-  let vignetteXY1=vec3<f32>(viewportXY*${GRADE_BLOCK}.gradeVignette1.xy+${GRADE_BLOCK}.gradeVignette1.zw,1.0);
-  let vignetteTerm=dot(vignetteXY1,vignetteXY1);
-  let vignette=pow(vignetteTerm,${GRADE_BLOCK}.gradeVignette2.w);
-  let vignetteColor=${GRADE_BLOCK}.gradeVignette2.rgb;
-  let vignetteColorMultiplier=mix(vignetteColor,vec3<f32>(1.0,1.0,1.0),vignette);
-  return color*vignetteColorMultiplier;
-}
-fn gradeCurves(input:vec3<f32>)->vec3<f32>{
-  var color=input;
-  let luma=clamp(dot(color,vec3<f32>(0.2126,0.7152,0.0722)),0.0,1.0);
-  let curveMix=clamp(vec2<f32>(luma*3.0-1.5,luma*-3.0+1.5),vec2<f32>(0.0),vec2<f32>(1.0));
-  let colorCurve=${GRADE_BLOCK}.gradeCurveNeutral+curveMix.x*${GRADE_BLOCK}.gradeCurvePositive-curveMix.y*${GRADE_BLOCK}.gradeCurveNegative;
-  color*=colorCurve.rgb;
-  color=mix(vec3<f32>(luma),color,colorCurve.a);
-  return color;
-}
-fn gradeRand(seed:vec2<f32>)->f32{
-  return fract(sin(dot(seed.xy,vec2<f32>(12.9898,78.233)))*43758.5453);
-}
-fn gradeDither(color:vec3<f32>,at:vec2<f32>)->vec3<f32>{
-  let rand=gradeRand(gradeAt(at)*${GRADE_BLOCK}.gradeScreen.xy);
-  let dither=mix(-${GRADE_BLOCK}.gradeScreen.z,${GRADE_BLOCK}.gradeScreen.z,rand);
-  return clamp(color+vec3<f32>(dither),vec3<f32>(0.0),vec3<f32>(1.0));
-}`;
+export const MATERIAL_GRADE_WGSL = fill(wgsl(materialGradeSource), { gradeBlock: GRADE_BLOCK });
 
 /**
  * `displayShown(linear, exposure, contrast, at)`: a stage's linear colour as
@@ -128,10 +78,7 @@ fn gradeDither(color:vec3<f32>,at:vec2<f32>)->vec3<f32>{
  * curve, the colour curves and the dither, in Babylon.js's order. With
  * `DISPLAY_CURVE_WGSL` and `MATERIAL_GRADE_WGSL` ahead of it.
  */
-export const DISPLAY_SHOWN_WGSL = /* wgsl */ `
-fn displayShown(linear:vec3<f32>,exposure:f32,contrast:f32,at:vec2<f32>)->vec3<f32>{
-  return gradeDither(gradeCurves(displayColour(gradeVignette(linear,at),exposure,contrast)),at);
-}`;
+export const DISPLAY_SHOWN_WGSL = wgsl(shownSource);
 
 /**
  * `displayEncoded(color, contrast)`: a tone-mapped colour encoded for the
@@ -140,9 +87,4 @@ fn displayShown(linear:vec3<f32>,exposure:f32,contrast:f32,at:vec2<f32>)->vec3<f
  * tier with no chain drawn after one with a chain lays this on itself.
  * With `DISPLAY_CURVE_WGSL` ahead of it.
  */
-export const DISPLAY_ENCODE_WGSL = /* wgsl */ `${DISPLAY_CURVE_WGSL}
-fn displayEncoded(color:vec3<f32>,contrast:f32)->vec3<f32>{
-  var result=pow(max(color,vec3<f32>(0.0)),vec3<f32>(1.0/2.2));
-  result=clamp(result,vec3<f32>(0.0),vec3<f32>(1.0));
-  return displayContrastOf(result,contrast);
-}`;
+export const DISPLAY_ENCODE_WGSL = fill(wgsl(encodeSource), { displayCurve: DISPLAY_CURVE_WGSL });

@@ -34,135 +34,21 @@ import { MIDGE_FRAME_FLOATS, midgeSlots, packMidgeFrame, swarmSphere, type Midge
 import { MIDGE_SWARMS_MAX, SWARM_ROW_FLOATS } from "../midgeMotion.js";
 import { SEE_THROUGH_ORDER } from "./drawOrder.js";
 import type { FrameUploads } from "./frameUploads.js";
+import dataSource from "../shaders/midge/data.wgsl?raw";
+import varyingsSource from "../shaders/midge/varyings.wgsl?raw";
+import midgeVertexSource from "../shaders/midge/midge.vertex.wgsl?raw";
+import midgeFragmentSource from "../shaders/midge/midge.fragment.wgsl?raw";
+import { fill, wgsl } from "../shaders/shaderText.js";
 
 /** The frame's floats as the stages read them: `packMidgeFrame`'s five vec4s, then the table. */
-const DATA = `struct MidgeData{eye:vec4<f32>,sun:vec4<f32>,sunLight:vec4<f32>,skyGlow:vec4<f32>,tone:vec4<f32>,swarms:array<vec4<f32>,${(SWARM_ROW_FLOATS * MIDGE_SWARMS_MAX) / 4}>}`;
-const VARYINGS = "struct MidgeOut{@builtin(position)position:vec4<f32>,@location(0)vCorner:vec2<f32>,@location(1)vAlpha:f32,@location(2)vSunGlint:f32,@location(3)vSkyGlint:f32}";
+const DATA = fill(wgsl(dataSource), { swarmVecs: (SWARM_ROW_FLOATS * MIDGE_SWARMS_MAX) / 4 });
+const VARYINGS = wgsl(varyingsSource);
 
 /** The midges' vertex stage. The uniforms are read from the frame's floats by name. */
-const VERTEX = /* wgsl */ `
-${DATA}
-${VARYINGS}
-const MIDGE_TAU:f32=6.28318531;
-const MIDGE_RATE_0:f32=0.7;
-const MIDGE_RATE_1:f32=1.3;
-const MIDGE_RATE_2:f32=2.1;
-const MIDGE_AMP_0:f32=0.55;
-const MIDGE_AMP_1:f32=0.3;
-const MIDGE_AMP_2:f32=0.15;
-const MIDGE_BALL_FLAT:f32=0.6666666666666666;
-const MIDGE_CARD:f32=0.003;
-const MIDGE_MIN_PX:f32=2.0;
-const MIDGE_ALPHA_FLOOR:f32=0.6;
-const MIDGE_FLOOR_NEAR:f32=6.0;
-const MIDGE_FLOOR_FAR:f32=15.0;
-const MIDGE_FLASH_LOW:f32=9.0;
-const MIDGE_FLASH_HIGH:f32=14.0;
-const MIDGE_LOBE_POWER:f32=8.0;
-const MIDGE_FLASH_POWER:f32=24.0;
-const MIDGE_FLASH_GAIN:f32=0.5;
-const MIDGE_SKY_GLINT:f32=0.6;
-const MIDGE_SKY_LOBE_POWER:f32=2.0;
-fn midgeHash(i:f32,s:f32)->f32{
-  var p=fract(vec3<f32>(i,s,i+s)*0.1031);
-  p+=dot(p,p.yzx+33.33);
-  return fract((p.x+p.y)*p.z);
-}
-fn midgeAxis(slot:f32,seed:f32,axis:f32,t:f32)->f32{
-  let base=seed+3.0*axis;
-  var s=MIDGE_AMP_0*sin(MIDGE_TAU*MIDGE_RATE_0*(0.85+0.3*midgeHash(slot,base+11.0))*t+MIDGE_TAU*midgeHash(slot,base+41.0));
-  s+=MIDGE_AMP_1*sin(MIDGE_TAU*MIDGE_RATE_1*(0.85+0.3*midgeHash(slot,base+12.0))*t+MIDGE_TAU*midgeHash(slot,base+42.0));
-  s+=MIDGE_AMP_2*sin(MIDGE_TAU*MIDGE_RATE_2*(0.85+0.3*midgeHash(slot,base+13.0))*t+MIDGE_TAU*midgeHash(slot,base+43.0));
-  return s;
-}
-@vertex fn mainVertex(input:VertexInput)->MidgeOut{
-  var out:MidgeOut;
-  let midge=input.world0.xy;
-  let midgeEye=midgeData.eye.xyz;
-  let midgeTime=midgeData.eye.w;
-  let midgeSun=midgeData.sun.xyz;
-  let midgePixel=midgeData.skyGlow.w;
-  let at=3*i32(midge.x+0.5);
-  let slot=midge.y;
-  let place=midgeData.swarms[at];
-  let shape=midgeData.swarms[at+1];
-  let turn=midgeData.swarms[at+2];
-  let seed=turn.z;
-  let t=midgeTime;
-  let across=place.w*vec2<f32>(midgeAxis(slot,seed,0.0,t),midgeAxis(slot,seed,2.0,t));
-  let up=mix(place.w*MIDGE_BALL_FLAT,shape.x,shape.w)*midgeAxis(slot,seed,1.0,t)*(1.0-turn.y);
-  let c=cos(turn.x);
-  let n=sin(turn.x);
-  let centre=place.xyz+vec3<f32>(across.x*c-across.y*n,up,across.x*n+across.y*c);
-  let toEye=midgeEye-centre;
-  let far=length(toEye);
-  let view=toEye/max(far,1.0e-4);
-  let size=max(MIDGE_CARD,MIDGE_MIN_PX*midgePixel*far);
-  let alive=(1.0-step(shape.y,slot))*(1.0-step(shape.z,0.0));
-  var side=cross(vec3<f32>(0.0,1.0,0.0),view);
-  side=normalize(mix(vec3<f32>(1.0,0.0,0.0),side,step(1.0e-8,dot(side,side))));
-  let rise=cross(view,side);
-  let corner=centre+(side*input.position.x+rise*input.position.y)*size*alive;
-  out.position=scene.viewProjection*vec4<f32>(corner,1.0);
-  out.vCorner=2.0*input.position.xy;
-  let nearFloor=MIDGE_ALPHA_FLOOR*clamp((MIDGE_FLOOR_FAR-far)/(MIDGE_FLOOR_FAR-MIDGE_FLOOR_NEAR),0.0,1.0);
-  out.vAlpha=max(MIDGE_CARD/size,nearFloor)*shape.z*alive;
-  let lobe=pow(max(dot(-view,midgeSun),0.0),MIDGE_LOBE_POWER);
-  let rate=mix(MIDGE_FLASH_LOW,MIDGE_FLASH_HIGH,midgeHash(slot,seed+73.0));
-  let flash=pow(max(sin(MIDGE_TAU*rate*t+MIDGE_TAU*midgeHash(slot,seed+71.0)),0.0),MIDGE_FLASH_POWER);
-  out.vSunGlint=lobe+MIDGE_FLASH_GAIN*flash;
-  let sunLevel=vec3<f32>(midgeSun.x,0.0,midgeSun.z);
-  let sunFlat=normalize(mix(vec3<f32>(1.0,0.0,0.0),sunLevel,step(1.0e-8,dot(sunLevel,sunLevel))));
-  out.vSkyGlint=MIDGE_SKY_GLINT*pow(max(dot(-view,sunFlat),0.0),MIDGE_SKY_LOBE_POWER);
-  return out;
-}`;
+const VERTEX = fill(wgsl(midgeVertexSource), { data: DATA, varyings: VARYINGS });
 
 /** The midges' fragment stage. */
-const FRAGMENT = /* wgsl */ `
-${DATA}
-${VARYINGS}
-const MIDGE_DARK:f32=0.9;
-const MIDGE_NEUTRAL_START:f32=0.76;
-const MIDGE_NEUTRAL_DESATURATION:f32=0.15;
-fn midgeNeutral(input:vec3<f32>)->vec3<f32>{
-  var color=input;
-  let x=min(color.r,min(color.g,color.b));
-  let offset=mix(x-6.25*x*x,0.04,step(0.08,x));
-  color-=offset;
-  let peak=max(color.r,max(color.g,color.b));
-  let top=max(peak,MIDGE_NEUTRAL_START);
-  let k=1.0-MIDGE_NEUTRAL_START;
-  let newPeak=1.0-k*k/(top+k-MIDGE_NEUTRAL_START);
-  let g=1.0-1.0/(MIDGE_NEUTRAL_DESATURATION*(top-newPeak)+1.0);
-  let compressed=mix(color*(newPeak/top),vec3<f32>(newPeak),g);
-  return mix(color,compressed,step(MIDGE_NEUTRAL_START,peak));
-}
-fn midgeContrastOf(c:vec3<f32>,midgeContrast:f32)->vec3<f32>{
-  let high=c*c*(3.0-2.0*c);
-  let low=mix(vec3<f32>(0.5),c,midgeContrast);
-  let raised=mix(c,high,midgeContrast-1.0);
-  return max(mix(low,raised,step(1.0,midgeContrast)),vec3<f32>(0.0));
-}
-@fragment fn mainFragment(input:MidgeOut)->@location(0)vec4<f32>{
-  let midgeSunLight=midgeData.sunLight.xyz;
-  let midgeSkyGlow=midgeData.skyGlow.xyz;
-  let midgeNight=midgeData.sun.w;
-  let midgeSkyLuma=midgeData.sunLight.w;
-  let midgeExposure=midgeData.tone.x;
-  let midgeToneMap=midgeData.tone.y;
-  let midgeContrast=midgeData.tone.z;
-  let tent=clamp(1.0-abs(input.vCorner),vec2<f32>(0.0),vec2<f32>(1.0));
-  let a=input.vAlpha*tent.x*tent.y;
-  let day=1.0-midgeNight;
-  let sunGlint=midgeSunLight*day*input.vSunGlint;
-  let skyGlint=midgeSkyGlow*input.vSkyGlint;
-  let speck=MIDGE_DARK*clamp(midgeSkyLuma,0.0,1.0);
-  let light=(sunGlint+skyGlint)*a;
-  var toned=midgeNeutral(light*midgeExposure);
-  toned=clamp(pow(max(toned,vec3<f32>(0.0)),vec3<f32>(1.0/2.2)),vec3<f32>(0.0),vec3<f32>(1.0));
-  toned=midgeContrastOf(toned,midgeContrast);
-  return vec4<f32>(mix(light,toned,step(0.5,midgeToneMap)),speck*a);
-}`;
+const FRAGMENT = fill(wgsl(midgeFragmentSource), { data: DATA, varyings: VARYINGS });
 
 /** The stages' text, for the tests that hold it to the game's. */
 export const MIDGE_WGSL = { vertex: VERTEX, fragment: FRAGMENT } as const;

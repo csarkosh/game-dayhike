@@ -1,0 +1,1 @@
+out.vRainCanopy=${canopyName}.w;

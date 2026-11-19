@@ -47,6 +47,11 @@ import { RAIN_MAP_CAMERA, RAIN_MAP_CLEAR, createRainMapPlace, type RainMapKind }
 import { RAIN_MAP, type Vec3 } from "../rainParams.js";
 import { wgslFloat } from "./forestPlugins.js";
 import { TERRAIN_VERTEX_FLOATS, TERRAIN_VERTEX_LAYOUT } from "./terrainPlugins.js";
+import terrainSource from "../shaders/rainMap/terrain.wgsl?raw";
+import hardSource from "../shaders/rainMap/hard.wgsl?raw";
+import waterSource from "../shaders/rainMap/water.wgsl?raw";
+import canopyVaryingSource from "../shaders/rainMap/canopyVarying.wgsl?raw";
+import { fill, wgsl } from "../shaders/shaderText.js";
 
 const f = wgslFloat;
 
@@ -55,9 +60,9 @@ const CANOPY = TERRAIN_VERTEX_LAYOUT.find((part) => part.varying === "vTerrainW2
 
 /** The texel in place of the lit colour, by kind: the height shader's fragment (`RAIN_HEIGHT_FRAGMENT`, `rainMap.ts`). */
 export const RAIN_MAP_WGSL = {
-  terrain: `{let vHeight=input.worldPos.y;let vCanopy=input.vRainCanopy;let transmission=1.0-${f(RAIN_MAP.canopyBlock)}*vCanopy;let lift=${f(RAIN_MAP.canopyLift)}*step(0.01,vCanopy);color=vec3<f32>(vHeight,transmission,lift);alpha=1.0;}`,
-  hard: `{let vHeight=input.worldPos.y;let transmission=0.0;let lift=0.0;color=vec3<f32>(vHeight,transmission,lift);alpha=1.0;}`,
-  water: `{let vHeight=input.worldPos.y;let transmission=1.0;let lift=0.0;color=vec3<f32>(vHeight,transmission,lift);alpha=1.0;}`,
+  terrain: fill(wgsl(terrainSource), { rainMapCanopyBlock: f(RAIN_MAP.canopyBlock), rainMapCanopyLift: f(RAIN_MAP.canopyLift) }),
+  hard: wgsl(hardSource),
+  water: wgsl(waterSource),
 } as const;
 
 /** The plugin that writes a kind's texel, last in the fragment. The terrain's declares the terrain's vertex data whole, as
@@ -73,7 +78,7 @@ export function rainMapPlugin(kind: RainMapKind): MaterialPlugin {
     name: "RainMapTerrain",
     priority: 990,
     getCustomCode: (stage) =>
-      stage === "fragment" ? { CUSTOM_FRAGMENT_BEFORE_FRAGCOLOR: RAIN_MAP_WGSL.terrain } : { CUSTOM_VERTEX_MAIN_END: `out.vRainCanopy=${CANOPY.name}.w;` },
+      stage === "fragment" ? { CUSTOM_FRAGMENT_BEFORE_FRAGCOLOR: RAIN_MAP_WGSL.terrain } : { CUSTOM_VERTEX_MAIN_END: fill(wgsl(canopyVaryingSource), { canopyName: CANOPY.name }) },
     getVertexAttributes: () => [{ name: CANOPY.name, type: "vec4<f32>", format: "float32x4", stride: TERRAIN_VERTEX_FLOATS * 4, offset: CANOPY.offset * 4 }],
     getVaryings: () => [{ name: "vRainCanopy", type: "f32" }],
   };

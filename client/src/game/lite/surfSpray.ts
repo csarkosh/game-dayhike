@@ -40,12 +40,16 @@ import { wgslFloat } from "./forestPlugins.js";
 import { FRAME_CONTRAST_NAME, FRAME_EXPOSURE_NAME, stageOwn, stageReads } from "./frameBlock.js";
 import type { FrameUploads } from "./frameUploads.js";
 import { shaderUniformDecls, shaderUniformWriter } from "./shaderUniforms.js";
+import varyingsSource from "../shaders/surfSpray/varyings.wgsl?raw";
+import surfSprayVertexSource from "../shaders/surfSpray/surfSpray.vertex.wgsl?raw";
+import surfSprayFragmentSource from "../shaders/surfSpray/surfSpray.fragment.wgsl?raw";
+import { fill, wgsl } from "../shaders/shaderText.js";
 
 const f = wgslFloat;
 
 /** What the two stages hand each other. */
 const VARYINGS =
-  "struct SprayOut{@builtin(position)position:vec4<f32>,@location(0)fogDistance:vec3<f32>,@location(1)sprayAlpha:f32,@location(2)sprayUv:vec2<f32>}";
+  wgsl(varyingsSource);
 
 /** The slots' vec4s as the stage's one array, from the uniforms that hold them. */
 const SLOTS = Array.from({ length: SURF_SPRAY_BURSTS * 2 }, (_, i) => `u.${sprayBurstName(i)}`).join(",");
@@ -56,53 +60,7 @@ const SLOTS = Array.from({ length: SURF_SPRAY_BURSTS * 2 }, (_, i) => `u.${spray
  * own, the position taken as the world's (the mesh and every instance stand
  * at the origin) and the fog's distance in the view's space.
  */
-const VERTEX = /* wgsl */ `
-${VARYINGS}
-const SURF_SPRAY_G:f32=${f(SURF_SPRAY_G)};
-const SURF_SPRAY_DRAG:f32=${f(SURF_SPRAY_DRAG)};
-const SURF_SPRAY_LIFE_MIN:f32=${f(SURF_SPRAY_LIFE_S[0])};
-const SURF_SPRAY_LIFE_MAX:f32=${f(SURF_SPRAY_LIFE_S[1])};
-const SURF_SPRAY_SIZE:f32=${f(SURF_SPRAY_SIZE_M)};
-const SURF_SPRAY_STRETCH:f32=${f(SURF_SPRAY_STRETCH_M)};
-const SURF_SPRAY_ELEVATION_MIN:f32=${f(SURF_SPRAY_ELEVATION[0])};
-const SURF_SPRAY_ELEVATION_MAX:f32=${f(SURF_SPRAY_ELEVATION[1])};
-const SURF_SPRAY_SPEED_MIN:f32=${f(SURF_SPRAY_SPEED_MIN)};
-@vertex fn mainVertex(input:VertexInput)->SprayOut{
-  var out:SprayOut;
-  let u=shaderUniforms;
-  let spraySeed=input.world0;
-  let sprayBurst=input.world1.x;
-  var surfSprayBursts=array<vec4<f32>,${SURF_SPRAY_BURSTS * 2}>(${SLOTS});
-  let slot=2*i32(sprayBurst+0.5);
-  let origin=surfSprayBursts[slot];
-  let launch=surfSprayBursts[slot+1];
-  let life=mix(SURF_SPRAY_LIFE_MIN,SURF_SPRAY_LIFE_MAX,spraySeed.w);
-  let alive=step(0.0,origin.w)*(1.0-step(life,origin.w));
-  let t=clamp(origin.w,0.0,life);
-  let ahead=vec3<f32>(launch.x,0.0,launch.y);
-  let across=vec3<f32>(-launch.y,0.0,launch.x);
-  let start=origin.xyz+across*(spraySeed.x-0.5)*SURF_SPRAY_STRETCH;
-  let elevation=mix(SURF_SPRAY_ELEVATION_MIN,SURF_SPRAY_ELEVATION_MAX,spraySeed.y);
-  let speed=launch.z*mix(SURF_SPRAY_SPEED_MIN,1.0,spraySeed.z);
-  let v0=(ahead*cos(elevation)+vec3<f32>(0.0,sin(elevation),0.0))*speed;
-  let drift=vec3<f32>(u.sprayWind.x,-SURF_SPRAY_G/SURF_SPRAY_DRAG,u.sprayWind.y);
-  let p=start+drift*t+(v0-drift)*(1.0-exp(-SURF_SPRAY_DRAG*t))/SURF_SPRAY_DRAG;
-  let toEye=u.sprayCam-p;
-  let view=toEye/max(length(toEye),0.001);
-  let side=cross(vec3<f32>(0.0,1.0,0.0),view);
-  let right=side/max(length(side),0.001);
-  let up=cross(view,right);
-  let lived=t/life;
-  let size=SURF_SPRAY_SIZE*(0.5+0.5*lived)*alive;
-  let sprayAt=vec4<f32>(p+(right*input.position.x+up*input.position.y)*size,(1.0-lived)*alive);
-  let positionUpdated=sprayAt.xyz;
-  out.sprayAlpha=sprayAt.w;
-  out.sprayUv=input.position.xy+0.5;
-  let worldPos=vec4<f32>(positionUpdated,1.0);
-  out.position=scene.viewProjection*worldPos;
-  out.fogDistance=(scene.view*worldPos).xyz;
-  return out;
-}`;
+const VERTEX = fill(wgsl(surfSprayVertexSource), { varyings: VARYINGS, surfSprayG: f(SURF_SPRAY_G), surfSprayDrag: f(SURF_SPRAY_DRAG), surfSprayLifeS0: f(SURF_SPRAY_LIFE_S[0]), surfSprayLifeS1: f(SURF_SPRAY_LIFE_S[1]), surfSpraySizeM: f(SURF_SPRAY_SIZE_M), surfSprayStretchM: f(SURF_SPRAY_STRETCH_M), surfSprayElevation0: f(SURF_SPRAY_ELEVATION[0]), surfSprayElevation1: f(SURF_SPRAY_ELEVATION[1]), surfSpraySpeedMin: f(SURF_SPRAY_SPEED_MIN), burstSlots: SURF_SPRAY_BURSTS * 2, slots: SLOTS });
 
 /**
  * The fragment stage: the Standard material's, with no light, no texture, an
@@ -110,34 +68,7 @@ const SURF_SPRAY_SPEED_MIN:f32=${f(SURF_SPRAY_SPEED_MIN)};
  * in Babylon.js's order, and the spray plugin's disc (`sprayCover`) before
  * the colour is written.
  */
-const FRAGMENT = /* wgsl */ `
-${VARYINGS}
-${DISPLAY_CURVE_WGSL}
-const SPRAY_E:f32=2.71828;
-const SURF_SPRAY_OPACITY:f32=${f(SURF_SPRAY_OPACITY)};
-fn sprayFogFactor(vFogDistance:vec3<f32>,fogDensity:f32)->f32{
-  let fogDistance=length(vFogDistance);
-  let fogCoeff=1.0/pow(SPRAY_E,fogDistance*fogDistance*fogDensity*fogDensity);
-  return clamp(fogCoeff,0.0,1.0);
-}
-fn sprayCover(vSprayUv:vec2<f32>,vSprayAlpha:f32)->f32{
-  let d=length(vSprayUv-0.5)*2.0;
-  return (1.0-smoothstep(0.0,1.0,d))*vSprayAlpha*SURF_SPRAY_OPACITY;
-}
-@fragment fn mainFragment(input:SprayOut)->@location(0)vec4<f32>{
-  let u=shaderUniforms;
-  let alpha=1.0;
-  let emissiveColor=u.sprayEmissive;
-  let finalDiffuse=clamp(emissiveColor,vec3<f32>(0.0),vec3<f32>(1.0));
-  var color=vec4<f32>(finalDiffuse,alpha);
-  color=vec4<f32>(max(color.rgb,vec3<f32>(0.0)),color.a);
-  let fog=sprayFogFactor(input.fogDistance,u.sprayFogDensity);
-  color=vec4<f32>(mix(u.sprayFogColour,color.rgb,fog),color.a);
-  color=vec4<f32>(pow(color.rgb,vec3<f32>(2.2)),color.a);
-  color=vec4<f32>(displayColour(color.rgb,u.sprayExposure,u.sprayContrast),color.a);
-  color.a*=sprayCover(input.sprayUv,input.sprayAlpha);
-  return color;
-}`;
+const FRAGMENT = fill(wgsl(surfSprayFragmentSource), { varyings: VARYINGS, displayCurve: DISPLAY_CURVE_WGSL, surfSprayOpacity: f(SURF_SPRAY_OPACITY) });
 
 /** The stages' text, for the tests that hold it to the game's. */
 export const SPRAY_WGSL = { vertex: VERTEX, fragment: FRAGMENT } as const;

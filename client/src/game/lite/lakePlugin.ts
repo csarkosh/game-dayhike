@@ -38,6 +38,8 @@ import {
   LAKE_LENS_WGSL, LAKE_MIRROR_WGSL, LAKE_PANORAMA_WGSL, LAKE_RIPPLES_WGSL, LAKE_SHORE_WGSL, WATER_BUMP_WGSL, WATER_DEFS_WGSL, WATER_SPLIT_WGSL, WATER_THROUGH_DEFS_WGSL,
   WATER_THROUGH_FINAL_WGSL, WATER_VERTEX_WGSL, lakeComposeWgsl, lakeLightsWgsl,
 } from "./waterWgsl.js";
+import derivativeUniformitySource from "../shaders/diagnostic/derivativeUniformity.wgsl?raw";
+import { wgsl } from "../shaders/shaderText.js";
 
 /** The plugin's place among a material's: before the air's, which is laid over what it shades. */
 export const WATER_PRIORITY = 230;
@@ -73,7 +75,7 @@ export function lakePlugin(uniforms: LakeUniforms, textures: LakeTextures, share
   return {
     name: "LakeWater",
     priority: WATER_PRIORITY,
-    getFragmentDirectives: () => "diagnostic(off,derivative_uniformity);",
+    getFragmentDirectives: () => wgsl(derivativeUniformitySource),
     getCustomCode: (stage) =>
       stage === "fragment"
         ? {

@@ -55,6 +55,9 @@ import { FRAME_BLOCK } from "./frameBlock.js";
 import type { FrameUploads } from "./frameUploads.js";
 import { uniformFields, writeUniforms } from "./pluginUniforms.js";
 import { TERRAIN_VERTEX_FLOATS, TERRAIN_VERTEX_LAYOUT } from "./terrainPlugins.js";
+import groundColourSource from "../shaders/lakePanorama/groundColour.wgsl?raw";
+import canopyVaryingSource from "../shaders/lakePanorama/canopyVarying.wgsl?raw";
+import { fill, wgsl } from "../shaders/shaderText.js";
 
 /** The picture's format: half floats, as the game's, for lit colour ahead of the display's curve. */
 export const PANORAMA_FORMAT = "rgba16float";
@@ -76,14 +79,7 @@ export type PanoramaGroundUniforms = { lakeMirrorColour: Float32Array };
  * density and colour the frame's, as the air's plugin reads them) from the
  * eye of the pass that draws it.
  */
-export const PANORAMA_GROUND_WGSL = `{
-  var pgColour=material.lakeMirrorColour*(1.0-${wgslFloat(MIRROR_CANOPY_SHADE)}*input.vPanoramaCanopy);
-  let pgDepth=length(input.worldPos-scene.vEyePosition.xyz)*${FRAME_BLOCK}.atmBaseDensity;
-  let pgFog=pow(clamp(exp(-pgDepth*pgDepth),0.0,1.0),2.2);
-  pgColour=mix(${FRAME_BLOCK}.atmFarColour,pgColour,pgFog);
-  color=pgColour;
-  alpha=1.0;
-}`;
+export const PANORAMA_GROUND_WGSL = fill(wgsl(groundColourSource), { mirrorCanopyShade: wgslFloat(MIRROR_CANOPY_SHADE), frameBlock: FRAME_BLOCK });
 
 /** The stand-in as a plugin on a plain material: it declares the terrain's vertex data whole, as the terrain's own does, and hands the canopy's density on. */
 export function panoramaGroundPlugin(uniforms: PanoramaGroundUniforms, shared: PluginUniformBlock): MaterialPlugin {
@@ -91,7 +87,7 @@ export function panoramaGroundPlugin(uniforms: PanoramaGroundUniforms, shared: P
     name: "PanoramaGround",
     priority: 990,
     getCustomCode: (stage) =>
-      stage === "fragment" ? { CUSTOM_FRAGMENT_BEFORE_FRAGCOLOR: PANORAMA_GROUND_WGSL } : { CUSTOM_VERTEX_MAIN_END: `out.vPanoramaCanopy=${CANOPY.name}.w;` },
+      stage === "fragment" ? { CUSTOM_FRAGMENT_BEFORE_FRAGCOLOR: PANORAMA_GROUND_WGSL } : { CUSTOM_VERTEX_MAIN_END: fill(wgsl(canopyVaryingSource), { canopyName: CANOPY.name }) },
     getVertexAttributes: () => [{ name: CANOPY.name, type: "vec4<f32>", format: "float32x4", stride: TERRAIN_VERTEX_FLOATS * 4, offset: CANOPY.offset * 4 }],
     getVaryings: () => [{ name: "vPanoramaCanopy", type: "f32" }],
     getUniforms: () => ({ ubo: uniformFields(uniforms) }),

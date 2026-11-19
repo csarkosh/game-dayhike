@@ -45,6 +45,8 @@ import type { SkyState } from "../skyState.js";
 import { SKY_RADIANCE_WGSL } from "./skyDome.js";
 import { wgslFloat } from "./forestPlugins.js";
 import { askRenderPipeline } from "./pipelineAsk.js";
+import captureSource from "../shaders/skyCapture/capture.wgsl?raw";
+import { fill, wgsl } from "../shaders/shaderText.js";
 
 /** WebGPU's buffer usages the capture's buffers take (`GPUBufferUsage`), by their values. */
 const COPY_DST = 0x0008;
@@ -64,31 +66,7 @@ export const SKY_CAPTURE_BYTES = SKY_FLOATS * 4;
  * face's axes. `probeDomeDirection` (`skyProbeParams.ts`) is
  * `skyProbeDome`, statement for statement.
  */
-export const SKY_CAPTURE_WGSL = /* wgsl */ `
-struct Sky{sunDir:vec4<f32>,deckZenith:vec4<f32>,night:vec4<f32>,mistAir:vec4<f32>,disc:vec4<f32>,eye:vec4<f32>}
-struct Face{normal:vec4<f32>,across:vec4<f32>,down:vec4<f32>}
-@group(0)@binding(0)var<uniform>sky:Sky;
-@group(0)@binding(1)var skyTable:texture_2d<f32>;
-@group(0)@binding(2)var skyTableSampler:sampler;
-@group(0)@binding(3)var<uniform>face:Face;
-${SKY_RADIANCE_WGSL}
-const SKY_DOME_HALF:f32=${wgslFloat(SKY_DOME_SIZE / 2)};
-fn skyProbeDome(ray:vec3<f32>,eye:vec3<f32>)->vec3<f32>{
-  let along=select(vec3<f32>(3.0e38),(eye+sign(ray)*SKY_DOME_HALF)/ray,abs(ray)>vec3<f32>(1.0e-8));
-  let t=min(along.x,min(along.y,along.z));
-  return normalize(ray*t-eye);
-}
-@vertex fn faceVertex(@builtin(vertex_index)i:u32)->@builtin(position)vec4<f32>{
-  var corners=array<vec2<f32>,3>(vec2<f32>(-1.0,-1.0),vec2<f32>(3.0,-1.0),vec2<f32>(-1.0,3.0));
-  return vec4<f32>(corners[i],0.0,1.0);
-}
-@fragment fn faceFragment(@builtin(position)at:vec4<f32>)->@location(0)vec4<f32>{
-  let a=2.0*at.x/${wgslFloat(SKY_PROBE_SIZE)}-1.0;
-  let b=2.0*at.y/${wgslFloat(SKY_PROBE_SIZE)}-1.0;
-  let d=skyProbeDome(normalize(face.normal.xyz+face.across.xyz*a+face.down.xyz*b),sky.eye.xyz);
-  let radiance=skyRadiance(d,sky.sunDir.xyz,sky.sunDir.w,sky.deckZenith.w,sky.deckZenith.xyz,sky.night.xyz,sky.disc.xyz,sky.mistAir.xyz,sky.night.w,1.0);
-  return vec4<f32>(radiance*sky.mistAir.w,1.0);
-}`;
+export const SKY_CAPTURE_WGSL = fill(wgsl(captureSource), { skyRadiance: SKY_RADIANCE_WGSL, skyDomeHalf: wgslFloat(SKY_DOME_SIZE / 2), skyProbeSize: wgslFloat(SKY_PROBE_SIZE) });
 
 /**
  * The sky's values for a capture of `s` at the scene's `share` with the eye
