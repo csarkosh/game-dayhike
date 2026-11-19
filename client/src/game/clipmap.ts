@@ -19,6 +19,7 @@ import { forestDensity } from "../sim/vegetation.js";
 import { classifySurface } from "./terrainSurface.js";
 import { waterGroundAt } from "./waterGround.js";
 import type { QualityTier } from "./quality.js";
+import { finish, sliceDue, type Slices } from "./syncJobs.js";
 
 export const RING_CELLS = 128;
 export const RING_COUNT = 7;
@@ -688,7 +689,7 @@ export function ringGeometry(
   // boost against ring 0's 2 m snap step can run on essentially every frame.
   // `lite/terrainMeshes.ts` copies what is drawn into a Uint32Array for the mesh.
   const all = new Uint16Array(quadCount * 6);
-  const indexCount = writeRingIndices(ring, hole, covered, all);
+  const indexCount = finish(writeRingIndicesSlices(ring, hole, covered, all));
   // A fresh build allocates anyway: the drawn indices alone.
   const indices = indexCount === all.length ? all : all.slice(0, indexCount);
 
@@ -734,12 +735,12 @@ export function coversRing(covered: CoveredGround | null, spacing: number): bool
  * left out, but never on the ring's border row, where it meets the coarser
  * ring, nor on the row around its hole, where it meets the finer one.
  */
-function writeRingIndices(
+function* writeRingIndicesSlices(
   ring: RingSamples,
   hole: { x0: number; z0: number } | null,
   covered: CoveredGround | null,
   indices: Uint16Array,
-): number {
+): Slices<number> {
   const leave = coversRing(covered, ring.spacing);
   const cell = covered?.cell ?? 1;
   // A ring finer than the covering surface's widest points is bound by `fine` too.
@@ -790,6 +791,8 @@ function writeRingIndices(
         indices[k++] = c;
       }
     }
+    // A row of cells is a few samples' work: the slice ends between rows.
+    if (sliceDue(ROW_UNITS)) yield;
   }
   return k;
 }
@@ -818,8 +821,12 @@ export function ringGeometryBuffers(hole: boolean): RingGeometry {
 }
 
 /** Rows of positions a slice of a re-emit writes before it yields: a whole
- * ring's positions are about a tenth of a millisecond. */
+ * ring's positions are about a tenth of a millisecond. A slice also ends
+ * where the scheduler's clock says (`sliceDue`), between two rows. */
 const EMIT_SLICE_ROWS = 64;
+
+/** The units of work (`sliceDue`) a row of a ring's vertices or cells counts: the blend toward the coarser ring or the triangles' test is about eight samples' worth. */
+const ROW_UNITS = 8;
 
 /** `coarseHeight` from the coarser ring's kept lifts: the same doubles,
  * averaged the same way. */
@@ -852,7 +859,7 @@ export function* ringGeometrySlices(
   coarser: RingSamples | null,
   out: RingGeometry,
   covered: CoveredGround | null = null,
-): Generator<void, void, void> {
+): Slices {
   out.normals.set(ring.normals);
   out.colors.set(ring.colors);
   out.weights.set(ring.weights);
@@ -875,8 +882,9 @@ export function* ringGeometrySlices(
       positions[p + 1] = y;
       positions[p + 2] = ring.originZ + iz * ring.spacing;
     }
-    if ((iz + 1) % EMIT_SLICE_ROWS === 0) yield;
+    const due = sliceDue(ROW_UNITS);
+    if (due || (iz + 1) % EMIT_SLICE_ROWS === 0) yield;
   }
   // `ringGeometry`'s indices, which the winding test there guards.
-  out.indexCount = writeRingIndices(ring, hole, covered, out.indices);
+  out.indexCount = yield* writeRingIndicesSlices(ring, hole, covered, out.indices);
 }

@@ -36,6 +36,7 @@ import type { TrailGraph } from "../sim/trail.js";
 import { forestDensity } from "../sim/vegetation.js";
 import { WEIGHTS2_STRIDE, type CoveredGround } from "./clipmap.js";
 import type { QualityTier } from "./quality.js";
+import { finish, sliceDue, type Slices } from "./syncJobs.js";
 import { classifySurface } from "./terrainSurface.js";
 import { waterGroundAt } from "./waterGround.js";
 
@@ -45,6 +46,9 @@ import { waterGroundAt } from "./waterGround.js";
  * material is the ground's in every other way. */
 export const FACE_PATCH_Z_OFFSET = -1;
 export const FACE_PATCH_Z_UNITS = -120;
+
+/** The units of work (`sliceDue`) a vertex's paint and surface count: about four terrain samples. */
+const VERTEX_UNITS = 4;
 
 /** A patch cell's side, metres, on the world's lattice. */
 export const PATCH_CELL = 16;
@@ -313,10 +317,23 @@ function surfaceInto(
  * that edge, and painted as the coarser patch's interpolation paints them;
  * the even points are the coarser patch's own, position and normal, since
  * both come from the world point alone.
+ *
+ * `facePatchGeometrySlices` is the same work as slices: its loops ask
+ * `sliceDue` at each sample and vertex and give the thread back when the
+ * scheduler's slice has used its time, to go on from the same point, so the
+ * arrays are the ones a build at once makes, sample for sample in the same
+ * order. A cell is 17 to 33 samples a side, 15 to 54 ms on a phone.
  */
 export function facePatchGeometry(
   seed: number, ci: number, cj: number, spacing: number, stitch: PatchStitch, trail: TrailGraph | null = null,
 ): FacePatch | null {
+  return finish(facePatchGeometrySlices(seed, ci, cj, spacing, stitch, trail));
+}
+
+/** `facePatchGeometry` in slices, ended by the scheduler's clock (`sliceDue`); returns the patch, or null. */
+export function* facePatchGeometrySlices(
+  seed: number, ci: number, cj: number, spacing: number, stitch: PatchStitch, trail: TrailGraph | null = null,
+): Slices<FacePatch | null> {
   const n = Math.round(PATCH_CELL / spacing);
   const side = n + 1;
   const count = side * side;
@@ -333,6 +350,7 @@ export function facePatchGeometry(
       const g = Math.sqrt(s.dx * s.dx + s.dz * s.dz);
       if (!steep && faceMask(g) > 0) steep = true;
       if (!rocky && rockOfSlope(g) >= GROUND_ROCK_MIN) rocky = true;
+      if (sliceDue()) yield;
     }
   }
   if (!steep && !rocky) return null;
@@ -351,6 +369,7 @@ export function facePatchGeometry(
         ring[(iz + 1) * rside + ix + 1] = inside
           ? samples[iz * side + ix] as TerrainSample
           : elevationSampleAt(seed, x0 + ix * spacing, z0 + iz * spacing);
+        if (!inside && sliceDue()) yield;
       }
     }
   }
@@ -408,6 +427,8 @@ export function facePatchGeometry(
       weights2[w2 + 2] = duff;
       weights2[w2 + 3] = canopy;
       cover[at] = Math.min(1, gc.grass);
+      // A vertex is the paint's several lookups and the surface's relief: about four samples.
+      if (sliceDue(VERTEX_UNITS)) yield;
     }
   }
 

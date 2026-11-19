@@ -81,7 +81,7 @@ import {
   type CoveredGround, type RingArrays, type RingGeometry, type RingMove, type RingSamples,
 } from "../clipmap.js";
 import {
-  PATCH_CELL, PATCH_FAR_SPACING, PATCH_NEAR_SPACING, PATCH_REACH, facePatchCells, facePatchCover, facePatchGeometry, facePatchStitch, patchKey,
+  PATCH_CELL, PATCH_FAR_SPACING, PATCH_NEAR_SPACING, PATCH_REACH, facePatchCells, facePatchCover, facePatchGeometrySlices, facePatchStitch, patchKey,
   patchStitchBits,
   type FacePatch, type PatchCell, type PatchReach, type PatchStitch,
 } from "../facePatches.js";
@@ -97,16 +97,16 @@ import {
 } from "./patchPool.js";
 import type { ReflectionRegistry } from "./lakePanorama.js";
 import { RAIN_MAP_RINGS, type CoverRegistry } from "./rainMap.js";
-import { TERRAIN_VERTEX_FLOATS, terrainVertexData } from "./terrainPlugins.js";
+import { TERRAIN_VERTEX_FLOATS, terrainVertexData, terrainVertexDataSlices } from "./terrainPlugins.js";
 
 /** What writing one ring's buffers is expected to take (ms): the game's own estimate. The
  * rings' job says so before its last slice (`syncJobs.ts`). */
 const CLIPMAP_UPLOAD_MS = 1;
 
-/** What a patched cell's slice is expected to take (ms) by its spacing, near and far, and a wide cell's: the game's
- * own estimates. A near one is more than a frame's share and starts only as one begins. */
-const FACE_PATCH_SLICE_MS: Readonly<Record<number, number>> = { [PATCH_NEAR_SPACING]: 5, [PATCH_FAR_SPACING]: 2 };
-const WIDE_SLICE_MS = 0.5;
+/** What showing a set of patches is expected to take (ms): its list of triangles written and sent, one step. The
+ * scheduler learns the figure on the device it runs on (`syncJobs.ts`) and trusts it where it is more. A cell's own
+ * sampling is not one step: it is sliced by the scheduler's clock (`facePatchGeometrySlices`). */
+const FACE_PATCH_SHOW_MS = 2;
 
 /**
  * Vertices the patches' pool is made with room for, by tier. A set drawn holds 6,000 to 10,000 on low and 21,000 to
@@ -462,11 +462,14 @@ export function createTerrainMeshes(
 
   const isReady = (w: Wanted, i: number): boolean => !Number.isNaN(readyAt(w, i));
 
-  /** Cell `i` of `w`'s patch as wanted, computed: null for a cell with no steep ground. */
-  function shape(w: Wanted, i: number): FacePatch | null {
+  /** Cell `i` of `w`'s patch as wanted, computed in slices ended by the scheduler's clock: null for a cell with no steep ground. */
+  function shapeSlices(w: Wanted, i: number): Slices<FacePatch | null> {
     const c = w.cells[i] as PatchCell;
-    return facePatchGeometry(seed, c.ci, c.cj, c.spacing, w.stitches[i] as PatchStitch, options.trail ?? null);
+    return facePatchGeometrySlices(seed, c.ci, c.cj, c.spacing, w.stitches[i] as PatchStitch, options.trail ?? null);
   }
+
+  /** Cell `i` of `w`'s patch as wanted, computed at once. */
+  const shape = (w: Wanted, i: number): FacePatch | null => finish(shapeSlices(w, i));
 
   /** The bytes writing `patch` to the slot it would take sends: its positions and its normals, and what its plugin
    * vertex data adds to the run the frame's marks send. */
@@ -495,10 +498,10 @@ export function createTerrainMeshes(
     if (!isReady(w, i)) enter(w, i, shape(w, i));
   }
 
-  /** Cell `i` of `w` built as a job builds it, in slices: computed, then written to a slot once the frame's upload
-   * budget has room for it. */
+  /** Cell `i` of `w` built as a job builds it, in slices: computed a slice at a time, then written to a slot once the
+   * frame's upload budget has room for it. */
   function* makeSlices(w: Wanted, i: number): Slices {
-    const patch = shape(w, i);
+    const patch = yield* shapeSlices(w, i);
     if (uploads !== undefined) yield* uploads.hold(shapeBytes(patch, (w.cells[i] as PatchCell).spacing));
     if (disposed) return;
     enter(w, i, patch);
@@ -525,9 +528,6 @@ export function createTerrainMeshes(
     entry.stitch = w.bits[i] as number;
     return entry;
   }
-
-  /** What cell `i` of `w`'s slice is expected to take (ms). */
-  const sliceMs = (w: Wanted, i: number): number => FACE_PATCH_SLICE_MS[(w.cells[i] as PatchCell).spacing] ?? WIDE_SLICE_MS;
 
   /**
    * The set `w` drawn: each cell built since taken into the set, and the patch it replaces dropped; then, unless
@@ -578,11 +578,12 @@ export function createTerrainMeshes(
     const w = want(ci, cj);
     for (const i of w.changed) {
       if ((nearOnly && (w.cells[i] as PatchCell).spacing !== PATCH_NEAR_SPACING) || isReady(w, i)) continue;
-      yield sliceMs(w, i);
       if (disposed) return;
       yield* makeSlices(w, i);
+      // A cell is a slice at the least: the jobs behind it and the frame's share are looked at between cells.
+      yield;
     }
-    yield;
+    yield FACE_PATCH_SHOW_MS;
     if (uploads !== undefined) yield* uploads.hold(showBytes(w, nearOnly));
     if (disposed) return;
     showPatches(w, nearOnly);
@@ -594,9 +595,9 @@ export function createTerrainMeshes(
     const w = want(ci, cj);
     for (const i of w.changed) {
       if (isReady(w, i)) continue;
-      yield sliceMs(w, i);
       if (disposed) return;
       yield* makeSlices(w, i);
+      yield;
     }
   }
 
@@ -718,7 +719,7 @@ export function createTerrainMeshes(
     to.geometry = geometry;
     yield* ringGeometrySlices(ring, finer === null ? null : holeCellsFor(ring, finer), coarser, geometry, coverOf(level));
     const vertices = ringVertices(geometry);
-    to.plugin = terrainVertexData(vertices, to.plugin);
+    to.plugin = yield* terrainVertexDataSlices(vertices, to.plugin);
     const whole = to.indices ?? new Uint32Array(geometry.indices.length);
     to.indices = whole;
     whole.set(vertices.indices);
