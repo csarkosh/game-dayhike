@@ -8,7 +8,7 @@ import { DEFAULT_TERRAIN_VARIANT, elevationAt, setActiveTerrainVariant } from ".
 import { AiState, Phase, type EnemyState, type PlayerState } from "../../src/sim/types.js";
 import { ENEMY_HALF, TICK_DT } from "../../src/sim/constants.js";
 import { trailDistance } from "../../src/sim/trail.js";
-import { HOLLOW_HUNT_SPEED, WAY_LEAD_M, spawnHollow } from "../../src/sim/hollow.js";
+import { HOLLOW_HUNT_SPEED, WAY_AIM_STEP_M, WAY_LEAD_M, spawnHollow } from "../../src/sim/hollow.js";
 import { wayDirection, wayDistance, wayPoint, wayProject } from "../../src/sim/wayDown.js";
 import { wayOf } from "../../src/sim/wayDraw.js";
 import { graph } from "./helpers/stemGraph.js";
@@ -48,9 +48,9 @@ function strayStretch(w: World): number {
 }
 
 describe("a Hollow hunting down the way", SUITE, () => {
-  it("names its lead", () => { expect(WAY_LEAD_M).toBe(12); });
+  it("names its lead, and the places on the way it walks to", () => { expect([WAY_LEAD_M, WAY_AIM_STEP_M]).toEqual([12, 4]); });
 
-  it("closes on a player 200 m down the way along the way, never further than 8 m off it", () => {
+  it("closes on a player 200 m down the way along the way, never further than 3 m off it", () => {
     const { w, p, h } = chase();
     const s0 = strayStretch(w);
     const from = wayPoint(w.way!, s0, { x: 0, z: 0 }), to = wayPoint(w.way!, s0 + 200, { x: 0, z: 0 });
@@ -63,7 +63,7 @@ describe("a Hollow hunting down the way", SUITE, () => {
       tickWorld(w, new Map());
       maxOff = Math.max(maxOff, wayDistance(w.way!, h.pos.x, h.pos.z));
     }
-    expect(maxOff).toBeLessThan(8);
+    expect(maxOff).toBeLessThan(3);
     expect(wayProject(w.way!, h.pos.x, h.pos.z).s).toBeGreaterThan(s0 + HOLLOW_HUNT_SPEED * 20 * 0.8);
   });
 

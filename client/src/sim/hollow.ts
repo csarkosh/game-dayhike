@@ -346,8 +346,17 @@ function followRoute(h: EnemyState, world: World, graph: TrailGraph, dt: number,
   return true;
 }
 
-/** Metres down the way from its own place a Hollow walks toward, and within which of its player's place along the way it turns straight for them. */
+/**
+ * Metres of its player's place along the way within which a Hollow turns
+ * straight for them, and the metres apart the places on the way it walks to
+ * stand: it walks to the next but one of them from its own place, 4 to 8 m
+ * on, a place that stands still while it closes on it. (Until 2026-11-19 it
+ * walked to a point always 12 m ahead of itself: a point that kept its
+ * distance read as no progress on a straight stretch, and a 12 m chord cut
+ * across what a bend of the way goes round.)
+ */
 export const WAY_LEAD_M = 12;
+export const WAY_AIM_STEP_M = 4;
 const WAY_AIM = { x: 0, z: 0 };
 
 /**
@@ -372,7 +381,7 @@ function pursue(h: EnemyState, world: World, graph: TrailGraph, dt: number, targ
       h.lastDistSq = Infinity;
       return;
     }
-    const aim = wayPoint(world.way, mine + (gap > 0 ? WAY_LEAD_M : -WAY_LEAD_M), WAY_AIM);
+    const aim = wayPoint(world.way, (gap > 0 ? Math.floor(mine / WAY_AIM_STEP_M) + 2 : Math.ceil(mine / WAY_AIM_STEP_M) - 2) * WAY_AIM_STEP_M, WAY_AIM);
     walkToward(h, world, dt, aim.x, aim.z, speed);
     return;
   }

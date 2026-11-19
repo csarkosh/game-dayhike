@@ -1,11 +1,11 @@
 /**
  * Drawing the way down (docs/gameplay/2026-11-13-the-way-down.md): the one
- * path from the crest to the pad that the chase holds a player to. A meander
- * about the straight line, sized so its length is the design's aim, then a
- * search over the ground for the cheapest line that keeps to it: off the
- * lakes, the sea and the slopes a player slides on, round every trunk, log,
- * rock and cliff a runner could not step over, a little cheaper along the
- * trail. Where nothing gets through, the
+ * path from the crest to the pad that the chase holds a player to. Nearly
+ * the straight line: a long, shallow meander about it, then a search over
+ * the ground for the cheapest line that keeps to it (off the lakes, the sea
+ * and the slopes a player slides on, round every trunk, log, rock and cliff
+ * a runner could not step over, a little cheaper along the trail), and that
+ * line eased until its bends are soft. Where nothing gets through, the
  * trail's stem, flagged.
  *
  * Every peer draws it from the seed alone, long before the find, a slice at a
@@ -24,35 +24,18 @@ import { hash2 } from "./field.js";
 import { stemAhead, stemNodes } from "./trailRoute.js";
 import { makeWay, type WayDown } from "./wayDown.js";
 
-/** Metres a clean run aims at: two minutes at the sprint's 7 m/s. */
-export const WAY_TARGET_M = 840;
-/** The most the way may be of the straight line, and the least (what leaves it room to bend). */
-export const WAY_MAX_RATIO = 2;
-export const WAY_MIN_RATIO = 1.12;
-/** No way is longer than this while its straight line allows: a line over 1,027 m winds less than WAY_MIN_RATIO to keep under it, and one over 1,095 m is WAY_LONG_RATIO of itself. */
-export const WAY_MAX_M = 1150;
-export const WAY_LONG_RATIO = 1.05;
-/** The shape's rules, held by the tests: the longest straight stretch, the most the distance to the car may grow, the least two stretches stand apart. */
-export const WAY_STRAIGHT_MAX_M = 40;
 /**
- * The longest a drawn line's stretch may measure straight before the draw
- * bends it, and the cells round the stretch's middle it walls to do so. A
- * stretch is straight while its segments' headings all lie within 8 degrees
- * of each other (STRAIGHT_COS is that angle's cosine): a line wound least
- * measures 44 to 48 m by that, which stands; a line crossing from the meander
- * to one of its copies, or back, ran straight for 60 m and more.
+ * What the way's length aims at, as a share of its straight line: nearly
+ * direct, with a fiftieth over for bends so long they are only felt. (Until
+ * 2026-11-19 the way wound to a length of its own, 840 m or twice the line,
+ * and no stretch of it ran straight: it read as a zigzag.)
  */
-export const WAY_STRAIGHT_MOST_M = 46;
-export const WAY_BEND_CELLS = 2;
-/** Rounds of the search a bend earns over BOX_ROUNDS (one to go round it, more for what the new line meets), and the most all a line's bends may earn: in a thick wood the trunks on the line take the rounds there are. */
-const BEND_EARNS = 3;
-const BEND_ROUNDS_MOST = 18;
-const STRAIGHT_COS = 0.9902680687415704;
+export const WAY_RATIO = 1.02;
+/** The shape's rules, held by the tests: the most the distance to the car may grow, and the least two stretches stand apart. */
 export const WAY_BACK_MAX_M = 10;
 export const WAY_APART_M = 25;
-/** Metres of a whole wave of the meander at its straightest (the least ratio), and at its widest (the most): wide waves keep a long way's bends gentle. */
-export const WAY_WAVE_M = 100;
-export const WAY_WAVE_WIDE_M = 220;
+/** Metres of a whole wave of the meander: a bend to one side and back is this long, so its radius is some 200 m. */
+export const WAY_WAVE_M = 320;
 /** Metres a cell of the search spans. */
 export const WAY_CELL_M = 3;
 /** Metres down the stem from the crest the way begins: where a party stands at the find (summit.ts DISCOVERY_RADIUS; a test holds the two equal). */
@@ -78,8 +61,30 @@ const TRAIL_COST = 0.95;
 /** Rounds of the search for what stands on the line (each round finds a few more: a wood is full of trunks), and of the whole for the length. */
 const BOX_ROUNDS = 24;
 const LENGTH_ROUNDS = 3;
-/** Points either side a point is averaged with. */
-const SMOOTH_REACH = 3;
+/**
+ * The line found is pulled taut and then eased, so that its bends are soft.
+ * Taut: from each point the line runs straight to the furthest of the next
+ * PULL_POINTS (some 40 m of it: the meander's waves are far longer) that it
+ * can reach over clear ground, so the search's steps and its weaving between
+ * trunks are gone. Eased: each point moves EASE_SHARE of the way to the
+ * middle of its two neighbours, EASE_PASSES times, wherever the place it
+ * would move to is clear, which leaves nothing shorter than some 80 m of the
+ * corners and all but the whole of the meander's waves. Rounded: ROUND_PASSES
+ * more, each followed by a step back out (EASE_BACK), which holds the line's
+ * long shapes where they are and lets the points either side of a corner
+ * that something pins swing wide of it. Clear is a place in no cell the
+ * ground rules out, where a player stands with EASE_MARGIN of slope to
+ * spare and nothing a runner could not step over is within EASE_CLEAR_M of
+ * them, asked by squares of FINE_M.
+ */
+const PULL_POINTS = 14;
+const EASE_PASSES = 150;
+const ROUND_PASSES = 150;
+const EASE_SHARE = 0.5;
+const EASE_BACK = -0.51;
+const EASE_CLEAR_M = 0.4;
+const EASE_MARGIN = 0.05;
+const FINE_M = 0.5;
 /** Cells priced between two yields: a cell is five to nine reads of the ground (the walkable rock's layer), some 50 µs on a laptop, so a slice is well under a millisecond there. */
 const SLICE_CELLS = 8;
 /** Samples of the meander its length is measured by. */
@@ -87,9 +92,7 @@ const MEANDER_SAMPLES = 400;
 
 /** What the way's length aims at for a straight line of `straight` metres. */
 export function wayTarget(straight: number): number {
-  const aim = Math.max(WAY_MIN_RATIO * straight, Math.min(WAY_TARGET_M, WAY_MAX_RATIO * straight));
-  // A line so long that its least winding passes the most a way may be winds less, down to WAY_LONG_RATIO.
-  return Math.min(aim, Math.max(WAY_MAX_M, WAY_LONG_RATIO * straight));
+  return WAY_RATIO * straight;
 }
 
 type Meander = { halfWaves: number; flip: number; amplitude: number };
@@ -126,45 +129,6 @@ function amplitudeFor(m: Meander, straight: number, target: number, most: number
     else hi = mid;
   }
   return (lo + hi) / 2;
-}
-
-/**
- * The middle point of each of the line's stretches that measures straight
- * for over WAY_STRAIGHT_MOST_M, one after another down the line. Headings are
- * compared as unit vectors (a square root is rounded alike everywhere, a
- * tangent is not): a stretch holds while the two of its headings furthest
- * apart are within the angle.
- */
-function longStraightMiddles(way: WayDown): number[] {
-  const n = way.xs.length - 1;
-  const hx = new Float64Array(n), hz = new Float64Array(n);
-  for (let i = 0; i < n; i++) {
-    const dx = (way.xs[i + 1] as number) - (way.xs[i] as number), dz = (way.zs[i + 1] as number) - (way.zs[i] as number);
-    const len = Math.sqrt(dx * dx + dz * dz);
-    hx[i] = len > 0 ? dx / len : 0;
-    hz[i] = len > 0 ? dz / len : 0;
-  }
-  const middles: number[] = [];
-  for (let i = 0; i < n; i++) {
-    // The headings furthest to the left and to the right of the first's, by the sine of each one's turn from it.
-    let lo = i, hi = i, sLo = 0, sHi = 0, j = i;
-    while (j + 1 < n) {
-      const k = j + 1;
-      const turn = (hx[i] as number) * (hz[k] as number) - (hz[i] as number) * (hx[k] as number);
-      const nLo = turn < sLo ? k : lo, nHi = turn > sHi ? k : hi;
-      const ahead = (hx[i] as number) * (hx[k] as number) + (hz[i] as number) * (hz[k] as number);
-      if (ahead <= 0 || (hx[nLo] as number) * (hx[nHi] as number) + (hz[nLo] as number) * (hz[nHi] as number) < STRAIGHT_COS) break;
-      if (nLo === k) { lo = k; sLo = turn; }
-      if (nHi === k) { hi = k; sHi = turn; }
-      j = k;
-    }
-    if ((way.cum[j + 1] as number) - (way.cum[i] as number) > WAY_STRAIGHT_MOST_M) {
-      middles.push((i + j + 1) >> 1);
-      // The next stretch begins where this one ended.
-      i = j;
-    }
-  }
-  return middles;
 }
 
 const SHORE = newLakeShore();
@@ -205,15 +169,14 @@ export function* drawWay(world: World): Generator<void, WayDown | null, void> {
   const ux = (E.x - S.x) / straight, uz = (E.z - S.z) / straight;
   const px = -uz, pz = ux;
   const target = wayTarget(straight);
-  const ratio = target / straight;
-  // Wider waves the more the way must wind, so its bends stay gentle.
-  const wave = WAY_WAVE_M + ((WAY_WAVE_WIDE_M - WAY_WAVE_M) * Math.max(0, ratio - WAY_MIN_RATIO)) / (WAY_MAX_RATIO - WAY_MIN_RATIO);
-  const halfWaves = Math.max(2, Math.round(straight / (wave / 2)));
+  const halfWaves = Math.max(2, Math.round(straight / (WAY_WAVE_M / 2)));
   const most = (1.2 * straight) / halfWaves;
   const meander: Meander = { halfWaves, flip: hash2(S.x, S.z, seed) < 0.5 ? 0 : 1, amplitude: 0 };
   meander.amplitude = amplitudeFor(meander, straight, target, most);
 
   let priced = 0, sliced = 0;
+  // What stands at a place, by squares of FINE_M, asked once each (`clearAt`).
+  const fine = new Map<number, boolean>();
   let best: WayDown | null = null;
   let widened = 0;
   for (let round = 0; round < LENGTH_ROUNDS; ) {
@@ -245,15 +208,31 @@ export function* drawWay(world: World): Generator<void, WayDown | null, void> {
       }
     }
     const walled = new Uint8Array(count);
-    const price = (c: number): number => {
+    // Cells the ground itself rules out whatever their slope: the crest's, a lake's, the sea's.
+    const barred = new Uint8Array(count);
+    /** Whether anything a runner could not step over stands within `half` metres (in x and in z) of a place. */
+    const standsWithin = (x: number, z: number, half: number): boolean => {
+      const h = ground.heightAt(x, z);
+      BOX_MIN.x = x - half; BOX_MIN.y = h - 1; BOX_MIN.z = z - half;
+      BOX_MAX.x = x + half; BOX_MAX.y = h + 2 * PLAYER_HALF.y; BOX_MAX.z = z + half;
+      for (const box of boxesNear(world.boxes, BOX_MIN, BOX_MAX)) {
+        if (box.max.x < BOX_MIN.x || box.min.x > BOX_MAX.x || box.max.z < BOX_MIN.z || box.min.z > BOX_MAX.z) continue;
+        if (box.max.y - h <= STEP_HEIGHT || box.min.y > BOX_MAX.y) continue;
+        return true;
+      }
+      return false;
+    };
+    /** A cell's cost a metre: what its ground costs, or Infinity where the search has walled it. */
+    const price = (c: number): number => (walled[c] === 1 ? Infinity : groundCost(c));
+    const groundCost = (c: number): number => {
       const known = cost[c] as number;
       if (known !== 0) return known;
       priced++;
       const i = c % cols, j = (c - i) / cols;
       const x = worldX(i, j), z = worldZ(i, j);
       let value = Infinity;
-      let dry = walled[c] === 0;
-      if (dry) {
+      let dry = true;
+      {
         // The crest is the Hollow's: nothing of the way within WAY_BODY_CLEAR_M of the body, nor within
         // WAY_CREST_CLEAR_M of it on the side away from the party.
         const bx = x - crest.x, bz = z - crest.z;
@@ -269,6 +248,7 @@ export function* drawWay(world: World): Generator<void, WayDown | null, void> {
           }
         }
       }
+      if (!dry) barred[c] = 1;
       if (dry) {
         ground.normalAt(x, z, NORMAL);
         // The trail's own cells are never refused for their slope: its bed is cut level through ground a centre beside it may not be.
@@ -286,11 +266,37 @@ export function* drawWay(world: World): Generator<void, WayDown | null, void> {
       return value;
     };
 
+    /**
+     * Whether a place is clear: in no cell the ground rules out, on ground a player stands on with EASE_MARGIN
+     * to spare, and with nothing standing within EASE_CLEAR_M of a player there. The last two are asked of the
+     * place's square of FINE_M, once: the search's cells are too coarse to ease a line between two trunks.
+     */
+    const clearAt = (x: number, z: number): boolean => {
+      const c = cellOf(x, z);
+      if (c < 0) return false;
+      groundCost(c);
+      if (barred[c] === 1) return false;
+      const qx = Math.round(x / FINE_M), qz = Math.round(z / FINE_M);
+      const key = (qx + 1048576) * 2097152 + (qz + 1048576);
+      let clear = fine.get(key);
+      if (clear === undefined) {
+        const fx = qx * FINE_M, fz = qz * FINE_M;
+        ground.normalAt(fx, fz, NORMAL);
+        clear = NORMAL.y > (ground.standNormalY?.(fx, fz) ?? GROUND_NORMAL_Y) + EASE_MARGIN && !standsWithin(fx, fz, PLAYER_HALF.x + EASE_CLEAR_M + FINE_M / 2);
+        fine.set(key, clear);
+        priced++;
+      }
+      return clear;
+    };
+    /** Whether the straight line between two places is clear, a square of FINE_M at a time. */
+    const clearBetween = (a: { x: number; z: number }, b: { x: number; z: number }): boolean => {
+      const parts = Math.max(1, Math.ceil(Math.sqrt((b.x - a.x) * (b.x - a.x) + (b.z - a.z) * (b.z - a.z)) / FINE_M));
+      for (let q = 1; q < parts; q++) if (!clearAt(a.x + ((b.x - a.x) * q) / parts, a.z + ((b.z - a.z) * q) / parts)) return false;
+      return true;
+    };
     const from = cellOf(S.x, S.z), to = cellOf(E.x, E.z);
     let drawn: WayDown | null = null;
-    // The rounds this line may take: BOX_ROUNDS, and what its bends earn.
-    let rounds = BOX_ROUNDS;
-    for (let boxRound = 0; boxRound < rounds; boxRound++) {
+    for (let boxRound = 0; boxRound < BOX_ROUNDS; boxRound++) {
       // A*: the cheapest line of cells from the crest's to the pad's.
       const gScore = new Float64Array(count).fill(Infinity);
       const parent = new Int32Array(count).fill(-1);
@@ -392,18 +398,9 @@ export function* drawWay(world: World): Generator<void, WayDown | null, void> {
       for (const c of cells) {
         if (c === from || c === to) continue;
         const i = c % cols, j = (c - i) / cols;
-        const x = worldX(i, j), z = worldZ(i, j);
-        const h = ground.heightAt(x, z);
-        const half = WAY_CELL_M / 2 + PLAYER_HALF.x;
-        BOX_MIN.x = x - half; BOX_MIN.y = h - 1; BOX_MIN.z = z - half;
-        BOX_MAX.x = x + half; BOX_MAX.y = h + 2 * PLAYER_HALF.y; BOX_MAX.z = z + half;
-        for (const box of boxesNear(world.boxes, BOX_MIN, BOX_MAX)) {
-          if (box.max.x < BOX_MIN.x || box.min.x > BOX_MAX.x || box.max.z < BOX_MIN.z || box.min.z > BOX_MAX.z) continue;
-          if (box.max.y - h <= STEP_HEIGHT || box.min.y > BOX_MAX.y) continue;
+        if (standsWithin(worldX(i, j), worldZ(i, j), WAY_CELL_M / 2 + PLAYER_HALF.x)) {
           walled[c] = 1;
-          cost[c] = Infinity;
           blocked++;
-          break;
         }
         priced++;
         if (priced - sliced >= SLICE_CELLS) {
@@ -412,29 +409,55 @@ export function* drawWay(world: World): Generator<void, WayDown | null, void> {
         }
       }
       // The last round's line stands with whatever is still on it: a trunk to run round, never a reason for no way.
-      if (blocked > 0 && boxRound < rounds - 1) continue;
+      if (blocked > 0 && boxRound < BOX_ROUNDS - 1) continue;
 
-      // The cells' centres, the ends the crest and the pad themselves, each averaged with its neighbours; a point
-      // the averaging put on refused ground is its cell's own again.
+      // The cells' centres, the ends the crest and the pad themselves.
       const raw = cells.map((c) => {
         const i = c % cols, j = (c - i) / cols;
         return { x: worldX(i, j), z: worldZ(i, j) };
       });
       raw[0] = S;
       raw[raw.length - 1] = E;
-      const smooth = raw.map((p, k) => {
-        if (k === 0 || k === raw.length - 1) return p;
-        const reachK = Math.min(SMOOTH_REACH, k, raw.length - 1 - k);
-        let x = 0, z = 0;
-        for (let d = -reachK; d <= reachK; d++) {
-          x += (raw[k + d] as { x: number; z: number }).x;
-          z += (raw[k + d] as { x: number; z: number }).z;
+      // Pulled taut: from each point straight to the furthest of the next few it reaches over clear ground.
+      const taut: { x: number; z: number }[] = [raw[0] as { x: number; z: number }];
+      for (let k = 0; k + 1 < raw.length; ) {
+        let j = Math.min(raw.length - 1, k + PULL_POINTS);
+        while (j > k + 1 && !clearBetween(raw[k] as { x: number; z: number }, raw[j] as { x: number; z: number })) j--;
+        taut.push(raw[j] as { x: number; z: number });
+        k = j;
+        if (priced - sliced >= SLICE_CELLS) {
+          sliced = priced;
+          yield;
         }
-        const q = { x: x / (2 * reachK + 1), z: z / (2 * reachK + 1) };
-        const c = cellOf(q.x, q.z);
-        return c < 0 || price(c) === Infinity ? p : q;
-      });
-      drawn = makeWay(smooth, straight, false);
+      }
+      // A point every cell's width of it again, and eased: a point stays where the place it would move to is not clear.
+      const eased: { x: number; z: number }[] = [{ x: S.x, z: S.z }];
+      for (let k = 1; k < taut.length; k++) {
+        const a = taut[k - 1] as { x: number; z: number }, b = taut[k] as { x: number; z: number };
+        const parts = Math.max(1, Math.ceil(Math.sqrt((b.x - a.x) * (b.x - a.x) + (b.z - a.z) * (b.z - a.z)) / WAY_CELL_M));
+        for (let q = 1; q <= parts; q++) eased.push({ x: a.x + ((b.x - a.x) * q) / parts, z: a.z + ((b.z - a.z) * q) / parts });
+      }
+      const count2 = eased.length;
+      const ex = new Float64Array(count2), ez = new Float64Array(count2);
+      for (let pass = 0; pass < EASE_PASSES + 2 * ROUND_PASSES; pass++) {
+        const share = pass < EASE_PASSES || (pass - EASE_PASSES) % 2 === 0 ? EASE_SHARE : EASE_BACK;
+        for (let k = 1; k + 1 < count2; k++) {
+          const p = eased[k] as { x: number; z: number }, a = eased[k - 1] as { x: number; z: number }, b = eased[k + 1] as { x: number; z: number };
+          ex[k] = p.x + ((a.x + b.x) / 2 - p.x) * share;
+          ez[k] = p.z + ((a.z + b.z) / 2 - p.z) * share;
+        }
+        for (let k = 1; k + 1 < count2; k++) {
+          if (!clearAt(ex[k] as number, ez[k] as number)) continue;
+          const p = eased[k] as { x: number; z: number };
+          p.x = ex[k] as number;
+          p.z = ez[k] as number;
+        }
+        if (priced - sliced >= SLICE_CELLS) {
+          sliced = priced;
+          yield;
+        }
+      }
+      drawn = makeWay(eased, straight, false);
       // The line's own points, between the cells' centres: one on ground a player could not stand on (a bank
       // the centres straddle), or where something they could not step over stands (the averaging cuts corners
       // the cells went round: a fallen trunk's end), walls its cell, and the search goes again. Where something
@@ -465,6 +488,10 @@ export function* drawWay(world: World): Generator<void, WayDown | null, void> {
           }
         }
         if (!refused) continue;
+        // The place and the squares round it are not clear, whatever was found of their own middles: the line is
+        // not eased back through them.
+        const qx = Math.round(x / FINE_M), qz = Math.round(z / FINE_M);
+        for (let dz = -1; dz <= 1; dz++) for (let dx = -1; dx <= 1; dx++) fine.set((qx + dx + 1048576) * 2097152 + (qz + dz + 1048576), false);
         if (stoodOn) {
           let near = -1, least = Infinity;
           for (let q = 1; q + 1 < cells.length; q++) {
@@ -477,40 +504,16 @@ export function* drawWay(world: World): Generator<void, WayDown | null, void> {
           }
           if (near >= 0 && walled[near] === 0) {
             walled[near] = 1;
-            cost[near] = Infinity;
             slid++;
           }
         }
         const c = cellOf(x, z);
         if (c < 0 || c === from || c === to || walled[c] === 1) continue;
         walled[c] = 1;
-        cost[c] = Infinity;
         slid++;
       }
-      // A stretch that runs straight for too long is bent: the cells round its middle are walled, as if a boulder
-      // stood there, and the search goes again and round them. Every such stretch of the line at once, and
-      // whatever else this round found: a round spent on a trunk is not one a straight stretch waits behind.
-      let bent = 0;
-      for (const middle of longStraightMiddles(drawn)) {
-        const c = cellOf(drawn.xs[middle] as number, drawn.zs[middle] as number);
-        if (c >= 0) {
-          const ci = c % cols, cj = (c - ci) / cols;
-          for (let dj = -WAY_BEND_CELLS; dj <= WAY_BEND_CELLS; dj++) {
-            for (let di = -WAY_BEND_CELLS; di <= WAY_BEND_CELLS; di++) {
-              const ni = ci + di, nj = cj + dj;
-              if (di * di + dj * dj > WAY_BEND_CELLS * WAY_BEND_CELLS || ni < 0 || ni >= cols || nj < 0 || nj >= rows) continue;
-              const b = nj * cols + ni;
-              if (b === from || b === to || walled[b] === 1) continue;
-              walled[b] = 1;
-              cost[b] = Infinity;
-              bent++;
-            }
-          }
-        }
-      }
-      if (bent > 0) rounds = Math.min(rounds + BEND_EARNS, BOX_ROUNDS + BEND_ROUNDS_MOST);
       yield;
-      if ((slid === 0 && bent === 0) || boxRound === rounds - 1) break;
+      if (slid === 0 || boxRound === BOX_ROUNDS - 1) break;
     }
     if (drawn === null) {
       // Nothing got through this much ground: more of it, or no more to try.

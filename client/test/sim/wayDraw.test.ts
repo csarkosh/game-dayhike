@@ -14,10 +14,10 @@ import type { WayDown } from "../../src/sim/wayDown.js";
 import { stemAhead } from "../../src/sim/trailRoute.js";
 import { DISCOVERY_RADIUS, emergePoint } from "../../src/sim/summit.js";
 import {
-  WAY_APART_M, WAY_BACK_MAX_M, WAY_BODY_CLEAR_M, WAY_CREST_CLEAR_M, WAY_LONG_RATIO, WAY_MAX_M, WAY_MAX_RATIO, WAY_START_M, WAY_MIN_RATIO, WAY_STRAIGHT_MAX_M, WAY_TARGET_M,
+  WAY_APART_M, WAY_BACK_MAX_M, WAY_BODY_CLEAR_M, WAY_CREST_CLEAR_M, WAY_RATIO, WAY_START_M, WAY_WAVE_M,
   drawWay, drawWayNow, wayTarget,
 } from "../../src/sim/wayDraw.js";
-import { STRAIGHT_SLACK_M, wayRules } from "./helpers/wayRules.js";
+import { TURN_MOST_DEG, UNGENTLE_SHARE_MOST, wayRules } from "./helpers/wayRules.js";
 import { timeLimit } from "../helpers/timeLimit.js";
 
 /** A file of the client, wherever the suite is run from (the gate runs it from the repository's root). */
@@ -30,18 +30,13 @@ const SUITE = { timeout: timeLimit(120_000) };
 
 describe("the way's aim", () => {
   it("names the design's numbers", () => {
-    expect([WAY_TARGET_M, WAY_MAX_RATIO, WAY_MIN_RATIO, WAY_MAX_M, WAY_STRAIGHT_MAX_M, WAY_BACK_MAX_M, WAY_APART_M]).toEqual([840, 2, 1.12, 1150, 40, 10, 25]);
+    expect([WAY_RATIO, WAY_WAVE_M, WAY_BACK_MAX_M, WAY_APART_M]).toEqual([1.02, 320, 10, 25]);
   });
 
-  it("sets the target from the straight line: twice a short one, 840 m, or just over a long one", () => {
-    expect(wayTarget(260)).toBe(520);
-    expect(wayTarget(500)).toBe(840);
-    expect(wayTarget(900)).toBeCloseTo(1008, 6);
-  });
-
-  it("winds a very long line less, to keep under the most a way may be while it can", () => {
-    expect(wayTarget(1057)).toBe(WAY_MAX_M);
-    expect(wayTarget(1200)).toBeCloseTo(WAY_LONG_RATIO * 1200, 6);
+  it("aims at a fiftieth over the straight line, whatever its length: nearly direct", () => {
+    expect(wayTarget(260)).toBeCloseTo(265.2, 6);
+    expect(wayTarget(500)).toBeCloseTo(510, 6);
+    expect(wayTarget(1200)).toBeCloseTo(1224, 6);
   });
 });
 
@@ -83,13 +78,13 @@ describe("drawing the way down", SUITE, () => {
     }
   });
 
-  it("is the target's length, bends, never heads back and never doubles on itself", () => {
+  it("is nearly direct, bends softly, never heads back and never doubles on itself", () => {
     const r = wayRules(way, world.trail!.trailhead);
-    expect(r.length).toBeGreaterThan(r.target * 0.9);
+    expect(r.length).toBeGreaterThanOrEqual(way.straight);
     expect(r.length).toBeLessThan(r.target * 1.1);
-    expect(r.longestStraight).toBeLessThanOrEqual(WAY_STRAIGHT_MAX_M + STRAIGHT_SLACK_M);
+    expect(r.sharpestTurn).toBeLessThanOrEqual(TURN_MOST_DEG);
+    expect(r.ungentleShare).toBeLessThanOrEqual(UNGENTLE_SHARE_MOST);
     expect(r.worstBack).toBeLessThanOrEqual(WAY_BACK_MAX_M);
-    expect(r.length).toBeLessThanOrEqual(WAY_MAX_M);
     expect(r.closestApart).toBeGreaterThanOrEqual(WAY_APART_M);
   });
 
@@ -138,20 +133,21 @@ describe("drawing the way down", SUITE, () => {
   });
 });
 
-describe("a way that leaves its meander for one of its copies", SUITE, () => {
-  // On these two worlds something stands across the near ground, and the cheapest line crosses to a copy of the
-  // meander 80 m to the side and back. Each crossing was a straight diagonal, 62 m and 60 m by the rules' measure.
-  // On the other two the wood is thick: the trunks on the line took the search's rounds, and none were left to bend with.
+describe("a way on ground that is in its way", SUITE, () => {
+  // On the first two worlds something stands across the near ground, and the line crosses to a copy of the meander
+  // 80 m to the side and back; on the third the party stands on the crest's far side and the way comes round it;
+  // on the last the wood is thick. Each is still soft: no corner, and little of it past a gentle bend.
   for (const token of ["hollow16", "hollow24", "hollow46", "hollow49"]) {
-    it(`bends every long straight stretch on ${token}: none measures over the design's 40 m and its give`, () => {
+    it(`bends softly on ${token}, and is not long for it`, () => {
       const w = createForestWorld(createForest(seedFromToken(token)));
       const way = drawWayNow(w) as WayDown;
       expect(way.fallback).toBe(false);
       const r = wayRules(way, w.trail!.trailhead);
-      expect(r.longestStraight).toBeLessThanOrEqual(WAY_STRAIGHT_MAX_M + STRAIGHT_SLACK_M);
+      expect(r.sharpestTurn).toBeLessThanOrEqual(TURN_MOST_DEG);
+      expect(r.ungentleShare).toBeLessThanOrEqual(UNGENTLE_SHARE_MOST);
       // And it is still a way of its length that never doubles on itself.
-      expect(r.length).toBeGreaterThan(r.target * 0.9);
-      expect(r.length).toBeLessThan(r.target * 1.25);
+      expect(r.length).toBeGreaterThanOrEqual(way.straight);
+      expect(r.length).toBeLessThan(r.target * 1.4);
       expect(r.closestApart).toBeGreaterThanOrEqual(WAY_APART_M);
     }, timeLimit(120_000));
   }

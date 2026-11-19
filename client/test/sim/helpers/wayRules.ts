@@ -1,8 +1,8 @@
 import type { WayDown } from "../../../src/sim/wayDown.js";
 import { wayTarget } from "../../../src/sim/wayDraw.js";
 
-/** Degrees a stretch's headings may differ by and still be straight. */
-const STRAIGHT_DEG = 8;
+/** Metres of the way a turn is measured over: a sprint's two seconds. */
+const TURN_OVER_M = 14;
 /** Metres along the way two points must be apart before their closeness counts as the way doubling on itself. */
 const APART_ALONG_M = 60;
 /**
@@ -15,21 +15,33 @@ const APART_ALONG_M = 60;
  */
 const START_M = 160;
 /**
- * The give the tests allow on two of the shape's rules, which the design
- * states as "about": a straight stretch may measure 8 m over
- * WAY_STRAIGHT_MAX_M (a long line, wound least, measures 44 to 48 m by this
- * file's 8 degrees), and a way gone round a lake may head back 5 m more than
+ * The give the tests allow on heading back, which the design states as
+ * "about": a way gone round a lake may head back 5 m more than
  * WAY_BACK_MAX_M (measured 11 m).
  */
-export const STRAIGHT_SLACK_M = 8;
 export const BACK_SLACK_M = 5;
+/**
+ * How soft the way's bends are, as the tests hold them: the most its heading
+ * may turn over any TURN_OVER_M of it, in degrees, and the share of its
+ * length that may turn by more than a gentle bend does (GENTLE_DEG): what
+ * stands in the way is gone round, and that is the only turning there is.
+ * Measured on seven worlds, 2026-11-19: the sharpest 40 to 78 degrees (a
+ * fallen trunk or a rock band the line is held against), 6 to 16 % of the
+ * way past gentle. The way before, which wound to a length and bent every
+ * straight stretch, turned through 90 degrees in places.
+ */
+export const TURN_MOST_DEG = 90;
+export const GENTLE_DEG = 15;
+export const UNGENTLE_SHARE_MOST = 0.25;
 
 export type WayRules = {
   length: number;
   /** What the way's length aims at, from its straight line (wayTarget). */
   target: number;
-  /** The longest stretch whose headings stay within 8 degrees of each other, metres. */
-  longestStraight: number;
+  /** The most the heading turns over any 14 m of the way, degrees. */
+  sharpestTurn: number;
+  /** The share of the way's points whose 14 m on turn by more than a gentle bend (15 degrees). */
+  ungentleShare: number;
   /** The most the straight-line distance to `end` grows before it falls again, metres, past the way's start (START_M). */
   worstBack: number;
   /** The same over the start alone: how far the way's start, going round the crest, takes it from the pad. */
@@ -52,18 +64,15 @@ export function wayRules(way: WayDown, end: { x: number; z: number }): WayRules 
     }
     headings.push(h);
   }
-  let longestStraight = 0;
+  let sharpestTurn = 0, ungentle = 0;
   for (let i = 0; i < headings.length; i++) {
-    let lo = headings[i] as number, hi = lo, j = i;
-    while (j + 1 < headings.length) {
-      const h = headings[j + 1] as number;
-      if (Math.max(hi, h) - Math.min(lo, h) > STRAIGHT_DEG) break;
-      lo = Math.min(lo, h);
-      hi = Math.max(hi, h);
-      j++;
-    }
-    longestStraight = Math.max(longestStraight, (way.cum[j + 1] as number) - (way.cum[i] as number));
+    let j = i;
+    while (j + 1 < headings.length && (way.cum[j + 1] as number) - (way.cum[i] as number) < TURN_OVER_M) j++;
+    const turn = Math.abs((headings[j] as number) - (headings[i] as number));
+    sharpestTurn = Math.max(sharpestTurn, turn);
+    if (turn > GENTLE_DEG) ungentle++;
   }
+  const ungentleShare = headings.length > 0 ? ungentle / headings.length : 0;
   let worstBack = 0, startBack = 0, least = Infinity;
   for (let i = 0; i < n; i++) {
     const d = Math.hypot((way.xs[i] as number) - end.x, (way.zs[i] as number) - end.z);
@@ -83,5 +92,5 @@ export function wayRules(way: WayDown, end: { x: number; z: number }): WayRules 
       closestApart = Math.min(closestApart, Math.hypot((way.xs[i] as number) - (way.xs[j] as number), (way.zs[i] as number) - (way.zs[j] as number)));
     }
   }
-  return { length: way.length, target: wayTarget(way.straight), longestStraight, worstBack, startBack, closestApart };
+  return { length: way.length, target: wayTarget(way.straight), sharpestTurn, ungentleShare, worstBack, startBack, closestApart };
 }
