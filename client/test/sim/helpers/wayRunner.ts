@@ -1,12 +1,22 @@
 import { tickWorld, type World } from "../../../src/sim/world.js";
-import { Button, DeathCause, type PlayerState } from "../../../src/sim/types.js";
+import { AiState, Button, DeathCause, type PlayerState } from "../../../src/sim/types.js";
 import { STEP_HEIGHT, TICK_DT } from "../../../src/sim/constants.js";
 import { boxesNear } from "../../../src/sim/boxSource.js";
-import { WAY_RIM_M, wayDistance, wayPoint, wayProject, type WayDown } from "../../../src/sim/wayDown.js";
+import { WAY_RIM_M, wayDirection, wayDistance, wayPoint, wayProject, type WayDown } from "../../../src/sim/wayDown.js";
 
 /** Metres down the way from its own place the runner aims at, and the metres ahead on its heading it looks for something in the way. */
 const AIM_AHEAD_M = 8;
 const LOOK_AHEAD_M = 5;
+/**
+ * A runner who reads the mist (`lunges`): the metres down the way it looks
+ * for a lunge beside the path, the metres past one it still minds it, the
+ * metres from the line one must stand within to count, and the metres to
+ * the side of the line the runner keeps while one is there.
+ */
+const LUNGE_LOOK_M = 45;
+const LUNGE_PAST_M = 6;
+const LUNGE_BESIDE_M = 14;
+const LUNGE_LANE_M = 2.5;
 /** Metres either side of a sampled point that a box must be clear of. */
 const CLEAR_M = 0.6;
 /** The turns off its aim it tries, in degrees, nearest first. */
@@ -65,13 +75,18 @@ function clear(walls: readonly Box[], p: PlayerState, yaw: number): boolean {
  * ahead of their own place, turning off that aim only for a trunk or a rock
  * in the way, to the side with room inside the channel. Runs until the
  * player is safe, dead, or `maxSeconds` pass. `each` is called after every
- * tick, for whatever else a test watches.
+ * tick, for whatever else a test watches. With `lunges`, the runner minds
+ * the nearest lunge beside the path ahead and keeps to the far side of the
+ * path from it ("far"), as a player who has learnt the chase does, or to its
+ * own side ("near"), as nobody should.
  */
-export function runDown(world: World, playerId: number, opts: { maxSeconds?: number; each?: () => void } = {}): RunDown {
+export function runDown(world: World, playerId: number, opts: { maxSeconds?: number; each?: () => void; lunges?: "far" | "near" } = {}): RunDown {
   const way = world.way as WayDown;
   const p = world.state.players.get(playerId) as PlayerState;
   const aim = { x: 0, z: 0 };
   let seq = 0, side = 1, best = -Infinity, stalled = 0, stalledS = 0, maxOff = 0, ticks = 0;
+  /** The side of the line each lunge stood on when it was first seen: where it waited, whichever side it has since come to. */
+  const stoodOn = new Map<number, number>();
   const most = Math.round((opts.maxSeconds ?? 400) / TICK_DT);
   while (ticks < most && !p.safe && p.health > 0) {
     const here = wayProject(way, p.pos.x, p.pos.z);
@@ -84,6 +99,31 @@ export function runDown(world: World, playerId: number, opts: { maxSeconds?: num
       if (stalled > stalledS) stalledS = stalled;
     }
     wayPoint(way, here.s + AIM_AHEAD_M, aim);
+    if (opts.lunges !== undefined) {
+      // The nearest lunge beside the path ahead, and which side of the line it is on.
+      let nearest = Infinity, lungeSide = 0;
+      for (const e of world.state.enemies.values()) {
+        if (e.ai !== AiState.Lunge && e.ai !== AiState.Strike) continue;
+        const at = wayProject(way, e.pos.x, e.pos.z), gap = at.s - here.s;
+        if (gap < -LUNGE_PAST_M || gap > LUNGE_LOOK_M || at.d > LUNGE_BESIDE_M || gap >= nearest) continue;
+        let stood = stoodOn.get(e.id);
+        if (stood === undefined) {
+          const on = wayPoint(way, at.s, { x: 0, z: 0 }), along = wayDirection(way, at.s, { x: 0, z: 0 });
+          stood = (e.pos.x - on.x) * -along.z + (e.pos.z - on.z) * along.x >= 0 ? 1 : -1;
+          stoodOn.set(e.id, stood);
+        }
+        nearest = gap;
+        lungeSide = stood;
+      }
+      if (lungeSide !== 0) {
+        const along = wayDirection(way, here.s + AIM_AHEAD_M, { x: 0, z: 0 });
+        const lane = (opts.lunges === "far" ? -lungeSide : lungeSide) * LUNGE_LANE_M;
+        aim.x += -along.z * lane;
+        aim.z += along.x * lane;
+        // And what stands in its own way it goes round on that side too: a turn to the right is a turn from the way's left.
+        side = opts.lunges === "far" ? lungeSide : -lungeSide;
+      }
+    }
     const want = Math.atan2(aim.x - p.pos.x, aim.z - p.pos.z);
     const snagged = stalled > SNAG_S;
     const walls = wallsNear(world, p, snagged);

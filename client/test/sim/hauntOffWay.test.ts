@@ -50,7 +50,8 @@ describe("the chase answers a player who leaves the way", { timeout: timeLimit(2
       tickWorld(w, new Map([[p.id, { seq: t, moveX: 0, moveZ: 1, yaw, pitch: 0, buttons: Button.Sprint }]]));
       off = Math.max(off, chaseLineDistance(w, p.pos.x, p.pos.z));
       for (const e of w.state.enemies.values()) {
-        if (seen.has(e.id) || (e.ai !== AiState.Shade && e.ai !== AiState.Lunge)) continue;
+        // The way's own lunges wait beside the path for whoever runs it (waylay.test.ts): what answers leaving it is the rest.
+        if (seen.has(e.id) || e.waylay !== 0 || (e.ai !== AiState.Shade && e.ai !== AiState.Lunge)) continue;
         seen.add(e.id);
         if (e.ai === AiState.Shade) standing++;
         if (t * TICK_DT < 8) continue;

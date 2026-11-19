@@ -124,6 +124,7 @@ export function spawnHollow(world: World, at: Vec3, targetId: number, revealS: n
     seen: false,
     emergeTo: null,
     stalks: false,
+    waylay: 0,
   };
   world.state.enemies.set(hollow.id, hollow);
   return hollow;

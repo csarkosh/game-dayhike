@@ -293,7 +293,7 @@ export function spawnWatcher(world: World, at: Vec3, leadId: number): EnemyState
     routeAt: 0,
     approach: false,
     seen: false,
-    emergeTo: null, stalks: false,
+    emergeTo: null, stalks: false, waylay: 0,
   };
   world.state.enemies.set(watcher.id, watcher);
   record.id = watcher.id;

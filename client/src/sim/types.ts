@@ -185,6 +185,13 @@ export type EnemyState = {
    * phase, and its touch kills nobody until it hunts. Host-only.
    */
   stalks: boolean;
+  /**
+   * A lunge that waits beside the way down for its player and comes onto
+   * the path at them (haunt.ts, the way's lungers): the side of the way's
+   * line it waits on, 1 its left and -1 its right, and `approach` is
+   * whether it has been loosed. Host-only. 0 on every other enemy.
+   */
+  waylay: number;
 };
 
 export type WorldState = {

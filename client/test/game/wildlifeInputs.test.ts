@@ -13,7 +13,7 @@ function enemy(id: number, x: number, z: number, ai: AiState): EnemyState {
   return {
     id, pos: { x, y: 0.9, z }, vel: { x: 0, y: 0, z: 0 }, yaw: 0, health: 40, ai,
     targetId: 0, stateTimer: 0, attackCooldown: 0, lastDistSq: Infinity, stuckTimer: 0, unstickTimer: 0,
-    route: [], routeAt: 0, approach: false, seen: false, emergeTo: null, stalks: false,
+    route: [], routeAt: 0, approach: false, seen: false, emergeTo: null, stalks: false, waylay: 0,
   };
 }
 function state(players: PlayerState[], enemies: EnemyState[] = []): WorldState {
