@@ -13,20 +13,25 @@
 import type { QualityTier } from "./quality.js";
 import { hash2 } from "../sim/field.js";
 import { Outcome, Phase, nextRandom } from "../sim/types.js";
-import { WAY_RIM_M } from "../sim/wayDown.js";
+import { WAY_FLOOR_M, WAY_RIM_M } from "../sim/wayDown.js";
 
 /** The most figures a screen keeps at the crowd's thickest. */
 export const CROWD_MOST: Record<QualityTier, number> = { low: 60, medium: 60, high: 60 };
 /**
- * Where they stand, in metres. Beyond the channel's rim: none within
- * CROWD_CLEAR_M of it, CROWD_NEAR_SHARE of them within CROWD_NEAR_BAND_M,
- * the rest out to CROWD_FAR_BAND_M. Down the way from the player's own place
- * on it: to CROWD_AHEAD_M, so there are always eyes far down the way; one
- * left CROWD_BEHIND_M behind is taken away. No two within CROWD_APART_M.
- * Round a player who has left the way: CROWD_OFF_WAY_M from them. And the
- * nearest one comes to its player before it goes: CROWD_KEEP_M.
+ * Where they stand, in metres. Beyond the path's edge, where its mist is
+ * whole (sim/wayDown.ts WAY_FLOOR_M): none within CROWD_CLEAR_M of it (so
+ * CROWD_EDGE_M from the way's line is the nearest one stands or waits),
+ * CROWD_NEAR_SHARE of them within CROWD_NEAR_BAND_M, the rest out to
+ * CROWD_FAR_BAND_M. Down the way from the player's own place on it: to
+ * CROWD_AHEAD_M, so there are always eyes far down the way; one left
+ * CROWD_BEHIND_M behind is taken away. No two within CROWD_APART_M. Round a
+ * player who has left the way: CROWD_OFF_WAY_M from them. And the nearest
+ * one comes to its player before it goes: CROWD_KEEP_M. (Until 2026-11-19
+ * they kept 3 m beyond the way's rim, 8.5 m from its line, and went at 6 m
+ * from their player: a runner on the path had nothing near them.)
  */
-export const CROWD_CLEAR_M = 3;
+export const CROWD_CLEAR_M = 1;
+export const CROWD_EDGE_M = WAY_FLOOR_M + CROWD_CLEAR_M;
 export const CROWD_NEAR_BAND_M = 15;
 export const CROWD_FAR_BAND_M = 35;
 export const CROWD_NEAR_SHARE = 0.7;
@@ -34,7 +39,7 @@ export const CROWD_AHEAD_M = 85;
 export const CROWD_BEHIND_M = 30;
 export const CROWD_APART_M = 5.5;
 export const CROWD_OFF_WAY_M: readonly [number, number] = [8, 15];
-export const CROWD_KEEP_M = 6;
+export const CROWD_KEEP_M = 3;
 
 const smooth = (t: number): number => (t <= 0 ? 0 : t >= 1 ? 1 : t * t * (3 - 2 * t));
 
@@ -58,6 +63,23 @@ export function crowdTarget(progress: number, most: number): number {
  * opening far off.
  */
 export type CrowdFigure = { id: number; x: number; z: number; size: number; eyes: number; warm: number; pace: number; born: number; gone: number; rise: 0 | 1; /** Whether the ground last refused its step on: it stands until it is asked again. */ held?: boolean };
+
+/**
+ * The lunge: a figure waiting at the path's edge comes onto the path at a
+ * runner once they are within CROWD_LUNGE_M of it down the way, at
+ * CROWD_LUNGE_MPS, faster than a sprint, so that the woods either side throw
+ * themselves at whoever passes. CROWD_LUNGE_SHARE of the figures are
+ * lungers (`crowdLunges`, from a figure's own number); the rest hold the
+ * edge and fall in behind. None reaches its player: it goes at CROWD_KEEP_M
+ * as every figure does.
+ */
+export const CROWD_LUNGE_M = 12;
+export const CROWD_LUNGE_MPS = 8;
+export const CROWD_LUNGE_SHARE = 2 / 3;
+/** Whether the figure of this number is a lunger. */
+export function crowdLunges(id: number, seed: number): boolean {
+  return hash2(id, 6, seed) < CROWD_LUNGE_SHARE;
+}
 
 /** A figure's look, from its own number: the same for as long as it lives. A fifth are small, one in seven large, the rest near a Hollow's size. */
 export function figureOf(id: number, seed: number): Pick<CrowdFigure, "size" | "eyes" | "warm" | "pace"> {
@@ -108,11 +130,11 @@ export function placeCrowd(world: CrowdWorld, eye: { x: number; z: number; yaw: 
     world.point(s, AT);
     world.direction(s, ALONG);
     const beyond = near ? CROWD_CLEAR_M + band * (CROWD_NEAR_BAND_M - CROWD_CLEAR_M) : CROWD_NEAR_BAND_M + band * (CROWD_FAR_BAND_M - CROWD_NEAR_BAND_M);
-    x = AT.x - side * ALONG.z * (WAY_RIM_M + beyond);
-    z = AT.z + side * ALONG.x * (WAY_RIM_M + beyond);
+    x = AT.x - side * ALONG.z * (WAY_FLOOR_M + beyond);
+    z = AT.z + side * ALONG.x * (WAY_FLOOR_M + beyond);
   }
-  // Clear of the channel wherever the way bends toward it.
-  if (world.project(x, z).d < WAY_RIM_M + CROWD_CLEAR_M) return null;
+  // Clear of the path wherever the way bends toward it.
+  if (world.project(x, z).d < CROWD_EDGE_M) return null;
   if (!world.admit(x, z)) return null;
   for (const f of figures) {
     const dx = f.x - x, dz = f.z - z;
@@ -126,9 +148,9 @@ export function placeCrowd(world: CrowdWorld, eye: { x: number; z: number; yaw: 
  * coming for them. A figure runs in from far off and stalks the last metres:
  * its own pace where it would go (CROWD_KEEP_M), CROWD_RUSH times that from
  * CROWD_RUSH_M off and further. One the player has passed gives chase
- * instead, to CROWD_CHASE_MPS from that far off: faster than a player
- * sprints, so what follows holds a little way off a runner's heels and
- * closes on one who slows. At a runner's back there are CROWD_PACK at the
+ * instead, to CROWD_CHASE_MPS from CROWD_CHASE_M off: faster than a player
+ * sprints, so what follows holds some 9 m off a sprinter's heels and closes
+ * on one who slows (16 m off until 2026-11-19, too far back to be felt). At a runner's back there are CROWD_PACK at the
  * most, so the rest of the crowd is ahead of them, where they look. And no
  * figure walks into another: within CROWD_PRESS_M of one it is turned aside,
  * and directly behind one it waits.
@@ -136,6 +158,7 @@ export function placeCrowd(world: CrowdWorld, eye: { x: number; z: number; yaw: 
 export const CROWD_RUSH = 3.6;
 export const CROWD_RUSH_M = 22;
 export const CROWD_CHASE_MPS = 9;
+export const CROWD_CHASE_M = 12;
 export const CROWD_PACK = 10;
 export const CROWD_PRESS_M = 3;
 /** How hard a figure is turned from one inside the press's reach, against its own step toward the player: at half the reach the two are equal. */
@@ -143,7 +166,7 @@ const PRESS_PUSH = 2;
 
 /** The metres a second a figure of this `pace` moves at, `d` metres from its player: giving chase (`chasing`, behind them) or coming in from the woods. */
 export function crowdSpeed(pace: number, d: number, chasing: boolean): number {
-  const far = smooth((d - CROWD_KEEP_M) / (CROWD_RUSH_M - CROWD_KEEP_M));
+  const far = smooth((d - CROWD_KEEP_M) / ((chasing ? CROWD_CHASE_M : CROWD_RUSH_M) - CROWD_KEEP_M));
   return pace + ((chasing ? CROWD_CHASE_MPS : pace * CROWD_RUSH) - pace) * far;
 }
 
@@ -185,7 +208,7 @@ export function crowdGives(crowd: Crowd, at: { x: number; z: number }, seconds: 
  * clear ground, ground that refuses it): there it goes into the mist.
  */
 export function crowdTakes(crowd: Crowd, at: { x: number; z: number }, seconds: number, world: CrowdWorld): void {
-  if (world.project(at.x, at.z).d < WAY_RIM_M + CROWD_CLEAR_M || !world.admit(at.x, at.z)) return;
+  if (world.project(at.x, at.z).d < CROWD_EDGE_M || !world.admit(at.x, at.z)) return;
   const id = crowd.nextId++;
   crowd.figures.push({ id, x: at.x, z: at.z, born: seconds, gone: -1, rise: 0, ...figureOf(id, crowd.seed) });
 }
@@ -266,8 +289,10 @@ export function presenceOf(f: CrowdFigure, seconds: number): number {
  * With no world, or `most` at nothing, every figure begins to go. Otherwise
  * each figure comes for the player (crowdSpeed), turned aside from any
  * other it would walk into. One ahead of the player's place on the way keeps
- * clear of the channel as it comes, sliding along beside it; one the player
- * has passed is free to step in behind them, and gives chase.
+ * off the path as it comes, sliding along its edge, until the player is
+ * within a lunge of it down the way, when a lunger comes onto the path at
+ * them; one the player has passed is free to step in behind them, and gives
+ * chase.
  * A figure goes when it has come within CROWD_KEEP_M of its player, has been
  * left CROWD_BEHIND_M behind, is too far down the way, or, round a player
  * who has left the way, is too far from them; and behind a player on the way
@@ -300,9 +325,11 @@ export function stepCrowd(crowd: Crowd, world: CrowdWorld | null, eye: { x: numb
     const d = Math.sqrt(dx * dx + dz * dz);
     const at = world.project(f.x, f.z);
     const ahead = at.s > here.s;
-    // Its step toward the player, turned from any figure it presses on; ahead of them, along beside the way where the step would take it into the channel.
+    // A lunger the player has come within a lunge of, down the way: loosed onto the path at them.
+    const loosed = ahead && offWay <= 0 && at.s <= here.s + CROWD_LUNGE_M && crowdLunges(f.id, crowd.seed);
+    // Its step toward the player (never past where it would go), turned from any figure it presses on; ahead of them, along the path's edge where the step would take it onto the path.
     if (d > 0) {
-      const step = Math.min(crowdSpeed(f.pace, d, offWay <= 0 && !ahead) * dt, d);
+      const step = Math.max(0, Math.min((loosed ? CROWD_LUNGE_MPS : crowdSpeed(f.pace, d, offWay <= 0 && !ahead)) * dt, d - CROWD_KEEP_M + 0.05));
       let ux = dx / d, uz = dz / d, px = 0, pz = 0;
       for (const g of figures) {
         if (g === f || g.gone >= 0) continue;
@@ -324,7 +351,7 @@ export function stepCrowd(crowd: Crowd, world: CrowdWorld | null, eye: { x: numb
       }
       let nx = f.x + ux * step, nz = f.z + uz * step;
       let to = world.project(nx, nz);
-      if (ahead && to.d < WAY_RIM_M + CROWD_CLEAR_M) {
+      if (ahead && !loosed && to.d < CROWD_EDGE_M) {
         world.direction(at.s, ALONG);
         const along = (ux * ALONG.x + uz * ALONG.z) * step;
         nx = f.x + ALONG.x * along;
@@ -332,8 +359,8 @@ export function stepCrowd(crowd: Crowd, world: CrowdWorld | null, eye: { x: numb
         to = world.project(nx, nz);
       }
       if ((f.id + crowd.steps) % CROWD_ADMIT_EVERY === 0) f.held = !world.admit(nx, nz);
-      // Into the channel only behind the player's own place on the way, wherever the figure set out from.
-      if (f.held !== true && (to.s <= here.s || to.d >= WAY_RIM_M + CROWD_CLEAR_M)) {
+      // Onto the path only behind the player's own place on the way, or in a lunge, wherever the figure set out from.
+      if (f.held !== true && (loosed || to.s <= here.s || to.d >= CROWD_EDGE_M)) {
         f.x = nx;
         f.z = nz;
       }

@@ -1,11 +1,12 @@
 import { describe, expect, it } from "vitest";
 import {
   CROWD_AHEAD_M, CROWD_APART_M, CROWD_BEHIND_M, CROWD_CLEAR_M, CROWD_FAR_BAND_M, CROWD_KEEP_M, CROWD_MOST, CROWD_NEAR_BAND_M, CROWD_NEAR_SHARE, CROWD_OFF_WAY_M,
-  CROWD_CHASE_MPS, CROWD_FADE_S, CROWD_MIST_M, CROWD_PACK, CROWD_PRESS_M, CROWD_RISE_S, CROWD_RUSH, CROWD_RUSH_M, CROWD_TRIES_A_STEP, CROWD_VIEW_COS,
-  crowdGives, crowdSpeed, crowdTakes, crowdTarget, figureOf, newCrowd, placeCrowd, presenceOf, stepCrowd, type Crowd, type CrowdFigure, type CrowdWorld,
+  CROWD_CHASE_M, CROWD_CHASE_MPS, CROWD_EDGE_M, CROWD_FADE_S, CROWD_LUNGE_M, CROWD_LUNGE_MPS, CROWD_LUNGE_SHARE, CROWD_MIST_M, CROWD_PACK, CROWD_PRESS_M, CROWD_RISE_S, CROWD_RUSH, CROWD_RUSH_M,
+  CROWD_TRIES_A_STEP, CROWD_VIEW_COS,
+  crowdGives, crowdLunges, crowdSpeed, crowdTakes, crowdTarget, figureOf, newCrowd, placeCrowd, presenceOf, stepCrowd, type Crowd, type CrowdFigure, type CrowdWorld,
 } from "../../src/game/crowdField.js";
 import { SPRINT_SPEED, WALK_SPEED } from "../../src/sim/constants.js";
-import { WAY_RIM_M } from "../../src/sim/wayDown.js";
+import { WAY_FLOOR_M, WAY_RIM_M } from "../../src/sim/wayDown.js";
 
 /** A straight way along +x, 400 m long, and ground that admits everything but one square beside it. */
 const LENGTH = 400;
@@ -20,9 +21,10 @@ export const straightWorld = (): CrowdWorld => ({
 const figureAt = (id: number, x: number, z: number): CrowdFigure => ({ id, x, z, born: 0, gone: -1, rise: 0, ...figureOf(id, 1) });
 
 describe("the crowd's numbers", () => {
-  it("is the design's: sixty at the thickest on every tier, outside the channel, most of them near it, far down the way", () => {
+  it("is the design's: sixty at the thickest on every tier, off the path from a metre into its mist, most of them near it, far down the way", () => {
     expect(CROWD_MOST).toEqual({ low: 60, medium: 60, high: 60 });
-    expect([CROWD_CLEAR_M, CROWD_NEAR_BAND_M, CROWD_FAR_BAND_M, CROWD_NEAR_SHARE, CROWD_AHEAD_M, CROWD_BEHIND_M, CROWD_APART_M, CROWD_KEEP_M]).toEqual([3, 15, 35, 0.7, 85, 30, 5.5, 6]);
+    expect([CROWD_CLEAR_M, CROWD_NEAR_BAND_M, CROWD_FAR_BAND_M, CROWD_NEAR_SHARE, CROWD_AHEAD_M, CROWD_BEHIND_M, CROWD_APART_M, CROWD_KEEP_M]).toEqual([1, 15, 35, 0.7, 85, 30, 5.5, 3]);
+    expect(CROWD_EDGE_M).toBe(WAY_FLOOR_M + CROWD_CLEAR_M);
     expect(CROWD_OFF_WAY_M).toEqual([8, 15]);
   });
 
@@ -60,14 +62,14 @@ describe("the crowd's numbers", () => {
 describe("where a figure of the crowd may stand", () => {
   const eye = { x: 100, z: 0, yaw: Math.PI / 2 };
 
-  it("beside the way ahead of the player: beyond the channel's rim and its clear ground, most within 15 m of it, none past 35 m", () => {
+  it("beside the way ahead of the player: beyond the path's edge and its clear ground, most within 15 m of it, none past 35 m", () => {
     const world = straightWorld(), rng = { rngSeed: 11 };
     const places: { x: number; z: number }[] = [];
     for (let i = 0; i < 800; i++) { const p = placeCrowd(world, eye, [], rng, 0); if (p !== null) places.push(p); }
     expect(places.length).toBeGreaterThan(700);
     let near = 0, left = 0;
     for (const p of places) {
-      const off = Math.abs(p.z) - WAY_RIM_M;
+      const off = Math.abs(p.z) - WAY_FLOOR_M;
       expect(off).toBeGreaterThanOrEqual(CROWD_CLEAR_M - 1e-9);
       expect(off).toBeLessThanOrEqual(CROWD_FAR_BAND_M + 1e-9);
       // Never behind the player's own place on the way, never past 85 m down it.
@@ -111,7 +113,7 @@ describe("where a figure of the crowd may stand", () => {
       const d = Math.hypot(p.x - off.x, p.z - off.z);
       expect(d).toBeGreaterThanOrEqual(CROWD_OFF_WAY_M[0] - 1e-9);
       expect(d).toBeLessThanOrEqual(CROWD_OFF_WAY_M[1] + 1e-9);
-      expect(world.project(p.x, p.z).d).toBeGreaterThanOrEqual(WAY_RIM_M + CROWD_CLEAR_M - 1e-9);
+      expect(world.project(p.x, p.z).d).toBeGreaterThanOrEqual(CROWD_EDGE_M - 1e-9);
       bearings.add(Math.floor(((Math.atan2(p.x - off.x, p.z - off.z) + Math.PI) / (2 * Math.PI)) * 8));
     }
     expect(kept).toBeGreaterThan(500);
@@ -168,9 +170,9 @@ describe("the crowd, stepped", () => {
       expect(have).toBeLessThanOrEqual(want + 1);
       if (i * DT > 10) worstShort = Math.max(worstShort, want - have);
       for (const f of living(crowd)) {
-        // Ahead of the runner's own place on the way nothing stands in the channel or within 3 m of its rim.
-        if (f.x > eye.x) expect(Math.abs(f.z)).toBeGreaterThanOrEqual(WAY_RIM_M + CROWD_CLEAR_M - 1e-6);
-        else if (Math.abs(f.z) < WAY_RIM_M) behindInChannel = true;
+        // Further down the way than a lunge begins, nothing stands on the path or within a metre of its edge.
+        if (f.x > eye.x + CROWD_LUNGE_M) expect(Math.abs(f.z)).toBeGreaterThanOrEqual(CROWD_EDGE_M - 1e-6);
+        else if (f.x <= eye.x && Math.abs(f.z) < WAY_FLOOR_M) behindInChannel = true;
       }
     }
     expect(worstShort).toBeLessThanOrEqual(8);
@@ -178,7 +180,7 @@ describe("the crowd, stepped", () => {
     expect(behindInChannel).toBe(true);
   });
 
-  it("comes toward a player who stands still, and none of it reaches them: a figure 6 m off begins to go", () => {
+  it("comes toward a player who stands still, and none of it reaches them: a figure 3 m off begins to go", () => {
     const world = straightWorld(), crowd = newCrowd(4), eye = { x: 200, z: 0, yaw: Math.PI / 2 };
     let nearest = Infinity, closed = false;
     const first = new Map<number, number>();
@@ -274,13 +276,13 @@ describe("the crowd closing on its player", () => {
   it("gives chase faster than a player sprints, and holds off a runner's heels: what follows keeps its distance from one who runs and closes on one who stops", () => {
     expect(CROWD_CHASE_MPS).toBeGreaterThan(SPRINT_SPEED + 1);
     for (const pace of [0.6, 1.4]) {
-      expect(crowdSpeed(pace, CROWD_RUSH_M, true)).toBe(CROWD_CHASE_MPS);
+      expect(crowdSpeed(pace, CROWD_CHASE_M, true)).toBe(CROWD_CHASE_MPS);
       for (const run of [WALK_SPEED, SPRINT_SPEED]) {
         // The distance a chaser keeps behind a player moving at `run`: where its speed is theirs.
         let held = CROWD_KEEP_M;
         while (crowdSpeed(pace, held, true) < run) held += 0.1;
-        expect(held).toBeGreaterThan(CROWD_KEEP_M + 5);
-        expect(held).toBeLessThan(CROWD_RUSH_M - 2);
+        expect(held).toBeGreaterThan(CROWD_KEEP_M + 3);
+        expect(held).toBeLessThan(CROWD_CHASE_M);
       }
     }
   });
@@ -306,8 +308,8 @@ describe("the crowd closing on its player", () => {
     const eyeX = 100 + SPRINT_SPEED * 12;
     expect(crowd.figures).toContain(f);
     expect(f.gone).toBe(-1);
-    expect(eyeX - f.x).toBeLessThan(CROWD_RUSH_M);
-    expect(nearest).toBeGreaterThan(CROWD_KEEP_M + 4);
+    expect(eyeX - f.x).toBeLessThan(CROWD_CHASE_M);
+    expect(nearest).toBeGreaterThan(CROWD_KEEP_M + 3);
   });
 
   it("keeps a pack at a sprinter's back and the rest of the crowd ahead of them: ten behind at the most", () => {
@@ -358,6 +360,64 @@ describe("the crowd closing on its player", () => {
   });
 });
 
+describe("the crowd lunging at a runner", () => {
+  const DT = 1 / 60;
+  const crowdOf = (...figures: CrowdFigure[]): Crowd => ({ ...newCrowd(1), figures, nextId: 1000 });
+  /** The first figure's number from `from` that lunges, or does not, under the seed figureAt gives a figure's look from. */
+  const numberThat = (lunges: boolean, from = 1): number => { let id = from; while (crowdLunges(id, 1) !== lunges) id++; return id; };
+
+  it("names its numbers", () => {
+    expect([CROWD_LUNGE_M, CROWD_LUNGE_MPS, CROWD_LUNGE_SHARE, CROWD_CHASE_M]).toEqual([12, 8, 2 / 3, 12]);
+    expect(CROWD_LUNGE_MPS).toBeGreaterThan(SPRINT_SPEED);
+  });
+
+  it("two figures in three are lungers, each from its own number, the same for as long as it lives", () => {
+    let lungers = 0;
+    for (let id = 0; id < 3000; id++) if (crowdLunges(id, 7)) lungers++;
+    expect(lungers / 3000).toBeGreaterThan(0.63);
+    expect(lungers / 3000).toBeLessThan(0.7);
+    expect(crowdLunges(5, 7)).toBe(crowdLunges(5, 7));
+  });
+
+  it("a lunger at the path's edge waits there for a runner, and comes onto the path at them once they are within 12 m of it down the way", () => {
+    const world = straightWorld(), f = { ...figureAt(numberThat(true), 160, 8), pace: 1 }, crowd = crowdOf(f);
+    let waitedOff = true, least = Infinity, fastest = 0;
+    for (let i = 0; i < 9 * 60; i++) {
+      const eye = { x: 100 + SPRINT_SPEED * i * DT, z: 0, yaw: Math.PI / 2 };
+      const was = { x: f.x, z: f.z };
+      stepCrowd(crowd, world, eye, 1, i * DT, DT);
+      if (f.x > eye.x + CROWD_LUNGE_M + 1 && Math.abs(f.z) < CROWD_EDGE_M - 1e-6) waitedOff = false;
+      if (f.x > eye.x) least = Math.min(least, Math.abs(f.z));
+      fastest = Math.max(fastest, Math.hypot(f.x - was.x, f.z - was.z) / DT);
+    }
+    expect(waitedOff).toBe(true);
+    // On the path while still ahead of the runner, and at a lunge's speed.
+    expect(least).toBeLessThan(WAY_FLOOR_M - 2);
+    expect(fastest).toBeCloseTo(CROWD_LUNGE_MPS, 1);
+  });
+
+  it("one that is no lunger keeps off the path until the runner has passed it", () => {
+    const world = straightWorld(), f = { ...figureAt(numberThat(false), 160, 8), pace: 1 }, crowd = crowdOf(f);
+    for (let i = 0; i < 9 * 60; i++) {
+      const eye = { x: 100 + SPRINT_SPEED * i * DT, z: 0, yaw: Math.PI / 2 };
+      stepCrowd(crowd, world, eye, 1, i * DT, DT);
+      if (f.x > eye.x) expect(Math.abs(f.z)).toBeGreaterThanOrEqual(CROWD_EDGE_M - 1e-6);
+    }
+  });
+
+  it("a lunge never reaches the runner: the nearest it comes is where a figure goes", () => {
+    const world = straightWorld(), crowd = newCrowd(12);
+    let nearest = Infinity;
+    for (let i = 0; i < 40 * 60; i++) {
+      const eye = { x: 20 + SPRINT_SPEED * i * DT, z: 0, yaw: Math.PI / 2 };
+      stepCrowd(crowd, world, eye, 60, i * DT, DT);
+      for (const g of crowd.figures) if (g.gone < 0) nearest = Math.min(nearest, Math.hypot(g.x - eye.x, g.z - eye.z));
+    }
+    expect(nearest).toBeGreaterThan(CROWD_KEEP_M - 0.1);
+    expect(nearest).toBeLessThan(CROWD_KEEP_M + 3);
+  });
+});
+
 describe("the crowd and what kills", () => {
   const crowdOf = (...figures: CrowdFigure[]): Crowd => ({ ...newCrowd(1), figures, nextId: 1000 });
 
@@ -386,7 +446,7 @@ describe("the crowd and what kills", () => {
   it("leaves nothing where a figure of the crowd may not stand: in the channel, on its clear ground, or on ground that refuses it", () => {
     const world = straightWorld(), crowd = crowdOf();
     crowdTakes(crowd, { x: 140, z: 2 }, 7, world);
-    crowdTakes(crowd, { x: 140, z: WAY_RIM_M + CROWD_CLEAR_M - 0.5 }, 7, world);
+    crowdTakes(crowd, { x: 140, z: CROWD_EDGE_M - 0.5 }, 7, world);
     crowdTakes(crowd, { x: 25, z: 15 }, 7, world);
     expect(crowd.figures.length).toBe(0);
     expect(crowd.nextId).toBe(1000);
