@@ -62,6 +62,35 @@ import { WIND_K1, WIND_K2, WIND_OMEGA_FLUTTER, WIND_OMEGA_GUST, WIND_OMEGA_GUST2
 import { FADE_ROWS_NAME, frameReads, ownFields, ownValues } from "./frameBlock.js";
 import { uniformFields, writeUniforms, type UniformField, type UniformRecord } from "./pluginUniforms.js";
 import { WET_FIELDS, WET_LIGHTS, WET_WGSL, writeWetUniforms } from "./wetWgsl.js";
+import gustSource from "../shaders/forest/gust.wgsl?raw";
+import mossHashSource from "../shaders/forest/mossHash.wgsl?raw";
+import collapseSource from "../shaders/forest/collapse.wgsl?raw";
+import foliageTintSource from "../shaders/forest/foliageTint.wgsl?raw";
+import foliageSource from "../shaders/forest/foliage.wgsl?raw";
+import fadeSource from "../shaders/forest/fade.wgsl?raw";
+import conformSource from "../shaders/forest/conform.wgsl?raw";
+import deadwoodSource from "../shaders/forest/deadwood.wgsl?raw";
+import vertexSource from "../shaders/forest/vertex.wgsl?raw";
+import foliageMatchSource from "../shaders/forest/foliageMatch.wgsl?raw";
+import foliageColourSource from "../shaders/forest/foliageColour.wgsl?raw";
+import mossMaskSource from "../shaders/forest/mossMask.wgsl?raw";
+import deadwoodMaskSource from "../shaders/forest/deadwoodMask.wgsl?raw";
+import deadwoodContactSource from "../shaders/forest/deadwoodContact.wgsl?raw";
+import mossSource from "../shaders/forest/moss.wgsl?raw";
+import groundTintSource from "../shaders/forest/groundTint.wgsl?raw";
+import foliageLightSource from "../shaders/forest/foliageLight.wgsl?raw";
+import foliageSkySource from "../shaders/forest/foliageSky.wgsl?raw";
+import fadeMainBeginSource from "../shaders/forest/fadeMainBegin.wgsl?raw";
+import foliageConstsSource from "../shaders/forest/foliageConsts.wgsl?raw";
+import fadeNoiseSource from "../shaders/forest/fadeNoise.wgsl?raw";
+import mossSideSource from "../shaders/forest/mossSide.wgsl?raw";
+import oneSidedSource from "../shaders/forest/oneSided.wgsl?raw";
+import wetWeatherKeptSource from "../shaders/forest/wetWeatherKept.wgsl?raw";
+import splitSource from "../shaders/forest/split.wgsl?raw";
+import splitDrySource from "../shaders/forest/splitDry.wgsl?raw";
+import baseColourSource from "../shaders/forest/baseColour.wgsl?raw";
+import bakePicturesSource from "../shaders/forest/bakePictures.wgsl?raw";
+import { fill, wgsl } from "../shaders/shaderText.js";
 
 /**
  * The eye the foliage and the fade measure from, as the scene's own uniforms hold it for the pass being drawn. The
@@ -165,14 +194,9 @@ export function writeVegetationInstances(
 }
 
 // foliage.vertex.glsl: two octaves whose phase is the position projected onto the wind's direction, and a lattice hash.
-const GUST = /* wgsl */ `fn foliageGust(p:vec2<f32>,t:f32)->f32{
-  let u=material.windDir.x*p.x+material.windDir.y*p.y;
-  let c=floor(p/${f(WIND_RAGGED_CELL)});
-  let ragged=${f(WIND_RAGGED)}*(fract(c.x*0.618034+c.y*0.381966)-0.5);
-  return sin(${f(WIND_K1)}*u-${f(WIND_OMEGA_GUST)}*t+ragged)+0.5*sin(${f(WIND_K2)}*u-${f(WIND_OMEGA_GUST2)}*t+1.7*ragged);
-}`;
+const GUST = fill(wgsl(gustSource), { windRaggedCell: f(WIND_RAGGED_CELL), windRagged: f(WIND_RAGGED), windK1: f(WIND_K1), windOmegaGust: f(WIND_OMEGA_GUST), windK2: f(WIND_K2), windOmegaGust2: f(WIND_OMEGA_GUST2) });
 // The moss: a tree's draw, hashed from its foot.
-const MOSS_HASH = /* wgsl */ `fn mossHash(p:vec2<f32>)->f32{var p3=fract(vec3<f32>(p.x,p.y,p.x)*0.1031);p3+=dot(p3,p3.yzx+33.33);return fract((p3.x+p3.y)*p3.z);}`;
+const MOSS_HASH = wgsl(mossHashSource);
 
 /** The vertex stage: one running world position, as Babylon's `worldPos` is, and the clip position from it at the end.
  * The varying `worldPos` keeps the place before any of it, as Babylon's `vPositionW` does. */
@@ -182,143 +206,47 @@ function vertexCode(v: Vegetation): string {
   // The foliage's blades: a blade clump's motion ignores the outer edge, and in place of the far sink each of
   // its blades is pulled to its root by its share of the tier's band and of the cell's strength, last, so a
   // collapsed blade's vertices coincide.
-  const collapse = /* wgsl */ `{
-  let bRoot=(finalWorld*vec4<f32>(blade.x,0.0,blade.y,1.0)).xyz;
-  let bGrow=smoothstep(material.foliageBladeEdges.x,material.foliageBladeEdges.y,fDist);
-  let bThin=smoothstep(material.foliageBladeEdges.z,material.foliageBladeEdges.w,fDist);
-  let bIn=clamp((${f(1 + BLADE_SOFT)}*bGrow-blade.z)/${f(BLADE_SOFT)},0.0,1.0);
-  let bOut=clamp((blade.z-bThin*${f(1 + BLADE_SOFT)})/${f(BLADE_SOFT)}+1.0,0.0,1.0);
-  let bAlive=bIn*bOut*step(fract(blade.x*37.31+blade.y*91.17+0.37),bladeStrength);
-  w=bRoot+(w-bRoot)*bAlive;}`;
-  const foliage = v.foliage === null ? "" : /* wgsl */ `
-  let fH=clamp(position.y/material.foliageHeight,0.0,1.0);
-  let fH2=fH*fH;
-  let fDist=distance(o,material.windEye.xz);
-  let fCell=floor(o/${f(FOLIAGE_CLUMP_CELL)});
-  let fClump=fract(fCell.x*0.618034+fCell.y*0.381966);
-  let fScale=length(finalWorld[1].xyz);
-  let fNl=length(out.worldNormal);
-  let fUp=out.worldNormal/max(fNl,1.0e-6)+vec3<f32>(0.0,material.foliageNormalUp,0.0);
-  let fUl=length(fUp);
-  if(fUl>1.0e-4){out.worldNormal=fUp/fUl*fNl;}else{out.worldNormal=vec3<f32>(0.0,fNl,0.0);}
-  let fEdge=${blades ? "1.0" : "1.0-smoothstep(material.foliageEdges.x,material.foliageEdges.y,fDist)"};
-  let fM=material.foliageAmp*fH2*material.foliageHeight*fScale*fEdge;
-  let fDir=vec3<f32>(material.windDir.x,0.0,material.windDir.y);
-  let fGust=foliageGust(o,material.windTime+0.6*(fClump-0.5));
-  w+=fDir*(material.windLean+material.windGust*fGust)*fM;
-  let fFlutter=sin(2.1*w.x+1.7*w.z+${f(WIND_OMEGA_FLUTTER)}*material.windTime);
-  let fF=material.windFlutter*fM*fFlutter*vec2<f32>(0.75,-0.35);
-  w=vec3<f32>(w.x+fF.x,w.y,w.z+fF.y);
-  if(material.foliageFlags.x>0.5){
-    let fAway=o-material.windEye.xz;
-    let fT=${f(FOLIAGE_TILT)}*fH2*fAway/max(length(fAway),1.0e-3);
-    w=vec3<f32>(w.x+fT.x,w.y,w.z+fT.y);
-  }
-  if(material.foliageFlags.y>0.5){
-    for(var i:i32=0;i<${FOLIAGE_PLAYERS};i++){
-      let fD=o-bitcast<vec4<f32>>(material.windPlayers[i]).xz;
-      let fL=length(fD);
-      let fWt=1.0-clamp(fL/${f(FOLIAGE_BEND_R)},0.0,1.0);
-      let fB=(fD/max(fL,1.0e-3))*(${f(FOLIAGE_BEND)}*fH2*fWt*fWt);
-      w=vec3<f32>(w.x+fB.x,w.y,w.z+fB.y);
-    }
-  }
-  ${tint
-    ? `${blades ? "" : `w.y-=${f(FOLIAGE_SINK)}*material.foliageHeight*smoothstep(material.foliageEdges.x,material.foliageEdges.y,fDist);`}out.vFoliage=foliage;`
-    : `out.vFoliage=vec4<f32>(0.0,0.0,0.0,1.0);`}${blades ? collapse : ""}
-  out.vFoliageH=fH;out.vFoliageClump=fClump;out.vFoliageDist=fDist;`;
+  const collapse = fill(wgsl(collapseSource), { bladeSoftOuter: f(1 + BLADE_SOFT), bladeSoft: f(BLADE_SOFT) });
+  const foliage = v.foliage === null ? "" : fill(wgsl(foliageSource), { clumpCell: f(FOLIAGE_CLUMP_CELL), edge: blades ? "1.0" : "1.0-smoothstep(material.foliageEdges.x,material.foliageEdges.y,fDist)", flutterOmega: f(WIND_OMEGA_FLUTTER), tilt: f(FOLIAGE_TILT), players: FOLIAGE_PLAYERS, bendRadius: f(FOLIAGE_BEND_R), bend: f(FOLIAGE_BEND), tinted: tint
+    ? fill(wgsl(foliageTintSource), { sink: blades ? "" : `w.y-=${f(FOLIAGE_SINK)}*material.foliageHeight*smoothstep(material.foliageEdges.x,material.foliageEdges.y,fDist);` })
+    : `out.vFoliage=vec4<f32>(0.0,0.0,0.0,1.0);`, collapse: blades ? collapse : "" });
   // The distance fade: the bands and the distance handed on, the instance widened about its origin.
-  const fade = !v.fade ? "" : /* wgsl */ `
-  out.vFadeBands=fadeBands;
-  let dfD=distance(o,material.fadeEye.xz);
-  out.vFadeDist=dfD;
-  let dfK=1.0+material.fadeWiden.z*smoothstep(material.fadeWiden.x,material.fadeWiden.y,dfD);
-  w=vec3<f32>(o.x+(w.x-o.x)*dfK,w.y,o.y+(w.z-o.y)*dfK);`;
+  const fade = !v.fade ? "" : wgsl(fadeSource);
   // The base conform.
-  const conform = !v.conform ? "" : /* wgsl */ `
-  let gcOff=w.xz-o;
-  let gcW=1.0-smoothstep(0.0,material.gcRamp,position.y);
-  w.y+=gcW*min(0.0,material.gcOvershoot*dot(gcOff,groundGrad));`;
+  const conform = !v.conform ? "" : wgsl(conformSource);
   // The moss's height and draw; or, on dead wood, the bark's coordinates from the position (round the axis, along the
   // length), over the mesh's own, and the varying.
   const moss = v.moss === null ? "" : v.deadwood === null ? `
-  out.vMoss=vec2<f32>(position.y,mossHash(o));` : /* wgsl */ `{
-  let dwScale=length(finalWorld[0].xyz);
-  let dwAlong=position.x*dwScale*material.deadwoodBark.x;
-  let dwTurn=atan2(position.y-material.deadwoodAxis.x,position.z-material.deadwoodAxis.y)/6.283185307179586;
-  let dwTiles=max(1.0,floor(6.283185307179586*material.deadwoodBark.z*dwScale*material.deadwoodBark.y+0.5));
-  out.uv=vec2<f32>(dwTurn*dwTiles,dwAlong);
-  out.vDeadwood=vec4<f32>(deadwoodRole,(position.x+material.deadwoodBark.w)*dwScale,position.y,mossHash(o));}`;
+  out.vMoss=vec2<f32>(position.y,mossHash(o));` : wgsl(deadwoodSource);
   // A rock wall: the ground's colour under the instance, handed on untouched.
   const ground = v.ground === undefined ? "" : `
   out.vCliffTint=foliage;`;
-  return `{
-  var w=out.worldPos;
-  let o=finalWorld[3].xz;${foliage}${fade}${conform}${moss}${ground}
-  out.clipPos=scene.viewProjection*vec4<f32>(w,1.0);
-}`;
+  return fill(wgsl(vertexSource), { foliage, fade, conform, moss, ground });
 }
 
 /** The colour block before the lights: the foliage's (with its match), then the moss's or
  * the dead wood's with the moss's roughness, which the game sets where Babylon reads its own, then a rock
  * wall's tint toward the ground. */
 function lightsCode(v: Vegetation): string {
-  const foliage = v.foliage === null ? "" : /* wgsl */ `{
-  surfaceAlbedo=mix(FOLIAGE_CARD_GREEN,surfaceAlbedo,material.foliageContrast);
-  surfaceAlbedo*=mix(material.foliageRootAO,1.0,input.vFoliageH);
-  let fRoot=(1.0-input.vFoliageH)*(1.0-input.vFoliageH);
-  let fHas=step(1.0/255.0,max(input.vFoliage.r,max(input.vFoliage.g,input.vFoliage.b)));
-  let fTintW=material.foliageTint*fRoot*(1.0+0.5*smoothstep(20.0,80.0,input.vFoliageDist))*fHas;
-  surfaceAlbedo=mix(surfaceAlbedo,input.vFoliage.rgb,clamp(fTintW,0.0,0.85));
-  surfaceAlbedo*=1.0+${f(FOLIAGE_CLUMP_LUMA)}*(input.vFoliageClump-0.5);
-  ${v.match ? `if(fHas>0.5){surfaceAlbedo=mix(surfaceAlbedo,input.vFoliage.rgb*mix(material.foliageRootAO,1.0,input.vFoliageH)/(0.5*(material.foliageRootAO+1.0))*(1.0+${f(FOLIAGE_CLUMP_LUMA)}*(input.vFoliageClump-0.5)),0.7);}` : ""}
-  surfaceAlbedo=max(surfaceAlbedo,FOLIAGE_ALBEDO_FLOOR);
-  N=normalize(mix(vec3<f32>(0.0,1.0,0.0),N,mix(material.foliageNormalRoot,1.0,input.vFoliageH)));
-  N=faceForward(N,-V,N);
-}`;
-  const mask = v.deadwood === null ? /* wgsl */ `
-  let mossBand=1.0-smoothstep(${f(MOSS_BAND[0])},${f(MOSS_BAND[1])},input.vMoss.x);
-  let mossSide=smoothstep(0.0,${f(MOSS_SIDE_EDGE)},dot(normalize(input.worldNormal),MOSS_SIDE));
-  let mossTree=mix(${f(MOSS_AMOUNT[0])},${f(MOSS_AMOUNT[1])},input.vMoss.y);` : /* wgsl */ `
-  let dwN=normalize(input.worldNormal);
-  let dwLog=input.vDeadwood.x;
-  let mossBand=mix(1.0-smoothstep(${f(MOSS_BAND[0])},${f(MOSS_BAND[1])},input.vDeadwood.y),1.0,dwLog);
-  let mossSide=mix(smoothstep(0.0,${f(MOSS_SIDE_EDGE)},dot(dwN,MOSS_SIDE)),smoothstep(${f(DEADWOOD_UP[0])},${f(DEADWOOD_UP[1])},dwN.y),dwLog);
-  let mossTree=mix(${f(MOSS_AMOUNT[0])},${f(MOSS_AMOUNT[1])},mix(input.vDeadwood.w,mix(${f(DEADWOOD_LOG_DRAW)},1.0,input.vDeadwood.w),dwLog));`;
-  const moss = v.moss === null ? "" : /* wgsl */ `{${mask}
-  let mossColour=textureSample(mossSampler,mossSamplerSampler,input.uv*${f(MOSS_TILE)}).rgb;
-  let mossLuma=dot(mossColour,${vec3(MOSS_LUMA)});
-  let mossW=smoothstep(${f(MOSS_EDGE[0])},${f(MOSS_EDGE[1])},mossBand*mossSide*mossTree*(0.5+mossLuma));
-  surfaceAlbedo=mix(surfaceAlbedo,mossColour*${vec3(MOSS_TINT)},mossW);
-  roughness=mix(roughness,${f(MOSS_ROUGHNESS)},mossW);
-  ${v.deadwood === null ? "" : `surfaceAlbedo*=mix(1.0,mix(${f(DEADWOOD_CONTACT)},1.0,smoothstep(${f(DEADWOOD_CONTACT_BAND[0])},${f(DEADWOOD_CONTACT_BAND[1])},input.vDeadwood.z)),dwLog);`}
-}`;
+  const foliage = v.foliage === null ? "" : fill(wgsl(foliageColourSource), { clumpLuma: f(FOLIAGE_CLUMP_LUMA), match: v.match ? fill(wgsl(foliageMatchSource), { foliageClumpLuma: f(FOLIAGE_CLUMP_LUMA) }) : "" });
+  const mask = v.deadwood === null ? fill(wgsl(mossMaskSource), { mossBand0: f(MOSS_BAND[0]), mossBand1: f(MOSS_BAND[1]), mossSideEdge: f(MOSS_SIDE_EDGE), mossAmount0: f(MOSS_AMOUNT[0]), mossAmount1: f(MOSS_AMOUNT[1]) }) : fill(wgsl(deadwoodMaskSource), { mossBand0: f(MOSS_BAND[0]), mossBand1: f(MOSS_BAND[1]), mossSideEdge: f(MOSS_SIDE_EDGE), deadwoodUp0: f(DEADWOOD_UP[0]), deadwoodUp1: f(DEADWOOD_UP[1]), mossAmount0: f(MOSS_AMOUNT[0]), mossAmount1: f(MOSS_AMOUNT[1]), deadwoodLogDraw: f(DEADWOOD_LOG_DRAW) });
+  const moss = v.moss === null ? "" : fill(wgsl(mossSource), { mask, mossTile: f(MOSS_TILE), mossLuma: vec3(MOSS_LUMA), mossEdge0: f(MOSS_EDGE[0]), mossEdge1: f(MOSS_EDGE[1]), mossTint: vec3(MOSS_TINT), mossRoughness: f(MOSS_ROUGHNESS), contact: v.deadwood === null ? "" : fill(wgsl(deadwoodContactSource), { deadwoodContact: f(DEADWOOD_CONTACT), deadwoodContactBand0: f(DEADWOOD_CONTACT_BAND[0]), deadwoodContactBand1: f(DEADWOOD_CONTACT_BAND[1]) }) });
   // A rock wall's tint: the module's own colour and the ground's under it; a black tint is no tint.
-  const ground = v.ground === undefined ? "" : `{let cHas=step(1.0/255.0,max(input.vCliffTint.r,max(input.vCliffTint.g,input.vCliffTint.b)));surfaceAlbedo=mix(surfaceAlbedo,input.vCliffTint.rgb,${f(v.ground)}*cHas);}`;
+  const ground = v.ground === undefined ? "" : fill(wgsl(groundTintSource), { ground: f(v.ground) });
   return foliage + moss + ground;
 }
 
 // The foliage's light, inside the light loop: the directional light's Lambert term,
 // which Lite has added by this point, replaced by the wrapped and back-lit one under the canopy's cut.
-const FOLIAGE_LIGHT = /* wgsl */ `{
-  if(u32(lights.lights[lightIndex].vLightData.w)==1u){
-    let fNdotL=dot(N,pl.L);
-    let fUnit=pl.color/3.14159265;
-    let fWrapped=clamp((fNdotL+1.0)/(1.0+1.0),0.0,1.0);
-    let fBack=pow(clamp(-dot(V,pl.L),0.0,1.0),4.0);
-    let fThick=1.0-0.7*input.vFoliageH;
-    let fSun=1.0-material.foliageCanopySun*(1.0-input.vFoliage.a);
-    directDiffuse+=surfaceAlbedo*(fUnit*(fWrapped+0.6*fBack*fThick)*fSun-fUnit*max(fNdotL,0.0))*pl.atten*material.directIntensity*sf;
-  }
-}`;
+const FOLIAGE_LIGHT = wgsl(foliageLightSource);
 
 // The foliage's sky: the image-based light on a card, thinned by the canopy over it.
-const FOLIAGE_SKY = `{let fSky=1.0-${f(FOLIAGE_CANOPY_SKY)}*(1.0-input.vFoliage.a);color-=(finalIrradiance+finalRadianceScaled)*(1.0-fSky);}`;
+const FOLIAGE_SKY = fill(wgsl(foliageSkySource), { foliageCanopySky: f(FOLIAGE_CANOPY_SKY) });
 
 // The distance fade's screen-door, before any texture is read. The noise is a fixed pattern of the pixel, whose row
 // the game counts up from the frame's bottom, where a WGSL fragment's counts down
 // from its top: the row is turned over by the frame's height, so a seam's two buckets keep the same pixels.
-const FADE_MAIN_BEGIN = `{let dfN=dfNoise(vec2<f32>(input.clipPos.x,material.fadeRows-input.clipPos.y));let dfIn=smoothstep(input.vFadeBands.x,input.vFadeBands.y,input.vFadeDist);let dfOut=1.0-smoothstep(input.vFadeBands.z,input.vFadeBands.w,input.vFadeDist);if(dfIn<1.0-dfN||dfOut<dfN){discard;}}`;
+const FADE_MAIN_BEGIN = wgsl(fadeMainBeginSource);
 
 /** The floats a vertex of a blade clump's `blade` attribute: the mesh's plugin vertex data. */
 export const BLADE_VERTEX_FLOATS = 4;
@@ -377,9 +305,9 @@ export function vegetationPlugin(v: Vegetation): MaterialPlugin {
 
   const fragment: Record<string, string> = {
     CUSTOM_FRAGMENT_DEFINITIONS:
-      (v.foliage !== null ? `const FOLIAGE_CARD_GREEN:vec3<f32>=${vec3(COVER_GREEN)};const FOLIAGE_ALBEDO_FLOOR:vec3<f32>=${vec3(FOLIAGE_ALBEDO_FLOOR)};` : "") +
-      (v.fade ? "fn dfNoise(p:vec2<f32>)->f32{return fract(52.9829189*fract(0.06711056*p.x+0.00583715*p.y));}" : "") +
-      (v.moss !== null ? `const MOSS_SIDE:vec3<f32>=vec3<f32>(${f(MOSS_SIDE.x)},${f(MOSS_SIDE.y)},${f(MOSS_SIDE.z)});` : ""),
+      (v.foliage !== null ? fill(wgsl(foliageConstsSource), { coverGreen: vec3(COVER_GREEN), albedoFloor: vec3(FOLIAGE_ALBEDO_FLOOR) }) : "") +
+      (v.fade ? wgsl(fadeNoiseSource) : "") +
+      (v.moss !== null ? fill(wgsl(mossSideSource), { mossSideX: f(MOSS_SIDE.x), mossSideY: f(MOSS_SIDE.y), mossSideZ: f(MOSS_SIDE.z) }) : ""),
   };
   if (v.fade) fragment.CUSTOM_FRAGMENT_MAIN_BEGIN = reads(FADE_MAIN_BEGIN, shared);
   if (v.foliage !== null || v.moss !== null || v.ground !== undefined) fragment.CUSTOM_FRAGMENT_BEFORE_LIGHTS = reads(lightsCode(v), shared);
@@ -506,24 +434,24 @@ export function oneSidedLightPlugin(turned = false): MaterialPlugin {
     defines: { turned },
     getCustomCode: (stage) =>
       stage === "fragment"
-        ? { CUSTOM_FRAGMENT_UPDATE_DIFFUSE: `if(!frontFacing){N=-N;N_geom=-N_geom;}${turned ? "else{N=2.0*dot(N,N_geom)*N_geom-N;}" : ""}` }
+        ? { CUSTOM_FRAGMENT_UPDATE_DIFFUSE: fill(wgsl(oneSidedSource), { turned: turned ? "else{N=2.0*dot(N,N_geom)*N_geom-N;}" : "" }) }
         : null,
   };
 }
 
 // The weather's share, where the map's roughness is known: the roughness glossed at
 // once, the albedo's factor kept for the split, since the game darkens the colour after the colour block has run.
-const WET_WEATHER_KEPT = `var wetShare=1.0;{let wetPorosity=min(material.wetCap,clamp((roughness-0.5)/0.4,0.0,1.0));let wetFactor=mix(1.0,0.2,wetPorosity);wetShare=mix(1.0,wetFactor,material.wetWeather);let wetGloss=mix(1.0,1.0-roughness,mix(1.0,wetFactor,0.5*material.wetWeather));roughness=1.0-wetGloss;}`;
+const WET_WEATHER_KEPT = wgsl(wetWeatherKeptSource);
 
 // Babylon's reflectivity block, which follows its point before the lights: the weather's darkening of the colour the
 // block left, then the colour split into the albedo and the reflectance at normal incidence, a metal's its own colour.
 // The reflectance at normal incidence is `dielectricF0` on every channel: these materials' reflectance colour is white,
 // and Lite declares that one name with its reflectance feature and without it (it leaves the feature out of a material
 // whose weight is one).
-const SPLIT = `{let fBase=surfaceAlbedo*wetShare;colorF0=mix(vec3<f32>(dielectricF0),fBase,metallic);surfaceAlbedo=fBase*(1.0-dielectricF0)*(1.0-metallic);}`;
+const SPLIT = wgsl(splitSource);
 
 // The split with no weather's darkening before it: a surface the rain does not wet.
-const SPLIT_DRY = `{let fBase=surfaceAlbedo;colorF0=mix(vec3<f32>(dielectricF0),fBase,metallic);surfaceAlbedo=fBase*(1.0-dielectricF0)*(1.0-metallic);}`;
+const SPLIT_DRY = wgsl(splitDrySource);
 
 /**
  * The colour a forest material's block before the lights works on: the base
@@ -539,7 +467,7 @@ export function baseColourPlugin(): MaterialPlugin {
   return {
     name: "BaseColour",
     priority: 100,
-    getCustomCode: (stage) => (stage === "fragment" ? { CUSTOM_FRAGMENT_BEFORE_LIGHTS: `surfaceAlbedo=baseColor;` } : null),
+    getCustomCode: (stage) => (stage === "fragment" ? { CUSTOM_FRAGMENT_BEFORE_LIGHTS: wgsl(baseColourSource) } : null),
   };
 }
 
@@ -596,7 +524,7 @@ export const BAKE_MODE_FIELD: UniformField = { name: "bakeMode", type: "f32" };
 // and its split, in gamma space as a colour map is stored; the normal is the shaded one in the world's frame, which is
 // the bake camera's (it looks along +z with +y up), written as a map of the card, whose face looks along -z. A
 // fragment the material's alpha test kept is whole.
-const BAKE_PICTURES = `if(material.bakeMode>1.5){let bakeN=normalize(N);color=vec3<f32>(bakeN.x,bakeN.y,-bakeN.z)*0.5+0.5;alpha=1.0;}else if(material.bakeMode>0.5){color=pow(surfaceAlbedo,vec3<f32>(1.0/2.2));alpha=1.0;}`;
+const BAKE_PICTURES = wgsl(bakePicturesSource);
 
 /**
  * What a far tree's bake writes in place of the lit colour, last in the

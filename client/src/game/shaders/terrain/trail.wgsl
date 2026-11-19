@@ -1,0 +1,105 @@
+
+{
+  let P=input.worldPos;
+  let tb=clamp((P.xz-trailInfo.xy)*trailInfo.z,vec2<f32>(0.0),vec2<f32>(trailInfo.w-1.0));
+  let tIdx=textureLoad(trailTable,vec2<i32>(i32(floor(tb.x)),2+i32(floor(tb.y))),0).xy;
+  var tdBest=1.0e9;
+  var tOff=vec2<f32>(0.0);
+  var tcBest=0;
+  var ttBest=0.0;
+  for(var ti=0;ti<32;ti++){
+    if(f32(ti)>=tIdx.y){break;}
+    let tc=i32(tIdx.x+f32(ti)+0.5);
+    let ts=textureLoad(trailTable,vec2<i32>(tc,0),0);
+    let te=ts.zw-ts.xy;
+    let tp=P.xz-ts.xy;
+    let tl2=dot(te,te);
+    let tt=select(0.0,clamp(dot(tp,te)/tl2,0.0,1.0),tl2>0.0);
+    let tov=tp-tt*te;
+    let td=length(tov);
+    if(td<tdBest){tdBest=td;tOff=tov;tcBest=tc;ttBest=tt;}
+  }
+  let taa=fwidth(tdBest);
+  if(tdBest<7.0+taa){
+    let tk=1.0-smoothstep(terrainFade.x,terrainFade.y,distance(P,terrainEye));
+    let tAway=select(vec2<f32>(0.0),tOff/tdBest,tdBest>1.0e-4);
+    let tRise=dot(-input.worldNormal.xz,tAway)/max(input.worldNormal.y,1.0e-3);
+    let tSoil=clamp(input.vTerrainW.x+input.vTerrainW.y,0.0,1.0);
+    let tSnow=1.0-clamp(input.vTerrainW2.y,0.0,1.0);
+    let tRow=textureLoad(trailTable,vec2<i32>(tcBest,1),0);
+    let tU=mix(tRow.x,tRow.y,ttBest);
+    let tWj=mix(tRow.z,tRow.w,ttBest);
+    let tWear=0.6*trailValueNoise1(tU,12.0)+0.4*trailValueNoise1(tU,3.0);
+    let tWidthK=mix(0.8,1.25,tWear)*tWj;
+    let tDarkK=mix(0.85,1.1,tWear);
+    let tEdgeN=0.6*macroValueNoise(P.xz,1.5)+0.4*macroValueNoise(P.xz,0.4);
+    let tdN=tdBest+0.25*(2.0*tEdgeN-1.0);
+    let tuvP=P.xz*terrainTiling.w;
+    let tuvF=P.xz*terrainTiling.y;
+    let tGravelTex=mix(vec3<f32>(1.0),tex2(terrainPebble,tuvP)/terrainRock2.y,tk);
+    let tFloorTex=mix(vec3<f32>(1.0),tex2(terrainFloor,tuvF)/terrainRock2.y,tk);
+    let tBedTex=mix(tGravelTex,tFloorTex,0.7);
+    let tGravelN=textureSample(terrainNormals,terrainSmp,tuvP,4).rgb*2.0-1.0;
+    let tGravelRAH=textureSample(terrainRAH,terrainSmp,tuvP,4).rgb;
+    let tFloorN=textureSample(terrainNormals,terrainSmp,tuvF,1).rgb*2.0-1.0;
+    let tFloorRAH=textureSample(terrainRAH,terrainSmp,tuvF,1).rgb;
+    let tBedN=mix(tGravelN,tFloorN,0.7);
+    let tBedRAH=mix(tGravelRAH,tFloorRAH,0.7);
+    let tdB=tdN/tWidthK-0.3*(mix(0.5,tGravelRAH.b,tk)-0.5);
+    let tE=max(0.08,taa/tWidthK);
+    let tInCore=1.0-smoothstep(0.45,0.45+tE,tdB);
+    let tInMargin=1.0-smoothstep(0.75,0.75+tE,tdB);
+    let tCore=tInCore*(1.0-tSnow);
+    let tTrample=(1.0-tInMargin)*(1.0-smoothstep(0.75,1.35,tdB))*tSoil*(1.0-tSnow);
+    let tBank=smoothstep(0.0,0.15,tRise)*(1.0-smoothstep(0.75,7.0,tdN))*tSoil*(1.0-tSnow)*(1.0-tInMargin);
+    let tBankBase=input.vTerrainColor.rgb;
+    let tBedBase=mix(tBankBase,vec3<f32>(0.15,0.105,0.06),0.75*clamp(input.vTerrainW2.w,0.0,1.0));
+    let tBenchBase=mix(vec3<f32>(1.0),tBedBase,0.8);
+    var tCol=surfaceAlbedo*mix(vec3<f32>(1.0),vec3<f32>(0.9,0.88,0.8),tTrample);
+    tCol=mix(tCol,tFloorTex*mix(1.0,tFloorRAH.g/0.5,tk)*tBankBase,tBank);
+    N=normalize(mix(N,normalize(N+vec3<f32>(tFloorN.x,0.0,tFloorN.y)),tBank*tk));
+    terrainRough=mix(terrainRough,clamp(terrainLayerRough.y*mix(1.0,tFloorRAH.r/0.5,tk),0.0,1.0),tBank);
+    terrainF0=mix(terrainF0,terrainLayerF0.y,tBank);
+    let tAo=mix(1.0,tBedRAH.g/0.5,tk);
+    var tCoreCol=vec3<f32>(0.3,0.26,0.21)*tDarkK*tBedTex*0.24*tAo*tBenchBase;
+    var tMarginCol=vec3<f32>(0.4,0.36,0.3)*tBedTex*0.47*tAo*tBenchBase;
+    var tDrift=smoothstep(0.25,0.7,clamp(input.vTerrainW2.z,0.0,1.0));
+    let tWash=smoothstep(0.55,0.8,macroValueNoise(P.xz,4.0));
+    tDrift*=1.0-tWash;
+    let tDriftCol=tFloorTex*vec3<f32>(0.8893440413949226,0.6225408289764459,0.35573761655796904)*mix(1.0,tFloorRAH.g/0.5,tk)*tBenchBase;
+    let tWashDark=mix(0.4,0.75,clamp(input.vTerrainW2.w,0.0,1.0));
+    let tWashCol=tFloorTex*tWashDark*mix(1.0,tFloorRAH.g/0.5,tk)*tBenchBase;
+    tCoreCol=mix(mix(tCoreCol,tDriftCol,tDrift),tWashCol,tWash);
+    tMarginCol=mix(mix(tMarginCol,tDriftCol,tDrift),tWashCol,tWash);
+    let tPuddleLow=smoothstep(0.62,0.75,1.0-macroValueNoise(P.xz,6.0));
+    let tPuddle=smoothstep(0.55,0.8,terrainWet)*tPuddleLow*tCore;
+    tCoreCol*=1.0-0.35*terrainWet;
+    tMarginCol*=1.0-0.35*0.5*terrainWet;
+    tCoreCol=mix(tCoreCol,tCoreCol*0.5,tPuddle);
+    let tPacked=surfaceAlbedo*vec3<f32>(0.86,0.88,0.94);
+    let tOnBench=tInMargin;
+    tCol=mix(tCol,mix(mix(tMarginCol,tCoreCol,tInCore),tPacked,tSnow),tOnBench);
+    let tGravel=tOnBench*(1.0-tSnow);
+    terrainPaintW=max(terrainPaintW,max(tBank,tOnBench));
+    let tBenchN=normalize(N+vec3<f32>(tBedN.x,0.0,tBedN.y)*mix(1.0,0.5,tInCore)*(1.0-tDrift)*(1.0-tWash)+vec3<f32>(tFloorN.x,0.0,tFloorN.y)*tDrift);
+    let tRamp=smoothstep(0.75,1.25,tdN/tWidthK);
+    let tLip=4.0*tRamp*(1.0-tRamp)*(1.0-tSnow);
+    let tLipN=normalize(N-vec3<f32>(tAway.x,0.0,tAway.y)*0.12*tLip);
+    var tRipple=vec2<f32>(0.0);
+    if(terrainRain>0.0){
+      tRipple+=trailRipple(P.xz,2.5,vec2<f32>(0.0,0.0),0.0,1.0,0.0);
+      tRipple+=trailRipple(P.xz,3.2,vec2<f32>(0.37,0.61),1.0,0.85,0.2);
+      tRipple+=trailRipple(P.xz,2.1,vec2<f32>(0.71,0.13),2.0,0.93,0.45);
+      tRipple+=trailRipple(P.xz,3.8,vec2<f32>(0.19,0.83),3.0,1.13,0.7);
+    }
+    let tPuddleN=normalize(vec3<f32>(tRipple.x*terrainRain,1.0,tRipple.y*terrainRain));
+    N=normalize(mix(mix(tLipN,tBenchN,tGravel*tk),tPuddleN,tPuddle));
+    var tRoughBench=clamp(terrainLayerRough2.x*mix(1.0,tBedRAH.r/0.5,tk),0.0,1.0);
+    tRoughBench=mix(tRoughBench,clamp(terrainLayerRough.y*mix(1.0,tFloorRAH.r/0.5,tk),0.0,1.0),tDrift);
+    tRoughBench=mix(tRoughBench,clamp(tRoughBench*1.15,0.0,1.0),tWash);
+    tRoughBench*=1.0-0.5*terrainWet*mix(0.5,1.0,tInCore);
+    terrainRough=mix(mix(terrainRough,tRoughBench,tGravel),0.05,tPuddle);
+    terrainF0=mix(terrainF0,terrainLayerF02.x,tGravel);
+    surfaceAlbedo=tCol;
+  }
+}
