@@ -71,7 +71,7 @@ export function createPropMeshes(engine: EngineContext, scene: SceneContext, gri
   /**
    * The rebuild for a camera at (x, z), as slices: the chunks of its window not yet made, in the window's order,
    * one a slice (a chunk is the simulation's generation of it and its boxes), and the chunks of the last window
-   * that it no longer wants let go as it begins.
+   * that it does not want let go as it begins.
    */
   function* rebuild(x: number, z: number): Slices {
     const [cx, cz] = propChunk(x, z);
