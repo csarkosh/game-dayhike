@@ -29,12 +29,25 @@
 import type { Rgb } from "./colour.js";
 import { CLOUD_NOISE_LARGE_M, CLOUD_NOISE_SMALL_M, CLOUD_WIND_MPS } from "./cloudParams.js";
 
-/** Metres either side of the line the sheets reach, the metres over the ground each lies at, and the metres the banks stand to, which every sheet thins toward. */
-export const WAY_WIDTH_M = 7;
+/**
+ * Across the way, in metres from its line: the mist is the path's thin share
+ * within the first, whole by the second (sim/wayDown.ts WAY_FLOOR_M), and
+ * this mesh's own goes out between the third and the fourth, where the mist
+ * beyond takes over (the mist beyond the banks on the tiers that draw it,
+ * wayMistFieldGeometry.ts, and the night's ground mist on the others). The
+ * path's edge is where the mist thickens, over metres, and nothing else
+ * marks it. (1 and 3.1, out between 4.6 and 6.4, until 2026-11-19: too
+ * narrow, with a glow under the banks that read as a bright line.)
+ */
+export const WAY_EDGE_M: readonly [number, number, number, number] = [2.5, 6, 7, 10.5];
+/** Metres apart a sheet's vertices lie across the way, the steps of that either side of the line they reach, the metres that comes to, the metres over the ground each sheet lies at, and the metres the banks stand to, which every sheet thins toward. */
+export const WAY_ROW_STEP_M = 1.5;
+export const WAY_ROW_STEPS = 7;
+export const WAY_WIDTH_M = WAY_ROW_STEP_M * WAY_ROW_STEPS;
 export const WAY_SHEETS_M: readonly number[] = [0, 0.22, 0.45, 0.7, 0.95, 1.25, 1.6];
 export const WAY_SHEET_TOP_M = 3;
 /** The veils a side: the metres from the line each stands at and the metres it stands to, before its wandering. */
-export const WAY_VEILS: readonly { out: number; top: number }[] = [{ out: 2.7, top: 2.3 }, { out: 3.7, top: 3.5 }, { out: 4.9, top: 3.0 }];
+export const WAY_VEILS: readonly { out: number; top: number }[] = [{ out: 5.6, top: 2.3 }, { out: 7.2, top: 3.5 }, { out: 9, top: 3.0 }];
 /**
  * A veil and a fin are built this many times as high as their mist stands at
  * rest. The shader lifts a top with the large shapes (to 1.2 times) and the
@@ -43,15 +56,17 @@ export const WAY_VEILS: readonly { out: number; top: number }[] = [{ out: 2.7, t
  */
 export const WAY_HEAD = 1.3;
 /** A fin: the metres from the line it reaches and the metres it stands to, before its wandering. */
-export const WAY_FIN_REACH_M = 6.4;
+export const WAY_FIN_REACH_M = 10.5;
 export const WAY_FIN_TOP_M = 3.6;
 /**
  * The way across at a point is square to the line from this many points
- * behind it to this many ahead. The drawn way has kinks (a step in five
- * turns on a radius under 7 m), and a way across taken at the point alone
- * folds the mist over itself on the inside of one.
+ * behind it to this many ahead. The drawn way turns hardest where it goes
+ * round something that stands in it, and a way across taken at the point
+ * alone folds the mist over itself on the inside of such a turn: over 12 m
+ * either side, a square corner turns the mist's 10.5 m edge by less than
+ * the 2 m between two points. (4 while the mist reached 7 m.)
  */
-export const WAY_ACROSS_POINTS = 4;
+export const WAY_ACROSS_POINTS = 6;
 /** Metres of way a mesh holds, and the metres every vertex stands over the ground under it. */
 export const WAY_CHUNK_M = 64;
 export const WAY_LIFT_M = 0.08;
@@ -62,8 +77,8 @@ export const WAY_KIND_VEIL = 1;
 export const WAY_KIND_FIN = 2;
 /** Numbers a vertex carries for the shader. */
 export const WAY_LIGHT_FLOATS = 4;
-/** Vertices across a sheet (a metre apart), in all a point's sheets, a side's veils and fin, and a point's whole. */
-export const WAY_ROW_VERTICES = 2 * WAY_WIDTH_M + 1;
+/** Vertices across a sheet, in all a point's sheets, a side's veils and fin, and a point's whole. */
+export const WAY_ROW_VERTICES = 2 * WAY_ROW_STEPS + 1;
 export const WAY_SHEET_VERTICES = WAY_ROW_VERTICES * WAY_SHEETS_M.length;
 const SIDE_VERTICES = WAY_VEILS.length * 2 + 4;
 export const WAY_POINT_VERTICES = WAY_SHEET_VERTICES + 2 * SIDE_VERTICES;
@@ -79,8 +94,8 @@ export const WAY_VEIL_STRENGTH = 0.3;
 export const WAY_FIN_SHARE = 0.7;
 export const WAY_SHEET_STRENGTH = 0.28;
 export const WAY_HIDE_SHARE = 0.85;
-/** The ground's glow under the banks and on the path, and how fast the ground's glow and the mist fall off with the metres from the eye (e^(-reach × d)). */
-export const WAY_GROUND_BAND = 0.14;
+/** The ground's glow under the banks (none: it drew the path's edges as bright lines) and on the path, and how fast the ground's glow and the mist fall off with the metres from the eye (e^(-reach × d)). */
+export const WAY_GROUND_BAND = 0;
 export const WAY_GROUND_CORE = 0.04;
 export const WAY_GROUND_REACH = 0.012;
 export const WAY_MIST_REACH = 0.0144;
@@ -103,11 +118,18 @@ export const WAY_HEAVE_RATES: readonly [number, number] = [0.9, 0.55];
 export const WAY_CURL = 0.12;
 export const WAY_WIND_SCALE = 2.2;
 export const WAY_STRATA_M = 4;
-/** The cold the mist's colour leans toward (linear), by how much, and how many times the ground mist's own colour it is lit to, on the post path (before the tone map) and on the material path (in the frame's own terms). */
+/**
+ * The cold the mist's colour leans toward (linear), by how much, and how
+ * many times the ground mist's own colour it is lit to, on the post path
+ * (before the tone map) and on the material path (in the frame's own terms).
+ * (8 and 14 until 2026-11-19: lit that far the banks were a pale band along
+ * each side of the path, and the path's edge was that band and not the mist
+ * thickening.)
+ */
 export const WAY_TINT: readonly [number, number, number] = [0.62, 0.7, 0.86];
 export const WAY_COLD_SHARE = 0.25;
-export const WAY_POST_LIFT = 8;
-export const WAY_MATERIAL_LIFT = 14;
+export const WAY_POST_LIFT = 5.5;
+export const WAY_MATERIAL_LIFT = 8.5;
 
 const weight = (r: number, g: number, b: number): number => 0.299 * r + 0.587 * g + 0.114 * b;
 
@@ -190,7 +212,7 @@ export function wayGroundOf(j: number): number {
   const r = (j - WAY_SHEET_VERTICES) % SIDE_VERTICES;
   const veils = WAY_VEILS.length * 2;
   if (r < veils) return j - (r % 2);
-  if (r < veils + 2) return WAY_WIDTH_M;
+  if (r < veils + 2) return WAY_ROW_STEPS;
   return j - (r - veils - 2);
 }
 
@@ -237,7 +259,7 @@ export function wayChunk(way: WayShape, heightAt: (x: number, z: number) => numb
     const s = way.cum[i] as number;
     for (const up of WAY_SHEETS_M) {
       for (let k = 0; k < WAY_ROW_VERTICES; k++) {
-        const lateral = k - WAY_WIDTH_M;
+        const lateral = (k - WAY_ROW_STEPS) * WAY_ROW_STEP_M;
         put(x + lx * lateral, z + lz * lateral, up, Math.abs(lateral), WAY_KIND_SHEET, WAY_SHEET_TOP_M);
       }
     }

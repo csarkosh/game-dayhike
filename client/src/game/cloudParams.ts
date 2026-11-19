@@ -44,8 +44,8 @@ export const CLOUD_TRAIL_SHARE = 0.3;
 export const CLOUD_TRAIL_EDGE_M = 0.8;
 export const CLOUD_TRAIL_FADE_M = 4.5;
 /** The same for the way down in the chase (wayLightGeometry.ts), whose channel is wider than the trail: thin from the line to where its banks begin, whole past them. The way's own mist (wayLight.ts) stands where this one is thinned. */
-export const WAY_MIST_EDGE_M = 2;
-export const WAY_MIST_FADE_M = 5.5;
+export const WAY_MIST_EDGE_M = 2.5;
+export const WAY_MIST_FADE_M = 7;
 /** Metres from the eye within which the cloud's shapes smooth to a plain veil, the small ones first, so the near mist hangs rather than rushing past a walker. */
 export const CLOUD_NEAR_M = 8;
 /** The noise's two reads: metres a tile spans for the large shapes and the small, and the wind's metres a second. */

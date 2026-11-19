@@ -6,7 +6,7 @@ describe("the way down's geometry", () => {
   const L = makeWay([{ x: 0, z: 0 }, { x: 100, z: 0 }, { x: 100, z: 60 }], 116.6, false);
 
   it("names its widths", () => {
-    expect([WAY_STEP_M, WAY_FLOOR_M, WAY_RIM_M]).toEqual([2, 4, 5.5]);
+    expect([WAY_STEP_M, WAY_FLOOR_M, WAY_RIM_M]).toEqual([2, 6, 8]);
   });
 
   it("resamples at 2 m and keeps its ends", () => {

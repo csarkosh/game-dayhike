@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { WAY_DEPTH_SLOPE, WAY_HEIGHTS_A_SLICE, emptyWayLightUniforms, standWayChunk, wayMistFrame, type WayChunkData } from "../../src/game/wayLight.js";
 import {
-  WAY_CURL, WAY_DENSITY_FLOOR, WAY_FIN_SHARE, WAY_GROUND_BAND, WAY_GROUND_CORE, WAY_GROUND_REACH, WAY_HEAD, WAY_HEAVE, WAY_HIDE_SHARE, WAY_LIFT_M, WAY_LIGHT_FLOATS, WAY_MATERIAL_LIFT,
+  WAY_CURL, WAY_DENSITY_FLOOR, WAY_EDGE_M, WAY_FIN_SHARE, WAY_GROUND_BAND, WAY_GROUND_CORE, WAY_GROUND_REACH, WAY_HEAD, WAY_HEAVE, WAY_HIDE_SHARE, WAY_LIFT_M, WAY_LIGHT_FLOATS, WAY_MATERIAL_LIFT,
   WAY_MIST_REACH, WAY_NEAR_DAMP, WAY_PATH_SHARE, WAY_PATH_TOP_M, WAY_POINT_GROUNDS, WAY_POINT_VERTICES, WAY_POST_LIFT, WAY_SHEET_STRENGTH, WAY_STRATA_M, WAY_VEIL_STRENGTH,
   wayCastOnMaterial, wayChunk, wayChunks, wayDrift, wayHeavePhases, wayMistColour, type WayShape,
 } from "../../src/game/wayLightGeometry.js";
@@ -36,7 +36,8 @@ describe("the way's mist: what its material is drawn with", () => {
     expect(u.wayHead).toEqual([WAY_HEAD]);
     expect(u.wayGain).toEqual([0]);
     expect(u.wayMove).toEqual([WAY_HEAVE, WAY_CURL, 0, 0]);
-    expect(Object.keys(u).sort()).toEqual(["wayDrift", "wayGain", "wayGround", "wayHead", "wayMist", "wayMove", "wayPath", "wayStrata", "wayTint"]);
+    expect(u.wayEdge).toEqual([...WAY_EDGE_M]);
+    expect(Object.keys(u).sort()).toEqual(["wayDrift", "wayEdge", "wayGain", "wayGround", "wayHead", "wayMist", "wayMove", "wayPath", "wayStrata", "wayTint"]);
     // Toward the eye is up on a depth that runs from 1 at the near plane: the lowest sheet is pulled ahead of the ground.
     expect(WAY_DEPTH_SLOPE).toBeGreaterThan(0);
   });

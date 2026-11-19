@@ -11,9 +11,13 @@
 
 /** Metres between the way's points. */
 export const WAY_STEP_M = 2;
-/** Metres either side of the line that are the channel's floor, and to the far side of the mist banks beside it: within that a player is on the way. */
-export const WAY_FLOOR_M = 4;
-export const WAY_RIM_M = 5.5;
+/**
+ * Metres either side of the line that are the path, where the mist is thin
+ * (it is whole by there), and to where a player has left the way: within
+ * that they are on it. (4 and 5.5 until 2026-11-19, which was too narrow.)
+ */
+export const WAY_FLOOR_M = 6;
+export const WAY_RIM_M = 8;
 
 /** Metres a cell of the way's index spans. */
 const CELL_M = 16;

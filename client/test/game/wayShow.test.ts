@@ -60,19 +60,19 @@ describe("the way's light, when", () => {
 
 describe("the mist over the way", () => {
   it("is thin from the line to where the way's banks begin and whole past them: wider than the trail's", () => {
-    expect([WAY_MIST_EDGE_M, WAY_MIST_FADE_M]).toEqual([2, 5.5]);
+    expect([WAY_MIST_EDGE_M, WAY_MIST_FADE_M]).toEqual([2.5, 7]);
     expect(WAY_MIST_EDGE_M).toBeGreaterThan(CLOUD_TRAIL_EDGE_M);
     expect(WAY_MIST_FADE_M).toBeGreaterThan(CLOUD_TRAIL_FADE_M);
     // A line along x through the map's centre: the share off it by its distance, with the way's edge and fade.
     const g = cloudGroundMap(() => 0, 0, 0, (_x, z) => Math.abs(z), 64, 128, WAY_MIST_EDGE_M, WAY_MIST_FADE_M);
     const at = (z: number): number => g.data[(Math.floor((z / 128 + 0.5) * 64) * 64 + 32) * 4 + 3]!;
     expect(at(1)).toBe(0);
-    expect(at(7)).toBe(255);
-    expect(at(3)).toBeGreaterThan(0);
-    expect(at(3)).toBeLessThan(at(5));
+    expect(at(9)).toBe(255);
+    expect(at(4)).toBeGreaterThan(0);
+    expect(at(4)).toBeLessThan(at(6));
     // The trail's own edge and fade are the default still.
     const t = cloudGroundMap(() => 0, 0, 0, (_x, z) => Math.abs(z), 64, 128);
-    expect(t.data[(Math.floor((5 / 128 + 0.5) * 64) * 64 + 32) * 4 + 3]).toBe(255);
+    expect(t.data[(Math.floor((7 / 128 + 0.5) * 64) * 64 + 32) * 4 + 3]).toBe(255);
   });
 });
 

@@ -106,11 +106,11 @@ describe("the line the chase holds a player to", SUITE, () => {
     expect(wayProject(w.way!, a.x, a.z).s - wayProject(w.way!, me.x, me.z).s).toBeCloseTo(30, 0);
   });
 
-  it("a death beside the trail but 8 m off the way is off the trail's cause; one on the way, far from the trail, is not", () => {
+  it("a death beside the trail but 12 m off the way is off the trail's cause; one on the way, far from the trail, is not", () => {
     const w = forest(Phase.Chase);
     const p = spawnPlayer(w);
     const s = offTheTrail(w, 30);
-    const on = beside(w, s, 1), off = beside(w, s, 8);
+    const on = beside(w, s, 1), off = beside(w, s, 12);
     const h = spawnHollow(w, { x: on.x, y: elevationAt(seed, on.x, on.z) + 1, z: on.z }, p.id, 0);
     h.ai = AiState.Hunt;
     // Running down the way, the Hollow behind: caught, not off anything.

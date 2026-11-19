@@ -4,7 +4,7 @@ import {
   FIELD_SHEETS_M, FIELD_SHEET_STRENGTH, FIELD_SHEET_VERTICES, FIELD_TOP_M, FIELD_VERTICES, FIELD_WHOLE_M,
   fieldFinAt, fieldIndices, fillField, newFieldCache, refreshField,
 } from "../../src/game/wayMistFieldGeometry.js";
-import { WAY_FIN_SHARE, WAY_HEAD, WAY_LIFT_M, WAY_SHEET_STRENGTH, WAY_VEIL_STRENGTH } from "../../src/game/wayLightGeometry.js";
+import { WAY_FIN_SHARE, WAY_HEAD, WAY_LIFT_M, WAY_SHEET_STRENGTH, WAY_VEIL_STRENGTH, WAY_EDGE_M } from "../../src/game/wayLightGeometry.js";
 
 const N = FIELD_CELLS, PER = N * N, HALF = (N - 1) / 2;
 const ground = (x: number, z: number): number => 5 + 0.1 * x - 0.05 * z;
@@ -24,8 +24,9 @@ describe("the mist beyond the way: its numbers", () => {
     // The owner's word: thicker beyond the way than the way's walls.
     expect(FIELD_SHEET_STRENGTH).toBeGreaterThan(WAY_SHEET_STRENGTH * 2);
     expect(FIELD_FIN_STRENGTH).toBeGreaterThan(WAY_VEIL_STRENGTH * WAY_FIN_SHARE * 2);
-    // The banks are whole from 3.1 m off the line and gone by 6.4 m (wayLight.fragment.fx): the field fills as they fade.
-    expect([FIELD_FROM_M, FIELD_WHOLE_M]).toEqual([3, 6.5]);
+    // The way's own mist goes out between 7 m and 10.5 m off the line (WAY_EDGE_M): the field fills as it fades, so no band is twice as thick.
+    expect([FIELD_FROM_M, FIELD_WHOLE_M]).toEqual([WAY_EDGE_M[2], WAY_EDGE_M[3]]);
+    expect([FIELD_FROM_M, FIELD_WHOLE_M]).toEqual([7, 10.5]);
     expect(FIELD_RIM_M).toEqual([22, 34]);
     expect(FIELD_RIM_M[1]).toBeLessThan(HALF * FIELD_CELL_M);
   });

@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
+import { WAY_FLOOR_M } from "../../src/sim/wayDown.js";
 import {
-  WAY_ACROSS_POINTS, WAY_CHUNK_M, WAY_COLD_SHARE, WAY_CURL, WAY_DENSITY_FLOOR, WAY_FIN_REACH_M, WAY_FIN_SHARE, WAY_FIN_TOP_M, WAY_GROUND_BAND, WAY_GROUND_CORE,
+  WAY_ACROSS_POINTS, WAY_CHUNK_M, WAY_EDGE_M, WAY_ROW_STEPS, WAY_ROW_STEP_M, WAY_COLD_SHARE, WAY_CURL, WAY_DENSITY_FLOOR, WAY_FIN_REACH_M, WAY_FIN_SHARE, WAY_FIN_TOP_M, WAY_GROUND_BAND, WAY_GROUND_CORE,
   WAY_GROUND_REACH, WAY_HEAD, WAY_HEAVE, WAY_HEAVE_RATES, WAY_HIDE_SHARE, WAY_KIND_FIN, WAY_KIND_SHEET, WAY_KIND_VEIL, WAY_LIFT_M, WAY_LIGHT_FLOATS, WAY_MATERIAL_LIFT, WAY_MIST_REACH,
   WAY_NEAR_DAMP, WAY_PATH_SHARE, WAY_PATH_TOP_M, WAY_POINT_GROUNDS, WAY_POINT_VERTICES, WAY_POST_LIFT, WAY_ROW_VERTICES, WAY_SHEETS_M, WAY_SHEET_STRENGTH,
   WAY_SHEET_TOP_M, WAY_SHEET_VERTICES, WAY_STRATA_M, WAY_TINT, WAY_VEILS, WAY_VEIL_STRENGTH, WAY_WIDTH_M, WAY_WIND_SCALE,
@@ -25,9 +26,13 @@ const P = WAY_POINT_VERTICES, F = WAY_LIGHT_FLOATS;
 
 describe("the way's mist: its numbers", () => {
   it("is the approved look's shape", () => {
-    expect([WAY_WIDTH_M, WAY_SHEET_TOP_M, WAY_FIN_REACH_M, WAY_FIN_TOP_M, WAY_ACROSS_POINTS, WAY_CHUNK_M, WAY_LIFT_M]).toEqual([7, 3, 6.4, 3.6, 4, 64, 0.08]);
+    expect([WAY_ROW_STEP_M, WAY_ROW_STEPS, WAY_WIDTH_M, WAY_SHEET_TOP_M, WAY_FIN_REACH_M, WAY_FIN_TOP_M, WAY_ACROSS_POINTS, WAY_CHUNK_M, WAY_LIFT_M]).toEqual([1.5, 7, 10.5, 3, 10.5, 3.6, 6, 64, 0.08]);
+    // Across the way: thin within 2.5 m of the line, whole by the path's edge, and the mesh's own mist out between 7 m and its reach.
+    expect(WAY_EDGE_M).toEqual([2.5, 6, 7, 10.5]);
+    expect(WAY_EDGE_M[1]).toBe(WAY_FLOOR_M);
+    expect(WAY_EDGE_M[3]).toBe(WAY_WIDTH_M);
     expect(WAY_SHEETS_M).toEqual([0, 0.22, 0.45, 0.7, 0.95, 1.25, 1.6]);
-    expect(WAY_VEILS).toEqual([{ out: 2.7, top: 2.3 }, { out: 3.7, top: 3.5 }, { out: 4.9, top: 3.0 }]);
+    expect(WAY_VEILS).toEqual([{ out: 5.6, top: 2.3 }, { out: 7.2, top: 3.5 }, { out: 9, top: 3.0 }]);
     expect([WAY_ROW_VERTICES, WAY_SHEET_VERTICES, WAY_POINT_VERTICES, WAY_POINT_GROUNDS, WAY_LIGHT_FLOATS]).toEqual([15, 105, 125, 23, 4]);
     expect([WAY_KIND_SHEET, WAY_KIND_VEIL, WAY_KIND_FIN]).toEqual([0, 1, 2]);
   });
@@ -41,10 +46,11 @@ describe("the way's mist: its numbers", () => {
 
   it("is the approved look's strengths: fuller on the path, the banks whole", () => {
     expect([WAY_VEIL_STRENGTH, WAY_FIN_SHARE, WAY_SHEET_STRENGTH, WAY_HIDE_SHARE]).toEqual([0.3, 0.7, 0.28, 0.85]);
-    expect([WAY_GROUND_BAND, WAY_GROUND_CORE, WAY_GROUND_REACH, WAY_MIST_REACH]).toEqual([0.14, 0.04, 0.012, 0.0144]);
+    // No glow under the banks: it drew the path's edges as bright lines (the owner's word of 2026-11-19: the mist's thickness marks the edge).
+    expect([WAY_GROUND_BAND, WAY_GROUND_CORE, WAY_GROUND_REACH, WAY_MIST_REACH]).toEqual([0, 0.04, 0.012, 0.0144]);
     expect([WAY_PATH_SHARE, WAY_PATH_TOP_M, WAY_NEAR_DAMP, WAY_DENSITY_FLOOR]).toEqual([0.3, 1.3, 0.3, 0.15]);
     expect([WAY_HEAVE, WAY_CURL, WAY_WIND_SCALE, WAY_STRATA_M]).toEqual([0.3, 0.12, 2.2, 4]);
-    expect([WAY_COLD_SHARE, WAY_POST_LIFT, WAY_MATERIAL_LIFT]).toEqual([0.25, 8, 14]);
+    expect([WAY_COLD_SHARE, WAY_POST_LIFT, WAY_MATERIAL_LIFT]).toEqual([0.25, 5.5, 8.5]);
     expect(WAY_TINT).toEqual([0.62, 0.7, 0.86]);
     // The path's mist is thinner and lower than the banks', and there is some (lighter on the path floor, the owner's word of 2026-11-14: 0.55 and 1.7 m before).
     expect(WAY_PATH_SHARE).toBeGreaterThan(0);
@@ -125,14 +131,14 @@ describe("a chunk of the way's mist", () => {
   });
 
   it("the sheets lie across the whole width at their heights over the ground, each vertex knowing how far from the line it is", () => {
-    // Point 3 (x = 6): the sheets come first, the lowest first, each from 7 m one side to 7 m the other.
+    // Point 3 (x = 6): the sheets come first, the lowest first, each from 10.5 m one side to 10.5 m the other, a vertex every 1.5 m.
     for (let l = 0; l < WAY_SHEETS_M.length; l++) {
       for (let k = 0; k < 15; k++) {
         const v = 3 * P + l * 15 + k;
         expect(c.positions[v * 3]).toBeCloseTo(6, 5);
         expect(c.positions[v * 3 + 1]).toBeCloseTo(10 + WAY_LIFT_M + WAY_SHEETS_M[l]!, 5);
-        expect(Math.abs(c.positions[v * 3 + 2]!)).toBeCloseTo(Math.abs(k - 7), 5);
-        expect([...c.light.slice(v * F, v * F + 4)]).toEqual([Math.abs(k - 7), Math.fround(WAY_SHEETS_M[l]!), WAY_KIND_SHEET, WAY_SHEET_TOP_M]);
+        expect(Math.abs(c.positions[v * 3 + 2]!)).toBeCloseTo(Math.abs(k - 7) * 1.5, 5);
+        expect([...c.light.slice(v * F, v * F + 4)]).toEqual([Math.abs(k - 7) * 1.5, Math.fround(WAY_SHEETS_M[l]!), WAY_KIND_SHEET, WAY_SHEET_TOP_M]);
       }
     }
     // One edge each side of the line.
@@ -220,7 +226,7 @@ describe("a chunk of the way's mist", () => {
 
   it("follows a bend: well past it the mist lies square across the way", () => {
     const bent = wayChunk(kinked(), flat, 0, 19);
-    // The last point's direction is +z, so its sheets span x, 7 m either side.
+    // The last point's direction is +z, so its sheets span x, 10.5 m either side.
     const v = 19 * P;
     expect(Math.abs(bent.positions[v * 3]! - 18)).toBeCloseTo(WAY_WIDTH_M, 4);
     expect(bent.positions[v * 3 + 2]).toBeCloseTo(20, 4);
@@ -240,8 +246,8 @@ describe("a chunk of the way's mist", () => {
       const [ax, az] = across(p), [bx, bz] = across(p + 1);
       most = Math.max(most, Math.acos(Math.min(1, ax * bx + az * bz)));
     }
-    // A square kink is a quarter turn; no step between points takes more than a fifth of it.
-    expect(most).toBeLessThan(Math.PI / 2 / 5);
+    // A square kink is a quarter turn; no step between points takes more than a seventh of it.
+    expect(most).toBeLessThan(Math.PI / 2 / 7);
     // And neither edge runs backward along the way coming into the turn (the inner one did, by 3 m, when the way across turned at one point).
     for (let p = 0; p + 1 < 10; p++) {
       const a = p * P, b = (p + 1) * P;

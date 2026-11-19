@@ -17,9 +17,9 @@ ${varyings}
   var small=textureSample(wayNoise,wayNoiseSampler,mix(plan*0.25+up*vec2<f32>(0.37,0.19),strata,standing)-u.wayDrift.zw+curl).g;
   large=mix(0.6,large,smoothstep(0.0,4.0,d));
   small=mix(0.6,small,smoothstep(1.6,8.0,d));
-  let bank=smoothstep(1.0,3.1,lateral);
-  let band=mix(u.wayPath.x,1.0,bank)*(1.0-smoothstep(4.6,6.4,lateral));
-  let core=1.0-smoothstep(1.5,4.0,lateral);
+  let bank=smoothstep(u.wayEdge.x,u.wayEdge.y,lateral);
+  let band=mix(u.wayPath.x,1.0,bank)*(1.0-smoothstep(u.wayEdge.z,u.wayEdge.w,lateral));
+  let core=1.0-smoothstep(u.wayEdge.x,u.wayEdge.y,lateral);
   let close=mix(u.wayPath.z,1.0,smoothstep(1.0,10.0,d));
   let far=exp(-u.wayGround.w*d);
   let heave=sin(dot(plan,vec2<f32>(0.31,0.22))-u.wayMove.z)*sin(dot(plan,vec2<f32>(-0.13,0.19))+u.wayMove.w);

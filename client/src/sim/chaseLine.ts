@@ -12,11 +12,11 @@ import { stemAhead } from "./trailRoute.js";
 import { wayDistance, wayPoint, wayProject } from "./wayDown.js";
 
 /**
- * Metres taken off a distance from the way's line, so that its walls' rim
- * (WAY_RIM_M, 5.5) reads as the trail's edge (OFF_TRAIL_FROM_M, 4): the
- * channel is wider than the trail was. A test holds it to their difference.
+ * Metres taken off a distance from the way's line, so that the way's rim
+ * (WAY_RIM_M, 8) reads as the trail's edge (OFF_TRAIL_FROM_M, 4): the way is
+ * wider than the trail was. A test holds it to their difference.
  */
-export const WAY_SLACK_M = 1.5;
+export const WAY_SLACK_M = 4;
 
 /** Metres round the place the party stood at the find (`World.crest`, host only) that are on the line whatever the way's distance. */
 export const CREST_GRACE_M = 15;

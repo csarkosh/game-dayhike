@@ -18,10 +18,10 @@
  *   together they look like a volume.
  * - **Across the way the mist is thin on the path and whole in the banks
  *   either side**: `wayPath.x` of the banks' on the line, filling to whole
- *   between 1 m and 3.1 m from it, gone between 4.6 m and 6.4 m. It stands
- *   lower on the path too (`wayPath.y` metres, the banks to each vertex's
- *   own). The lowest sheet is the ground's own glow, a faint core on the
- *   path and a band under the banks.
+ *   between `wayEdge.x` and `wayEdge.y` metres from it, gone between
+ *   `wayEdge.z` and `wayEdge.w`. It stands lower on the path too
+ *   (`wayPath.y` metres, the banks to each vertex's own). The lowest sheet
+ *   is the ground's own glow, a faint core on the path.
  * - **It moves.** The shapes drift (`wayDrift`), the small ones another way
  *   from the large and carried by them (`wayMove.y`), so they curl and
  *   change. The banks' tops heave on two crossed waves (`wayMove.x` of their
@@ -46,7 +46,7 @@ import type { Rgb } from "./colour.js";
 import { CHASE_TINT } from "./gradeParams.js";
 import { sliceDue, type Slices } from "./syncJobs.js";
 import {
-  WAY_CURL, WAY_DENSITY_FLOOR, WAY_FIN_SHARE, WAY_GROUND_BAND, WAY_GROUND_CORE, WAY_GROUND_REACH, WAY_HEAD, WAY_HEAVE, WAY_HIDE_SHARE, WAY_MIST_REACH,
+  WAY_CURL, WAY_DENSITY_FLOOR, WAY_EDGE_M, WAY_FIN_SHARE, WAY_GROUND_BAND, WAY_GROUND_CORE, WAY_GROUND_REACH, WAY_HEAD, WAY_HEAVE, WAY_HIDE_SHARE, WAY_MIST_REACH,
   WAY_NEAR_DAMP, WAY_PATH_SHARE, WAY_PATH_TOP_M, WAY_POINT_VERTICES, WAY_SHEET_STRENGTH, WAY_STRATA_M, WAY_VEIL_STRENGTH,
   wayChunk, wayDrift, wayGroundOf, wayHeavePhases, wayTint, type WayShape,
 } from "./wayLightGeometry.js";
@@ -72,6 +72,7 @@ export type WayLightUniforms = {
   wayMist: [number, number, number, number];
   wayGround: [number, number, number, number];
   wayPath: [number, number, number, number];
+  wayEdge: [number, number, number, number];
   wayMove: [number, number, number, number];
   wayDrift: [number, number, number, number];
 };
@@ -86,6 +87,7 @@ export function emptyWayLightUniforms(): WayLightUniforms {
     wayMist: [WAY_VEIL_STRENGTH, WAY_FIN_SHARE, WAY_SHEET_STRENGTH, WAY_HIDE_SHARE],
     wayGround: [WAY_GROUND_BAND, WAY_GROUND_CORE, WAY_GROUND_REACH, WAY_MIST_REACH],
     wayPath: [WAY_PATH_SHARE, WAY_PATH_TOP_M, WAY_NEAR_DAMP, WAY_DENSITY_FLOOR],
+    wayEdge: [WAY_EDGE_M[0], WAY_EDGE_M[1], WAY_EDGE_M[2], WAY_EDGE_M[3]],
     wayMove: [WAY_HEAVE, WAY_CURL, 0, 0],
     wayDrift: [0, 0, 0, 0],
   };

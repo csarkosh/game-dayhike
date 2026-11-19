@@ -37,9 +37,9 @@ export const FIELD_FLOATS = 4;
 /** Cells asked for in one frame, and the most metres from the way a cell remembers. */
 export const FIELD_FILL_A_FRAME = 40;
 export const FIELD_FAR_M = 12;
-/** Metres off the way's line the field comes in over (the banks fade out from 4.6 m to 6.4 m), and metres from the eye it fades out over. */
-export const FIELD_FROM_M = 3;
-export const FIELD_WHOLE_M = 6.5;
+/** Metres off the way's line the field comes in over (where the way's own mist goes out: wayLightGeometry.ts WAY_EDGE_M, a test holds the two equal), and metres from the eye it fades out over. */
+export const FIELD_FROM_M = 7;
+export const FIELD_WHOLE_M = 10.5;
 export const FIELD_RIM_M: readonly [number, number] = [22, 34];
 /** How much a sheet and a fin veil at their thickest (the way's banks: 0.28 and 0.21), and the metres the sheets' mist stands to. */
 export const FIELD_SHEET_STRENGTH = 0.8;
