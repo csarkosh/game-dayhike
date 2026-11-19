@@ -141,7 +141,9 @@ it. So some of what lunges is real. All the way down, a lunge stands up beside t
 of whoever leads each group of runners (players within 60 m of one ahead of them are that
 one's group): 40 to 60 m down the way from them, 7 to 8 m from its line, in the thick mist at
 the path's edge among the crowd, on a drawn side, 40 to 70 m of way on from the one before
-(1.6 times that at the way's start, easing to once by three tenths of it), and none in the
+(1.6 times that at the way's start, easing to once by three tenths of it), never within 40 m
+of one that stands already whoever it stands for (a runner who takes the lead is not given one
+beside the last leader's), and none in the
 way's first 110 m, a quarter of a minute's sprint. It waits there. When its player is within
 24 m of it down the way, over three seconds of sprint, it lunges onto the path as the crowd's
 do, at 8 m/s, straight out from where it waited to a metre short of the way's line, and stands
@@ -335,7 +337,13 @@ not in a decided match. It is a death of the chase like any other (they fall whe
 and come back on the crest), and its cause is walking into what killed them (`DeathCause.Into`)
 or, past the path's edge, leaving the path. The host takes a player's word for their own death
 and for nothing else. The figure holds its reach over them until they are back, then goes; one
-the host did not give it (a player just returned) it lets go after 2 s.
+the host did not give it it lets go after 2 s. Nothing is had while a scene has the player's
+legs (the return's run down the way), nor for the four seconds of the host's hold after a
+return, and a living player who cannot be had (on the road) is let go of at once. **A return
+scatters the crowd**: while a player lies dead the crowd comes in and stands round them, on the
+path, and more stand down the way where they ran; left there, a death near the crest was run
+back into on every return. So on a return every figure goes, and the woods fill again by the
+crowd's own rules.
 
 **How they go.** A figure goes when it is
 left 30 m behind, is too far down the way, or, round a player off the way, is over 25 m from
