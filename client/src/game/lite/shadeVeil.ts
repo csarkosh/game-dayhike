@@ -35,6 +35,9 @@ import type { StareShade } from "../stareLens.js";
 import { SEE_THROUGH_ORDER } from "./drawOrder.js";
 import { wgslFloat } from "./forestPlugins.js";
 import { SHADE_BLOCK_WGSL, SHADE_HELPERS_WGSL, STARE_BLOCK_WGSL } from "./postWgsl.js";
+import veilVertexSource from "../shaders/shadeVeil/veil.vertex.wgsl?raw";
+import veilFragmentSource from "../shaders/shadeVeil/veil.fragment.wgsl?raw";
+import { fill, wgsl } from "../shaders/shaderText.js";
 
 /** The veil's uniforms, by the grade's names for them. */
 export type VeilUniforms = { shadeShape: [number, number, number, number]; shadeMonster: [number]; stareShade: [number, number, number, number] };
@@ -59,30 +62,10 @@ export function veilShown(stare: StareShade, shades: boolean): boolean {
 }
 
 /** The vertex stage: one triangle over the frame, at the near plane, `vUV` counting up from the frame's foot as the game's does. */
-const VERTEX = /* wgsl */ `
-struct VeilOut{@builtin(position)position:vec4<f32>,@location(0)vUV:vec2<f32>}
-@vertex fn mainVertex(input:VertexInput)->VeilOut{
-  var out:VeilOut;
-  out.position=vec4<f32>(input.position.xy,1.0,1.0);
-  out.vUV=input.position.xy*0.5+0.5;
-  return out;
-}`;
+const VERTEX = wgsl(veilVertexSource);
 
 /** shadeVeil.fragment.glsl: a factor of 1 where nothing darkens, the grade's two blocks on it, and the display's gamma. */
-const FRAGMENT = /* wgsl */ `
-struct VeilOut{@builtin(position)position:vec4<f32>,@location(0)vUV:vec2<f32>}
-fn tx(uv:vec2<f32>)->vec2<f32>{return vec2<f32>(uv.x,1.0-uv.y);}
-fn shadeRead(uv:vec2<f32>)->vec3<f32>{return textureSampleLevel(shadeSampler,shadeSamplerSampler,tx(uv),0.0).rgb;}
-${SHADE_HELPERS_WGSL}
-@fragment fn mainFragment(input:VeilOut)->@location(0)vec4<f32>{
-  let u=shaderUniforms;
-  let vUV=input.vUV;
-  var c=vec3<f32>(1.0);
-  let centred=(vUV-0.5)*2.0;
-${SHADE_BLOCK_WGSL}
-${STARE_BLOCK_WGSL}
-  return vec4<f32>(pow(c,vec3<f32>(${wgslFloat(VEIL_GAMMA)})),1.0);
-}`;
+const FRAGMENT = fill(wgsl(veilFragmentSource), { shadeHelpers: SHADE_HELPERS_WGSL, shadeBlock: SHADE_BLOCK_WGSL, stareBlock: STARE_BLOCK_WGSL, veilGamma: wgslFloat(VEIL_GAMMA) });
 
 /**
  * A claim on `texture` for as long as its holder may bind it again; the

@@ -69,6 +69,10 @@ import type { CameraAxes, CameraPose } from "./cameraPose.js";
 import { DISPLAY_CURVE_WGSL, MATERIAL_GRADE_WGSL } from "./displayCurve.js";
 import { wgslFloat } from "./forestPlugins.js";
 import { FRAME_BLOCK, FRAME_CONTRAST_NAME, FRAME_EXPOSURE_NAME, SHADE_SMOKE_TIME_NAME } from "./frameBlock.js";
+import smokeNoiseSource from "../shaders/shadeMask/smokeNoise.wgsl?raw";
+import smokeVertexSource from "../shaders/shadeMask/smokeVertex.wgsl?raw";
+import smokeFragmentSource from "../shaders/shadeMask/smokeFragment.wgsl?raw";
+import { fill, wgsl } from "../shaders/shaderText.js";
 
 const f = wgslFloat;
 
@@ -79,55 +83,14 @@ export const SHADE_LOOK_FLOATS = 8;
 const LOOK_AHEAD = 10;
 
 /** shadeSmokeNoise.glsl: value noise in three dimensions on a hash, three octaves of it, and where a point is in the smoke at a time. */
-export const SHADE_SMOKE_NOISE_WGSL = /* wgsl */ `
-const SHADE_SMOKE_SCALE:f32=${f(SHADE_SMOKE_SCALE)};
-const SHADE_SMOKE_RISE:f32=${f(SHADE_SMOKE_RISE)};
-const SHADE_SMOKE_SOFT:f32=${f(SHADE_SMOKE_SOFT)};
-const SHADE_SMOKE_FEET:f32=${f(SHADE_SMOKE_FEET)};
-fn shadeSmokeHash(q:vec3<f32>)->f32{
-  var p=fract(q*0.3183099+vec3<f32>(0.1,0.2,0.3));
-  p*=17.0;
-  return fract(p.x*p.y*p.z*(p.x+p.y+p.z));
-}
-fn shadeSmokeNoise(x:vec3<f32>)->f32{
-  let i=floor(x);
-  var f=fract(x);
-  f=f*f*(3.0-2.0*f);
-  let n000=shadeSmokeHash(i);
-  let n100=shadeSmokeHash(i+vec3<f32>(1.0,0.0,0.0));
-  let n010=shadeSmokeHash(i+vec3<f32>(0.0,1.0,0.0));
-  let n110=shadeSmokeHash(i+vec3<f32>(1.0,1.0,0.0));
-  let n001=shadeSmokeHash(i+vec3<f32>(0.0,0.0,1.0));
-  let n101=shadeSmokeHash(i+vec3<f32>(1.0,0.0,1.0));
-  let n011=shadeSmokeHash(i+vec3<f32>(0.0,1.0,1.0));
-  let n111=shadeSmokeHash(i+vec3<f32>(1.0,1.0,1.0));
-  return mix(mix(mix(n000,n100,f.x),mix(n010,n110,f.x),f.y),mix(mix(n001,n101,f.x),mix(n011,n111,f.x),f.y),f.z);
-}
-fn shadeSmokeFbm(p:vec3<f32>)->f32{
-  var v=0.5*shadeSmokeNoise(p);
-  v+=0.25*shadeSmokeNoise(p*2.03+vec3<f32>(1.7,9.2,4.4));
-  v+=0.125*shadeSmokeNoise(p*4.01+vec3<f32>(8.3,2.8,6.1));
-  return v/0.875;
-}
-fn shadeSmokeAt(world:vec3<f32>,seconds:f32)->vec3<f32>{
-  return world*SHADE_SMOKE_SCALE+vec3<f32>(0.0,-seconds*SHADE_SMOKE_RISE*SHADE_SMOKE_SCALE,0.0);
-}`;
+export const SHADE_SMOKE_NOISE_WGSL = fill(wgsl(smokeNoiseSource), { shadeSmokeScale: f(SHADE_SMOKE_SCALE), shadeSmokeRise: f(SHADE_SMOKE_RISE), shadeSmokeSoft: f(SHADE_SMOKE_SOFT), shadeSmokeFeet: f(SHADE_SMOKE_FEET) });
 
 /**
  * shadeSmokeWorldPos.vertex.glsl: the outline swells and draws in along the
  * normal; then the clip position from the place it came to, which the
  * fragment reads too, and the figure's own values handed on.
  */
-export const SHADE_SMOKE_VERTEX_WGSL = /* wgsl */ `{
-  let shadeSmokeTime=${FRAME_BLOCK}.${SHADE_SMOKE_TIME_NAME};
-  var w=out.worldPos;
-  let shadeSmokeSwell=shadeSmokeFbm(shadeSmokeAt(w,shadeSmokeTime)*0.5+vec3<f32>(shadeSmokeTime*0.11,0.0,shadeSmokeTime*0.07))-0.5;
-  w+=normalize(out.worldNormal)*shadeSmokeSwell*2.0*${f(SHADE_SMOKE_SWELL_M)};
-  out.worldPos=w;
-  out.clipPos=scene.viewProjection*vec4<f32>(w,1.0);
-  out.vShadeLook=shadeLook;
-  out.vShadeFeet=shadeFeet.xy;
-}`;
+export const SHADE_SMOKE_VERTEX_WGSL = fill(wgsl(smokeVertexSource), { frameBlock: FRAME_BLOCK, shadeSmokeTimeName: SHADE_SMOKE_TIME_NAME, shadeSmokeSwellM: f(SHADE_SMOKE_SWELL_M) });
 
 /**
  * The mask's texel: Babylon.js's Standard material as the mask sets it (the
@@ -137,26 +100,7 @@ export const SHADE_SMOKE_VERTEX_WGSL = /* wgsl */ `{
  * through the material colour path, as every Standard material's does there.
  */
 export function shadeMaskFragmentWgsl(linear: boolean): string {
-  return /* wgsl */ `{
-  let shadeSmoke=vec4<f32>(input.vShadeLook.w,${FRAME_BLOCK}.${SHADE_SMOKE_TIME_NAME},input.vShadeFeet.x,input.vShadeFeet.y);
-  let vPositionW=input.worldPos;
-  let normalW=normalize(input.worldNormal);
-  let viewDirectionW=normalize(scene.vEyePosition.xyz-vPositionW);
-  var shadeColour=pow(clamp(vec3<f32>(input.vShadeLook.x,0.0,input.vShadeLook.y),vec3<f32>(0.0),vec3<f32>(1.0)),vec3<f32>(2.2));
-  ${linear ? "" : `shadeColour=gradeCurves(displayColour(shadeColour,${FRAME_BLOCK}.${FRAME_EXPOSURE_NAME},${FRAME_BLOCK}.${FRAME_CONTRAST_NAME}));`}
-  var shadeAlpha=input.vShadeLook.z;
-  let shadeSmokeUp=clamp((vPositionW.y-shadeSmoke.z)/max(shadeSmoke.w,0.01),0.0,1.0);
-  let shadeSmokeN=shadeSmokeFbm(shadeSmokeAt(vPositionW,shadeSmoke.y));
-  let shadeSmokeCut=0.75*shadeSmokeN+0.25*shadeSmokeUp;
-  let shadeSmokeIn=mix(-SHADE_SMOKE_SOFT,1.0+SHADE_SMOKE_SOFT,shadeSmoke.x);
-  var shadeSmokeKeep=smoothstep(shadeSmokeCut-SHADE_SMOKE_SOFT,shadeSmokeCut+SHADE_SMOKE_SOFT,shadeSmokeIn);
-  let shadeSmokeRim=1.0-abs(dot(normalW,viewDirectionW));
-  let shadeSmokeFray=shadeSmokeFbm(shadeSmokeAt(vPositionW,shadeSmoke.y*1.7)*2.0+vec3<f32>(shadeSmoke.y*0.23,0.0,shadeSmoke.y*0.17));
-  shadeSmokeKeep*=1.0-${f(SHADE_SMOKE_FRAY)}*smoothstep(0.35,0.9,shadeSmokeRim+(shadeSmokeFray-0.5)*0.9);
-  shadeSmokeKeep*=smoothstep(0.0,SHADE_SMOKE_FEET,shadeSmokeUp);
-  shadeAlpha*=shadeSmokeKeep;
-  return vec4<f32>(shadeColour,shadeAlpha);
-}`;
+  return fill(wgsl(smokeFragmentSource), { frameBlock: FRAME_BLOCK, smokeTimeName: SHADE_SMOKE_TIME_NAME, colourCurve: linear ? "" : `shadeColour=gradeCurves(displayColour(shadeColour,${FRAME_BLOCK}.${FRAME_EXPOSURE_NAME},${FRAME_BLOCK}.${FRAME_CONTRAST_NAME}));`, shadeSmokeFray: f(SHADE_SMOKE_FRAY) });
 }
 
 /** The mask's material's plugin: the smoke at its points, the figure's own values an instance's, the clock the frame's block's. */

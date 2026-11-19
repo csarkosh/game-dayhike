@@ -39,6 +39,10 @@ import { MIST_HORIZON, SUN_DISC_CAPTURE_MAX, SUN_DISC_COS, type SkyState } from 
 import { DRAW_ORDER } from "./drawOrder.js";
 import { wgslFloat } from "./forestPlugins.js";
 import { FRAME_CONTRAST_NAME, FRAME_EXPOSURE_NAME, stageOwn, stageReads } from "./frameBlock.js";
+import radianceSource from "../shaders/skyDome/radiance.wgsl?raw";
+import domeVertexSource from "../shaders/skyDome/dome.vertex.wgsl?raw";
+import domeFragmentSource from "../shaders/skyDome/dome.fragment.wgsl?raw";
+import { fill, wgsl } from "../shaders/shaderText.js";
 
 const f = wgslFloat;
 
@@ -50,46 +54,10 @@ const f = wgslFloat;
  * toward the air at the horizon. It reads `skyTable` through
  * `skyTableSampler`, which the stage that includes it binds.
  */
-export const SKY_RADIANCE_WGSL = /* wgsl */ `
-const SKY_PI:f32=${Math.PI.toFixed(8)};
-const SKY_AZIMUTHS:f32=${f(SLICE_AZIMUTHS)};
-const SKY_ELEVATIONS:f32=${f(SLICE_ELEVATIONS)};
-const SKY_MIST_HORIZON:f32=${f(MIST_HORIZON)};
-const SKY_DISC_COS:f32=${SUN_DISC_COS.toFixed(8)};
-const SKY_DISC_CAPTURE_MAX:f32=${f(SUN_DISC_CAPTURE_MAX)};
-fn skyTableUv(d:vec3<f32>,sunDir:vec3<f32>)->vec2<f32>{
-  let h=d.xz;
-  let s=sunDir.xz;
-  let hl=length(h);
-  let sl=length(s);
-  let c=select(1.0,clamp(dot(h,s)/(hl*sl),-1.0,1.0),hl>1.0e-6&&sl>1.0e-6);
-  let u=acos(c)/SKY_PI;
-  let e=asin(clamp(d.y,0.0,1.0));
-  let v=0.5+0.5*sign(e)*sqrt(abs(e)/(0.5*SKY_PI));
-  return vec2<f32>((u*(SKY_AZIMUTHS-1.0)+0.5)/SKY_AZIMUTHS,(v*(SKY_ELEVATIONS-1.0)+0.5)/SKY_ELEVATIONS);
-}
-fn skyDeck(zenith:vec3<f32>,sinE:f32)->vec3<f32>{
-  return zenith*(1.0+2.0*max(sinE,0.0))/3.0;
-}
-fn skyRadiance(d:vec3<f32>,sunDir:vec3<f32>,scale:f32,cloud:f32,deckZenith:vec3<f32>,night:vec3<f32>,disc:vec3<f32>,mistAir:vec3<f32>,mistWeight:f32,capture:f32)->vec3<f32>{
-  var sky=scale*textureSampleLevel(skyTable,skyTableSampler,skyTableUv(d,sunDir),0.0).rgb;
-  sky=mix(sky,skyDeck(deckZenith,d.y),cloud);
-  sky+=night;
-  let inDisc=step(SKY_DISC_COS,dot(d,sunDir));
-  sky+=inDisc*mix(disc,min(disc,vec3<f32>(SKY_DISC_CAPTURE_MAX)),capture);
-  let h=mistWeight*exp(-max(d.y,0.0)/SKY_MIST_HORIZON);
-  return mix(sky,mistAir,h);
-}`;
+export const SKY_RADIANCE_WGSL = fill(wgsl(radianceSource), { mathPi: Math.PI.toFixed(8), sliceAzimuths: f(SLICE_AZIMUTHS), sliceElevations: f(SLICE_ELEVATIONS), mistHorizon: f(MIST_HORIZON), sunDiscCos: SUN_DISC_COS.toFixed(8), sunDiscCaptureMax: f(SUN_DISC_CAPTURE_MAX) });
 
 /** The vertex stage: a corner of the box at the eye plus its own position, which the fragment stage reads as the direction. */
-const VERTEX = /* wgsl */ `
-struct SkyOut{@builtin(position)position:vec4<f32>,@location(0)dir:vec3<f32>}
-@vertex fn mainVertex(input:VertexInput)->SkyOut{
-  var out:SkyOut;
-  out.dir=input.position;
-  out.position=scene.viewProjection*vec4<f32>(scene.vEyePosition.xyz+input.position,1.0);
-  return out;
-}`;
+const VERTEX = wgsl(domeVertexSource);
 
 /**
  * The fragment stage: the radiance, then the material colour path as the
@@ -97,36 +65,7 @@ struct SkyOut{@builtin(position)position:vec4<f32>,@location(0)dir:vec3<f32>}
  * Neutral, the encode, the contrast), and the clamp the dither leaves at an
  * intensity of 0.
  */
-const fragment = (linear: boolean, graded = false): string => /* wgsl */ `
-struct SkyOut{@builtin(position)position:vec4<f32>,@location(0)dir:vec3<f32>}
-${graded ? MATERIAL_GRADE_WGSL : ""}
-${SKY_RADIANCE_WGSL}
-fn skyNeutral(input:vec3<f32>)->vec3<f32>{
-  let x=min(input.r,min(input.g,input.b));
-  let offset=select(0.04,x-6.25*x*x,x<0.08);
-  let color=input-offset;
-  let peak=max(color.r,max(color.g,color.b));
-  let k=1.0-0.76;
-  let newPeak=1.0-k*k/(peak+k-0.76);
-  let g=1.0-1.0/(0.15*(peak-newPeak)+1.0);
-  let compressed=mix(color*(newPeak/max(peak,1.0e-6)),vec3<f32>(newPeak),g);
-  return select(compressed,color,peak<0.76);
-}
-fn skyContrastOf(c:vec3<f32>,contrast:f32)->vec3<f32>{
-  let high=c*c*(3.0-2.0*c);
-  let shaped=select(mix(c,high,contrast-1.0),mix(vec3<f32>(0.5),c,contrast),contrast<1.0);
-  return max(shaped,vec3<f32>(0.0));
-}
-@fragment fn mainFragment(input:SkyOut)->@location(0)vec4<f32>{
-  let u=shaderUniforms;
-  let sky=skyRadiance(normalize(input.dir),u.skySunDir,u.skyScale,u.skyCloud,u.skyDeckZenith,u.skyNight,u.skyDisc,u.skyMistAir,u.skyMistWeight,0.0);
-  ${linear ? "return vec4<f32>(sky,1.0);" : ""}
-  var toned=skyNeutral(${graded ? "gradeVignette(sky*u.skyExposure,input.position.xy)" : "sky*u.skyExposure"});
-  toned=clamp(pow(max(toned,vec3<f32>(0.0)),vec3<f32>(1.0/2.2)),vec3<f32>(0.0),vec3<f32>(1.0));
-  toned=skyContrastOf(toned,u.skyContrast);
-  ${graded ? "toned=gradeCurves(toned);toned=gradeDither(toned,input.position.xy);" : ""}
-  return vec4<f32>(clamp(toned,vec3<f32>(0.0),vec3<f32>(1.0)),1.0);
-}`;
+const fragment = (linear: boolean, graded = false): string => fill(wgsl(domeFragmentSource), { grade: graded ? MATERIAL_GRADE_WGSL : "", radiance: SKY_RADIANCE_WGSL, linearReturn: linear ? "return vec4<f32>(sky,1.0);" : "", skyColour: graded ? "gradeVignette(sky*u.skyExposure,input.position.xy)" : "sky*u.skyExposure", gradedTone: graded ? "toned=gradeCurves(toned);toned=gradeDither(toned,input.position.xy);" : "" });
 const FRAGMENT = fragment(false);
 
 /** The stages' text, for the tests that hold it to the game's: the fragment's on the material colour path, and with the radiance handed on as it is, for a post chain to grade (`skyToneMap` at 0 in the game's). */
