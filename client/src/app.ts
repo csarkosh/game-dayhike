@@ -115,8 +115,9 @@ import { wayDirection, wayPoint, wayProject } from "./sim/wayDown.js";
 import { groundSpawn } from "./sim/spawn.js";
 import { isOnCorridor } from "./sim/containment.js";
 import { WATCH_SLOPE_NY } from "./sim/watcher.js";
-import { CROWD_MOST, crowdGives, crowdOn, crowdTakes, newCrowd, presenceOf, stepCrowd, type Crowd, type CrowdWorld } from "./game/crowdField.js";
+import { CROWD_MOST, crowdGives, crowdLetGo, crowdOn, crowdScatter, crowdTakes, newCrowd, presenceOf, stepCrowd, type Crowd, type CrowdWorld } from "./game/crowdField.js";
 import { threatOf } from "./game/chaseThreat.js";
+import { RETURN_HOLD_S } from "./sim/checkpoint.js";
 import { isShadeState } from "./sim/haunt.js";
 import { wayLevelFor } from "./game/wayLevel.js";
 import { hasLineOfSight } from "./sim/ai.js";
@@ -572,6 +573,8 @@ function buildGame(
   let crowdWorld: CrowdWorld | null = null;
   /** Whether the death of the player this screen's crowd has (`crowd.has`) has been seen: the host is told no more of it. */
   let crowdTook = false;
+  /** The screen's seconds until which no figure may have its player: the hold after a return (sim/checkpoint.ts), through which the host would refuse the touch. */
+  let crowdQuietUntil = 0;
   /** A command as the host is to hear it: with the word that a figure of this screen's crowd has its player (sim/taken.ts makes the death), until that death is seen. */
   const taken = (cmd: InputCommand): InputCommand => (crowd !== null && crowd.has !== 0 && !crowdTook ? { ...cmd, buttons: cmd.buttons | Button.Taken } : cmd);
   /** What can kill, as this screen last saw it in the state: where each stood, and whether it was a shade of the haunt (one that goes back into the crowd). */
@@ -1174,7 +1177,8 @@ function buildGame(
       known.z = e.pos.z;
       known.shade = isShadeState(e.ai);
     }
-    const prey = up && me !== undefined && me.health > 0 && state.phase === Phase.Chase && state.outcome === Outcome.Playing && !me.safe;
+    const prey = up && me !== undefined && me.health > 0 && state.phase === Phase.Chase && state.outcome === Outcome.Playing && !me.safe && !sceneOn() && seconds >= crowdQuietUntil;
+    if (!prey && me !== undefined && me.health > 0) crowdLetGo(crowd, seconds);
     const eyeAt = me === undefined ? CROWD_NOWHERE : { x: me.pos.x, z: me.pos.z, yaw: me.yaw, prey };
     stepCrowd(crowd, up ? crowdWorld : null, eyeAt, crowdHeld ?? CROWD_MOST[tier], seconds, dt);
     if (crowd.has === 0) crowdTook = false;
@@ -1558,6 +1562,12 @@ function buildGame(
     hud.fade(false);
     ambient.restoreMaster(RETURN_LIFT_MS / 1000);
     telemetry?.event("return", { tick: state.tick, cause: causeName(self.cause), n: life.returns() });
+    // The crowd that came in round the body, and what stands down the way they ran, is not run back through.
+    if (crowd !== null) {
+      const now = performance.now() / 1000;
+      crowdScatter(crowd, now);
+      crowdQuietUntil = now + RETURN_HOLD_S;
+    }
     sceneKind = "return";
     sceneUntil = performance.now() + (SHOTS[4] as number) * 1000;
     voiceClips.cut();

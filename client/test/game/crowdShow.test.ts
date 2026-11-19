@@ -105,7 +105,12 @@ describe("the renderer and the app", () => {
     // And says whether the crowd is up: while it is, the chase's killers are drawn among it, as shadows.
     expect(app).toContain("renderer.setCrowd(crowd.figures, seconds, up);");
     // Whether a figure may have this player now: alive, in the chase, the match undecided, off the road.
-    expect(app).toContain("const prey = up && me !== undefined && me.health > 0 && state.phase === Phase.Chase && state.outcome === Outcome.Playing && !me.safe;");
+    // Nor while a scene has their legs, nor in the hold after a return (the host would refuse it, and a touch then would land as the hold ended).
+    expect(app).toContain("const prey = up && me !== undefined && me.health > 0 && state.phase === Phase.Chase && state.outcome === Outcome.Playing && !me.safe && !sceneOn() && seconds >= crowdQuietUntil;");
+    // A living player who cannot be had is let go of at once: no stale word is left to send.
+    expect(app).toContain("if (!prey && me !== undefined && me.health > 0) crowdLetGo(crowd, seconds);");
+    // And a return scatters the crowd: what gathered round the body, or stands down the way, is not run back through.
+    expect(app).toContain("crowdScatter(crowd, now);\n      crowdQuietUntil = now + RETURN_HOLD_S;");
     expect(app).toContain("{ x: me.pos.x, z: me.pos.z, yaw: me.yaw, prey }");
     // A player their crowd has says so to the host in every command until their death is seen, on the host and on a client alike.
     expect(app).toContain("crowd !== null && crowd.has !== 0 && !crowdTook ? { ...cmd, buttons: cmd.buttons | Button.Taken } : cmd");

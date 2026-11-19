@@ -4,7 +4,7 @@ import {
   CROWD_CHASE_M, CROWD_CHASE_MPS, CROWD_EDGE_M, CROWD_FADE_S, CROWD_LUNGE_M, CROWD_LUNGE_MPS, CROWD_LUNGE_SHARE, CROWD_MIST_M, CROWD_PACK, CROWD_PRESS_M, CROWD_RISE_S, CROWD_RUSH, CROWD_RUSH_M,
   CROWD_TRIES_A_STEP, CROWD_VIEW_COS,
   CROWD_HOLD_S, CROWD_LANE_AHEAD_M, CROWD_LANE_M, CROWD_REACH_FROM_M, CROWD_REACH_S, CROWD_TOUCH_M, CROWD_TOUCH_PRESENCE,
-  crowdGives, crowdLunges, crowdSpeed, crowdTakes, crowdTarget, figureOf, newCrowd, placeCrowd, presenceOf, stepCrowd, type Crowd, type CrowdFigure, type CrowdWorld,
+  crowdGives, crowdLetGo, crowdLunges, crowdScatter, crowdSpeed, crowdTakes, crowdTarget, figureOf, newCrowd, placeCrowd, presenceOf, stepCrowd, type Crowd, type CrowdFigure, type CrowdWorld,
 } from "../../src/game/crowdField.js";
 import { SPRINT_SPEED, WALK_SPEED } from "../../src/sim/constants.js";
 import { WAY_FLOOR_M, WAY_RIM_M } from "../../src/sim/wayDown.js";
@@ -565,6 +565,53 @@ describe("the crowd as what a player must not walk into", () => {
         expect(nearest, `${name}, seed ${seed}`).toBeLessThan(CROWD_KEEP_M + 1.5);
       }
     }
+  });
+
+  it("lets go of a player who cannot be had after all (on the road, in a scene): at once, and the figure goes", () => {
+    const world = straightWorld(), f = stood(1, 204, 0), crowd = crowdOf(f);
+    for (let i = 0; i < 10; i++) stepCrowd(crowd, world, { x: 203.6, z: 0, yaw: EAST, prey: true }, 1, i * DT, DT);
+    expect(crowd.has).toBe(1);
+    crowdLetGo(crowd, 0.5);
+    expect(crowd.has).toBe(0);
+    expect(f.gone).toBe(0.5);
+    // And with none that has them it does nothing.
+    const idle = crowdOf(stood(2, 204, 0));
+    crowdLetGo(idle, 0.5);
+    expect(idle.figures[0]!.gone).toBe(-1);
+  });
+
+  it("scatters when its player is put somewhere else (back on the crest): every figure goes, none has them, and none of those can be walked into", () => {
+    const world = straightWorld(), crowd = newCrowd(5);
+    let t = 0;
+    for (; t < 12; t += DT) stepCrowd(crowd, world, { x: 60, z: 0, yaw: EAST, prey: true }, 90, t, DT);
+    expect(crowd.figures.filter((f) => f.gone < 0).length).toBeGreaterThan(20);
+    crowdScatter(crowd, t);
+    expect(crowd.has).toBe(0);
+    expect(crowd.figures.every((f) => f.gone === t)).toBe(true);
+    // The woods fill again by the crowd's own rules, out of view or far off.
+    for (let i = 0; i < 6 * 60; i++, t += DT) stepCrowd(crowd, world, { x: 20, z: 0, yaw: EAST, prey: true }, 90, t, DT);
+    expect(crowd.figures.filter((f) => f.gone < 0).length).toBeGreaterThan(15);
+  });
+
+  it("a player back from a death runs straight down past where they fell: the crowd that stood round them there was scattered, where left standing it has them", () => {
+    const run = (scatter: boolean, seed: number): number => {
+      const world = straightWorld(), crowd = newCrowd(seed);
+      let t = 0;
+      // A run to 50 m down the way, and six seconds dead there with the crowd coming in round the place.
+      for (let x = 20; x < 50; x += SPRINT_SPEED * DT, t += DT) stepCrowd(crowd, world, { x, z: 0, yaw: EAST, prey: true }, 90, t, DT);
+      for (let i = 0; i < 6 * 60; i++, t += DT) stepCrowd(crowd, world, { x: 50, z: 0, yaw: EAST }, 90, t, DT);
+      // Back at the way's start; then straight down it again, looking where they go.
+      if (scatter) crowdScatter(crowd, t);
+      for (let x = 20; x < 110 && crowd.has === 0; x += SPRINT_SPEED * DT, t += DT) stepCrowd(crowd, world, { x, z: 0, yaw: EAST, prey: true }, 90, t, DT);
+      return crowd.has;
+    };
+    let hadLeftStanding = 0;
+    for (const seed of [3, 12, 77, 501]) {
+      expect(run(true, seed), `seed ${seed}`).toBe(0);
+      if (run(false, seed) !== 0) hadLeftStanding++;
+    }
+    // What the scatter is for: without it the ring round the old place is on the path, and is run into.
+    expect(hadLeftStanding).toBeGreaterThanOrEqual(3);
   });
 
   it("has a runner who turns off their line into one that stands beside it", () => {

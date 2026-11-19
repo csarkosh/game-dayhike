@@ -208,6 +208,28 @@ export function newCrowd(seed: number): Crowd {
   return { figures: [], rng: { rngSeed: (seed ^ 0x2c0d) >>> 0 }, nextId: 1, seed, steps: 0, has: 0, hadAt: 0 };
 }
 
+/**
+ * The figure that has its player lets go: the player cannot be had after all
+ * (on the road, in a scene, in the hold after a return). It goes.
+ */
+export function crowdLetGo(crowd: Crowd, seconds: number): void {
+  if (crowd.has === 0) return;
+  for (const f of crowd.figures) if (f.id === crowd.has && f.gone < 0) f.gone = seconds;
+  crowd.has = 0;
+}
+
+/**
+ * The crowd's player is somewhere else at a stroke (back on the crest after
+ * a death): every figure goes, and none has them. While they lay dead the
+ * crowd came in and stood round them, on the path, and figures stand down
+ * the way where they ran; a return runs them straight back through both. The
+ * woods fill again by the crowd's own rules, out of view or far off.
+ */
+export function crowdScatter(crowd: Crowd, seconds: number): void {
+  for (const f of crowd.figures) if (f.gone < 0) f.gone = seconds;
+  crowd.has = 0;
+}
+
 /** Where a crowd is stepped round: its player's place, the yaw of their look, and whether a figure may have them now (`prey`: alive, in the chase, not on the road; absent, nothing is had). */
 export type CrowdEye = { x: number; z: number; yaw: number; prey?: boolean };
 
