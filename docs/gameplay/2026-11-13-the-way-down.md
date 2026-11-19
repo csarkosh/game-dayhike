@@ -264,21 +264,25 @@ trail's.
 **What is reported.** Each page sends one `way` telemetry event as its way settles: its length,
 its straight line, and whether it is the fallback.
 
-## 3a. The crowd (`game/crowdField.ts`, `game/crowdKillers.ts`, `game/crowdEyes.ts`, `game/crowdCards.ts`, `game/lite/crowdEyeMeshes.ts`, `game/lite/crowdCardMeshes.ts`)
+## 3a. The crowd (`game/crowdField.ts`, `sim/taken.ts`, `game/crowdKillers.ts`, `game/crowdEyes.ts`, `game/crowdCards.ts`, `game/lite/crowdEyeMeshes.ts`, `game/lite/crowdCardMeshes.ts`)
 
 In the chase the woods beside the way are full of shades, and all of them are coming for the
-player. They are dressing: each screen makes and moves its own round its own player, from its
-own random stream, and they hurt nobody. The host knows none of them, nothing of them is on the
-wire, and two players side by side do not see the same ones. What kills is still the host's (a
-Hollow, a shade's lunge: `2026-10-06-the-haunt.md`), told apart by its solid figure and red eyes.
+player. Each screen makes and moves its own round its own player, from its own random stream.
+The host knows none of them, nothing of them is on the wire, and two players side by side do
+not see the same ones. **They are what a runner must not touch**: none of them comes the last
+metres to a player, but a player who walks into one dies of it (below). What hunts is still the
+host's (a Hollow, a shade's lunge: `2026-10-06-the-haunt.md`), told apart by its solid figure
+and red eyes. (Until 2026-11-19 the crowd hurt nobody: once a player knew it, the owner found,
+its numbers were no pressure at all.)
 
-**How many, and where they rise.** Up to sixty a screen on every tier (`CROWD_MOST`): a third
+**How many, and where they rise.** Up to ninety a screen on every tier (`CROWD_MOST`; sixty
+until 2026-11-19, which the owner found too few): a third
 of that near the crest, all of it from three tenths of the way to eight, half by the road
 (`crowdTarget`). The crowd is up from the summit scene's turn to the way through the chase
 (`crowdOn`). A figure rises beside the way ahead of its player: to 85 m down it, on a drawn
 side, a metre and more into the thick mist beyond the path's edge (7 m from the line,
 `CROWD_EDGE_M`), seven in ten within 15 m of the edge and the rest out to 35 m, never within
-5.5 m of another, on dry ground a figure can stand on with nothing
+4.5 m of another, on dry ground a figure can stand on with nothing
 solid in it. Nothing rises in plain view inside the mist's reach (30 m): a figure rises out of
 view, or far off in view as a pair of eyes opening. Round a player who has left the way they
 rise 8 to 15 m from them on any bearing, and still clear of the path.
@@ -302,7 +306,31 @@ slows. (Until 2026-11-19 nothing came nearer a runner on the path than 8.5 m to 
 so the rest of the crowd is ahead of them, where they look. No figure walks into another:
 within 3 m of one it is turned aside, and directly behind one it waits.
 
-**How they go.** A figure goes when it comes within 3 m of its player (none reaches them), is
+**Where they stop.** No figure steps nearer its player than 3 m (`CROWD_KEEP_M`): there it
+stands, and stays, so a runner passes among standing figures and one who stops is stood round.
+(Until 2026-11-19 a figure that came within 3 m went, and nothing of the crowd could be walked
+into.) And none steps into the ground right in front of its player: within 1.6 m of the line of
+their look for 10 m along it (`CROWD_LANE_M`, `CROWD_LANE_AHEAD_M`) no figure moves in, and one
+already there (the player turned to it) comes no nearer. So the way a player is looking and
+going is always open, and whoever looks where they run and keeps straight on passes through the
+crowd untouched, at a sprint or a walk, down the middle or off to a side, or after standing a
+while. A player dies of the crowd only by turning into it.
+
+**The touch** (`stepCrowd`, `sim/taken.ts`). A figure's arms open as its player comes within
+2.4 m of it (`CROWD_REACH_FROM_M`), by how near they are, and shut as they go: one brushed past
+at the lane's edge has them part open, so the touch is seen coming. A player who comes within
+1 m of a figure (`CROWD_TOUCH_M`; one at least half risen, and not one that is going) is had by
+it: it stands where it is with both arms out. The player's own screen is the only one that can
+know, so it says so to the host in a bit of its commands' buttons (`Button.Taken`) until it
+sees the death, and the host makes the death where every death is made: on the tick it hears
+it, for a living player in the chase who is not on the road, not in the hold after a return and
+not in a decided match. It is a death of the chase like any other (they fall where they stood
+and come back on the crest), and its cause is walking into what killed them (`DeathCause.Into`)
+or, past the path's edge, leaving the path. The host takes a player's word for their own death
+and for nothing else. The figure holds its reach over them until they are back, then goes; one
+the host did not give it (a player just returned) it lets go after 2 s.
+
+**How they go.** A figure goes when it is
 left 30 m behind, is too far down the way, or, round a player off the way, is over 25 m from
 them: at once where it is out of view, over 2.6 s where it is in it. It comes in over 2.4 s.
 
@@ -313,7 +341,8 @@ shadows move and not how the monster did. A killer's figure stands where its bod
 frame, 1.15 times a Hollow's size, first among what is drawn so a full crowd never leaves it
 out. Two things tell it from the crowd: its eyes are the Hollow's red, twice as bright and 1.7
 times as large as a figure's of the crowd, where the crowd's are never red; and its body is
-solid where theirs are veils. The summit scene's Hollow steps out as the model, as before, and
+solid where theirs are veils. Its arms are out as its body's are: in a lunge's last metres and
+in its strike. The summit scene's Hollow steps out as the model, as before, and
 is a shadow from the moment the chase begins, when the player has turned to run.
 
 **The crowd and what kills.** When a killer first appears in the state while the crowd is up,
@@ -329,13 +358,39 @@ make the crowd deep. Inside 36 m its body is a card facing the eye (`crowdCards.
 antlered figure drawn in the fragment stage, written into the shades' mask
 (`lite/shadeMask.ts`, whose pass draws the cards' mesh with a material of the cards' own in place
 of the one it wears) as a darkness in the mist, and into the frame as a dark body with a
-faint rim the mist lights, so it shows against black woods as well as pale mist. Both are one
+faint rim the mist lights, so it shows against black woods as well as pale mist. One that
+reaches opens both arms wide at an eye's height, a hand at the end of each, on a card as wide
+again, with a brighter rim and its eyes twice as bright (arms raised over its head were out of
+a near player's view). Both are one
 mesh each, rewritten every frame. The ground under a figure is asked for a few figures a frame
 and again only once one has moved a metre (`crowdHeights`), and whether the ground admits a
 figure's step is asked one step in eight.
 
 **The console.** `crowd on`, `crowd off` and `crowd <count>` hold this screen's crowd for a
 look.
+
+## 3b. The chase's dark (`game/stareLens.ts`, `game/chaseThreat.ts`)
+
+Looking at a Hollow closes a darkness over the frame on a heartbeat (the stare,
+`2026-10-05-the-stare.md`). On the way down that left a runner nothing to see by, so in the
+chase the darkness is the chase's own (2026-11-19):
+
+- **It is there the whole chase**, for a living player who is off the road in an undecided
+  match: it comes in over a second or two as the chase begins and goes as it lets them go.
+- **It never closes far.** At the top of a beat it is three tenths closed (`CHASE_REACH`),
+  between beats a little over half of that (`CHASE_PULSE`), however long the player looks at
+  what hunts them; and it is centred, where the stare's leans from the Hollow's side. A
+  death's closing dark still takes the whole frame.
+- **It beats faster with a shadow or a hunter at the centre of the view**: 48 beats a minute
+  with nothing there, up to the heart's fastest (84, the most a screen may pulse at) with
+  something whole there. What is at the centre (`threatOf`) is the nearest of the screen's own
+  crowd and the state's enemies to the middle of the player's look: whole within 6 degrees of
+  it and 6 m, falling to nothing at 25 degrees and at 30 m. The beat quickens within half a
+  second and slows over a few.
+- **The stare itself is as it was**: its level still dims the frame a little and muffles the
+  world when a player looks back at the Hollow. But a lunge that waits beside the way or
+  stands in the path (§2) fills no stare, as the crowd's shades fill none: a runner has one in
+  front of them most of the way down.
 
 ## 4. The ranger's lines
 
@@ -370,12 +425,21 @@ until they are made again.
 - `test/game/crowdField.test.ts`, `crowdEyes.test.ts`, `crowdCards.test.ts`, `crowdShow.test.ts`:
   the crowd's numbers, where a figure may stand, a crowd stepped round a player who stands,
   runs and leaves the way, how it closes (the speed's shape, the pack and its cap, figures
-  kept apart), the hand-over to and from what kills, and what is drawn and wired.
+  kept apart), the hand-over to and from what kills, and what is drawn and wired. And the
+  touch: a player who walks into a figure is had by it, its arms opening as they near; nobody
+  is had who cannot be, or by one rising or going; the reach held over a death and let go; the
+  lane in front of a player kept open; four kinds of runner who keep straight on, on four
+  crowds each, never touched; and one who turns into the crowd, had.
+- `test/sim/taken.test.ts`: the host's side of the touch: the bit, the death and its cause, a
+  return like any other, everywhere nothing kills, and that movement reads nothing of it.
+- `test/game/stareLens.test.ts`, `chaseThreat.test.ts`: the chase's dark (there the whole
+  chase, never closed far, its beat by what is at the centre of the view, centred, gone when
+  the chase lets go, giving way to a death's dark) and the measure of what is at the centre.
 - `test/sim/haunt.test.ts`, `hauntOffWay.test.ts`: on the way down no shade that only stands
   is raised and none closes the dark, and a player who leaves the way is still lunged at.
 - `test/sim/waylay.test.ts`: the way's lungers' numbers; one standing up ahead of a player and
   waiting; its lunge onto the path, where it stands and when it goes; none in the way's first
-  110 m or for a player off the way; and three whole runs down a real way: a runner who goes
+  110 m or for a player off the way; that one in plain view fills no stare; and three whole runs down a real way: a runner who goes
   round each one on its far side reaches the road, one who holds the middle of the path is
   struck down, and so is one who keeps to each one's own side.
 - `test/game/crowdKillers.test.ts`, and in `crowdEyes.test.ts`, `crowdCards.test.ts`,
