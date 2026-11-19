@@ -52,6 +52,13 @@
       "seed": "atmo",
       "look": "summit",
       "check": true
+    },
+    {
+      "name": "walk-day",
+      "still": "trailhead",
+      "firstPerson": true,
+      "walk": true,
+      "check": true
     }
   ]
 }

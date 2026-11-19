@@ -10,7 +10,7 @@
 //
 //   npm run frame-budget:phone -- --base <url> --out <dir> --views reveal,walk-night [--tier low]
 //       [--windows 1] [--settle 0] [--port 9222] [--label phone] [--tag <text>] [--profile]
-//       [--engine webgpu|webgl2]
+//       [--engine webgpu|webgl2] [--steer]
 //
 //   --base <url>     the build measured: the live site, a preview channel or a dev server the phone can reach
 //   --out <dir>      the rows' and the JPEGs' directory (under the lab disk)
@@ -24,6 +24,9 @@
 //   --engine <e>     the engine forced (`?engine=`): the game's own rule puts Chrome on an Android phone
 //                    on WebGPU and every other phone on WebGL2, so this is how the other engine is
 //                    timed; the row's `engine` says what was asked
+//   --steer          keep a `walk` view walking: the page's count of streaming slices is read each second, and
+//                    after 3 s without one (the walker stands against a trunk or a slope) a look swipe is made
+//                    on a second touch, so the walk crosses cells for every window and not only its first
 //   --profile        a CPU profile (`Profiler.start/stop`, 0.5 ms samples) over the view, saved as
 //                    <view>-<stamp>.cpuprofile; `tools/telemetry/symbolicate.mjs` reads its frames back
 //
@@ -34,7 +37,7 @@ import { execFileSync } from "node:child_process";
 import { appendFileSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { connect, evaluate, version, ORIGIN_STORAGE } from "./lib/cdp.mjs";
-import { isAndroid, jobsOf, parseArgs, phoneState, rowOf, stickTouches } from "./lib/phone.mjs";
+import { ACT_SCRIPT, STEER_STILL_S, STICK_FORWARD, createSteering, isAndroid, jobsOf, parseArgs, phoneState, rowOf, stickTouches, swipeTouches } from "./lib/phone.mjs";
 import { resolveViews, viewUrl } from "./lib/views.mjs";
 
 const HERE = new URL(".", import.meta.url);
@@ -55,6 +58,8 @@ const WINDOW_EXPRESSION = `(async () => {
   const pipes = () => { const p = globalThis.dayhikePipelines; return p ? { asked: p.asked, landed: p.landed, sync: p.sync, held: p.held, leftOut: p.leftOut } : null; };
   const counters = { wgsl: wgsl(), pipes: pipes() };
   await sleep(${WARMUP_S * 1000});
+  // The longest slice by owner is counted from here, the window's own frames.
+  if (typeof window.__syncJobsReset === "function") window.__syncJobsReset();
   const canvasStart = size();
   const frames = [];
   const readings = [];
@@ -97,7 +102,7 @@ function wakePhone(base) {
 }
 
 /** A tab of the phone's Chrome, the game's stored state cleared, navigated to `url` and its canvas waited for. */
-async function openTab(browser, port, url) {
+async function openTab(browser, port, url, steer = false) {
   const origin = new URL(url).origin;
   const { targetId } = await browser("Target.createTarget", { url: "about:blank" });
   let target;
@@ -116,6 +121,7 @@ async function openTab(browser, port, url) {
   try {
     await page("Page.enable");
     await page("Runtime.enable");
+    if (steer) await page("Page.addScriptToEvaluateOnNewDocument", { source: ACT_SCRIPT });
     await page("Storage.clearDataForOrigin", { origin, storageTypes: ORIGIN_STORAGE }).catch(() => undefined);
     await browser("Target.activateTarget", { targetId }).catch(() => undefined);
     const nav = await page("Page.navigate", { url });
@@ -154,11 +160,45 @@ async function holdStick(page) {
   return () => page("Input.dispatchTouchEvent", { type: "touchEnd", touchPoints: [] }).catch(() => undefined);
 }
 
+/**
+ * `--steer`: a second finger turns the walker when the page's count of streaming slices stands still for `STEER_STILL_S`
+ * seconds, while the joystick's finger (at `held`) stays down. Returns what stops it.
+ */
+function startSteering(page, base, log) {
+  const held = { x: base.x, y: base.y - STICK_FORWARD };
+  const steering = createSteering(STEER_STILL_S);
+  let stop = false;
+  const swipe = async () => {
+    const frames = swipeTouches(held);
+    for (const [i, touchPoints] of frames.entries()) {
+      await page("Input.dispatchTouchEvent", { type: i === 0 ? "touchStart" : "touchMove", touchPoints });
+      if (i > 0) await sleep(40);
+    }
+    await sleep(250);
+    await page("Input.dispatchTouchEvent", { type: "touchEnd", touchPoints: [{ ...held, id: 1 }] });
+  };
+  const done = (async () => {
+    while (!stop) {
+      await sleep(1000);
+      const count = await evaluate(page, "window.__act ?? 0").catch(() => null);
+      if (count !== null && steering.feed(count)) {
+        log(`steer: no streaming for ${STEER_STILL_S} s, a turn`);
+        await swipe().catch(() => undefined);
+      }
+    }
+  })();
+  return async () => {
+    stop = true;
+    await done;
+  };
+}
+
 async function measureView(session, options, stills, view, still, rowsFile, about) {
   const url = viewUrl(options.base, stills.game, options.tier, view, still, { gpuTime: true, engine: options.engine });
-  const { page, close } = await openTab(session.browser, session.port, url);
+  const { page, close } = await openTab(session.browser, session.port, url, options.steer);
   const stamp = new Date().toISOString().replace(/[:.]/g, "-");
   let release = null;
+  let stopSteering = null;
   try {
     const readyS = await awaitReady(page, view.name);
     await sleep((options.settle + (options.windows > 1 ? 0 : (view.extraSettleS ?? 0))) * 1000);
@@ -169,6 +209,10 @@ async function measureView(session, options, stills, view, still, rowsFile, abou
     }
     if (view.walk) {
       release = await holdStick(page);
+      if (options.steer) {
+        const base = await evaluate(page, "(() => { const s = document.querySelector('.touch .stick'); const r = s.getBoundingClientRect(); return { x: r.left + r.width / 2, y: r.top + r.height / 2 }; })()");
+        stopSteering = startSteering(page, base, (m) => console.log(`  ${m}`));
+      }
       await sleep(2000);
     }
     const rows = [];
@@ -180,7 +224,7 @@ async function measureView(session, options, stills, view, still, rowsFile, abou
       const row = rowOf(w, { ...r, readyS, jobs: jobsOf(r.readings) }, { ...about, view: view.name, walking: view.walk === true, phone: phoneState() });
       appendFileSync(rowsFile, JSON.stringify(row) + "\n");
       rows.push(row);
-      const jobs = row.jobs === null ? "" : `  jobs ${row.jobs.ms} ms (${row.jobs.lateMs} late in ${row.jobs.lateFrames} frames)`;
+      const jobs = row.jobs === null ? "" : `  jobs ${row.jobs.ms} ms (${row.jobs.lateMs} late in ${row.jobs.lateFrames} frames, ${row.jobs.overdueJobs} run to their end)`;
       console.log(`  ${view.name} w${w}: mean ${row.mean} ms  p95 ${row.p95}  max ${row.max}  (${row.fps} fps, ${row.over20} over 20 ms, ${row.stalls} stalls)${jobs}  canvas ${r.canvasStart.join("x")}  ready ${readyS}s`);
     }
     if (options.profile) {
@@ -190,6 +234,7 @@ async function measureView(session, options, stills, view, still, rowsFile, abou
     }
     return rows;
   } finally {
+    if (stopSteering !== null) await stopSteering();
     if (release !== null) await release();
     await close();
   }
