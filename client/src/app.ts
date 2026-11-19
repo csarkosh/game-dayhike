@@ -110,20 +110,38 @@ import { extrasLater } from "./game/extrasLater.js";
 import { connectFailure, createConnectPanel, sessionEndOutcome } from "./game/connectPanel.js";
 import { pressedEdges, resolveInteract } from "./sim/interact.js";
 import { Button, DeathCause, Outcome, Phase, type InputCommand, type PlayerState, type Vec3, type WorldState } from "./sim/types.js";
+import { stepWay, wayOf } from "./sim/wayDraw.js";
+import { wayDirection, wayPoint, wayProject } from "./sim/wayDown.js";
+import { groundSpawn } from "./sim/spawn.js";
+import { isOnCorridor } from "./sim/containment.js";
+import { WATCH_SLOPE_NY } from "./sim/watcher.js";
+import { CROWD_MOST, crowdGives, crowdLetGo, crowdOn, crowdScatter, crowdTakes, newCrowd, presenceOf, stepCrowd, type Crowd, type CrowdWorld } from "./game/crowdField.js";
+import { threatOf } from "./game/chaseThreat.js";
+import { RETURN_HOLD_S } from "./sim/checkpoint.js";
+import { isShadeState } from "./sim/haunt.js";
+import { wayLevelFor } from "./game/wayLevel.js";
 import { hasLineOfSight } from "./sim/ai.js";
 import { isHollowState, playerSees } from "./sim/hollow.js";
-import { trailDistance } from "./sim/trail.js";
+import { chaseLineDistance, chaseLinePoint } from "./sim/chaseLine.js";
 import { AiState } from "./sim/types.js";
 import { stepInnerVoice, voiceRest, VOICE_LINE_MS, type VoiceState, type VoiceScene } from "./game/innerVoice.js";
 import { CAP_NEAR_M, droppedCapAt, type DroppedCap } from "./game/droppedCap.js";
 import { createVoiceClips } from "./game/voiceClips.js";
-import { CAP_SCENE_S, SHOTS, SUMMIT_SCENE_S, THRESHOLD_AT_S, thresholdAt } from "./game/cutscene.js";
+import { CAP_SCENE_S, SHOTS, SUMMIT_SCENE_S, THRESHOLD_AT_S, thresholdAt, thresholdLook } from "./game/cutscene.js";
 import { DIED_CLOSE_FROM_S } from "./game/ending.js";
 import { RETURN_LIFT_MS, causeName, createDeathReturn } from "./game/deathReturn.js";
 import { returnHollowAt } from "./sim/returns.js";
 import { ENEMY_HALF, PLAYER_EYE_OFFSET, PLAYER_HALF } from "./sim/constants.js";
-import { stemAhead } from "./sim/trailRoute.js";
 import { HOLLOW_CALL_AFTER, HOLLOW_CALL_RATE } from "./game/ambientAudio.js";
+
+/** The way down's draw: milliseconds of it a frame through the climb, and once the scene or the chase is on; and the tick it starts at, ten seconds in, so nothing of it runs under the intro. */
+const WAY_DRAW_MS = 1.5;
+const WAY_DRAW_LATE_MS = 4;
+/** The draw's slice while the summit scene's shots play: a find the draw was not done by (a console's `summit`, a peer admitted late) has until the threshold, where the player is turned to the way. */
+const WAY_DRAW_SCENE_MS = 10;
+const WAY_DRAW_FROM_TICK = 600;
+/** Where the crowd is stepped from with no local player: nowhere, and it has no world then either. */
+const CROWD_NOWHERE = { x: 0, z: 0, yaw: 0 };
 
 /** Seconds after the last howl ends before the voice answers it, and the milliseconds into the cap's scene its line comes. */
 const CRY_BEAT_S = 0.6;
@@ -542,6 +560,25 @@ function buildGame(
   let escalation: EscalationState = ESCALATION_REST;
   /** The `escalation` command's hold on the world's escalation for a look, or null for the climb's own. */
   let escalationHold: number | null = null;
+  /** The way down's light (wayLevel.ts): the level shown, the console's hold on it (`way on|off`) or null, and the renderer and the way last given to it. */
+  let wayShown = 0;
+  let wayHeld: number | null = null;
+  let wayGivenTo: Renderer | null = null;
+  let wayGiven: World["way"] = null;
+  let wayReported = false;
+  /** This screen's crowd (crowdField.ts): the figures, the console's hold on their count (`crowd on|off|<count>`) or null, and the way its view of the world was made for. */
+  let crowd: Crowd | null = null;
+  let crowdHeld: number | null = null;
+  let crowdWayFor: World["way"] = null;
+  let crowdWorld: CrowdWorld | null = null;
+  /** Whether the death of the player this screen's crowd has (`crowd.has`) has been seen: the host is told no more of it. */
+  let crowdTook = false;
+  /** The screen's seconds until which no figure may have its player: the hold after a return (sim/checkpoint.ts), through which the host would refuse the touch. */
+  let crowdQuietUntil = 0;
+  /** A command as the host is to hear it: with the word that a figure of this screen's crowd has its player (sim/taken.ts makes the death), until that death is seen. */
+  const taken = (cmd: InputCommand): InputCommand => (crowd !== null && crowd.has !== 0 && !crowdTook ? { ...cmd, buttons: cmd.buttons | Button.Taken } : cmd);
+  /** What can kill, as this screen last saw it in the state: where each stood, and whether it was a shade of the haunt (one that goes back into the crowd). */
+  const crowdKnown = new Map<number, { x: number; z: number; shade: boolean }>();
   /** The explore day's clock (exploreDay.ts): seconds since the hike began, on a calm world. */
   let exploreClockS = 0;
   /** The woods' voice on the climb (woodsVoice.ts), reset with the escalation. */
@@ -614,15 +651,17 @@ function buildGame(
     }
     return { ...cmd, moveX: 0, moveZ: 0, buttons: 0, yaw: endRunYaw, pitch: 0 };
   }
-  /** The way down for the threshold, as a look from where `me` stands: to a point `DOWN_TRAIL_M` back down the stem, and its ground. Null with no player or no trail. */
+  /** The way down for the threshold, as a look from where `me` stands: to a point `DOWN_TRAIL_M` down the line the chase holds them to (sim/chaseLine.ts: the way down, or the stem where there is none), and its ground. Null with no player or no line. */
   function wayDownFrom(me: PlayerState | undefined, sim: World): { yaw: number; pitch: number } | null {
-    const down = me === undefined || sim.trail === null ? null : stemAhead(sim.trail, me.pos.x, me.pos.z, -DOWN_TRAIL_M);
+    const down = me === undefined ? null : chaseLinePoint(sim, me.pos.x, me.pos.z, DOWN_TRAIL_M, { x: 0, z: 0 });
     if (down === null || me === undefined) return null;
     const eyeY = me.pos.y + PLAYER_EYE_OFFSET;
     const groundY = sim.ground?.heightAt(down.x, down.z) ?? eyeY;
     return { yaw: Math.atan2(down.x - me.pos.x, down.z - me.pos.z), pitch: Math.atan2(eyeY - groundY, Math.hypot(down.x - me.pos.x, down.z - me.pos.z)) };
   }
-  function stilled(cmd: InputCommand): InputCommand {
+  /** Whether the summit scene's threshold has begun on this screen: the shot in which the player is turned to the way down and run down it. */
+  const thresholdOn = (): boolean => downLook !== null && sceneOn() && SUMMIT_SCENE_S - (sceneUntil - performance.now()) / 1000 >= THRESHOLD_AT_S;
+  function stilled(cmd: InputCommand, me: PlayerState | undefined, sim: World): InputCommand {
     if (!sceneOn()) {
       lastLook = { yaw: cmd.yaw, pitch: cmd.pitch };
       return cmd;
@@ -633,13 +672,14 @@ function buildGame(
       // way down, then the legs: the player runs before the controls are theirs, and keeps the look.
       const stage = thresholdAt(into - THRESHOLD_AT_S);
       if (stage.stage === "look") return { ...cmd, moveX: 0, moveZ: 0, buttons: 0, yaw: lastLook.yaw, pitch: lastLook.pitch };
-      let turn = downLook.yaw - lastLook.yaw;
-      turn = Math.atan2(Math.sin(turn), Math.cos(turn));
-      const yaw = stage.stage === "turn" ? lastLook.yaw + turn * stage.f : downLook.yaw;
-      const pitch = stage.stage === "turn" ? lastLook.pitch + (downLook.pitch - lastLook.pitch) * stage.f : downLook.pitch;
-      input.setLook(yaw, pitch);
-      if (stage.stage === "turn") return { ...cmd, moveX: 0, moveZ: 0, buttons: 0, yaw, pitch };
-      return { ...cmd, moveX: 0, moveZ: 1, buttons: Button.Sprint, yaw, pitch };
+      // The way down from where they are now, asked for every tick: a way the find came too soon for is
+      // turned to once it is drawn, and the run goes down it as it bends, never down the trail beside it.
+      const fresh = wayDownFrom(me, sim);
+      if (fresh !== null) downLook = fresh;
+      const look = thresholdLook(stage, lastLook, downLook);
+      input.setLook(look.yaw, look.pitch);
+      if (stage.stage === "turn") return { ...cmd, moveX: 0, moveZ: 0, buttons: 0, yaw: look.yaw, pitch: look.pitch };
+      return { ...cmd, moveX: 0, moveZ: 1, buttons: Button.Sprint, yaw: look.yaw, pitch: look.pitch };
     }
     return { ...cmd, moveX: 0, moveZ: 0, buttons: 0, yaw: lastLook.yaw, pitch: lastLook.pitch };
   }
@@ -843,6 +883,14 @@ function buildGame(
       const held = args.length === 0 ? null : Number(args[0]);
       const drawn = renderer.setMist(held);
       hud.setStatus(held === null ? `mist: the night's, now ${drawn.toFixed(2)}` : `mist held at ${held.toFixed(2)}`);
+    } else if (name === "way") {
+      // The way down's light, held whole or out, or let go to the chase (wayLevel.ts).
+      wayHeld = args.length === 0 ? null : args[0] === "on" ? 1 : 0;
+      hud.setStatus(wayHeld === null ? "way: the chase's" : `way held ${wayHeld === 1 ? "on" : "off"}`);
+    } else if (name === "crowd") {
+      // This screen's crowd, held at a count or let go to the chase (crowdField.ts).
+      crowdHeld = args.length === 0 ? null : args[0] === "on" ? CROWD_MOST[tier] : args[0] === "off" ? 0 : Number(args[0]);
+      hud.setStatus(crowdHeld === null ? "crowd: the chase's" : `crowd held at ${crowdHeld}`);
     } else if (name === "summit") {
       // The summit scene for a look (cutscene.ts): the host's own player stands at the body, and the next tick is the find.
       if (summitPreview === null) hud.setStatus("summit: the host's to call");
@@ -1067,10 +1115,105 @@ function buildGame(
     }
     return k.seen;
   }
+  /**
+   * The way down's draw (sim/wayDraw.ts), a slice a frame on the host and on a client alike, from ten seconds
+   * into the match (never under the intro), so it is long done by the find; a larger slice once the scene or the
+   * chase is on and it somehow is not (a console's `summit`, a peer admitted late).
+   */
+  function syncWayDraw(world: World, state: WorldState): void {
+    if (world.wayDraw === null || (state.phase === Phase.Climb && state.tick < WAY_DRAW_FROM_TICK)) return;
+    // The threshold turns the player to the way and runs them down it: what is left of the draw is done at its cut.
+    if (thresholdOn()) {
+      wayOf(world);
+      return;
+    }
+    stepWay(world, state.phase === Phase.Climb ? WAY_DRAW_MS : state.phase === Phase.Scene ? WAY_DRAW_SCENE_MS : WAY_DRAW_LATE_MS, () => performance.now());
+  }
+  /**
+   * The way down's light, a frame: whatever renderer is drawing has the world's way (a renderer made again for the
+   * WebGPU swap or a lost device starts with none, and the way itself arrives when its draw ends), and the level
+   * moves toward what the match asks, from the summit scene's threshold through the chase.
+   */
+  /**
+   * This screen's crowd, a frame (crowdField.ts): stepped round the local player while the chase is on (or the
+   * console holds it), from the world's way and ground, and given to the renderer. Nothing of it is the sim's,
+   * and each screen has its own; a figure this player walks into has them, which the next commands say to the
+   * host (`taken`). And what stands at the centre of their view (chaseThreat.ts) is told to the renderer, whose
+   * dark beats faster by it.
+   */
+  function syncCrowd(world: World, state: WorldState, localId: number, dt: number): void {
+    crowd ??= newCrowd((seed ^ Math.imul(localId + 1, 0x9e3779b1)) >>> 0);
+    const way = world.way, ground = world.ground;
+    if (way !== crowdWayFor) {
+      crowdWayFor = way;
+      const normal = { x: 0, y: 0, z: 0 };
+      crowdWorld = way === null || ground === null ? null : {
+        length: way.length,
+        project: (x, z) => wayProject(way, x, z),
+        point: (s, out) => wayPoint(way, s, out),
+        direction: (s, out) => wayDirection(way, s, out),
+        // Dry ground a figure can stand on, off the road, with nothing solid in it: what a shade of the sim's needs.
+        admit: (x, z) => {
+          if (groundSpawn(world.boxes, seed, x, z, ENEMY_HALF) === null || isOnCorridor(world, x, z)) return false;
+          ground.normalAt(x, z, normal);
+          return normal.y >= WATCH_SLOPE_NY;
+        },
+      };
+    }
+    const me = state.players.get(localId);
+    const up = me !== undefined && (crowdHeld !== null ? crowdHeld > 0 : crowdOn(state.phase, state.outcome, wayShown));
+    const seconds = performance.now() / 1000;
+    // What can kill and the crowd: a killer first seen in the state has the nearest of the crowd to have been (it
+    // goes as the killer comes), and a shade or a lunge gone from the state goes back among them where it stood.
+    if (up && crowdWorld !== null) {
+      for (const e of state.enemies.values()) if (!crowdKnown.has(e.id)) crowdGives(crowd, e.pos, seconds);
+      for (const [id, was] of crowdKnown) if (was.shade && !state.enemies.has(id)) crowdTakes(crowd, was, seconds, crowdWorld);
+    }
+    for (const id of crowdKnown.keys()) if (!state.enemies.has(id)) crowdKnown.delete(id);
+    for (const e of state.enemies.values()) {
+      let known = crowdKnown.get(e.id);
+      if (known === undefined) crowdKnown.set(e.id, (known = { x: 0, z: 0, shade: false }));
+      known.x = e.pos.x;
+      known.z = e.pos.z;
+      known.shade = isShadeState(e.ai);
+    }
+    const prey = up && me !== undefined && me.health > 0 && state.phase === Phase.Chase && state.outcome === Outcome.Playing && !me.safe && !sceneOn() && seconds >= crowdQuietUntil;
+    if (!prey && me !== undefined && me.health > 0) crowdLetGo(crowd, seconds);
+    const eyeAt = me === undefined ? CROWD_NOWHERE : { x: me.pos.x, z: me.pos.z, yaw: me.yaw, prey };
+    stepCrowd(crowd, up ? crowdWorld : null, eyeAt, crowdHeld ?? CROWD_MOST[tier], seconds, dt);
+    if (crowd.has === 0) crowdTook = false;
+    else if (me !== undefined && me.health <= 0) crowdTook = true;
+    renderer.setCrowd(crowd.figures, seconds, up);
+    let threat: number | null = null;
+    if (prey) {
+      threat = 0;
+      for (const f of crowd.figures) if (f.gone < 0) threat = Math.max(threat, threatOf(eyeAt, f.x, f.z, presenceOf(f, seconds)));
+      for (const e of state.enemies.values()) threat = Math.max(threat, threatOf(eyeAt, e.pos.x, e.pos.z));
+    }
+    renderer.setChaseThreat(threat);
+  }
+  function syncWayLight(world: World, dt: number): void {
+    if (wayGivenTo !== renderer || wayGiven !== world.way) {
+      const ground = world.ground;
+      if (ground === null) renderer.setWay(null, () => 0);
+      else renderer.setWay(world.way, (x, z) => ground.heightAt(x, z));
+      // The way, once, as it settles: a fallback to the trail's stem, or a way longer than it should be, is a world to look at.
+      const way = world.way;
+      if (way !== null && !wayReported && telemetry !== null) {
+        wayReported = true;
+        telemetry.event("way", { length: Math.round(way.length), straight: Math.round(way.straight), fallback: way.fallback, tick: world.state.tick });
+      }
+      wayGivenTo = renderer;
+      wayGiven = world.way;
+    }
+    const sceneInto = sceneOn() ? SUMMIT_SCENE_S - (sceneUntil - performance.now()) / 1000 : null;
+    wayShown = wayHeld ?? wayLevelFor(world, sceneInto, wayShown, dt);
+    renderer.setWayLevel(wayShown);
+  }
   function syncAtmosphere(world: World, state: WorldState, localId: number, dt: number): void {
     if (world.search === null || world.trail === null) return;
     sightIndex = 0;
-    const targets = escalationTargets(state, localId, world.trail, world.boxes, world.ground, (eye, h) => sightEvery(eye, h, world));
+    const targets = escalationTargets(state, localId, world.trail, world.boxes, world.ground, (eye, h) => sightEvery(eye, h, world), (x, z) => chaseLineDistance(world, x, z));
     escalation = stepEscalation(escalation, targets, dt);
     lastTargets = targets;
     if (telemetry !== null) {
@@ -1178,7 +1321,7 @@ function buildGame(
       const spoke = stepInnerVoice(voice, {
         climb: calm ? 0 : escalation.progressMax, wet: acts.wet, night: acts.night, mist: calm ? settled.weather.mist : acts.mist,
         chase: state.phase === Phase.Chase, ended: ended || dead, covered: gate.covered, scene: sceneOn() ? sceneKind : "none",
-        offTrail: world.trail === null ? 0 : trailDistance(world.trail, self.pos.x, self.pos.z),
+        offTrail: chaseLineDistance(world, self.pos.x, self.pos.z),
         lamp: self.lamp.on, stare: self.stare, moving: Math.hypot(self.vel.x, self.vel.z) > 0.2,
         shadeSeen, cry: cryOver && !sceneOn(),
         // The scene's reveal: the terror line in the predator's view, the fourth shot.
@@ -1419,6 +1562,12 @@ function buildGame(
     hud.fade(false);
     ambient.restoreMaster(RETURN_LIFT_MS / 1000);
     telemetry?.event("return", { tick: state.tick, cause: causeName(self.cause), n: life.returns() });
+    // The crowd that came in round the body, and what stands down the way they ran, is not run back through.
+    if (crowd !== null) {
+      const now = performance.now() / 1000;
+      crowdScatter(crowd, now);
+      crowdQuietUntil = now + RETURN_HOLD_S;
+    }
     sceneKind = "return";
     sceneUntil = performance.now() + (SHOTS[4] as number) * 1000;
     voiceClips.cut();
@@ -1675,7 +1824,7 @@ function buildGame(
       // Nor /mist and /end, which are for looking at the night's effects on the spot,
       // nor /summit and /escape, which are for looking at a scene (`isLook`).
       // Applied below via applyView; never written back to `?cmd=`.
-      if (parsed.name !== "volume" && parsed.name !== "mist" && parsed.name !== "escalation" && parsed.name !== "end" && !isLook(parsed.name)) persist(parsed.name, args);
+      if (parsed.name !== "volume" && parsed.name !== "mist" && parsed.name !== "way" && parsed.name !== "escalation" && parsed.name !== "end" && !isLook(parsed.name)) persist(parsed.name, args);
       if (findCommand(parsed.name)?.kind === "world") {
         // Re-initialise through the path `main.ts` already listens on.
         window.dispatchEvent(new PopStateEvent("popstate"));
@@ -1898,7 +2047,6 @@ function buildGame(
       near: lastTargets?.near ?? 0,
       sprinting,
       progress: escalation.progressMax,
-      cuts: world.cut?.cuts ?? null,
     };
     for (const e of trace.step(self, frame)) telemetry.event(e.n, e.fields);
   }
@@ -2087,7 +2235,7 @@ function buildGame(
       escapeStep?.();
       for (let i = 0; i < ticks; i++) {
         const me = host.world.state.players.get(host.localEntityId);
-        cmd = ranToCar(stilled(input.sample(++seq)), me);
+        cmd = taken(ranToCar(stilled(input.sample(++seq), me, host.world), me));
         if (i === ticks - 1) eyeBefore = me === undefined ? null : capturedEye(me, eyeBeforeScratch);
         host.tick(cmd);
       }
@@ -2095,6 +2243,9 @@ function buildGame(
 
       const state: WorldState = host.world.state;
       const self = state.players.get(host.localEntityId);
+      syncWayLight(host.world, dt);
+      syncCrowd(host.world, state, host.localEntityId, dt);
+      syncWayDraw(host.world, state);
       syncAtmosphere(host.world, state, host.localEntityId, dt);
       renderer.sync(state, host.localEntityId, accumulator.alpha, { dt, sprinting: input.sprinting, before: eyeBefore });
       playWildlifeAudio();
@@ -2242,7 +2393,7 @@ function buildGame(
       let cmd: InputCommand | null = null;
       for (let i = 0; i < ticks; i++) {
         const me = client.world.state.players.get(client.localEntityId);
-        cmd = ranToCar(stilled(input.sample(++seq)), me);
+        cmd = taken(ranToCar(stilled(input.sample(++seq), me, client.world), me));
         if (i === ticks - 1) eyeBefore = me === undefined ? null : capturedEye(me, eyeBeforeScratch);
         client.tick(cmd);
       }
@@ -2250,6 +2401,9 @@ function buildGame(
 
       const state = client.renderState(performance.now());
       const self = state.players.get(client.localEntityId);
+      syncWayLight(client.world, dt);
+      syncCrowd(client.world, state, client.localEntityId, dt);
+      syncWayDraw(client.world, state);
       syncAtmosphere(client.world, state, client.localEntityId, dt);
       renderer.sync(state, client.localEntityId, accumulator.alpha, { dt, sprinting: input.sprinting, before: eyeBefore });
       playWildlifeAudio();

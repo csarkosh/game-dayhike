@@ -85,6 +85,9 @@ where a Hollow steps out of every wrong branch at every fork, so that exactly on
 open — a medium-to-long, non-linear way, never the straight trail down. The woods end at the road,
 and so do they.
 
+*Amended 2026-11-13: the descent is now down one lit way, direct and never straight, that leaves
+the trail where that is shorter (`2026-11-13-the-way-down.md`); no Hollow steps out at a fork.*
+
 The fetch-every-hiker loop (B) read as a chore. This replaces it with one ascent of rising dread
 and one panicked escape.
 
@@ -311,6 +314,13 @@ phase has flipped; the lead is re-read when the lead dies.
 
 ## 5. The summit and the chase
 
+> **Amended 2026-11-13.** The chase's way home is no longer a guide route cut fork by fork: it
+> is the way down (`2026-11-13-the-way-down.md`), one drawn path from the crest to the pad, lit,
+> that leaves the trail where that is shorter. §5.3 below is how the chase worked until then and
+> is kept as its record; the guide, the cuts and the forks' Hollows are gone from the game, and
+> wherever this note says a Hollow steps out of a branch, or a fork is made whole at a return,
+> nothing does. The summit (§5.1), safety (§5.2) and the end rule stand as written.
+
 ### 5.1 The summit (S1)
 
 **The body.** A placeholder at the crest centre: two dark timbers crossed, a hiker-shaped capsule
@@ -348,6 +358,8 @@ player per tick from the road distance (§2), rides the snapshot as a bit beside
 what the roster and the end rule read.
 
 ### 5.3 The cut (S3)
+
+*Removed 2026-11-13 (see the amendment under §5). What follows is the design as it was built.*
 
 **The guide.** On the discovery tick the host draws a hidden **guide route** crest → pad: a seeded
 random walk on the trail graph from the world RNG that never repeats an edge and may run round a

@@ -714,7 +714,7 @@
     {
       "id": "voice.chaseOffTrail.1",
       "output": "audio/voice.chaseOffTrail.1.mp3",
-      "bytes": 20557
+      "bytes": 24476
     },
     {
       "id": "voice.chaseOffTrail.2",
@@ -724,7 +724,7 @@
     {
       "id": "voice.chaseOffTrail.3",
       "output": "audio/voice.chaseOffTrail.3.mp3",
-      "bytes": 25416
+      "bytes": 24946
     },
     {
       "id": "voice.chaseStart.1",
@@ -739,7 +739,7 @@
     {
       "id": "voice.chaseStart.3",
       "output": "audio/voice.chaseStart.3.mp3",
-      "bytes": 15228
+      "bytes": 18206
     },
     {
       "id": "voice.crest.1",
@@ -890,6 +890,96 @@
       "id": "voice.rain.3",
       "output": "audio/voice.rain.3.mp3",
       "bytes": 17266
+    },
+    {
+      "id": "voice.returnCaught.1",
+      "output": "audio/voice.returnCaught.1.mp3",
+      "bytes": 16325
+    },
+    {
+      "id": "voice.returnCaught.2",
+      "output": "audio/voice.returnCaught.2.mp3",
+      "bytes": 10996
+    },
+    {
+      "id": "voice.returnCaught.3",
+      "output": "audio/voice.returnCaught.3.mp3",
+      "bytes": 18206
+    },
+    {
+      "id": "voice.returnInto.1",
+      "output": "audio/voice.returnInto.1.mp3",
+      "bytes": 17266
+    },
+    {
+      "id": "voice.returnInto.2",
+      "output": "audio/voice.returnInto.2.mp3",
+      "bytes": 20557
+    },
+    {
+      "id": "voice.returnInto.3",
+      "output": "audio/voice.returnInto.3.mp3",
+      "bytes": 16325
+    },
+    {
+      "id": "voice.returnLooked.1",
+      "output": "audio/voice.returnLooked.1.mp3",
+      "bytes": 13347
+    },
+    {
+      "id": "voice.returnLooked.2",
+      "output": "audio/voice.returnLooked.2.mp3",
+      "bytes": 15228
+    },
+    {
+      "id": "voice.returnLooked.3",
+      "output": "audio/voice.returnLooked.3.mp3",
+      "bytes": 13818
+    },
+    {
+      "id": "voice.returnLunge.1",
+      "output": "audio/voice.returnLunge.1.mp3",
+      "bytes": 18676
+    },
+    {
+      "id": "voice.returnLunge.2",
+      "output": "audio/voice.returnLunge.2.mp3",
+      "bytes": 12407
+    },
+    {
+      "id": "voice.returnLunge.3",
+      "output": "audio/voice.returnLunge.3.mp3",
+      "bytes": 19147
+    },
+    {
+      "id": "voice.returnOffTrail.1",
+      "output": "audio/voice.returnOffTrail.1.mp3",
+      "bytes": 22908
+    },
+    {
+      "id": "voice.returnOffTrail.2",
+      "output": "audio/voice.returnOffTrail.2.mp3",
+      "bytes": 19147
+    },
+    {
+      "id": "voice.returnOffTrail.3",
+      "output": "audio/voice.returnOffTrail.3.mp3",
+      "bytes": 24005
+    },
+    {
+      "id": "voice.returnStill.1",
+      "output": "audio/voice.returnStill.1.mp3",
+      "bytes": 16796
+    },
+    {
+      "id": "voice.returnStill.2",
+      "output": "audio/voice.returnStill.2.mp3",
+      "bytes": 20087
+    },
+    {
+      "id": "voice.returnStill.3",
+      "output": "audio/voice.returnStill.3.mp3",
+      "bytes": 18206
     },
     {
       "id": "voice.road.1",

@@ -67,7 +67,9 @@ stare closes only to `REVEAL_STARE_CAP` (0.25), at half its pace, so the vignett
 its pulse slow. The cast turns and the woods hush as from the chase (the escalation and the
 woods' voice read the scene as the chase begun); the haunt's chase rules, the cut and the end
 rule, and the inner voice's chase lines, wait for `Chase`. The dark and the kill return the tick
-the scene ends: the Hollow hunts, and the guide shades stand beside the way down.
+the scene ends: the Hollow hunts. (Since 2026-11-13 the way down's light comes up at the
+threshold and the eye turns to the way's own point 10 m on, not the stem's: `2026-11-13-the-way-down.md`.
+The guide shades are gone with the guide.)
 
 ## 1. The party (`sim/summit.ts`, `gatherParty`)
 

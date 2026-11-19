@@ -10,7 +10,9 @@
  * the hike's makes its own (`hikeRenderer.ts`).
  */
 import type { Vec3, WorldState } from "../sim/types.js";
+import type { WayDown } from "../sim/wayDown.js";
 import type { ListenerPose } from "./ambientAudio.js";
+import type { CrowdFigure } from "./crowdField.js";
 import type { EngineHandle, EngineName } from "./engineHandle.js";
 import type { WatchEngine } from "./engineWatch.js";
 import type { EyePose } from "./eyeBlend.js";
@@ -169,6 +171,26 @@ export type Renderer = {
   setMist(density: number | null): number;
   /** How far the mist has come in, 0 to 1 (acts.ts): the ground cloud rises by it, after the night. */
   setMistIn(level: number): void;
+  /** The way down to draw in mist in the chase (wayLight.ts), or none, and the ground its mist stands on (the sim's field, as the players stand on it): the app gives every renderer the world's, when it has it. */
+  setWay(way: WayDown | null, heightAt: (x: number, z: number) => number): void;
+  /**
+   * The way's mist, 0 to 1 (wayLevel.ts): the way's mist is drawn at it, the
+   * rest of the frame is dimmed by it (`wayDimAt`), and where the ground
+   * mist has a ground map it thins over the way in place of the trail.
+   */
+  setWayLevel(level: number): void;
+  /**
+   * This screen's crowd for the frame (crowdField.ts), told before `sync`: its figures are drawn as cards, in the
+   * frame and in the shade mask, and as eyes. While `shadows`, the chase's killers are drawn among them, as
+   * shadows with the Hollow's red eyes, and not as the model (crowdKillers.ts).
+   */
+  setCrowd(figures: readonly CrowdFigure[], seconds: number, shadows: boolean): void;
+  /**
+   * What stands at the centre of the local player's view in the chase (chaseThreat.ts, 0 to 1), told before
+   * `sync`; null where the chase does not have them. While it is given the frame's dark is the chase's own
+   * (stareLens.ts): there the whole way down, never closed far, beating faster by this.
+   */
+  setChaseThreat(threat: number | null): void;
   /**
    * The end for this player, once; a second call changes nothing. Died: the
    * camera is the death's from now (ending.ts). Won: the end scene plays

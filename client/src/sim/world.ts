@@ -6,7 +6,6 @@ import type { Level } from "./level.js";
 import type { BoxProvider } from "./boxSource.js";
 import type { Forest } from "./forest.js";
 import type { TrailGraph } from "./trail.js";
-import type { CutRecord } from "./cut.js";
 import { createWatcherRecord, stepWatcher, type WatcherRecord } from "./watcher.js";
 import { createHauntRecord, stepHaunt, type HauntRecord } from "./haunt.js";
 import { spiralSpawn, trailheadStart } from "./spawn.js";
@@ -21,6 +20,9 @@ import { isExpiredCorpse, stepEnemy } from "./ai.js";
 import { updateDirector } from "./director.js";
 import { stepHollows, updateHollows, updateLoss } from "./hollow.js";
 import { stepSummit, updateSafety } from "./summit.js";
+import { stepTaken } from "./taken.js";
+import type { WayDown } from "./wayDown.js";
+import { drawWay } from "./wayDraw.js";
 import { ENEMY_POPULATION_CAP, PLAYER_HALF, PLAYER_MAX_HEALTH, TICK_DT } from "./constants.js";
 
 export type World = {
@@ -81,15 +83,6 @@ export type World = {
    * what `app.ts` paints signs from. Null for a hand-authored level.
    */
   trail: TrailGraph | null;
-  /**
-   * The cut (`cut.ts`): the guide route and the forks cut so far, host only.
-   * Null until the discovery tick draws the guide, and null forever on a
-   * client's predicted world. It lives here and not on `WorldState` because
-   * `WorldState` is what `cloneWorldState` copies, `serializeWorldState`
-   * fingerprints and the snapshot carries to every peer — and the record is
-   * the host's alone, like `search` and `trail` beside it.
-   */
-  cut: CutRecord | null;
   /** The haunt's director (haunt.ts): host-only, off the wire, outside the fingerprint. */
   haunt: HauntRecord | null;
   /**
@@ -109,6 +102,14 @@ export type World = {
    * null until the find, and for ever on a hand-authored level.
    */
   crest: { pos: Vec3; yaw: number } | null;
+  /**
+   * The way down (wayDown.ts): the one path the chase holds a player to, the
+   * same on every peer, drawn from the seed. Null until its draw is done, and
+   * for a world with no chase (no forest, no trail, peaceful).
+   */
+  way: WayDown | null;
+  /** The way's draw while it is under way (wayDraw.ts `stepWay`, `wayOf`); null once the way is settled, and where none is drawn. */
+  wayDraw: Generator<void, WayDown | null, void> | null;
   /** Explore (`game/gameMode.ts`): no watcher, no haunt, and the summit is
    * never found (summit.ts), so nothing walks out of the woods and the
    * climb never flips. The world's, so every peer runs the same one. */
@@ -127,8 +128,9 @@ export function createWorld(level: Level, seed: number, authoritative = true): W
     interactables: new Map(),
     search: null,
     trail: null,
-    cut: null,
     crest: null,
+    way: null,
+    wayDraw: null,
     haunt: null,
     watcher: null,
     peaceful: false,
@@ -165,8 +167,9 @@ export function createForestWorld(forest: Forest, authoritative = true, peaceful
     interactables: new Map(),
     search: null,
     trail: graph ?? null,
-    cut: null,
     crest: null,
+    way: null,
+    wayDraw: null,
     watcher: graph === undefined || !authoritative || peaceful ? null : createWatcherRecord(forest.seed),
     haunt: graph === undefined || !authoritative || peaceful ? null : createHauntRecord(forest.seed),
     peaceful,
@@ -180,6 +183,8 @@ export function createForestWorld(forest: Forest, authoritative = true, peaceful
       rngSeed: forest.seed | 0,
     },
   };
+  // The way down is every peer's to draw, a slice at a time, long before the find; a world with no chase draws none.
+  if (graph !== undefined && !peaceful) world.wayDraw = drawWay(world);
   // The board and the car stand where the trailhead pass put them, and the
   // poster comes from the same seed on every peer.
   const roadCenterX = variant.roadCenterX;
@@ -298,6 +303,8 @@ export function tickWorld(world: World, inputs: Map<number, InputCommand>): void
   // it as they move and as they pick their prey, so a player who crossed onto
   // the corridor this tick is out of reach on the same tick (summit.ts).
   updateSafety(world);
+  // A player their own crowd has (taken.ts): before the Hollows move, so what killed them is the touch.
+  stepTaken(world, inputs);
 
   if (world.trail !== null) {
     // The climb's watcher shows and hides before the Hollows move, so the

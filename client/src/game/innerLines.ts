@@ -107,12 +107,12 @@ export const INNER_LINES: Readonly<Record<VoiceScenario, readonly string[]>> = {
   chaseStart: [
     "Run. NOW.",
     "I need to go. NOW.",
-    "I need to get down the trail. NOW.",
+    "Down. Follow the light. NOW.",
   ],
   chaseOffTrail: [
-    "The trail. Stay on the trail.",
-    "Not through there. The trail!",
-    "I'm off the path. Go back. Now!",
+    "The light. Stay in the light.",
+    "Not through there. Back!",
+    "I'm out of the light. Go back. Now!",
   ],
   safe: [
     "There's the car!",
@@ -122,9 +122,9 @@ export const INNER_LINES: Readonly<Record<VoiceScenario, readonly string[]>> = {
   // Back on the crest after a death in the chase (docs/gameplay/2026-09-16-the-summit.md §2): what
   // the ranger says to themselves about how they died, one pool a cause (sim/deathCause.ts).
   returnOffTrail: [
-    "Right. The trail. Stay on the trail.",
+    "Right. The light. Stay in the light.",
     "Shortcut. Never again.",
-    "Off the trail is where it keeps them. Noted.",
+    "Out of the light is where it keeps them. Noted.",
   ],
   returnStill: [
     "Standing still. Great plan.",

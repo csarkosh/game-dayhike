@@ -45,6 +45,12 @@ export const DRAW_ORDER = { rings: 80, patches: 90, forest: 100, clutter: 110, b
  * the splashes, then the drips and the streaks, one draw whose instances
  * are in that order (`rainField.ts`).
  *
+ * Between the mist banks and the rain stand the chase's own, in the order
+ * they lie from the eye outward and back: the crowd's cards first, so the
+ * mist is drawn over them and a figure stands in the mist, never on it; the
+ * way's mist; the mist beyond its banks, on the tiers that draw it; and the
+ * crowd's eyes, which carry through all of it.
+ *
  * Then the water the tiers blend over what lies under it. A lake's
  * surface and the sea's rings stand past the rain's place, so the rain is blended
  * first and the water over it: a streak falling in front of deep water is
@@ -76,7 +82,7 @@ export const DRAW_ORDER = { rings: 80, patches: 90, forest: 100, clutter: 110, b
  * the tiers with no post chain, the shade veil, which the game draws over
  * the finished frame (`shadeVeil.ts`).
  */
-export const SEE_THROUGH_ORDER = { motes: 200, mist: 210, splashes: 220, rain: 230, sea: 238, lip: 239, water: 240, carShadow: 242, lettering: 244, boardFace: 245, glass: 246, spray: 248, midges: 250, dragonflies: 252, veil: 260 } as const;
+export const SEE_THROUGH_ORDER = { motes: 200, mist: 210, crowdCards: 212, wayLight: 214, wayField: 216, crowdEyes: 218, splashes: 220, rain: 230, sea: 238, lip: 239, water: 240, carShadow: 242, lettering: 244, boardFace: 245, glass: 246, spray: 248, midges: 250, dragonflies: 252, veil: 260 } as const;
 
 /** The places a shell has past its first. */
 export const DRAW_PLACES = 1024;

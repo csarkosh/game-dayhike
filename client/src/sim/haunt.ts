@@ -30,7 +30,6 @@ import type { EnemyState, PlayerState, Vec3 } from "./types.js";
 import { AiState, Outcome, Phase, cloneVec3, nextRandom } from "./types.js";
 import type { World } from "./world.js";
 import type { TrailGraph, TrailNode } from "./trail.js";
-import { nearestTrailNode } from "./trail.js";
 import { groundSpawn } from "./spawn.js";
 import { hasLineOfSight } from "./ai.js";
 import { aimDirection } from "./view.js";
@@ -38,7 +37,8 @@ import { isOnCorridor } from "./containment.js";
 import { faceToward, horizontalDistSq, playerSees, revealing, walkToward } from "./hollow.js";
 import { climbOf, WATCH_SLOPE_NY } from "./watcher.js";
 import { actsUnder, MIST_AT, MIST_SPAN, smootherstep } from "./acts.js";
-import { trailDistance } from "./trail.js";
+import { chaseLineDistance, onWay } from "./chaseLine.js";
+import { wayDirection, wayPoint, wayProject } from "./wayDown.js";
 import { causeOfDeath } from "./deathCause.js";
 import { decided } from "./checkpoint.js";
 import { ENEMY_HALF, ENEMY_MAX_HEALTH, PLAYER_EYE_OFFSET } from "./constants.js";
@@ -116,9 +116,55 @@ export const LUNGE_ATTACK_M = 2.6;
 export const LUNGE_ATTACK_S = 0.9;
 export const LUNGE_ATTACK_HIT_S = 0.4;
 export const LUNGE_ATTACK_REACH = 3.4;
-/** In the chase: how far along the open way home a guide shade's node may be, and how far along the way to it the trail point it stands off (SHADE_TRAIL_OFF_M) is. */
-export const GUIDE_REACH: readonly [number, number] = [15, 60];
-export const GUIDE_ALONG: readonly [number, number] = [0.55, 0.8];
+/**
+ * The way's lungers (2026-11-19). The crowd beside the way down is each
+ * screen's own (game/crowdField.ts): it lunges at a runner and stops short,
+ * and kills only one who walks into it. So some of what lunges is the host's,
+ * and stands in the path. All the
+ * way down, a lunge stands up beside the path ahead of whoever leads each
+ * group of runners: WAYLAY_AHEAD_M down the way from them, WAYLAY_OFF_M from
+ * its line (in the thick mist at the path's edge, among the crowd), on a
+ * drawn side, WAYLAY_GAP_M of way on from the one before (WAYLAY_GAP_EARLY
+ * times that at the way's start, easing to once by three tenths of it), none
+ * in the way's first WAYLAY_FROM_M (a quarter of a minute's sprint). It waits there. When its player is
+ * within WAYLAY_LOOSE_M of it down the way (over three seconds of sprint) it
+ * lunges onto the path as the crowd's do, at WAYLAY_SPEED, straight out
+ * from where it waited to WAYLAY_SIDE_M short of the way's line, and stands
+ * there. Whoever comes within WAYLAY_REACH_M of it, it has: its strike
+ * lands at once (a lunge's own strike stops 2.6 m short and lands 0.4 s on,
+ * which a sprinter outruns or does not by a hand's width; this one is to be
+ * read at a sprint). It never crosses the line and it follows nobody. So
+ * the middle of the path and a strip of its own half are death, and the far
+ * half, from a metre off the line, is safe however the meeting is timed: a
+ * clean run reads the mist ahead and goes round each one on the side it did
+ * not come from, and no two are met within five seconds of each other. It
+ * is gone WAYLAY_RUN_S after it is loosed, or once its player is
+ * WAYLAY_PAST_M past it; players within WAYLAY_GROUP_M of one ahead of them
+ * down the way are that one's group and are given none of their own.
+ */
+export const WAYLAY_AHEAD_M: readonly [number, number] = [40, 60];
+export const WAYLAY_OFF_M: readonly [number, number] = [7, 8];
+export const WAYLAY_GAP_M: readonly [number, number] = [40, 70];
+export const WAYLAY_REACH_M = 2;
+export const WAYLAY_SIDE_M = 1;
+export const WAYLAY_GAP_EARLY = 1.6;
+export const WAYLAY_FROM_M = 110;
+export const WAYLAY_LOOSE_M = 24;
+/** The crowd's lunge (game/crowdField.ts CROWD_LUNGE_MPS; a test holds the two equal). */
+export const WAYLAY_SPEED = 8;
+export const WAYLAY_RUN_S = 6;
+export const WAYLAY_PAST_M = 8;
+export const WAYLAY_GROUP_M = 60;
+/** Seconds one waits for its player at the most, the share of the way by which they stand at their closest, and the metres of the way's end none stands in. */
+const WAYLAY_WAIT_S = 60;
+const WAYLAY_FULL_AT = 0.3;
+const WAYLAY_END_M = 30;
+/** Metres from its place on the path within which a loosed one has reached it, and the seconds of no progress toward it after which it stands where it is. */
+const WAYLAY_STOOD_M = 0.3;
+const WAYLAY_HELD_S = 0.1;
+/** Metres further on a place is tried at where the ground refused the last. */
+const WAYLAY_RETRY_M = 5;
+const WAYLAY_ON = { x: 0, z: 0 }, WAYLAY_ALONG = { x: 0, z: 0 };
 /** Placements tried for a shade in one attempt. */
 export const HAUNT_PLACE_TRIES = 6;
 /**
@@ -142,6 +188,8 @@ export type HauntRecord = {
   rest: number;
   /** The episode running, or null. */
   episode: { left: number; shades: number; nextShade: number; real: boolean } | null;
+  /** The way's lungers: for each player who leads a group, the metres down the way the next one stands at. */
+  waylay: Map<number, number>;
 };
 
 const between = (rng: { rngSeed: number }, band: readonly [number, number]): number =>
@@ -149,19 +197,19 @@ const between = (rng: { rngSeed: number }, band: readonly [number, number]): num
 
 export function createHauntRecord(seed: number): HauntRecord {
   const rng = { rngSeed: (seed ^ HAUNT_SALT) | 0 };
-  return { rng, active: true, rest: between(rng, HAUNT_REST_EARLY), episode: null };
+  return { rng, active: true, rest: between(rng, HAUNT_REST_EARLY), episode: null, waylay: new Map() };
 }
 
 export function isShadeState(ai: AiState): boolean {
   return ai === AiState.Shade || ai === AiState.Lunge || ai === AiState.Strike;
 }
 
-/** How far off the trail the chase's targets are, 0 on it to 1 from OFF_TRAIL_FROM_M + OFF_TRAIL_SPAN_M off: the farthest of them. */
+/** How far off the chase's line (chaseLine.ts: the way down, or the trail) its targets are, 0 on it to 1 from OFF_TRAIL_FROM_M + OFF_TRAIL_SPAN_M off: the farthest of them. */
 export function offTrailOf(world: World): number {
   if (world.trail === null) return 0;
   let worst = 0;
   for (const p of targetsOf(world)) {
-    const t = (trailDistance(world.trail, p.pos.x, p.pos.z) - OFF_TRAIL_FROM_M) / OFF_TRAIL_SPAN_M;
+    const t = (chaseLineDistance(world, p.pos.x, p.pos.z) - OFF_TRAIL_FROM_M) / OFF_TRAIL_SPAN_M;
     if (t > worst) worst = t;
   }
   return worst > 1 ? 1 : worst;
@@ -203,8 +251,8 @@ function targetsOf(world: World): PlayerState[] {
   return out;
 }
 
-/** Standable, off the corridor, clear of every living player by the shade's flee radius, and in a clear sightline from `eye`. */
-function admits(world: World, x: number, z: number, eye: Vec3): Vec3 | null {
+/** Standable, off the corridor, clear of every living player by the shade's flee radius, and in a clear sightline from `eye` (none asked for with no eye). */
+function admits(world: World, x: number, z: number, eye: Vec3 | null): Vec3 | null {
   if (world.forest === null || world.ground === null) return null;
   const centre = groundSpawn(world.boxes, world.forest.seed, x, z, ENEMY_HALF);
   if (centre === null) return null;
@@ -219,7 +267,7 @@ function admits(world: World, x: number, z: number, eye: Vec3): Vec3 | null {
   for (const e of world.state.enemies.values()) {
     if (isShadeState(e.ai) && horizontalDistSq(e.pos, centre) < SHADE_APART_M * SHADE_APART_M) return null;
   }
-  if (!hasLineOfSight(eye, centre, world.boxes, world.ground)) return null;
+  if (eye !== null && !hasLineOfSight(eye, centre, world.boxes, world.ground)) return null;
   return centre;
 }
 
@@ -273,8 +321,16 @@ function standOff(world: World, graph: TrailGraph, target: PlayerState, on: { x:
   const eye: Vec3 = { x: target.pos.x, y: target.pos.y + PLAYER_EYE_OFFSET, z: target.pos.z };
   const at = admits(world, x, z, eye);
   if (at === null) return null;
-  const d = trailDistance(graph, at.x, at.z);
+  const d = chaseLineDistance(world, at.x, at.z);
   return d >= SHADE_TRAIL_OFF_M[0] && d <= SHADE_TRAIL_OFF_M[1] ? at : null;
+}
+
+/** The point of the line nearest (x, z) and its direction there: the way down's once the chase holds to it (chaseLine.ts), else the trail's. */
+function nearestOnLine(world: World, graph: TrailGraph, x: number, z: number): { x: number; z: number; tx: number; tz: number } {
+  if (world.way === null || !onWay(world)) return nearestOnTrail(graph, x, z);
+  const s = wayProject(world.way, x, z).s;
+  const at = wayPoint(world.way, s, { x: 0, z: 0 }), along = wayDirection(world.way, s, { x: 0, z: 0 });
+  return { x: at.x, z: at.z, tx: along.x, tz: along.z };
 }
 
 /**
@@ -297,7 +353,7 @@ export function placeShadeOffTrail(world: World, target: PlayerState, rng: { rng
   const graph = world.trail;
   if (graph === null) return null;
   const look = aimDirection(target.yaw, 0);
-  const stood = standOff(world, graph, target, nearestOnTrail(graph, target.pos.x + look.x * ahead, target.pos.z + look.z * ahead), side, off);
+  const stood = standOff(world, graph, target, nearestOnLine(world, graph, target.pos.x + look.x * ahead, target.pos.z + look.z * ahead), side, off);
   if (stood !== null) return stood;
   const minX = look.x * SHADE_BEARING_MIN_COS - bandSide * look.z * SHADE_BEARING_MIN_SIN;
   const minZ = bandSide * look.x * SHADE_BEARING_MIN_SIN + look.z * SHADE_BEARING_MIN_COS;
@@ -309,42 +365,12 @@ export function placeShadeOffTrail(world: World, target: PlayerState, rng: { rng
   const eye: Vec3 = { x: target.pos.x, y: target.pos.y + PLAYER_EYE_OFFSET, z: target.pos.z };
   const at = admits(world, target.pos.x + (bx / len) * range, target.pos.z + (bz / len) * range, eye);
   if (at === null) return null;
-  const d = trailDistance(graph, at.x, at.z);
-  return d >= SHADE_TRAIL_OFF_M[0] && d <= SHADE_TRAIL_OFF_M[1] ? at : null;
-}
-
-/**
- * One try at a place off the open way home, for the chase: the nearest
- * guide node within GUIDE_REACH of `target` that is nearer the pad than
- * their own nearest node, the point of the guide's own path nearest a drawn
- * share of the way to it, and from that point a drawn side at a drawn
- * SHADE_TRAIL_OFF_M (`standOff`): beside the branch that is open, never a
- * closed one. Null without a guide or a node, and then the plain stand off
- * the trail is used. Spends three draws.
- */
-export function placeShadeOnGuide(world: World, target: PlayerState, rng: { rngSeed: number }): Vec3 | null {
-  const graph = world.trail;
-  const cut = world.cut;
-  if (graph === null || cut === null || cut.guide.length === 0) return null;
-  const mine = nearestTrailNode(graph, target.pos.x, target.pos.z);
-  const home = graph.homeDist[mine] as number;
-  let best: TrailNode | null = null;
-  let bestSq = Infinity;
-  for (const gi of cut.guide) {
-    if ((graph.homeDist[gi] as number) >= home) continue;
-    const n = graph.nodes[gi] as TrailNode;
-    const dx = n.x - target.pos.x;
-    const dz = n.z - target.pos.z;
-    const sq = dx * dx + dz * dz;
-    if (sq < GUIDE_REACH[0] * GUIDE_REACH[0] || sq > GUIDE_REACH[1] * GUIDE_REACH[1]) continue;
-    if (sq < bestSq) { bestSq = sq; best = n; }
-  }
-  const along = between(rng, GUIDE_ALONG);
-  const side = nextRandom(rng) < 0.5 ? -1 : 1;
-  const off = between(rng, SHADE_TRAIL_OFF_M);
-  if (best === null) return null;
-  const on = nearestOnTrail(graph, target.pos.x + (best.x - target.pos.x) * along, target.pos.z + (best.z - target.pos.z) * along, cut.guide);
-  return standOff(world, graph, target, on, side, off);
+  const d = chaseLineDistance(world, at.x, at.z);
+  // Where the chase holds its players to the way down, the line is the one way home, with no other trail
+  // beside it: a player who has left it is answered where they are. The place may stand as much further off
+  // the line as they have gone, and never nearer it than a shade ever stands.
+  const gone = onWay(world) ? chaseLineDistance(world, target.pos.x, target.pos.z) : 0;
+  return d >= SHADE_TRAIL_OFF_M[0] && d <= SHADE_TRAIL_OFF_M[1] + gone ? at : null;
 }
 
 /** Spawns a shade or a lunge at `at` for `target`: a shade stands `dwell` seconds, a lunge walks at the target for at most LUNGE_MAX_S. */
@@ -367,7 +393,7 @@ export function spawnShade(world: World, at: Vec3, target: PlayerState, lunge: b
     routeAt: 0,
     approach: false,
     seen: false,
-    emergeTo: null, stalks: false, fork: -1, forkEdge: -1,
+    emergeTo: null, stalks: false, waylay: 0,
   };
   faceToward(shade, target.pos.x, target.pos.z);
   world.state.enemies.set(shade.id, shade);
@@ -410,7 +436,39 @@ export function stepShade(h: EnemyState, world: World, dt: number): boolean {
   // length it strikes. Out of time, stuck, or its player dead or safe, it
   // is gone. Contact is the Hollows' (updateHollows) as well.
   if (h.stateTimer <= 0 || target === undefined || target.health <= 0 || target.safe) return true;
-  if (horizontalDistSq(h.pos, target.pos) <= LUNGE_ATTACK_M * LUNGE_ATTACK_M) {
+  if (h.waylay !== 0 && !h.approach) {
+    // One of the way's: it waits where it rose, its face to its player, until they are within its reach down
+    // the way (or of it, however they came). A player gone back up the way, or past it unmet, has left it behind.
+    faceToward(h, target.pos.x, target.pos.z);
+    const way = world.way;
+    if (way === null) return true;
+    const gap = wayProject(way, h.pos.x, h.pos.z).s - wayProject(way, target.pos.x, target.pos.z).s;
+    if (gap > WAYLAY_AHEAD_M[1] + WAYLAY_GAP_M[1] || gap < -WAYLAY_LOOSE_M) return true;
+    if (gap <= WAYLAY_LOOSE_M || horizontalDistSq(h.pos, target.pos) <= WAYLAY_LOOSE_M * WAYLAY_LOOSE_M) {
+      // Loosed: straight out onto the path from where it waited, to just short of the way's line on its own side.
+      const mine = wayProject(way, h.pos.x, h.pos.z).s;
+      const on = wayPoint(way, mine, WAYLAY_ON), along = wayDirection(way, mine, WAYLAY_ALONG);
+      h.emergeTo = { x: on.x - along.z * h.waylay * WAYLAY_SIDE_M, y: h.pos.y, z: on.z + along.x * h.waylay * WAYLAY_SIDE_M };
+      h.approach = true;
+      h.stateTimer = WAYLAY_RUN_S;
+      h.lastDistSq = Infinity;
+    }
+    return false;
+  }
+  if (h.waylay !== 0) {
+    // One of the way's, loosed. Its player well past it, it is gone. It has whoever it reaches: the strike, its blow due at once.
+    const way = world.way, to = h.emergeTo;
+    if (way === null || to === null) return true;
+    if (wayProject(way, target.pos.x, target.pos.z).s - wayProject(way, h.pos.x, h.pos.z).s > WAYLAY_PAST_M) return true;
+    if (horizontalDistSq(h.pos, target.pos) <= WAYLAY_REACH_M * WAYLAY_REACH_M) {
+      h.ai = AiState.Strike;
+      h.stateTimer = LUNGE_ATTACK_S - LUNGE_ATTACK_HIT_S;
+      h.attackCooldown = 0;
+      h.vel = { x: 0, y: 0, z: 0 };
+      faceToward(h, target.pos.x, target.pos.z);
+      return false;
+    }
+  } else if (horizontalDistSq(h.pos, target.pos) <= LUNGE_ATTACK_M * LUNGE_ATTACK_M) {
     h.ai = AiState.Strike;
     h.stateTimer = LUNGE_ATTACK_S;
     h.attackCooldown = 0;
@@ -418,8 +476,90 @@ export function stepShade(h: EnemyState, world: World, dt: number): boolean {
     faceToward(h, target.pos.x, target.pos.z);
     return false;
   }
+  if (h.waylay !== 0) {
+    // To its place on the path, and there it stands, its face to its player.
+    const to = h.emergeTo as Vec3;
+    const dx = to.x - h.pos.x, dz = to.z - h.pos.z;
+    if (dx * dx + dz * dz <= WAYLAY_STOOD_M * WAYLAY_STOOD_M) {
+      h.vel = { x: 0, y: 0, z: 0 };
+      faceToward(h, target.pos.x, target.pos.z);
+      return false;
+    }
+    walkToward(h, world, dt, to.x, to.z, WAYLAY_SPEED);
+    faceToward(h, target.pos.x, target.pos.z);
+    // Held off its place by something that stands in its way, it stands where it is held: it never turns aside
+    // to find a way round (the walk's own answer to being held), which could carry it across the line.
+    if (h.stuckTimer > WAYLAY_HELD_S) {
+      to.x = h.pos.x;
+      to.z = h.pos.z;
+      h.stuckTimer = 0;
+      h.unstickTimer = 0;
+    }
+    return false;
+  }
   walkToward(h, world, dt, target.pos.x, target.pos.z, LUNGE_SPEED);
   return h.stuckTimer > 1.5;
+}
+
+/**
+ * The way's lungers' director (see WAYLAY_AHEAD_M): for each player on the
+ * way who leads a group, stands the next lunge up beside the path once its
+ * place is within WAYLAY_AHEAD_M of them down the way. One place is tried a
+ * tick; ground that refuses it moves the place on a little.
+ */
+function stepWaylay(world: World, record: HauntRecord): void {
+  const way = world.way;
+  if (way === null || !onWay(world)) return;
+  const targets = targetsOf(world);
+  for (const p of targets) {
+    if (chaseLineDistance(world, p.pos.x, p.pos.z) > 0) continue;
+    const s = wayProject(way, p.pos.x, p.pos.z).s;
+    // Another runner ahead of this one within a group's length leads it: theirs are this one's too.
+    let led = false;
+    for (const q of targets) {
+      if (q === p || chaseLineDistance(world, q.pos.x, q.pos.z) > 0) continue;
+      const ahead = wayProject(way, q.pos.x, q.pos.z).s - s;
+      if (ahead > 0 && ahead <= WAYLAY_GROUP_M) led = true;
+    }
+    if (led) continue;
+    const nearest = Math.max(WAYLAY_FROM_M, s + WAYLAY_AHEAD_M[0]);
+    let next = record.waylay.get(p.id);
+    // No place yet, one the player has outrun, or one left far down the way by a player returned to the crest.
+    if (next === undefined || next < nearest || next > s + WAYLAY_AHEAD_M[1] + 2 * WAYLAY_GAP_M[1] * WAYLAY_GAP_EARLY) next = nearest;
+    if (next > s + WAYLAY_AHEAD_M[1] || next > way.length - WAYLAY_END_M) {
+      record.waylay.set(p.id, next);
+      continue;
+    }
+    // Never within a gap of one that stands already, whoever it stands for: a runner who takes the lead is not
+    // given one beside the last leader's, on the path's other half.
+    let crowded = false;
+    for (const e of world.state.enemies.values()) {
+      if (e.waylay === 0) continue;
+      const es = wayProject(way, e.pos.x, e.pos.z).s;
+      if (es > next - WAYLAY_GAP_M[0] && es < next + WAYLAY_GAP_M[0]) {
+        next = es + WAYLAY_GAP_M[0];
+        crowded = true;
+      }
+    }
+    if (crowded) {
+      record.waylay.set(p.id, next);
+      continue;
+    }
+    const side = nextRandom(record.rng) < 0.5 ? -1 : 1;
+    const off = between(record.rng, WAYLAY_OFF_M);
+    const on = wayPoint(way, next, { x: 0, z: 0 }), along = wayDirection(way, next, { x: 0, z: 0 });
+    const at = admits(world, on.x - side * along.z * off, on.z + side * along.x * off, null);
+    if (at === null) {
+      record.waylay.set(p.id, next + WAYLAY_RETRY_M);
+      continue;
+    }
+    const lunge = spawnShade(world, at, p, true, 0);
+    lunge.waylay = side;
+    lunge.stateTimer = WAYLAY_WAIT_S;
+    const early = 1 + (WAYLAY_GAP_EARLY - 1) * (1 - smootherstep(next / (way.length * WAYLAY_FULL_AT)));
+    record.waylay.set(p.id, next + between(record.rng, WAYLAY_GAP_M) * early);
+  }
+  for (const id of record.waylay.keys()) if (!world.state.players.has(id)) record.waylay.delete(id);
 }
 
 /**
@@ -441,6 +581,7 @@ export function stepHaunt(world: World, dt: number): void {
     return;
   }
   const chase = world.state.phase === Phase.Chase;
+  if (chase) stepWaylay(world, record);
   const pressure = pressureOf(world);
   const off = chase ? offTrailOf(world) : 0;
   if (record.episode === null) {
@@ -465,14 +606,19 @@ export function stepHaunt(world: World, dt: number): void {
     if (targets.length > 0) {
       const target = targets[Math.floor(nextRandom(record.rng) * targets.length) % targets.length] as PlayerState;
       // The episode's last shade is its lunge, when it has one, or the shade placed once only HAUNT_REAL_BY_S is left; off the trail in the chase, any shade may be.
-      const lunge = (ep.real && (ep.shades === 1 || ep.left <= HAUNT_REAL_BY_S)) || (off > 0 && nextRandom(record.rng) < OFF_TRAIL_REAL_EACH + (1 - OFF_TRAIL_REAL_EACH) * off);
+      // On the way down the path's own lunges are the way's (stepWaylay), which a runner reads by where they wait: the
+      // episode's own, which walks in from far off the line, is not raised there. Leaving the way is answered as before.
+      const lunge = (ep.real && !onWay(world) && (ep.shades === 1 || ep.left <= HAUNT_REAL_BY_S)) || (off > 0 && nextRandom(record.rng) < OFF_TRAIL_REAL_EACH + (1 - OFF_TRAIL_REAL_EACH) * off);
       let at: Vec3 | null = null;
-      // Every one stands off the trail ahead of its player; in the chase a shade first off the open way home.
-      for (let i = 0; i < HAUNT_PLACE_TRIES && at === null; i++) {
-        if (chase && !lunge) at = placeShadeOnGuide(world, target, record.rng);
-        if (at === null) at = placeShadeOffTrail(world, target, record.rng);
-      }
-      if (at !== null) {
+      // On the way down the standing shades are the crowd's, each screen's own (game/crowdField.ts): the haunt raises
+      // only what lunges, and a shade that would only have stood is one of the episode's count gone by.
+      const stands = !lunge && onWay(world);
+      // Every one stands off the line ahead of its player: the trail, or in the chase the way down (chaseLine.ts).
+      for (let i = 0; i < HAUNT_PLACE_TRIES && at === null && !stands; i++) at = placeShadeOffTrail(world, target, record.rng);
+      if (stands) {
+        ep.shades--;
+        ep.nextShade = between(record.rng, HAUNT_SHADE_GAP_S) / (1 + OFF_TRAIL_SHADES_GAIN * off);
+      } else if (at !== null) {
         spawnShade(world, at, target, lunge, between(record.rng, SHADE_DWELL_S));
         // One real one an episode: once it has come, the rest are shades.
         if (lunge) ep.real = false;

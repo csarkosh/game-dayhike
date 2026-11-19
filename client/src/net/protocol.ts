@@ -1,7 +1,12 @@
 import type { DeathCause, InputCommand, Vec3 } from "../sim/types.js";
 
 /**
- * Bumped whenever the wire format changes (most recently: the summit loop —
+ * Bumped whenever the wire format changes, or what the two ends must agree
+ * on that the wire does not show (7, 2026-11-19: the chase follows the way
+ * down, which each end draws for itself, and a command's buttons carry the
+ * crowd's touch: a page from before it, in a party with one from after,
+ * would be held to a path it cannot see; the codec is unchanged. Before
+ * that: the summit loop —
  * the phase byte; each player's flags byte, whose bit 0 is safety; the items
  * section and three bytes per player gone; the Named event; before that,
  * the stare, one byte per player; before that, the match outcome and the
@@ -13,7 +18,7 @@ import type { DeathCause, InputCommand, Vec3 } from "../sim/types.js";
  * version is refused in words instead of decoding garbage. The level id
  * does not cover this — it moves with the terrain, not the codec.
  */
-export const PROTOCOL_VERSION = 6;
+export const PROTOCOL_VERSION = 7;
 
 export const enum MessageType {
   Input = 1,

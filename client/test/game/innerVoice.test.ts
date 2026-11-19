@@ -1,9 +1,14 @@
+import { existsSync, readFileSync, statSync } from "node:fs";
+import { fileURLToPath } from "node:url";
 import { describe, it, expect } from "vitest";
 import {
   OFF_TRAIL_M, OFF_TRAIL_S, VOICE_FIRST_S, VOICE_GAP_S, returnScenario, stepInnerVoice, voiceRest, type VoiceInputs, type VoiceState,
 } from "../../src/game/innerVoice.js";
 import { INNER_LINES } from "../../src/game/innerLines.js";
 import { DeathCause } from "../../src/sim/types.js";
+
+/** A file of the client, wherever the suite is run from (the gate runs it from the repository's root). */
+const clientFile = (path: string): string => fileURLToPath(new URL(`../../${path}`, import.meta.url));
 
 const DAY: VoiceInputs = {
   climb: 0.5, wet: 1, night: 0, mist: 0, chase: false, ended: false, offTrail: 0, lamp: false, stare: 0, moving: true,
@@ -182,7 +187,7 @@ describe("the line on coming back from a death in the chase", () => {
   const back = (cause: DeathCause): VoiceInputs => ({ ...CHASE, scene: "return", returned: cause });
 
   it("has the six causes' lines as the design gives them", () => {
-    expect(INNER_LINES.returnOffTrail).toEqual(["Right. The trail. Stay on the trail.", "Shortcut. Never again.", "Off the trail is where it keeps them. Noted."]);
+    expect(INNER_LINES.returnOffTrail).toEqual(["Right. The light. Stay in the light.", "Shortcut. Never again.", "Out of the light is where it keeps them. Noted."]);
     expect(INNER_LINES.returnStill).toEqual(["Standing still. Great plan.", "Don't stop. Do not stop this time.", "It doesn't wait. Why did I?"]);
     expect(INNER_LINES.returnInto).toEqual(["Away from it. AWAY.", "Wrong way. That was the wrong way.", "Maybe don't run at it this time."]);
     expect(INNER_LINES.returnLooked).toEqual(["Don't look at it. Just run.", "Stop staring. Start running.", "Eyes down. Feet moving."]);
@@ -247,5 +252,32 @@ describe("the line on coming back from a death in the chase", () => {
     const quiet = stepInnerVoice(voiceRest(5), { ...CHASE, scene: "return", nearBody: true, hollowSeen: true, safe: true }, DT);
     expect(quiet.line).toBeNull();
     expect(stepInnerVoice(voiceRest(5), back(DeathCause.None), DT).line).toBeNull();
+  });
+});
+
+describe("the chase's lines since the way down", () => {
+  it("speak of the light, never the trail or a path: the way home is the lit channel now", () => {
+    for (const scenario of ["chaseStart", "chaseOffTrail", "returnOffTrail"] as const) {
+      for (const line of INNER_LINES[scenario]) expect(line, scenario).not.toMatch(/trail|path/i);
+    }
+    expect(INNER_LINES.chaseStart).toEqual(["Run. NOW.", "I need to go. NOW.", "Down. Follow the light. NOW."]);
+    expect(INNER_LINES.chaseOffTrail).toEqual(["The light. Stay in the light.", "Not through there. Back!", "I'm out of the light. Go back. Now!"]);
+  });
+
+  it("are every one of them spoken: each line of every pool has its clip, and the catalog lists it at its size (the reworded chase lines and the six returns' were made 2026-11-19)", () => {
+    const catalog = JSON.parse(readFileSync(clientFile("assets/catalog.json"), "utf8")) as { audio: { id: string; output: string; bytes: number }[] };
+    const listed = new Map(catalog.audio.map((e) => [e.id, e]));
+    let lines = 0;
+    for (const [scenario, pool] of Object.entries(INNER_LINES)) {
+      pool.forEach((_text, i) => {
+        const id = `voice.${scenario}.${i + 1}`, file = clientFile(`assets/audio/${id}.mp3`);
+        lines++;
+        expect(existsSync(file), id).toBe(true);
+        expect(listed.get(id), id).toEqual({ id, output: `audio/${id}.mp3`, bytes: statSync(file).size });
+      });
+    }
+    expect(lines).toBe(81);
+    // And the catalog lists no clip for a line that is not there.
+    for (const id of listed.keys()) if (id.startsWith("voice.")) expect(existsSync(clientFile(`assets/audio/${id}.mp3`)), id).toBe(true);
   });
 });

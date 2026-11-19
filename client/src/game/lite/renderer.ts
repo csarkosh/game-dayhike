@@ -361,6 +361,27 @@
  * grade reads the mask; with none the veil does (`shadeVeil.ts`): one
  * triangle multiplied into the frame, last of the see-through draws, with
  * the stare's darkness, hidden while there is neither.
+ *
+ * **The chase's way down is a channel of mist of its own**
+ * (`wayLightMeshes.ts`): the way the app hands the renderer (`setWay`) is
+ * stood on the ground a stretch at a time by the scheduler, and drawn at
+ * the level the app holds (`setWayLevel`), from the summit scene's turn
+ * through the chase. By that level the rest of the frame is dimmed
+ * (`wayDimAt`): in the exposure every material ends with on a tier with no
+ * chain, in the grade's on a tier with one, and the mist's own colour is
+ * made so the dim does not reach it. Where the ground cloud is marched its
+ * map is built over the way in place of the trail while the mist is up, so
+ * the cloud thins over the path; where none is marched the way's mist is
+ * carried on past its banks by a mesh round the eye (`wayFieldMesh.ts`).
+ * A hand-authored level has none of it.
+ *
+ * **The chase's crowd is this screen's own** (`crowdField.ts`), told before
+ * each `sync` (`setCrowd`): every figure a pair of eyes
+ * (`crowdEyeMeshes.ts`) and, within the mist's reach, a card
+ * (`crowdCardMeshes.ts`) drawn in the frame as a dark body and in the
+ * haunt's mask as a shade, on the ground the way's mist stands on, asked
+ * for a few figures a frame. With no figure both are hidden and nothing is
+ * sent.
  */
 import {
   NeutralToneMapping, addTask, addToScene, createBankedFreeCamera, createTexture2DFromPixels, createDirectionalLight, createEngine, createHemisphericLight, createPbrMaterial, createSpotLight,
@@ -376,18 +397,25 @@ import type { Forest } from "../../sim/forest.js";
 import { FOG_DISTANCE } from "../../sim/forestConstants.js";
 import type { Level } from "../../sim/level.js";
 import { activeTerrainVariant, elevationAt, type LakeSource } from "../../sim/terrain.js";
+import { wayDistanceWithin, type WayDown } from "../../sim/wayDown.js";
 import type { ListenerPose } from "../ambientAudio.js";
 import { GRADIENT_MID_STEP, atmosphereUniforms, emptyAtmosphereUniforms, fogGradientAt } from "../atmosphereParams.js";
 import { BASE_SPACING_BY_TIER } from "../clipmap.js";
 import { clutterReachFor } from "../clutterField.js";
-import { cloudDensityNow, cloudFor, cloudGroundDue, cloudGroundMap, cloudMarchSteps, cloudOn, cloudStepsFor, cloudUniforms, emptyCloudUniforms, noCloud } from "../cloudParams.js";
+import {
+  CLOUD_GROUND_SIZE, CLOUD_GROUND_SPAN, WAY_MIST_EDGE_M, WAY_MIST_FADE_M, cloudColourUnder, cloudDensityNow, cloudFor, cloudGroundDue, cloudGroundMap, cloudMarchSteps, cloudOn,
+  cloudStepsFor, cloudUniforms, emptyCloudUniforms, noCloud,
+} from "../cloudParams.js";
+import { CROWD_CARDS_TO_M } from "../crowdCards.js";
+import { CROWD_MOST, crowdHeights, type CrowdGround } from "../crowdField.js";
 import type { EngineHandle } from "../engineHandle.js";
 import { createDeviceHeld, type HeldDevice } from "../deviceHeld.js";
 import { createDeviceMakes, type MakesDevice } from "../deviceMakes.js";
 import { createDrawnFrames, whenDrawnSettled } from "../drawnSettle.js";
 import { createEngineWatch } from "../engineWatch.js";
 import { HEADLAMP_CONE, HEADLAMP_INTENSITY, HEADLAMP_RANGE } from "../endScene.js";
-import { createEntityPoses, type EntityFrame } from "../entityPoses.js";
+import { createEntityPoses, type EntityFrame, type HollowPose } from "../entityPoses.js";
+import { KILLERS_MOST, createKillerShadows } from "../crowdKillers.js";
 import { blendedEye, type EyePose } from "../eyeBlend.js";
 import { FACE_PATCH_Z_OFFSET, FACE_PATCH_Z_UNITS } from "../facePatches.js";
 import { featureTableFor } from "../featureTable.js";
@@ -396,7 +424,7 @@ import { createFrameFit } from "../frameSize.js";
 import { nearRadiusFor } from "../forestField.js";
 import { GAME_FOV, lensProjection } from "../gameLens.js";
 import { hearErrorScopes, readPictureSmall, type FaultListener, type FaultSource } from "../gpuFaults.js";
-import { PAINT_PALETTES, gradeRecordUnder, sightUnder, type PaintPaletteName } from "../gradeParams.js";
+import { CHASE_TINT, PAINT_PALETTES, gradeRecordUnder, sightUnder, type PaintPaletteName } from "../gradeParams.js";
 import { brushBoxes } from "../propBoxes.js";
 import { emptyMaterialGradeUniforms, materialGradeUniforms } from "../materialGrade.js";
 import { isHollow } from "../../sim/hollow.js";
@@ -441,6 +469,10 @@ import { SILENT_WATER_LIFE, createPlayerSlots, pixelAtOneMetre, skyLumaOf } from
 import type { WaterLifeFrame } from "../waterLifeScene.js";
 import { emptyWaterFrameUniforms } from "../waterSurface.js";
 import { WET_CAP, emptyWetUniforms, setWetCove, setWetSwash, setWetWeather, wetLineFor, wetUniforms, type WetBody, type WetUniforms } from "../wetSurface.js";
+import { wayDimAt } from "../wayLevel.js";
+import type { WayColourPath } from "../wayLight.js";
+import { wayTint } from "../wayLightGeometry.js";
+import { wayHazeInto } from "../wayHaze.js";
 import { windRecordUnder, type WindRecord } from "../windParams.js";
 import { atmospherePlugin } from "./atmospherePlugin.js";
 import { createBladeMeshes, type BladeMeshes } from "./bladeMeshes.js";
@@ -448,6 +480,8 @@ import { createLiteBrushes, type LiteBrushes } from "./brushMeshes.js";
 import { cameraAxes, projectToCanvas, restAxes, restPlanes, viewCorners, viewPlanes, type CameraPose } from "./cameraPose.js";
 import { createCapMesh, type CapMesh } from "./capMesh.js";
 import { createCliffMeshes, type CliffMeshes } from "./cliffMeshes.js";
+import { createLiteCrowdCards, type LiteCrowdCards } from "./crowdCardMeshes.js";
+import { createLiteCrowdEyes, type LiteCrowdEyes } from "./crowdEyeMeshes.js";
 import { createClutterMeshes, type ClutterMeshes } from "./clutterMeshes.js";
 import { createDuffMeshes, type DuffMeshes } from "./duffMeshes.js";
 import { createEntityMeshes, type EntityMeshes } from "./entityMeshes.js";
@@ -479,6 +513,8 @@ import { createLiteSurfSpray, type LiteSurfSpray } from "./surfSpray.js";
 import { createTerrainMeshes, type TerrainMeshes } from "./terrainMeshes.js";
 import { createLiteWaterBed, type LiteWaterBed } from "./waterBed.js";
 import { createWaterBehind } from "./waterBehind.js";
+import { createLiteWayField, type LiteWayField } from "./wayFieldMesh.js";
+import { createLiteWayLight, type LiteWayLight } from "./wayLightMeshes.js";
 import { createLiteWaterLife, type LiteWaterLife } from "./waterLifeMeshes.js";
 import { createLiteWaterPlants, type LiteWaterPlants } from "./waterPlantMeshes.js";
 import { createLiteWildlifeMeshes, type LiteWildlifeMeshes } from "./wildlifeMeshes.js";
@@ -508,6 +544,15 @@ const LOOK_AHEAD = 10;
 
 /** The samples a pixel of the frame's own pass on a tier with no post chain. */
 const FRAME_SAMPLES = 4;
+
+/** The most figures of the crowd any tier keeps: what its drawers are made for. */
+const CROWD_MOST_ANY = Math.max(CROWD_MOST.low, CROWD_MOST.medium, CROWD_MOST.high) + KILLERS_MOST;
+/** A frame with no bodies in it. */
+const NO_BODIES: readonly HollowPose[] = [];
+/** No figure of the crowd is held by a model. */
+const CROWD_NONE_HELD: ReadonlySet<number> = new Set();
+/** Metres under the eye the ground is taken to lie where it has not been asked for yet. */
+const CROWD_EYE_OVER_GROUND_M = 1.7;
 
 /** GPU errors said in the console before the rest are left out: one broken
  * shader reports again every frame. */
@@ -591,6 +636,12 @@ type Standing = {
   mist: LiteMistMeshes | null;
   /** The motes, on the tiers that draw them (`motes.ts`). */
   motes: LiteMotes | null;
+  /** The way down's mist (`wayLightMeshes.ts`), and the mist beyond its banks on a tier that marches no ground cloud (`wayFieldMesh.ts`); null in a world with no forest. */
+  wayLight: LiteWayLight | null;
+  wayField: LiteWayField | null;
+  /** The crowd's cards and eyes (`crowdCardMeshes.ts`, `crowdEyeMeshes.ts`); null where there is no mask for the cards. */
+  crowdCards: LiteCrowdCards | null;
+  crowdEyes: LiteCrowdEyes | null;
   /** The rain's streaks and drips (`rain.ts`). */
   rain: LiteRain;
   /** The rain's cover map and the splashes that land on it, on the tiers that draw them (`rainMap.ts`, `rainSplash.ts`). */
@@ -705,10 +756,29 @@ export function createLiteRenderer(canvas: HTMLCanvasElement, level: Level, fore
   /** The rain on the lens, smoothed (`lensParams.ts`), and the local player's stare as their screen and ears take it (`stareLens.ts`). */
   let lensStrength = 0;
   let stareLens: StareLens = STARE_LENS_REST;
+  /** What stands at the centre of the local player's view in the chase (`setChaseThreat`), or null outside it: the lens's dark is the chase's own while it is given. */
+  let chaseThreat: number | null = null;
   /** The stare as the frame shows it: a death's closing dark rides its shade (`stareWithDark`). */
   let shownStare: StareLens = STARE_LENS_REST;
-  /** The frame's exposure as shown: the weather's and the hour's, less what the stare takes of it where no chain's grade does (`sightUnder`). */
-  const shownExposure = (): number => (chained ? light.exposure : light.exposure * sightUnder(shownStare.level));
+  /** The way down the app last gave (`setWay`) with the ground its mist stands on, and the level its mist is held at (`setWayLevel`). */
+  let way: WayDown | null = null;
+  let wayHeightAt: ((x: number, z: number) => number) | null = null;
+  let wayLevel = 0;
+  /** Whether the ground cloud's map was last built over the way: a change builds it again. */
+  let wayMistBuilt = false;
+  /** Which path the way's mist and the crowd's rims are toned for. */
+  const wayPath: WayColourPath = chained ? "post" : "material";
+  /** The ground under the crowd's figures, kept between frames (`crowdHeights`), and the frame's heights. */
+  const crowdGround: CrowdGround = new Map();
+  const crowdHeightsOut: number[] = [];
+  /** The chase's killers drawn among the crowd (crowdKillers.ts), and the screen's seconds the crowd was last told at, which their figures come and go by. */
+  const killers = createKillerShadows();
+  let crowdSeconds = 0;
+  /**
+   * The frame's exposure as shown: the weather's and the hour's, less what the stare takes of it (`sightUnder`) and
+   * what the chase's dim does (`wayDimAt`) where no chain's grade does.
+   */
+  const shownExposure = (): number => (chained ? light.exposure : light.exposure * sightUnder(shownStare.level) * wayDimAt(wayLevel));
   /** The material path's grade for the frame (`materialGrade.ts`), filled in place. */
   const gradeValues = emptyMaterialGradeUniforms();
   /** The chase's cast (`escalation.ts`) and how far the dread reaches the lens (`/unsettle`), as the app last set them. */
@@ -992,6 +1062,10 @@ export function createLiteRenderer(canvas: HTMLCanvasElement, level: Level, fore
     made.splash?.dispose();
     made.rain.dispose();
     made.rainMap?.dispose();
+    made.crowdEyes?.dispose();
+    made.crowdCards?.dispose();
+    made.wayField?.dispose();
+    made.wayLight?.dispose();
     made.motes?.dispose();
     made.mist?.dispose();
     made.props?.dispose();
@@ -1114,6 +1188,10 @@ export function createLiteRenderer(canvas: HTMLCanvasElement, level: Level, fore
     const mist = forest === null ? null : createLiteMistMeshes(engine, scene, forest.seed, tier, shared, uploads, chained);
     // The motes are the air's everywhere, on the tiers with the capacity for them.
     const motes = createLiteMotes(engine, scene, tier, shared, uploads, chained);
+    // The way down's mist, a forest's alone, on every tier; and the mist beyond its banks where no ground cloud is
+    // marched to stand there: the tiers with no chain.
+    const wayLight = forest === null ? null : createLiteWayLight(engine, scene, wayPath, jobs, uploads);
+    const wayField = forest === null || chained ? null : createLiteWayField(engine, scene, uploads);
     // The rain's cover map, on the tiers that draw one, over the terrain the rings draw: the rings, the patches, the
     // props and the cliffs' near buckets stand in it as they are made. Then the rain, which is the weather's
     // everywhere, and the splashes, which land on the map.
@@ -1159,6 +1237,11 @@ export function createLiteRenderer(canvas: HTMLCanvasElement, level: Level, fore
     // where there is no chain the veil does, one triangle multiplied into the frame last of all.
     const mask = forest !== null ? createLiteShadeMask(engine, scene, { shared, linear: chained, near: lens.near, far: lens.far, fov: lens.fov }) : null;
     const veil = mask !== null && !chained ? createLiteShadeVeil(engine, scene, createTexture2DFromPixels(engine, new Uint8Array([0, 0, 0, 255]), 1, 1)) : null;
+    // The crowd, for as many as any tier keeps: a card each, in the frame and in the mask, out to where the mist has
+    // taken the body, and a pair of eyes each at every distance.
+    const crowdCards = mask === null ? null : createLiteCrowdCards(engine, scene, CROWD_MOST_ANY, uploads);
+    const crowdEyes = mask === null ? null : createLiteCrowdEyes(engine, scene, CROWD_MOST_ANY, uploads);
+    if (mask !== null && crowdCards !== null) mask.addCards(crowdCards.mesh, crowdCards.maskMaterial);
     // The chain: the scene's pass into its first target and its own passes after, before the scene is registered.
     const chain = chained && cloudMap !== null ? createLitePostChain(engine, scene, { features: postFeatures, camera, cloudMap, now: clock, keep: tier === "high", uploads }) : null;
     // The frame behind the water, where the scene's pass is broken for it: the sea's, the lip's and every lake's surface read it.
@@ -1394,6 +1477,7 @@ export function createLiteRenderer(canvas: HTMLCanvasElement, level: Level, fore
     }
     const made: Standing = {
       engine, scene, camera, sun, fill, lamp, dome, capture, shared, chain, materials, terrain, road, cloudGround, forest: trees, blades, clutter, duff, cliffs, props, brushes, mist, motes,
+      wayLight, wayField, crowdCards, crowdEyes,
       rain, rainMap, panorama, mirror, splash, skinClock, entities, mask, veil, wornLamps, cap, wildlife, scenery, bed, sea, spray, lakes: lakeMeshes, waterPlants, waterLives,
     };
     if (disposed) {
@@ -1402,6 +1486,8 @@ export function createLiteRenderer(canvas: HTMLCanvasElement, level: Level, fore
     }
     // A palette asked for while the renderer was being made is worn from the first frame.
     if (palette !== null) chain?.setPalette(PAINT_PALETTES[palette.name], 0);
+    // And a way handed over meanwhile is stood on the ground from now.
+    if (way !== null && wayHeightAt !== null) wayLight?.setWay(way, wayHeightAt);
     standing = made;
     if (pipelinesAtOnce) scene.syncPipelines = true;
     stoodAt = clock();
@@ -1592,6 +1678,8 @@ export function createLiteRenderer(canvas: HTMLCanvasElement, level: Level, fore
     // The ground cloud is marched in the tier's steps while it has density: by the chain where there is one, and
     // then by no material.
     atmosphereUniforms(light.air, cloud, made.chain === null ? cloudMarchSteps(cloud) : 0, airValues);
+    // No chain: the woods over the way's mist stand in a haze of its colour, in the air every material draws.
+    if (made.chain === null) wayHazeInto(airValues, wayLevel, wayTint("material", cloudColourUnder(nearColour), 1, chaseCast, CHASE_TINT));
     if (made.chain !== null) {
       // The chain's frame: the camera its passes rebuild a pixel's ray from, the sun and the cloud its far softening
       // marches, and the jitter's next step, before the projection is read for the frame's block.
@@ -1739,6 +1827,8 @@ export function createLiteRenderer(canvas: HTMLCanvasElement, level: Level, fore
       // Where every body stands this frame, before the frame's scene is stepped, which reads where the others are
       // drawn. Who the scene then shows or hides is taken up below, in this same frame.
       let bodies: EntityFrame | null = standing !== null && standing.entities !== null ? poses.step(state, localId, alpha, frame.dt, standing.entities.models) : null;
+      // The chase's killers that are drawn as shadows this frame: figures among the crowd's, where their bodies stand.
+      killers.step(bodies === null ? NO_BODIES : bodies.hollows, crowdSeconds);
       // The death's dark as the last frame posed it: the passes read it a frame late.
       const darkWas = play.close;
       playNow = null;
@@ -1892,6 +1982,13 @@ export function createLiteRenderer(canvas: HTMLCanvasElement, level: Level, fore
           motesFrame.seconds = seconds;
           motesFrame.exposure = shownExposure();
           standing.motes?.update(weather, light.hour, nearColour, wind, motesFrame);
+        }
+        // The way down's mist at the level the app holds, a shade of the ground mist's own colour, which every tier
+        // has; its colour undoes the chase's dim where a chain's grade lays it on.
+        if (standing.wayLight !== null) {
+          const wayMist = cloudColourUnder(nearColour);
+          standing.wayLight.update(wayLevel, 1 / wayDimAt(wayLevel), wayMist, seconds, chaseCast);
+          standing.wayField?.update(pose, wayLevel, wayMist, seconds, chaseCast, way, wayHeightAt);
         }
         coverDrawn = false;
         if (coverAt !== null && rainFrame !== null && splashFrame !== null) {
@@ -2077,12 +2174,17 @@ export function createLiteRenderer(canvas: HTMLCanvasElement, level: Level, fore
         // the game builds it, and counted with what follows the camera; then its density for the frame, from the
         // night, the haunt and the chase's cast by how far the mist has come in, or the level it is held at.
         if (cloudSteps > 0 && forest !== null && standing.cloudGround !== null) {
-          if (cloudGroundDue(cloudGroundAt, pose.x, pose.z)) {
+          // In the chase the cloud thins over the way down, not the trail: the way's own mist stands there in its
+          // place, thin on the path and whole in its banks.
+          const over = way !== null && wayLevel > 0 ? way : null;
+          if (cloudGroundDue(cloudGroundAt, pose.x, pose.z) || (over !== null) !== wayMistBuilt) {
             cloudGroundAt = { x: pose.x, z: pose.z };
+            wayMistBuilt = over !== null;
             const trailAt = activeTerrainVariant().trailDistance;
-            const ground = cloudGroundMap(
-              (x, z) => elevationAt(forest.seed, x, z), cloudGroundAt.x, cloudGroundAt.z, trailAt === undefined ? null : (x, z) => trailAt(forest.seed, x, z),
-            );
+            const elevation = (x: number, z: number): number => elevationAt(forest.seed, x, z);
+            const ground = over !== null
+              ? cloudGroundMap(elevation, cloudGroundAt.x, cloudGroundAt.z, (x, z) => wayDistanceWithin(over, x, z, WAY_MIST_FADE_M), CLOUD_GROUND_SIZE, CLOUD_GROUND_SPAN, WAY_MIST_EDGE_M, WAY_MIST_FADE_M)
+              : cloudGroundMap(elevation, cloudGroundAt.x, cloudGroundAt.z, trailAt === undefined ? null : (x, z) => trailAt(forest.seed, x, z));
             standing.cloudGround.lay(ground);
             uploads.stream("textures", standing.cloudGround.bytes);
             cloud = cloudOn(cloud, ground);
@@ -2104,7 +2206,7 @@ export function createLiteRenderer(canvas: HTMLCanvasElement, level: Level, fore
             if (at !== null && (side === null || at.cos > side.cos)) side = at;
           }
         }
-        stareLens = stepStareLens(stareLens, stare, side, dt);
+        stareLens = stepStareLens(stareLens, stare, side, dt, chaseThreat);
         // Rain on the lens: strongest looking up, smoothed over a second.
         lensStrength = lensSmooth(lensStrength, lensStrengthUnder(weather.rain, pose.pitch), dt);
         // The chain's grade for the frame: before the sky's first slices there is no night factor, and the day's 0
@@ -2112,6 +2214,8 @@ export function createLiteRenderer(canvas: HTMLCanvasElement, level: Level, fore
         // The death's closing dark rides the stare's shade, driven to full: the grade's on a tier with a chain, the
         // veil's and the exposure's on a tier with none.
         shownStare = stareWithDark(stareLens, darkWas);
+        // The chase's dim: everything but the way down's mist, in the grade's exposure where there is a chain.
+        standing.chain?.setDim(wayDimAt(wayLevel));
         standing.chain?.update(weather, light.hour, sky?.night ?? 0, unsettle, shownStare, lensStrength, chaseCast);
         // With no chain the veil lays the mask and the stare's darkness over the frame, while there is either.
         standing.veil?.update(standing.mask?.texture ?? null, standing.mask?.any ?? false, stareShadeUnder(shownStare, seconds), canvas.width, canvas.height);
@@ -2241,6 +2345,35 @@ export function createLiteRenderer(canvas: HTMLCanvasElement, level: Level, fore
     },
     setMistIn(level) {
       mistIn = Math.max(0, Math.min(1, level));
+    },
+    setWay(next, heightAt) {
+      way = next;
+      wayHeightAt = heightAt;
+      // A renderer still being made takes the way when it stands.
+      standing?.wayLight?.setWay(next, heightAt);
+    },
+    setWayLevel(level) {
+      wayLevel = Math.max(0, Math.min(1, level));
+    },
+    setChaseThreat(threat) {
+      chaseThreat = threat;
+    },
+    setCrowd(figures, seconds, shadows) {
+      crowdSeconds = seconds;
+      // The killers are shadows only where there are cards to draw them as: without, the model stands.
+      if (standing === null || standing.crowdCards === null || standing.crowdEyes === null) {
+        poses.shadows = false;
+        return;
+      }
+      poses.shadows = shadows;
+      const shown = killers.shown(figures);
+      const under = pose.y - CROWD_EYE_OVER_GROUND_M;
+      const heights = crowdHeights(crowdGround, shown, wayHeightAt ?? (() => under), under, crowdHeightsOut);
+      // A figure's rim is lit by the way's mist: its colour this frame, as the mist itself is given it.
+      const tint = wayTint(wayPath, cloudColourUnder(nearColour), 1 / wayDimAt(wayLevel), chaseCast, CHASE_TINT);
+      const cards = standing.crowdCards.sync(shown, heights, pose, seconds, CROWD_NONE_HELD, 0, CROWD_CARDS_TO_M, tint);
+      standing.mask?.cards(cards > 0);
+      standing.crowdEyes.sync(shown, heights, pose, seconds, CROWD_NONE_HELD);
     },
     wind() {
       return wind;

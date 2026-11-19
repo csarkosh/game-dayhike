@@ -471,7 +471,7 @@ export function createEntityMeshes(engine: EngineContext, scene: SceneContext, o
         // The figure stands on its feet, which is where its pose is.
         for (const values of bodyLooks) if (writeShadeLook(values, index, { fade: inMask ? look.fade : 0, presence: look.presence, soft: look.soft, near: look.near, feetY: y })) relooked = true;
       };
-      for (const pose of frame.hollows) if (pose.modelled) figure(pose.id, pose.x, pose.y, pose.z, pose.yaw, pose.clip, pose.rate, pose.shade);
+      for (const pose of frame.hollows) if (pose.modelled && !pose.shadow) figure(pose.id, pose.x, pose.y, pose.z, pose.yaw, pose.clip, pose.rate, pose.shade);
       for (const pose of frame.fading) figure(pose.id, pose.x, pose.y, pose.z, pose.yaw, null, null, pose.shade);
       for (const id of clocks.keys()) if (!seen.has(id)) clocks.delete(id);
 

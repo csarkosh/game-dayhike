@@ -43,6 +43,9 @@ export const CLOUD_STEPS_MEDIUM = 8;
 export const CLOUD_TRAIL_SHARE = 0.3;
 export const CLOUD_TRAIL_EDGE_M = 0.8;
 export const CLOUD_TRAIL_FADE_M = 4.5;
+/** The same for the way down in the chase (wayLightGeometry.ts), whose channel is wider than the trail: thin from the line to where its banks begin, whole past them. The way's own mist (wayLight.ts) stands where this one is thinned. */
+export const WAY_MIST_EDGE_M = 2.5;
+export const WAY_MIST_FADE_M = 7;
 /** Metres from the eye within which the cloud's shapes smooth to a plain veil, the small ones first, so the near mist hangs rather than rushing past a walker. */
 export const CLOUD_NEAR_M = 8;
 /** The noise's two reads: metres a tile spans for the large shapes and the small, and the wind's metres a second. */
@@ -166,7 +169,7 @@ export type CloudGround = {
  * over `span` metres, centred on (cx, cz), the lowest at 0 and the highest
  * at 255. A cell is span/size metres; the texture is read bilinearly.
  */
-export function cloudGroundMap(elevation: (x: number, z: number) => number, cx: number, cz: number, trail: ((x: number, z: number) => number) | null = null, size: number = CLOUD_GROUND_SIZE, span: number = CLOUD_GROUND_SPAN): CloudGround {
+export function cloudGroundMap(elevation: (x: number, z: number) => number, cx: number, cz: number, trail: ((x: number, z: number) => number) | null = null, size: number = CLOUD_GROUND_SIZE, span: number = CLOUD_GROUND_SPAN, edge: number = CLOUD_TRAIL_EDGE_M, fade: number = CLOUD_TRAIL_FADE_M): CloudGround {
   const heights = new Float32Array(size * size);
   const off = new Uint8Array(size * size);
   let lo = Infinity, hi = -Infinity;
@@ -179,7 +182,7 @@ export function cloudGroundMap(elevation: (x: number, z: number) => number, cx: 
       if (h < lo) lo = h;
       if (h > hi) hi = h;
       const d = trail === null ? Infinity : trail(x, z);
-      const t = clamp01((d - CLOUD_TRAIL_EDGE_M) / (CLOUD_TRAIL_FADE_M - CLOUD_TRAIL_EDGE_M));
+      const t = clamp01((d - edge) / (fade - edge));
       off[j * size + i] = Math.round(t * t * (3 - 2 * t) * 255);
     }
   }

@@ -138,6 +138,12 @@ export type LitePostChain = {
   readonly features: PostFeatures;
   /** The frame's grade and the rain on the lens. */
   update(weather: WeatherParams, hour: number, night: number, unsettle: number, stare: StareLens, lens?: number, chase?: number): void;
+  /**
+   * The share of the frame's exposure the chase leaves everything but the
+   * way down's mist (wayLevel.ts `wayDimAt`), from the next `update`: 1 is
+   * all of it. With no chain the frame's own exposure carries it.
+   */
+  setDim(share: number): void;
   setPalette(palette: PaintPalette, fadeSeconds?: number): void;
   palette(): PaintPalette;
   /** The haunt's mask to read the shades from, and whether any shade is in it this frame. */
@@ -308,6 +314,8 @@ export function createLitePostChain(engine: EngineContext, scene: SceneContext, 
   const lensGate = createLensGate();
   const paletteFade = createPaletteFade(now);
   let record: GradeRecord = gradeRecordUnder(WEATHER_PRESETS.clear, 12, 0, 1);
+  /** What the chase's dim leaves of the frame's exposure (`setDim`). */
+  let dim = 1;
   let ditherSeconds = 0;
   let lensStrength = 0;
   let lensOn = false;
@@ -485,9 +493,14 @@ export function createLitePostChain(engine: EngineContext, scene: SceneContext, 
       shadeMask = mask;
       shadeAny = any;
     },
+    setDim(share) {
+      dim = share;
+    },
     update(weather, hour, night, unsettle, stare, lens = 0, chase = 0) {
       const seconds = (now() - start) / 1000;
       record = gradeRecordUnder(weather, hour, night, unsettle, seconds, stare, chase, paletteFade.now());
+      // The chase's dim (`setDim`): one more factor in the frame's exposure, as the stare's is in the record.
+      if (dim !== 1) record = { ...record, exposure: record.exposure * dim };
       ditherSeconds = seconds;
       lensStrength = lens;
       lensOn = features.lens && lensGate.step(lens, seconds);

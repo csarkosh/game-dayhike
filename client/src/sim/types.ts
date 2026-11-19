@@ -34,6 +34,8 @@ export const enum Button {
   Sprint = 8,
   /** The reload bit became the headlamp toggle. */
   Lamp = 16,
+  /** Not a key: this player's own screen says a shade of its crowd has them (taken.ts). Movement reads nothing of it. */
+  Taken = 32,
 }
 
 export const enum Outcome {
@@ -186,11 +188,12 @@ export type EnemyState = {
    */
   stalks: boolean;
   /**
-   * The fork node and the edge a fork's Hollow closed (cut.ts), or -1: what
-   * is made whole again when it is withdrawn or moved (returns.ts). Host-only.
+   * A lunge that waits beside the way down for its player and comes onto
+   * the path at them (haunt.ts, the way's lungers): the side of the way's
+   * line it waits on, 1 its left and -1 its right, and `approach` is
+   * whether it has been loosed. Host-only. 0 on every other enemy.
    */
-  fork: number;
-  forkEdge: number;
+  waylay: number;
 };
 
 export type WorldState = {

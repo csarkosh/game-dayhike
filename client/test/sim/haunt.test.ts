@@ -18,10 +18,11 @@ import { MIST_AT, MIST_SPAN, actsUnder, DUSK_AT, NIGHT_SPAN } from "../../src/si
 import {
   HAUNT_MIST_MIN, HAUNT_PRESS_SPAN, HAUNT_REAL_BY_S, HAUNT_RETRY_S, HAUNT_REAL_CHASE, HAUNT_REST_EARLY, HAUNT_REST_LATE, HAUNT_SHADES_EARLY, HAUNT_SHADES_LATE, LUNGE_ATTACK_M, LUNGE_ATTACK_S, LUNGE_MAX_S,
   LUNGE_SPEED, SHADE_BEARING_MIN_COS, SHADE_DWELL_S, SHADE_FLEE_RADIUS, SHADE_TRAIL_BEARING_MAX_COS, SHADE_TRAIL_OFF_M, SHADE_WATCHED_S, OFF_TRAIL_FROM_M, OFF_TRAIL_SPAN_M, OFF_TRAIL_REAL_EACH, offTrailOf,
-  bestClimb, isHaunting, isShadeState, nearestOnTrail, placeShadeOnGuide, pressureOf, spawnShade,
+  bestClimb, isHaunting, isShadeState, nearestOnTrail, pressureOf, spawnShade,
 } from "../../src/sim/haunt.js";
 import { isHollow, SHADE_STARE_CAP, SUMMIT_REVEAL_S, spawnHollow } from "../../src/sim/hollow.js";
 import { trailDistance } from "../../src/sim/trail.js";
+import { makeWay } from "../../src/sim/wayDown.js";
 
 setActiveTerrainVariant(DEFAULT_TERRAIN_VARIANT);
 const seed = seedFromToken("hollow");
@@ -254,7 +255,6 @@ describe("the director", () => {
     standAt(p, here.x, here.z);
     p.yaw = Math.atan2(down.x - here.x, down.z - here.z);
     w.state.phase = Phase.Chase;
-    w.cut = { guide: [...chain].reverse(), cuts: new Map(), closed: new Set() };
     w.haunt!.rest = 0;
     let real = 0;
     const seen = new Set<number>();
@@ -382,37 +382,52 @@ describe("the director", () => {
     expect(summit.ai).not.toBe(AiState.Emerge);
     expect(w.haunt!.episode !== null || [...w.state.enemies.values()].some((e) => e.ai === AiState.Shade || e.ai === AiState.Lunge)).toBe(true);
   });
+});
 
-  it("in the chase, a shade stands 15 to 20 m off the open way home, ahead of its player and in view", () => {
-    const { w, p } = forestWorld();
-    const graph = w.trail!;
-    const chain = stemNodes(graph);
-    // A player a way up the stem, looking down it, with the stem as the guide (crest to pad).
-    const at = chain.indexOf(chain[Math.floor(chain.length * 0.6)] as number);
-    const here = node(w, chain[at] as number), down = node(w, chain[at - 1] as number);
-    standAt(p, here.x, here.z);
-    p.yaw = Math.atan2(down.x - here.x, down.z - here.z);
+describe("the haunt on a world whose chase follows a way", () => {
+  /** A straight way through the player: from 30 m behind them to 300 m on along their look. */
+  function wayThrough(w: World, p: PlayerState): void {
+    const sx = Math.sin(p.yaw), sz = Math.cos(p.yaw);
+    w.way = makeWay([{ x: p.pos.x - sx * 30, z: p.pos.z - sz * 30 }, { x: p.pos.x + sx * 300, z: p.pos.z + sz * 300 }], 330, false);
     w.state.phase = Phase.Chase;
-    const guide = [...chain].reverse();
-    w.cut = { guide, cuts: new Map(), closed: new Set() };
-    const rng = { rngSeed: 7 };
-    let placed: Vec3 | null = null;
-    for (let i = 0; i < 40 && placed === null; i++) placed = placeShadeOnGuide(w, p, rng);
-    expect(placed).not.toBeNull();
-    const off = trailDistance(graph, placed!.x, placed!.z);
-    expect(off).toBeGreaterThanOrEqual(15);
-    expect(off).toBeLessThanOrEqual(20);
-    // In view: 16° to 50° off the look down the stem.
-    const d = dist(placed!, p.pos);
-    const dx = placed!.x - p.pos.x, dz = placed!.z - p.pos.z;
-    const cos = (dx * Math.sin(p.yaw) + dz * Math.cos(p.yaw)) / d;
-    expect(cos).toBeGreaterThanOrEqual(SHADE_TRAIL_BEARING_MAX_COS - 1e-3);
-    expect(cos).toBeLessThanOrEqual(SHADE_BEARING_MIN_COS + 1e-3);
-    // The point of the way home it stands off is ahead of the player, down the stem.
-    const on = nearestOnTrail(graph, placed!.x, placed!.z, guide);
-    expect((on.x - p.pos.x) * Math.sin(p.yaw) + (on.z - p.pos.z) * Math.cos(p.yaw)).toBeGreaterThan(0);
-    // Looking back up the stem, no guide node is ahead: null, and the plain stand off the trail stands in.
-    p.yaw += Math.PI;
-    expect(placeShadeOnGuide(w, p, rng)).toBeNull();
+  }
+
+  it("a standing shade no longer closes the dark, the woods being full of them; a Hollow still does", () => {
+    const { w, p } = forestWorld();
+    standAtClimb(w, p, 0.3);
+    wayThrough(w, p);
+    w.haunt!.active = false;
+    const ahead = { x: p.pos.x + Math.sin(p.yaw) * 14, y: 0, z: p.pos.z + Math.cos(p.yaw) * 14 };
+    ahead.y = elevationAt(seed, ahead.x, ahead.z) + 1;
+    const h = spawnShade(w, ahead, p, false, 60);
+    lookAt(p, h.pos);
+    for (let t = 0; t < 120; t++) { h.pos = { ...ahead }; h.stateTimer = 60; h.attackCooldown = 0; tick(w); }
+    expect(p.stare).toBe(0);
+    w.state.enemies.delete(h.id);
+    spawnHollow(w, ahead, p.id, 0);
+    tick(w, 20);
+    expect(p.stare).toBeGreaterThan(0);
   });
+
+  it("raises no standing shade there, only what lunges: the crowd is the standing shades now", () => {
+    const { w, p } = forestWorld();
+    standAtClimb(w, p, 0.3);
+    wayThrough(w, p);
+    w.haunt!.rest = 0;
+    let standing = 0, episodes = 0, was = false;
+    const seen = new Set<number>();
+    for (let t = 0; t < Math.round(40 / TICK_DT) && p.health > 0; t++) {
+      tick(w);
+      const now = w.haunt!.episode !== null;
+      if (now && !was) episodes++;
+      was = now;
+      for (const e of w.state.enemies.values()) {
+        if (seen.has(e.id)) continue;
+        seen.add(e.id);
+        if (e.ai === AiState.Shade) standing++;
+      }
+    }
+    expect(episodes).toBeGreaterThanOrEqual(1);
+    expect(standing).toBe(0);
+  }, timeLimit(60_000));
 });

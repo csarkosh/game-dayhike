@@ -20,6 +20,8 @@ import type { World } from "./world.js";
 import type { TrailGraph, TrailNode } from "./trail.js";
 import { nearestTrailNode } from "./trail.js";
 import { route } from "./trailRoute.js";
+import { onWay } from "./chaseLine.js";
+import { wayPoint, wayProject } from "./wayDown.js";
 import { causeOfDeath } from "./deathCause.js";
 import { decided, returnsOn } from "./checkpoint.js";
 import { stepMovement } from "./movement.js";
@@ -47,10 +49,10 @@ export const SUMMIT_REVEAL_S = 21;
 /** The last seconds of its stand it walks at whoever found the body, at this pace: the scene's threshold (cutscene.ts), the first steps the player sees before they turn and run. */
 export const HOLLOW_STEP_S = 4;
 export const HOLLOW_STALK_SPEED = 1.5;
-/** Seconds a fork Hollow stands at the mouth of its branch, facing its trigger, before it hunts. */
-export const FORK_REVEAL_S = 2.5;
-/** Seconds a fork Hollow may spend walking to the mouth before it reveals where it stands. */
-export const FORK_EMERGE_MAX_S = 6;
+/** Seconds a Hollow that stepped out to a place (`spawnHollowStepping`) stands there, facing its player, before it hunts. */
+export const STEP_OUT_REVEAL_S = 2.5;
+/** Seconds such a Hollow may spend walking to its place before it reveals where it stands. */
+export const STEP_OUT_MAX_S = 6;
 /** cos 20°: it must be near the centre of the view, not the edge. */
 export const HOLLOW_LOOK_COS = 0.9397;
 /** Metres from the eye within which looking counts. */
@@ -122,26 +124,24 @@ export function spawnHollow(world: World, at: Vec3, targetId: number, revealS: n
     seen: false,
     emergeTo: null,
     stalks: false,
-    fork: -1,
-    forkEdge: -1,
+    waylay: 0,
   };
   world.state.enemies.set(hollow.id, hollow);
   return hollow;
 }
 
 /**
- * A Hollow stepping out of a closed branch (cut.ts `stepCuts`): spawned at `at` in
- * Emerge, it walks to `mouth` at the hunt speed, stands FORK_REVEAL_S there
- * facing `targetId`, then hunts them. The walk ends early, where it stands,
- * once it has been stuck STUCK_SECONDS or has walked FORK_EMERGE_MAX_S: a
- * branch it cannot walk out of is still a Hollow in that branch.
+ * A Hollow stepping out to a place: spawned at `at` in Emerge, it walks to
+ * `to` at the hunt speed, stands STEP_OUT_REVEAL_S there facing `targetId`,
+ * then hunts them. The walk ends early, where it stands, once it has been
+ * stuck STUCK_SECONDS or has walked STEP_OUT_MAX_S: a place it cannot walk
+ * to is still a Hollow on its way there. (Until 2026-11-13 this was the
+ * forks' Hollow, stepping out of a closed branch; the forks are gone with
+ * the guide, the stepping out is kept for what steps into the way down.)
  */
-export function spawnForkHollow(world: World, at: Vec3, mouth: Vec3, targetId: number, fork = -1, edge = -1): EnemyState {
-  const hollow = spawnHollow(world, at, targetId, FORK_EMERGE_MAX_S);
-  hollow.emergeTo = cloneVec3(mouth);
-  // What it closed, so the fork can be made whole again if it is withdrawn (returns.ts).
-  hollow.fork = fork;
-  hollow.forkEdge = edge;
+export function spawnHollowStepping(world: World, at: Vec3, to: Vec3, targetId: number): EnemyState {
+  const hollow = spawnHollow(world, at, targetId, STEP_OUT_MAX_S);
+  hollow.emergeTo = cloneVec3(to);
   return hollow;
 }
 
@@ -348,12 +348,44 @@ function followRoute(h: EnemyState, world: World, graph: TrailGraph, dt: number,
 }
 
 /**
- * The hunt's walk: the graph to the node nearest the target, then straight at
- * it. Off the graph, losing sight of the target for HOLLOW_LOST_SIGHT_S drops
+ * Metres of its player's place along the way within which a Hollow turns
+ * straight for them, and the metres apart the places on the way it walks to
+ * stand: it walks to the next but one of them from its own place, 4 to 8 m
+ * on, a place that stands still while it closes on it. (Until 2026-11-19 it
+ * walked to a point always 12 m ahead of itself: a point that kept its
+ * distance read as no progress on a straight stretch, and a 12 m chord cut
+ * across what a bend of the way goes round.)
+ */
+export const WAY_LEAD_M = 12;
+export const WAY_AIM_STEP_M = 4;
+const WAY_AIM = { x: 0, z: 0 };
+
+/**
+ * The hunt's walk: the graph to the node nearest the target (in the chase,
+ * the way down toward the target's place along it: sim/chaseLine.ts), then
+ * straight at it. Off the graph, losing sight of the target for HOLLOW_LOST_SIGHT_S drops
  * the approach and re-routes from wherever it is.
  */
 function pursue(h: EnemyState, world: World, graph: TrailGraph, dt: number, target: Vec3): void {
   const speed = speedOf(h);
+  if (!h.approach && world.way !== null && onWay(world)) {
+    // The chase's way down, not the trail's graph: down (or up) the way toward its player's place along it, until
+    // it is near them along it, or near them with a clear sight, as the graph's walk ends.
+    const mine = wayProject(world.way, h.pos.x, h.pos.z).s;
+    const gap = wayProject(world.way, target.x, target.z).s - mine;
+    const near =
+      horizontalDistSq(h.pos, target) <= HOLLOW_APPROACH_RANGE * HOLLOW_APPROACH_RANGE &&
+      hasLineOfSight(h.pos, target, world.boxes, world.ground);
+    if (near || (gap <= WAY_LEAD_M && gap >= -WAY_LEAD_M)) {
+      h.approach = true;
+      h.stateTimer = 0;
+      h.lastDistSq = Infinity;
+      return;
+    }
+    const aim = wayPoint(world.way, (gap > 0 ? Math.floor(mine / WAY_AIM_STEP_M) + 2 : Math.ceil(mine / WAY_AIM_STEP_M) - 2) * WAY_AIM_STEP_M, WAY_AIM);
+    walkToward(h, world, dt, aim.x, aim.z, speed);
+    return;
+  }
   if (!h.approach) {
     const targetNode = nearestTrailNode(graph, target.x, target.z);
     if (h.routeAt >= h.route.length || h.route[h.route.length - 1] !== targetNode) {
@@ -414,7 +446,7 @@ function stepHollow(h: EnemyState, world: World, graph: TrailGraph, dt: number):
         const arrived = horizontalDistSq(h.pos, h.emergeTo) <= HOLLOW_WAYPOINT_RADIUS * HOLLOW_WAYPOINT_RADIUS;
         if (arrived || h.stuckTimer > STUCK_SECONDS || h.stateTimer <= 0) {
           h.emergeTo = null;
-          h.stateTimer = FORK_REVEAL_S;
+          h.stateTimer = STEP_OUT_REVEAL_S;
           h.vel = { x: 0, y: 0, z: 0 };
           h.stuckTimer = 0;
           h.unstickTimer = 0;
@@ -543,6 +575,9 @@ export function updateHollows(world: World): void {
     if (p.health <= 0) continue;
     let sees = false;
     for (const h of all) {
+      // A lunge that waits beside the way or stands in the path (haunt.ts) is no stare: a runner has one in
+      // front of them most of the way down, and the dark would never open.
+      if (h.waylay !== 0) continue;
       if (playerSees(p, h, world)) {
         h.seen = true;
         sees = true;
@@ -554,8 +589,10 @@ export function updateHollows(world: World): void {
     else p.stare = sees ? Math.min(1, p.stare + fill) : Math.max(0, p.stare - empty);
     // A shade of the haunt (not a Hollow: harmless) in the cone fills the
     // stare too, but only to SHADE_STARE_CAP: the dark closes a little on
-    // it, never all the way, as it does on the thing itself.
-    if (!sees && p.stare < SHADE_STARE_CAP) {
+    // it, never all the way, as it does on the thing itself. Not on the way
+    // down, where the woods are full of shades (game/crowdField.ts) and the
+    // dark would never open.
+    if (!sees && p.stare < SHADE_STARE_CAP && !onWay(world)) {
       for (const e of state.enemies.values()) {
         if (e.ai !== AiState.Shade || !playerSees(p, e, world)) continue;
         p.stare = Math.min(SHADE_STARE_CAP, p.stare + fill + empty);

@@ -36,6 +36,11 @@
  *   two are left out.
  * - **The eyes are not in the mask.** The game draws them there with the
  *   body; they lie on the head, which covers them.
+ * - **The crowd's cards are in the mask too** (`crowdCardMeshes.ts`): their
+ *   one mesh, which the frame's own pass draws as dark bodies, is drawn here
+ *   with a material of the cards' own in place of the one it wears, and
+ *   follows the mesh's own word: shown while a card is up. While one is, the
+ *   mask is drawn and read whether or not a figure of the sim's is in it.
  *
  * The target is the size Babylon.js gives a mask of the frame's
  * (`shadeMaskSize`) and follows it; it has no depth, since nothing but the
@@ -58,8 +63,8 @@ import {
   addMeshToTask, addTaskAtStart, addToScene, createBankedFreeCamera, createCustomTask, createMeshFromData, createPbrMaterial, createRenderTargetTexture,
   createRenderTask, disposeMeshGpu, disposeRenderTargetTexture, markThinInstancePluginData, removeFromScene, removeMeshFromTask, setMeshVisible,
   setTaskMeshVisible, setThinInstances, vec3,
-  type BankedFreeCamera, type EngineContext, type MaterialPlugin, type Mesh, type PbrMaterialProps, type PluginUniformBlock, type RenderTargetTextureResult,
-  type RenderTask, type RenderTaskConfig, type SceneContext, type Texture2D,
+  type BankedFreeCamera, type EngineContext, type Material, type MaterialPlugin, type Mesh, type PbrMaterialProps, type PluginUniformBlock,
+  type RenderTargetTextureResult, type RenderTask, type RenderTaskConfig, type SceneContext, type Texture2D,
 } from "@babylonjs/lite";
 import { HOLLOW_FIGURE_M } from "../hollowLook.js";
 import {
@@ -190,8 +195,15 @@ export function createMaskTargets<T>(width: number, height: number, make: (width
 export type LiteShadeMask = {
   /** The mask's picture, for the grade or the veil to read: the target's as it stands, and another object when another target has taken its place. */
   readonly texture: Texture2D;
-  /** Whether any figure is in the mask this frame. */
+  /** Whether anything is in the mask this frame: a figure of the sim's, or a card of the crowd's. */
   readonly any: boolean;
+  /**
+   * Puts the crowd's cards in the mask: their one `mesh`, drawn here with `material` in place of the one it wears in
+   * the frame. Shown here while the mesh is shown, by the mesh's own word.
+   */
+  addCards(mesh: Mesh, material: Material): void;
+  /** Whether a card of the crowd's is up this frame: while one is, the mask is drawn and read, with or without a figure. */
+  cards(up: boolean): void;
   /**
    * Puts `mesh`, a primitive of the figure's body with room for `capacity` bodies, in the mask; its figures' values are
    * `look`, which it keeps. The mask's pass draws the mesh whatever the mesh's own word: a body is hidden, so that no
@@ -270,6 +282,10 @@ export function createLiteShadeMask(
   addTaskAtStart(scene, sizer);
 
   const looks = new Map<Mesh, Float32Array>();
+  /** The crowd's cards' mesh, once it is in the mask, and whether a card is up; and whether a figure of the sim's is in. */
+  let cardsMesh: Mesh | null = null;
+  let cardsUp = false;
+  let figures = false;
   let any = false;
   let draws = 0;
   let disposed = false;
@@ -303,9 +319,21 @@ export function createLiteShadeMask(
       // A frame on from a move of the mask's size: whatever read the target replaced has been handed this one.
       targets.settle();
       if (changed && count > 0) for (const mesh of looks.keys()) markThinInstancePluginData(mesh, 0, count * SHADE_LOOK_FLOATS);
-      any = anyNow && count > 0 && looks.size > 0;
+      figures = anyNow && count > 0 && looks.size > 0;
+      any = figures || cardsUp;
       task.enabled = any;
       if (any) draws++;
+    },
+    addCards(mesh, cardMaterial) {
+      if (disposed || cardsMesh !== null) return;
+      cardsMesh = mesh;
+      addMeshToTask(task, mesh, { material: cardMaterial });
+    },
+    cards(up) {
+      if (disposed) return;
+      cardsUp = up && cardsMesh !== null;
+      any = figures || cardsUp;
+      task.enabled = any;
     },
     place(pose, axes, fov) {
       camera.position.x = pose.x;
@@ -324,6 +352,10 @@ export function createLiteShadeMask(
       disposed = true;
       for (const mesh of looks.keys()) removeMeshFromTask(task, mesh);
       looks.clear();
+      if (cardsMesh !== null) removeMeshFromTask(task, cardsMesh);
+      cardsMesh = null;
+      cardsUp = false;
+      figures = false;
       task.enabled = false;
       any = false;
       targets.settle();

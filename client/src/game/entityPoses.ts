@@ -220,6 +220,8 @@ export type ShadeLook = { fade: number; presence: number; soft: number; near: nu
 export type HollowPose = {
   id: number;
   modelled: boolean;
+  /** Drawn as one of the crowd's shadows this frame (`EntityPoses.shadows`), not as the model: the renderer's cards stand where the pose is. */
+  shadow: boolean;
   /** Where it stands: a model's feet, a capsule's middle. */
   x: number;
   y: number;
@@ -275,6 +277,13 @@ export type EntityPoses = {
   /** In the end scene, every other body within `radius` of this point (the car's door) is hidden: it is in the car. */
   hideNear: { x: number; z: number; radius: number } | null;
   /**
+   * Whether the chase's enemies are drawn as the crowd's shadows (the
+   * renderer's cards, crowdKillers.ts) and not as the model: while it is so,
+   * every enemy's pose in the chase says `shadow`, and one gone from the
+   * state is not left going out as the model.
+   */
+  shadows: boolean;
+  /**
    * A frame. `dt` is the frame's seconds, from which a Hollow's pace, its
    * fades and its reach are stepped; 0 leaves them where they were. The
    * lists handed back are reused by the next call.
@@ -309,6 +318,8 @@ export function createEntityPoses(): EntityPoses {
   const soft = new Map<number, number>();
   const near = new Map<number, number>();
   const reaches = new Map<number, number>();
+  /** The enemies last drawn as shadows (`EntityPoses.shadows`). */
+  const shadowed = new Set<number>();
   /** Shades gone from the state, going out: held until the fade ends. */
   const fading = new Map<number, { at: HollowTrack; level: number; soft: number; near: number }>();
 
@@ -338,7 +349,7 @@ export function createEntityPoses(): EntityPoses {
   function hollowAt(n: number): HollowPose {
     let pose = hollows[n];
     if (pose === undefined) {
-      pose = { id: 0, modelled: false, x: 0, y: 0, z: 0, yaw: 0, level: 1, shade: emptyShade(), clip: "idle", rate: 1, reach: 0 };
+      pose = { id: 0, modelled: false, shadow: false, x: 0, y: 0, z: 0, yaw: 0, level: 1, shade: emptyShade(), clip: "idle", rate: 1, reach: 0 };
       hollows[n] = pose;
     }
     return pose;
@@ -372,6 +383,7 @@ export function createEntityPoses(): EntityPoses {
   const poses: EntityPoses = {
     showLocal: false,
     hideNear: null,
+    shadows: false,
     step(state, localId, alpha, dt, models) {
       const clamped = alpha < 0 ? 0 : alpha > 1 ? 1 : alpha;
       let n = 0;
@@ -454,6 +466,9 @@ export function createEntityPoses(): EntityPoses {
       for (const [id, enemy] of state.enemies) {
         const pose = hollowAt(n++);
         pose.id = id;
+        pose.shadow = poses.shadows && state.phase === Phase.Chase;
+        if (pose.shadow) shadowed.add(id);
+        else shadowed.delete(id);
         const feet = enemy.pos.y - ENEMY_HALF.y;
         let fade = fades.get(id);
         if (fade === undefined) {
@@ -565,7 +580,8 @@ export function createEntityPoses(): EntityPoses {
       for (const [id, fade] of fades) {
         if (state.enemies.has(id)) continue;
         const at = hollowModels.get(id);
-        if (at !== undefined && (fade.ai === AiState.Shade || fade.ai === AiState.Lunge || fade.ai === AiState.Strike)) {
+        // One drawn as a shadow goes as the crowd's figures go (crowdKillers.ts), never as the model.
+        if (at !== undefined && !shadowed.delete(id) && (fade.ai === AiState.Shade || fade.ai === AiState.Lunge || fade.ai === AiState.Strike)) {
           hollowModels.delete(id);
           fading.set(id, { at, level: fade.level, soft: soft.get(id) ?? 1, near: near.get(id) ?? 1 });
         }
@@ -635,6 +651,7 @@ export function createEntityPoses(): EntityPoses {
       near.clear();
       reaches.clear();
       fading.clear();
+      shadowed.clear();
     },
   };
   return poses;

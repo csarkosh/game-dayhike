@@ -474,6 +474,13 @@ describe("layer boundaries", () => {
       join(SRC, "game", "framePace.ts"),
       join(SRC, "game", "atmosphereParams.ts"),
       join(SRC, "game", "cloudParams.ts"),
+      join(SRC, "game", "wayLightGeometry.ts"),
+      join(SRC, "game", "wayLight.ts"),
+      join(SRC, "game", "wayMistFieldGeometry.ts"),
+      join(SRC, "game", "wayMistField.ts"),
+      join(SRC, "game", "crowdField.ts"),
+      join(SRC, "game", "crowdEyes.ts"),
+      join(SRC, "game", "crowdCards.ts"),
       join(SRC, "game", "clipmap.ts"),
       join(SRC, "game", "facePatches.ts"),
       join(SRC, "game", "roadPaint.ts"),
@@ -999,9 +1006,9 @@ describe("layer boundaries", () => {
     expect(bad).toEqual([]);
     // Lite itself is loaded only by the modules that draw: the plugins, the pose and the light name its types alone.
     expect(lite.sort()).toEqual([
-      "game/lite/bladeMeshes.ts", "game/lite/brushMeshes.ts", "game/lite/capMesh.ts", "game/lite/cliffMeshes.ts", "game/lite/clutterMeshes.ts", "game/lite/dragonflyMeshes.ts", "game/lite/duffMeshes.ts", "game/lite/entityMeshes.ts", "game/lite/forestMeshes.ts", "game/lite/forestModels.ts", "game/lite/gpuTimeReadout.ts", "game/lite/groundTextures.ts", "game/lite/impostorBake.ts",
+      "game/lite/bladeMeshes.ts", "game/lite/brushMeshes.ts", "game/lite/capMesh.ts", "game/lite/cliffMeshes.ts", "game/lite/clutterMeshes.ts", "game/lite/crowdCardMeshes.ts", "game/lite/crowdEyeMeshes.ts", "game/lite/dragonflyMeshes.ts", "game/lite/duffMeshes.ts", "game/lite/entityMeshes.ts", "game/lite/forestMeshes.ts", "game/lite/forestModels.ts", "game/lite/gpuTimeReadout.ts", "game/lite/groundTextures.ts", "game/lite/impostorBake.ts",
       "game/lite/lakeMeshes.ts", "game/lite/lakeMirror.ts", "game/lite/lakePanorama.ts", "game/lite/lipMeshes.ts", "game/lite/listMeshes.ts", "game/lite/midgeMeshes.ts", "game/lite/mistMeshes.ts", "game/lite/motes.ts", "game/lite/postChain.ts", "game/lite/propMeshes.ts", "game/lite/rain.ts", "game/lite/rainMap.ts", "game/lite/rainSplash.ts", "game/lite/renderer.ts", "game/lite/sceneActor.ts", "game/lite/sceneryMeshes.ts", "game/lite/sceneryModels.ts", "game/lite/sceneryPaint.ts", "game/lite/seaFft.ts", "game/lite/seaMeshes.ts", "game/lite/shadeMask.ts", "game/lite/shadeVeil.ts", "game/lite/shaderUniforms.ts",
-      "game/lite/skinnedModels.ts", "game/lite/skyCapture.ts", "game/lite/skyDome.ts", "game/lite/surfSpray.ts", "game/lite/terrainMeshes.ts", "game/lite/waterBed.ts", "game/lite/waterBehind.ts", "game/lite/waterPlantMeshes.ts", "game/lite/wildlifeMeshes.ts", "game/lite/wornLamps.ts",
+      "game/lite/skinnedModels.ts", "game/lite/skyCapture.ts", "game/lite/skyDome.ts", "game/lite/surfSpray.ts", "game/lite/terrainMeshes.ts", "game/lite/waterBed.ts", "game/lite/waterBehind.ts", "game/lite/waterPlantMeshes.ts", "game/lite/wayFieldMesh.ts", "game/lite/wayLightMeshes.ts", "game/lite/wildlifeMeshes.ts", "game/lite/wornLamps.ts",
     ]);
     // And the hike is handed that renderer by a module that loads it and nothing else that draws.
     expect(readFileSync(join(SRC, "game/hikeRenderer.ts"), "utf8")).toContain("  return createLiteRenderer(canvas, level, forest, options);");
@@ -1480,8 +1487,6 @@ describe("wall-clock tests", () => {
    * `console.time`.
    */
   const PRINTED_NOT_ASSERTED: Record<string, string> = {
-    "sim/trailSystem.test.ts > finds the longest way home the graph offers":
-      "logs the guide walk's time over the seed set; asserts only the walks themselves",
   };
   const report = wallClockOffenders(files, PRINTED_NOT_ASSERTED);
 

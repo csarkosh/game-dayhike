@@ -117,6 +117,7 @@ export function escalationTargets(
   boxes: BoxProvider,
   ground: GroundField | null,
   sight: (eye: Vec3, hollow: Vec3) => boolean = (eye, hollow) => hasLineOfSight(eye, hollow, boxes, ground),
+  lineDistance: (x: number, z: number) => number = (x, z) => trailDistance(graph, x, z),
 ): EscalationTargets {
   const hollows: Vec3[] = [];
   for (const e of state.enemies.values()) {
@@ -137,7 +138,8 @@ export function escalationTargets(
   const me = state.players.get(localId);
   if (me === undefined) return { world, offTrail: 0, near: 0, dead: false, chase: state.phase !== Phase.Climb, haunt: 0 };
 
-  const d = trailDistance(graph, me.pos.x, me.pos.z);
+  // Off the line the game holds them to: the trail, or in the chase the way down (sim/chaseLine.ts), as the caller measures it.
+  const d = lineDistance(me.pos.x, me.pos.z);
   const offTrail = clamp01((d - OFF_TRAIL_START) / (OFF_TRAIL_FULL - OFF_TRAIL_START));
 
   const eye: Vec3 = { x: me.pos.x, y: me.pos.y + PLAYER_EYE_OFFSET, z: me.pos.z };
