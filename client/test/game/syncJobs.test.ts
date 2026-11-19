@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
-  SYNC_BUDGET_MS, SYNC_LATE_FRAMES_MAX, SYNC_LATE_MS_MAX, createCrossing, createSyncJobs, crossingAt, finish, nextCrossing, sortSlices, turn,
+  SLICE_READ_UNITS, SLICE_TARGET_MS, SYNC_BUDGET_MS, SYNC_LATE_BUDGET_MS, SYNC_LATE_FRAMES_MAX, SYNC_LATE_MS_MAX, SYNC_OVERDUE_MS,
+  createCrossing, createSyncJobs, crossingAt, finish, nextCrossing, sliceDue, sortSlices, turn,
   type Slices,
 } from "../../src/game/syncJobs.js";
 
@@ -30,47 +31,50 @@ function job(clock: { advance(ms: number): void }, slices: number, ms: number, d
 
 describe("the scheduler", () => {
   it("names its budget and its lateness bounds", () => {
-    expect([SYNC_BUDGET_MS, SYNC_LATE_FRAMES_MAX, SYNC_LATE_MS_MAX]).toEqual([4, 6, 100]);
+    expect([SYNC_BUDGET_MS, SYNC_LATE_FRAMES_MAX, SYNC_LATE_MS_MAX, SYNC_LATE_BUDGET_MS, SYNC_OVERDUE_MS]).toEqual([4, 6, 100, 8, 1000]);
+    expect([SLICE_TARGET_MS, SLICE_READ_UNITS]).toEqual([1.5, 8]);
   });
 
   /** A job of 400 slices of 0.125 ms begun at frame 0, with the clock set to
-   * `frameMs` times the frame as each frame's share starts (a share runs 32
-   * slices): the frame whose share ran it to its end, and how many slices
-   * that share ran late. `replaceAt` begins it again at that frame. */
-  function forcedAt(frameMs: number, replaceAt: number | null = null): { at: number | null; late: number } {
+   * `frameMs` times the frame as each frame's share starts (the ordinary share
+   * runs 32 slices, the late one 64): the frame whose share ran it to its end,
+   * and how many slices each frame ran late. `replaceAt` begins it again at
+   * that frame. */
+  function lateAt(frameMs: number, replaceAt: number | null = null): { at: number | null; late: number[] } {
     let now = 0;
     const jobs = createSyncJobs(() => now);
     const done = { at: null as number | null };
     const clock = { advance: (ms: number) => { now += ms; } };
     const owner = {};
     jobs.begin(owner, job(clock, 400, 0.125, done, () => jobs.frame));
-    let late = 0;
-    for (let f = 0; f < 10 && done.at === null; f++) {
+    const late: number[] = [];
+    for (let f = 0; f < 12 && done.at === null; f++) {
       now = f * frameMs;
       if (f === replaceAt) jobs.begin(owner, job(clock, 400, 0.125, done, () => jobs.frame));
       jobs.run();
-      late = jobs.last.late;
+      late.push(jobs.last.late);
     }
     return { at: done.at, late };
   }
 
-  it("runs a job to its end 100 ms after its crossing at 30 frames a second: the fourth frame, not the sixth", () => {
+  it("makes a job late 100 ms after its crossing at 30 frames a second: the fifth frame, not the seventh", () => {
     // 33.3 ms a frame: frame 3's share starts at 99.9 ms, frame 4's at 133.2.
-    // Four shares of 32 slices, then the other 272 at once.
-    expect(forcedAt(33.3)).toEqual({ at: 4, late: 272 });
+    // Four ordinary shares of 32 slices, then late shares of 64, the last
+    // of the 16 slices left.
+    expect(lateAt(33.3)).toEqual({ at: 8, late: [0, 0, 0, 0, 64, 64, 64, 64, 16] });
   });
 
-  it("runs a job to its end in the sixth frame after its crossing at 60 frames a second, as before", () => {
-    // 16.6 ms a frame: the sixth frame's share starts at 99.6 ms. Six shares
-    // of 32 slices, then the other 208 at once.
-    expect(forcedAt(16.6)).toEqual({ at: 6, late: 208 });
+  it("makes a job late in the seventh frame after its crossing at 60 frames a second, as before", () => {
+    // 16.6 ms a frame: the sixth frame's share starts at 99.6 ms, and a job
+    // begun at frame 0 is six frames old there.
+    expect(lateAt(16.6)).toEqual({ at: 9, late: [0, 0, 0, 0, 0, 0, 64, 64, 64, 16] });
   });
 
   it("keeps a replaced job's wait counted from its first crossing's time", () => {
-    // Replaced at frame 2 (66.6 ms): still forced at frame 4, 133.2 ms after
-    // the first crossing, with 336 of the new job's slices left; counted from
-    // the second crossing it would wait to frame 6.
-    expect(forcedAt(33.3, 2)).toEqual({ at: 4, late: 336 });
+    // Replaced at frame 2 (66.6 ms): late at frame 4, 133.2 ms after the
+    // first crossing, with the new job's 400 slices to make; counted from the
+    // second crossing it would be late at frame 6.
+    expect(lateAt(33.3, 2)).toEqual({ at: 9, late: [0, 0, 0, 0, 64, 64, 64, 64, 64, 16] });
   });
 
   it("runs every pending job to its end at once when the clock jumps, as a first build does", () => {
@@ -81,11 +85,13 @@ describe("the scheduler", () => {
     jobs.begin({}, job(clock, 100, 0.125, a, () => jobs.frame));
     jobs.begin({}, job(clock, 100, 0.125, b, () => jobs.frame));
     jobs.run();
-    // A tab hidden for a minute: the next frame's clock is 60 s on. The
-    // first job's other 68 slices and the second's 100, all at once.
+    // A tab hidden for a minute: the next frame's clock is 60 s on, so both are
+    // overdue. The first job's other 68 slices and the second's 100, all at
+    // once, none of them under the late share.
     now += 60_000;
     jobs.run();
-    expect([a.at, b.at, jobs.last.late]).toEqual([1, 1, 168]);
+    expect([a.at, b.at, jobs.last.overdue, jobs.last.overdueJobs, jobs.last.late]).toEqual([1, 1, 168, 2, 0]);
+    expect(jobs.last.lateMs).toBe(jobs.last.ms);
   });
 
   it("spends a frame's budget and at most one slice past it, oldest job first", () => {
@@ -109,22 +115,108 @@ describe("the scheduler", () => {
     expect(jobs.pending(ownerA) || jobs.pending(ownerB)).toBe(false);
   });
 
-  it("runs a job to its end in the sixth frame after its crossing, whatever the budget", () => {
+  it("gives a late job the late share a frame and no more, and ends it over the frames after", () => {
     const t = testClock();
     const jobs = createSyncJobs(t.clock);
     const done = { at: null as number | null };
     const owner = {};
-    // 100 slices of 1 ms: the budget alone would take 25 frames.
+    // 100 slices of 1 ms: the ordinary share alone would take 25 frames.
     jobs.begin(owner, job(t, 100, 1, done, () => jobs.frame));
     const late: number[] = [];
-    for (let f = 0; f <= SYNC_LATE_FRAMES_MAX; f++) {
+    const spent: number[] = [];
+    for (let f = 0; f < 16; f++) {
+      const before = t.clock();
       jobs.run();
       late.push(jobs.last.late);
+      spent.push(t.clock() - before);
     }
-    // Four slices a frame for six frames, then the other 76 at once.
-    expect(late).toEqual([0, 0, 0, 0, 0, 0, 76]);
-    expect(done.at).toBe(6);
+    // Four slices a frame for six frames, then eight a frame, the last four.
+    expect(late).toEqual([0, 0, 0, 0, 0, 0, 8, 8, 8, 8, 8, 8, 8, 8, 8, 4, 0].slice(0, 16));
+    expect(Math.max(...spent)).toBeLessThanOrEqual(SYNC_LATE_BUDGET_MS);
+    expect(done.at).toBe(15);
     expect(jobs.pending(owner)).toBe(false);
+  });
+
+  it("stops a late job at the late share even when its slices are long, and goes on next frame", () => {
+    const t = testClock();
+    const jobs = createSyncJobs(t.clock);
+    const done = { at: null as number | null };
+    const owner = {};
+    jobs.begin(owner, job(t, 30, 3, done, () => jobs.frame));
+    // Two slices of 3 ms an ordinary frame: the second begins at 3 ms, under the 4.
+    for (let f = 0; f < SYNC_LATE_FRAMES_MAX; f++) jobs.run();
+    const before = t.clock();
+    jobs.run();
+    // The share is looked at before each slice: they begin at 0, 3 and 6 ms, and the one at 9 does not.
+    expect(t.clock() - before).toBe(9);
+    expect(jobs.last.late).toBe(3);
+    expect(jobs.pending(owner)).toBe(true);
+    expect(done.at).toBeNull();
+  });
+
+  it("goes to the late jobs first, ahead of one queued before it that is not late", () => {
+    const t = testClock();
+    const jobs = createSyncJobs(t.clock);
+    const ran: string[] = [];
+    const named = (name: string): Slices => (function* () {
+      for (let i = 0; i < 100; i++) {
+        if (ran[ran.length - 1] !== name || i === 0) ran.push(name);
+        t.advance(1);
+        yield;
+      }
+    })();
+    const first = {}, second = {};
+    // `second` is begun patient at frame 0, and again as an ordinary job at frame 4, behind `first`, which is begun then: but its crossing is the older.
+    jobs.begin(second, named("second"), true);
+    for (let f = 0; f < 4; f++) jobs.run();
+    jobs.begin(first, named("first"));
+    jobs.begin(second, named("second"));
+    // Frames 4 and 5: `first` is queued first and takes the ordinary share, `second` the rest if any.
+    jobs.run();
+    jobs.run();
+    expect(jobs.last.late).toBe(0);
+    ran.length = 0;
+    // Frame 6: `second`'s crossing is six frames old, `first`'s two.
+    jobs.run();
+    expect(jobs.last.late).toBe(8);
+    expect(ran[0]).toBe("second");
+    expect(ran).toEqual(["second"]);
+  });
+
+  it("runs a job to its end when it is overdue, whatever the share", () => {
+    const t = testClock();
+    const jobs = createSyncJobs(t.clock);
+    const done = { at: null as number | null };
+    const owner = {};
+    jobs.begin(owner, job(t, 400, 1, done, () => jobs.frame));
+    jobs.run();
+    // A frame whose clock is a second on: the whole of what is left, in one go.
+    t.advance(SYNC_OVERDUE_MS);
+    const before = t.clock();
+    jobs.run();
+    expect(done.at).toBe(1);
+    expect([jobs.last.overdueJobs, jobs.last.overdue]).toEqual([1, 396]);
+    expect(t.clock() - before).toBe(396);
+    expect(jobs.pending(owner)).toBe(false);
+  });
+
+  it("makes a job replaced again and again overdue a second after the first crossing", () => {
+    const t = testClock();
+    const jobs = createSyncJobs(t.clock);
+    const owner = {};
+    const done = { at: null as number | null };
+    // A crossing every 250 ms of the clock, each beginning a job the share cannot finish.
+    let overdueAt = -1;
+    jobs.begin(owner, job(t, 1000, 1, done, () => jobs.frame));
+    for (let f = 0; f < 12 && overdueAt < 0; f++) {
+      t.advance(250);
+      jobs.begin(owner, job(t, 1000, 1, done, () => jobs.frame));
+      jobs.run();
+      if (jobs.last.overdueJobs > 0) overdueAt = f;
+    }
+    // Begun at 0, replaced at 250, 500 and 750 ms (the share's own time counted), overdue when a frame starts a second on.
+    expect(overdueAt).toBe(3);
+    expect(done.at).toBe(jobs.frame - 1);
   });
 
   it("keeps two crossings in one frame from making one long frame", () => {
@@ -168,18 +260,19 @@ describe("the scheduler", () => {
     jobs.begin(bystander, job(t, 2, 1, other, () => jobs.frame));
     jobs.run();
     jobs.run();
-    // A further crossing, two frames on: the new rebuild is still due six
-    // frames after the first one began, and still ahead of the bystander.
+    // A further crossing, two frames on: the new rebuild is late six frames
+    // after the first one began, and still ahead of the bystander.
     jobs.begin(owner, job(t, 40, 1, second, () => jobs.frame));
     const late: number[] = [];
-    for (let f = 2; f <= SYNC_LATE_FRAMES_MAX; f++) {
+    for (let f = 2; f <= 9; f++) {
       jobs.run();
       late.push(jobs.last.late);
     }
-    expect([first.at, second.at, other.at]).toEqual([null, 6, 6]);
-    // Four frames of four slices, then in frame 6 the other 24 at once, and
-    // the bystander's two, due then too.
-    expect(late).toEqual([0, 0, 0, 0, 26]);
+    expect([first.at, second.at, other.at]).toEqual([null, 8, 9]);
+    // Four frames of four slices (the new job's first 16), then three of the late
+    // share's eight (its other 24), the bystander's two after it: the bystander
+    // is late too, and has no share while the job ahead of it takes the late one.
+    expect(late).toEqual([0, 0, 0, 0, 8, 8, 8, 2]);
   });
 
   it("starts a slice said to be long only where it fits, or first in a frame, and lets the jobs behind it go on", () => {
@@ -573,7 +666,7 @@ describe("the jobs' milliseconds, by owner", () => {
     expect(jobs.last.lateMs).toBe(0);
     expect(jobs.last.owners.clipmap).toBeCloseTo(1.5, 9);
     expect(done.at).toBe(0);
-    // A job of 50 slices of 1 ms gets 4 a frame; at its sixth frame it is late and runs to its end.
+    // A job of 50 slices of 1 ms gets 4 a frame; at its sixth frame it is late and gets the late share.
     const long = { at: null as number | null };
     jobs.begin({}, job({ advance }, 50, 1, long, () => jobs.frame), false, "forest");
     for (let f = 0; f < 6; f++) jobs.run();
@@ -581,13 +674,249 @@ describe("the jobs' milliseconds, by owner", () => {
     expect(jobs.last.lateMs).toBe(0);
     expect(long.at).toBeNull();
     jobs.run();
-    expect(long.at).toBe(7);
-    expect(jobs.last.lateMs).toBeGreaterThan(20);
+    expect(long.at).toBeNull();
+    expect(jobs.last.lateMs).toBe(8);
     expect(jobs.last.ms).toBe(jobs.last.lateMs);
     expect(jobs.last.owners.forest).toBe(jobs.last.ms);
+    // The other 18 slices: eight, eight, then two, which end the job.
+    jobs.run();
+    jobs.run();
+    expect(long.at).toBeNull();
+    jobs.run();
+    expect(long.at).toBe(10);
+    expect(jobs.last.lateMs).toBe(2);
     // An unnamed owner counts under "other".
     jobs.begin({}, job({ advance }, 2, 0.25, { at: null }, () => jobs.frame));
     jobs.run();
     expect(jobs.last.owners.other).toBeCloseTo(0.5, 9);
+  });
+});
+
+describe("a slice that ends by the clock", () => {
+  /** A builder of `samples` samples, each costing `ms` of a test clock, that asks `sliceDue` after each; the slices it was cut into, by their samples. */
+  function sampler(clock: { advance(ms: number): void }, samples: number, ms: number, cuts: number[]): Slices {
+    return (function* () {
+      let since = 0;
+      for (let i = 0; i < samples; i++) {
+        clock.advance(ms);
+        since++;
+        if (sliceDue()) {
+          cuts.push(since);
+          since = 0;
+          yield;
+        }
+      }
+      cuts.push(since);
+    })();
+  }
+
+  it("ends by the target, held past it by at most one reading's interval of samples", () => {
+    for (const ms of [0.01, 0.1, 0.4]) {
+      const t = testClock();
+      const jobs = createSyncJobs(t.clock);
+      const cuts: number[] = [];
+      const owner = {};
+      jobs.begin(owner, sampler(t, 2000, ms, cuts));
+      for (let frames = 0; jobs.pending(owner) && frames < 5000; frames++) jobs.run();
+      // Every slice but the last ran its samples in a time that is at least the target (it ended because of it) and under the target and one reading's interval.
+      const longest = Math.max(...cuts.slice(0, -1)) * ms;
+      expect(Math.min(...cuts.slice(0, -1)) * ms).toBeGreaterThanOrEqual(SLICE_TARGET_MS - 1e-9);
+      expect(longest).toBeLessThanOrEqual(SLICE_TARGET_MS + SLICE_READ_UNITS * ms + 1e-9);
+      expect(cuts.reduce((a, b) => a + b, 0)).toBe(2000);
+    }
+  });
+
+  it("reads the clock once every SLICE_READ_UNITS units, not at every sample", () => {
+    let reads = 0;
+    let now = 0;
+    const jobs = createSyncJobs(() => {
+      reads++;
+      return now;
+    });
+    jobs.begin({}, (function* () {
+      const before = reads;
+      for (let i = 0; i < 64; i++) sliceDue();
+      // 64 calls: eight readings, none of them past the target.
+      expect(reads - before).toBe(64 / SLICE_READ_UNITS);
+      now += 0;
+      yield;
+    })());
+    jobs.run();
+    expect(reads).toBeGreaterThan(8);
+  });
+
+  it("counts a call's units: a unit more than the interval reads at once", () => {
+    let now = 0;
+    const jobs = createSyncJobs(() => now);
+    const seen: boolean[] = [];
+    jobs.begin({}, (function* () {
+      now += 2;
+      seen.push(sliceDue(1), sliceDue(SLICE_READ_UNITS));
+      yield;
+    })());
+    jobs.run();
+    expect(seen).toEqual([false, true]);
+  });
+
+  it("is false outside a scheduler's slice, so a build at once runs through", () => {
+    expect(sliceDue()).toBe(false);
+    expect(sliceDue(1000)).toBe(false);
+    const cuts: number[] = [];
+    const t = testClock();
+    const slices = sampler(t, 500, 1, cuts);
+    finish(slices);
+    expect(cuts).toEqual([500]);
+  });
+
+  it("is not carried from one slice into the next, or out of the scheduler", () => {
+    const t = testClock();
+    const jobs = createSyncJobs(t.clock);
+    const cuts: number[] = [];
+    jobs.begin({}, sampler(t, 100, 0.5, cuts));
+    jobs.run();
+    // After a share the gate is closed again.
+    expect(sliceDue(1000)).toBe(false);
+    // And a slice that begins late in a frame is given its own target, not what was left of the last.
+    jobs.run();
+    expect(cuts.slice(0, 2).every((n) => n * 0.5 >= SLICE_TARGET_MS - 1e-9)).toBe(true);
+  });
+
+  it("gives idle work the same bound", () => {
+    const t = testClock();
+    const jobs = createSyncJobs(t.clock);
+    const cuts: number[] = [];
+    jobs.idle({}, sampler(t, 1000, 0.1, cuts));
+    for (let f = 0; f < 200 && cuts.reduce((a, b) => a + b, 0) < 1000; f++) jobs.run();
+    expect(Math.max(...cuts.slice(0, -1)) * 0.1).toBeLessThanOrEqual(SLICE_TARGET_MS + SLICE_READ_UNITS * 0.1 + 1e-9);
+    expect(jobs.last.longest.idle).toBeLessThanOrEqual(SLICE_TARGET_MS + SLICE_READ_UNITS * 0.1 + 1e-9);
+  });
+});
+
+describe("what an apply step takes", () => {
+  /** A job that does `small` slices of `smallMs`, says its apply takes `said` ms, and then spends `real` ms in it. */
+  function applying(t: { advance(ms: number): void }, small: number, smallMs: number, said: number, real: number, done: { at: number | null }, frame: () => number): Slices {
+    return (function* () {
+      for (let i = 0; i < small; i++) {
+        t.advance(smallMs);
+        yield;
+      }
+      yield said;
+      t.advance(real);
+      done.at = frame();
+    })();
+  }
+
+  it("learns an owner's figure from what its announced slices took", () => {
+    const t = testClock();
+    const jobs = createSyncJobs(t.clock);
+    const done = { at: null as number | null };
+    jobs.begin({}, applying(t, 0, 0, 1, 6, done, () => jobs.frame), false, "forest");
+    jobs.run();
+    expect(jobs.last.learned.forest).toBe(6);
+    expect(done.at).toBe(0);
+    // A second one weighs in at a quarter.
+    // (Its apply, learned to take 6 ms, waits for a frame it is first in.)
+    jobs.begin({}, applying(t, 0, 0, 1, 2, done, () => jobs.frame), false, "forest");
+    jobs.run();
+    jobs.run();
+    expect(jobs.last.learned.forest).toBeCloseTo(5, 9);
+  });
+
+  it("keeps an apply out of a frame it does not fit, by the learned figure where it is more than the builder's", () => {
+    const t = testClock();
+    const jobs = createSyncJobs(t.clock);
+    const first = { at: null as number | null }, second = { at: null as number | null };
+    // The first teaches the scheduler that "forest" applies take 3 ms where they say 1.
+    jobs.begin({}, applying(t, 0, 0, 1, 3, first, () => jobs.frame), false, "forest");
+    jobs.run();
+    // A frame that has spent 2 ms on an older job: the apply says 1 ms and would fit in the 4, but it is learned to take 3.
+    jobs.begin({}, job(t, 2, 1.5, { at: null }, () => jobs.frame));
+    jobs.begin({}, applying(t, 0, 0, 1, 3, second, () => jobs.frame), false, "forest");
+    jobs.run();
+    expect(second.at).toBeNull();
+    // Next frame it is first in the frame, so it runs whatever it takes.
+    jobs.run();
+    expect(second.at).toBe(2);
+    expect(first.at).toBe(0);
+  });
+
+  it("starts an apply that is the first slice of a frame whatever it is learned to take, and never holds it for ever", () => {
+    const t = testClock();
+    const jobs = createSyncJobs(t.clock);
+    const done = { at: null as number | null };
+    // An apply learned at 30 ms, far past the share.
+    jobs.begin({}, applying(t, 0, 0, 1, 30, { at: null }, () => jobs.frame), false, "clipmap");
+    jobs.run();
+    expect(jobs.last.learned.clipmap).toBe(30);
+    // Behind a job of 40 slices of 1 ms: the apply waits while that job takes the share, then is first in a frame.
+    const owner = {};
+    jobs.begin({}, job(t, 6, 1, { at: null }, () => jobs.frame));
+    jobs.begin(owner, applying(t, 0, 0, 1, 30, done, () => jobs.frame), false, "clipmap");
+    for (let f = 0; f < 10 && done.at === null; f++) jobs.run();
+    expect(done.at).not.toBeNull();
+    expect(jobs.pending(owner)).toBe(false);
+  });
+
+  it("trusts what a builder says when it is more than the learned figure", () => {
+    const t = testClock();
+    const jobs = createSyncJobs(t.clock);
+    const learned = { at: null as number | null }, later = { at: null as number | null };
+    jobs.begin({}, applying(t, 0, 0, 1, 0.5, learned, () => jobs.frame), false, "clipmap");
+    jobs.run();
+    // 2 ms of another job's, then an apply that says 3: 2 + 3 > 4, so it waits.
+    jobs.begin({}, job(t, 1, 2, { at: null }, () => jobs.frame));
+    jobs.begin({}, applying(t, 0, 0, 3, 0.5, later, () => jobs.frame), false, "clipmap");
+    jobs.run();
+    expect(later.at).toBeNull();
+  });
+
+  it("does not learn from a slice that said nothing", () => {
+    const t = testClock();
+    const jobs = createSyncJobs(t.clock);
+    jobs.begin({}, job(t, 3, 0.5, { at: null }, () => jobs.frame), false, "clutter");
+    jobs.run();
+    expect(jobs.last.learned.clutter).toBeUndefined();
+  });
+
+  it("holds an apply that does not fit the late share to the next frame too", () => {
+    const t = testClock();
+    const jobs = createSyncJobs(t.clock);
+    const owner = {};
+    const done = { at: null as number | null };
+    // Teach "forest" 5 ms.
+    jobs.begin({}, applying(t, 0, 0, 5, 5, { at: null }, () => jobs.frame), false, "forest");
+    jobs.run();
+    // A late job that has used 4 ms of the late share, then another whose apply is 5: 4 + 5 > 8, so it waits.
+    const slow = {};
+    jobs.begin(slow, job(t, 200, 1, { at: null }, () => jobs.frame));
+    jobs.begin(owner, applying(t, 0, 0, 1, 5, done, () => jobs.frame), false, "forest");
+    for (let f = 0; f < SYNC_LATE_FRAMES_MAX; f++) jobs.run();
+    jobs.run();
+    expect(jobs.last.late).toBeGreaterThan(0);
+    expect(done.at).toBeNull();
+  });
+});
+
+describe("the longest slice an owner ran", () => {
+  it("records the longest single slice by owner until it is reset", () => {
+    const t = testClock();
+    const jobs = createSyncJobs(t.clock);
+    jobs.begin({}, (function* () {
+      t.advance(1);
+      yield;
+      t.advance(3);
+      yield;
+      t.advance(2);
+    })(), false, "clipmap");
+    jobs.run();
+    jobs.run();
+    expect(jobs.last.longest.clipmap).toBe(3);
+    jobs.begin({}, job(t, 1, 2.5, { at: null }, () => jobs.frame), false, "clipmap");
+    jobs.run();
+    expect(jobs.last.longest.clipmap).toBe(3);
+    jobs.resetLongest();
+    jobs.begin({}, job(t, 1, 0.5, { at: null }, () => jobs.frame), false, "clipmap");
+    jobs.run();
+    expect(jobs.last.longest.clipmap).toBe(0.5);
   });
 });

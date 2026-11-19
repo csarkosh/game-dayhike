@@ -429,7 +429,7 @@ import { SILENT_SURF_SOUND, createSurfSound, fillSurfSound, type SurfSound } fro
 import type { SkyState } from "../skyState.js";
 import { STARE_LENS_REST, stareShadeUnder, stareSide, stepStareLens, type StareLens } from "../stareLens.js";
 import { DEFAULT_HOUR, sunAltitudeDeg, whenSkyHeld } from "../skyWait.js";
-import { createSyncJobs, finish, stepSlices, type SyncJobs } from "../syncJobs.js";
+import { createSyncJobs, finish, stepSlices, type SyncJobsLast } from "../syncJobs.js";
 import { followRoadCentre, terrainTablesFor, type TerrainTables } from "../terrainTables.js";
 import { terrainCoverFor, terrainSurfaceUnder, terrainUniforms, type TerrainUniformInputs } from "../terrainUniforms.js";
 import { createViewBob } from "../viewBob.js";
@@ -796,8 +796,16 @@ export function createLiteRenderer(canvas: HTMLCanvasElement, level: Level, fore
   const jobs = createSyncJobs(() => performance.now());
   // The measurement mode (`?gpuTime`): the jobs' record of the last frame, read out as `window.__syncJobs()`. A copy
   // each time: the record is written in place every frame.
-  const measured = globalThis as { __syncJobs?: () => SyncJobs["last"]; __frameUploads?: () => FrameUploadCounts };
-  if (options.gpuTime === true) measured.__syncJobs = () => ({ ...jobs.last, owners: { ...jobs.last.owners } });
+  // `__syncJobsReset()` forgets the longest slices recorded, so a reading's are those since the call.
+  const measured = globalThis as {
+    __syncJobs?: () => SyncJobsLast; __syncJobsReset?: () => void; __frameUploads?: () => FrameUploadCounts;
+  };
+  if (options.gpuTime === true) {
+    measured.__syncJobs = () => ({
+      ...jobs.last, owners: { ...jobs.last.owners }, longest: { ...jobs.last.longest }, learned: { ...jobs.last.learned },
+    });
+    measured.__syncJobsReset = () => jobs.resetLongest();
+  }
   // What each frame hands to the GPU, and the budget its streamed part is held to (`frameUploads.ts`); the last
   // frame's record is read out beside the jobs', a copy each time too.
   const uploads = createFrameUploads();
@@ -1428,6 +1436,7 @@ export function createLiteRenderer(canvas: HTMLCanvasElement, level: Level, fore
       surface = null;
       if (options.gpuTime === true) {
         if (measured.__syncJobs !== undefined) delete measured.__syncJobs;
+        if (measured.__syncJobsReset !== undefined) delete measured.__syncJobsReset;
         if (measured.__frameUploads !== undefined) delete measured.__frameUploads;
       }
     },
