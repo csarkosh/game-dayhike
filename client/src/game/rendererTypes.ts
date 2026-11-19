@@ -311,4 +311,7 @@ export type RendererOptions = {
    * read out as `window.__gpuTime()` and a corner line (`lite/gpuTimeReadout.ts`), and
    * the render scale held at full. */
   gpuTime?: boolean;
+  /** Draw at most 60 frames a second, evenly (`framePace.ts`): a phone's, whose display runs at
+   * 120 Hz under a finger. Absent or false, every frame the browser asks for is drawn. */
+  paced?: boolean;
 };

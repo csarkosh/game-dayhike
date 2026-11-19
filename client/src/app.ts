@@ -72,6 +72,7 @@ import { createClientSession } from "./net/clientSession.js";
 import { degradeTransport, parseNetConditions } from "./net/channels.js";
 import type { Transport } from "./net/transport.js";
 import { isTouchDevice } from "./game/platform.js";
+import { isMobile } from "./game/gpuSignals.js";
 import { createInteractPrompt, promptModel } from "./game/interactPrompt.js";
 import { createPosterPanel, posterModel } from "./game/posterPanel.js";
 import { DEATH_LINE, DEATH_TITLE, DEATH_FADE_AFTER_MS, DEATH_SOUND_FADE_S, END_LANDING_MS, WON_LINE, WON_TITLE, atRoadWall } from "./game/passages.js";
@@ -454,7 +455,7 @@ function buildGame(
     [options.tier, ...options.fallbackTiers],
     {
       build: (next, at) =>
-        createHikeRenderer(next, level, forest, { tier: at, deferClipmap: options.deferClipmap, start, prepared: options.takePrepared?.() ?? null, firstBuilds, skyTable: skySource.table, gpuTime: parseGpuTime(location.search) }),
+        createHikeRenderer(next, level, forest, { tier: at, deferClipmap: options.deferClipmap, start, prepared: options.takePrepared?.() ?? null, firstBuilds, skyTable: skySource.table, gpuTime: parseGpuTime(location.search), paced: isMobile(navigator) }),
       freshCanvas: () => document.createElement("canvas"),
       ...engineBindings,
     },
@@ -2428,7 +2429,7 @@ function buildGame(
     // The renderer makes its own engine from the canvas it is built on: the
     // one made for the switch (`options.engineFor`), which `freshCanvas`
     // hands out first.
-    build: (next, target) => createHikeRenderer(next, level, forest, { tier: target, skyTable: skySource.table, gpuTime: parseGpuTime(location.search) }),
+    build: (next, target) => createHikeRenderer(next, level, forest, { tier: target, skyTable: skySource.table, gpuTime: parseGpuTime(location.search), paced: isMobile(navigator) }),
     freshCanvas: () => document.createElement("canvas"),
     extras: { dispose: disposeExtras, build: buildExtras },
     rebind: (next) => {

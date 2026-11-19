@@ -490,6 +490,7 @@ import depthAheadCosSource from "../shaders/renderer/depthAheadCos.wgsl?raw";
 import depthAheadProjectionSource from "../shaders/renderer/depthAheadProjection.wgsl?raw";
 import depthAheadSlopeSource from "../shaders/renderer/depthAheadSlope.wgsl?raw";
 import { fill, wgsl } from "../shaders/shaderText.js";
+import { PHONE_FRAME_MS, createFramePace } from "../framePace.js";
 
 /**
  * Whether a renderer of this page has drawn a tier with a post chain. Lite's
@@ -1451,8 +1452,11 @@ export function createLiteRenderer(canvas: HTMLCanvasElement, level: Level, fore
   const frames = new Set<() => void>();
   const frameEnds = new Set<() => void>();
   let scheduled: number | null = null;
-  function tick(): void {
+  // A phone draws every second refresh of a display at 120 Hz, so its frames stay 16.7 ms apart (`framePace.ts`).
+  const pace = createFramePace(options.paced === true ? PHONE_FRAME_MS : 0);
+  function tick(now: number): void {
     scheduled = requestAnimationFrame(tick);
+    if (!pace.due(now)) return;
     for (const frame of [...frames]) frame();
     for (const end of [...frameEnds]) end();
   }
