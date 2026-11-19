@@ -258,7 +258,7 @@ describe("snapshot codec", () => {
     expect(encodeFlagsByte({ safe: false, cause: DeathCause.None })).toBe(0);
     expect(PLAYER_BYTES).toBe(28);
     // A build that cannot bring a player back must not share a match with one that can.
-    expect(PROTOCOL_VERSION).toBe(6);
+    expect(PROTOCOL_VERSION).toBe(7);
   });
 
   it("carries the lamp in one byte and round-trips it at exact charge steps", () => {
