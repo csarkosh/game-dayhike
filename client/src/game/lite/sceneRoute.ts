@@ -54,7 +54,7 @@ import { createLiteRenderer } from "./renderer.js";
 import { liteSceneryOf, type LiteActor, type LiteTrailhead } from "./sceneryMeshes.js";
 import { stageLiteFrame, type LiteStageDeps } from "./sceneStage.js";
 
-/** The run of frames with nothing streamed after which the world is in: a job hands over within `SYNC_LATE_FRAMES_MAX` frames of the crossing that began it, and two more. */
+/** The run of frames with nothing streamed after which the world is in: a crossing's job streams from the frame that finds it, and a quiet run of `SYNC_LATE_FRAMES_MAX` frames and two more is a world no job waits on. */
 export const SETTLE_FRAMES = SYNC_LATE_FRAMES_MAX + 2;
 /** Frames drawn at a stretch while the world streams in, before the page is given a turn: a model lands, a worker answers, only between two of the page's tasks. */
 export const SETTLE_STRETCH = 8;
