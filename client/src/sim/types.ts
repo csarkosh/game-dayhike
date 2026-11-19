@@ -34,6 +34,8 @@ export const enum Button {
   Sprint = 8,
   /** The reload bit became the headlamp toggle. */
   Lamp = 16,
+  /** Not a key: this player's own screen says a shade of its crowd has them (taken.ts). Movement reads nothing of it. */
+  Taken = 32,
 }
 
 export const enum Outcome {

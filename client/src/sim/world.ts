@@ -20,6 +20,7 @@ import { isExpiredCorpse, stepEnemy } from "./ai.js";
 import { updateDirector } from "./director.js";
 import { stepHollows, updateHollows, updateLoss } from "./hollow.js";
 import { stepSummit, updateSafety } from "./summit.js";
+import { stepTaken } from "./taken.js";
 import type { WayDown } from "./wayDown.js";
 import { drawWay } from "./wayDraw.js";
 import { ENEMY_POPULATION_CAP, PLAYER_HALF, PLAYER_MAX_HEALTH, TICK_DT } from "./constants.js";
@@ -302,6 +303,8 @@ export function tickWorld(world: World, inputs: Map<number, InputCommand>): void
   // it as they move and as they pick their prey, so a player who crossed onto
   // the corridor this tick is out of reach on the same tick (summit.ts).
   updateSafety(world);
+  // A player their own crowd has (taken.ts): before the Hollows move, so what killed them is the touch.
+  stepTaken(world, inputs);
 
   if (world.trail !== null) {
     // The climb's watcher shows and hides before the Hollows move, so the
