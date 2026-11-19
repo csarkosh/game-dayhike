@@ -5,7 +5,8 @@ import { createForestWorld, spawnPlayer, tickWorld, type World } from "../../src
 import { seedFromToken } from "../../src/game/seed.js";
 import { DEFAULT_TERRAIN_VARIANT, setActiveTerrainVariant } from "../../src/sim/terrain.js";
 import { AiState, DeathCause, Phase, type EnemyState, type PlayerState } from "../../src/sim/types.js";
-import { SPRINT_SPEED, TICK_DT } from "../../src/sim/constants.js";
+import { PLAYER_EYE_OFFSET, SPRINT_SPEED, TICK_DT } from "../../src/sim/constants.js";
+import { playerSees } from "../../src/sim/hollow.js";
 import { CROWD_LUNGE_MPS } from "../../src/game/crowdField.js";
 import {
   LUNGE_ATTACK_M, WAYLAY_AHEAD_M, WAYLAY_FROM_M, WAYLAY_GAP_EARLY, WAYLAY_GAP_M, WAYLAY_GROUP_M, WAYLAY_LOOSE_M, WAYLAY_OFF_M, WAYLAY_PAST_M, WAYLAY_REACH_M, WAYLAY_RUN_S, WAYLAY_SIDE_M, WAYLAY_SPEED,
@@ -114,6 +115,31 @@ describe("the way's lungers, on a real world", SUITE, () => {
     // It has had its seconds: gone.
     ticks(w, WAYLAY_RUN_S);
     expect(w.state.enemies.has(e.id)).toBe(false);
+  });
+
+  it("is no stare: one stood in the path in a runner's plain view fills nothing, so the dark stays open down the way", () => {
+    const { w, p } = chase();
+    stand(w, p, 200);
+    p.heldFor = 1e9;
+    ticks(w, 2);
+    const e = waylayers(w)[0]!;
+    const mine = wayProject(w.way!, e.pos.x, e.pos.z).s;
+    stand(w, p, mine - WAYLAY_LOOSE_M + 1, -e.waylay * 2);
+    ticks(w, 1.5);
+    // Then from eight metres up the way, looking straight at it for three seconds, with nothing between.
+    stand(w, p, mine - 8, -e.waylay * 2);
+    let seen = 0;
+    for (let i = 0; i < Math.round(3 / TICK_DT); i++) {
+      const dx = e.pos.x - p.pos.x, dy = e.pos.y - (p.pos.y + PLAYER_EYE_OFFSET), dz = e.pos.z - p.pos.z;
+      p.yaw = Math.atan2(dx, dz);
+      p.pitch = -Math.atan2(dy, Math.hypot(dx, dz));
+      if (playerSees(p, e, w)) seen++;
+      tickWorld(w, new Map());
+    }
+    expect(w.state.enemies.has(e.id)).toBe(true);
+    expect(seen).toBeGreaterThan(100);
+    expect(p.stare).toBe(0);
+    expect(e.seen).toBe(false);
   });
 
   it("none stands in the way's first 110 m, and none for a player who has left the way", () => {

@@ -575,6 +575,9 @@ export function updateHollows(world: World): void {
     if (p.health <= 0) continue;
     let sees = false;
     for (const h of all) {
+      // A lunge that waits beside the way or stands in the path (haunt.ts) is no stare: a runner has one in
+      // front of them most of the way down, and the dark would never open.
+      if (h.waylay !== 0) continue;
       if (playerSees(p, h, world)) {
         h.seen = true;
         sees = true;
