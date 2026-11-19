@@ -186,6 +186,12 @@ export type Renderer = {
    */
   setCrowd(figures: readonly CrowdFigure[], seconds: number, shadows: boolean): void;
   /**
+   * What stands at the centre of the local player's view in the chase (chaseThreat.ts, 0 to 1), told before
+   * `sync`; null where the chase does not have them. While it is given the frame's dark is the chase's own
+   * (stareLens.ts): there the whole way down, never closed far, beating faster by this.
+   */
+  setChaseThreat(threat: number | null): void;
+  /**
    * The end for this player, once; a second call changes nothing. Died: the
    * camera is the death's from now (ending.ts). Won: the end scene plays
    * over the player's camera from now (endScene.ts): the run, the car, the

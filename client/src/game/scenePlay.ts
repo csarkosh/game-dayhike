@@ -111,7 +111,7 @@ export type ScenePlay = {
   readonly close: number;
   readonly blur: number;
   /** The stare's lens as the frame shows it: the death's closing dark rides its shade, driven to full. */
-  shown<T extends { level: number; phase: number }>(stare: T): T;
+  shown<T extends { level: number; phase: number; chase?: number }>(stare: T): T;
   /** The player whose run the end scene shows where it is not this screen's own, or undefined: the world is built round them. */
   runnerId(): number | undefined;
   /**
@@ -127,9 +127,14 @@ export type ScenePlay = {
  * A stare's lens as a frame shows it under a death's dark closed by
  * `close`, 0 to 1: the dark rides the stare's shade, driven to full, from
  * the side the death closes from; the lens itself where none has closed.
+ * The chase's own dark (stareLens.ts `chase`), which holds the shade open,
+ * gives way to it as it closes.
  */
-export function stareWithDark<T extends { level: number; phase: number }>(stare: T, close: number): T {
-  return close > 0 ? { ...stare, level: Math.max(stare.level, close), phase: 0.9 } : stare;
+export function stareWithDark<T extends { level: number; phase: number; chase?: number }>(stare: T, close: number): T {
+  if (!(close > 0)) return stare;
+  const dark = { ...stare, level: Math.max(stare.level, close), phase: 0.9 };
+  if (stare.chase !== undefined) dark.chase = stare.chase * (1 - Math.min(1, close));
+  return dark;
 }
 
 export function createScenePlay(deps: PlayDeps): ScenePlay {

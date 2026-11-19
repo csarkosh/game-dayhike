@@ -111,6 +111,11 @@ describe("the renderer and the app", () => {
     expect(app).toContain("crowd !== null && crowd.has !== 0 && !crowdTook ? { ...cmd, buttons: cmd.buttons | Button.Taken } : cmd");
     expect(app).toContain("cmd = taken(ranToCar(stilled(input.sample(++seq), me, host.world), me));");
     expect(app).toContain("cmd = taken(ranToCar(stilled(input.sample(++seq), me, client.world), me));");
+    // And what is at the centre of their view, for the chase's dark: the crowd's figures and the state's enemies; null where the chase does not have them.
+    expect(app).toContain("renderer.setChaseThreat(threat);");
+    expect(app).toContain("threat = Math.max(threat, threatOf(eyeAt, f.x, f.z, presenceOf(f, seconds)));");
+    expect(app).toContain("for (const e of state.enemies.values()) threat = Math.max(threat, threatOf(eyeAt, e.pos.x, e.pos.z));");
+    expect(renderer).toContain("stareLens = stepStareLens(stareLens, stare, side, dt, chaseThreat);");
     expect(app).toContain("crowdHeld !== null ? crowdHeld > 0 : crowdOn(state.phase, state.outcome, wayShown)");
     // Each screen's own: its stream is seeded from the world's seed and whose screen it is, never the sim's.
     expect(app).toContain("newCrowd((seed ^ Math.imul(localId + 1, 0x9e3779b1)) >>> 0)");

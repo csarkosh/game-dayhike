@@ -756,6 +756,8 @@ export function createLiteRenderer(canvas: HTMLCanvasElement, level: Level, fore
   /** The rain on the lens, smoothed (`lensParams.ts`), and the local player's stare as their screen and ears take it (`stareLens.ts`). */
   let lensStrength = 0;
   let stareLens: StareLens = STARE_LENS_REST;
+  /** What stands at the centre of the local player's view in the chase (`setChaseThreat`), or null outside it: the lens's dark is the chase's own while it is given. */
+  let chaseThreat: number | null = null;
   /** The stare as the frame shows it: a death's closing dark rides its shade (`stareWithDark`). */
   let shownStare: StareLens = STARE_LENS_REST;
   /** The way down the app last gave (`setWay`) with the ground its mist stands on, and the level its mist is held at (`setWayLevel`). */
@@ -2204,7 +2206,7 @@ export function createLiteRenderer(canvas: HTMLCanvasElement, level: Level, fore
             if (at !== null && (side === null || at.cos > side.cos)) side = at;
           }
         }
-        stareLens = stepStareLens(stareLens, stare, side, dt);
+        stareLens = stepStareLens(stareLens, stare, side, dt, chaseThreat);
         // Rain on the lens: strongest looking up, smoothed over a second.
         lensStrength = lensSmooth(lensStrength, lensStrengthUnder(weather.rain, pose.pitch), dt);
         // The chain's grade for the frame: before the sky's first slices there is no night factor, and the day's 0
@@ -2352,6 +2354,9 @@ export function createLiteRenderer(canvas: HTMLCanvasElement, level: Level, fore
     },
     setWayLevel(level) {
       wayLevel = Math.max(0, Math.min(1, level));
+    },
+    setChaseThreat(threat) {
+      chaseThreat = threat;
     },
     setCrowd(figures, seconds, shadows) {
       crowdSeconds = seconds;

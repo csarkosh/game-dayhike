@@ -115,7 +115,8 @@ import { wayDirection, wayPoint, wayProject } from "./sim/wayDown.js";
 import { groundSpawn } from "./sim/spawn.js";
 import { isOnCorridor } from "./sim/containment.js";
 import { WATCH_SLOPE_NY } from "./sim/watcher.js";
-import { CROWD_MOST, crowdGives, crowdOn, crowdTakes, newCrowd, stepCrowd, type Crowd, type CrowdWorld } from "./game/crowdField.js";
+import { CROWD_MOST, crowdGives, crowdOn, crowdTakes, newCrowd, presenceOf, stepCrowd, type Crowd, type CrowdWorld } from "./game/crowdField.js";
+import { threatOf } from "./game/chaseThreat.js";
 import { isShadeState } from "./sim/haunt.js";
 import { wayLevelFor } from "./game/wayLevel.js";
 import { hasLineOfSight } from "./sim/ai.js";
@@ -1134,7 +1135,8 @@ function buildGame(
    * This screen's crowd, a frame (crowdField.ts): stepped round the local player while the chase is on (or the
    * console holds it), from the world's way and ground, and given to the renderer. Nothing of it is the sim's,
    * and each screen has its own; a figure this player walks into has them, which the next commands say to the
-   * host (`taken`).
+   * host (`taken`). And what stands at the centre of their view (chaseThreat.ts) is told to the renderer, whose
+   * dark beats faster by it.
    */
   function syncCrowd(world: World, state: WorldState, localId: number, dt: number): void {
     crowd ??= newCrowd((seed ^ Math.imul(localId + 1, 0x9e3779b1)) >>> 0);
@@ -1178,6 +1180,13 @@ function buildGame(
     if (crowd.has === 0) crowdTook = false;
     else if (me !== undefined && me.health <= 0) crowdTook = true;
     renderer.setCrowd(crowd.figures, seconds, up);
+    let threat: number | null = null;
+    if (prey) {
+      threat = 0;
+      for (const f of crowd.figures) if (f.gone < 0) threat = Math.max(threat, threatOf(eyeAt, f.x, f.z, presenceOf(f, seconds)));
+      for (const e of state.enemies.values()) threat = Math.max(threat, threatOf(eyeAt, e.pos.x, e.pos.z));
+    }
+    renderer.setChaseThreat(threat);
   }
   function syncWayLight(world: World, dt: number): void {
     if (wayGivenTo !== renderer || wayGiven !== world.way) {
