@@ -117,9 +117,10 @@ export const LUNGE_ATTACK_S = 0.9;
 export const LUNGE_ATTACK_HIT_S = 0.4;
 export const LUNGE_ATTACK_REACH = 3.4;
 /**
- * The way's lungers (2026-11-19). The crowd beside the way down is dressing
- * (game/crowdField.ts): it lunges at a runner and never lands, and a player
- * who learns that stops fearing it. So some of what lunges is real. All the
+ * The way's lungers (2026-11-19). The crowd beside the way down is each
+ * screen's own (game/crowdField.ts): it lunges at a runner and stops short,
+ * and kills only one who walks into it. So some of what lunges is the host's,
+ * and stands in the path. All the
  * way down, a lunge stands up beside the path ahead of whoever leads each
  * group of runners: WAYLAY_AHEAD_M down the way from them, WAYLAY_OFF_M from
  * its line (in the thick mist at the path's edge, among the crowd), on a

@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   CROWD_EYE_APART_M, CROWD_EYE_DIM_M, CROWD_EYE_EMBER, CROWD_EYE_FLOATS, CROWD_EYE_GAIN, CROWD_EYE_HEIGHT, CROWD_EYE_KILLS_GAIN, CROWD_EYE_KILLS_SIZE, CROWD_EYE_M, CROWD_EYE_PALE,
   CROWD_EYE_VERTICES,
-  crowdEyeColour, crowdEyeIndices, crowdEyeVertices, writeCrowdEyes,
+  crowdEyeColour, crowdEyeIndices, crowdEyeVertices, writeCrowdEyes, CROWD_EYE_REACH_GAIN, CROWD_EYE_REACH_SIZE,
 } from "../../src/game/crowdEyes.js";
 import { CROWD_RISE_S, figureOf, type CrowdFigure } from "../../src/game/crowdField.js";
 import { HOLLOW_EYE_COLOR, HOLLOW_FIGURE_M } from "../../src/game/hollowLook.js";
@@ -37,6 +37,16 @@ describe("the crowd's eyes", () => {
     expect(eye[8 * 4 + 2]).toBeCloseTo(eye[2]! * CROWD_EYE_KILLS_SIZE, 6);
     // Its pair is as far apart as any figure's of its size.
     expect(eye[8 * 4 + 3]).toBeCloseTo(eye[3]!, 6);
+  });
+
+  it("opens a reaching figure's eyes: twice as bright and half as large again at the whole reach, where they were", () => {
+    expect([CROWD_EYE_REACH_GAIN, CROWD_EYE_REACH_SIZE]).toEqual([2, 1.5]);
+    const out = crowdEyeVertices(2);
+    const stands = figure(1, 10, 0, { size: 1, eyes: 1, warm: 0.5 }), reaches = figure(2, 12, 0, { size: 1, eyes: 1, warm: 0.5, reach: 1 });
+    expect(writeCrowdEyes(out, 2, [stands, reaches], [3, 3], EYE, 100, new Set())).toBe(2);
+    expect(out.colours[8 * 4 + 3]).toBeCloseTo(out.colours[3]! * CROWD_EYE_REACH_GAIN, 5);
+    expect(out.eyes[8 * 4 + 2]).toBeCloseTo(out.eyes[2]! * CROWD_EYE_REACH_SIZE, 6);
+    expect(out.positions[8 * 3 + 1]).toBe(out.positions[1]);
   });
 
   it("have room for every pair there may be: two eyes a figure, a quad an eye", () => {

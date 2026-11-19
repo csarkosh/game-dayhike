@@ -569,6 +569,10 @@ function buildGame(
   let crowdHeld: number | null = null;
   let crowdWayFor: World["way"] = null;
   let crowdWorld: CrowdWorld | null = null;
+  /** Whether the death of the player this screen's crowd has (`crowd.has`) has been seen: the host is told no more of it. */
+  let crowdTook = false;
+  /** A command as the host is to hear it: with the word that a figure of this screen's crowd has its player (sim/taken.ts makes the death), until that death is seen. */
+  const taken = (cmd: InputCommand): InputCommand => (crowd !== null && crowd.has !== 0 && !crowdTook ? { ...cmd, buttons: cmd.buttons | Button.Taken } : cmd);
   /** What can kill, as this screen last saw it in the state: where each stood, and whether it was a shade of the haunt (one that goes back into the crowd). */
   const crowdKnown = new Map<number, { x: number; z: number; shade: boolean }>();
   /** The explore day's clock (exploreDay.ts): seconds since the hike began, on a calm world. */
@@ -1128,8 +1132,9 @@ function buildGame(
    */
   /**
    * This screen's crowd, a frame (crowdField.ts): stepped round the local player while the chase is on (or the
-   * console holds it), from the world's way and ground, and given to the renderer. It is dressing: nothing of
-   * it is the sim's, and each screen has its own.
+   * console holds it), from the world's way and ground, and given to the renderer. Nothing of it is the sim's,
+   * and each screen has its own; a figure this player walks into has them, which the next commands say to the
+   * host (`taken`).
    */
   function syncCrowd(world: World, state: WorldState, localId: number, dt: number): void {
     crowd ??= newCrowd((seed ^ Math.imul(localId + 1, 0x9e3779b1)) >>> 0);
@@ -1167,7 +1172,11 @@ function buildGame(
       known.z = e.pos.z;
       known.shade = isShadeState(e.ai);
     }
-    stepCrowd(crowd, up ? crowdWorld : null, me === undefined ? CROWD_NOWHERE : { x: me.pos.x, z: me.pos.z, yaw: me.yaw }, crowdHeld ?? CROWD_MOST[tier], seconds, dt);
+    const prey = up && me !== undefined && me.health > 0 && state.phase === Phase.Chase && state.outcome === Outcome.Playing && !me.safe;
+    const eyeAt = me === undefined ? CROWD_NOWHERE : { x: me.pos.x, z: me.pos.z, yaw: me.yaw, prey };
+    stepCrowd(crowd, up ? crowdWorld : null, eyeAt, crowdHeld ?? CROWD_MOST[tier], seconds, dt);
+    if (crowd.has === 0) crowdTook = false;
+    else if (me !== undefined && me.health <= 0) crowdTook = true;
     renderer.setCrowd(crowd.figures, seconds, up);
   }
   function syncWayLight(world: World, dt: number): void {
@@ -2207,7 +2216,7 @@ function buildGame(
       escapeStep?.();
       for (let i = 0; i < ticks; i++) {
         const me = host.world.state.players.get(host.localEntityId);
-        cmd = ranToCar(stilled(input.sample(++seq), me, host.world), me);
+        cmd = taken(ranToCar(stilled(input.sample(++seq), me, host.world), me));
         if (i === ticks - 1) eyeBefore = me === undefined ? null : capturedEye(me, eyeBeforeScratch);
         host.tick(cmd);
       }
@@ -2365,7 +2374,7 @@ function buildGame(
       let cmd: InputCommand | null = null;
       for (let i = 0; i < ticks; i++) {
         const me = client.world.state.players.get(client.localEntityId);
-        cmd = ranToCar(stilled(input.sample(++seq), me, client.world), me);
+        cmd = taken(ranToCar(stilled(input.sample(++seq), me, client.world), me));
         if (i === ticks - 1) eyeBefore = me === undefined ? null : capturedEye(me, eyeBeforeScratch);
         client.tick(cmd);
       }

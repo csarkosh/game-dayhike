@@ -57,6 +57,20 @@ describe("the crowd's cards", () => {
     expect(out.cards[4 * 4 + 3]).toBeCloseTo(out.cards[3]! * CROWD_CARD_KILLS, 5);
   });
 
+  it("tells the shader a figure's reach in the length of its corner's x, and draws one that reaches as solid as one that kills, no taller", () => {
+    const out = crowdCardVertices(3);
+    const stands = figure(1, 15, 0, { size: 1 }), half = figure(2, 0, 15, { size: 1, reach: 0.5 }), whole = figure(3, -15, 0, { size: 1, reach: 1 });
+    expect(writeCrowdCards(out, 3, [stands, half, whole], [3, 3, 3], EYE, 100, new Set(), 0, 60)).toBe(3);
+    const card = out.cards;
+    // The corners' x: its sign the corner, its length one and the reach.
+    expect([0, 1, 2, 3].map((v) => card[v * 4])).toEqual([-1, 1, -1, 1]);
+    expect([0, 1, 2, 3].map((v) => card[(4 + v) * 4])).toEqual([-1.5, 1.5, -1.5, 1.5]);
+    expect([0, 1, 2, 3].map((v) => card[(8 + v) * 4])).toEqual([-2, 2, -2, 2]);
+    expect(card[8 * 4 + 2]).toBeCloseTo(HOLLOW_FIGURE_M, 5);
+    expect(card[8 * 4 + 3]).toBeCloseTo(card[3]! * CROWD_CARD_KILLS, 5);
+    expect(card[4 * 4 + 3]).toBeCloseTo(card[3]! * (1 + (CROWD_CARD_KILLS - 1) / 2), 5);
+  });
+
   it("writes only the figures in its band of distance that no other drawer holds, and says how many", () => {
     const out = crowdCardVertices(4);
     const figures = [figure(1, 5, 0), figure(2, 15, 0), figure(3, 25, 0), figure(4, 45, 0)];

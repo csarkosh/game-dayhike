@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import { CROWD_FADE_S, CROWD_RISE_S, figureOf, presenceOf, type CrowdFigure } from "../../src/game/crowdField.js";
 import { KILLER_SIZE, createKillerShadows } from "../../src/game/crowdKillers.js";
 
-const pose = (id: number, x: number, z: number, level = 1, shadow = true) => ({ id, x, z, level, shadow });
+const pose = (id: number, x: number, z: number, level = 1, shadow = true, reach = 0) => ({ id, x, z, level, shadow, reach });
 const crowd = (id: number): CrowdFigure => ({ id, x: id, z: 0, born: 0, gone: -1, rise: 0, ...figureOf(id, 1) });
 
 describe("the chase's killers among the crowd", () => {
@@ -18,6 +18,14 @@ describe("the chase's killers among the crowd", () => {
     expect(new Set(shown.map((f) => f.id)).size).toBe(2);
     killers.step([pose(7, 11, 21), pose(9, -3, 4)], 50.1);
     expect(killers.shown([])[0]).toMatchObject({ x: 11, z: 21 });
+  });
+
+  it("reaches as its body does: a lunge in its last metres and a strike have both arms out, as the model's were", () => {
+    const killers = createKillerShadows();
+    killers.step([pose(1, 0, 0, 1, true, 0), pose(2, 5, 0, 1, true, 0.6)], 50);
+    expect(killers.shown([]).map((f) => f.reach)).toEqual([0, 0.6]);
+    killers.step([pose(1, 0, 0, 1, true, 1), pose(2, 5, 0, 1, true, 0)], 50.1);
+    expect(killers.shown([]).map((f) => f.reach)).toEqual([1, 0]);
   });
 
   it("is as far in as its body is: one that stands at once is whole, one coming up out of the mist comes in with it", () => {

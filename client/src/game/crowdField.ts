@@ -1,9 +1,12 @@
 /**
  * The crowd (docs/gameplay/2026-11-13-the-way-down.md): in the chase the
- * woods beside the way are full of shades. They are dressing. Each screen
- * makes and moves its own round its own player, from the rules here; they
- * hurt nobody, the host knows none of them, and two players side by side do
- * not see the same ones. What can kill is the host's, as it was (a Hollow, a
+ * woods beside the way are full of shades. Each screen makes and moves its
+ * own round its own player, from the rules here; the host knows none of
+ * them, and two players side by side do not see the same ones. None of them
+ * comes for a player the last metres: each stops short and stands. But a
+ * player who walks into one is had by it (its arms come out, and the screen
+ * tells the host, which makes the death: sim/taken.ts), so the crowd is what
+ * a runner must not touch. What hunts is the host's, as it was (a Hollow, a
  * shade's lunge), and is told apart by its red eyes.
  *
  * This file is the rules and their numbers, computed with no engine so they
@@ -16,7 +19,7 @@ import { Outcome, Phase, nextRandom } from "../sim/types.js";
 import { WAY_FLOOR_M, WAY_RIM_M } from "../sim/wayDown.js";
 
 /** The most figures a screen keeps at the crowd's thickest. */
-export const CROWD_MOST: Record<QualityTier, number> = { low: 60, medium: 60, high: 60 };
+export const CROWD_MOST: Record<QualityTier, number> = { low: 90, medium: 90, high: 90 };
 /**
  * Where they stand, in metres. Beyond the path's edge, where its mist is
  * whole (sim/wayDown.ts WAY_FLOOR_M): none within CROWD_CLEAR_M of it (so
@@ -26,9 +29,9 @@ export const CROWD_MOST: Record<QualityTier, number> = { low: 60, medium: 60, hi
  * CROWD_AHEAD_M, so there are always eyes far down the way; one left
  * CROWD_BEHIND_M behind is taken away. No two within CROWD_APART_M. Round a
  * player who has left the way: CROWD_OFF_WAY_M from them. And the nearest
- * one comes to its player before it goes: CROWD_KEEP_M. (Until 2026-11-19
- * they kept 3 m beyond the way's rim, 8.5 m from its line, and went at 6 m
- * from their player: a runner on the path had nothing near them.)
+ * one comes to its player by its own steps: CROWD_KEEP_M, where it stands.
+ * (Until 2026-11-19 there were sixty, 5.5 m apart, and one that came within
+ * 3 m of its player went: nothing of the crowd could be walked into.)
  */
 export const CROWD_CLEAR_M = 1;
 export const CROWD_EDGE_M = WAY_FLOOR_M + CROWD_CLEAR_M;
@@ -37,7 +40,7 @@ export const CROWD_FAR_BAND_M = 35;
 export const CROWD_NEAR_SHARE = 0.7;
 export const CROWD_AHEAD_M = 85;
 export const CROWD_BEHIND_M = 30;
-export const CROWD_APART_M = 5.5;
+export const CROWD_APART_M = 4.5;
 export const CROWD_OFF_WAY_M: readonly [number, number] = [8, 15];
 export const CROWD_KEEP_M = 3;
 
@@ -60,11 +63,38 @@ export function crowdTarget(progress: number, most: number): number {
  * player at over the last metres (crowdSpeed: it runs in from further off);
  * `born` the seconds it began to rise at, and `gone` the seconds it began to
  * go at, or -1; `rise` how it came, 0 out of the mist or 1 as a pair of eyes
- * opening far off. `kills` marks a figure that is no part of this crowd: one
- * of the host's that can kill, drawn among it (crowdKillers.ts), with the
+ * opening far off; `reach` how far its two arms are out at its player, 0
+ * (or absent) to 1. `kills` marks a figure that is no part of this crowd:
+ * one of the host's that hunts, drawn among it (crowdKillers.ts), with the
  * Hollow's red eyes.
  */
-export type CrowdFigure = { id: number; x: number; z: number; size: number; eyes: number; warm: number; pace: number; born: number; gone: number; rise: 0 | 1; /** Whether the ground last refused its step on: it stands until it is asked again. */ held?: boolean; kills?: boolean };
+export type CrowdFigure = { id: number; x: number; z: number; size: number; eyes: number; warm: number; pace: number; born: number; gone: number; rise: 0 | 1; /** Whether the ground last refused its step on: it stands until it is asked again. */ held?: boolean; kills?: boolean; reach?: number };
+
+/**
+ * The touch: a player who comes within CROWD_TOUCH_M of a figure that is at
+ * least CROWD_TOUCH_PRESENCE there (not one still rising, nor one going) is
+ * had by it. It stands where it is and its arms come out over CROWD_REACH_S;
+ * the screen tells the host (app.ts, sim/taken.ts), which makes the death,
+ * and the figure holds its reach over them until they are back. A player the
+ * host does not give it (one just returned, one on the road) it lets go
+ * after CROWD_HOLD_S, and goes. The touch is seen coming: a figure's arms
+ * open as its player comes within CROWD_REACH_FROM_M of it, by how near they
+ * are, and shut as they go, so one brushed past at the lane's edge shows
+ * what it would do.
+ *
+ * And what makes the touch the player's own doing: no figure steps into the
+ * ground right in front of its player, within CROWD_LANE_M of the line of
+ * their look for CROWD_LANE_AHEAD_M along it. One that is there (the player
+ * turned to it) comes no nearer. So a player who looks where they go and
+ * keeps straight on passes through the crowd; one who turns into it dies.
+ */
+export const CROWD_TOUCH_M = 1;
+export const CROWD_TOUCH_PRESENCE = 0.5;
+export const CROWD_REACH_S = 0.12;
+export const CROWD_HOLD_S = 2;
+export const CROWD_REACH_FROM_M = 2.4;
+export const CROWD_LANE_M = 1.6;
+export const CROWD_LANE_AHEAD_M = 10;
 
 /**
  * The lunge: a figure waiting at the path's edge comes onto the path at a
@@ -72,8 +102,8 @@ export type CrowdFigure = { id: number; x: number; z: number; size: number; eyes
  * CROWD_LUNGE_MPS, faster than a sprint, so that the woods either side throw
  * themselves at whoever passes. CROWD_LUNGE_SHARE of the figures are
  * lungers (`crowdLunges`, from a figure's own number); the rest hold the
- * edge and fall in behind. None reaches its player: it goes at CROWD_KEEP_M
- * as every figure does.
+ * edge and fall in behind. None reaches its player: it stops at
+ * CROWD_KEEP_M as every figure does, beside their line, and is passed.
  */
 export const CROWD_LUNGE_M = 12;
 export const CROWD_LUNGE_MPS = 8;
@@ -172,11 +202,14 @@ export function crowdSpeed(pace: number, d: number, chasing: boolean): number {
   return pace + ((chasing ? CROWD_CHASE_MPS : pace * CROWD_RUSH) - pace) * far;
 }
 
-/** A screen's crowd: its figures, its own stream (never the sim's), the next figure's number, and the seed its figures' looks come from. */
-export type Crowd = { figures: CrowdFigure[]; rng: { rngSeed: number }; nextId: number; seed: number; steps: number };
+/** A screen's crowd: its figures, its own stream (never the sim's), the next figure's number, the seed its figures' looks come from, and the number of the figure that has its player (0: none has) with the seconds it had them at. */
+export type Crowd = { figures: CrowdFigure[]; rng: { rngSeed: number }; nextId: number; seed: number; steps: number; has: number; hadAt: number };
 export function newCrowd(seed: number): Crowd {
-  return { figures: [], rng: { rngSeed: (seed ^ 0x2c0d) >>> 0 }, nextId: 1, seed, steps: 0 };
+  return { figures: [], rng: { rngSeed: (seed ^ 0x2c0d) >>> 0 }, nextId: 1, seed, steps: 0, has: 0, hadAt: 0 };
 }
+
+/** Where a crowd is stepped round: its player's place, the yaw of their look, and whether a figure may have them now (`prey`: alive, in the chase, not on the road; absent, nothing is had). */
+export type CrowdEye = { x: number; z: number; yaw: number; prey?: boolean };
 
 /** Metres from where the host raises a killer within which a figure of the crowd is the one that turned. */
 export const CROWD_GIVES_M = 12;
@@ -294,8 +327,10 @@ export function presenceOf(f: CrowdFigure, seconds: number): number {
  * off the path as it comes, sliding along its edge, until the player is
  * within a lunge of it down the way, when a lunger comes onto the path at
  * them; one the player has passed is free to step in behind them, and gives
- * chase.
- * A figure goes when it has come within CROWD_KEEP_M of its player, has been
+ * chase. None steps nearer its player than CROWD_KEEP_M, nor into the lane
+ * in front of them (CROWD_LANE_M); one a player who is `prey` walks into has
+ * them (`crowd.has`), and stands reaching until it lets go.
+ * A figure goes when it has been
  * left CROWD_BEHIND_M behind, is too far down the way, or, round a player
  * who has left the way, is too far from them; and behind a player on the way
  * the furthest goes while there are more than CROWD_PACK there. It goes at
@@ -304,12 +339,20 @@ export function presenceOf(f: CrowdFigure, seconds: number): number {
  * player's view or past the mist's reach, so nothing appears in plain sight
  * (round a player off the way they rise close, and their rise is the fade).
  */
-export function stepCrowd(crowd: Crowd, world: CrowdWorld | null, eye: { x: number; z: number; yaw: number }, most: number, seconds: number, dt: number): void {
+export function stepCrowd(crowd: Crowd, world: CrowdWorld | null, eye: CrowdEye, most: number, seconds: number, dt: number): void {
   const figures = crowd.figures;
   if (world === null || most <= 0) {
     for (const f of figures) if (f.gone < 0) f.gone = seconds;
     crowd.figures = figures.filter((f) => seconds - f.gone < CROWD_FADE_S);
+    crowd.has = 0;
     return;
+  }
+  const prey = eye.prey === true;
+  // The one that has its player lets go of one who is prey still, or again, after the hold: the host did not give
+  // them to it, or they have died of it and are back. It goes.
+  if (crowd.has !== 0 && prey && seconds - crowd.hadAt > CROWD_HOLD_S) {
+    for (const f of figures) if (f.id === crowd.has && f.gone < 0) f.gone = seconds;
+    crowd.has = 0;
   }
   const here = world.project(eye.x, eye.z);
   const offWay = Math.max(0, here.d - WAY_RIM_M);
@@ -321,6 +364,13 @@ export function stepCrowd(crowd: Crowd, world: CrowdWorld | null, eye: { x: numb
   for (const f of figures) {
     if (f.gone >= 0) {
       if (seconds - f.gone < CROWD_FADE_S) kept.push(f);
+      continue;
+    }
+    // The one that has its player stands where it took them, its arms coming out.
+    if (f.id === crowd.has) {
+      f.reach = Math.min(1, (f.reach ?? 0) + dt / CROWD_REACH_S);
+      alive++;
+      kept.push(f);
       continue;
     }
     const dx = eye.x - f.x, dz = eye.z - f.z;
@@ -361,14 +411,30 @@ export function stepCrowd(crowd: Crowd, world: CrowdWorld | null, eye: { x: numb
         to = world.project(nx, nz);
       }
       if ((f.id + crowd.steps) % CROWD_ADMIT_EVERY === 0) f.held = !world.admit(nx, nz);
+      // Never into the ground right in front of its player, nor nearer them along it: the lane of their look is theirs.
+      const fore = (nx - eye.x) * lookX + (nz - eye.z) * lookZ, side = Math.abs((nx - eye.x) * lookZ - (nz - eye.z) * lookX);
+      const lane = fore > 0 && fore < CROWD_LANE_AHEAD_M && side < CROWD_LANE_M && side <= Math.abs(dx * lookZ - dz * lookX);
       // Onto the path only behind the player's own place on the way, or in a lunge, wherever the figure set out from.
-      if (f.held !== true && (loosed || to.s <= here.s || to.d >= CROWD_EDGE_M)) {
+      if (f.held !== true && !lane && (loosed || to.s <= here.s || to.d >= CROWD_EDGE_M)) {
         f.x = nx;
         f.z = nz;
       }
     }
     const nd = Math.sqrt((eye.x - f.x) * (eye.x - f.x) + (eye.z - f.z) * (eye.z - f.z));
-    const going = nd <= CROWD_KEEP_M || at.s < here.s - CROWD_BEHIND_M || at.s > here.s + CROWD_AHEAD_M + AHEAD_SLACK_M || (offWay > 0 && nd > OFF_WAY_FAR_M);
+    // Walked into: it has them, and stands.
+    if (prey && crowd.has === 0 && nd <= CROWD_TOUCH_M && presenceOf(f, seconds) >= CROWD_TOUCH_PRESENCE) {
+      crowd.has = f.id;
+      crowd.hadAt = seconds;
+      f.reach = Math.min(1, dt / CROWD_REACH_S);
+      alive++;
+      kept.push(f);
+      continue;
+    }
+    // Its arms open as its player comes near, and shut as they go.
+    const open = prey && nd < CROWD_REACH_FROM_M && presenceOf(f, seconds) >= CROWD_TOUCH_PRESENCE ? clamp01((CROWD_REACH_FROM_M - nd) / (CROWD_REACH_FROM_M - CROWD_TOUCH_M)) : 0;
+    const arms = f.reach ?? 0;
+    if (open !== arms) f.reach = arms + Math.max(-dt / CROWD_REACH_S, Math.min(dt / CROWD_REACH_S, open - arms));
+    const going = at.s < here.s - CROWD_BEHIND_M || at.s > here.s + CROWD_AHEAD_M + AHEAD_SLACK_M || (offWay > 0 && nd > OFF_WAY_FAR_M);
     if (going) {
       // Out of view it is simply gone. In view it fades.
       if (!seen(f.x, f.z, nd)) continue;
@@ -395,7 +461,7 @@ export function stepCrowd(crowd: Crowd, world: CrowdWorld | null, eye: { x: numb
   if (alive > want) {
     let far: CrowdFigure | null = null, farD = -1;
     for (const f of kept) {
-      if (f.gone >= 0) continue;
+      if (f.gone >= 0 || f.id === crowd.has) continue;
       const d = (eye.x - f.x) * (eye.x - f.x) + (eye.z - f.z) * (eye.z - f.z);
       if (d > farD) {
         farD = d;

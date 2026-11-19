@@ -3,6 +3,7 @@ import {
   CROWD_AHEAD_M, CROWD_APART_M, CROWD_BEHIND_M, CROWD_CLEAR_M, CROWD_FAR_BAND_M, CROWD_KEEP_M, CROWD_MOST, CROWD_NEAR_BAND_M, CROWD_NEAR_SHARE, CROWD_OFF_WAY_M,
   CROWD_CHASE_M, CROWD_CHASE_MPS, CROWD_EDGE_M, CROWD_FADE_S, CROWD_LUNGE_M, CROWD_LUNGE_MPS, CROWD_LUNGE_SHARE, CROWD_MIST_M, CROWD_PACK, CROWD_PRESS_M, CROWD_RISE_S, CROWD_RUSH, CROWD_RUSH_M,
   CROWD_TRIES_A_STEP, CROWD_VIEW_COS,
+  CROWD_HOLD_S, CROWD_LANE_AHEAD_M, CROWD_LANE_M, CROWD_REACH_FROM_M, CROWD_REACH_S, CROWD_TOUCH_M, CROWD_TOUCH_PRESENCE,
   crowdGives, crowdLunges, crowdSpeed, crowdTakes, crowdTarget, figureOf, newCrowd, placeCrowd, presenceOf, stepCrowd, type Crowd, type CrowdFigure, type CrowdWorld,
 } from "../../src/game/crowdField.js";
 import { SPRINT_SPEED, WALK_SPEED } from "../../src/sim/constants.js";
@@ -21,9 +22,9 @@ export const straightWorld = (): CrowdWorld => ({
 const figureAt = (id: number, x: number, z: number): CrowdFigure => ({ id, x, z, born: 0, gone: -1, rise: 0, ...figureOf(id, 1) });
 
 describe("the crowd's numbers", () => {
-  it("is the design's: sixty at the thickest on every tier, off the path from a metre into its mist, most of them near it, far down the way", () => {
-    expect(CROWD_MOST).toEqual({ low: 60, medium: 60, high: 60 });
-    expect([CROWD_CLEAR_M, CROWD_NEAR_BAND_M, CROWD_FAR_BAND_M, CROWD_NEAR_SHARE, CROWD_AHEAD_M, CROWD_BEHIND_M, CROWD_APART_M, CROWD_KEEP_M]).toEqual([1, 15, 35, 0.7, 85, 30, 5.5, 3]);
+  it("is the design's: ninety at the thickest on every tier, off the path from a metre into its mist, most of them near it, far down the way", () => {
+    expect(CROWD_MOST).toEqual({ low: 90, medium: 90, high: 90 });
+    expect([CROWD_CLEAR_M, CROWD_NEAR_BAND_M, CROWD_FAR_BAND_M, CROWD_NEAR_SHARE, CROWD_AHEAD_M, CROWD_BEHIND_M, CROWD_APART_M, CROWD_KEEP_M]).toEqual([1, 15, 35, 0.7, 85, 30, 4.5, 3]);
     expect(CROWD_EDGE_M).toBe(WAY_FLOOR_M + CROWD_CLEAR_M);
     expect(CROWD_OFF_WAY_M).toEqual([8, 15]);
   });
@@ -180,7 +181,7 @@ describe("the crowd, stepped", () => {
     expect(behindInChannel).toBe(true);
   });
 
-  it("comes toward a player who stands still, and none of it reaches them: a figure 3 m off begins to go", () => {
+  it("comes toward a player who stands still, and none of it reaches them: a figure 3 m off stands there", () => {
     const world = straightWorld(), crowd = newCrowd(4), eye = { x: 200, z: 0, yaw: Math.PI / 2 };
     let nearest = Infinity, closed = false;
     const first = new Map<number, number>();
@@ -196,6 +197,9 @@ describe("the crowd, stepped", () => {
     }
     expect(closed).toBe(true);
     expect(nearest).toBeGreaterThan(CROWD_KEEP_M - 0.1);
+    // The ones that came are still there, as near as they come: the player is stood round, not left alone.
+    const round = living(crowd).filter((f) => Math.hypot(f.x - eye.x, f.z - eye.z) < CROWD_KEEP_M + 0.5);
+    expect(round.length).toBeGreaterThanOrEqual(2);
   });
 
   it("is drawn in round a player who leaves the way, and is never more than the most", () => {
@@ -405,7 +409,7 @@ describe("the crowd lunging at a runner", () => {
     }
   });
 
-  it("a lunge never reaches the runner: the nearest it comes is where a figure goes", () => {
+  it("a lunge never reaches a runner who keeps straight on: it stops short of them, well beyond a touch, and they pass it", () => {
     const world = straightWorld(), crowd = newCrowd(12);
     let nearest = Infinity;
     for (let i = 0; i < 40 * 60; i++) {
@@ -413,8 +417,165 @@ describe("the crowd lunging at a runner", () => {
       stepCrowd(crowd, world, eye, 60, i * DT, DT);
       for (const g of crowd.figures) if (g.gone < 0) nearest = Math.min(nearest, Math.hypot(g.x - eye.x, g.z - eye.z));
     }
-    expect(nearest).toBeGreaterThan(CROWD_KEEP_M - 0.1);
+    expect(nearest).toBeGreaterThan(CROWD_TOUCH_M + 0.8);
     expect(nearest).toBeLessThan(CROWD_KEEP_M + 3);
+  });
+});
+
+describe("the crowd as what a player must not walk into", () => {
+  const DT = 1 / 60;
+  const crowdOf = (...figures: CrowdFigure[]): Crowd => ({ ...newCrowd(1), figures, nextId: 1000 });
+  /** A figure long risen, standing. */
+  const stood = (id: number, x: number, z: number): CrowdFigure => ({ ...figureAt(id, x, z), born: -10 });
+  const EAST = Math.PI / 2;
+
+  it("names its numbers: an arm's length, a figure half risen, the lane kept open ahead, the reach's eighth of a second", () => {
+    expect([CROWD_TOUCH_M, CROWD_TOUCH_PRESENCE, CROWD_LANE_M, CROWD_LANE_AHEAD_M, CROWD_REACH_S, CROWD_HOLD_S, CROWD_REACH_FROM_M]).toEqual([1, 0.5, 1.6, 10, 0.12, 2, 2.4]);
+    // One passed at the lane's edge has its arms part open: a runner sees what it would do.
+    expect(CROWD_LANE_M).toBeLessThan(CROWD_REACH_FROM_M);
+    expect(CROWD_TOUCH_M).toBeLessThan(CROWD_KEEP_M - 1.5);
+    expect(CROWD_LANE_M).toBeGreaterThan(CROWD_TOUCH_M + 0.5);
+  });
+
+  it("has a player who walks into one: it stops where it is, its arms come out within an eighth of a second, and it holds them", () => {
+    const world = straightWorld(), f = stood(1, 204, 0), crowd = crowdOf(f);
+    let x = 200, hadAtStep = -1;
+    for (let i = 0; i < 120; i++) {
+      x = Math.min(203.5, x + WALK_SPEED * DT);
+      stepCrowd(crowd, world, { x, z: 0, yaw: EAST, prey: true }, 1, i * DT, DT);
+      if (crowd.has !== 0 && hadAtStep < 0) {
+        hadAtStep = i;
+        expect(Math.hypot(f.x - x, f.z)).toBeLessThanOrEqual(CROWD_TOUCH_M);
+      }
+      if (hadAtStep >= 0 && i === hadAtStep + Math.ceil(CROWD_REACH_S / DT)) expect(f.reach).toBe(1);
+    }
+    expect(crowd.has).toBe(1);
+    expect(f.reach).toBe(1);
+    expect([f.x, f.z, f.gone]).toEqual([204, 0, -1]);
+  });
+
+  it("opens its arms as its player comes near, so the touch is seen coming: shut at 2.4 m, part open nearer, whole at the touch, and shut again as they go", () => {
+    const world = straightWorld(), f = stood(1, 204, 0), crowd = crowdOf(f);
+    let t = 0;
+    /** Half a second with the player `off` metres to the figure's side (off its own line, so it is not the lane that holds it): its reach, and what its distance asks. */
+    const settle = (off: number, prey = true): { reach: number; asked: number } => {
+      const eye = { x: f.x, z: f.z + off, yaw: EAST, prey };
+      for (let i = 0; i < 30; i++, t += DT) stepCrowd(crowd, world, eye, 1, t, DT);
+      const d = Math.hypot(f.x - eye.x, f.z - eye.z);
+      return { reach: f.reach ?? 0, asked: Math.max(0, Math.min(1, (CROWD_REACH_FROM_M - d) / (CROWD_REACH_FROM_M - CROWD_TOUCH_M))) };
+    };
+    expect(settle(CROWD_KEEP_M).reach).toBe(0);
+    expect(settle(CROWD_REACH_FROM_M + 0.05).reach).toBe(0);
+    const mid = settle((CROWD_REACH_FROM_M + CROWD_TOUCH_M) / 2);
+    expect(mid.reach).toBeCloseTo(0.5, 2);
+    expect(mid.reach).toBeCloseTo(mid.asked, 6);
+    expect(settle(CROWD_TOUCH_M + 0.07).reach).toBeGreaterThan(0.9);
+    expect(crowd.has).toBe(0);
+    expect(settle(CROWD_KEEP_M).reach).toBe(0);
+    // Nothing of it for a player who cannot be had.
+    expect(settle((CROWD_REACH_FROM_M + CROWD_TOUCH_M) / 2, false).reach).toBe(0);
+  });
+
+  it("has nobody who cannot be had: a screen that says its player is no prey walks through the crowd as it always did", () => {
+    const world = straightWorld(), f = stood(1, 204, 0), crowd = crowdOf(f);
+    for (let i = 0; i < 60; i++) stepCrowd(crowd, world, { x: 203.6, z: 0, yaw: EAST }, 1, i * DT, DT);
+    expect(crowd.has).toBe(0);
+    expect(f.reach ?? 0).toBe(0);
+  });
+
+  it("has nobody while it is still rising out of the mist, or once it has begun to go", () => {
+    const world = straightWorld();
+    const rising = { ...figureAt(1, 204, 0), born: 0 }, a = crowdOf(rising);
+    stepCrowd(a, world, { x: 203.6, z: 0, yaw: EAST, prey: true }, 1, CROWD_RISE_S * (CROWD_TOUCH_PRESENCE - 0.1), DT);
+    expect(a.has).toBe(0);
+    stepCrowd(a, world, { x: 203.6, z: 0, yaw: EAST, prey: true }, 1, CROWD_RISE_S * (CROWD_TOUCH_PRESENCE + 0.1), DT);
+    expect(a.has).toBe(1);
+    const going = { ...stood(2, 204, 0), gone: 0 }, b = crowdOf(going);
+    stepCrowd(b, world, { x: 203.6, z: 0, yaw: EAST, prey: true }, 1, 0.2, DT);
+    expect(b.has).toBe(0);
+  });
+
+  it("holds its reach over a player who has died of it, and lets go once they are back: it goes, and another may have them", () => {
+    const world = straightWorld(), f = stood(1, 204, 0), crowd = crowdOf(f);
+    let t = 0;
+    const step = (prey: boolean, x: number): void => { stepCrowd(crowd, world, { x, z: 0, yaw: EAST, prey }, 1, t, DT); t += DT; };
+    for (let i = 0; i < 30; i++) step(true, 203.6);
+    // Dead on the ground for six seconds: no prey, and the one that has them stands over them.
+    for (let i = 0; i < 6 * 60; i++) step(false, 203.6);
+    expect(crowd.has).toBe(1);
+    expect([f.reach, f.gone]).toEqual([1, -1]);
+    // Back on the crest, far up the way.
+    step(true, 20);
+    expect(crowd.has).toBe(0);
+    expect(crowd.figures.includes(f) ? f.gone : 0).toBeGreaterThanOrEqual(0);
+  });
+
+  it("lets go of a player the host would not give it (one just returned, one on the road): after two seconds it goes", () => {
+    const world = straightWorld(), f = stood(1, 204, 0), crowd = crowdOf(f);
+    let t = 0;
+    for (; t < CROWD_HOLD_S - 0.1; t += DT) stepCrowd(crowd, world, { x: 203.6, z: 0, yaw: EAST, prey: true }, 1, t, DT);
+    expect(crowd.has).toBe(1);
+    for (; t < CROWD_HOLD_S + 0.2; t += DT) stepCrowd(crowd, world, { x: 203.6, z: 0, yaw: EAST, prey: true }, 1, t, DT);
+    expect(crowd.has).toBe(0);
+    expect(f.gone).toBeGreaterThan(0);
+  });
+
+  it("never steps into the ground right in front of its player: a lunge at one who stands looking down the way stops beside their line", () => {
+    const world = straightWorld(), eye = { x: 200, z: 0, yaw: EAST, prey: true };
+    const numbers: number[] = [];
+    for (let id = 1; numbers.length < 6; id++) if (crowdLunges(id, 1)) numbers.push(id);
+    const figures = numbers.map((id, k) => stood(id, 203 + k * 1.5, (k % 2 === 0 ? 1 : -1) * (CROWD_EDGE_M + 0.5 + k)));
+    const crowd = crowdOf(...figures);
+    let came = 0;
+    for (let i = 0; i < 12 * 60; i++) {
+      stepCrowd(crowd, world, eye, figures.length, i * DT, DT);
+      for (const f of crowd.figures) {
+        const ahead = f.x - eye.x;
+        if (f.gone < 0 && ahead > 0 && ahead < CROWD_LANE_AHEAD_M) expect(Math.abs(f.z), `figure ${f.id} at step ${i}`).toBeGreaterThanOrEqual(CROWD_LANE_M - 1e-6);
+      }
+    }
+    for (const f of figures) if (Math.hypot(f.x - eye.x, f.z) < CROWD_KEEP_M + 2.5) came++;
+    // They came for the player all the same, and stand round the lane.
+    expect(came).toBeGreaterThanOrEqual(3);
+    expect(crowd.has).toBe(0);
+  });
+
+  it("is never walked into by a player who looks where they go and keeps straight on: down the middle, off to a side, at a walk, or after standing a while", () => {
+    type Plan = (t: number) => { speed: number; z: number };
+    const plans: Record<string, Plan> = {
+      middle: () => ({ speed: SPRINT_SPEED, z: 0 }),
+      aside: () => ({ speed: SPRINT_SPEED, z: 3 }),
+      walked: () => ({ speed: WALK_SPEED, z: -2 }),
+      stood: (t) => ({ speed: t > 12 && t < 18 ? 0 : SPRINT_SPEED, z: 1 }),
+    };
+    for (const [name, plan] of Object.entries(plans)) {
+      for (const seed of [3, 12, 77, 501]) {
+        const world = straightWorld(), crowd = newCrowd(seed);
+        let x = 20, nearest = Infinity;
+        for (let i = 0; x < LENGTH - 40 && i < 120 * 60; i++) {
+          const t = i * DT, now = plan(t);
+          x += now.speed * DT;
+          stepCrowd(crowd, world, { x, z: now.z, yaw: EAST, prey: true }, 90, t, DT);
+          for (const f of crowd.figures) if (f.gone < 0 && presenceOf(f, t) >= CROWD_TOUCH_PRESENCE) nearest = Math.min(nearest, Math.hypot(f.x - x, f.z - now.z));
+          if (crowd.has !== 0) break;
+        }
+        expect(crowd.has, `${name}, seed ${seed}`).toBe(0);
+        expect(nearest, `${name}, seed ${seed}`).toBeGreaterThan(CROWD_TOUCH_M + 0.3);
+        // And the crowd is near enough to be walked into: it stands within a few metres of where they pass.
+        expect(nearest, `${name}, seed ${seed}`).toBeLessThan(CROWD_KEEP_M + 1.5);
+      }
+    }
+  });
+
+  it("has a runner who turns off their line into one that stands beside it", () => {
+    const world = straightWorld(), crowd = newCrowd(12);
+    let x = 20, z = 0, t = 0;
+    // Twenty seconds straight on, so the woods are full and the pack is behind.
+    for (; t < 20; t += DT) { x += SPRINT_SPEED * DT; stepCrowd(crowd, world, { x, z, yaw: EAST, prey: true }, 90, t, DT); }
+    expect(crowd.has).toBe(0);
+    // Then hard at the path's edge, looking down the way still: into whatever stands there.
+    for (let i = 0; i < 8 * 60 && crowd.has === 0; i++, t += DT) { z += SPRINT_SPEED * DT; stepCrowd(crowd, world, { x, z, yaw: EAST, prey: true }, 90, t, DT); }
+    expect(crowd.has).not.toBe(0);
   });
 });
 

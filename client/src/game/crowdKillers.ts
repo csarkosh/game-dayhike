@@ -14,8 +14,8 @@ import { CROWD_FADE_S, CROWD_RISE_S, type CrowdFigure } from "./crowdField.js";
 export const KILLER_SIZE = 1.15;
 export const KILLERS_MOST = 12;
 
-/** A body of the frame as this file reads it (entityPoses.ts `HollowPose`): where it is drawn, how far in it is, and whether it is drawn as a shadow. */
-export type KillerPose = { readonly id: number; readonly x: number; readonly z: number; readonly level: number; readonly shadow: boolean };
+/** A body of the frame as this file reads it (entityPoses.ts `HollowPose`): where it is drawn, how far in it is, whether it is drawn as a shadow, and how far its arms are out (a lunge's last metres, a strike). */
+export type KillerPose = { readonly id: number; readonly x: number; readonly z: number; readonly level: number; readonly shadow: boolean; readonly reach: number };
 
 export type KillerShadows = {
   /**
@@ -48,6 +48,7 @@ export function createKillerShadows(): KillerShadows {
         }
         f.x = pose.x;
         f.z = pose.z;
+        f.reach = pose.reach;
       }
       for (const [id, f] of figures) {
         if (live.has(id)) continue;

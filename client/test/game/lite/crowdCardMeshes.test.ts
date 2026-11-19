@@ -14,7 +14,13 @@ describe("the crowd's cards' stages on Babylon Lite", () => {
     expect(VERTEX).toContain("letcrowdCard=input.color;");
     // The camera's right in the world, laid flat.
     expect(VERTEX).toContain("varright=vec2<f32>(scene.view[0][0],scene.view[2][0]);right=right/max(length(right),0.0001);");
-    expect(VERTEX).toContain("letacross=right*(crowdCard.x*crowdCard.z*0.25);");
+    // The corner's x carries the figure's reach in its length (crowdCards.ts): its sign is the corner. And the card
+    // of one that reaches is as wide again, for its arms to open in.
+    expect(VERTEX).toContain("letcorner=sign(crowdCard.x);");
+    expect(VERTEX).toContain("letreach=clamp(abs(crowdCard.x)-1.0,0.0,1.0);");
+    expect(VERTEX).toContain("letacross=right*(corner*crowdCard.z*0.25*(1.0+reach));");
+    expect(VERTEX).toContain("out.card=vec4<f32>(corner,crowdCard.y,crowdCard.z,crowdCard.w);");
+    expect(VERTEX).toContain("out.reach=reach;");
     expect(CROWD_CARD_WIDE / 2).toBe(0.25);
     expect(VERTEX).toContain("at=vec3<f32>(at.x+across.x,at.y+crowdCard.y*crowdCard.z,at.z+across.y);");
     expect(VERTEX).toContain("out.position=scene.viewProjection*vec4<f32>(at,1.0);");
@@ -22,18 +28,27 @@ describe("the crowd's cards' stages on Babylon Lite", () => {
   });
 
   it("draws the figure's shape in shares of its height, the same on both sides of its middle, leaning on a beat of its own, its feet lost in the mist", () => {
-    expect(FRAGMENT).toContain("varp=vec2<f32>(vCard.x*0.25,vCard.y);");
+    expect(FRAGMENT).toContain("letreach=input.reach;");
+    expect(FRAGMENT).toContain("varp=vec2<f32>(vCard.x*0.25*(1.0+reach),vCard.y);");
     expect(FRAGMENT).toContain("p.x-=sin(u.crowdTime*vStir.y+vStir.x)*0.012*p.y;");
     expect(FRAGMENT).toContain("letq=vec2<f32>(abs(p.x),p.y);");
-    // A torso, a head, a leg, an arm and three strokes of antler.
-    expect(CROWD_CARD_WGSL.fragment.match(/d=min\(d,/g)).toHaveLength(6);
+    // A torso, a head, a leg, an arm with its hand and three strokes of antler.
+    expect(CROWD_CARD_WGSL.fragment.match(/d=min\(d,/g)).toHaveLength(7);
     expect(FRAGMENT).toContain("letfeet=smoothstep(0.0,0.14,p.y);");
     expect(FRAGMENT).toContain("letshape=body*feet*vCard.w;");
   });
 
+  it("opens both arms wide round whoever stands in front of it as the figure reaches: each hand from its side out to an eye's height, well clear of the body, opening as it comes", () => {
+    expect(FRAGMENT).toContain("lethand=mix(vec2<f32>(0.135,0.33),vec2<f32>(0.3,0.5),reach);");
+    // The same shoulder as the arm that hangs; and the arm is drawn once, mirrored, so both come up together.
+    expect(FRAGMENT).toContain("d=min(d,crowdLimb(q,vec2<f32>(0.105,0.64),hand)-mix(0.024,0.03,reach));");
+    expect(FRAGMENT).toContain("d=min(d,length(q-hand)-0.045*reach);");
+  });
+
   it("is a shade in the mask's red, and in the frame a dark body with a faint, wide rim the mist lights, premultiplied", () => {
     expect(FRAGMENT).toContain("letinMask=vec4<f32>(1.0,0.0,0.0,shape);");
-    expect(FRAGMENT).toContain("letinFrame=vec4<f32>(u.crowdTint*(0.05+0.2*rim)*shape,shape*0.75);");
+    // The rim is brighter on one that reaches, so its arms are read against the dark of the woods.
+    expect(FRAGMENT).toContain("letinFrame=vec4<f32>(u.crowdTint*(0.05+(0.2+0.6*reach)*rim)*shape,shape*0.75);");
     expect(FRAGMENT).toContain("returnmix(inMask,inFrame,u.crowdPass);");
     expect(CROWD_PASS).toEqual({ mask: 0, frame: 1 });
     const read = new Set([...CROWD_CARD_WGSL.fragment.matchAll(/\bu\.(crowd\w+)/g)].map((m) => m[1]));

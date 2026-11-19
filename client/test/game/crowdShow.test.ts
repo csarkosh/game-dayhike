@@ -104,6 +104,13 @@ describe("the renderer and the app", () => {
     expect(app).toContain("      syncCrowd(client.world, state, client.localEntityId, dt);\n      syncWayDraw(client.world, state);");
     // And says whether the crowd is up: while it is, the chase's killers are drawn among it, as shadows.
     expect(app).toContain("renderer.setCrowd(crowd.figures, seconds, up);");
+    // Whether a figure may have this player now: alive, in the chase, the match undecided, off the road.
+    expect(app).toContain("const prey = up && me !== undefined && me.health > 0 && state.phase === Phase.Chase && state.outcome === Outcome.Playing && !me.safe;");
+    expect(app).toContain("{ x: me.pos.x, z: me.pos.z, yaw: me.yaw, prey }");
+    // A player their crowd has says so to the host in every command until their death is seen, on the host and on a client alike.
+    expect(app).toContain("crowd !== null && crowd.has !== 0 && !crowdTook ? { ...cmd, buttons: cmd.buttons | Button.Taken } : cmd");
+    expect(app).toContain("cmd = taken(ranToCar(stilled(input.sample(++seq), me, host.world), me));");
+    expect(app).toContain("cmd = taken(ranToCar(stilled(input.sample(++seq), me, client.world), me));");
     expect(app).toContain("crowdHeld !== null ? crowdHeld > 0 : crowdOn(state.phase, state.outcome, wayShown)");
     // Each screen's own: its stream is seeded from the world's seed and whose screen it is, never the sim's.
     expect(app).toContain("newCrowd((seed ^ Math.imul(localId + 1, 0x9e3779b1)) >>> 0)");

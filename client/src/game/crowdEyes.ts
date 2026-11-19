@@ -31,6 +31,9 @@ export const CROWD_EYE_GAIN = 1.6;
 /** A figure that kills (`CrowdFigure.kills`) has the Hollow's red, this many times as bright and as large as a figure of the crowd's: red eyes in the mist are what a runner reads. */
 export const CROWD_EYE_KILLS_GAIN = 2;
 export const CROWD_EYE_KILLS_SIZE = 1.7;
+/** A figure that has its player (`CrowdFigure.reach`) opens its eyes on them: this many times as bright and as large at its whole reach. */
+export const CROWD_EYE_REACH_GAIN = 2;
+export const CROWD_EYE_REACH_SIZE = 1.5;
 /** Metres from the eye over which a pair dims to half and no further: it carries through the mist. */
 export const CROWD_EYE_DIM_M: readonly [number, number] = [40, 120];
 /** Vertices a pair (two quads), and the floats of each of a vertex's three attributes: its place, its corner and size, its colour. */
@@ -79,12 +82,13 @@ export function writeCrowdEyes(
   for (let i = 0; i < figures.length && drawn < most; i++) {
     const f = figures[i] as CrowdFigure;
     if (skip.has(f.id)) continue;
+    const reach = f.reach ?? 0;
     const y = (heights[i] as number) + HOLLOW_FIGURE_M * f.size * CROWD_EYE_HEIGHT;
     const dx = f.x - eye.x, dy = y - eye.y, dz = f.z - eye.z;
     const far = (Math.sqrt(dx * dx + dy * dy + dz * dz) - CROWD_EYE_DIM_M[0]) / (CROWD_EYE_DIM_M[1] - CROWD_EYE_DIM_M[0]);
     const t = far <= 0 ? 0 : far >= 1 ? 1 : far * far * (3 - 2 * far);
     const kills = f.kills === true;
-    const level = f.eyes * presenceOf(f, seconds) * CROWD_EYE_GAIN * (1 - 0.5 * t) * (kills ? CROWD_EYE_KILLS_GAIN : 1);
+    const level = f.eyes * presenceOf(f, seconds) * CROWD_EYE_GAIN * (1 - 0.5 * t) * (kills ? CROWD_EYE_KILLS_GAIN : 1) * (1 + (CROWD_EYE_REACH_GAIN - 1) * reach);
     const colour = kills ? HOLLOW_EYE_COLOR : crowdEyeColour(f.warm);
     for (let e = 0; e < 2; e++) {
       for (let c = 0; c < 4; c++) {
@@ -94,7 +98,7 @@ export function writeCrowdEyes(
         positions[v * 3 + 2] = f.z;
         eyes[v * 4] = corner[0];
         eyes[v * 4 + 1] = corner[1];
-        eyes[v * 4 + 2] = CROWD_EYE_M * f.size * (kills ? CROWD_EYE_KILLS_SIZE : 1);
+        eyes[v * 4 + 2] = CROWD_EYE_M * f.size * (kills ? CROWD_EYE_KILLS_SIZE : 1) * (1 + (CROWD_EYE_REACH_SIZE - 1) * reach);
         eyes[v * 4 + 3] = (e === 0 ? -0.5 : 0.5) * CROWD_EYE_APART_M * f.size;
         colours[v * 4] = colour.r;
         colours[v * 4 + 1] = colour.g;

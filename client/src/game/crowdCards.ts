@@ -18,7 +18,14 @@
  * shares of its height: a torso broader at the shoulders, a head, long arms,
  * legs, and the antlers, the same on both sides of its middle. It leans a
  * little on a slow beat of its own (its phase and its rate ride with the
- * vertex), and its feet are lost in the mist. In the mask (`crowdPass` 0) it
+ * vertex), and its feet are lost in the mist. One that has its player
+ * (`CrowdFigure.reach`) opens both arms wide round whoever stands in front
+ * of it, a hand opening at the end of each at an eye's height (raised over
+ * its head they were out of a near player's view), on a card as wide again
+ * for them; and its rim is brighter, so the arms are read against the dark
+ * of the woods. Its reach rides in the length of its corner's x (1 and the
+ * reach; the sign is the corner), since the mesh has no attribute to spare.
+ * In the mask (`crowdPass` 0) it
  * is written into the mask's red as a shade is; in the frame (`crowdPass` 1)
  * it is a dark body that hides what is behind it, with a faint, wide rim the
  * mist lights (`crowdTint`), blended premultiplied as the way's mist is: a
@@ -86,14 +93,16 @@ export function writeCrowdCards(
     const d = Math.sqrt(dx * dx + dy * dy + dz * dz);
     if (d < from || d >= to) continue;
     const t = Math.max(0, Math.min(1, (d - SHADE_NEAR_M) / (SHADE_FAR_M - SHADE_NEAR_M)));
-    const level = presenceOf(f, seconds) * (1 - (1 - SHADE_FAR_SHARE) * t) * (f.kills === true ? CROWD_CARD_KILLS : 1);
+    // One that reaches is as solid as one that kills.
+    const reach = f.reach ?? 0;
+    const level = presenceOf(f, seconds) * (1 - (1 - SHADE_FAR_SHARE) * t) * (f.kills === true ? CROWD_CARD_KILLS : 1 + (CROWD_CARD_KILLS - 1) * reach);
     const phase = hash2(f.id, 6, 0) * 2 * Math.PI, rate = 0.5 + f.pace * 0.5;
     for (let c = 0; c < 4; c++) {
       const v = drawn * 4 + c, corner = CORNERS[c] as [number, number];
       positions[v * 3] = f.x;
       positions[v * 3 + 1] = ground;
       positions[v * 3 + 2] = f.z;
-      cards[v * 4] = corner[0];
+      cards[v * 4] = corner[0] * (1 + reach);
       cards[v * 4 + 1] = corner[1];
       cards[v * 4 + 2] = HOLLOW_FIGURE_M * f.size;
       cards[v * 4 + 3] = level;
