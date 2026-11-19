@@ -1,4 +1,4 @@
-import { existsSync, readFileSync } from "node:fs";
+import { existsSync, readFileSync, statSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { describe, it, expect } from "vitest";
 import {
@@ -264,12 +264,20 @@ describe("the chase's lines since the way down", () => {
     expect(INNER_LINES.chaseOffTrail).toEqual(["The light. Stay in the light.", "Not through there. Back!", "I'm out of the light. Go back. Now!"]);
   });
 
-  it("leave no clip that speaks a line's old words: a reworded line is a caption until its clip is made again", () => {
-    for (const id of ["voice.chaseStart.3", "voice.chaseOffTrail.1", "voice.chaseOffTrail.2", "voice.chaseOffTrail.3"]) {
-      expect(existsSync(clientFile(`assets/audio/${id}.mp3`)), id).toBe(false);
-      expect(readFileSync(clientFile("assets/catalog.json"), "utf8"), id).not.toContain(`"${id}"`);
+  it("are every one of them spoken: each line of every pool has its clip, and the catalog lists it at its size (the reworded chase lines and the six returns' were made 2026-11-19)", () => {
+    const catalog = JSON.parse(readFileSync(clientFile("assets/catalog.json"), "utf8")) as { audio: { id: string; output: string; bytes: number }[] };
+    const listed = new Map(catalog.audio.map((e) => [e.id, e]));
+    let lines = 0;
+    for (const [scenario, pool] of Object.entries(INNER_LINES)) {
+      pool.forEach((_text, i) => {
+        const id = `voice.${scenario}.${i + 1}`, file = clientFile(`assets/audio/${id}.mp3`);
+        lines++;
+        expect(existsSync(file), id).toBe(true);
+        expect(listed.get(id), id).toEqual({ id, output: `audio/${id}.mp3`, bytes: statSync(file).size });
+      });
     }
-    // The lines that kept their words kept their clips.
-    for (const id of ["voice.chaseStart.1", "voice.chaseStart.2", "voice.safe.1"]) expect(existsSync(clientFile(`assets/audio/${id}.mp3`)), id).toBe(true);
+    expect(lines).toBe(81);
+    // And the catalog lists no clip for a line that is not there.
+    for (const id of listed.keys()) if (id.startsWith("voice.")) expect(existsSync(clientFile(`assets/audio/${id}.mp3`)), id).toBe(true);
   });
 });

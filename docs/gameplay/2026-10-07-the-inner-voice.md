@@ -85,11 +85,11 @@ order (`voiceClipId`); `node tools/voice/manifest.mjs` prints every line with it
 for whatever makes them. The pools are three a scenario, eighty-one lines since the six returns' (2026-11-13: what the
 ranger says on coming back from a death in the chase, one pool a cause, `returnOffTrail`,
 `returnStill`, `returnInto`, `returnLooked`, `returnLunge`, `returnCaught`; said on the frame of
-the return whatever the gap, at every return, in place of the chase's opening line; their clips
-are still to be made, so their captions stand alone; and since the way down the same day, the
-chase's lines that named the trail name the light, `chaseStart`'s third, `chaseOffTrail`'s three
-and `returnOffTrail`'s first and third, their four old recordings removed and their captions
-alone until they are made again), so the clips stay small
+the return whatever the gap, at every return, in place of the chase's opening line; and since
+the way down the same day, the chase's lines that named the trail name the light,
+`chaseStart`'s third, `chaseOffTrail`'s three and `returnOffTrail`'s first and third, their
+four old recordings removed. The returns' eighteen clips and those four were made 2026-11-19,
+out of breath and dry about what killed them, so every line is spoken), so the clips stay small
 (a line of a second or three at the calls' encoding is tens of kilobytes; the set about a
 megabyte) while a once-only scenario still reads differently across three matches and a capped
 one never repeats within one. A clip is fetched the first time its line is said and kept decoded;
