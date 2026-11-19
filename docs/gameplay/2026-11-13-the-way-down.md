@@ -2,7 +2,8 @@
 
 **Date:** 2026-11-13
 **Status:** Built: the path, the rules that hold a player to it, its light, the crowd of
-shades beside it, and the ranger's lines. The obstacles on it and the whispers are later pieces.
+shades beside it, the lunges that step out of it into the path, and the ranger's lines. The
+whispers are a later piece.
 **Parents:** `2026-09-16-the-summit.md` (§5, the chase, whose guide and fork cuts this replaces),
 `2026-10-06-the-haunt.md` (§3, §3b), `2026-10-07-the-inner-voice.md`, `2026-10-08-the-summit-scene.md`
 (the threshold, where the light comes up), `2026-10-06-the-mist-shades.md` (the ground mist).
@@ -124,8 +125,27 @@ returned there, did not leave the way.
   until 2026-11-19: on a straight stretch a point that kept its distance read as no progress,
   and the chord cut across what a bend goes round.)
 
-A first attempt meets the crest's Hollow alone. A Hollow that steps out to a place and then
-hunts (`spawnHollowStepping`, once the forks' Hollow) is kept for what will step into the way.
+A Hollow that steps out to a place and then hunts (`spawnHollowStepping`, once the forks'
+Hollow) is kept for what will step into the way.
+
+**What stands in the path** (`haunt.ts`, the way's lungers). The crowd beside the way (§3a) is
+dressing: it lunges at a runner and never lands, and a player who learns that stops fearing
+it. So some of what lunges is real. All the way down, a lunge stands up beside the path ahead
+of whoever leads each group of runners (players within 60 m of one ahead of them are that
+one's group): 40 to 60 m down the way from them, 7 to 8 m from its line, in the thick mist at
+the path's edge among the crowd, on a drawn side, 40 to 70 m of way on from the one before
+(1.6 times that at the way's start, easing to once by three tenths of it), and none in the
+way's first 110 m, a quarter of a minute's sprint. It waits there. When its player is within
+24 m of it down the way, over three seconds of sprint, it lunges onto the path as the crowd's
+do, at 8 m/s, straight out from where it waited to a metre short of the way's line, and stands
+there. Whoever comes within 2 m of it, it has: its strike lands at once. It never crosses the
+line and it follows nobody; six seconds after it is loosed, or once its player is 8 m past
+it, it is gone. So the middle of the path and a strip of its own half are death, and the far
+half, from a metre off the line, is safe however the meeting is timed: a clean run reads the
+red eyes in the mist ahead and goes round each one on the side it did not come from, and no
+two are met within five seconds of each other. The episode's own lunge, which walks in from
+15 to 20 m off the line at 4 m/s, is not raised on the way: what answers a player who leaves
+the way is as it was.
 
 **Leaving it is answered where the player is.** A shade or a lunge stands 15 to 20 m off the
 line, and while the line was the trail there was always trail near enough for one to stand
@@ -244,7 +264,7 @@ trail's.
 **What is reported.** Each page sends one `way` telemetry event as its way settles: its length,
 its straight line, and whether it is the fallback.
 
-## 3a. The crowd (`game/crowdField.ts`, `game/crowdEyes.ts`, `game/crowdCards.ts`, `game/lite/crowdEyeMeshes.ts`, `game/lite/crowdCardMeshes.ts`)
+## 3a. The crowd (`game/crowdField.ts`, `game/crowdKillers.ts`, `game/crowdEyes.ts`, `game/crowdCards.ts`, `game/lite/crowdEyeMeshes.ts`, `game/lite/crowdCardMeshes.ts`)
 
 In the chase the woods beside the way are full of shades, and all of them are coming for the
 player. They are dressing: each screen makes and moves its own round its own player, from its
@@ -285,6 +305,16 @@ within 3 m of one it is turned aside, and directly behind one it waits.
 **How they go.** A figure goes when it comes within 3 m of its player (none reaches them), is
 left 30 m behind, is too far down the way, or, round a player off the way, is over 25 m from
 them: at once where it is out of view, over 2.6 s where it is in it. It comes in over 2.4 s.
+
+**What kills is one of the shadows** (`crowdKillers.ts`). While the crowd is up, in the chase,
+everything that can kill (the Hollow that hunts, a lunge, a strike) is drawn as the crowd is
+drawn, a dark figure that glides, and not as the model that walks: the owner liked how the
+shadows move and not how the monster did. A killer's figure stands where its body is each
+frame, 1.15 times a Hollow's size, first among what is drawn so a full crowd never leaves it
+out. Two things tell it from the crowd: its eyes are the Hollow's red, twice as bright and 1.7
+times as large as a figure's of the crowd, where the crowd's are never red; and its body is
+solid where theirs are veils. The summit scene's Hollow steps out as the model, as before, and
+is a shadow from the moment the chase begins, when the player has turned to run.
 
 **The crowd and what kills.** When a killer first appears in the state while the crowd is up,
 the nearest living figure within 12 m of it begins to go as the killer comes in (`crowdGives`),
@@ -343,3 +373,11 @@ until they are made again.
   kept apart), the hand-over to and from what kills, and what is drawn and wired.
 - `test/sim/haunt.test.ts`, `hauntOffWay.test.ts`: on the way down no shade that only stands
   is raised and none closes the dark, and a player who leaves the way is still lunged at.
+- `test/sim/waylay.test.ts`: the way's lungers' numbers; one standing up ahead of a player and
+  waiting; its lunge onto the path, where it stands and when it goes; none in the way's first
+  110 m or for a player off the way; and three whole runs down a real way: a runner who goes
+  round each one on its far side reaches the road, one who holds the middle of the path is
+  struck down, and so is one who keeps to each one's own side.
+- `test/game/crowdKillers.test.ts`, and in `crowdEyes.test.ts`, `crowdCards.test.ts`,
+  `entityPoses.test.ts`, `crowdShow.test.ts`: the killers' figures among the crowd, their red
+  eyes and solid bodies, the pose that says a body is a shadow, and the wiring.
