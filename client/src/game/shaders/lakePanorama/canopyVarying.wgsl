@@ -1,0 +1,1 @@
+out.vPanoramaCanopy=${canopyName}.w;

@@ -22,6 +22,9 @@ import { wingHalfSpan } from "../wingParams.js";
 import { frameReads } from "./frameBlock.js";
 import { wgslFloat } from "./forestPlugins.js";
 import type { UniformOffsets } from "./pluginUniforms.js";
+import wingSource from "../shaders/wing/wing.wgsl?raw";
+import tintSource from "../shaders/wing/tint.wgsl?raw";
+import { fill, wgsl } from "../shaders/shaderText.js";
 
 /** Where a bird's numbers ride in its instance's matrix: the last float of each of its first three columns. */
 export const WING_PHASE_AT = 3;
@@ -29,23 +32,7 @@ export const WING_AMP_AT = 7;
 export const WING_COLOURWAY_AT = 11;
 
 /** The vertex stage's last step: `shaders`'s wing beat in the bird's own frame, then the place the matrix gives it. */
-export const WING_WGSL = /* wgsl */ `{
-let wingPhase=finalWorld[0].w;
-let wingAmp=finalWorld[1].w;
-var wingPos=position;
-let wingSide=select(1.0,-1.0,wingPos.x<0.0);
-let wingAbsX=abs(wingPos.x);
-let wingSpan=clamp(wingAbsX/material.wingHalfSpan,0.0,1.0);
-let wingA=wingAmp*sin(material.wingTime*material.wingOmega+wingPhase)*wingSpan;
-let wingC=cos(wingA);
-let wingS=sin(wingA);
-let wingY0=wingPos.y;
-wingPos.y=wingY0*wingC+wingAbsX*wingS;
-wingPos.x=wingSide*(wingAbsX*wingC-wingY0*wingS);
-let wingWorld=(finalWorld*vec4<f32>(wingPos,1.0)).xyz;
-out.worldPos=wingWorld;
-out.clipPos=scene.viewProjection*vec4<f32>(wingWorld,1.0);
-}`;
+export const WING_WGSL = wgsl(wingSource);
 
 /**
  * The plugin for a model whose wings beat at `omega` (rad/s) against a half
@@ -57,11 +44,7 @@ out.clipPos=scene.viewProjection*vec4<f32>(wingWorld,1.0);
  */
 export function wingPlugin(halfSpan: number, omega: number, shared: PluginUniformBlock, colourways: readonly (readonly [number, number, number])[] | null = null): MaterialPlugin {
   const span = wingHalfSpan(halfSpan);
-  const tint = colourways === null ? "" : `{
-let wingWay=u32(clamp(finalWorld[2].w,0.0,${wgslFloat(colourways.length - 1)}));
-var wingTints=array<vec3<f32>,${colourways.length}>(${colourways.map((c) => `vec3<f32>(${wgslFloat(c[0])},${wgslFloat(c[1])},${wgslFloat(c[2])})`).join(",")});
-out.vWingTint=wingTints[wingWay];
-}`;
+  const tint = colourways === null ? "" : fill(wgsl(tintSource), { lastWay: wgslFloat(colourways.length - 1), wayCount: String(colourways.length), wayColours: colourways.map((c) => `vec3<f32>(${wgslFloat(c[0])},${wgslFloat(c[1])},${wgslFloat(c[2])})`).join(",") });
   return {
     name: "Wing",
     priority: 220,
