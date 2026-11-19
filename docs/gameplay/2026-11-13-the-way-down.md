@@ -10,10 +10,11 @@ shades beside it, and the ranger's lines. The obstacles on it and the whispers a
 ## 0. What this is
 
 In the chase there is one way home and the player can see it. From the crest to the pad runs a
-drawn path, direct and never straight, that leaves the trail wherever that is shorter. It is
-shown as a channel of pale ground mist: thin and low on the path, standing in tall banks either
-side of it, never still, and everything outside it about half as bright. The player may still go anywhere; the light,
-the dark, and what the chase does to a player off the way are what keep them in the channel.
+drawn path, nearly straight, its bends long and soft, that leaves the trail wherever that is
+shorter. It is shown by the ground mist alone: thin and low on a path 12 m wide, thickening over
+metres into the mist that fills the woods either side, never still, and everything outside it
+about half as bright. Nothing else marks its edge. The player may still go anywhere; the mist,
+the dark, and what the chase does to a player off the way are what keep them on the path.
 
 Before this the chase drew a hidden guide route down the trail's branches, one and a half to two
 and a half times the shortest way home, and stood a Hollow in every branch the guide did not take.
@@ -35,51 +36,54 @@ Hollow steps out past the body from there, so no part of the way comes within 8 
 (`WAY_CREST_CLEAR_M`): the light's mouth is on the party's side, and where the pad lies behind
 the crest the way goes round it.
 
-**Its length.** `wayTarget(straight)`: 840 m (`WAY_TARGET_M`, two minutes at the sprint's 7 m/s)
-or twice the straight line from its start to the pad (`WAY_MAX_RATIO`), whichever is less, and never under
-1.12 times the line (`WAY_MIN_RATIO`), the least that leaves it room to bend. Straight lines run
-from a few hundred metres to over a kilometre: a line over 1,027 m winds less than that so as to
-stay under 1,150 m (`WAY_MAX_M`), and one over 1,095 m is 1.05 times itself (`WAY_LONG_RATIO`).
+**Its length.** `wayTarget(straight)`: a fiftieth over the straight line from its start to the
+pad (`WAY_RATIO`, 1.02). Straight lines run from a few hundred metres to over a kilometre, so a
+clean run is from under a minute to two and a half at the sprint's 7 m/s. What stands across
+the line (a lake, a cliff band, the crest itself where the party stands on its far side) is
+gone round, and that is length the aim did not ask for: on seven worlds measured, five ways are
+within 8 % of their line, one is 13 % over and one 30 %.
 
-On a short world, where the aim is over one and a half times the line, the way winds as much as
-its ground lets it: an aim of twice the line takes swings of 100 m and more to either side, and
-the steep ground round a crest that near the pad does not always allow them. Two worlds in the
-sweep's fifty come out 0.70 and 0.77 of their aim, 1.4 and 1.5 times their line.
-
-**Its shape.** No stretch runs straight for more than about 40 m (`WAY_STRAIGHT_MAX_M`), the
+**Its shape.** Soft. The way turns only as far as its ground makes it: over any 14 m of it (a
+sprint's two seconds) its heading turns by no more than 90 degrees, and by more than a gentle
+bend's 15 degrees over no more than a quarter of its length (measured: the sharpest 40 to 78
+degrees, where a fallen trunk or a rock band holds the line; 6 to 16 % past gentle). The
 distance to the pad never grows by more than about 10 m before it falls again
-(`WAY_BACK_MAX_M`), and no two stretches come within 25 m (`WAY_APART_M`). These two are the
-design's "about": the tests give a straight stretch 8 m and a way gone round a lake 5 m, and
-measure heading back past the way's first 160 m, which may be going round the crest (on two
-worlds in fifty the party stands on the crest's far side, and coming round it takes 150 m). The draw
-holds the first itself: a stretch of the drawn line that measures straight for over 46 m
-(`WAY_STRAIGHT_MOST_M`) has the cells round its middle walled, as if a boulder stood there, and
-the search goes again and round them, every such stretch at once, each bend earning the line
-three more rounds of the search. Without it a line that left the meander for one of its
-copies, round a lake or a cliff band, crossed to it and back in straight diagonals of 60 m and
-more. The line's own points are checked as its cells are: where the smoothing cut a corner
-across something a runner cannot step over (a fallen trunk's end), that point's cell and the
-nearest cell of the search's line are walled, and the search goes again.
+(`WAY_BACK_MAX_M`), and no two stretches come within 25 m (`WAY_APART_M`); heading back is
+measured past the way's first 160 m, which may be going round the crest.
+
+Until 2026-11-19 the way wound to a length of its own (840 m, or twice a short line) on waves of
+100 to 220 m, and any stretch that ran straight for 46 m was bent by walling the ground at its
+middle. It read as a zigzag, with square corners where it went round a wall.
 
 **How it is drawn** (`drawWay`, a generator):
 
 1. A meander about the straight line: parabola arches to alternate sides, a little less at the
-   ends, their amplitude found by bisection so the meander is the target's length. Waves are
-   100 m at the least winding and up to 220 m at the most, so a long way's bends stay gentle.
+   ends, a whole wave every 320 m (`WAY_WAVE_M`), their amplitude found by bisection so the
+   meander is the target's length: some 14 m to either side, on a radius of about 200 m.
 2. A search (A*) over a grid of 3 m cells in the line's own axes for the cheapest line from the
    start's cell to the pad's. A cell is priced the first time it is touched: refused on the
    crest's ground above, in a lake (or within 3 m of its shore), under the sea's level, or on
    ground steeper than a player can stand on with a margin; dearer by a quarter for each metre it
-   is off the meander or the nearest of its copies, which lie 80 m apart, so a line gone wide
-   round a lake still winds; a twentieth cheaper where the trail passes. The trail's own cells
-   are never refused for slope.
+   is off the meander or the nearest of its copies, which lie 80 m apart; a twentieth cheaper
+   where the trail passes. The trail's own cells are never refused for slope.
 3. Along the line found, and only there: anything a runner could not step over (a trunk, a
-   fallen one, a rock, a cliff) walls its cell, and so does a point of the line itself that
-   stands on ground a player would slide on; then the search goes again, up to 24 rounds, and
-   the last round's line stands with whatever is still on it, a trunk to run round.
-4. The cells' centres are averaged with their neighbours and resampled. A length that misses the
-   target corrects the amplitude and the whole goes again, up to three rounds.
-5. Where nothing gets through the ground searched, the search widens (40, 160, 400 m past the
+   fallen one, a rock, a cliff) walls its cell, and the search goes again, up to 24 rounds; the
+   last round's line stands with whatever is still on it, a trunk to run round.
+4. The line is pulled taut: from each of its points it runs straight to the furthest of the
+   next fourteen (some 40 m) it can reach over clear ground, which takes out the search's steps
+   and its weaving between trunks. Clear is asked by squares of half a metre: in no cell the
+   ground rules out, where a player stands with slope to spare, and with nothing they could not
+   step over within 0.4 m of them.
+5. It is eased: 150 times each point moves half way to the middle of its two neighbours,
+   wherever that place is clear, which leaves no corner shorter than some 80 m; then 150 more,
+   each followed by a step back out, which holds the long shapes where they are and lets the
+   points either side of a corner that something pins swing wide of it.
+6. Each of the eased line's own points is checked as a player would stand on it: one on ground
+   they would slide on, or where something stands, walls its cell and its squares, and the
+   search goes again.
+7. A length that misses the target by a twentieth corrects the amplitude and the whole goes
+   again, up to three rounds.
+8. Where nothing gets through the ground searched, the search widens (40, 160, 400 m past the
    meander); where nothing gets through at all, the way is the trail's stem and says so
    (`fallback`).
 
@@ -99,9 +103,10 @@ the forest's collision chunks along the way early.
 
 Once the scene or the chase is on and the world has its way (`onWay`), every rule that asked how
 far a player is from the trail asks how far they are from the way, through one function,
-`chaseLineDistance`. The channel is wider than the trail was, so 1.5 m (`WAY_SLACK_M`) is taken
-off the distance from the line: the far side of the mist banks, 5.5 m out (`WAY_RIM_M`), reads as the trail's
-4 m edge, and every threshold keeps its meaning. Before the find, and on any level with no way,
+`chaseLineDistance`. The way is wider than the trail was, so 4 m (`WAY_SLACK_M`) is taken off
+the distance from the line: 8 m out (`WAY_RIM_M`), 2 m into the thick mist beside the path,
+reads as the trail's 4 m edge, and every threshold keeps its meaning. (The rim was 5.5 m out
+until 2026-11-19, when the path was widened.) Before the find, and on any level with no way,
 it is the trail's distance as before. The place the party stood at the find, and 15 m round
 it (`CREST_GRACE_M`), is on the line whatever the way's distance: a player caught there, or just
 returned there, did not leave the way.
@@ -112,9 +117,12 @@ returned there, did not leave the way.
 - **The lens and the ranger's warning** (`escalation.ts`, `app.ts`): measured off the way.
 - **The threshold's turn** (`app.ts` `wayDownFrom`): the eye turns to the way's point 10 m on.
 - **A hunting Hollow** (`hollow.ts` `pursue`): comes down the way itself, toward its player's
-  place along it, 12 m ahead of its own at a time (`WAY_LEAD_M`), and turns straight for them
-  when it is that near them along the way or near them in plain sight. At 6.3 m/s it loses
-  ground to a sprint and gains on a walk, as before.
+  place along it, walking to places that stand 4 m apart on the line (`WAY_AIM_STEP_M`: the next
+  but one from its own, 4 to 8 m on), and turns straight for them when it is within 12 m of them
+  along the way (`WAY_LEAD_M`) or near them in plain sight. At 6.3 m/s it loses ground to a
+  sprint and gains on a walk, as before. (It walked to a point always 12 m ahead of itself
+  until 2026-11-19: on a straight stretch a point that kept its distance read as no progress,
+  and the chord cut across what a bend goes round.)
 
 A first attempt meets the crest's Hollow alone. A Hollow that steps out to a place and then
 hunts (`spawnHollowStepping`, once the forks' Hollow) is kept for what will step into the way.
@@ -125,32 +133,37 @@ beside. The way is the only line: a player 25 m and more off it, looking away, h
 view for anything to stand, and met nothing until the crest's Hollow reached them a minute and
 a half later. On the way, the place a shade is tried at round the player's own look may stand as
 much further off the line as the player has gone (`placeShadeOffTrail`), never nearer it than
-15 m, so nothing of it stands in the channel; and off the line every shade is a lunge, as
+15 m, so nothing of it stands on the path; and off the line every shade is a lunge, as
 before. The chase's first episode also comes at once: the rest it began under (up to half a
 minute late in a climb, a minute and more for a find that came early) is cut to the chase's own
 2 s as the chase begins (`summit.ts`).
 
-## 3. The light (`game/wayLightGeometry.ts`, `game/wayLight.ts`, `game/lite/wayLightMeshes.ts`, `game/wayLevel.ts`)
+## 3. The light (`game/wayLightGeometry.ts`, `game/wayLight.ts`, `game/lite/wayLightMeshes.ts`, `game/wayHaze.ts`, `game/wayLevel.ts`)
 
-**The shape.** Taller ground mist, not a wall. Across the way the mist is thin on the path
-(`WAY_PATH_SHARE`, 0.3 of the banks', standing to 1.3 m; 0.55 and 1.7 m until the owner asked
-for it lighter on the path floor) and whole in a bank either side,
-filling between 1 m and 3.1 m from the line and gone between 4.6 m and 6.4 m, the banks standing
-2.3 to 3.5 m and taller and shorter as they go. Under it the ground glows faintly, a core on the
-path and a band under the banks. Every vertex stands on the ground the players stand on (the
+**The shape.** Taller ground mist, not a wall, and its thickness is all that marks the path's
+edge. Across the way the mist is thin on the path (`WAY_PATH_SHARE`, 0.3 of the banks',
+standing to 1.3 m; 0.55 and 1.7 m until the owner asked for it lighter on the path floor),
+within 2.5 m of the line, and thickens to whole by 6 m from it (`WAY_EDGE_M`, `WAY_FLOOR_M`):
+a path 12 m across, its edge a rise in the mist over three and a half metres. The banks stand
+2.3 to 3.5 m and taller and shorter as they go, and this mesh's own mist goes out between 7 m
+and 10.5 m, where the mist beyond takes over. Under it the ground glows faintly on the path
+alone. (Until 2026-11-19 the path was 6 m across, the mist filling between 1 m and 3.1 m, with
+a band of glow on the ground under each bank and the banks lit brighter: the path's edges were
+two pale lines.) Every vertex stands on the ground the players stand on (the
 simulation's field, the walkable rock's rise with it), which the app gives the renderer with the
 way. (Until 2026-11-14 the way was a half pipe: a lit floor and a wall curving up a quarter
 circle from either edge. It read as a literal wall.)
 
 **How it is drawn.** As sheets that all read one field of noise in the world, the ground mist's
 own map (`cloudNoiseMap`), so together they look like a volume: seven sheets that follow the
-ground across the whole width (`WAY_SHEETS_M`, to 1.6 m over it), the mist a plant on the path
-stands in; three veils a side along the way (`WAY_VEILS`), each wandering in and out; and a fin
+ground across the whole width (`WAY_SHEETS_M`, to 1.6 m over it, a vertex every 1.5 m to 10.5 m
+either side), the mist a plant on the path stands in; three veils a side along the way (`WAY_VEILS`), each wandering in and out; and a fin
 a side across the way at every point, which is what an eye looking down the way sees, where the
 veils are edge on. A fin fades as it turns edge on to the eye, and a sheet as the eye looks along
 it, judged from the face itself so a sheet on a slope is judged by its own lie. The way across at
-a point is taken over four points either side of it (`WAY_ACROSS_POINTS`): the drawn way has
-kinks, and a way across taken at the point alone folds the mist over itself inside a bend. One
+a point is taken over six points either side of it (`WAY_ACROSS_POINTS`): where the way goes
+round something it may turn hard, and a way across taken at the point alone folds the mist over
+itself inside the turn. One
 material of its own (`wayLight`), a mesh every 64 m of way, built a chunk a slice, 23 of the
 ground's heights a point. No other material's shader knows of it, so it costs geometry and its
 own pixels rather than work on every lit pixel, on every tier. Its stages are WGSL
@@ -161,9 +174,10 @@ chase's own stand between the valley's mist banks and the rain: the crowd's bodi
 the mist beyond its banks, then the crowd's eyes.
 
 **Its colour.** The ground mist's own (`cloudColourUnder` of the air's near colour, which every
-tier has), a quarter of the way toward a cold tint and lit to 8 times it before the tone map
-(`WAY_POST_LIFT`; 14 times in the frame's own terms on the low tier, `WAY_MATERIAL_LIFT`), so it
-belongs to the night it stands in and still reads as the lit way. The blend is premultiplied:
+tier has), a quarter of the way toward a cold tint and lit to 5.5 times it before the tone map
+(`WAY_POST_LIFT`; 8.5 times in the frame's own terms on the low tier, `WAY_MATERIAL_LIFT`), so it
+belongs to the night it stands in: paler than the dark round it, never a lit band (8 and 14
+until 2026-11-19). The blend is premultiplied:
 the mist hides 0.85 of its amount of what is behind it (`WAY_HIDE_SHARE`) and adds its colour,
 so thin mist glows a little and thick mist settles at its own colour. Added light alone, as the
 half pipe was, went white wherever sheets piled up.
@@ -185,10 +199,18 @@ way is the thinner, darker lane through it. It is one mesh: a square of 25 by 25
 round the eye, moved a cell at a time so every vertex is a place in the world, with three sheets
 that follow the ground and a fin standing on every second line of the lattice both ways, about
 3 m tall and wandering off its line. It reads the way's own noise and moves with it. It comes
-in from 3 m to 6.5 m off the way's line, where the banks go out, and fades out from 22 m to 34 m
-from the eye. The ground under it is asked for forty cells a frame, the nearest the eye first,
+in from 7 m to 10.5 m off the way's line, exactly where the way's own mist goes out, so no band
+between them is twice as thick, and fades out from 22 m to 34 m from the eye. The ground under it is asked for forty cells a frame, the nearest the eye first,
 and kept by the cell's place in the world, so a step asks for one new row. The tiers that march
 the night's ground mist have that beyond the banks already.
+
+**The haze over it, on phones** (`wayHaze.ts`). The tiers that march the ground mist stand the
+whole frame in it: trunks and crowd fall away into a soft mauve grey. The tiers with no post
+chain had the mist on the ground and black woods over it. There the woods now stand in a haze of
+the mist's own colour, by no pass and no mesh: every material on those tiers already draws the
+air between the eye and itself, and while the way's mist is up that air is thickened
+(`WAY_HAZE_DENSITY`: a trunk 40 m off keeps about three fifths of itself) and takes 0.82 of the
+mist's colour (`WAY_HAZE_SHARE`), by the mist's level, so it comes and goes with the mist.
 
 **The chase's red on the material path.** No pass grades the frame there, and the grade the
 tier's other materials lay on themselves is not in a stage of the mist's kind, which writes its
@@ -201,8 +223,9 @@ in. The hue is the desktop's and the mist is as bright as it was.
 ends with on the tiers with no post chain, the grade's on the others. The way's mist itself is exempt.
 
 **The mist.** Where the tier has ground mist, its map of "how far off the trail" is built over
-the way instead while the light is up: thin from the line to where the way's banks begin, whole
-past them (`wayDistanceWithin`: only the cells near a place are asked). The way's own mist stands
+the way instead while the light is up: thin within 2.5 m of the line, whole past 7 m
+(`WAY_MIST_EDGE_M`, `WAY_MIST_FADE_M`; `wayDistanceWithin`: only the cells near a place are
+asked). The way's own mist stands
 where the ground mist is thinned.
 
 **When.** The level (`wayLevelFor`) rises over two seconds from the summit scene's threshold,
@@ -233,11 +256,12 @@ Hollow, a shade's lunge: `2026-10-06-the-haunt.md`), told apart by its solid fig
 of that near the crest, all of it from three tenths of the way to eight, half by the road
 (`crowdTarget`). The crowd is up from the summit scene's turn to the way through the chase
 (`crowdOn`). A figure rises beside the way ahead of its player: to 85 m down it, on a drawn
-side, 3 m and more beyond the channel's rim, seven in ten within 15 m of the rim and the rest
-out to 35 m, never within 5.5 m of another, on dry ground a figure can stand on with nothing
+side, a metre and more into the thick mist beyond the path's edge (7 m from the line,
+`CROWD_EDGE_M`), seven in ten within 15 m of the edge and the rest out to 35 m, never within
+5.5 m of another, on dry ground a figure can stand on with nothing
 solid in it. Nothing rises in plain view inside the mist's reach (30 m): a figure rises out of
 view, or far off in view as a pair of eyes opening. Round a player who has left the way they
-rise 8 to 15 m from them on any bearing, and still clear of the channel.
+rise 8 to 15 m from them on any bearing, and still clear of the path.
 
 **Each figure** is the same for as long as it lives, from its own number (`figureOf`): its size
 (a fifth small at 0.5 to 0.7 of a Hollow, one in seven large at 1.4 to 1.75, the rest 0.8 to
@@ -245,24 +269,27 @@ rise 8 to 15 m from them on any bearing, and still clear of the channel.
 and the pace it stalks at (0.6 to 1.4 m/s).
 
 **How they close** (`crowdSpeed`, `stepCrowd`). A figure runs in from far off and stalks the
-last metres: its own pace at 6 m from its player, rising to 3.6 times that from 22 m and
-further. Ahead of the player's place on the way it never enters the channel or the 3 m beside
-its rim: it comes to that edge and slides along it toward them, stopping abreast, so the walls
-of the way fill with figures as a runner nears them. One the player has passed is free to step
-into the channel, and gives chase at up to 9 m/s, faster than a sprint (7 m/s): what follows
-settles where its speed is the runner's, some 16 m behind a sprint, and closes on a player who
-slows. At a runner's back there are ten at the most (`CROWD_PACK`), the furthest going first,
+last metres: its own pace at 3 m from its player, rising to 3.6 times that from 22 m and
+further. Ahead of the player's place on the way it comes to the path's edge and waits there,
+sliding along it toward them, so the mist either side of a runner is full of figures. **Then it
+lunges**: two figures in three (`crowdLunges`, from a figure's own number) come onto the path
+at the player once they are within 12 m of it down the way (`CROWD_LUNGE_M`), at 8 m/s, faster
+than a sprint (7 m/s), from both sides, and fall in at their back as they pass. The rest hold
+the edge. One the player has passed gives chase at up to 9 m/s: what follows settles where its
+speed is the runner's, some 9 m behind a sprint (`CROWD_CHASE_M`), and closes on a player who
+slows. (Until 2026-11-19 nothing came nearer a runner on the path than 8.5 m to the side and
+16 m behind.) At a runner's back there are ten at the most (`CROWD_PACK`), the furthest going first,
 so the rest of the crowd is ahead of them, where they look. No figure walks into another:
 within 3 m of one it is turned aside, and directly behind one it waits.
 
-**How they go.** A figure goes when it comes within 6 m of its player (none reaches them), is
+**How they go.** A figure goes when it comes within 3 m of its player (none reaches them), is
 left 30 m behind, is too far down the way, or, round a player off the way, is over 25 m from
 them: at once where it is out of view, over 2.6 s where it is in it. It comes in over 2.4 s.
 
 **The crowd and what kills.** When a killer first appears in the state while the crowd is up,
 the nearest living figure within 12 m of it begins to go as the killer comes in (`crowdGives`),
 so one of the crowd is seen to turn. A shade or a lunge gone from the state leaves a figure
-where it stood (`crowdTakes`), unless that is in the channel, on its clear ground or on ground
+where it stood (`crowdTakes`), unless that is on the path, on its clear ground or on ground
 that refuses a figure. On the way down the haunt raises no shade that only stands, the crowd
 being those, and a standing shade does not close the dark (`2026-10-06-the-haunt.md` §3c).
 
@@ -300,10 +327,10 @@ until they are made again.
   first-timer meets it: the find from the stem, the scene and its threshold's run down the way,
   then a runner who sprints with real input, turning only for what is in the way
   (`helpers/wayRunner.ts`), the crest's Hollow hunting behind. The runner reaches the road
-  without stalling or leaving the channel, and the Hollow never comes within 3 m.
+  without stalling or leaving the way, and the Hollow never comes within 3 m.
 - `test/sim/summitRun.test.ts`: one whole match on one world, the climb included.
 - `test/game/wayLightGeometry.test.ts`, `wayLight.test.ts`, `wayMistFieldGeometry.test.ts`,
-  `wayMistField.test.ts`, `wayShow.test.ts`: the mist's sheets, veils and fins, that it never
+  `wayMistField.test.ts`, `wayHaze.test.ts`, `wayShow.test.ts`: the mist's sheets, veils and fins, that it never
   folds at a kink, its colour, drift and heave, a stretch stood on the ground in slices, the
   field's cells round the eye, the level, the dim on both colour paths, the mist's map, and the
   renderer's and the app's wiring.
