@@ -154,25 +154,29 @@ describe("a way on ground that is in its way", SUITE, () => {
 });
 
 describe("a way through fallen wood", SUITE, () => {
-  it("has nothing a runner cannot step over standing on its line: the line as smoothed, not only the cells it was found through", () => {
-    // On this world the smoothed line cut a corner across a fallen trunk's boxes, which the cells it was found
-    // through had gone round, and a runner aimed down the line stood against the trunk until the chase took them.
-    const w = createForestWorld(createForest(seedFromToken("hollow39")));
-    const way = drawWayNow(w) as WayDown;
-    expect(way.fallback).toBe(false);
-    const on: number[] = [];
-    for (let k = 1; k + 1 < way.xs.length; k++) {
-      const x = way.xs[k] as number, z = way.zs[k] as number, h = w.ground!.heightAt(x, z);
-      const lo = { x: x - PLAYER_HALF.x, y: h - 1, z: z - PLAYER_HALF.z }, hi = { x: x + PLAYER_HALF.x, y: h + 2 * PLAYER_HALF.y, z: z + PLAYER_HALF.z };
-      for (const b of boxesNear(w.boxes, lo, hi)) {
-        if (b.max.x < lo.x || b.min.x > hi.x || b.max.z < lo.z || b.min.z > hi.z) continue;
-        if (b.max.y - h <= STEP_HEIGHT || b.min.y > hi.y) continue;
-        on.push(Math.round(way.cum[k] as number));
-        break;
+  // On the first world the smoothed line cut a corner across a fallen trunk's boxes, which the cells it was found
+  // through had gone round, and a runner aimed down the line stood against the trunk until the chase took them.
+  // On the other two a fallen trunk lies across the whole path, and the nearly straight way ran out of rounds
+  // going round it a cell at a time: its line was left through the trunk (2026-11-19).
+  for (const token of ["hollow39", "hollow0", "hollow1"]) {
+    it(`has nothing a runner cannot step over standing on its line on ${token}: the line as smoothed, not only the cells it was found through`, () => {
+      const w = createForestWorld(createForest(seedFromToken(token)));
+      const way = drawWayNow(w) as WayDown;
+      expect(way.fallback).toBe(false);
+      const on: number[] = [];
+      for (let k = 1; k + 1 < way.xs.length; k++) {
+        const x = way.xs[k] as number, z = way.zs[k] as number, h = w.ground!.heightAt(x, z);
+        const lo = { x: x - PLAYER_HALF.x, y: h - 1, z: z - PLAYER_HALF.z }, hi = { x: x + PLAYER_HALF.x, y: h + 2 * PLAYER_HALF.y, z: z + PLAYER_HALF.z };
+        for (const b of boxesNear(w.boxes, lo, hi)) {
+          if (b.max.x < lo.x || b.min.x > hi.x || b.max.z < lo.z || b.min.z > hi.z) continue;
+          if (b.max.y - h <= STEP_HEIGHT || b.min.y > hi.y) continue;
+          on.push(Math.round(way.cum[k] as number));
+          break;
+        }
       }
-    }
-    expect(on).toEqual([]);
-  }, timeLimit(120_000));
+      expect(on).toEqual([]);
+    }, timeLimit(120_000));
+  }
 });
 
 describe("the way's arithmetic", () => {

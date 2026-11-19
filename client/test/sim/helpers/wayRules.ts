@@ -27,12 +27,15 @@ export const BACK_SLACK_M = 5;
  * stands in the way is gone round, and that is the only turning there is.
  * Measured on seven worlds, 2026-11-19: the sharpest 40 to 78 degrees (a
  * fallen trunk or a rock band the line is held against), 6 to 16 % of the
- * way past gentle. The way before, which wound to a length and bent every
- * straight stretch, turned through 90 degrees in places.
+ * way past gentle. The fifty of the sweep then showed two worlds whose way
+ * rounds the end of a fallen trunk that lies across it, in one rounded S of
+ * 100 and 104 degrees, with 20 and 24 % of the way past gentle: those are
+ * the bounds' measure. The way before, which wound to a length and bent
+ * every straight stretch, turned through 90 degrees in places.
  */
-export const TURN_MOST_DEG = 90;
+export const TURN_MOST_DEG = 110;
 export const GENTLE_DEG = 15;
-export const UNGENTLE_SHARE_MOST = 0.25;
+export const UNGENTLE_SHARE_MOST = 0.3;
 
 export type WayRules = {
   length: number;

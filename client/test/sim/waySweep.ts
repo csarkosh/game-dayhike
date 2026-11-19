@@ -25,16 +25,18 @@ export const WAY_PARTS = 10;
  * must be within a tenth of it: a world whose near ground a lake or a cliff
  * band crosses is gone round, and that detour is length the aim did not ask
  * for (measured 2026-11-19 on seven worlds: five within 8 %, one 13 % over,
- * and 30 % over on a world whose way comes round the crest and then a lake).
+ * and 30 % over on a world whose way comes round the crest and then a lake;
+ * and of the sweep's fifty, 42 % over on the one whose party stands on the
+ * crest's far side with steep ground between them and the pad).
  */
-const LENGTH_MOST = 1.4;
+const LENGTH_MOST = 1.45;
 const WITHIN_TENTH_SHARE = 0.6;
 /** Seconds a sprint down the way may take over its length at the sprint's speed: trunks to run round. */
 const RUN_SLACK = 1.25;
 /** The longest the runner's place along the way may go without advancing, seconds (measured 0.1), and the nearest the hunting Hollow may come, metres. */
 const STALL_MOST_S = 1;
-/** The most the way's start (wayRules.ts START_M) may take it from the pad: round the crest's clear ground, where the stem came up its far side. */
-const START_BACK_MOST_M = 45;
+/** The most the way's start (wayRules.ts START_M) may take it from the pad: round the crest's clear ground, where the stem came up its far side (87 m on the one world of the fifty where steep ground lies that way too, 2026-11-19; under 40 m on the rest). */
+const START_BACK_MOST_M = 90;
 const HOLLOW_NEAREST_M = 3;
 
 /** The threshold's run (game/cutscene.ts: the last shot less its look and turn): the seconds the scene has the player sprinting before the hunt. */

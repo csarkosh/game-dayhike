@@ -111,8 +111,8 @@ describe("the world's way down", SUITE, () => {
     expect(app).toContain("    if (thresholdOn()) {\n      wayOf(world);\n      return;\n    }");
     // The look is asked for again every tick of the threshold, from where the player is: a way that was not drawn at the find is turned to once it is, and the run follows it.
     expect(app).toContain("      const fresh = wayDownFrom(me, sim);\n      if (fresh !== null) downLook = fresh;");
-    expect(app).toContain("cmd = ranToCar(stilled(input.sample(++seq), me, host.world), me);");
-    expect(app).toContain("cmd = ranToCar(stilled(input.sample(++seq), me, client.world), me);");
+    expect(app).toContain("cmd = taken(ranToCar(stilled(input.sample(++seq), me, host.world), me));");
+    expect(app).toContain("cmd = taken(ranToCar(stilled(input.sample(++seq), me, client.world), me));");
     expect(app).toContain("const look = thresholdLook(stage, lastLook, downLook);");
   });
 

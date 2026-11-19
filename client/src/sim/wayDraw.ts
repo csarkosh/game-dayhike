@@ -60,6 +60,14 @@ const OFF_MEANDER_MAX_M = 40;
 const TRAIL_COST = 0.95;
 /** Rounds of the search for what stands on the line (each round finds a few more: a wood is full of trunks), and of the whole for the length. */
 const BOX_ROUNDS = 24;
+/**
+ * The most cells a round walls outward from what it found standing on the
+ * line: every cell joined to one of those in which something stands too. A
+ * fallen trunk lies across a dozen cells, and going round it a cell a round
+ * used the rounds up, on a line that no longer wound round it: the line was
+ * left through the trunk (two worlds in fifty, 2026-11-19).
+ */
+const FLOOD_CELLS = 96;
 const LENGTH_ROUNDS = 3;
 /**
  * The line found is pulled taut and then eased, so that its bends are soft.
@@ -222,6 +230,10 @@ export function* drawWay(world: World): Generator<void, WayDown | null, void> {
       }
       return false;
     };
+    /** The cells walled this round and not yet looked round, and the round each cell was last asked in. */
+    const flood: number[] = [];
+    const asked = new Int32Array(count);
+    let askRound = 0;
     /** A cell's cost a metre: what its ground costs, or Infinity where the search has walled it. */
     const price = (c: number): number => (walled[c] === 1 ? Infinity : groundCost(c));
     const groundCost = (c: number): number => {
@@ -395,14 +407,39 @@ export function* drawWay(world: World): Generator<void, WayDown | null, void> {
       // Boxes, only along what was found: anything a runner could not step over (a trunk, a fallen one, a rock, a
       // cliff) walls its cell, and the search goes again, so the line itself is clear ground.
       let blocked = 0;
+      flood.length = 0;
       for (const c of cells) {
         if (c === from || c === to) continue;
         const i = c % cols, j = (c - i) / cols;
         if (standsWithin(worldX(i, j), worldZ(i, j), WAY_CELL_M / 2 + PLAYER_HALF.x)) {
           walled[c] = 1;
+          flood.push(c);
           blocked++;
         }
         priced++;
+        if (priced - sliced >= SLICE_CELLS) {
+          sliced = priced;
+          yield;
+        }
+      }
+      // And what stands there is walled whole: every cell joined to those in which something stands too.
+      askRound++;
+      for (let q = 0; q < flood.length && flood.length < FLOOD_CELLS; q++) {
+        const c = flood[q] as number, i = c % cols, j = (c - i) / cols;
+        for (let dj = -1; dj <= 1; dj++) {
+          for (let di = -1; di <= 1; di++) {
+            const ni = i + di, nj = j + dj;
+            if ((di === 0 && dj === 0) || ni < 0 || ni >= cols || nj < 0 || nj >= rows) continue;
+            const n = nj * cols + ni;
+            if (n === from || n === to || walled[n] === 1 || asked[n] === askRound) continue;
+            asked[n] = askRound;
+            if (standsWithin(worldX(ni, nj), worldZ(ni, nj), WAY_CELL_M / 2 + PLAYER_HALF.x)) {
+              walled[n] = 1;
+              flood.push(n);
+            }
+            priced++;
+          }
+        }
         if (priced - sliced >= SLICE_CELLS) {
           sliced = priced;
           yield;

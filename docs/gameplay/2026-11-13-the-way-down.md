@@ -42,12 +42,16 @@ pad (`WAY_RATIO`, 1.02). Straight lines run from a few hundred metres to over a 
 clean run is from under a minute to two and a half at the sprint's 7 m/s. What stands across
 the line (a lake, a cliff band, the crest itself where the party stands on its far side) is
 gone round, and that is length the aim did not ask for: on seven worlds measured, five ways are
-within 8 % of their line, one is 13 % over and one 30 %.
+within 8 % of their line, one is 13 % over and one 30 %; of the sweep's fifty the longest is
+42 % over, where the party stands on the crest's far side with steep ground between them and
+the pad, and its first 160 m take it 87 m further from the pad.
 
 **Its shape.** Soft. The way turns only as far as its ground makes it: over any 14 m of it (a
-sprint's two seconds) its heading turns by no more than 90 degrees, and by more than a gentle
-bend's 15 degrees over no more than a quarter of its length (measured: the sharpest 40 to 78
-degrees, where a fallen trunk or a rock band holds the line; 6 to 16 % past gentle). The
+sprint's two seconds) its heading turns by no more than 110 degrees, and by more than a gentle
+bend's 15 degrees over no more than three tenths of its length (measured on seven worlds: the
+sharpest 40 to 78 degrees, where a fallen trunk or a rock band holds the line, 6 to 16 % past
+gentle; and on two of the sweep's fifty a rounded S of 100 and 104 degrees round the end of a
+fallen trunk that lies across the way, 20 and 24 % past gentle). The
 distance to the pad never grows by more than about 10 m before it falls again
 (`WAY_BACK_MAX_M`), and no two stretches come within 25 m (`WAY_APART_M`); heading back is
 measured past the way's first 160 m, which may be going round the crest.
@@ -68,8 +72,11 @@ middle. It read as a zigzag, with square corners where it went round a wall.
    is off the meander or the nearest of its copies, which lie 80 m apart; a twentieth cheaper
    where the trail passes. The trail's own cells are never refused for slope.
 3. Along the line found, and only there: anything a runner could not step over (a trunk, a
-   fallen one, a rock, a cliff) walls its cell, and the search goes again, up to 24 rounds; the
-   last round's line stands with whatever is still on it, a trunk to run round.
+   fallen one, a rock, a cliff) walls its cell, and with it every cell joined to it in which
+   something stands too (up to 96 a round: a fallen trunk lies across a dozen cells, and gone
+   round a cell a round it used the rounds up and the line was left through it), and the
+   search goes again, up to 24 rounds; the last round's line stands with whatever is still on
+   it, a trunk to run round.
 4. The line is pulled taut: from each of its points it runs straight to the furthest of the
    next fourteen (some 40 m) it can reach over clear ground, which takes out the search's steps
    and its weaving between trunks. Clear is asked by squares of half a metre: in no cell the
