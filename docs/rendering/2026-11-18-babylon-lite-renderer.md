@@ -2,7 +2,7 @@
 
 ## 1. Status
 
-- Day Hike is drawn by Babylon Lite (`@babylonjs/lite`, version 1.39.3 with 48 patches, tag `v1.39.3-dayhike.8` of `csarkosh/babylon-lite`), on WebGPU, with every shader in WGSL. Babylon.js 9.18, which drew the game on WebGL2 and WebGPU, is out of the tree as of this note, 2026-11-18.
+- Day Hike is drawn by Babylon Lite (`@babylonjs/lite`, version 1.39.3 with 52 patches, tag `v1.39.3-dayhike.9` of `csarkosh/babylon-lite`), on WebGPU, with every shader in WGSL. Babylon.js 9.18, which drew the game on WebGL2 and WebGPU, is out of the tree as of this note, 2026-11-18.
 - The older build (Babylon.js 9.18) was measured against this one on 2026-11-17 and 2026-11-18; the counts below were taken in headless Chrome on a MacBook Air.
 - A browser must offer WebGPU and an adapter that is not the browser's software one and reaches WebGPU's default limits. No optional feature is required (`client/src/game/loadCheck.ts`). Anyone else sees a page that says why (section 6).
 
@@ -70,7 +70,44 @@ Play clicked on the landing page to world-ready, medium, three runs each, caches
 | older, WebGL2 | 102.2, 103.4, 94.9 | 98.0, 99.7, 91.6 | 7812, 3607, 4239 |
 | this, WebGPU | 68.5, 76.4, 62.8 | 62.3, 60.7, 51.0 | 2466, 2988, 582 |
 
-Making the pipelines off the main thread (a patch the game does not use, section 4) bought nothing here: Play to world-ready 78.0, 81.0 and 79.4 s, with 164 to 614 frames drawn while a pipeline was pending.
+With the caches warm, making the hike's pipelines off the main thread bought nothing: Play to world-ready 78.0, 81.0 and 79.4 s, with 164 to 614 frames drawn while a pipeline was pending. It is on a first visit that it matters (next).
+
+### A first visit under the film
+
+The intro is a film played over the hike while the hike loads. On a first visit no cache holds a shader or a file, and two things made the film stand. The frame cap was on for every run here, medium, the browser's profile and the driver's shader cache emptied before each.
+
+**Pipelines.** A pipeline made with `createRenderPipeline` holds the browser's GPU thread while it compiles, and that thread presents the film's frames. A load made about 90 of them on medium: 14.2 s of that thread in one traced cold run, single calls of 0.2 to 1.5 s (0.6 s in all with the caches warm). While a hike loads, every pipeline is now asked for with `createRenderPipelineAsync`: the hike's own pass, the shader materials, the post chain, the sky's capture and Lite's helpers, four asks a frame at most. The passes whose pictures are kept (the far trees' bakes, the rain's cover map, the shore's panorama, the haunt's mask) draw whole or not at all, and are drawn once their pipelines are in. From world-ready on, every pass makes its pipelines at once, so what joins a hike under way is drawn from the frame it joins.
+
+| synchronous pipeline makes before world-ready | low | medium | high |
+|---|---|---|---|
+| every pipeline made at once | 78 | 96 | 93 |
+| as built | 1 | 1 | 2 |
+
+The one left on every tier is a mip chain's blit, made by a synchronous caller; high's second is Lite's depth grab for transmission. In a traced cold run as built the GPU thread spent 0.07 s in synchronous pipeline makes.
+
+**Downloads.** A browser fetches a film element's file at a low priority and every `fetch` at a high one. A hike asked for about fifty files at once, so the film got little of the link while they were in flight, and stood once its buffer was played. While the film plays, a hike's downloads now take turns behind it (`client/src/game/downloadTurns.ts`): a download starts only while the film has enough buffered ahead (hungry below 5 s, fed again at 9 s) and a few at a time, the number doubling while the film stays fed and halving when it goes hungry. A film that holding does not feed holds a hike for about a minute at most, and a hike with no film is not bounded. Counted in headless Chrome on a MacBook Air with the link throttled, Play clicked at once on a cold profile:
+
+| link | downloads all at once | as built |
+|---|---|---|
+| 15 Mbit/s | the film waits 4 times, ends 22.4 s behind | waits 0 times, ends 0.1 to 0.3 s behind |
+| 25 Mbit/s | waits 3 times, 5.1 s behind | waits 0 times, 0.3 s behind |
+| 8 Mbit/s | waits 4 times, about 60 s behind | waits 2 times, about 3 s behind; the hike is in after the film's end |
+| not throttled | waits 0 times | waits 0 times |
+
+The older build starts its models in sequences and has the same fault in a smaller measure: at 15 Mbit/s its film waits 3 times and ends about 7 s behind.
+
+**On the rig**, medians of the cold runs (the older build's two runs each given):
+
+| build | runs | worst step of the film's clock, s | worst skip of its picture, s | longest page stop, s | stops over 0.25 s | film frames dropped | Play to world-ready, s |
+|---|---|---|---|---|---|---|---|
+| every pipeline at once, downloads at once | 3 | 3.82 | 2.92 | 3.37 | 13 | 237 | 27.7 |
+| pipelines off the thread | 10 | 1.12 | 0.46 | 0.71 | 5 | 43.5 | 29.9 |
+| as built: and the downloads in turns | 7 | 0.45 | 0.75 | 0.73 | 4 | 57 | 28.8 |
+| older (Babylon.js 9.18, WebGPU asked) | 1 + 1 | 0.00, 0.46 | 0.75, 0.50 | 1.35, 1.35 | 7, 5 | 59, 62 | 38.2, 32.6 |
+
+With the caches warm, as built: no step of the clock, no skip, no frame dropped, no stop over 0.25 s, world-ready at 15.4 and 16.7 s.
+
+What is left on a cold load: the film still waits two or three times a load with 12 to 17 s buffered, so not for data. One traced run puts the waits beside tasks of 0.3 to 0.7 s that the browser's GPU process spends on the page's raster work, not on pipelines; that reading rests on one trace. The page's own stops over 0.25 s are the renderer's creation (0.3 to 0.4 s), the first builds' slices, the parse of the models and the trailhead board's drawing. One cold run in each set, the first after the rig was started, held a stop of 2.8 to 5 s in which the page ran nothing; it is not explained.
 
 ### The long session
 
@@ -119,7 +156,7 @@ The indirect draws (section 4) cost nothing measurable on the GPU: each build al
 
 ## 4. What Lite needed
 
-The game's build of Lite carries 48 patches over 1.39.3, eight tags. Each is a commit in the fork.
+The game's build of Lite carries 52 patches over 1.39.3, nine tags. Each is a commit in the fork.
 
 | tag | patches |
 |---|---|
@@ -131,6 +168,7 @@ The game's build of Lite carries 48 patches over 1.39.3, eight tags. Each is a c
 | `.6` | a shader material's thin instances carry attributes of one's own; a list's buffer made again records only its own part; the scene's bind group set once a pass; a disposed mesh's plugin buffers destroyed with it; a mesh's uniform buffer and the lights buffer written only when their bytes changed; a shader material reads the application's uniform blocks (`uniformBlocks`); a mesh added or removed records only its own part of the list; plugin data sent when its version moves, by range, shown or hidden; thin instances written past the drawn count sent as a ranged flush |
 | `.7` | a render task's pass broken before the meshes an application names (`enableRenderTaskBreak`); a render task shows or hides a mesh by its own word (`setTaskMeshVisible`); a draw range marks only its own mesh's recorded draw stale; a task clears its viewport alone and writes alpha 1 where it drew; a range of a plugin uniform block written alone; a public way to a pass of one's own on the frame's encoder; a shader material lets go of the textures it claimed; a render target can keep its textures while its size stands (`keep`) |
 | `.8` | a draw range that stands, or moves over triangles already walked, reads nothing of the mesh; a scene let go leaves the PBR pipelines other scenes draw with; a blended mesh can be ordered by a point of its own (`Mesh.sortOrigin`); what a task's break keeps can stand from one recording to the next; the first scene node a page makes can be let go; one shader module a stage for every pipeline of a PBR layout; a plain mesh can draw from indirect arguments of its own (`enableMeshDrawArgs`); a task or a scene can make its PBR pipelines at once (`syncPipelines`) |
+| `.9` | a render task draws whole or not at all while a pipeline of its list compiles (`drawWhole`, `isRenderTaskHeld`, `whenRenderTaskPipelinesIdle`); a shader material's pipelines made off the main thread whenever it joins (`enableAsyncShaderMaterialPipelines`); Lite's helper pipelines (the read-back, the RGBD decode, a mip chain's blit) asked for off the main thread where their callers wait; a bound on the pipelines asked for in one frame (`setPipelineAsksPerFrame`) |
 
 What the later tags counted, each in the fork's own report:
 
@@ -142,7 +180,7 @@ What the later tags counted, each in the fork's own report:
 | `sortOrigin`, the car's glass on a moving frame | 2 writes, 16,728 bytes → 1 write, 144 bytes |
 | a ranged write of the frame block, a held frame | medium 7,728 bytes → 2,424, high 8,496 → 3,192; low 5,312 bytes → none |
 
-The game calls neither `enableAsyncPbrPipelines` nor `syncPipelines`: section 2 gives what making pipelines off the main thread did on the rig.
+The game calls `enableAsyncPbrPipelines`, `enableAsyncShaderMaterialPipelines` and `setPipelineAsksPerFrame` while a hike loads, sets `drawWhole` on the passes whose pictures are kept, and sets `syncPipelines` on the scene from world-ready on: section 2 gives what that did on a first visit.
 
 ### What the game still works around
 
@@ -210,7 +248,9 @@ Over thirty days before the spike, 51 of 53 page loads had a usable adapter, and
 - **Phones.** No phone was timed or looked at on this build.
 - **Safari and Firefox.** Both are on the page's list of browsers because they have WebGPU turned on, not because the game was run in them on this renderer.
 - **The tier check on a machine with warm caches.** With emptied caches on the rig, no step of the check was ready in its 15 s on either build (two runs each: this build with the frame cap on and off, the older with it on and off). No verdict was reached and none could be compared; both start at low. On this build the last pipeline was asked for 14.3 s into the step with the cap on, and with it off the far trees' bakes had not begun by 15 s. A first-visit player on such a machine waits 15 s behind the screen, spends an attempt and gets the start tier.
-- **A first-visit load**, and the load on high and low (the load was timed on medium only).
+- **The load on high and low**, beyond one cold run each (world-ready at 24.5 s on low and 31.1 s on high, before the downloads took turns).
+- **A first visit on a real slow link.** The throttle shares a link equally among requests; a server that honours priorities gives a low request nothing while a high one has data, so a real link starves the film harder than the throttle shows.
+- **Why the film still waits with data in hand** on a cold load (section 2): laid beside the GPU process's raster tasks by one trace, not proved.
 - **The walk on high and low**, and a third run of the older build on its WebGPU engine (one of its three ran on WebGL2).
 - **The older build on WebGL2 in the standing views**, which is what a desktop player on medium and low had.
 - **The floor on low**, at any view but the forest and, on high, the beach; the title still on medium and low.
