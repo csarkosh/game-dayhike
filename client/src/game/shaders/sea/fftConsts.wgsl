@@ -1,0 +1,5 @@
+
+const FFT_N:f32=256.0;
+const FFT_CASCADE_0:f32=1000.0;
+const FFT_CASCADE_1:f32=150.0;
+const FFT_CASCADE_2:f32=25.0;
