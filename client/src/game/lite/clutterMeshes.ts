@@ -73,6 +73,10 @@ import type { FrameUploads } from "./frameUploads.js";
 import { listBytes, listMesh, showList, type ListMesh } from "./listMeshes.js";
 import { cellOrigin, createRebuilds } from "./rebuildJobs.js";
 
+/** What showing the clutter's lists is expected to take (ms): every bucket handed its list, one step. The scheduler
+ * learns the figure on the device it runs on (`syncJobs.ts`) and trusts it where it is more. */
+const CLUTTER_UPLOAD_MS = 1;
+
 export type ClutterMeshes = {
   /** Follows the eye: the lists are made again when it crosses a grass cell, at a walk over the frames after. Before the models have landed it only keeps where the eye is. */
   update(camX: number, camZ: number): void;
@@ -323,7 +327,8 @@ export function createClutterMeshes(engine: EngineContext, scene: SceneContext, 
     if (made === null) return;
     yield* made.rebuild(x, z);
     // The lists are filled; the meshes go on drawing the last ones, and the cut waits, until the frame's upload
-    // budget has room for these.
+    // budget has room for these. Showing them is one step, whose cost the scheduler learns.
+    yield CLUTTER_UPLOAD_MS;
     if (options.uploads !== undefined) {
       let sending = 0;
       for (const bucket of made.all) {

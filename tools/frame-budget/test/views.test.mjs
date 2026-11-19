@@ -11,11 +11,15 @@ describe("views", () => {
     expect(all.map((v) => v.view.name)).toEqual(["trailhead", "forest", "tarn", "meadow", "crest", "beach", "forest-night"]);
     expect(resolveViews(config, stills, ["chase"])[0].view.check).toBe(true);
     expect(resolveViews(config, stills, ["chase"])[0].still).toBeUndefined();
-    // The phone's two check views (phone.mjs): the night forest walked, and the reveal timed from world-ready.
+    // The phone's check views (phone.mjs): the night forest walked, and the reveal timed from world-ready.
     const walk = resolveViews(config, stills, ["walk-night"])[0];
     expect(walk.view.check).toBe(true);
     expect(walk.view.walk).toBe(true);
     expect(viewScript(walk.view, walk.still)).toBe("seed atmo;stand 250 -500 1.09;escalation 1;unsettle 0;lamp");
+    // The day's walk: the trailhead's still, a first person, no lamp and no night.
+    const day = resolveViews(config, stills, ["walk-day"])[0];
+    expect(day.view).toMatchObject({ check: true, walk: true, firstPerson: true });
+    expect(viewScript(day.view, day.still)).toBe("seed atmo;stand -275 -1 1.571;escalation 0;unsettle 0");
     const reveal = resolveViews(config, stills, ["reveal"])[0];
     expect(reveal.view.check).toBe(true);
     expect(viewScript(reveal.view, reveal.still)).toBe("seed atmo;summit");

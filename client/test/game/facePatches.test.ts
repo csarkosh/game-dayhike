@@ -9,6 +9,7 @@ import {
   maskSlopeAt,
   facePatchCells,
   facePatchGeometry,
+  facePatchGeometrySlices,
   facePatchStitch,
   groundBend,
   patchDepth,
@@ -30,6 +31,7 @@ import {
   GROUND_LOUD_LO,
   GROUND_LOUD_HI,
 } from "../../src/game/facePatches.js";
+import { runBySlices } from "../helpers/sliceRun.js";
 import { timeLimit } from "../helpers/timeLimit.js";
 
 /** The scarp by the road: the reference pose's world. */
@@ -599,5 +601,41 @@ describe("facePatchCells and facePatchStitch", () => {
     // 0.2518 once the player stood on the rock (2026-10-13): the shards lift
     // only and the mask is the smoothed slope's rock.
     expect(f.least).toBeCloseTo(0.2518, 4);
+  }, timeLimit(20_000));
+});
+
+describe("facePatchGeometrySlices", () => {
+  it("builds the arrays a build at once builds, cut at every reading of the scheduler's clock", () => {
+    const cells: Array<[number, number, number, PatchStitch]> = [
+      [-24, -57, 1, NONE],
+      [-23, -57, 0.5, EAST],
+      [-24, -57, 2, { west: true, east: false, north: true, south: false, open: OPEN_EAST }],
+      [-23, -57, 1, { west: false, east: true, north: false, south: true, open: 0 }],
+    ];
+    let cut = 0;
+    for (const [ci, cj, spacing, stitch] of cells) {
+      const whole = facePatchGeometry(SEED, ci, cj, spacing, stitch);
+      expect(whole).not.toBeNull();
+      const sliced = runBySlices(facePatchGeometrySlices(SEED, ci, cj, spacing, stitch));
+      // A cell is cut into many slices, and builds what it built whole: the same bytes of every array.
+      expect(sliced.slices).toBeGreaterThan(8);
+      cut += sliced.slices;
+      const a = whole as FacePatch;
+      const b = sliced.value as FacePatch;
+      expect([b.vertexCount, b.triangleCount]).toEqual([a.vertexCount, a.triangleCount]);
+      for (const key of ["positions", "normals", "colors", "weights", "weights2", "cover", "indices"] as const) {
+        expect(Buffer.from(bytes(b[key] as Float32Array)).equals(Buffer.from(bytes(a[key] as Float32Array)))).toBe(true);
+      }
+    }
+    expect(cut).toBeGreaterThan(100);
+  }, timeLimit(60_000));
+
+  it("answers null for a cell with no steep ground, cut or not", () => {
+    expect(runBySlices(facePatchGeometrySlices(SEED, -29, -81, 1, NONE)).value).toBeNull();
+  }, timeLimit(20_000));
+
+  it("builds the whole patch in one call when no scheduler has a slice open", () => {
+    const slices = facePatchGeometrySlices(SEED, -24, -57, 1, NONE);
+    expect(slices.next().done).toBe(true);
   }, timeLimit(20_000));
 });

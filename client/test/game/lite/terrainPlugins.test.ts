@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import { ATMOSPHERE_PRIORITY } from "../../../src/game/lite/atmospherePlugin.js";
 import {
   TERRAIN_ARRAY_TEXTURES, TERRAIN_FIELDS, TERRAIN_TEXTURE_ORDER, TERRAIN_VERTEX_FLOATS, TERRAIN_VERTEX_LAYOUT, TERRAIN_WET_FIELDS,
-  emptyTerrainMaterialUniforms, terrainPlugin, terrainSplitPlugin, terrainVertexData, terrainWetPlugin,
+  emptyTerrainMaterialUniforms, terrainPlugin, terrainSplitPlugin, terrainVertexData, terrainVertexDataSlices, terrainWetPlugin,
   type TerrainPaints, type TerrainTextures,
 } from "../../../src/game/lite/terrainPlugins.js";
 import {
@@ -11,6 +11,7 @@ import {
   FAR_SELF_SHADOW, FAR_SPEC_CUT, FAR_SUN_GAIN_MAX, FAR_SWARD, FAR_SWARD_COVER, FAR_SWARD_MAX,
   HEX_LATTICE, HEX_SHARPNESS, HEX_SKEW, HEX_UNSKEW, MACRO_DRY, MACRO_LUSH, MACRO_SLOPE, MACRO_WAVE, MACRO_WEIGHT,
 } from "../../../src/game/groundHexParams.js";
+import { runBySlices } from "../../helpers/sliceRun.js";
 import { ROAD_ASPHALT_HALF, ROAD_PAINT_END, ROAD_SHOULDER_HALF } from "../../../src/game/roadPaint.js";
 import { NEEDLE_BED } from "../../../src/game/terrainSurface.js";
 import { emptyTerrainUniforms, terrainUniforms, type TerrainUniformInputs } from "../../../src/game/terrainUniforms.js";
@@ -274,6 +275,22 @@ describe("the terrain's plugin on Babylon Lite: a vertex's own data", () => {
     expect(made).toHaveLength(26);
     expect([...other]).toEqual(Array.from({ length: 13 }, () => 0));
     expect(terrainVertexData(vertices, null)).toHaveLength(26);
+  });
+
+  it("interleaves the same floats in slices ended at every reading of the scheduler's clock", () => {
+    // A ring's worth of vertices, each array a ramp of its own.
+    const n = 16_641;
+    const ramp = (floats: number, seed: number): Float32Array => Float32Array.from({ length: n * floats }, (_, i) => Math.fround(Math.sin(i * 0.37 + seed)));
+    const vertices: TerrainVertices = {
+      positions: new Float32Array(n * 3), normals: new Float32Array(n * 3), colors: ramp(4, 1), weights: ramp(4, 2), weights2: ramp(4, 3), cover: ramp(1, 4),
+      indices: new Uint16Array(3),
+    };
+    const whole = terrainVertexData(vertices);
+    const sliced = runBySlices(terrainVertexDataSlices(vertices));
+    expect(sliced.slices).toBeGreaterThan(8);
+    expect(Buffer.from(sliced.value.buffer).equals(Buffer.from(whole.buffer))).toBe(true);
+    // Into an array the right length it fills that array, as it does at once.
+    expect(runBySlices(terrainVertexDataSlices(vertices, whole)).value).toBe(whole);
   });
 });
 

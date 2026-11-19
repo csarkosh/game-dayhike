@@ -10,6 +10,8 @@ import { clutterBucketFade, createClutterLists, type ClutterBucket } from "../..
 import { FADE_NONE_IN } from "../../src/game/distanceFade.js";
 import type { CullPose } from "../../src/game/grassCull.js";
 import { finish } from "../../src/game/syncJobs.js";
+import { runBySlices } from "../helpers/sliceRun.js";
+import { timeLimit } from "../helpers/timeLimit.js";
 
 const SEED = 1;
 // Near the origin, where grass grows reliably.
@@ -93,6 +95,27 @@ describe("the clutter's lists", () => {
     expect(lists.buckets[CLUTTER_ROCK]!.filter((perLod) => perLod.some((bucket) => bucket.list.count > 0)).length).toBeGreaterThan(2);
     expect(lists.buckets[CLUTTER_GRASS]![0]![NEAR_LOD]!.list.count).toBeGreaterThan(0);
   });
+
+  it("are filled the same in slices cut at every reading of the scheduler's clock, over three crossings", () => {
+    const whole = createClutterLists(SEED, options());
+    const sliced = createClutterLists(SEED, options());
+    let cut = 0;
+    for (const [x, z] of [[CAM.x, CAM.z], [CAM.x + CLUTTER_GRASS_CELL, CAM.z], [CAM.x + CLUTTER_GRASS_CELL, CAM.z + CLUTTER_GRASS_CELL]] as const) {
+      finish(whole.rebuild(x, z));
+      cut += runBySlices(sliced.rebuild(x, z)).slices;
+      expect(sliced.view).toEqual(whole.view);
+      expect(sliced.kept).toBe(whole.kept);
+      sliced.all.forEach((bucket, i) => {
+        const a = (whole.all[i] as ClutterBucket).list;
+        const b = bucket.list;
+        expect(b.count).toBe(a.count);
+        for (const key of ["buf", "bands", "foliage"] as const) {
+          expect(Buffer.from(b[key].buffer, b[key].byteOffset, Math.min(b[key].byteLength, a.count * 16 * 4)).equals(Buffer.from(a[key].buffer, a[key].byteOffset, Math.min(a[key].byteLength, a.count * 16 * 4)))).toBe(true);
+        }
+      });
+    }
+    expect(cut).toBeGreaterThan(30);
+  }, timeLimit(60_000));
 
   it("cut the grass class's lists to the view where the tier asks, and no list otherwise", () => {
     const pose: CullPose = { x: CAM.x, y: elevationSampleAt(SEED, CAM.x, CAM.z).h + 1.7, z: CAM.z, yaw: 0, pitch: 0, roll: 0, fov: 1, aspect: 1.5 };

@@ -124,7 +124,7 @@ describe("a shell's rebuilds on the renderer's scheduler", () => {
     expect(shown).toEqual([2.9, 3.0]);
   });
 
-  it("runs a rebuild to its end once it is as late as the game lets a job be", () => {
+  it("gives a rebuild the late share once it is as late as the game lets a job be, and shows it after", () => {
     const time = { now: 0 };
     const jobs = createSyncJobs(() => time.now);
     const shown: number[] = [];
@@ -146,15 +146,18 @@ describe("a shell's rebuilds on the renderer's scheduler", () => {
     time.now += 1;
     jobs.run();
     rebuilds.update(3.0, 0);
-    let frames = 0;
-    while (shown.length < 2) {
+    const late: number[] = [];
+    while (shown.length < 2 && late.length < 40) {
       // The frames come a millisecond apart, so the bound in frames is the one reached.
       time.now += 1;
       jobs.run();
-      frames++;
-      expect(frames).toBeLessThanOrEqual(SYNC_LATE_FRAMES_MAX + 1);
+      late.push(jobs.last.late);
     }
-    expect(frames).toBe(SYNC_LATE_FRAMES_MAX + 1);
+    // Two slices a frame for the six frames, then the late share's four: 88 slices and the one that shows them, 23 frames.
+    expect(late.slice(0, SYNC_LATE_FRAMES_MAX)).toEqual([0, 0, 0, 0, 0, 0]);
+    expect(late.slice(SYNC_LATE_FRAMES_MAX, SYNC_LATE_FRAMES_MAX + 3)).toEqual([4, 4, 4]);
+    expect(late.length).toBe(SYNC_LATE_FRAMES_MAX + 23);
+    expect(Math.max(...late)).toBe(4);
   });
 
   it("replaces a rebuild still pending with the one for the newer view, and never shows the stale one", () => {

@@ -19,7 +19,7 @@ import type { FadeBands } from "./distanceFade.js";
 import {
   clutterInCell, clutterCell, CLUTTER_CLASS_COUNT, CLUTTER_GRASS_CELL, CLUTTER_MEADOW, type ClutterInstance, CLUTTER_GRASS, CLUTTER_BUSH, CLUTTER_FLOWER, CLUTTER_LITTER, CLUTTER_FERN, CLUTTER_SHRUB, CLUTTER_WETPLANT, CLUTTER_HIGHPLANT,
 } from "../sim/clutter.js";
-import { finish, nextCrossing, type Slices } from "./syncJobs.js";
+import { finish, nextCrossing, sliceDue, type Slices } from "./syncJobs.js";
 import {
   createCellWindow, inWindow, moveWindow, prefetchWindow, walkEveryCell, type CellRows, type CellWindow,
 } from "./cellWindow.js";
@@ -407,8 +407,10 @@ function clutterOrigin(camX: number, camZ: number, cell: number): { x: number; z
   };
 }
 
-/** Listed instances a slice of the band walk classifies before it yields. */
+/** Listed instances a slice of the band walk classifies before it yields. A slice also ends by the scheduler's clock
+ * (`sliceDue`), which counts `LIST_UNITS` listed instances as one unit of work. */
 const BAND_SLICE = 6144;
+const LIST_UNITS = 128;
 
 /**
  * The band walk itself, parameterised over where the cells come from and the
@@ -477,7 +479,8 @@ function* collectClutterSlices(
         }
       }
       listed += row.length;
-      if (listed >= BAND_SLICE) {
+      const ended = sliceDue(row.length / LIST_UNITS);
+      if (listed >= BAND_SLICE || ended) {
         listed = 0;
         yield;
       }

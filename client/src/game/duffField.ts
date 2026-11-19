@@ -4,7 +4,7 @@ import { forestDensity } from "../sim/vegetation.js";
 import { latticeHash } from "./groundHexParams.js";
 import { DUFF_CHARACTER_COUNT, DUFF_TWIG } from "./duffClump.js";
 import { GROW_NONE, type BladeEdges } from "./bladeField.js";
-import { finish, nextCrossing, type Slices } from "./syncJobs.js";
+import { finish, nextCrossing, sliceDue, sortSlices, type Slices } from "./syncJobs.js";
 import { createCellWindow, inWindow, moveWindow, prefetchWindow, walkEveryCell, type CellRows } from "./cellWindow.js";
 
 /**
@@ -134,8 +134,10 @@ function duffOrigin(v: number): number {
   return Math.floor(v / DUFF_CELL) * DUFF_CELL;
 }
 
-/** Listed cells a slice of the walk classifies before it yields. */
+/** Listed cells a slice of the walk classifies before it yields. A slice also ends by the scheduler's clock
+ * (`sliceDue`), which counts `LIST_UNITS` listed cells as one unit of work. */
 const TIER_SLICE = 4096;
+const LIST_UNITS = 128;
 
 /** The walk, shared by the pure one-shot and the collector that keeps its
  * square (`createDuffCollector`): the same loop over the same rows, in
@@ -162,15 +164,16 @@ function* collectDuffSlices(camX: number, camZ: number, reach: number, rowsOf: C
       if (d2 >= farLo2) far.push({ c, d2 });
     }
     listed += row.length;
-    if (listed >= TIER_SLICE) {
+    const ended = sliceDue(row.length / LIST_UNITS);
+    if (listed >= TIER_SLICE || ended) {
       listed = 0;
       yield;
     }
   }
-  // Stable, so cells at one distance keep the walk's order.
+  // Stable, so cells at one distance keep the walk's order; in slices, the order `sort` leaves.
   const nearest = (a: { d2: number }, b: { d2: number }) => a.d2 - b.d2;
-  near.sort(nearest);
-  far.sort(nearest);
+  yield* sortSlices(near, nearest);
+  yield* sortSlices(far, nearest);
   const tiers = { near: near.map((p) => p.c), far: far.map((p) => p.c) };
   yield;
   return tiers;

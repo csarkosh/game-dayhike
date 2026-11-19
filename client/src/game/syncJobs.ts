@@ -2,66 +2,88 @@
  * The renderer's rebuilds, spread over frames under a per-frame budget.
  *
  * A rebuild that a crossing starts — the terrain's rings, the ground cover's
- * lists, the forest's bands — is a job: a generator whose every `yield` ends
- * one slice and whose
- * last slice applies the result to the shell's meshes in one step, so no frame
- * ever draws a buffer half written. `run`, called once a frame at the end of
- * the renderer's `sync`, first runs to its end any job begun
- * `SYNC_LATE_FRAMES_MAX` frames or `SYNC_LATE_MS_MAX` milliseconds ago,
- * whichever comes first, then gives the jobs still pending, oldest first, one
- * slice after another until `SYNC_BUDGET_MS` of the clock has gone. A job's
- * result therefore reaches the screen at most six frames and at most 100 ms
- * after the crossing that began it, and a frame spends at most the budget and
- * one slice on jobs unless a job is that late.
+ * lists, the forest's bands, the props' chunks — is a job: a generator whose
+ * every `yield` ends one slice and whose last slice applies the result to the
+ * shell's meshes in one step, so no frame ever draws a buffer half written.
+ * `run`, called once a frame at the end of the renderer's `sync`, gives the
+ * jobs pending, oldest first, one slice after another until `SYNC_BUDGET_MS`
+ * of the clock has gone.
+ *
+ * **A slice ends by the clock, on any device.** A builder's loop asks
+ * `sliceDue` as it works, and ends its slice once the scheduler's clock says
+ * `SLICE_TARGET_MS` has gone since the slice began. What a loop costs a
+ * sample is a desktop's figure or a phone's, five to ten times as much, so a
+ * count of samples cannot size a slice; the clock can, and it is the one the
+ * scheduler is handed, so a test drives it. Only the apply step is a slice no
+ * clock divides: it is one step by design, says what it expects to take (a
+ * yielded number of milliseconds), and starts only as a frame's share begins
+ * or where it fits in what is left; the scheduler learns each owner's real
+ * figure from what its apply steps took by its own clock (`learned`) and
+ * trusts it where the builder's own is smaller.
  *
  * What budget no job needs goes to idle work (`idle`): work a shell can do
  * ahead of a crossing it expects, such as the terrain sampling the ground its
  * rings will move onto next. It runs only while no job is pending, is never
- * late, and may be dropped between any two of its slices.
+ * late, and may be dropped between any two of its slices. The first slice of a
+ * frame starts whatever it says it takes: slices are bounded, so that is at
+ * most one slice past the budget, and idle work never waits for ever behind
+ * an estimate.
  *
- * Slices are small, a tenth of a millisecond or so, except the one that
- * uploads: that must be one step, and the terrain's takes about a millisecond
- * a ring. A job says so by yielding the milliseconds its next slice will
- * take, and such a slice starts only as a frame's share begins or where it
- * fits in what is left of the budget; the jobs behind it use the rest.
+ * **A late job gets a larger share, not the whole frame.** A job begun
+ * `SYNC_LATE_FRAMES_MAX` frames or `SYNC_LATE_MS_MAX` milliseconds ago,
+ * whichever comes first, is late: it goes before the other jobs, and the
+ * frame gives late jobs slices until `SYNC_LATE_BUDGET_MS` of the clock has
+ * gone, then stops; what is left of the job goes on next frame. On a machine
+ * where a crossing's work fits in six frames of the ordinary share no job is
+ * ever late. The hard bound stays for what the soft one cannot meet, a clock
+ * that jumped (a tab hidden for a minute) or a job starved: one begun
+ * `SYNC_OVERDUE_MS` ago is run to its end in one frame, as a first build is.
  *
  * Which crossings wait and which do not is each shell's `crossingAt`: the
  * first build, a jump of more than one cell (a teleport) and a view moving
  * more than half a cell or a metre a frame (the free camera's boost) all
- * build at once,
- * as they did before there were jobs, so at those the picture is exactly what
- * it was. A crossing that finds the shell's last job still pending — the view
- * has moved past a further line before that job applied, as a walk along a
- * diagonal does whenever it crosses an x line and a z line a few frames apart
- * — replaces it with the rebuild for the new view, which keeps the old job's
- * deadline, in frames and in time: the view it was begun for is never
- * drawn, and the picture is still never more than six frames or 100 ms
- * behind the first crossing it has not yet shown.
+ * build at once, or are stepped by the loader of first builds
+ * (`firstBuilds.ts`), so at those the picture is exactly what it was. A
+ * crossing that finds the shell's last job still pending — the view has moved
+ * past a further line before that job applied, as a walk along a diagonal
+ * does whenever it crosses an x line and a z line a few frames apart —
+ * replaces it with the rebuild for the new view, which keeps the old job's
+ * deadline, in frames and in time: the view it was begun for is never drawn.
+ * What the old job had made that the new needs is not made again, as each
+ * shell's own record says (a ring's samples, the cells a lookup holds, the
+ * face patches built ahead), so a replacement costs a job's array building and
+ * not its sampling.
  *
- * A patient job (`begin`'s `patient`) is never late: it is the rebuild of a
- * shell whose meshes draw the last set it applied, whole and correct, until
- * the next set is applied, so waiting costs detail and never shows a hole —
- * the face patches', whose crossing builds far more than six frames' share.
- * It runs after every other job, with the share they leave, and is never run
- * to its end at once; idle work runs while only patient jobs are pending,
- * with what they leave.
+ * A patient job (`begin`'s `patient`) is never late and never overdue: it is
+ * the rebuild of a shell whose meshes draw the last set it applied, whole and
+ * correct, until the next set is applied, so waiting costs detail and never
+ * shows a hole — the face patches', whose crossing builds far more than six
+ * frames' share. It runs after every other job, with the share they leave, and
+ * a frame whose share the other jobs took whole gives the first patient job one
+ * slice all the same (`SYNC_PATIENT_MAX_MS`): a walk replaces the job at every
+ * crossing, and a job that is never run is never shown. Idle work runs while
+ * only patient jobs are pending, with what they leave.
  *
  * Pure and Babylon-free: time is the clock handed in, so a test drives it.
  */
 
-/** The most a frame's `run` spends on jobs (ms), past which it starts no
- * further slice. */
+/**
+ * The most a frame's `run` spends on jobs (ms), past which it starts no
+ * further slice. A phone's frame at 60 a second is 16.7 ms and the rest of it
+ * (the draw, the simulation, the rest of `sync`, the sound) takes 4 to 5, so
+ * the share is what a frame can spend on streaming and still hold its rate,
+ * with the slice that starts inside it.
+ */
 export const SYNC_BUDGET_MS = 4;
 
-/** The most frames a job's result may reach the screen after the crossing
- * that began it; a job this old is run to its end, whatever the budget. */
+/** The most frames a job's result may take to reach the screen after the
+ * crossing that began it before the job is late. */
 export const SYNC_LATE_FRAMES_MAX = 6;
 
 /**
- * The most time (ms) a job's result may reach the screen after the crossing
- * that began it, whatever the frame rate; a job this old is run to its end,
- * whatever the budget, as one `SYNC_LATE_FRAMES_MAX` frames old is. At 60
- * frames a second the two bounds are the same; below it, this one comes
+ * The most time (ms) a job's result may take to reach the screen after the
+ * crossing that began it, whatever the frame rate, before the job is late. At
+ * 60 frames a second the two bounds are the same; below it, this one comes
  * first. What hides the wait is reckoned against it: in 100 ms the view
  * moves 0.33 m at 3.3 m/s, 0.525 m walking (5.25 m/s) and 0.70 m sprinting
  * (7 m/s), at any frame rate. The blade field's `BLADE_PAD` of 2.12 m leaves
@@ -70,13 +92,104 @@ export const SYNC_LATE_FRAMES_MAX = 6;
  * least 8 m past the grass cell's 4.24 m snap; the forest's `SEAM_PAD` is
  * exactly its snap, so a late forest is up to those distances past a seam's
  * pad, and the low tier's litter ramp (4.8 m) up to 0.14 m at a sprint.
+ * Past it a job is given the larger share below, so it is shown later by what
+ * its work needs, a few tenths of a second on a phone.
  *
- * Time is the renderer's clock. One that jumps — a tab hidden for a minute,
- * whose frames stop while its clock runs on — makes every pending job late
- * at once, and the next frame runs them all to their end, as a first build
- * does.
+ * Time is the renderer's clock.
  */
 export const SYNC_LATE_MS_MAX = 100;
+
+/**
+ * The most a frame's `run` spends on late jobs (ms), twice the ordinary
+ * share: the phone's frame has 12 ms to spare after the 4 to 5 ms the rest of
+ * it takes, and 8 leaves the other 4 for a slice that starts inside the share
+ * and a frame that runs long. A late job is shown after the number of frames
+ * its work needs at this share, not run to its end in the frame that finds it
+ * late, which on a phone was 40 to 105 ms of one frame.
+ */
+export const SYNC_LATE_BUDGET_MS = 8;
+
+/**
+ * The age (ms) at which a job is run to its end in one frame whatever the
+ * share: the hard bound for what the share cannot meet. A tab hidden for a
+ * minute stops its frames while its clock runs on, so every pending job is
+ * overdue at once on its next frame, and the next frame runs them all to
+ * their end, as a first build does; a job starved by others, or replaced by
+ * crossing after crossing and never shown, is overdue a second after the
+ * first crossing that began it. A second is ten times the soft bound and
+ * three to four of a walk's crossings (a ring lattice step of 4 m is 0.76 s
+ * at 5.25 m/s), so no walk meets it unless the device cannot keep up.
+ */
+export const SYNC_OVERDUE_MS = 1000;
+
+/**
+ * The most a frame has spent (ms) when a patient job's one slice a frame may still start: the late share and a slice.
+ * A patient job runs after every other, with what they leave, and the late jobs of a walk on a slow device leave
+ * nothing for frames at a stretch; so a frame in which no patient job ran gives the first of them one slice, past
+ * the ordinary budget and inside this, where its next slice fits in what is left (a first slice of a frame
+ * starts whatever it says). A walk's every crossing replaces the face patches' job, and a job that is never run is
+ * never shown: one slice a frame, 1.5 ms of a phone's 12 to spare, keeps it moving.
+ */
+export const SYNC_PATIENT_MAX_MS = SYNC_LATE_BUDGET_MS + 1.5;
+
+/** The frames a patient job's slice may be left out of the floor for not fitting before it is given it whatever it says: its apply step, which says what it takes, is not held for ever behind other jobs. */
+export const SYNC_PATIENT_WAIT_FRAMES = 30;
+
+/**
+ * The longest a builder holds the thread in one slice (ms): the time since the
+ * slice began at which `sliceDue` says to end it. Three of these fit in the
+ * ordinary share and five in the late one, so the jobs behind one still run
+ * in the frame, and one is under a tenth of a frame: a phone's page thread
+ * answers a touch or a timer inside it.
+ */
+export const SLICE_TARGET_MS = 1.5;
+
+/**
+ * Units of work a loop counts between two readings of the clock. A unit is
+ * about one sample of the terrain (a few microseconds on a desktop, tens on a
+ * phone), so a reading comes every 8 samples, 0.05 to 0.4 ms of a phone's
+ * work, and a slice is held past its target by at most that and one step of
+ * the loop. A reading is a call to the clock, tens of nanoseconds to a few
+ * hundred, a hundredth of the work it follows or less.
+ */
+export const SLICE_READ_UNITS = 8;
+
+/** The clock the open slice reads, its end, and the units counted since its last reading; null with no slice open. */
+let gateClock: (() => number) | null = null;
+let gateEnd = Infinity;
+let gateUnits = 0;
+
+/**
+ * Whether the slice a builder is in has used its time: true once the clock has
+ * passed `SLICE_TARGET_MS` since the slice began, read every
+ * `SLICE_READ_UNITS` units of the work the caller counts (`units`, 1 for a
+ * sample). A builder's loop ends its slice with `if (sliceDue()) yield;`
+ * where it can resume. False when no scheduler has a slice open — a build at
+ * once, a first build stepped by the loader, a test — so such a build runs as
+ * it always did; what a builder builds is the same either way, only where it
+ * gives the thread back changes.
+ */
+export function sliceDue(units = 1): boolean {
+  if (gateClock === null) return false;
+  gateUnits += units;
+  if (gateUnits < SLICE_READ_UNITS) return false;
+  gateUnits = 0;
+  return gateClock() >= gateEnd;
+}
+
+/** Opens a slice that began at `at` on `clock`, and returns the one it replaces (a slice run inside another's). */
+function openSlice(clock: () => number, at: number): [(() => number) | null, number, number] {
+  const held: [(() => number) | null, number, number] = [gateClock, gateEnd, gateUnits];
+  gateClock = clock;
+  gateEnd = at + SLICE_TARGET_MS;
+  gateUnits = 0;
+  return held;
+}
+
+/** Closes the open slice, the one it replaced open again. */
+function closeSlice(held: [(() => number) | null, number, number]): void {
+  [gateClock, gateEnd, gateUnits] = held;
+}
 
 /** A rebuild in slices: each `next()` runs one slice, and the call that
  * returns `done` has applied the result. A slice may yield what it expects
@@ -87,6 +200,9 @@ export type Slices<T = void> = Generator<number | void, T, void>;
 
 /** Elements a slice of `sortSlices` moves before it yields. */
 const SORT_SLICE = 8192;
+/** Elements a merge writes between two looks at the scheduler's clock (a power of two), and how many of them are one unit of work (`sliceDue`). */
+const SORT_LOOK = 256;
+const SORT_UNITS = 64;
 
 /**
  * Sorts `list` in place, in slices: a bottom-up merge sort, stable like
@@ -106,8 +222,12 @@ export function* sortSlices<T>(list: T[], compare: (a: T, b: T) => number): Slic
       let i = lo;
       let j = mid;
       let k = lo;
-      // Ties take the left run first: that is what keeps it stable.
-      while (i < mid && j < hi) to[k++] = compare(from[j] as T, from[i] as T) < 0 ? (from[j++] as T) : (from[i++] as T);
+      // Ties take the left run first: that is what keeps it stable. A merge asks the clock every `SORT_LOOK`
+      // elements, so the last passes, whose one merge is the whole list, are cut as well.
+      while (i < mid && j < hi) {
+        to[k++] = compare(from[j] as T, from[i] as T) < 0 ? (from[j++] as T) : (from[i++] as T);
+        if ((k & (SORT_LOOK - 1)) === 0 && sliceDue(SORT_LOOK / SORT_UNITS)) yield;
+      }
       while (i < mid) to[k++] = from[i++] as T;
       while (j < hi) to[k++] = from[j++] as T;
       moved += hi - lo;
@@ -167,6 +287,31 @@ export async function stepSlices<T>(
   }
 }
 
+/** What `SyncJobs.last` carries: the last `run`'s slices, and the counts since the last `resetLongest`. */
+export type SyncJobsLast = {
+  /** Slices the last `run` ran. */
+  readonly slices: number;
+  /** How many of them ran as a late job's, past the ordinary budget, and how many jobs were late as the share began. */
+  readonly late: number;
+  readonly lateJobs: number;
+  /** How many ran as an overdue job's, to its end, and how many jobs that was. */
+  readonly overdue: number;
+  readonly overdueJobs: number;
+  /** The jobs completed, and the idle slices run. */
+  readonly completed: number;
+  /** The slices of a patient job run for the floor a frame has no other of (0 or 1). */
+  readonly floor: number;
+  readonly idle: number;
+  /** The milliseconds the slices took, how many of those a late or overdue run took, and the milliseconds by the jobs' names. */
+  readonly ms: number;
+  readonly lateMs: number;
+  readonly owners: Readonly<Record<string, number>>;
+  /** The longest single slice by owner (ms) since the last `resetLongest`. */
+  readonly longest: Readonly<Record<string, number>>;
+  /** The apply cost learned by owner (ms): what its announced slices took, as a running figure. */
+  readonly learned: Readonly<Record<string, number>>;
+};
+
 export type SyncJobs = {
   /** Queues `slices` as `owner`'s job, begun this frame. An owner has at most
    * one job: one it already has is dropped unfinished, and the new one takes
@@ -182,31 +327,29 @@ export type SyncJobs = {
   /** Sets `owner`'s idle work, replacing any it has (null clears it): slices
    * run only with the budget left while no job is pending. */
   idle(owner: object, slices: Slices | null): void;
-  /** This frame's share: the late jobs to their end, then slices of the rest
-   * until the budget is spent. Call once a frame, after every shell's update. */
+  /** This frame's share: the overdue jobs to their end, the late jobs' slices
+   * until the late share has gone, then the others' until the budget is spent. Call once a frame, after every shell's update. */
   run(): void;
   /** The clock (ms) as the last `run` began, NaN before the first: a frame's
    * time for `crossingAt`, read without another reading of the clock. */
   started(): number;
   /** Frames `run` has closed. */
   readonly frame: number;
-  /** Slices the last `run` ran, how many of them it ran past the budget
-   * because a job was late, the jobs it completed, and the idle slices it
-   * ran; and the milliseconds the slices took, how many of those a late run
-   * took, and the milliseconds by the jobs' names (`begin`'s `name`, `other`
-   * for a job given none, `idle` for idle work). For the tests, and for the
-   * measurement mode's `window.__syncJobs()` (lite/renderer.ts), which a phone
-   * harness reads each frame (tools/frame-budget/phone.mjs). */
-  readonly last: {
-    readonly slices: number; readonly late: number; readonly completed: number; readonly idle: number;
-    readonly ms: number; readonly lateMs: number; readonly owners: Readonly<Record<string, number>>;
-  };
+  /** The last `run`'s record, for the tests and for the measurement mode's
+   * `window.__syncJobs()` (lite/renderer.ts), which a phone harness reads
+   * each frame (tools/frame-budget/phone.mjs). */
+  readonly last: SyncJobsLast;
+  /** Forgets the longest slices recorded, so the next reading's are those since now. */
+  resetLongest(): void;
 };
 
 /** A queued job: its slices, the frame whose crossing began it and the
  * clock then, what its next slice is expected to take (ms), and whether it
  * is never late. */
-type Job = { owner: object; slices: Slices; begun: number; begunAt: number; next: number; patient: boolean; name: string };
+type Job = { owner: object; slices: Slices; begun: number; begunAt: number; next: number; patient: boolean; name: string; starved: number };
+
+/** The weight of the newest apply slice in an owner's learned cost. */
+const LEARN_RATE = 0.25;
 
 /**
  * The scheduler. `clock` is read as a job begins, once as `run` starts and
@@ -219,28 +362,46 @@ export function createSyncJobs(clock: () => number): SyncJobs {
   let idleTurn = 0;
   let frame = 0;
   let startedAt = Number.NaN;
-  const last: { slices: number; late: number; completed: number; idle: number; ms: number; lateMs: number; owners: Record<string, number> } =
-    { slices: 0, late: 0, completed: 0, idle: 0, ms: 0, lateMs: 0, owners: {} };
+  const last = {
+    slices: 0, late: 0, lateJobs: 0, overdue: 0, overdueJobs: 0, completed: 0, floor: 0, idle: 0, ms: 0, lateMs: 0,
+    owners: {} as Record<string, number>, longest: {} as Record<string, number>, learned: {} as Record<string, number>,
+  };
   /** The slice the clock's next reading is charged to: the one that just ran
-   * (its name, and whether it ran late), or none. The clock is read once as
-   * a frame's share starts, once before each slice and once as the share
-   * ends, never inside a slice's timing, so a test clock that advances on
-   * every reading charges each slice one reading. */
-  let charging: { name: string; late: boolean } | null = null;
+   * (its name, whether it ran late, and whether it said what it would take),
+   * or none. The clock is read once as a frame's share starts, once before
+   * each slice and once as the share ends, never inside a slice's timing, so
+   * a test clock that advances on every reading charges each slice one
+   * reading. */
+  let charging: { name: string; late: boolean; announced: boolean } | null = null;
   let at = 0;
+  /** Whether a patient job ran a slice this frame. */
+  let patientRan = false;
   /** The clock, read: the time since the last reading goes to the slice that ran in it. */
   function tick(): number {
     const now = clock();
     if (charging !== null) {
       const ms = now - at;
+      const { name } = charging;
       last.ms += ms;
       if (charging.late) last.lateMs += ms;
-      last.owners[charging.name] = (last.owners[charging.name] ?? 0) + ms;
+      last.owners[name] = (last.owners[name] ?? 0) + ms;
+      if (ms > (last.longest[name] ?? 0)) last.longest[name] = ms;
+      if (charging.announced) {
+        const known = last.learned[name];
+        last.learned[name] = known === undefined ? ms : known + (ms - known) * LEARN_RATE;
+      }
       charging = null;
     }
     at = now;
     return now;
   }
+
+  /** What `job`'s next slice is expected to take (ms): what it said, or the owner's learned figure where that is more. A slice that said nothing is a bounded one. */
+  const expected = (job: Job): number => (job.next > 0 ? Math.max(job.next, last.learned[job.name] ?? 0) : 0);
+
+  /** Whether `job`, as a share begins at `now`, is late: begun too many frames or too long ago, and not patient. */
+  const isLate = (job: Job, now: number): boolean =>
+    !job.patient && (frame - job.begun >= SYNC_LATE_FRAMES_MAX || now - job.begunAt >= SYNC_LATE_MS_MAX);
 
   function remove(job: Job): void {
     const at = queue.indexOf(job);
@@ -259,15 +420,19 @@ export function createSyncJobs(clock: () => number): SyncJobs {
    * its job out of the queue before the error goes on. */
   function slice(job: Job, late = false): boolean {
     let done: boolean | undefined;
-    charging = { name: job.name, late };
+    charging = { name: job.name, late, announced: job.next > 0 };
+    const held = openSlice(clock, at);
     try {
       const step = job.slices.next();
       done = step.done;
       job.next = step.done !== true && typeof step.value === "number" ? step.value : 0;
     } finally {
+      closeSlice(held);
       if (done !== false) remove(job);
     }
     last.slices++;
+    if (job.patient) patientRan = true;
+    job.starved = 0;
     if (done === true) last.completed++;
     return done === true;
   }
@@ -276,7 +441,7 @@ export function createSyncJobs(clock: () => number): SyncJobs {
     begin(owner, slices, patient = false, name = "other") {
       const held = queue.find((job) => job.owner === owner);
       if (held === undefined) {
-        enqueue({ owner, slices, begun: frame, begunAt: clock(), next: 0, patient, name });
+        enqueue({ owner, slices, begun: frame, begunAt: clock(), next: 0, patient, name, starved: 0 });
         return;
       }
       held.name = name;
@@ -306,10 +471,18 @@ export function createSyncJobs(clock: () => number): SyncJobs {
       if (slices !== null) idle.push({ owner, slices, next: 0 });
     },
     started: () => startedAt,
+    resetLongest() {
+      for (const name in last.longest) last.longest[name] = 0;
+    },
     run() {
       last.slices = 0;
       last.late = 0;
+      last.lateJobs = 0;
+      last.overdue = 0;
+      last.overdueJobs = 0;
       last.completed = 0;
+      last.floor = 0;
+      patientRan = false;
       last.idle = 0;
       last.ms = 0;
       last.lateMs = 0;
@@ -317,19 +490,42 @@ export function createSyncJobs(clock: () => number): SyncJobs {
       charging = null;
       const start = tick();
       startedAt = start;
-      // A late job goes to its end first: it is the one the picture waits on.
-      // Its last slice takes it out of the queue, so the next job moves up
-      // into its index. Indexed rather than iterated over a copy: this runs
-      // every frame, and allocates nothing.
+      for (let i = 0; i < queue.length; i++) if (isLate(queue[i] as Job, start)) last.lateJobs++;
+      // A job begun `SYNC_OVERDUE_MS` ago goes to its end: the hard bound, for
+      // a clock that jumped or a job starved. Its last slice takes it out of
+      // the queue, so the next job moves up into its index. Indexed rather than
+      // iterated over a copy: this runs every frame, and allocates nothing.
       for (let i = 0; i < queue.length;) {
         const job = queue[i] as Job;
-        if (job.patient || (frame - job.begun < SYNC_LATE_FRAMES_MAX && start - job.begunAt < SYNC_LATE_MS_MAX)) {
+        if (job.patient || start - job.begunAt < SYNC_OVERDUE_MS) {
           i++;
           continue;
         }
-        // Each late slice after a reading, so each is charged its own time.
+        last.overdueJobs++;
+        // Each slice after a reading, so each is charged its own time.
         for (;;) {
           tick();
+          const done = slice(job, true);
+          last.overdue++;
+          if (done) break;
+        }
+      }
+      // Then the late jobs, oldest first, whose slices go before every
+      // other's: until the late share has gone. A late job whose next slice
+      // would not fit in what is left waits for the next frame (unless nothing
+      // has run yet this frame), and the late jobs behind it go on.
+      for (let i = 0, ran = last.slices; i < queue.length;) {
+        const job = queue[i] as Job;
+        if (!isLate(job, start)) {
+          i++;
+          continue;
+        }
+        for (;;) {
+          const spent = tick() - start;
+          if (spent >= SYNC_LATE_BUDGET_MS || (last.slices > ran && spent + expected(job) > SYNC_LATE_BUDGET_MS)) {
+            i++;
+            break;
+          }
           const done = slice(job, true);
           last.late++;
           if (done) break;
@@ -343,12 +539,26 @@ export function createSyncJobs(clock: () => number): SyncJobs {
         const spent = tick() - start;
         if (spent >= SYNC_BUDGET_MS) break;
         const job = queue[i] as Job;
-        if (last.slices > ran && spent + job.next > SYNC_BUDGET_MS) {
+        if (last.slices > ran && spent + expected(job) > SYNC_BUDGET_MS) {
           i++;
           continue;
         }
         slice(job);
         // A job done has left the queue, and the next has moved up to `i`.
+      }
+      // A patient job is not starved: with no slice of its own this frame it is given one, the first of them.
+      if (!patientRan) {
+        for (let i = 0; i < queue.length; i++) {
+          const job = queue[i] as Job;
+          if (!job.patient) continue;
+          const spent = tick() - start;
+          const fits = spent < SYNC_PATIENT_MAX_MS && (last.slices === 0 || spent + expected(job) <= SYNC_PATIENT_MAX_MS);
+          if (fits || job.starved >= SYNC_PATIENT_WAIT_FRAMES) {
+            slice(job);
+            last.floor++;
+          } else job.starved++;
+          break;
+        }
       }
       // Then idle work, with what is left, while nothing is pending: a slice
       // of each owner's in turn, so none waits on another's.
@@ -371,12 +581,14 @@ export function createSyncJobs(clock: () => number): SyncJobs {
         }
         skipped = 0;
         let done = true;
-        charging = { name: "idle", late: false };
+        charging = { name: "idle", late: false, announced: false };
+        const held = openSlice(clock, at);
         try {
           const step = work.slices.next();
           done = step.done === true;
           work.next = !done && typeof step.value === "number" ? step.value : 0;
         } finally {
+          closeSlice(held);
           if (done) idle.splice(idleTurn, 1);
           else idleTurn++;
         }

@@ -24,6 +24,7 @@
  *   the derivative-uniformity diagnostic off for itself.
  */
 import type { MaterialPlugin, PluginUniformBlock, Texture2D, Texture2DArray } from "@babylonjs/lite";
+import { finish, sliceDue, type Slices } from "../syncJobs.js";
 import { emptyTerrainUniforms, layerMeanInverse, type TerrainUniforms } from "../terrainUniforms.js";
 import { TERRAIN_ATTRIBUTES, TERRAIN_VERTEX_SIZES, type TerrainVertices } from "../terrainVertices.js";
 import type { WetUniforms } from "../wetSurface.js";
@@ -151,20 +152,33 @@ export const TERRAIN_VERTEX_FLOATS = TERRAIN_VERTEX_LAYOUT.reduce((sum, part) =>
  * an array of its own.
  */
 export function terrainVertexData(vertices: TerrainVertices, out?: Float32Array | null): Float32Array {
+  return finish(terrainVertexDataSlices(vertices, out));
+}
+
+/** Vertices copied between two looks at the scheduler's clock (`sliceDue`): a few thousand floats. */
+const COPY_BLOCK = 2048;
+
+/** `terrainVertexData` in slices, each ended by the scheduler's clock between two blocks of vertices. */
+export function* terrainVertexDataSlices(vertices: TerrainVertices, out?: Float32Array | null): Slices<Float32Array> {
   const count = vertices.positions.length / TERRAIN_VERTEX_SIZES.positions;
   const length = count * TERRAIN_VERTEX_FLOATS;
   const data = out !== undefined && out !== null && out.length === length ? out : new Float32Array(length);
   const sources = [vertices.weights, vertices.weights2, vertices.cover, vertices.colors];
-  TERRAIN_VERTEX_LAYOUT.forEach((part, p) => {
+  for (let p = 0; p < TERRAIN_VERTEX_LAYOUT.length; p++) {
+    const part = TERRAIN_VERTEX_LAYOUT[p] as (typeof TERRAIN_VERTEX_LAYOUT)[number];
     const source = sources[p] as Float32Array;
     for (let i = 0; i < count; i++) {
       const from = i * part.floats;
       const to = i * TERRAIN_VERTEX_FLOATS + part.offset;
       for (let k = 0; k < part.floats; k++) data[to + k] = source[from + k] as number;
+      if (i % COPY_BLOCK === COPY_BLOCK - 1 && sliceDue(COPY_UNITS)) yield;
     }
-  });
+  }
   return data;
 }
+
+/** The units of work (`sliceDue`) a block of `COPY_BLOCK` vertices' copy counts: about as long as eight terrain samples. */
+const COPY_UNITS = 8;
 
 const VERTEX_FORMATS = ["float32", "float32x2", "float32x3", "float32x4"] as const;
 const VERTEX_TYPES = ["f32", "vec2<f32>", "vec3<f32>", "vec4<f32>"] as const;

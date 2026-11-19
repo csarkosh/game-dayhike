@@ -45,6 +45,10 @@ import type { FrameUploads } from "./frameUploads.js";
 import { listBytes, listMesh, showList, type ListMesh } from "./listMeshes.js";
 import { cellOrigin, createRebuilds } from "./rebuildJobs.js";
 
+/** What showing the duff's lists is expected to take (ms): each bucket handed its list, one step. The scheduler
+ * learns the figure on the device it runs on (`syncJobs.ts`) and trusts it where it is more. */
+const DUFF_UPLOAD_MS = 1;
+
 export function duffMeshName(character: number, tier: number): string {
   return `duff_clumps_c${character}_t${tier}`;
 }
@@ -133,6 +137,8 @@ export function createDuffMeshes(engine: EngineContext, scene: SceneContext, see
   function* rebuild(x: number, z: number): Slices {
     yield* lists.rebuild(x, z);
     // The lists are filled; the meshes go on drawing the last ones until the frame's upload budget has room for these.
+    // Showing them is one step, whose cost the scheduler learns.
+    yield DUFF_UPLOAD_MS;
     if (options.uploads !== undefined) {
       let sending = 0;
       for (let i = 0; i < buckets.length; i++) {

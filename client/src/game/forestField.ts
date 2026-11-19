@@ -26,7 +26,7 @@ import {
   COHORT_LOG,
   type TreeInstance,
 } from "../sim/vegetation.js";
-import { finish, sortSlices, type Slices } from "./syncJobs.js";
+import { finish, sliceDue, sortSlices, type Slices } from "./syncJobs.js";
 
 /** Near band radius (m) — full-geometry trees; quality tiers may shrink it
  * via `collectBands`' `nearRadius` parameter (low runs 140 m).
@@ -260,6 +260,9 @@ export function collectBands(
  * millisecond. */
 const BAND_SLICE = 1280;
 const BAND_FRESH_COST = 64;
+/** Work (in those units) that counts as one unit of the scheduler's clock (`sliceDue`): a tree sampled fresh is eight,
+ * a cell looked up an eighth. A slice ends by the clock as well as by the count. */
+const BAND_CLOCK_WORK = 8;
 
 /**
  * The band walk itself, parameterised over the cell sampler so the memoizing
@@ -366,9 +369,12 @@ function* collectBandsSlices(
   let freshSeen = fresh.count;
   /** Counts a visit, and whether the slice has done its share. */
   const due = (): boolean => {
-    work += 1 + (fresh.count - freshSeen) * BAND_FRESH_COST;
+    const spent = 1 + (fresh.count - freshSeen) * BAND_FRESH_COST;
+    work += spent;
     freshSeen = fresh.count;
-    if (work < BAND_SLICE) return false;
+    // Asked of every visit, so the clock's count goes on whether or not the count here has.
+    const ended = sliceDue(spent / BAND_CLOCK_WORK);
+    if (work < BAND_SLICE && !ended) return false;
     work = 0;
     return true;
   };

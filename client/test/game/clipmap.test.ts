@@ -20,6 +20,8 @@ import {
   RING_CELLS,
   RING_COUNT,
   ringGeometry,
+  ringGeometryBuffers,
+  ringGeometrySlices,
   ringSpacing,
   snapOrigin,
   commitRingMove,
@@ -36,6 +38,7 @@ import { finish as finishSlices } from "../../src/game/syncJobs.js";
 import { classifySurface, GRASS_SLOPE, SCREE_SLOPE, snowLineAt, surfaceAlbedo } from "../../src/game/terrainSurface.js";
 import { groundCover } from "../../src/sim/clutter.js";
 import { forestDensity, treesInRect } from "../../src/sim/vegetation.js";
+import { runBySlices } from "../helpers/sliceRun.js";
 import { timeLimit } from "../helpers/timeLimit.js";
 
 const SEED = 0x717e;
@@ -959,4 +962,42 @@ describe("covered ground", () => {
     expect(total).toBe(wantTotal);
     expect(patched.size).toBe(wantSquares);
   }, timeLimit(120_000));
+});
+
+describe("the rings cut at every reading of the scheduler's clock", () => {
+  const ARRAYS = ["h", "hh", "dx", "dz", "colors", "weights", "weights2", "cover", "normals", "lift"] as const;
+  const same = (a: ArrayLike<number>, b: ArrayLike<number>): boolean => Buffer.from(new Uint8Array((a as Float32Array).buffer, (a as Float32Array).byteOffset, (a as Float32Array).byteLength)).equals(Buffer.from(new Uint8Array((b as Float32Array).buffer, (b as Float32Array).byteOffset, (b as Float32Array).byteLength)));
+
+  it("moves a ring's samples to what moving it at once makes, over three crossings", () => {
+    const sliced = createRingSamples(SEED, 1, 100, -50);
+    const whole = createRingSamples(SEED, 1, 100, -50);
+    const spare: RingArrays[] = [];
+    let cut = 0;
+    for (const [x, z] of [[104.5, -50], [104.5, -45.6], [96.2, -41]] as const) {
+      const run = runBySlices(ringSampleSlices(sliced, SEED, x, z, spare));
+      expect(updateRingSamples(whole, SEED, x, z)).toBe(run.value);
+      cut += run.slices;
+      expect([sliced.originX, sliced.originZ, sliced.moves]).toEqual([whole.originX, whole.originZ, whole.moves]);
+      for (const key of ARRAYS) expect(same(sliced[key], whole[key]), key).toBe(true);
+    }
+    expect(cut).toBeGreaterThan(30);
+  }, timeLimit(60_000));
+
+  it("writes a ring's geometry to the buffers a build at once makes, covered ground or none, over three crossings", () => {
+    const covers: Array<CoveredGround | null> = [null, { x: 100, z: -50, reach: 90, fine: 60, cell: 16 }, null];
+    let cut = 0;
+    [[100, -50], [104.5, -41], [89, -52]].forEach(([x, z], k) => {
+      const rings = [0, 1, 2].map((level) => createRingSamples(SEED, level, x as number, z as number));
+      const [finer, ring, coarser] = rings as [RingSamples, RingSamples, RingSamples];
+      const hole = holeCellsFor(ring, finer);
+      const whole = ringGeometry(ring, hole, coarser, covers[k] ?? null);
+      const out = ringGeometryBuffers(true);
+      const run = runBySlices(ringGeometrySlices(ring, hole, coarser, out, covers[k] ?? null));
+      cut += run.slices;
+      expect(out.indexCount).toBe(whole.indexCount);
+      for (const key of ["positions", "normals", "colors", "weights", "weights2", "cover"] as const) expect(same(out[key], whole[key]), key).toBe(true);
+      expect(same(out.indices.subarray(0, out.indexCount), whole.indices.subarray(0, whole.indexCount))).toBe(true);
+    });
+    expect(cut).toBeGreaterThan(30);
+  }, timeLimit(60_000));
 });

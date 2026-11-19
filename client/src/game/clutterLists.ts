@@ -22,7 +22,7 @@ import {
   KEPT_FOLIAGE, KEPT_STRIDE, commitStaged, createInstanceList, createViewCut, cutList, ensureStaging, stageKept, type InstanceList,
 } from "./instanceLists.js";
 import { createKeptValues } from "./keptValues.js";
-import type { Slices } from "./syncJobs.js";
+import { sliceDue, type Slices } from "./syncJobs.js";
 
 /** One matrix's worth of scratch floats, so an instance's matrix can be
  * composed and copied into the kept values at any offset without a
@@ -35,6 +35,9 @@ const scratchMat = new Float32Array(16);
  * walks through the terrain's noise. About a tenth of a millisecond. */
 const FILL_SLICE = 1536;
 const FILL_NEW_COST = 16;
+/** Work (in those units) that counts as one unit of the scheduler's clock (`sliceDue`): an instance computed for the
+ * first time is four, one copied a quarter. A slice ends by the clock as well as by the count. */
+const FILL_CLOCK_WORK = 4;
 
 /** What computing an instance's kept values ahead weighs on a slice of idle
  * work, in `prefetchWindow`'s units: about what sampling a cell does. */
@@ -243,8 +246,10 @@ export function createClutterLists(seed: number, options: ClutterListsOptions): 
           for (const inst of lod === NEAR_LOD ? band.near : band.far) {
             const known = kept.size;
             stageInstance(bucketFor(rows, inst, lod), inst);
-            work += kept.size > known ? FILL_NEW_COST : 1;
-            if (work >= FILL_SLICE) {
+            const cost = kept.size > known ? FILL_NEW_COST : 1;
+            work += cost;
+            const ended = sliceDue(cost / FILL_CLOCK_WORK);
+            if (work >= FILL_SLICE || ended) {
               work = 0;
               yield;
             }

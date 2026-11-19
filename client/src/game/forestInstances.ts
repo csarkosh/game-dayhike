@@ -21,7 +21,7 @@ import { groundNormalTilt, groundNormalY, seatOnGround } from "./groundTilt.js";
 import { composeInto, quatAboutAxis, quatFromEuler, quatMultiply, transformPoint, type Quat, type Vec3 } from "./instancePose.js";
 import { LOG_STATIONS, logStationOffsets, seatLog, trunkSeat, trunkTop, type TrunkSeat } from "./logSeat.js";
 import { NURSE_FERN, nursePlants } from "./nurseLog.js";
-import type { Slices } from "./syncJobs.js";
+import { sliceDue, type Slices } from "./syncJobs.js";
 import { surfaceAlbedo } from "./terrainSurface.js";
 
 const UP: Vec3 = { x: 0, y: 1, z: 0 };
@@ -351,8 +351,9 @@ export function* impostorMatrixSlices(
   let i = 0;
   for (const list of [lattice, fill]) {
     for (const t of list) {
-      // Thousands of billboards a bucket: a slice composes a share of them.
-      if (i > 0 && i % IMPOSTOR_SLICE === 0) yield;
+      // Thousands of billboards a bucket: a slice composes a share of them, and ends by the scheduler's clock as well.
+      const ended = sliceDue(IMPOSTOR_UNITS);
+      if (i > 0 && (i % IMPOSTOR_SLICE === 0 || ended)) yield;
       // Yaw that points the quad's face (−Z, the plane's; the material
       // is two-sided for the frames a rebuild is stale) at the camera:
       // rotating +Z by atan2(dx, dz) about Y lands it on (dx, dz), so −Z
@@ -374,6 +375,8 @@ export function* impostorMatrixSlices(
 
 /** Billboard matrices a slice composes: about a tenth of a millisecond. */
 export const IMPOSTOR_SLICE = 512;
+/** The units of work (`sliceDue`) a billboard's matrix counts: a quarter of a terrain sample. */
+const IMPOSTOR_UNITS = 0.25;
 
 /**
  * The impostor lists in ONE pass each, split into the buckets that will draw

@@ -18,7 +18,7 @@ import {
   KEPT_FOLIAGE, KEPT_STRIDE, commitStaged, createInstanceList, createViewCut, cutList, ensureStaging, stageKept, type InstanceList,
 } from "./instanceLists.js";
 import { createKeptValues } from "./keptValues.js";
-import type { Slices } from "./syncJobs.js";
+import { sliceDue, type Slices } from "./syncJobs.js";
 
 /** The distance tiers a clump is drawn in: fine, mid, coarse. */
 export const BLADE_TIER_COUNT = 3;
@@ -59,6 +59,9 @@ const scratchFrame: { height: number; lean: number; ax: number; az: number; tint
  * through the terrain's noise. About a tenth of a millisecond. */
 const FILL_SLICE = 1024;
 const FILL_NEW_COST = 16;
+/** Work (in those units) that counts as one unit of the scheduler's clock (`sliceDue`): a cell computed for the first
+ * time is four, one copied a quarter. A slice ends by the clock as well as by the count. */
+const FILL_CLOCK_WORK = 4;
 
 /** What computing a cell's kept values ahead weighs on a slice of idle work,
  * in `prefetchWindow`'s units: about what sampling a cell does. */
@@ -177,8 +180,10 @@ export function createBladeLists(seed: number): BladeLists {
       const at = kept.offsetOf(c);
       const i = stageKept(list, kept.data, at);
       list.staged.strength[i] = c.strength;
-      work += kept.size > known ? FILL_NEW_COST : 1;
-      if (work >= FILL_SLICE) {
+      const cost = kept.size > known ? FILL_NEW_COST : 1;
+      work += cost;
+      const ended = sliceDue(cost / FILL_CLOCK_WORK);
+      if (work >= FILL_SLICE || ended) {
         work = 0;
         yield;
       }
