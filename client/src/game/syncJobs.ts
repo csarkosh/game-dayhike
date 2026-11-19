@@ -184,6 +184,9 @@ export type Slices<T = void> = Generator<number | void, T, void>;
 
 /** Elements a slice of `sortSlices` moves before it yields. */
 const SORT_SLICE = 8192;
+/** Elements a merge writes between two looks at the scheduler's clock (a power of two), and how many of them are one unit of work (`sliceDue`). */
+const SORT_LOOK = 256;
+const SORT_UNITS = 64;
 
 /**
  * Sorts `list` in place, in slices: a bottom-up merge sort, stable like
@@ -203,8 +206,12 @@ export function* sortSlices<T>(list: T[], compare: (a: T, b: T) => number): Slic
       let i = lo;
       let j = mid;
       let k = lo;
-      // Ties take the left run first: that is what keeps it stable.
-      while (i < mid && j < hi) to[k++] = compare(from[j] as T, from[i] as T) < 0 ? (from[j++] as T) : (from[i++] as T);
+      // Ties take the left run first: that is what keeps it stable. A merge asks the clock every `SORT_LOOK`
+      // elements, so the last passes, whose one merge is the whole list, are cut as well.
+      while (i < mid && j < hi) {
+        to[k++] = compare(from[j] as T, from[i] as T) < 0 ? (from[j++] as T) : (from[i++] as T);
+        if ((k & (SORT_LOOK - 1)) === 0 && sliceDue(SORT_LOOK / SORT_UNITS)) yield;
+      }
       while (i < mid) to[k++] = from[i++] as T;
       while (j < hi) to[k++] = from[j++] as T;
       moved += hi - lo;

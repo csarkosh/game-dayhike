@@ -15,7 +15,7 @@
  * object whether the window or a whole walk reaches it. Pure and
  * Babylon-free.
  */
-import type { Slices } from "./syncJobs.js";
+import { sliceDue, type Slices } from "./syncJobs.js";
 
 export type CellWindow<T> = {
   /** The square, inclusive, in cells; NaN before the first move. */
@@ -76,6 +76,10 @@ export function walkEveryCell<T>(sample: (cls: number, cx: number, cz: number) =
  * millisecond. */
 const WINDOW_SLICE = 1024;
 const FRESH_COST = 64;
+/** Work (in the units above) that counts as one unit of the scheduler's clock (`sliceDue`): a cell sampled fresh is
+ * eight, a lookup of a held cell an eighth, so the clock is read about as often as a fresh cell is sampled. A slice
+ * ends by the clock as well as by the count above. */
+const CLOCK_WORK = 8;
 
 /**
  * Moves the window to the square [x0, x1] × [z0, z1], in slices: the rows are
@@ -99,9 +103,12 @@ export function* moveWindow<T>(
   let seen = fresh.count;
   /** Counts a lookup, and whether the slice has done its share. */
   const due = (): boolean => {
-    work += 1 + (fresh.count - seen) * FRESH_COST;
+    const spent = 1 + (fresh.count - seen) * FRESH_COST;
+    work += spent;
     seen = fresh.count;
-    if (work < WINDOW_SLICE) return false;
+    // Asked of every lookup, so the clock count goes on whether or not the count here has.
+    const late = sliceDue(spent / CLOCK_WORK);
+    if (work < WINDOW_SLICE && !late) return false;
     work = 0;
     return true;
   };
@@ -218,10 +225,13 @@ export function* prefetchWindow<T>(
         continue;
       }
       const v = sample(cx, cz);
-      work += 1 + (fresh.count - seen) * FRESH_COST;
+      const spent = 1 + (fresh.count - seen) * FRESH_COST;
+      work += spent;
       seen = fresh.count;
-      if (v !== null && found !== undefined) work += found(v);
-      if (work >= WINDOW_SLICE) {
+      const looked = v !== null && found !== undefined ? found(v) : 0;
+      work += looked;
+      const late = sliceDue((spent + looked) / CLOCK_WORK);
+      if (work >= WINDOW_SLICE || late) {
         work = 0;
         yield;
       }

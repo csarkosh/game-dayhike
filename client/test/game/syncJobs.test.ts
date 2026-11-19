@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { runBySlices } from "../helpers/sliceRun.js";
 import {
   SLICE_READ_UNITS, SLICE_TARGET_MS, SYNC_BUDGET_MS, SYNC_LATE_BUDGET_MS, SYNC_LATE_FRAMES_MAX, SYNC_LATE_MS_MAX, SYNC_OVERDUE_MS,
   createCrossing, createSyncJobs, crossingAt, finish, nextCrossing, sliceDue, sortSlices, turn,
@@ -540,6 +541,16 @@ describe("the scheduler", () => {
     expect(n).toBe(32);
     const empty: number[] = [];
     expect([...sortSlicesDone(empty), ...sortSlicesDone([3])]).toEqual([3]);
+  });
+
+  it("sorts the same order cut at every reading of the scheduler's clock, merges of the whole list included", () => {
+    const keys = Array.from({ length: 5000 }, (_, i) => ({ k: (i * 7919) % 211, i }));
+    const expected = [...keys].sort((a, b) => a.k - b.k);
+    const list = [...keys];
+    const run = runBySlices(sortSlices(list, (a, b) => a.k - b.k));
+    expect(list).toEqual(expected);
+    // Cut inside the passes: the count of elements moved alone makes 8 slices of these 5000 elements in 13 passes.
+    expect(run.slices).toBeGreaterThan(30);
   });
 
   it("finish runs a job's slices to the end and returns its result", () => {

@@ -1,6 +1,8 @@
 import { describe, it, expect } from "vitest";
 import "../../src/sim/olympic.js";
 import { setActiveTerrainVariant } from "../../src/sim/terrain.js";
+import { runBySlices } from "../helpers/sliceRun.js";
+import { timeLimit } from "../helpers/timeLimit.js";
 import {
   treeInCell,
   TREE_CELL,
@@ -610,4 +612,24 @@ describe("farTreeScale", () => {
     expect(farTreeScale(1000)).toEqual([1.4, 1.1]);
     expect(farTreeScale(1900)).toEqual([1.4, 1.1]);
   });
+});
+
+describe("the band collector cut at every reading of the scheduler's clock", () => {
+  it("collects the bands a collect at once collects, over three crossings", () => {
+    const whole = createBandCollector(SEED);
+    const sliced = createBandCollector(SEED);
+    let cut = 0;
+    for (const [x, z] of [[1, 1], [1 + TREE_CELL, 1], [1 + TREE_CELL, 1 + TREE_CELL]] as const) {
+      const expected = whole.collect(x, z);
+      const run = runBySlices(sliced.collectSlices(x, z));
+      cut += run.slices;
+      expect(Object.keys(run.value).sort()).toEqual(Object.keys(expected).sort());
+      for (const key of Object.keys(expected) as (keyof typeof expected)[]) {
+        // The same trees, in the same order.
+        expect(run.value[key].length, key).toBe(expected[key].length);
+        expect(run.value[key], key).toEqual(expected[key]);
+      }
+    }
+    expect(cut).toBeGreaterThan(100);
+  }, timeLimit(120_000));
 });

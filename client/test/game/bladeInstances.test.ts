@@ -6,6 +6,8 @@ import { instanceMatrixFor, trampleFrame, writeFoliage } from "../../src/game/cl
 import type { CullPose } from "../../src/game/grassCull.js";
 import type { InstanceList } from "../../src/game/instanceLists.js";
 import { finish } from "../../src/game/syncJobs.js";
+import { runBySlices } from "../helpers/sliceRun.js";
+import { timeLimit } from "../helpers/timeLimit.js";
 import { elevationSampleAt } from "../../src/sim/terrain.js";
 
 // The open-field census point: every tier and every character is present.
@@ -71,6 +73,28 @@ describe("the blade field's lists", () => {
     // Every cell listed is kept once, however many tiers list it.
     expect(lists.kept).toBe(new Set([...tiers.fine, ...tiers.mid, ...tiers.coarse]).size);
   });
+
+  it("are filled the same in slices cut at every reading of the scheduler's clock, over three crossings", () => {
+    const whole = createBladeLists(SEED);
+    const sliced = createBladeLists(SEED);
+    let cut = 0;
+    for (const [x, z] of [[CAM.x, CAM.z], [CAM.x + BLADE_REBUILD_CELL, CAM.z], [CAM.x + BLADE_REBUILD_CELL, CAM.z - BLADE_REBUILD_CELL]] as const) {
+      finish(whole.rebuild(x, z));
+      cut += runBySlices(sliced.rebuild(x, z)).slices;
+      expect(sliced.view).toEqual(whole.view);
+      expect(sliced.kept).toBe(whole.kept);
+      sliced.all.forEach((list, i) => {
+        const a = whole.all[i] as InstanceList;
+        expect(list.count).toBe(a.count);
+        for (const key of ["buf", "foliage"] as const) {
+          const n = Math.min(list[key].length, a.count * 16);
+          expect(Buffer.from(list[key].buffer, list[key].byteOffset, n * 4).equals(Buffer.from(a[key].buffer, a[key].byteOffset, n * 4))).toBe(true);
+        }
+        expect([...list.strength.subarray(0, a.count)]).toEqual([...a.strength.subarray(0, a.count)]);
+      });
+    }
+    expect(cut).toBeGreaterThan(30);
+  }, timeLimit(60_000));
 
   it("report each list whose drawn prefix changed: all of them after a rebuild, none for a view that stands, fewer for a view than for none", () => {
     const lists = createBladeLists(SEED);

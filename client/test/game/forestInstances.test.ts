@@ -9,6 +9,7 @@ import {
 } from "../../src/game/forestInstances.js";
 import { NURSE_FERN, nursePlants } from "../../src/game/nurseLog.js";
 import { finish } from "../../src/game/syncJobs.js";
+import { runBySlices } from "../helpers/sliceRun.js";
 import { elevationAt } from "../../src/sim/terrain.js";
 import { COHORT_GIANT, COHORT_LOG, COHORT_SAPLING, COHORT_SNAG, type TreeInstance } from "../../src/sim/vegetation.js";
 
@@ -183,6 +184,13 @@ describe("the forest's instance lists", () => {
       expect(-(m[10] as number) / columnLength(m, 2)).toBeCloseTo(-t.z / dist, 5);
     });
     expect(farTreeScale(1500)[0]).toBeGreaterThan(1);
+  });
+
+  it("compose the same billboards cut at every reading of the scheduler's clock", () => {
+    const many = Array.from({ length: IMPOSTOR_SLICE * 2 + 3 }, (_, i) => tree({ x: 200 + i, z: 300 - i }));
+    const sliced = runBySlices(impostorMatrixSlices(many.slice(0, 700), many.slice(700), 5, 1, 2));
+    expect(sliced.slices).toBeGreaterThan(30);
+    expect(Buffer.from(sliced.value.buffer).equals(Buffer.from(finish(impostorMatrixSlices(many.slice(0, 700), many.slice(700), 5, 1, 2)).buffer))).toBe(true);
   });
 
   it("compose a bucket's billboards over several slices, the same floats as at once", () => {

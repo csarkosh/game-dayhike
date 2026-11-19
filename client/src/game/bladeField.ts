@@ -3,7 +3,7 @@ import { activeTerrainVariant } from "../sim/terrain.js";
 import { forestDensity } from "../sim/vegetation.js";
 import { latticeHash } from "./groundHexParams.js";
 import { CLUTTER_FAR_SPLIT, clutterNearRadius, clutterSeamEdges } from "./clutterField.js";
-import { finish, nextCrossing, type Slices } from "./syncJobs.js";
+import { finish, nextCrossing, sliceDue, sortSlices, type Slices } from "./syncJobs.js";
 import { createCellWindow, inWindow, moveWindow, prefetchWindow, walkEveryCell, type CellRows } from "./cellWindow.js";
 
 /**
@@ -202,8 +202,10 @@ function bladeOrigin(v: number): number {
   return Math.floor(v / BLADE_CELL) * BLADE_CELL;
 }
 
-/** Listed cells a slice of the walk classifies before it yields. */
+/** Listed cells a slice of the walk classifies before it yields. A slice also ends by the scheduler's clock
+ * (`sliceDue`), which counts `LIST_UNITS` listed cells as one unit of work. */
 const TIER_SLICE = 4096;
+const LIST_UNITS = 128;
 
 /** The walk, shared by the pure one-shot and the collector that keeps its
  * square (`createBladeCollector`): the same loop over the same rows, in
@@ -234,17 +236,18 @@ function* collectBladeSlices(camX: number, camZ: number, rowsOf: CellRows<BladeC
       if (d2 >= coarseLo2) coarse.push({ c, d2 });
     }
     listed += row.length;
-    if (listed >= TIER_SLICE) {
+    const ended = sliceDue(row.length / LIST_UNITS);
+    if (listed >= TIER_SLICE || ended) {
       listed = 0;
       yield;
     }
   }
-  // Stable, so cells at one distance keep the walk's order.
+  // Stable, so cells at one distance keep the walk's order; in slices, the order `sort` leaves.
   const nearest = (a: { d2: number }, b: { d2: number }) => a.d2 - b.d2;
-  fine.sort(nearest);
-  mid.sort(nearest);
+  yield* sortSlices(fine, nearest);
+  yield* sortSlices(mid, nearest);
   yield;
-  coarse.sort(nearest);
+  yield* sortSlices(coarse, nearest);
   const tiers = { fine: fine.map((p) => p.c), mid: mid.map((p) => p.c), coarse: coarse.map((p) => p.c) };
   yield;
   return tiers;
