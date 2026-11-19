@@ -471,6 +471,7 @@ import { WET_CAP, emptyWetUniforms, setWetCove, setWetSwash, setWetWeather, wetL
 import { wayDimAt } from "../wayLevel.js";
 import type { WayColourPath } from "../wayLight.js";
 import { wayTint } from "../wayLightGeometry.js";
+import { wayHazeInto } from "../wayHaze.js";
 import { windRecordUnder, type WindRecord } from "../windParams.js";
 import { atmospherePlugin } from "./atmospherePlugin.js";
 import { createBladeMeshes, type BladeMeshes } from "./bladeMeshes.js";
@@ -1669,6 +1670,8 @@ export function createLiteRenderer(canvas: HTMLCanvasElement, level: Level, fore
     // The ground cloud is marched in the tier's steps while it has density: by the chain where there is one, and
     // then by no material.
     atmosphereUniforms(light.air, cloud, made.chain === null ? cloudMarchSteps(cloud) : 0, airValues);
+    // No chain: the woods over the way's mist stand in a haze of its colour, in the air every material draws.
+    if (made.chain === null) wayHazeInto(airValues, wayLevel, wayTint("material", cloudColourUnder(nearColour), 1, chaseCast, CHASE_TINT));
     if (made.chain !== null) {
       // The chain's frame: the camera its passes rebuild a pixel's ray from, the sun and the cloud its far softening
       // marches, and the jitter's next step, before the projection is read for the frame's block.
