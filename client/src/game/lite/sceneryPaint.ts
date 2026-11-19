@@ -40,6 +40,15 @@ import { LABEL_TEXTURE, paintLabel, type LabelFace } from "../signParts.js";
 import { DISPLAY_CURVE_WGSL, onColourPath } from "./displayCurve.js";
 import { FRAME_CONTRAST_NAME, FRAME_EXPOSURE_NAME, stageOwn, stageReads } from "./frameBlock.js";
 import { shaderUniformDecls, shaderUniformWriter } from "./shaderUniforms.js";
+import paintAlphaSource from "../shaders/sceneryPaint/paintAlpha.wgsl?raw";
+import patchVaryingsSource from "../shaders/sceneryPaint/patchVaryings.wgsl?raw";
+import patchVertexSource from "../shaders/sceneryPaint/patch.vertex.wgsl?raw";
+import patchFragmentSource from "../shaders/sceneryPaint/patch.fragment.wgsl?raw";
+import unlitBlackSource from "../shaders/sceneryPaint/unlitBlack.wgsl?raw";
+import tailVaryingsSource from "../shaders/sceneryPaint/tailVaryings.wgsl?raw";
+import tailVertexSource from "../shaders/sceneryPaint/tail.vertex.wgsl?raw";
+import tailFragmentSource from "../shaders/sceneryPaint/tail.fragment.wgsl?raw";
+import { fill, wgsl } from "../shaders/shaderText.js";
 
 /** The most rows a column of the lettering's picture holds: a texture no taller than every device takes. */
 export const ATLAS_ROWS = 32;
@@ -116,7 +125,7 @@ export function paintAlphaPlugin(): MaterialPlugin {
   return {
     name: "PaintAlpha",
     priority: 995,
-    getCustomCode: (stage) => (stage === "fragment" ? { CUSTOM_FRAGMENT_BEFORE_FRAGCOLOR: "return vec4<f32>(color,alpha*material.materialAlpha);" } : null),
+    getCustomCode: (stage) => (stage === "fragment" ? { CUSTOM_FRAGMENT_BEFORE_FRAGCOLOR: wgsl(paintAlphaSource) } : null),
   };
 }
 
@@ -160,53 +169,20 @@ export function faceMesh(engine: EngineContext, name: string, geometry: FaceGeom
 }
 
 /** What the two stages of the patch hand each other. */
-const PATCH_VARYINGS = "struct PatchOut{@builtin(position)position:vec4<f32>,@location(0)uv:vec2<f32>,@location(1)fogDistance:vec3<f32>}";
+const PATCH_VARYINGS = wgsl(patchVaryingsSource);
 
 /** The patch's depth set ahead, in a 24-bit depth buffer's steps toward the eye: Lite's depth runs from 1 at the near plane. */
 const PATCH_AHEAD = -CAR_SHADOW_BIAS / 2 ** 24;
 
 /** The vertex stage: a corner of the grid, already in the world's coordinates, and the fog's distance in the view's space. */
-const PATCH_VERTEX = /* wgsl */ `
-${PATCH_VARYINGS}
-@vertex fn mainVertex(input:VertexInput)->PatchOut{
-  var out:PatchOut;
-  let worldPos=vec4<f32>(input.position,1.0);
-  out.position=scene.viewProjection*worldPos;
-  out.position.z+=${PATCH_AHEAD.toExponential(6)}*out.position.w;
-  out.fogDistance=(scene.view*worldPos).xyz;
-  out.uv=input.uv;
-  return out;
-}`;
+const PATCH_VERTEX = fill(wgsl(patchVertexSource), { varyings: PATCH_VARYINGS, ahead: PATCH_AHEAD.toExponential(6) });
 
 /**
  * The fragment stage: the Standard material's, with no light, no emissive
  * colour, an opacity texture and the scene's fog (`CalcFogFactor` at
  * `FOGMODE_EXP2`), in Babylon.js's order.
  */
-const PATCH_FRAGMENT = /* wgsl */ `
-${PATCH_VARYINGS}
-${DISPLAY_CURVE_WGSL}
-const PATCH_E:f32=2.71828;
-fn patchFogFactor(vFogDistance:vec3<f32>,fogDensity:f32)->f32{
-  let fogDistance=length(vFogDistance);
-  let fogCoeff=1.0/pow(PATCH_E,fogDistance*fogDistance*fogDensity*fogDensity);
-  return clamp(fogCoeff,0.0,1.0);
-}
-@fragment fn mainFragment(input:PatchOut)->@location(0)vec4<f32>{
-  let u=shaderUniforms;
-  var alpha=u.patchDark;
-  let opacityMap=textureSample(patchMap,patchMapSampler,input.uv);
-  alpha*=opacityMap.a;
-  let emissiveColor=vec3<f32>(0.0);
-  let finalDiffuse=clamp(emissiveColor,vec3<f32>(0.0),vec3<f32>(1.0));
-  var color=vec4<f32>(finalDiffuse,alpha);
-  color=vec4<f32>(max(color.rgb,vec3<f32>(0.0)),color.a);
-  let fog=patchFogFactor(input.fogDistance,u.patchFogDensity);
-  color=vec4<f32>(mix(u.patchFogColour,color.rgb,fog),color.a);
-  color=vec4<f32>(pow(color.rgb,vec3<f32>(2.2)),color.a);
-  color=vec4<f32>(displayColour(color.rgb,u.patchExposure,u.patchContrast),color.a);
-  return color;
-}`;
+const PATCH_FRAGMENT = fill(wgsl(patchFragmentSource), { patchVaryings: PATCH_VARYINGS, displayCurve: DISPLAY_CURVE_WGSL });
 
 /** The stages' text, for the tests that hold it to the game's. */
 export const PATCH_WGSL = { vertex: PATCH_VERTEX, fragment: PATCH_FRAGMENT } as const;
@@ -251,7 +227,7 @@ export function unlitBlackPlugin(): MaterialPlugin {
   return {
     name: "UnlitBlack",
     priority: 890,
-    getCustomCode: (stage) => (stage === "fragment" ? { CUSTOM_FRAGMENT_BEFORE_FINALCOLORCOMPOSITION: "color=vec3<f32>(0.0);" } : null),
+    getCustomCode: (stage) => (stage === "fragment" ? { CUSTOM_FRAGMENT_BEFORE_FINALCOLORCOMPOSITION: wgsl(unlitBlackSource) } : null),
   };
 }
 
@@ -294,36 +270,16 @@ export function patchGeometry(grid: CarShadowGrid, yaw = 0): { positions: Float3
 }
 
 /** What the two stages of the tail lamps hand each other. */
-const TAIL_VARYINGS = "struct TailOut{@builtin(position)position:vec4<f32>}";
+const TAIL_VARYINGS = wgsl(tailVaryingsSource);
 
 /** The vertex stage: a corner of a lamp, already in the world's coordinates. */
-const TAIL_VERTEX = /* wgsl */ `
-${TAIL_VARYINGS}
-@vertex fn mainVertex(input:VertexInput)->TailOut{
-  var out:TailOut;
-  let worldPos=vec4<f32>(input.position,1.0);
-  out.position=scene.viewProjection*worldPos;
-  return out;
-}`;
+const TAIL_VERTEX = fill(wgsl(tailVertexSource), { tailVaryings: TAIL_VARYINGS });
 
 /**
  * The fragment stage: the Standard material's, with no light, the lamp's
  * colour given off and no fog (`fogEnabled` false), in Babylon.js's order.
  */
-const TAIL_FRAGMENT = /* wgsl */ `
-${TAIL_VARYINGS}
-${DISPLAY_CURVE_WGSL}
-@fragment fn mainFragment(input:TailOut)->@location(0)vec4<f32>{
-  let u=shaderUniforms;
-  let alpha=1.0;
-  let emissiveColor=u.tailColour;
-  let finalDiffuse=clamp(emissiveColor,vec3<f32>(0.0),vec3<f32>(1.0));
-  var color=vec4<f32>(finalDiffuse,alpha);
-  color=vec4<f32>(max(color.rgb,vec3<f32>(0.0)),color.a);
-  color=vec4<f32>(pow(color.rgb,vec3<f32>(2.2)),color.a);
-  color=vec4<f32>(displayColour(color.rgb,u.tailExposure,u.tailContrast),color.a);
-  return color;
-}`;
+const TAIL_FRAGMENT = fill(wgsl(tailFragmentSource), { tailVaryings: TAIL_VARYINGS, displayCurve: DISPLAY_CURVE_WGSL });
 
 /** The stages' text, for the tests that hold it to the patch's. */
 export const TAIL_WGSL = { vertex: TAIL_VERTEX, fragment: TAIL_FRAGMENT } as const;

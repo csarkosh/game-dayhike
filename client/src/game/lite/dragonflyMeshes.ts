@@ -32,10 +32,12 @@ import { oneSidedLightPlugin } from "./forestPlugins.js";
 import type { FrameUploads } from "./frameUploads.js";
 import { MATRIX_BYTES } from "./listMeshes.js";
 import { WING_AMP_AT, WING_COLOURWAY_AT, WING_PHASE_AT, wingPlugin } from "./wingPlugin.js";
+import vertexAlphaSource from "../shaders/dragonfly/vertexAlpha.wgsl?raw";
+import { wgsl } from "../shaders/shaderText.js";
 
 /** The card's alpha, a vertex's second texture coordinate, onto the surface's: the wings' membrane, the body whole. */
 export function vertexAlphaPlugin(): MaterialPlugin {
-  return { name: "VertexAlpha", priority: 225, getCustomCode: (stage) => (stage === "fragment" ? { CUSTOM_FRAGMENT_BEFORE_LIGHTS: "alpha*=input.uv.y;" } : null) };
+  return { name: "VertexAlpha", priority: 225, getCustomCode: (stage) => (stage === "fragment" ? { CUSTOM_FRAGMENT_BEFORE_LIGHTS: wgsl(vertexAlphaSource) } : null) };
 }
 
 /**

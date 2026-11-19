@@ -89,6 +89,9 @@ import type { FrameUploads } from "./frameUploads.js";
 import { MATRIX_BYTES } from "./listMeshes.js";
 import { writeShadeLook, type LiteShadeMask } from "./shadeMask.js";
 import { loadSkinnedModel, type SkinClock, type SkinnedModel, type SkinnedPart } from "./skinnedModels.js";
+import eyeLevelVertexSource from "../shaders/entity/eyeLevelVertex.wgsl?raw";
+import eyeLevelColourSource from "../shaders/entity/eyeLevelColour.wgsl?raw";
+import { wgsl } from "../shaders/shaderText.js";
 
 /** The bodies' places among the draws, from the shell's first: a ranger's primitives, a place each by their order in the model, then the capsule, then the Hollow's body, which the mask draws and the frame's own pass does not, then the Hollows' eyes. */
 export const BODY_PLACES = { rangers: 0, capsule: 4, figure: 5, eyes: 6 } as const;
@@ -129,8 +132,8 @@ export function eyeLevelPlugin(): MaterialPlugin {
     priority: 890,
     getCustomCode: (stage) =>
       stage === "vertex"
-        ? { CUSTOM_VERTEX_MAIN_END: "out.vEyeLevel=eyeLevel;if(eyeLevel<=0.0){out.clipPos=vec4<f32>(2.0,2.0,2.0,1.0);}" }
-        : { CUSTOM_FRAGMENT_BEFORE_FINALCOLORCOMPOSITION: "color*=input.vEyeLevel;" },
+        ? { CUSTOM_VERTEX_MAIN_END: wgsl(eyeLevelVertexSource) }
+        : { CUSTOM_FRAGMENT_BEFORE_FINALCOLORCOMPOSITION: wgsl(eyeLevelColourSource) },
     getInstanceAttributes: () => [{ name: "eyeLevel", type: "f32", format: "float32" as const, stride: EYE_LEVEL_BYTES, offset: 0 }],
     getVaryings: () => [{ name: "vEyeLevel", type: "f32" }],
   };

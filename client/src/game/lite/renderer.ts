@@ -485,6 +485,11 @@ import { createLiteWildlifeMeshes, type LiteWildlifeMeshes } from "./wildlifeMes
 import { emptyTerrainMaterialUniforms, terrainPlugin, terrainSplitPlugin, terrainWetPlugin } from "./terrainPlugins.js";
 import { createWorldLight } from "./worldLight.js";
 import { createWornLamps, type WornLamps } from "./wornLamps.js";
+import depthAheadSource from "../shaders/renderer/depthAhead.wgsl?raw";
+import depthAheadCosSource from "../shaders/renderer/depthAheadCos.wgsl?raw";
+import depthAheadProjectionSource from "../shaders/renderer/depthAheadProjection.wgsl?raw";
+import depthAheadSlopeSource from "../shaders/renderer/depthAheadSlope.wgsl?raw";
+import { fill, wgsl } from "../shaders/shaderText.js";
 
 /**
  * Whether a renderer of this page has drawn a tier with a post chain. Lite's
@@ -535,10 +540,10 @@ const DEPTH_AHEAD_MIN_COS = Math.cos((DEPTH_AHEAD_MAX_DEGREES * Math.PI) / 180);
  */
 export function depthAheadPlugin(units: number, slope = 0): MaterialPlugin {
   const ahead = units / 2 ** 24;
-  const constant = `out.clipPos.z+=${ahead.toExponential(6)}*out.clipPos.w;`;
-  const sloped = `{let daC=clamp(abs(dot(normalize(out.worldNormal),normalize(scene.vEyePosition.xyz-out.worldPos))),${DEPTH_AHEAD_MIN_COS.toExponential(6)},1.0);`
-    + `let daP=${FRAME_BLOCK}.${FRAME_PROJECTION_NAME};`
-    + `out.clipPos.z+=${slope.toExponential(6)}*abs(daP[3].z)*sqrt(1.0-daC*daC)/daC*2.0/(abs(daP[1].y)*${FRAME_BLOCK}.${FADE_ROWS_NAME});}`;
+  const constant = fill(wgsl(depthAheadSource), { ahead: ahead.toExponential(6) });
+  const sloped = fill(wgsl(depthAheadCosSource), { depthAheadMinCos: DEPTH_AHEAD_MIN_COS.toExponential(6) })
+    + fill(wgsl(depthAheadProjectionSource), { frameBlock: FRAME_BLOCK, frameProjectionName: FRAME_PROJECTION_NAME })
+    + fill(wgsl(depthAheadSlopeSource), { slope: slope.toExponential(6), frameBlock: FRAME_BLOCK, fadeRowsName: FADE_ROWS_NAME });
   return {
     name: "DepthAhead",
     priority: 950,

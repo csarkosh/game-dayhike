@@ -53,6 +53,9 @@ import { bakeGeometry } from "../modelBake.js";
 import type { WetUniforms } from "../wetSurface.js";
 import { loadModelFile, type ModelPart } from "./forestModels.js";
 import { baseColourPlugin, surfaceWetPlugin } from "./forestPlugins.js";
+import carTurnsFrameSource from "../shaders/sceneryModels/carTurnsFrame.wgsl?raw";
+import carTurnsSource from "../shaders/sceneryModels/carTurns.wgsl?raw";
+import { fill, wgsl } from "../shaders/shaderText.js";
 
 /** The LOD of a placed model that is drawn: these stand in one place and are seen up close. */
 export const SCENERY_LOD = "LOD0";
@@ -282,8 +285,8 @@ const byRows = (v: string, move: boolean): string =>
  * none keeps what the stage made of it.
  */
 export function carTurnsWgsl(tangents: boolean): string {
-  const frame = !tangents ? "" : `let ctTangent=${byRows("tangent", false)};let ctNl=normalize(ctNormal);let ctTl=normalize(ctTangent);let ctBl=cross(ctNl,ctTl)*tangent.w;out.worldTangent=(finalWorld*vec4<f32>(ctTl,0.0)).xyz;out.worldBitangent=(finalWorld*vec4<f32>(ctBl,0.0)).xyz;`;
-  return `{let ctN=u32(${CAR_PART_ATTRIBUTE});if(ctN>0u){let ctAt=(ctN-1u)*3u;let ctX=bitcast<vec4<f32>>(${CAR_TURNS_BLOCK}.${CAR_TURNS_ROWS}[ctAt]);let ctY=bitcast<vec4<f32>>(${CAR_TURNS_BLOCK}.${CAR_TURNS_ROWS}[ctAt+1u]);let ctZ=bitcast<vec4<f32>>(${CAR_TURNS_BLOCK}.${CAR_TURNS_ROWS}[ctAt+2u]);let ctPosition=${byRows("position", true)};let ctNormal=${byRows("normal", false)};let ctWorld4=finalWorld*vec4<f32>(ctPosition,1.0);out.worldPos=ctWorld4.xyz;out.clipPos=scene.viewProjection*ctWorld4;out.worldNormal=(finalWorld*vec4<f32>(normalize(ctNormal),0.0)).xyz;${frame}}}`;
+  const frame = !tangents ? "" : fill(wgsl(carTurnsFrameSource), { tangentRows: byRows("tangent", false) });
+  return fill(wgsl(carTurnsSource), { carPartAttribute: CAR_PART_ATTRIBUTE, carTurnsBlock: CAR_TURNS_BLOCK, carTurnsRows: CAR_TURNS_ROWS, positionRows: byRows("position", true), normalRows: byRows("normal", false), frame });
 }
 
 /**
