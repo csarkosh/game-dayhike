@@ -6,7 +6,7 @@ import type { PreparedScene } from "../../src/game/preparedScene.js";
 import type { QualityTier } from "@csarkosh/engine/game/quality";
 import type { WorldPrepReply } from "../../src/game/world.worker.js";
 import { installPassHash, passHash, passHashCachedFor, passHashKey } from "../../src/sim/forest.js";
-import { bowlFor, type Bowl } from "../../src/sim/olympic.js";
+import { bowlFor, type Bowl } from "../../src/sim/mountain.js";
 import { generateChunk } from "../../src/sim/chunk.js";
 import { createChunkGrid } from "../../src/sim/chunkGrid.js";
 import { DEFAULT_TERRAIN_VARIANT, setActiveTerrainVariant, terrainVariant } from "../../src/sim/terrain.js";
@@ -44,7 +44,7 @@ class FakeWorker {
 async function bowlFromAnotherSim(seed: number): Promise<Bowl> {
   vi.resetModules();
   await import("../../src/sim/passes/index.js");
-  const other = await import("../../src/sim/olympic.js");
+  const other = await import("../../src/sim/mountain.js");
   expect(other.bowlFor).not.toBe(bowlFor);
   return structuredClone(other.bowlFor(seed));
 }

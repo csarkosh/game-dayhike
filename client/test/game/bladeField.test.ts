@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import "../../src/sim/passes/index.js";
 import { CLUTTER_MEADOW, groundCover } from "../../src/sim/clutter.js";
-import { bowlFor } from "../../src/sim/olympic.js";
+import { bowlFor } from "../../src/sim/mountain.js";
 import { CLUTTER_FAR_SPLIT, clutterNearRadius, clutterSeamEdges } from "../../src/game/clutterField.js";
 import {
   BLADE_CELL, BLADE_CHARACTER_COUNT, BLADE_CHARACTER_WEIGHTS, BLADE_FINE, BLADE_FLOWER, BLADE_FLOWER_MIN_STRENGTH,

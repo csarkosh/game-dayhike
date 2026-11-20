@@ -36,23 +36,11 @@ import {
   CLIFF_ROAD_NEAR, CLIFF_ROAD_FAR,
   cliffD,
 } from "./cliffs.js";
-import { registerTerrainVariant, type TerrainSample, type WaterBodySource } from "./terrain.js";
+import { UNIT_KEEP } from "./cliffs.js";
 import {
-  BOWL_TUNABLES, BOWL_Z_HALF, TRAIL_Z_ANCHOR,
-  inBowl, padD, apronWindowD, apronKeepD, APRON_BLEND_END,
-} from "./bowl.js";
-import {
-  TRAIL_TUNABLES, trailCorridorD, trailSinkD, trailDistance as graphTrailDistance,
-  type TrailGraph,
-} from "./trail.js";
-import { buildTrail } from "./trailBuild.js";
-import {
-  LANDMARK_TUNABLES, landmarkMaskAt, type Landmark, type LandmarkMask,
-} from "./landmarks.js";
-import { FEATURE_TUNABLES, featureStageD, lakeStageD, featureMaskAt, type Feature, type FeatureMask } from "./features.js";
-import { BRAID_TUNABLES, type Braid } from "./trailBraid.js";
-import { forestDensityUnmasked } from "./vegetation.js";
-import { boulderDensityUnmasked, CLUTTER_BOULDER_SLOPE_LO } from "./clutter.js";
+  registerTerrainVariant, type LakeSource, type TerrainSample, type TerrainVariant, type WaterBodySource,
+} from "./terrain.js";
+import type { FeatureMask } from "./features.js";
 
 // ---- Tunables ---------------------------------------------------------------
 export const SEA_LEVEL = 0;
@@ -268,6 +256,9 @@ export type Headland = { z: number; height: number; reach: number };
 export type CoveStack = { x: number; z: number; radius: number; height: number };
 export type Cove = { z0: number; halfWidth: number; heads: Headland[]; stacks: CoveStack[] };
 
+/** Where the cove lies along the coast (z, m): the world's origin. A place laid over this coast that wants the cove at its door anchors itself here. */
+export const COVE_Z = 0;
+
 const COVE_CACHE = new Map<number, Cove>();
 /** The seed's cove: its width, its two headlands and the stacks off their
  * tips. A pure function of the seed, cached. */
@@ -276,7 +267,7 @@ export function coveFor(seed: number): Cove {
   if (cached !== undefined) return cached;
   const salted = seed ^ COVE_SALT;
   const halfWidth = (COVE_WIDTH_MIN + (COVE_WIDTH_MAX - COVE_WIDTH_MIN) * hash3(0, 0, 0, salted)) / 2;
-  const z0 = TRAIL_Z_ANCHOR;
+  const z0 = COVE_Z;
   const heads: Headland[] = [];
   const stacks: CoveStack[] = [];
   for (let i = 0; i < 2; i++) {
@@ -604,12 +595,16 @@ function coastFrame(seed: number, z: number): {
   // this is the headland/bay value exactly (W = 0). Product rule through W(z).
   const b0 = BLEND_END_HEADLAND + (BLEND_END_BAY - BLEND_END_HEADLAND) * head;
   const b0Dz = (BLEND_END_BAY - BLEND_END_HEADLAND) * headDz;
-  const W = apronWindowD(z);
+  const blend = overlay === null ? undefined : overlay.blend;
+  if (blend === undefined) {
+    return { coastlineX, dDz, blendEnd: b0, blendEndDz: b0Dz, roadBlendEnd: b0, roadBlendEndDz: b0Dz };
+  }
+  const W = blend.windowD(z);
   return {
     coastlineX,
     dDz,
-    blendEnd: b0 + (APRON_BLEND_END - b0) * W.v,
-    blendEndDz: b0Dz * (1 - W.v) + (APRON_BLEND_END - b0) * W.dz,
+    blendEnd: b0 + (blend.end - b0) * W.v,
+    blendEndDz: b0Dz * (1 - W.v) + (blend.end - b0) * W.dz,
     roadBlendEnd: b0,
     roadBlendEndDz: b0Dz,
   };
@@ -668,124 +663,52 @@ export function roadFrameAt(seed: number, x: number, z: number): { u: number; uD
   return { u: d - road.dr, uDz: f.dDz - road.drDz };
 }
 
-/** The pad sits on the road's shoulder: its height is
- * the road grade at the anchor, which corridorD already imposes there. */
-function padHeightFor(seed: number): number {
-  return roadGradeAt(seed, TRAIL_Z_ANCHOR).h;
-}
-
 /**
- * The field the graph builder and landmark placement sample for heights:
- * base → cliffs → dunes → trailhead pad → road corridor. The road corridor
- * joins this field so the builder's own field matches
- * the composed one inside |u| < ROAD_CORRIDOR_HALF — the pad sits on the
- * road's shoulder now, so the ground the builder routes from must already be
- * cut to the road grade there. No trail, no landmarks — it must not read
- * the graph.
+ * The coast's ground before any place is laid over it, with the road's frame it was made in:
+ * the massif, the coast, the cliffs, the dunes and the cove. What a place plans itself on,
+ * before it has a shape of its own to lay.
  */
-export function olympicPreTrailSample(seed: number, x: number, z: number): TerrainSample {
+export function coastGround(seed: number, x: number, z: number): { u: number; uDz: number; ground: TerrainSample } {
   const f = coastFrame(seed, z);
   const d = x - f.coastlineX;
   const road = roadOffsetD(seed, z, BLEND_START, f.roadBlendEnd, f.roadBlendEndDz);
   const u = d - road.dr;
   const uDz = f.dDz - road.drDz;
   const base = olympicBaseFrom(seed, x, z, d, f.dDz, f.blendEnd, f.blendEndDz);
-  const duned = duneD(seed, x, z, u, uDz, cliffD(seed, x, z, u, uDz, base, apronKeepD(u, uDz, z)));
-  const coved = coveD(seed, x, z, d, f.dDz, u, uDz, duned);
-  const padded = inBowl(u, z) ? padD(u, uDz, z, padHeightFor(seed), coved) : coved;
-  if (Math.abs(u) >= ROAD_CORRIDOR_HALF) return padded;
-  return corridorD(u, uDz, roadGradeAt(seed, z), padded);
+  const keep = overlay === null || overlay.cliffKeepD === undefined ? UNIT_KEEP : overlay.cliffKeepD(u, uDz, z);
+  const duned = duneD(seed, x, z, u, uDz, cliffD(seed, x, z, u, uDz, base, keep));
+  return { u, uDz, ground: coveD(seed, x, z, d, f.dDz, u, uDz, duned) };
 }
 
-/** Everything the bowl owns for one seed: the trail graph, its made features
- * (the peak, and the loop features) and its two scenery
- * landmarks — found where the seed's terrain provides, carved where it does
- * not. All three come out of one build (`buildTrail`): the landmarks are
- * chosen among the cells the trail can actually reach, so there is no second
- * pass to place them. */
-export type Bowl = { graph: TrailGraph; landmarks: Landmark[]; features: Feature[]; braid: Braid };
-const BOWL_CACHE = new Map<number, Bowl>();
-export function bowlFor(seed: number): Bowl {
-  let b = BOWL_CACHE.get(seed);
-  if (b === undefined) {
-    // Placement reads UNMASKED densities over the pre-trail field: the mask is
-    // derived from these placements, so reading it here would be circular.
-    b = buildTrail(seed, {
-      roadCenterX: (z) => roadCenterX(seed, z),
-      sample: (x, z) => olympicPreTrailSample(seed, x, z),
-      treeDensity: (x, z) => forestDensityUnmasked(seed, x, z, olympicPreTrailSample(seed, x, z)),
-      boulderDensity: (x, z) => boulderDensityUnmasked(seed, x, z, olympicPreTrailSample(seed, x, z)),
-      boulderSlopeMin: CLUTTER_BOULDER_SLOPE_LO,
-    });
-    BOWL_CACHE.set(seed, b);
-  }
-  return b;
+/** `ground` with the road's corridor cut through it, as the last stage of the coast's ground cuts it. */
+export function roadCorridorOverD(seed: number, z: number, u: number, uDz: number, ground: TerrainSample): TerrainSample {
+  if (Math.abs(u) >= ROAD_CORRIDOR_HALF) return ground;
+  return corridorD(u, uDz, roadGradeAt(seed, z), ground);
 }
 
-/**
- * Takes a bowl `bowlFor(seed)` made in another thread of the same build (a
- * worker's, cloned across) as this thread's, so the trail is not built twice.
- * False, and the bowl dropped, where the seed already has one: its graph and
- * features may already be in other hands, and two bowls of one seed, equal as
- * they are, are two objects.
- */
-export function installBowl(seed: number, bowl: Bowl): boolean {
-  if (BOWL_CACHE.has(seed)) return false;
-  BOWL_CACHE.set(seed, bowl);
-  return true;
-}
-
-/**
- * Distance to the nearest trail edge, or `Infinity` outside the bowl.
- *
- * `treeInCell` calls this for every surviving tree ANYWHERE in the world, and
- * without the gate each call loops the graph's edges and builds the bowl for
- * the seed. Every node of the graph is a walkability-grid cell centre, which is
- * at least half a cell (4 m) inside the region's box, and every landmark is
- * LANDMARK_BOWL_MARGIN (50 m) inside it — so a query outside `inBowl` is more
- * than 4 m from every edge, and every consumer of this hook is a threshold test
- * at 6 m or less. Cheapest test first: the z band costs two compares, the road
- * frame costs a coast lookup.
- */
-function trailDistanceHook(seed: number, x: number, z: number): number {
-  if (Math.abs(z - TRAIL_Z_ANCHOR) > BOWL_Z_HALF) return Infinity;
-  const { u } = roadFrameAt(seed, x, z);
-  if (!inBowl(u, z)) return Infinity;
-  return graphTrailDistance(bowlFor(seed).graph, x, z);
-}
-function trailGraphHook(seed: number): TrailGraph {
-  return bowlFor(seed).graph;
-}
-function landmarkMaskHook(seed: number, x: number, z: number): LandmarkMask {
-  return landmarkMaskAt(bowlFor(seed).landmarks, x, z);
-}
 /** The made-feature mask hook: samples the composed field itself only
  * when the caller doesn't already hold the ground height at (x, z) — the
  * peak's treeline is a height, not a radius, so `featureMaskAt` needs it, but
  * a caller that already sampled the ground should not
  * pay for a second `olympicSample`. */
 const WATER_BODIES_CACHE = new Map<number, readonly WaterBodySource[]>();
-/** The sea, then one lake per pond feature. A pure function of the bowl, so
+/** The sea, then the lakes of the place laid over the coast. A pure function of the seed, so
  * a per-seed cache is bit-transparent. */
 function waterBodiesHook(seed: number): readonly WaterBodySource[] {
   let bodies = WATER_BODIES_CACHE.get(seed);
   if (bodies === undefined) {
     const list: WaterBodySource[] = [{ kind: "sea", level: SEA_LEVEL }];
-    for (const f of bowlFor(seed).features) {
-      if (f.kind !== "pond" || f.shape === undefined) continue;
-      list.push({
-        kind: "lake", level: f.height, x: f.x, z: f.z, murk: f.murk ?? 0.5, lobe: f.lobe ?? null,
-        shape: f.shape, bound: f.shape.bound,
-      });
-    }
+    if (overlay !== null && overlay.lakes !== undefined) list.push(...overlay.lakes(seed));
     bodies = list;
     WATER_BODIES_CACHE.set(seed, bodies);
   }
   return bodies;
 }
 
-function featureMaskHook(seed: number, x: number, z: number, h?: number): FeatureMask {
-  return featureMaskAt(bowlFor(seed).features, x, z, h ?? olympicSample(seed, x, z).h);
+function featureMaskOf(place: CoastOverlay): TerrainVariant["featureMask"] {
+  const mask = place.featureMask;
+  if (mask === undefined) return undefined;
+  return (seed: number, x: number, z: number, h?: number): FeatureMask => mask(seed, x, z, h ?? olympicSample(seed, x, z).h);
 }
 
 function olympicSample(seed: number, x: number, z: number): TerrainSample {
@@ -799,7 +722,8 @@ function olympicSample(seed: number, x: number, z: number): TerrainSample {
   // then cuts through cliffed ground, and the
   // mask's road suppression keeps the corridor and grade lattice untouched
   // (cliffD is the identity for |u| ≤ CLIFF_ROAD_NEAR = ROAD_CORRIDOR_HALF).
-  const cliffed = cliffD(seed, x, z, u, uDz, base, apronKeepD(u, uDz, z));
+  const keep = overlay === null || overlay.cliffKeepD === undefined ? UNIT_KEEP : overlay.cliffKeepD(u, uDz, z);
+  const cliffed = cliffD(seed, x, z, u, uDz, base, keep);
   // Dunes AFTER cliffs so cliffD reads the exact base it read before this
   // feature existed (its own early-out is base.h < 12, and the dune window is
   // cold above 8, so the two are disjoint either way — this ordering just
@@ -818,30 +742,9 @@ function olympicSample(seed: number, x: number, z: number): TerrainSample {
   // sweep numerically unchanged.
   const duned = duneD(seed, x, z, u, uDz, cliffed);
   const coved = coveD(seed, x, z, d, f.dDz, u, uDz, duned);
-  let staged = coved;
-  if (inBowl(u, z)) {
-    // The trailhead pad — bit-identity outside its own small window.
-    // Cheaply gated by `inBowl` like every bowl
-    // stage: the pad's own disc + fade never reaches the bowl's edge.
-    staged = padD(u, uDz, z, padHeightFor(seed), coved);
-  }
-  // The made features: applied for EVERY point,
-  // not only inside `inBowl` — the peak's 300 m dome is centred up to
-  // BOWL_U_MAX − TRAIL_GRID_CELL in and can reach past u = 1000, and a
-  // straight cut at the bowl's own edge would slice through its skirt.
-  // `featureStageD` is its own cheap gate (one distance test per feature,
-  // `base` back unchanged outside every disc), and `bowlFor` is memoised per
-  // seed, so this costs one map lookup plus a few compares everywhere else in
-  // the world.
-  const bowl = bowlFor(seed);
-  staged = featureStageD(bowl.features, x, z, staged);
-  staged = lakeStageD(seed, bowl.features, x, z, staged);
-  if (inBowl(u, z)) {
-    // The trail corridor over every edge: every edge's own grid cell lies
-    // inside the bowl, so its corridor never needs to reach past this gate.
-    staged = trailCorridorD(bowl.graph.nodes, bowl.graph.edges, x, z, staged);
-    staged = trailSinkD(bowl.graph.nodes, bowl.graph.edges, x, z, staged);
-  }
+  // The place laid over the coast, if there is one: its ground over the cove's and under the
+  // road's corridor, so the road's earthworks still cut whatever it made in their way.
+  const staged = overlay === null ? coved : overlay.shapeD(seed, x, z, u, uDz, coved);
   if (Math.abs(u) >= ROAD_CORRIDOR_HALF) return staged;
   return corridorD(u, uDz, roadGradeAt(seed, z), staged);
 }
@@ -857,15 +760,14 @@ function roadDistance(seed: number, x: number, z: number): number {
  * same two calls `roadDistance` makes, minus the subtraction. A function
  * hook rather than a tunable, so the level id does not move; the renderer
  * bakes it into a 1-D table for per-fragment road paint. */
-function roadCenterX(seed: number, z: number): number {
+export function roadCenterX(seed: number, z: number): number {
   const f = coastFrame(seed, z);
   const road = roadOffsetD(seed, z, BLEND_START, f.roadBlendEnd, f.roadBlendEndDz);
   return f.coastlineX + road.dr;
 }
 
-registerTerrainVariant({
-  name: "olympic",
-  tunables: {
+/** What the coast declares of itself for the level id, before any place adds its own. */
+const COAST_TUNABLES: Readonly<Record<string, number>> = {
     ...DENSE_VARIANT_TUNABLES,
     SEA_LEVEL,
     COAST_X,
@@ -940,25 +842,64 @@ registerTerrainVariant({
     CLIFF_OUT_SALT,
     CLIFF_ROAD_NEAR,
     CLIFF_ROAD_FAR,
-    ...BOWL_TUNABLES,
-    ...TRAIL_TUNABLES,
-    ...LANDMARK_TUNABLES,
-    ...FEATURE_TUNABLES,
-    ...BRAID_TUNABLES,
-  },
-  waterLevel: SEA_LEVEL,
-  waterBodies: waterBodiesHook,
-  coveMask: coveMaskHook,
-  coastDistance: signedCoastDistance,
-  roadDistance,
-  roadCenterX,
-  trailDistance: trailDistanceHook,
-  trailGraph: trailGraphHook,
-  sceneryLandmarks: (seed) => bowlFor(seed).landmarks,
-  landmarkMask: landmarkMaskHook,
-  featureMask: featureMaskHook,
-  prepare: bowlFor,
-  install: (seed, prepared) => installBowl(seed, prepared as Bowl),
-  isPrepared: (seed) => BOWL_CACHE.has(seed),
-  sample: olympicSample,
-});
+};
+
+/**
+ * A place laid over the coast: ground of its own over the coast's, and its answers to what the
+ * rest of the world asks about it. The coast stays what it is everywhere the place does not
+ * reach; a world with no place laid over it is the plain coast and the massif behind it.
+ */
+export type CoastOverlay = {
+  /** What the place declares of itself: joined to the coast's own, and so part of the level id. */
+  tunables: Readonly<Record<string, number>>;
+  /**
+   * A window along the coast (its weight at z, with the weight's slope) inside which the
+   * shore's climb to the massif is drawn out to end `end` metres inland, whatever the bay or
+   * the headland there would have had.
+   */
+  blend?: { end: number; windowD(z: number): { v: number; dz: number } };
+  /** How much of the cliff bands is kept at a place in the road's frame: 1 all of them, 0 none. */
+  cliffKeepD?(u: number, uDz: number, z: number): { v: number; dx: number; dz: number };
+  /** The place's ground at a point, over the coast's (`base`, through the cove) and under the road's corridor, in the road's frame. */
+  shapeD(seed: number, x: number, z: number, u: number, uDz: number, base: TerrainSample): TerrainSample;
+  /** The place's lakes, which follow the sea among the world's water bodies. */
+  lakes?(seed: number): readonly LakeSource[];
+  /** The made features' mask at a place whose ground stands at `h`. */
+  featureMask?(seed: number, x: number, z: number, h: number): FeatureMask;
+} & Pick<
+  TerrainVariant,
+  "trailDistance" | "trailGraph" | "sceneryLandmarks" | "landmarkMask" | "prepare" | "install" | "isPrepared" | "shoreStrip" | "clearing"
+>;
+
+/** The place laid over the coast in this thread, once the coast is registered with one. */
+let overlay: CoastOverlay | null = null;
+
+/**
+ * Registers the coast as the terrain `olympic`, with the place a game lays over it or with
+ * none. Once a thread, before a world is asked for: every thread that builds a world (a
+ * worker's too) registers the same place, or the two build different worlds.
+ */
+export function registerOlympic(place: CoastOverlay | null): void {
+  registerTerrainVariant({
+    name: "olympic",
+    tunables: place === null ? COAST_TUNABLES : { ...COAST_TUNABLES, ...place.tunables },
+    waterLevel: SEA_LEVEL,
+    waterBodies: waterBodiesHook,
+    coveMask: coveMaskHook,
+    coastDistance: signedCoastDistance,
+    roadDistance,
+    roadCenterX,
+    trailDistance: place?.trailDistance,
+    trailGraph: place?.trailGraph,
+    sceneryLandmarks: place?.sceneryLandmarks,
+    landmarkMask: place?.landmarkMask,
+    featureMask: place === null ? undefined : featureMaskOf(place),
+    prepare: place?.prepare,
+    install: place?.install,
+    isPrepared: place?.isPrepared,
+    shoreStrip: place?.shoreStrip,
+    clearing: place?.clearing,
+    sample: olympicSample,
+  });
+  overlay = place;
+}

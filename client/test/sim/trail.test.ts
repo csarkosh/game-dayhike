@@ -5,8 +5,8 @@ import {
   TRAIL_EDGE_GAP,
   type TrailNode, type TrailEdge,
 } from "../../src/sim/trail.js";
-import { TRAIL_GRID_CELL } from "../../src/sim/trailGrid.js";
-import type { TerrainSample } from "../../src/sim/terrain.js";
+import { TRAIL_GRID_CELL, TRAIL_GRID_TUNABLES } from "../../src/sim/trailGrid.js";
+import { terrainVariant, type TerrainSample } from "../../src/sim/terrain.js";
 
 /** A hillside rising in +x at grade 0.4 with a 3 m bump at x ≈ 60. */
 function ground(x: number, z: number): TerrainSample {
@@ -201,8 +201,13 @@ describe("trailCorridorD", () => {
       "TRAIL_PROFILE_STEP", "TRAIL_PROFILE_SMOOTH", "TRAIL_REROUTE_MAX",
       "SHORE_GATE_ALT", "SHORE_GATE_U", "DOORWAY_HALF",
     ];
-    for (const k of keys) expect(TRAIL_TUNABLES[k], k).toBeTypeOf("number");
-    expect(Object.keys(TRAIL_TUNABLES).sort()).toEqual([...keys].sort());
+    // The trail's own and the grid's it is routed on, which the mountain declares together.
+    const declared: Record<string, number> = { ...TRAIL_TUNABLES, ...TRAIL_GRID_TUNABLES };
+    for (const k of keys) expect(declared[k], k).toBeTypeOf("number");
+    expect(Object.keys(declared).sort()).toEqual([...keys].sort());
+    // Every one of them is in the terrain's own record, which is what the level id digests.
+    const terrain = terrainVariant("olympic")?.tunables ?? {};
+    for (const k of keys) expect(terrain[k], k).toBe(declared[k]);
     expect(TRAIL_BED_HALF).toBeLessThan(TRAIL_CORRIDOR_HALF);
     expect(TRAIL_EDGE_MIN_GAP).toBe(2 * TRAIL_CORRIDOR_HALF + TRAIL_EDGE_GAP);
     expect(2 * TRAIL_GRID_CELL).toBeGreaterThanOrEqual(TRAIL_EDGE_MIN_GAP);

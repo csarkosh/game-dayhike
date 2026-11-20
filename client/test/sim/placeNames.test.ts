@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import "../../src/sim/passes/index.js";
-import { bowlFor } from "../../src/sim/olympic.js";
+import { bowlFor } from "../../src/sim/mountain.js";
 import { DEFAULT_TERRAIN_VARIANT, setActiveTerrainVariant } from "../../src/sim/terrain.js";
 import { MEADOW_NAMES, NAMES_SALT, POND_NAMES, placeNames, signSites } from "../../src/sim/placeNames.js";
 import { FIRST_NAMES, hikerNames } from "../../src/sim/hikerNames.js";

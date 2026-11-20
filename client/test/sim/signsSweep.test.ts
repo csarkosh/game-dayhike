@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import "../../src/sim/passes/index.js";
-import { bowlFor } from "../../src/sim/olympic.js";
+import { bowlFor } from "../../src/sim/mountain.js";
 import { setActiveTerrainVariant, DEFAULT_TERRAIN_VARIANT } from "../../src/sim/terrain.js";
 import { nearestTrailNode, trailDistance, TRAIL_BED_HALF, type TrailGraph } from "../../src/sim/trail.js";
 import { signPostSites, signPosts, SIGN_POST_HALF, SUMMIT_LABEL, TRAILHEAD_LABEL } from "../../src/sim/signs.js";

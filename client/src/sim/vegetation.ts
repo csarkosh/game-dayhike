@@ -13,7 +13,6 @@
 import { fbm2, hash3 } from "@csarkosh/engine/sim/field";
 import { activeTerrainVariant, elevationSampleAt, type TerrainSample } from "./terrain.js";
 import { TRAIL_CLEAR } from "./trail.js";
-import { shoreStrip, STRIP_FOREST_FLOOR, STRIP_LIFT } from "./shoreStrip.js";
 import { facingDir } from "@csarkosh/engine/sim/facing";
 import { seepOffset } from "@csarkosh/engine/sim/seep";
 import { POND_TREE_MARGIN } from "./features.js";
@@ -189,9 +188,10 @@ export function forestDensityUnmasked(seed: number, x: number, z: number, sample
   // ROAD_CLEAR+ROAD_CLEAR_FADE, r) to 1, so the road gate passes wide open —
   // infinitely far from any road, as designed.
   const r = variant.roadDistance?.(seed, x, z) ?? Infinity;
-  // The shore's rule reads the strip's height (`shoreStrip.ts`): the ground's own, but inland of the pad.
-  const strip = shoreStrip(seed, x, z);
-  const sh = strip === 0 ? s.h : s.h + STRIP_LIFT * strip;
+  // The shore's rule reads the strip's height (the terrain's `shoreStrip`): the ground's own, but inland of the pad.
+  const lifted = variant.shoreStrip;
+  const strip = lifted === undefined ? 0 : lifted.at(seed, x, z);
+  const sh = lifted === undefined || strip === 0 ? s.h : s.h + lifted.lift * strip;
   if (sh < SHORE_ALT || d < SHORE_D || r < ROAD_CLEAR) return 0;
   const slope = Math.sqrt(s.dx * s.dx + s.dz * s.dz);
   const alt = 1 - smoothstep(TREELINE_LO, TREELINE_HI, s.h);
@@ -203,9 +203,9 @@ export function forestDensityUnmasked(seed: number, x: number, z: number, sample
   const rag = smoothstep(RAG_LO, RAG_HI, fbm2(x / RAG_WAVELENGTH, z / RAG_WAVELENGTH, seed ^ RAG_SALT, RAG_OCTAVES));
   const valley = 1 + (VALLEY_DENSITY_BOOST - 1) * (1 - Math.min(1, s.h / TREELINE_HI));
   const rho = Math.min(1, alt * grade * shore * road * rag * valley);
-  if (strip === 0) return rho;
+  if (lifted === undefined || strip === 0) return rho;
   // A floor, as a carved stand has one: a wood stands in the strip whatever the raggedness says there.
-  return Math.max(rho, STRIP_FOREST_FLOOR * strip * road);
+  return Math.max(rho, lifted.forestFloor * strip * road);
 }
 
 /**
@@ -302,7 +302,7 @@ export function alderHabitat(seed: number, x: number, z: number, sample?: Terrai
   const d = variant.coastDistance?.(seed, x, z) ?? Infinity;
   // None in the strip at the trailhead: the wood that stands at the pad is
   // the forest's own, placed for the arrival, and stays as it was.
-  if (shoreStrip(seed, x, z) > 0) return 0;
+  if ((variant.shoreStrip?.at(seed, x, z) ?? 0) > 0) return 0;
   if (s.h < SHORE_ALT || d < SHORE_D || r < ROAD_CLEAR) return 0;
   const slope = Math.sqrt(s.dx * s.dx + s.dz * s.dz);
   const grade = 1 - smoothstep(SLOPE_LO, SLOPE_HI, slope);

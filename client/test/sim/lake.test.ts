@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import "../../src/sim/olympic.js";
-import { bowlFor } from "../../src/sim/olympic.js";
+import { bowlFor } from "../../src/sim/mountain.js";
 import { featureStageD, marshWeightAt, lobePoints, MARSH_AMP, MARSH_MURK_MIN } from "../../src/sim/features.js";
 import { lakeShoreInto, newLakeShore, rayToShore } from "@csarkosh/engine/sim/lakeShape";
 import { checkDerivatives, TOL_RATIO, variantOrThrow } from "./helpers/derivatives.js";

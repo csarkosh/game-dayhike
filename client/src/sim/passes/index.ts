@@ -12,7 +12,7 @@
  * cliffs, emits the cliff modules' colliders.
  */
 import "../montane.js";
-import "../olympic.js";
+import "../mountain.js";
 import "./elevation.js";
 import "./trees.js";
 import "./clutter.js";

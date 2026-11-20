@@ -1,5 +1,5 @@
 import "../../../src/sim/olympic.js";
-import { bowlFor } from "../../../src/sim/olympic.js";
+import { bowlFor } from "../../../src/sim/mountain.js";
 import type { Feature } from "../../../src/sim/features.js";
 import { activeTerrainVariant, type LakeSource } from "../../../src/sim/terrain.js";
 import { LOBBY_SEEDS } from "../trailGateSeeds.js";

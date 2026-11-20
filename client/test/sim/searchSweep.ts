@@ -1,6 +1,6 @@
 import { expect } from "vitest";
 import "../../src/sim/passes/index.js";
-import { bowlFor } from "../../src/sim/olympic.js";
+import { bowlFor } from "../../src/sim/mountain.js";
 import { trailheadPlaces } from "../../src/sim/trailhead.js";
 import { DEFAULT_TERRAIN_VARIANT, activeTerrainVariant, elevationAt, setActiveTerrainVariant } from "../../src/sim/terrain.js";
 import { buildSearch } from "../../src/sim/search.js";

@@ -1,4 +1,3 @@
-import "./passes/index.js";
 import { createChunkGrid, type ChunkGrid } from "./chunkGrid.js";
 import { generateChunkWith, registeredPasses, type Pass } from "./chunk.js";
 import { activeTerrainVariantName, elevationAt } from "./terrain.js";

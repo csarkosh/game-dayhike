@@ -92,6 +92,20 @@ export type TerrainVariant = {
   /** Whether this thread already holds the seed's prepared value, without
    * making it: what a caller asks before having another thread make one. */
   isPrepared?: (seed: number) => boolean;
+  /**
+   * A strip in which the shore's rules read the ground higher than it is, so that what grows
+   * inland grows down to the road there: its weight at a place (0 outside it, 1 at its heart),
+   * the metres the weight lifts the height the rules read, and the least forest density the
+   * weight stands for. The ground's own heights are never changed by it. Absent where a
+   * terrain has no such strip.
+   */
+  shoreStrip?: { lift: number; forestFloor: number; at(seed: number, x: number, z: number): number };
+  /**
+   * A clearing nothing that stands tall grows in: the place along z it is centred on, and its
+   * centre's x for a seed, asked only of a place within the clearing's reach of that z. The
+   * reach is the clutter's own (`TRAILHEAD_CLEARING`).
+   */
+  clearing?: { z: number; x(seed: number): number };
   sample(worldSeed: number, x: number, z: number): TerrainSample;
 };
 
@@ -144,4 +158,17 @@ export function elevationAt(worldSeed: number, x: number, z: number): number {
 /** Height plus its exact gradient — for normals, colours and spawn margins. */
 export function elevationSampleAt(worldSeed: number, x: number, z: number): TerrainSample {
   return activeTerrainVariant().sample(worldSeed, x, z);
+}
+
+/** The shore strip's weight at a place under the active terrain: 0 where it has no strip, or none is registered. */
+export function shoreStrip(seed: number, x: number, z: number): number {
+  return VARIANTS.get(activeName)?.shoreStrip?.at(seed, x, z) ?? 0;
+}
+
+/** The height the shore's rules read at a place whose ground stands at `h`: the ground's own outside the strip. */
+export function shoreHeight(seed: number, x: number, z: number, h: number): number {
+  const strip = VARIANTS.get(activeName)?.shoreStrip;
+  if (strip === undefined) return h;
+  const s = strip.at(seed, x, z);
+  return s === 0 ? h : h + strip.lift * s;
 }

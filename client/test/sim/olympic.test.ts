@@ -20,7 +20,8 @@ import { featureReach } from "../../src/sim/trailPlan.js";
 import {
   inBowl, TRAILHEAD_U, TRAILHEAD_RADIUS, TRAILHEAD_FADE, TRAIL_Z_ANCHOR, apronKeepD,
 } from "../../src/sim/bowl.js";
-import { roadFrameAt, olympicPreTrailSample, bowlFor, coveFor, COVE_END_BLEND } from "../../src/sim/olympic.js";
+import { roadFrameAt, coveFor, COVE_END_BLEND } from "../../src/sim/olympic.js";
+import { olympicPreTrailSample, bowlFor } from "../../src/sim/mountain.js";
 import { TRAIL_CORRIDOR_HALF } from "../../src/sim/trail.js";
 
 // Floors set to roughly half the measured counts (generous margin), per

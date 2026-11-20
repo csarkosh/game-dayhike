@@ -1,6 +1,6 @@
 import { expect } from "vitest";
 import "../../src/sim/passes/index.js";
-import { bowlFor, olympicPreTrailSample } from "../../src/sim/olympic.js";
+import { bowlFor, olympicPreTrailSample } from "../../src/sim/mountain.js";
 import { elevationSampleAt, setActiveTerrainVariant, DEFAULT_TERRAIN_VARIANT } from "../../src/sim/terrain.js";
 import { MAX_WALKABLE_GRADIENT } from "../../src/sim/ground.js";
 import { TRAIL_PAINT_MAX_SEGMENTS, TRAIL_PAINT_BUCKET_MAX, buildTrailTable, trailSegments } from "../../src/game/trailPaint.js";

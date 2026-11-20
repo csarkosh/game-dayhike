@@ -1,7 +1,8 @@
 import { describe, it, expect } from "vitest";
 import "../../src/sim/olympic.js";
 import { setActiveTerrainVariant, DEFAULT_TERRAIN_VARIANT, terrainVariant } from "../../src/sim/terrain.js";
-import { bowlFor, roadFrameAt } from "../../src/sim/olympic.js";
+import { roadFrameAt } from "../../src/sim/olympic.js";
+import { bowlFor } from "../../src/sim/mountain.js";
 import {
   landmarkMaskAt, LANDMARK_TUNABLES, LANDMARK_DISC_RADIUS, LANDMARK_DISC_FADE,
   LANDMARK_BOWL_MARGIN, LANDMARK_ORDER, LANDMARK_SPACING,

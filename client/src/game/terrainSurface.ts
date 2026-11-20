@@ -1,7 +1,7 @@
 import { fbm2, valueNoise2 } from "@csarkosh/engine/sim/field";
-import { shoreHeight } from "../sim/shoreStrip.js";
 import { clamp01, mixRgb, type Rgb } from "@csarkosh/engine/game/colour";
 import { SLOPE_HI, SLOPE_LO } from "../sim/vegetation.js";
+import { shoreHeight } from "../sim/terrain.js";
 import { NO_WATER_GROUND, type WaterGround } from "./waterGround.js";
 
 /**

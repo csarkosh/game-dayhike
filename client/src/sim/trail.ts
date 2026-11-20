@@ -28,15 +28,13 @@
  * Bit-identity outside every corridor by early return: `prod === 1` means every
  * weight was 0, so `base` comes back as the same object.
  *
- * Generic: knows nothing about the coast, the road or the landmarks — it may
- * import `trailGrid.ts` (for the grid's tunables) and nothing else of the
- * trail. `trailBuild.ts` is the one module that composes the three.
+ * Generic: knows nothing about the coast, the road, the landmarks or the grid
+ * a trail is routed on. `trailBuild.ts` is the one module that composes them.
  *
  * sim/ determinism rules: no trig, no Math.pow, no `**`, no hypot.
  */
 import type { TerrainSample } from "./terrain.js";
 import type { Feature } from "./features.js";
-import { TRAIL_GRID_TUNABLES } from "./trailGrid.js";
 
 // ---- Tunables ---------------------------------------------------------------
 /**
@@ -91,7 +89,6 @@ export const TRAIL_REROUTE_MAX = 3;
 
 export const TRAIL_TUNABLES: Readonly<Record<string, number>> = {
   TRAIL_HARD_SLOPE_MAX, TRAIL_EDGE_GAP, TRAIL_BED_HALF, TRAIL_CORRIDOR_HALF, TRAIL_SINK, TRAIL_SINK_RAMP, TRAIL_CLEAR, TRAIL_SALT,
-  ...TRAIL_GRID_TUNABLES,
   TRAIL_SIMPLIFY_TOL, TRAIL_PROFILE_STEP, TRAIL_PROFILE_SMOOTH, TRAIL_REROUTE_MAX,
 };
 export const TRAIL_EDGE_MIN_GAP = 2 * TRAIL_CORRIDOR_HALF + TRAIL_EDGE_GAP;

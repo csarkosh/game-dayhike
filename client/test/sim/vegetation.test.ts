@@ -36,7 +36,7 @@ import {
 } from "../../src/sim/terrain.js";
 import { TRAIL_CLEAR } from "../../src/sim/trail.js";
 import type { TerrainSample } from "../../src/sim/terrain.js";
-import { bowlFor } from "../../src/sim/olympic.js";
+import { bowlFor } from "../../src/sim/mountain.js";
 import { MEADOW_RIM } from "../../src/sim/features.js";
 import { rayToShore } from "@csarkosh/engine/sim/lakeShape";
 

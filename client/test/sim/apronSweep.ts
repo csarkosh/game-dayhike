@@ -1,6 +1,6 @@
 import { expect } from "vitest";
 import "../../src/sim/passes/index.js";
-import { olympicPreTrailSample } from "../../src/sim/olympic.js";
+import { olympicPreTrailSample } from "../../src/sim/mountain.js";
 import { elevationAt, setActiveTerrainVariant, DEFAULT_TERRAIN_VARIANT, activeTerrainVariant } from "../../src/sim/terrain.js";
 import { MAX_WALKABLE_GRADIENT } from "../../src/sim/ground.js";
 import { seedFromToken } from "@csarkosh/engine/game/seed";

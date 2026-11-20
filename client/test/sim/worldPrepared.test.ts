@@ -4,7 +4,7 @@ import { timeLimit } from "../helpers/timeLimit.js";
 type Sim = {
   terrain: typeof import("../../src/sim/terrain.js");
   forest: typeof import("../../src/sim/forest.js");
-  olympic: typeof import("../../src/sim/olympic.js");
+  olympic: typeof import("../../src/sim/mountain.js");
   spawn: typeof import("../../src/sim/spawn.js");
   world: typeof import("../../src/sim/world.js");
   chunk: typeof import("../../src/sim/chunk.js");
@@ -19,7 +19,7 @@ async function freshSim(): Promise<Sim> {
   return {
     terrain: await import("../../src/sim/terrain.js"),
     forest: await import("../../src/sim/forest.js"),
-    olympic: await import("../../src/sim/olympic.js"),
+    olympic: await import("../../src/sim/mountain.js"),
     spawn: await import("../../src/sim/spawn.js"),
     world: await import("../../src/sim/world.js"),
     chunk: await import("../../src/sim/chunk.js"),

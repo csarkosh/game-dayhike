@@ -156,6 +156,40 @@ describe("layer boundaries", () => {
     expect(bad).toEqual([]);
   });
 
+  it("registers Day Hike's world in every thread that asks for one: the page, the admin page and each worker that reaches the terrain reach the registration", () => {
+    // The engine's terrain registers nothing of its own, so a thread that reaches it without the
+    // game's registration (`sim/passes/index.ts`: the coast with the mountain on it, and every
+    // pass) would throw at its first world, or worse, build one that is not Day Hike's.
+    const loads = (file: string): string[] => {
+      const text = stripComments(readFileSync(file, "utf8"));
+      return [
+        ...[...text.matchAll(/^\s*(?:import|export)\s+(?!type\s)(?:[^"'();]*?\s+from\s+)?["']([^"'?]+)["']/gm)].map((m) => m[1] as string),
+        ...[...text.matchAll(/\bimport\(\s*["']([^"'?]+)["']\s*\)/g)].map((m) => m[1] as string),
+      ];
+    };
+    const reach = (entry: string): Set<string> => {
+      const seen = new Set<string>();
+      const stack = [entry];
+      while (stack.length > 0) {
+        const file = stack.pop() as string;
+        if (seen.has(file) || !existsSync(file)) continue;
+        seen.add(file);
+        for (const spec of loads(file)) {
+          const next = followed(file, spec);
+          if (next !== null) stack.push(next);
+        }
+      }
+      return seen;
+    };
+    const entries = [at("main.ts"), at("admin", "main.ts"), ...sourceFiles(SRC).filter((file) => file.endsWith(".worker.ts"))];
+    expect(entries.length).toBeGreaterThan(5);
+    const terrain = at("sim", "terrain.ts");
+    const registration = at("sim", "passes", "index.ts");
+    const asking = entries.filter((entry) => reach(entry).has(terrain));
+    expect(asking.map(logical)).toEqual(expect.arrayContaining(["main.ts", "game/world.worker.ts"]));
+    expect(asking.filter((entry) => !reach(entry).has(registration)).map(logical)).toEqual([]);
+  });
+
   it("sim/ imports nothing but node builtins and itself", () => {
     expect(violations(at("sim"), [/^@babylonjs/, /net\//, /game\//])).toEqual([]);
   });

@@ -52,7 +52,7 @@ import { fbm2 } from "@csarkosh/engine/sim/field";
 import { forestDensity } from "../../src/sim/vegetation.js";
 import { ROAD_BED_HALF, ROAD_CORRIDOR_HALF } from "../../src/sim/road.js";
 import { elevationSampleAt } from "../../src/sim/terrain.js";
-import { bowlFor } from "../../src/sim/olympic.js";
+import { bowlFor } from "../../src/sim/mountain.js";
 import { variantOrThrow, DERIV_SEED } from "./helpers/derivatives.js";
 import { centerlineX } from "./helpers/roadLine.js";
 import { setActiveTerrainVariant, DEFAULT_TERRAIN_VARIANT, activeTerrainVariant, type TerrainSample } from "../../src/sim/terrain.js";

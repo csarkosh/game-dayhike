@@ -1,3 +1,6 @@
+// A world is Day Hike's: the coast with the mountain on it, and every pass. Registered here so
+// that whatever makes a world has them, in whichever thread it runs.
+import "./passes/index.js";
 import type { Interactable } from "./interact.js";
 import type { EnemyState, InputCommand, PlayerState, Vec3, WorldState } from "./types.js";
 import { DeathCause, Outcome, Phase, cloneVec3 } from "./types.js";
