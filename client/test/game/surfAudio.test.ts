@@ -5,7 +5,7 @@ import {
   SURF_LOWPASS_INLAND_HZ, SURF_LOWPASS_INLAND_M, SURF_LOWPASS_SHORE_HZ, SURF_PLUNGE_VOICES, SURF_RANGE_M, SURF_REF_M,
   createSurfAudio, surfBedGain, surfCutoffHz,
 } from "../../src/game/surfAudio.js";
-import { createSurfSound, type SurfSound } from "../../src/game/surfSound.js";
+import { createSurfSound, type SurfSound } from "@csarkosh/engine/game/surfSound";
 
 /** A node as the stub context makes it: it records what it is connected to, and its params their glides. */
 type StubNode = {

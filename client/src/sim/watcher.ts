@@ -26,9 +26,9 @@
 import type { EnemyState, PlayerState, Vec3 } from "./types.js";
 import { AiState, cloneVec3, nextRandom } from "./types.js";
 import type { World } from "./world.js";
-import type { TrailGraph, TrailNode } from "./trail.js";
-import { trailDistance } from "./trail.js";
-import { stemAhead, stemProgress } from "./trailRoute.js";
+import type { TrailGraph, TrailNode } from "@csarkosh/engine/sim/trail";
+import { trailDistance } from "@csarkosh/engine/sim/trail";
+import { stemAhead, stemProgress } from "@csarkosh/engine/sim/trailRoute";
 import { groundSpawn } from "./spawn.js";
 import { hasLineOfSight } from "./ai.js";
 import { aimDirection } from "./view.js";

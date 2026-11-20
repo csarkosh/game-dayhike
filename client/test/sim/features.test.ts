@@ -6,9 +6,9 @@ import {
   planFeatures, peakD, flatD, featureStageD, featureMaskAt, murkFor, MURK_LO, MURK_HI, type Feature,
   lakeDepthD, lakeMiddleDepth, LAKE_SHELF_DEPTH, LAKE_SHELF_WIDTH, LAKE_SLOPE_WIDTH, LAKE_DEPTH_MURKY, LAKE_DEPTH_CLEAR,
   chooseLobe, marshD, marshWeightAt, marshWidth, lobePoints, MARSH_AMP, MARSH_EDGE, MARSH_ONSET, MARSH_MURK_MIN, MARSH_WIDTH_MIN, MARSH_WIDTH_MAX,
-} from "../../src/sim/features.js";
+} from "@csarkosh/engine/sim/features";
 import { TRAIL_GRID_CAP } from "../../src/sim/trailGrid.js";
-import type { TerrainSample } from "../../src/sim/terrain.js";
+import type { TerrainSample } from "@csarkosh/engine/sim/terrain";
 import { stadiumShape } from "../helpers/lakeShapes.js";
 import { lakeShoreInto, newLakeShore } from "@csarkosh/engine/sim/lakeShape";
 

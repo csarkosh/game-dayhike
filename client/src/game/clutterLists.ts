@@ -11,10 +11,10 @@
  * Loads no engine: the shell that draws the clutter hands these arrays to
  * its meshes, and nothing here knows what a mesh is.
  */
-import { CLUTTER_CLASS_COUNT, CLUTTER_MEADOW, type ClutterInstance } from "../sim/clutter.js";
+import { CLUTTER_CLASS_COUNT, CLUTTER_MEADOW, type ClutterInstance } from "@csarkosh/engine/sim/clutter";
 import {
   CLUTTER_MEADOW_NEAR_IN, COVER_RAMP_CLASSES, clutterFadeEdges, clutterSeamEdges, coverBands, coverFarBand, createClutterCollector,
-} from "./clutterField.js";
+} from "@csarkosh/engine/game/clutterField";
 import { CLUTTER_CULLED, FAR_LOD, FOLIAGE_BY_CLASS, NEAR_LOD, cutOf, cutsFor, instanceMatrixFor, trampleFrame, writeFoliage } from "./clutterInstances.js";
 import { fadeBands, writeFadeBands, type FadeBands } from "@csarkosh/engine/game/distanceFade";
 import type { CullPose } from "@csarkosh/engine/game/grassCull";

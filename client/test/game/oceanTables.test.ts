@@ -1,13 +1,13 @@
 import { describe, it, expect } from "vitest";
-import "../../src/sim/olympic.js";
-import { COVE_END_BLEND, coveFor, coveProfileD, shoreProfileD } from "../../src/sim/olympic.js";
-import { activeTerrainVariant } from "../../src/sim/terrain.js";
+import "@csarkosh/engine/sim/olympic";
+import { COVE_END_BLEND, coveFor, coveProfileD, shoreProfileD } from "@csarkosh/engine/sim/olympic";
+import { activeTerrainVariant } from "@csarkosh/engine/sim/terrain";
 import {
   OCEAN_ATLAS_ROWS, OCEAN_COAST_SAMPLES, OCEAN_COAST_STEP, OCEAN_D_MIN, OCEAN_D_STEP, OCEAN_DRY_DEPTH,
   OCEAN_ROW_BAY_FIRST, OCEAN_ROW_BAY_PROFILE, OCEAN_ROW_COAST, OCEAN_ROW_COMPONENTS, OCEAN_ROW_COVE_FIRST,
   OCEAN_PHASE_BLEND, OCEAN_ROW_COVE_PROFILE, OCEAN_TABLE_SAMPLES,
   buildOceanTables, coastProfilesFor, deepWeight, writeCoastRow, type CoastProfiles, type OceanTables,
-} from "../../src/game/oceanTables.js";
+} from "@csarkosh/engine/game/oceanTables";
 import { refraction, shoalingFactor, waveNumber, weggelCoefficients, OCEAN_G } from "@csarkosh/engine/game/oceanPhysics";
 import { swellComponents, swellStateFor, type SwellComponent } from "@csarkosh/engine/game/oceanSwell";
 import { LOBBY_SEEDS } from "../sim/trailGateSeeds.js";

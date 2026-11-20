@@ -17,7 +17,7 @@ import {
   spawnHollowStepping,
   spawnHollow,
 } from "../../src/sim/hollow.js";
-import { nearestTrailNode } from "../../src/sim/trail.js";
+import { nearestTrailNode } from "@csarkosh/engine/sim/trail";
 import { graph } from "./helpers/stemGraph.js";
 
 type Brush = { min: [number, number, number]; max: [number, number, number]; material: string };

@@ -16,7 +16,7 @@ for one.
 
 | question | decision |
 | --- | --- |
-| Where the relief lives | The drawn rock in the game layer, on the face patches (`client/src/game/facePatches.ts`); the ground the player stands on in the simulation (`client/src/sim/rockSurface.ts`, read by `ground.ts`), as amended (§7): the simulation's height function and placements are untouched, and the level id moves by the layer's tunables, declared through the elevation pass |
+| Where the relief lives | The drawn rock in the game layer, on the face patches (`engine/src/game/facePatches.ts`); the ground the player stands on in the simulation (`engine/src/sim/rockSurface.ts`, read by `ground.ts`), as amended (§7): the simulation's height function and placements are untouched, and the level id moves by the layer's tunables, declared through the elevation pass |
 | What it is masked by | The rock paint's share by the slope alone (`rockOfSlope`, the surface's own smoothstep of the gradient from the forest's SLOPE_LO to SLOPE_HI; as first built, `classifySurface`'s rock weight, which the water and the snow also move), times `1 − faceMask`, so a face carries the faces' relief alone and the two never add; times the cell's loudness; times the patches' taper toward cells outside the set. The ground the player stands on reads the same mask and loudness (§7) |
 | The depth | Outward only, along the ground's normal, up to `GROUND_DEPTH` = 1 m at full loudness (0.4, then 0.5, as first built), cut by the ground's bend as the faces' depth is but to the whole radius of curvature, not half (`GROUND_BEND_SHARE`): 0.4 m cannot gather a hollow past its centre as 4 m can, and the lowland outcrops are tight humps that half the radius halved. The depth was chosen for the look of fractured bedrock, since less (0.4 and 0.5) read as a cobbled ground. As first built a foot could stand a metre inside a drawn plate; as amended (§7) the player stands on the plates |
 | The forms | Three octaves of the cellular field: plates (2 m cells, 0.8 jitter, 0.15 m joints, a tilt of 1.5), the faces' blocks leaning harder and broken sharper, each a flat plane stepping to the next at a joint too narrow to round; shards (0.9 m, 0.25 m joints, a cone of 3, lifted by 0.9 and counted only above zero, at 0.5), tips standing up out of the plates and nothing between them; and outcrops (9 m, 2 m joints, a tilt of 2 and a dome of 0.5, at 0.8), the bedding; gained 2, gathered into patches by a 14 m noise (the calm ground keeps 0.35 of the relief) and clamped: a mean \|v\| of 0.39, 4.5 percent on the clamps, 23 percent above the midline. Fractured bedrock, after the reference given: flat plates leaning every way, sharp steps between, a few shards up. The domed cobbles first built (a dome of 3 on 3 m and 1.2 m cells, gained 1.5) read as a cobbled ground; the cones after them (2.4 m and 0.9 m, cone 3, gained 2.5) as spikes on a floor, too little |
@@ -70,7 +70,7 @@ the clamp holds, a few percent of the ground at the plates. The lattices have sa
 share nothing with the faces' lattices and a face and the rock at its foot
 show no common seam.
 
-## 4. The patches (`client/src/game/facePatches.ts`)
+## 4. The patches (`engine/src/game/facePatches.ts`)
 
 `surfaceInto` pushes a vertex by `d / sqrt(1 + g²)` along the ground's
 normal with, now, two terms in `d`: the faces' `m · τ · D · (v + 1) / 2` as
@@ -156,7 +156,7 @@ and the level id), neither of which this design takes.
 
 Played, a metre of relief put the player's feet a metre inside a drawn
 plate, since collision stayed on the height field. The simulation now
-stands the player on the rock (`client/src/sim/rockSurface.ts`, read by
+stands the player on the rock (`engine/src/sim/rockSurface.ts`, read by
 `ground.ts`'s `heightAt` and `normalAt`), and keeps the walk smooth, by
 colliding with the drawn relief's **walking twin** rather than the relief
 itself:

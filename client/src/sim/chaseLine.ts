@@ -7,8 +7,8 @@
  */
 import type { World } from "./world.js";
 import { Phase } from "./types.js";
-import { trailDistance } from "./trail.js";
-import { stemAhead } from "./trailRoute.js";
+import { trailDistance } from "@csarkosh/engine/sim/trail";
+import { stemAhead } from "@csarkosh/engine/sim/trailRoute";
 import { wayDistance, wayPoint, wayProject } from "./wayDown.js";
 
 /**

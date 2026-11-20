@@ -3,7 +3,7 @@ import "../../src/sim/passes/index.js";
 import { createForest } from "../../src/sim/forest.js";
 import { createForestWorld } from "../../src/sim/world.js";
 import { seedFromToken } from "@csarkosh/engine/game/seed";
-import { setActiveTerrainVariant, DEFAULT_TERRAIN_VARIANT } from "../../src/sim/terrain.js";
+import { setActiveTerrainVariant, DEFAULT_TERRAIN_VARIANT } from "@csarkosh/engine/sim/terrain";
 import { raycastGround } from "../../src/sim/collision.js";
 import { GROUND_RAY_REFINEMENTS, GROUND_RAY_STEP } from "../../src/sim/constants.js";
 import type { GroundField } from "../../src/sim/ground.js";

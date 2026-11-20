@@ -15,9 +15,9 @@
  * lattice stands (`seaLattice.ts`).
  */
 import type { OceanNumbers } from "./oceanFrame.js";
-import { SEA_RING_FLOATS } from "./seaLattice.js";
-import { WATER_RING_COUNT } from "./water.js";
-import type { BumpDrift, WaterSurface } from "./waterSurface.js";
+import { SEA_RING_FLOATS } from "@csarkosh/engine/game/seaLattice";
+import { WATER_RING_COUNT } from "@csarkosh/engine/game/water";
+import type { BumpDrift, WaterSurface } from "@csarkosh/engine/game/waterSurface";
 
 /** The vec4s of the swell's components (`oceanK`). */
 export const SEA_COMPONENT_VECS = 12;

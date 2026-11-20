@@ -3,8 +3,8 @@ import { describe, expect, it } from "vitest";
 import { ATMOSPHERE_PRIORITY } from "../../../src/game/lite/atmospherePlugin.js";
 import { FRAME_BLOCK, FRAME_FIELDS, inFrameBlock } from "../../../src/game/lite/frameBlock.js";
 import { WATER_PRIORITY, lakePlugin } from "../../../src/game/lite/lakePlugin.js";
-import { lakeWaterRow } from "../../../src/game/waterShading.js";
-import { createWaterSurface, emptyLakeMirrorUniforms, emptyLakeUniforms, emptyWaterFrameUniforms, lakeUniforms, setWaterCalm, setWaterLakeBody } from "../../../src/game/waterSurface.js";
+import { lakeWaterRow } from "@csarkosh/engine/game/waterShading";
+import { createWaterSurface, emptyLakeMirrorUniforms, emptyLakeUniforms, emptyWaterFrameUniforms, lakeUniforms, setWaterCalm, setWaterLakeBody } from "@csarkosh/engine/game/waterSurface";
 import { laidOut, readUniform, standInTexture } from "./pluginFixture.js";
 
 const SHARED = { name: FRAME_BLOCK } as unknown as PluginUniformBlock;

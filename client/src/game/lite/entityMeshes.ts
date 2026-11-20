@@ -82,7 +82,7 @@ import { clipNameFor, resolveCharacterAssets, type CharacterAsset, type ClipKind
 import { HOLLOW_MODEL, stepClip, type ClipClock, type EntityFrame, type EntityModels, type ShadeLook } from "../entityPoses.js";
 import { HOLLOW_EYE_COLOR, HOLLOW_EYE_INTENSITY, HOLLOW_SCALE } from "../hollowLook.js";
 import { writeBodyMatrix, writeClipParams, type BakedClip } from "@csarkosh/engine/game/skinInstances";
-import type { WetUniforms } from "../wetSurface.js";
+import type { WetUniforms } from "@csarkosh/engine/game/wetSurface";
 import { DRAW_ORDER, createDrawOrders } from "@csarkosh/engine/game/lite/drawOrder";
 import { baseColourPlugin, surfaceWetPlugin } from "./forestPlugins.js";
 import type { FrameUploads } from "@csarkosh/engine/game/lite/frameUploads";

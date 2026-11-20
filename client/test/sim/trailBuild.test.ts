@@ -10,13 +10,13 @@ import { buildTrail, type BuildFrame } from "../../src/sim/trailBuild.js";
 import {
   segmentDistance, TRAIL_HARD_SLOPE_MAX, TRAIL_EDGE_MIN_GAP,
   type TrailGraph,
-} from "../../src/sim/trail.js";
+} from "@csarkosh/engine/sim/trail";
 import { closeNonAdjacentEdgePairs } from "./helpers/edgeGap.js";
-import { LANDMARK_DISC_RADIUS } from "../../src/sim/landmarks.js";
+import { LANDMARK_DISC_RADIUS } from "@csarkosh/engine/sim/landmarks";
 import {
   PEAK_INLAND_MIN, PEAK_INLAND_MAX, PEAK_RISE_MAX, STEM_LEN_MIN,
   planFeatures, LOOP_JUNCTION_GAP, LOOP_LEN_MIN, LOOP_LEN_MAX, FEATURE_SPACING,
-} from "../../src/sim/features.js";
+} from "@csarkosh/engine/sim/features";
 import { TRAIL_GRID_CELL } from "../../src/sim/trailGrid.js";
 import { lakeShoreInto, newLakeShore, type LakeShape } from "@csarkosh/engine/sim/lakeShape";
 import { ROAD_X, ridgeFrame, flatFrame, narrowFrame } from "./helpers/buildFrames.js";

@@ -38,7 +38,7 @@
  */
 import { hash3 } from "@csarkosh/engine/sim/field";
 import { FROG_CALL_S } from "./insectVoices.js";
-import type { FrogVoice } from "./waterLifeField.js";
+import type { FrogVoice } from "@csarkosh/engine/game/waterLifeField";
 
 export const FROG_QUIET_RADIUS = 12, FROG_HOLLOW_STOP = 60, FROG_HOLLOW_RESUME = 80;
 export const FROG_RESTART_S: readonly [number, number] = [20, 40];

@@ -6,7 +6,7 @@ import {
   OCEAN_CAP_CYCLES, OCEAN_CAP_PERIOD, OCEAN_FOAM_FADE, OCEAN_INNER_COVER,
   capCycle, capCycleHash, capFires, foamCover, foamLookAge, foamShare, foamWhite, laceCover, laceLevel, oceanCapCells,
   oceanLace, swellPixelKeep, waterSkinHash, waterSkinNoise,
-} from "../../src/game/waterShading.js";
+} from "@csarkosh/engine/game/waterShading";
 import { timeLimit } from "../helpers/timeLimit.js";
 
 describe("Fresnel for water", () => {

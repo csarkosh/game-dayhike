@@ -6,7 +6,7 @@ import { FRAME_BLOCK, inFrameBlock } from "../../../src/game/lite/frameBlock.js"
 import { PANORAMA_FORMAT, PANORAMA_GROUND_WGSL, panoramaGroundPlugin } from "../../../src/game/lite/lakePanorama.js";
 import { REFLECTED_RINGS } from "../../../src/game/lite/terrainMeshes.js";
 import { TERRAIN_VERTEX_FLOATS, TERRAIN_VERTEX_LAYOUT } from "../../../src/game/lite/terrainPlugins.js";
-import { MIRROR_CANOPY_SHADE } from "../../../src/game/mirrorGround.js";
+import { MIRROR_CANOPY_SHADE } from "@csarkosh/engine/game/mirrorGround";
 import { laidOut, readUniform } from "./pluginFixture.js";
 import { babylonText } from "../../helpers/babylonFixture.js";
 import { inOrder, tight } from "./wgslText.js";

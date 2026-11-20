@@ -3,19 +3,19 @@ import "../../src/sim/passes/index.js";
 import {
   CLUTTER_BOULDER, CLUTTER_BUSH, CLUTTER_CLASS_COUNT, CLUTTER_DRIFTLOG, CLUTTER_DRIFTWOOD, CLUTTER_FERN, CLUTTER_GRASS, CLUTTER_LITTER,
   CLUTTER_MEADOW, CLUTTER_ROCK,
-} from "../../src/sim/clutter.js";
+} from "@csarkosh/engine/sim/clutter";
 import { BOULDER_A_BASE_H, BOULDER_B_BASE_H, BOULDER_SINK } from "../../src/sim/passes/clutter.js";
-import { activeTerrainVariant } from "../../src/sim/terrain.js";
-import { forestDensity } from "../../src/sim/vegetation.js";
+import { activeTerrainVariant } from "@csarkosh/engine/sim/terrain";
+import { forestDensity } from "@csarkosh/engine/sim/vegetation";
 import {
   CLUTTER_MODEL_IDS, CLUTTER_SINK, CUT_CLASSES, DRIFTLOG_SINK, FOLIAGE_BY_CLASS, LITTER_VARIANT_SCALE, clutterLodNames, clutterNearLodName,
   cutModel, cutOf, cutsFor, instanceMatrixFor, seatDriftLogs, trampleFrame, writeFoliage,
 } from "../../src/game/clutterInstances.js";
-import { FOLIAGE_PROFILES } from "../../src/game/foliageUniforms.js";
+import { FOLIAGE_PROFILES } from "@csarkosh/engine/game/foliageUniforms";
 import { transformPoint } from "@csarkosh/engine/game/instancePose";
 import { trunkSeat } from "@csarkosh/engine/game/logSeat";
 import { ROCK_CUTS } from "@csarkosh/engine/game/rockRelief";
-import { trampleAt } from "../../src/game/trailBenchParams.js";
+import { trampleAt } from "@csarkosh/engine/game/trailBenchParams";
 
 const IDENTITY_FRAME = { height: 1, lean: 0, ax: 0, az: 0, tint: { r: 1, g: 1, b: 1 } };
 

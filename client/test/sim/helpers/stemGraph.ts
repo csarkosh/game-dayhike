@@ -1,5 +1,5 @@
-import type { TrailGraph, TrailEdge } from "../../../src/sim/trail.js";
-import { homeDistances, forksOf } from "../../../src/sim/trailRoute.js";
+import type { TrailGraph, TrailEdge } from "@csarkosh/engine/sim/trail";
+import { homeDistances, forksOf } from "@csarkosh/engine/sim/trailRoute";
 
 /** Straight stem 0→1→2 along +x (progress 0, 0.5, 1); loops 1→3→4→2 round a meadow at (150, 60) and 1→5→6→2 round one at (150, -60). */
 export function graph(loops: 0 | 1 | 2): TrailGraph {

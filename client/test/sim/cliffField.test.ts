@@ -2,11 +2,11 @@ import { describe, it, expect } from "vitest";
 import "../../src/sim/passes/index.js";
 import { registeredPasses } from "../../src/sim/chunk.js";
 import { GROUND_NORMAL_Y } from "../../src/sim/constants.js";
-import { CLUTTER_ROCK, rockSlopeBand, type ClutterInstance } from "../../src/sim/clutter.js";
+import { CLUTTER_ROCK, rockSlopeBand, type ClutterInstance } from "@csarkosh/engine/sim/clutter";
 import { hash3 } from "@csarkosh/engine/sim/field";
 import {
   DEFAULT_TERRAIN_VARIANT, elevationSampleAt, registerTerrainVariant, setActiveTerrainVariant, type WaterBodySource,
-} from "../../src/sim/terrain.js";
+} from "@csarkosh/engine/sim/terrain";
 import { stadiumLake } from "../helpers/lakeShapes.js";
 import * as cliffField from "../../src/sim/cliffField.js";
 import { boxShell, seat } from "./helpers/cliffSolid.js";

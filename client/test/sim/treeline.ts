@@ -1,10 +1,10 @@
 import { expect } from "vitest";
 import "../../src/sim/passes/index.js";
-import { DEFAULT_TERRAIN_VARIANT, activeTerrainVariant, elevationAt, setActiveTerrainVariant } from "../../src/sim/terrain.js";
-import { stemNodes } from "../../src/sim/trailRoute.js";
-import { segmentDistance } from "../../src/sim/trail.js";
-import { treesInRect } from "../../src/sim/vegetation.js";
-import { CLUTTER_BOULDER, CLUTTER_BUSH, CLUTTER_FUNGUS, CLUTTER_ROCK, clutterInRect } from "../../src/sim/clutter.js";
+import { DEFAULT_TERRAIN_VARIANT, activeTerrainVariant, elevationAt, setActiveTerrainVariant } from "@csarkosh/engine/sim/terrain";
+import { stemNodes } from "@csarkosh/engine/sim/trailRoute";
+import { segmentDistance } from "@csarkosh/engine/sim/trail";
+import { treesInRect } from "@csarkosh/engine/sim/vegetation";
+import { CLUTTER_BOULDER, CLUTTER_BUSH, CLUTTER_FUNGUS, CLUTTER_ROCK, clutterInRect } from "@csarkosh/engine/sim/clutter";
 import { shoreHeight } from "../../src/sim/shoreStrip.js";
 import { SEEDS } from "./trailGateSeeds.js";
 import { seedPart } from "../helpers/seedPart.js";

@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { valueNoise2, macroNoise, MACRO_WAVE, MACRO_WEIGHT } from "@csarkosh/engine/game/groundHexParams";
 import { luma } from "@csarkosh/engine/game/colour";
-import { NEEDLE_BED } from "../../src/game/terrainSurface.js";
+import { NEEDLE_BED } from "@csarkosh/engine/game/terrainSurface";
 import {
   TRAIL_JUNCTION_W, TRAIL_WEAR_WAVE, TRAIL_WEAR_WEIGHT, TRAIL_WEAR_W0, TRAIL_WEAR_W1, TRAIL_WEAR_D0, TRAIL_WEAR_D1,
   TRAIL_EDGE_NOISE, TRAIL_EDGE_WAVE, TRAIL_EDGE_WEIGHT, TRAIL_HEIGHT_SHIFT,
@@ -13,7 +13,7 @@ import {
   TRAIL_WASH_DARK_OPEN, TRAIL_WASH_DARK_LITTER, TRAIL_BED_FLOOR,
   valueNoise1, trailWear, trailEdgeNoise, trailBands, trampleAt,
   trailDriftWeight, trailWashoutNoise, trailWashoutWeight, trailPatches,
-} from "../../src/game/trailBenchParams.js";
+} from "@csarkosh/engine/game/trailBenchParams";
 
 function smoothstepT(e0: number, e1: number, x: number): number {
   const t = Math.min(1, Math.max(0, (x - e0) / (e1 - e0)));

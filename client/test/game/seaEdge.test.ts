@@ -1,14 +1,14 @@
 import { describe, expect, it } from "vitest";
-import "../../src/sim/olympic.js";
-import { COVE_FACE_GRADE, COVE_TOE_DEPTH, coveFor } from "../../src/sim/olympic.js";
-import { setActiveTerrainVariant } from "../../src/sim/terrain.js";
-import { LipTracker } from "../../src/game/oceanBreaker.js";
+import "@csarkosh/engine/sim/olympic";
+import { COVE_FACE_GRADE, COVE_TOE_DEPTH, coveFor } from "@csarkosh/engine/sim/olympic";
+import { setActiveTerrainVariant } from "@csarkosh/engine/sim/terrain";
+import { LipTracker } from "@csarkosh/engine/game/oceanBreaker";
 import { SWELL_COMPONENTS } from "@csarkosh/engine/game/oceanSwell";
-import { coastProfilesFor } from "../../src/game/oceanTables.js";
-import { oceanFieldFor, swellPhases } from "../../src/game/oceanWaves.js";
-import { createSeaEdgeStep, swashCoveFor } from "../../src/game/seaEdge.js";
+import { coastProfilesFor } from "@csarkosh/engine/game/oceanTables";
+import { oceanFieldFor, swellPhases } from "@csarkosh/engine/game/oceanWaves";
+import { createSeaEdgeStep, swashCoveFor } from "@csarkosh/engine/game/seaEdge";
 import { seedFromToken } from "@csarkosh/engine/game/seed";
-import { SwashTable } from "../../src/game/swashTable.js";
+import { SwashTable } from "@csarkosh/engine/game/swashTable";
 
 setActiveTerrainVariant("olympic");
 const SEED = seedFromToken("atmo");

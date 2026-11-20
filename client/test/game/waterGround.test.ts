@@ -1,11 +1,11 @@
 import { describe, expect, it } from "vitest";
-import "../../src/sim/olympic.js";
-import { activeTerrainVariant, elevationAt } from "../../src/sim/terrain.js";
-import { lobePoints, marshWeightAt } from "../../src/sim/features.js";
+import "@csarkosh/engine/sim/olympic";
+import { activeTerrainVariant, elevationAt } from "@csarkosh/engine/sim/terrain";
+import { lobePoints, marshWeightAt } from "@csarkosh/engine/sim/features";
 import { TRAIL_Z_ANCHOR } from "../../src/sim/bowl.js";
 import { firstPondWorld, lakeOf } from "../sim/helpers/lakes.js";
 import { rayToShore } from "@csarkosh/engine/sim/lakeShape";
-import { NO_WATER_GROUND, waterGroundAt } from "../../src/game/waterGround.js";
+import { NO_WATER_GROUND, waterGroundAt } from "@csarkosh/engine/game/waterGround";
 import { timeLimit } from "../helpers/timeLimit.js";
 
 describe("waterGroundAt", { timeout: timeLimit(120_000) }, () => {

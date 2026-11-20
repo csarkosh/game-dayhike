@@ -4,7 +4,7 @@
  * before the game is, prepares the world the build then makes.
  */
 import "../sim/passes/index.js";
-import { DEFAULT_TERRAIN_VARIANT, terrainVariantNames } from "../sim/terrain.js";
+import { DEFAULT_TERRAIN_VARIANT, terrainVariantNames } from "@csarkosh/engine/sim/terrain";
 import { registerTerrainVariants } from "./commands.js";
 import { lastEntry, parseScript, splitEntries } from "./script.js";
 import { seedFromToken } from "@csarkosh/engine/game/seed";

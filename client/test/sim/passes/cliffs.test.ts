@@ -7,7 +7,7 @@ import type { Aabb } from "../../../src/sim/level.js";
 import { depenetrate, sweepBox } from "../../../src/sim/collision.js";
 import { GROUND_NORMAL_Y, PLAYER_HALF } from "../../../src/sim/constants.js";
 import { createForest } from "../../../src/sim/forest.js";
-import { elevationSampleAt } from "../../../src/sim/terrain.js";
+import { elevationSampleAt } from "@csarkosh/engine/sim/terrain";
 import { createForestWorld, spawnPlayer, tickWorld } from "../../../src/sim/world.js";
 import { Button } from "../../../src/sim/types.js";
 import {

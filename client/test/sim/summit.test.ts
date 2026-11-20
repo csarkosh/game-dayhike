@@ -3,14 +3,14 @@ import "../../src/sim/passes/index.js";
 import { createForest } from "../../src/sim/forest.js";
 import { createForestWorld, spawnPlayer, tickWorld } from "../../src/sim/world.js";
 import { seedFromToken } from "@csarkosh/engine/game/seed";
-import { setActiveTerrainVariant, DEFAULT_TERRAIN_VARIANT, elevationAt, activeTerrainVariant } from "../../src/sim/terrain.js";
+import { setActiveTerrainVariant, DEFAULT_TERRAIN_VARIANT, elevationAt, activeTerrainVariant } from "@csarkosh/engine/sim/terrain";
 import { AiState, Outcome, Phase } from "../../src/sim/types.js";
 import { ENEMY_HALF, TICK_DT } from "../../src/sim/constants.js";
 import { DISCOVERY_RADIUS, SUMMIT_SPAWN_DIST } from "../../src/sim/summit.js";
 import { HOLLOW_STEP_S, REVEAL_STARE_CAP, SUMMIT_REVEAL_S, revealing } from "../../src/sim/hollow.js";
 import { spawnShade } from "../../src/sim/haunt.js";
 import { GATHER_SIDE_M, GATHER_STEP_M } from "../../src/sim/summit.js";
-import { ROAD_CORRIDOR_HALF } from "../../src/sim/road.js";
+import { ROAD_CORRIDOR_HALF } from "@csarkosh/engine/sim/road";
 import { timeLimit } from "../helpers/timeLimit.js";
 
 setActiveTerrainVariant(DEFAULT_TERRAIN_VARIANT);

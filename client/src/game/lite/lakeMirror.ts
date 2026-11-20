@@ -46,8 +46,8 @@ import {
   removeMeshFromTask, setMeshVisible, setTaskMeshVisible, setThinInstances, vec3,
   type BankedFreeCamera, type EngineContext, type Mesh, type PluginUniformBlock, type RenderTarget, type RenderTargetAttachments, type SceneContext, type Texture2D,
 } from "@babylonjs/lite";
-import type { LakeSource } from "../../sim/terrain.js";
-import { mirrorGroundColour, type MirrorGroundSky } from "../mirrorGround.js";
+import type { LakeSource } from "@csarkosh/engine/sim/terrain";
+import { mirrorGroundColour, type MirrorGroundSky } from "@csarkosh/engine/game/mirrorGround";
 import {
   MIRROR_LIFT, createMirrorCadence, mirrorArmed, mirrorProjection, mirrorRead, mirrorScale, mirroredPose, poseView, type MirrorPose,
 } from "@csarkosh/engine/game/mirrorPass";

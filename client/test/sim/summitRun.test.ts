@@ -3,10 +3,10 @@ import "../../src/sim/passes/index.js";
 import { createForest } from "../../src/sim/forest.js";
 import { createForestWorld, spawnPlayer, tickWorld } from "../../src/sim/world.js";
 import { seedFromToken } from "@csarkosh/engine/game/seed";
-import { setActiveTerrainVariant, DEFAULT_TERRAIN_VARIANT, elevationAt } from "../../src/sim/terrain.js";
+import { setActiveTerrainVariant, DEFAULT_TERRAIN_VARIANT, elevationAt } from "@csarkosh/engine/sim/terrain";
 import { AiState, Button, DeathCause, Outcome, Phase } from "../../src/sim/types.js";
 import { TICK_DT } from "../../src/sim/constants.js";
-import { stemNodes } from "../../src/sim/trailRoute.js";
+import { stemNodes } from "@csarkosh/engine/sim/trailRoute";
 /** The threshold's run (game/cutscene.ts: the last shot less its look and turn): the seconds the scene has the player sprinting before the hunt. */
 const SCENE_RUN_S = 1.8;
 import { DISCOVERY_RADIUS } from "../../src/sim/summit.js";

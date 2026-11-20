@@ -25,7 +25,7 @@ import type { QualityTier } from "@csarkosh/engine/game/quality";
 import type { EndSceneNow, EndSceneSetup } from "./scenePlay.js";
 import type { SkyTable } from "@csarkosh/engine/game/skyTable";
 import type { StareLens } from "./stareLens.js";
-import type { SurfSound } from "./surfSound.js";
+import type { SurfSound } from "@csarkosh/engine/game/surfSound";
 import type { WaterLifeSound } from "./waterLifeAudio.js";
 import type { WeatherParams, WeatherPresetName } from "@csarkosh/engine/game/weather";
 import type { WildlifeEvent } from "./wildlifeBehaviour.js";

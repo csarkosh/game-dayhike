@@ -9,7 +9,7 @@ import { installPassHash, passHash, passHashCachedFor, passHashKey } from "../..
 import { bowlFor, type Bowl } from "../../src/sim/mountain.js";
 import { generateChunk } from "../../src/sim/chunk.js";
 import { createChunkGrid } from "../../src/sim/chunkGrid.js";
-import { DEFAULT_TERRAIN_VARIANT, setActiveTerrainVariant, terrainVariant } from "../../src/sim/terrain.js";
+import { DEFAULT_TERRAIN_VARIANT, setActiveTerrainVariant, terrainVariant } from "@csarkosh/engine/sim/terrain";
 import { timeLimit } from "../helpers/timeLimit.js";
 
 /** A Worker that records what it is sent and whether it was ended; the test answers for it. */

@@ -208,7 +208,7 @@ beside them.
 
 ## 4. The patches
 
-### 4.1 The grid (`client/src/game/facePatches.ts`, pure)
+### 4.1 The grid (`engine/src/game/facePatches.ts`, pure)
 
 The world is divided into `PATCH_CELL = 16` m cells. For a cell and a
 spacing `p` (0.5, 1 or 2 m) the patch is the `(16 / p + 1)²` lattice of the
@@ -437,7 +437,7 @@ triangles, 4,559, 1,933 and 199 of the 24,576 of rings 1, 2 and 3, and
 none of ring 4's, which begins about 500 m out: 18,273 in all, under 217
 of the 362 patched squares.
 
-### 4.4 The ground under the patches (`client/src/game/clipmap.ts`)
+### 4.4 The ground under the patches (`engine/src/game/clipmap.ts`)
 
 The clipmap draws an upper envelope of the ground, each vertex lifted by
 the most the field rises above its drawn edges, and past ring 0 that
@@ -507,7 +507,7 @@ The ground shader divides each layer's texture by its own mean colour, so a
 face shows the vertex colour the paint gives it, the texture adding
 variation and no hue of its own. The rock and the scree were a light
 grey-tan, (0.17, 0.16, 0.15) and (0.24, 0.23, 0.21), and a face read light
-and warm; `ROCK` and `SCREE` (`client/src/game/terrainSurface.ts`) are now
+and warm; `ROCK` and `SCREE` (`engine/src/game/terrainSurface.ts`) are now
 neutral at half that luminance, 0.081 and 0.115 on every channel, and the
 faces read a dark grey.
 
@@ -644,7 +644,7 @@ clamped). The search widens to twenty-five sites when a nearer site could lie ou
 exact while `border < (2 - sqrt 2) * cell` for every lattice. The slope mask runs from a gradient
 of 1.0 to 1.4; the standing limit is 1.02.
 
-**The patches** (`client/src/game/facePatches.ts`, pure; `facePatchMeshes.ts`, the shell) take
+**The patches** (`engine/src/game/facePatches.ts`, pure; `facePatchMeshes.ts`, the shell) take
 their normals from the relief's own derivatives, stitch a finer edge to a coarser neighbour's
 (0.5 to 1 m and 1 to 2 m), fade over 3 m toward any side or corner whose neighbour is outside the
 reach, and are built as one patient job per 16 m crossing on the renderer's job system: the near

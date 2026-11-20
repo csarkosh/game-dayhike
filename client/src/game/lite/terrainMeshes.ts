@@ -74,27 +74,27 @@ import {
   enableMeshDrawArgs, updateMeshGeometryCapacity, updateMeshNormals, updateMeshPositions,
   type EngineContext, type Material, type Mesh, type SceneContext,
 } from "@babylonjs/lite";
-import type { TrailGraph } from "../../sim/trail.js";
+import type { TrailGraph } from "@csarkosh/engine/sim/trail";
 import {
   BASE_SPACING_BY_TIER, RING_COUNT, commitRingMove, coversRing, createRingSamples, holeCellsFor, prepareRingMove, ringGeometryBuffers, ringGeometrySlices,
   ringSampleSlices, snapOrigin,
   type CoveredGround, type RingArrays, type RingGeometry, type RingMove, type RingSamples,
-} from "../clipmap.js";
+} from "@csarkosh/engine/game/clipmap";
 import {
   PATCH_CELL, PATCH_FAR_SPACING, PATCH_NEAR_SPACING, PATCH_REACH, facePatchCells, facePatchCover, facePatchGeometrySlices, facePatchStitch, patchKey,
   patchStitchBits,
   type FacePatch, type PatchCell, type PatchReach, type PatchStitch,
-} from "../facePatches.js";
+} from "@csarkosh/engine/game/facePatches";
 import { buildAtOnce, type FirstBuilds } from "@csarkosh/engine/game/firstBuilds";
 import type { QualityTier } from "@csarkosh/engine/game/quality";
 import { createCrossing, crossingAt, finish, nextCrossing, type Slices, type SyncJobs } from "@csarkosh/engine/game/syncJobs";
-import { facePatchVertices, ringVertices, type TerrainVertices } from "../terrainVertices.js";
+import { facePatchVertices, ringVertices, type TerrainVertices } from "@csarkosh/engine/game/terrainVertices";
 import { DRAW_ORDER, DRAW_PLACES } from "@csarkosh/engine/game/lite/drawOrder";
 import type { FrameUploads } from "@csarkosh/engine/game/lite/frameUploads";
 import {
   createMarkedRun, createPatchPool, firstDifference, patchIndexCapacity, patchIndexCount, patchVertexCount, writePatchTriangles,
   type DrawnPatch, type PatchSlot,
-} from "./patchPool.js";
+} from "@csarkosh/engine/game/lite/patchPool";
 import type { ReflectionRegistry } from "./lakePanorama.js";
 import { RAIN_MAP_RINGS, type CoverRegistry } from "./rainMap.js";
 import { TERRAIN_VERTEX_FLOATS, terrainVertexData, terrainVertexDataSlices } from "./terrainPlugins.js";

@@ -1,6 +1,6 @@
-import { ROCK_SURFACE_TUNABLES } from "../rockSurface.js";
+import { ROCK_SURFACE_TUNABLES } from "@csarkosh/engine/sim/rockSurface";
 import { CELLS_PER_CHUNK, cellCenter, quantize, registerPass } from "../chunk.js";
-import { activeTerrainVariant } from "../terrain.js";
+import { activeTerrainVariant } from "@csarkosh/engine/sim/terrain";
 import { HEIGHT_QUANTUM, TERRAIN_CELL } from "@csarkosh/engine/sim/forestConstants";
 
 /**

@@ -11,7 +11,7 @@
  * meshes, and nothing here knows what a mesh is.
  */
 import type { Rgb } from "@csarkosh/engine/game/colour";
-import { BLADE_CHARACTER_COUNT, BLADE_SIZE_COUNT, createBladeCollector, type BladeCell, type BladeTiers } from "./bladeField.js";
+import { BLADE_CHARACTER_COUNT, BLADE_SIZE_COUNT, createBladeCollector, type BladeCell, type BladeTiers } from "@csarkosh/engine/game/bladeField";
 import { instanceMatrixFor, trampleFrame, writeFoliage } from "./clutterInstances.js";
 import type { CullPose } from "@csarkosh/engine/game/grassCull";
 import {

@@ -1,8 +1,8 @@
 import { describe, it, expect } from "vitest";
 import { fbm2, fbm2d, gradientNoise2, hash2, hash3, valueNoise2 } from "@csarkosh/engine/sim/field";
-import "../../src/sim/montane.js";
-import { DENSE_VARIANT_TUNABLES, MONTANE_VARIANT_TUNABLES, denseSample, montaneSample } from "../../src/sim/montane.js";
-import { terrainVariant } from "../../src/sim/terrain.js";
+import "@csarkosh/engine/sim/montane";
+import { DENSE_VARIANT_TUNABLES, MONTANE_VARIANT_TUNABLES, denseSample, montaneSample } from "@csarkosh/engine/sim/montane";
+import { terrainVariant } from "@csarkosh/engine/sim/terrain";
 import {
   MONTANE_KERNEL_FIELDS,
   kernelFbm2,

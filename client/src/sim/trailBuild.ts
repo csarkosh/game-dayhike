@@ -34,7 +34,7 @@ import {
   segmentDistance,
   TRAIL_SALT, TRAIL_PROFILE_STEP, TRAIL_PROFILE_SMOOTH, TRAIL_CORRIDOR_HALF,
   type TrailGraph, type TrailNode, type TrailEdge, type TrailLoop, type LandmarkType,
-} from "./trail.js";
+} from "@csarkosh/engine/sim/trail";
 import {
   planPath, splitAt, markPath, routeTo, cellsAlong, stemGeometry, sampleStem,
   forEachCellNear, featureReach, SPLIT_SNAP,
@@ -43,13 +43,13 @@ import {
 export type { BuildFrame } from "./trailPlan.js";
 import { lakeShoreInto, newLakeShore, rayToShore, valleyLakeShape, LAKE_OUTLET_REACH, type LakeShape } from "@csarkosh/engine/sim/lakeShape";
 import { buildStrands, buildRungs, stemPose, type Braid } from "./trailBraid.js";
-import { homeDistances, forksOf } from "./trailRoute.js";
+import { homeDistances, forksOf } from "@csarkosh/engine/sim/trailRoute";
 import {
   scoreCandidate, scoredDisc, landmarkThreshold,
   LANDMARK_ORDER, LANDMARK_SCENERY_MIN_PATH, LANDMARK_SPACING, LANDMARK_CANDIDATE_STRIDE,
   LANDMARK_BOWL_MARGIN, LANDMARK_DISC_RADIUS,
   type Landmark, type Samplers,
-} from "./landmarks.js";
+} from "@csarkosh/engine/sim/landmarks";
 import {
   featureDraw, featureStageD, lakeGroundD, planFeatures, loopBand, murkFor, chooseLobe,
   PEAK_RADIUS_MIN, PEAK_RADIUS_MAX, PEAK_RISE_MIN, PEAK_RISE_MAX,
@@ -63,7 +63,7 @@ import {
   LOOP_BAND_LO_1, LOOP_BAND_HI_3,
   LOOP_LEN_MIN, LOOP_LEN_MAX,
   type Feature,
-} from "./features.js";
+} from "@csarkosh/engine/sim/features";
 
 /**
  * A NODE'S HEIGHT IS THE DE-CLODDED GROUND, not the raw ground (a departure

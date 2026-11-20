@@ -1,7 +1,7 @@
-import "../../../src/sim/olympic.js";
+import "@csarkosh/engine/sim/olympic";
 import { bowlFor } from "../../../src/sim/mountain.js";
-import type { Feature } from "../../../src/sim/features.js";
-import { activeTerrainVariant, type LakeSource } from "../../../src/sim/terrain.js";
+import type { Feature } from "@csarkosh/engine/sim/features";
+import { activeTerrainVariant, type LakeSource } from "@csarkosh/engine/sim/terrain";
 import { LOBBY_SEEDS } from "../trailGateSeeds.js";
 
 /** The first lobby world with a pond `pred` accepts, and the pond. Each world

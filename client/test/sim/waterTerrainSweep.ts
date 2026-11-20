@@ -2,16 +2,16 @@
 import { expect } from "vitest";
 import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
-import { coveFor, coveProfileD, COVE_BACK_FADE } from "../../src/sim/olympic.js";
+import { coveFor, coveProfileD, COVE_BACK_FADE } from "@csarkosh/engine/sim/olympic";
 import { bowlFor, olympicPreTrailSample } from "../../src/sim/mountain.js";
-import { ROAD_CORRIDOR_HALF } from "../../src/sim/road.js";
+import { ROAD_CORRIDOR_HALF } from "@csarkosh/engine/sim/road";
 import { variantOrThrow } from "./helpers/derivatives.js";
 import {
   featureStageD, lakeStageD, lobePoints, marshWeightAt, LAKE_SILL, LAKE_NOTCH_FADE, LAKE_TRAIL_CLEAR,
   MARSH_MURK_MIN, POND_SHORE, type Feature,
-} from "../../src/sim/features.js";
+} from "@csarkosh/engine/sim/features";
 import { lakeOutline, lakeShelfWidth, lakeShoreInto, newLakeShore, type LakeShape } from "@csarkosh/engine/sim/lakeShape";
-import { CLUTTER_LILY, clutterInRect } from "../../src/sim/clutter.js";
+import { CLUTTER_LILY, clutterInRect } from "@csarkosh/engine/sim/clutter";
 import { LOBBY_SEEDS } from "./trailGateSeeds.js";
 import { seedPart } from "../helpers/seedPart.js";
 

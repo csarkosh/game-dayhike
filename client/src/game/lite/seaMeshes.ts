@@ -56,20 +56,20 @@ import {
 } from "@babylonjs/lite";
 import { boxInPlanes, cornersPastBox, type ViewPlane } from "@csarkosh/engine/game/lakeSeen";
 import { createOceanFrame } from "../oceanFrame.js";
-import { OCEAN_ATLAS_ROWS, OCEAN_ROW_COAST, OCEAN_TABLE_SAMPLES } from "../oceanTables.js";
-import type { OceanField } from "../oceanWaves.js";
+import { OCEAN_ATLAS_ROWS, OCEAN_ROW_COAST, OCEAN_TABLE_SAMPLES } from "@csarkosh/engine/game/oceanTables";
+import type { OceanField } from "@csarkosh/engine/game/oceanWaves";
 import { startLoopWorker, type LoopStarter } from "../oceanLoopStart.js";
 import { LOOP_FRAMES, LOOP_N } from "@csarkosh/engine/game/oceanSpectrum";
 import type { QualityTier } from "@csarkosh/engine/game/quality";
-import { createSeaEdgeStep, type SeaEdgeStep } from "../seaEdge.js";
-import { SEA_SIDE, seaBedDepths, seaLattice, seaRingRecords, seaWetBounds, seaWetRun } from "../seaLattice.js";
+import { createSeaEdgeStep, type SeaEdgeStep } from "@csarkosh/engine/game/seaEdge";
+import { SEA_SIDE, seaBedDepths, seaLattice, seaRingRecords, seaWetBounds, seaWetRun } from "@csarkosh/engine/game/seaLattice";
 import { emptySeaFrameUniforms, emptySeaUniforms, seaFrameUniforms, seaUniforms, type SeaFrameUniforms } from "../seaUniforms.js";
 import { SWASH_FACE_LIFT_M } from "@csarkosh/engine/game/swashRunUp";
-import { SWASH_COLUMNS } from "../swashTable.js";
-import { WATER_RING_COUNT, createWaterRingSamples, seaFaceZ, updateWaterRingSamples, waterHoleCellsFor, type WaterRingSamples } from "../water.js";
+import { SWASH_COLUMNS } from "@csarkosh/engine/game/swashTable";
+import { WATER_RING_COUNT, createWaterRingSamples, seaFaceZ, updateWaterRingSamples, waterHoleCellsFor, type WaterRingSamples } from "@csarkosh/engine/game/water";
 import { WATER_BUMP_SIZE, waterBumpData } from "@csarkosh/engine/game/waterBump";
-import { WATER_ROWS, roughnessFor, waterSkinOffset } from "../waterShading.js";
-import { advanceWater, createBumpDrift, createWaterSurface, setWaterCove, setWaterWind } from "../waterSurface.js";
+import { WATER_ROWS, roughnessFor, waterSkinOffset } from "@csarkosh/engine/game/waterShading";
+import { advanceWater, createBumpDrift, createWaterSurface, setWaterCove, setWaterWind } from "@csarkosh/engine/game/waterSurface";
 import type { WindRecord } from "@csarkosh/engine/game/windParams";
 import { createWindSeaField, type WindSeaMode } from "../windSeaField.js";
 import { SEE_THROUGH_ORDER } from "@csarkosh/engine/game/lite/drawOrder";
@@ -78,7 +78,7 @@ import { createLiteLip, type LiteLip } from "./lipMeshes.js";
 import type { LiteSeaFft } from "./seaFft.js";
 import { seaPlugin, seaRestPlugin, type SeaTextures } from "./seaPlugin.js";
 import type { SeaLook } from "./seaWgsl.js";
-import type { LiteWaterBed } from "./waterBed.js";
+import type { LiteWaterBed } from "@csarkosh/engine/game/lite/waterBed";
 import type { WaterBehind } from "@csarkosh/engine/game/lite/waterBehind";
 
 /**

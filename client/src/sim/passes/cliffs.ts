@@ -1,8 +1,8 @@
 import { registerPass, type Chunk } from "../chunk.js";
 import { CHUNK_SIZE } from "@csarkosh/engine/sim/forestConstants";
 import type { Aabb } from "../level.js";
-import type { ClutterInstance } from "../clutter.js";
-import { activeTerrainVariantName, elevationSampleAt } from "../terrain.js";
+import type { ClutterInstance } from "@csarkosh/engine/sim/clutter";
+import { activeTerrainVariantName, elevationSampleAt } from "@csarkosh/engine/sim/terrain";
 import {
   CLIFF_CELL, CLIFF_DENSITY, CLIFF_MODEL_BASE, CLIFF_MODEL_DEPTH, CLIFF_MODEL_FRONT, CLIFF_MODEL_HEIGHT, CLIFF_MODEL_RIGHT, CLIFF_MODEL_WIDTH,
   CLIFF_RUN_REACH, CLIFF_SCALE, CLIFF_TUNABLES, cliffCellRuns, cliffFacing, leanPoint,

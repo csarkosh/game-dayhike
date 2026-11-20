@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import "../../src/sim/passes/index.js";
-import { setActiveTerrainVariant } from "../../src/sim/terrain.js";
-import { surfaceWeights } from "../../src/game/terrainSurface.js";
+import { setActiveTerrainVariant } from "@csarkosh/engine/sim/terrain";
+import { surfaceWeights } from "@csarkosh/engine/game/terrainSurface";
 
 const HOLLOW = 2032433950;
 const shore = (x: number, z: number, altitude: number): number => {

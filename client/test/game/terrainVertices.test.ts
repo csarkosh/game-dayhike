@@ -1,10 +1,10 @@
 import { describe, expect, it } from "vitest";
 import "../../src/sim/passes/index.js";
-import { RING_CELLS, WEIGHTS2_STRIDE, createRingSamples, ringGeometry, ringGeometryBuffers } from "../../src/game/clipmap.js";
-import { facePatchGeometry, type PatchStitch } from "../../src/game/facePatches.js";
+import { RING_CELLS, WEIGHTS2_STRIDE, createRingSamples, ringGeometry, ringGeometryBuffers } from "@csarkosh/engine/game/clipmap";
+import { facePatchGeometry, type PatchStitch } from "@csarkosh/engine/game/facePatches";
 import {
   TERRAIN_ATTRIBUTES, TERRAIN_VERTEX_SIZES, facePatchVertices, ringVertices, type TerrainVertices,
-} from "../../src/game/terrainVertices.js";
+} from "@csarkosh/engine/game/terrainVertices";
 import { timeLimit } from "../helpers/timeLimit.js";
 
 const ATTRIBUTES = ["positions", "normals", "colors", "weights", "weights2", "cover"] as const;

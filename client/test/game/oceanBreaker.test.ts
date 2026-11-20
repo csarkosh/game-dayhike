@@ -6,15 +6,15 @@
  * plunges from the swell's sum.
  */
 import { describe, it, expect } from "vitest";
-import "../../src/sim/olympic.js";
-import { setActiveTerrainVariant } from "../../src/sim/terrain.js";
-import { COVE_FACE_GRADE, COVE_TOE_DEPTH, coveFor } from "../../src/sim/olympic.js";
-import { coastRead, oceanFieldFor, oceanFieldFromState, swellAt, swellPhases, type OceanField } from "../../src/game/oceanWaves.js";
+import "@csarkosh/engine/sim/olympic";
+import { setActiveTerrainVariant } from "@csarkosh/engine/sim/terrain";
+import { COVE_FACE_GRADE, COVE_TOE_DEPTH, coveFor } from "@csarkosh/engine/sim/olympic";
+import { coastRead, oceanFieldFor, oceanFieldFromState, swellAt, swellPhases, type OceanField } from "@csarkosh/engine/game/oceanWaves";
 import {
   LIP_COLUMNS, LIP_CREST_TRAVEL, LIP_KEYFRAMES, LIP_PLUNGES, LIP_PROFILE_VERTS, LIP_SLOTS, LIP_SPEED_MAX, LIP_SPEED_MIN,
   LIP_STEP_MAX_S, LIP_TUBE_RATIO, LipTracker, crestOffset, faceIribarren, lipKey, lipProfile, plungeShare, profileAt, progressOf,
-} from "../../src/game/oceanBreaker.js";
-import type { SwashCove } from "../../src/game/swashTable.js";
+} from "@csarkosh/engine/game/oceanBreaker";
+import type { SwashCove } from "@csarkosh/engine/game/swashTable";
 import { LOBBY_SEEDS } from "../sim/trailGateSeeds.js";
 import { timeLimit } from "../helpers/timeLimit.js";
 

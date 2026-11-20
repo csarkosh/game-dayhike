@@ -1,6 +1,6 @@
-import { elevationAt, type LakeSource } from "../sim/terrain.js";
+import { elevationAt, type LakeSource } from "@csarkosh/engine/sim/terrain";
 import { lakeOutline, type LakeShape } from "@csarkosh/engine/sim/lakeShape";
-import { COHORT_GIANT, COHORT_SAPLING, COHORT_SNAG, treesInRect } from "../sim/vegetation.js";
+import { COHORT_GIANT, COHORT_SAPLING, COHORT_SNAG, treesInRect } from "@csarkosh/engine/sim/vegetation";
 import { GIANT_MODEL_HEIGHT } from "./wildlifeField.js";
 
 /**

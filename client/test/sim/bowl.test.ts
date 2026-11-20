@@ -5,8 +5,8 @@ import {
   apronWindowD, apronCliffFreeD, apronKeepD,
   APRON_Z_HALF, APRON_Z_FADE, APRON_CLIFF_U, APRON_CLIFF_FADE,
 } from "../../src/sim/bowl.js";
-import { ROAD_CORRIDOR_HALF } from "../../src/sim/road.js";
-import type { TerrainSample } from "../../src/sim/terrain.js";
+import { ROAD_CORRIDOR_HALF } from "@csarkosh/engine/sim/road";
+import type { TerrainSample } from "@csarkosh/engine/sim/terrain";
 
 /** A synthetic base: an inland ramp with a z tilt, exact derivatives. The
  * road frame is skewed (uDz = 0.1) so the chain rule back to world z is exercised. */

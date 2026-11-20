@@ -36,10 +36,10 @@
 import sandbox01 from "../../../levels/sandbox01.json" with { type: "json" };
 import { createForest } from "../../sim/forest.js";
 import { parseLevel } from "../../sim/level.js";
-import { DEFAULT_TERRAIN_VARIANT, setActiveTerrainVariant } from "../../sim/terrain.js";
+import { DEFAULT_TERRAIN_VARIANT, setActiveTerrainVariant } from "@csarkosh/engine/sim/terrain";
 import { createWorld } from "../../sim/world.js";
-import { PROBE_HOUR, PROBE_READY_MAX_MS, PROBE_SEED_TOKEN, createProbeMeter, probePose } from "../frameProbe.js";
-import { pageProbe, type PageProbe } from "../probePage.js";
+import { PROBE_HOUR, PROBE_READY_MAX_MS, PROBE_SEED_TOKEN, createProbeMeter, probePose } from "@csarkosh/engine/game/frameProbe";
+import { pageProbe, type PageProbe } from "@csarkosh/engine/game/probePage";
 import { containerPixels, type ProbeReading, type QualityTier } from "@csarkosh/engine/game/quality";
 import type { Renderer, RendererOptions } from "../rendererTypes.js";
 import { seedFromToken } from "@csarkosh/engine/game/seed";

@@ -4,7 +4,7 @@ import type { Row } from "../../src/admin/source.js";
 import { browserZone, useZone } from "../../src/admin/timeline.js";
 import { buildTrailFor, parseWorld, sameGeneration } from "../../src/admin/trail.js";
 import { GEN_VERSION } from "../../src/sim/forest.js";
-import { DEFAULT_TERRAIN_VARIANT } from "../../src/sim/terrain.js";
+import { DEFAULT_TERRAIN_VARIANT } from "@csarkosh/engine/sim/terrain";
 import { timeLimit } from "../helpers/timeLimit.js";
 
 describe("parseWorld", () => {

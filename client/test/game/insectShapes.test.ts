@@ -1,8 +1,8 @@
 import { describe, expect, it } from "vitest";
-import type { Dragonflies } from "../../src/game/dragonflyBehaviour.js";
+import type { Dragonflies } from "@csarkosh/engine/game/dragonflyBehaviour";
 import {
   DRAGONFLY_COLOURS, DRAGONFLY_DRAWN_SCALE, DRAGONFLY_WING_AMP, dragonflyGeometry, dragonflyHalfSpan, emptyDragonflyList, fillDragonflyList,
-} from "../../src/game/dragonflyShapes.js";
+} from "@csarkosh/engine/game/dragonflyShapes";
 import { MIDGE_DARK, MIDGE_FRAME_FLOATS, MIDGE_HEAD_FLOATS, MIDGE_TABLE_FLOATS, midgeSlots, packMidgeFrame, type MidgeFrame } from "../../src/game/midgeLook.js";
 import { MIDGE_SWARMS_MAX, SWARM_ROW_FLOATS } from "../../src/game/midgeMotion.js";
 

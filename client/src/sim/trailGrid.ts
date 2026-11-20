@@ -30,7 +30,7 @@
  *
  * Generic: the road frame arrives as a callback, the ground as a sampler.
  */
-import type { TerrainSample } from "./terrain.js";
+import type { TerrainSample } from "@csarkosh/engine/sim/terrain";
 import { BOWL_U_MIN, BOWL_U_MAX, BOWL_Z_HALF, TRAIL_Z_ANCHOR } from "./bowl.js";
 
 export const TRAIL_GRID_CELL = 8;

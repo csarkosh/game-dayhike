@@ -21,12 +21,12 @@ import {
   addToScene, createMeshFromData, createPbrMaterial, disposeMeshGpu, removeFromScene, setMeshVisible, setThinInstanceCount, setThinInstances,
   type EngineContext, type MaterialPlugin, type Mesh, type PluginUniformBlock, type SceneContext,
 } from "@babylonjs/lite";
-import type { Dragonflies } from "../dragonflyBehaviour.js";
+import type { Dragonflies } from "@csarkosh/engine/game/dragonflyBehaviour";
 import { sphereInPlanes, type ViewPlane } from "@csarkosh/engine/game/lakeSeen";
 import {
   DRAGONFLY_COLOURS, DRAGONFLY_KINDS, DRAGONFLY_OMEGA, DRAGONFLY_ROUGHNESS, dragonflyGeometry, dragonflyHalfSpan, emptyDragonflyList, fillDragonflyList,
   type DragonflyList,
-} from "../dragonflyShapes.js";
+} from "@csarkosh/engine/game/dragonflyShapes";
 import { SEE_THROUGH_ORDER } from "@csarkosh/engine/game/lite/drawOrder";
 import { oneSidedLightPlugin } from "./forestPlugins.js";
 import type { FrameUploads } from "@csarkosh/engine/game/lite/frameUploads";

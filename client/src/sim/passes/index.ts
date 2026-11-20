@@ -11,7 +11,7 @@
  * Pass 9, signs, emits the sign posts at the trail's junctions. Pass 10,
  * cliffs, emits the cliff modules' colliders.
  */
-import "../montane.js";
+import "@csarkosh/engine/sim/montane";
 import "../mountain.js";
 import "./elevation.js";
 import "./trees.js";

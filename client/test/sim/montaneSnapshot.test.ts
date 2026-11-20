@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import "../../src/sim/montane.js";
+import "@csarkosh/engine/sim/montane";
 import { variantOrThrow } from "./helpers/derivatives.js";
 
 /**

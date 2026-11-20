@@ -3,7 +3,7 @@ import "../../src/sim/passes/index.js";
 import { createForest } from "../../src/sim/forest.js";
 import { createForestWorld, spawnPlayer, tickWorld } from "../../src/sim/world.js";
 import { PLAYER_HALF } from "../../src/sim/constants.js";
-import { DEFAULT_TERRAIN_VARIANT, setActiveTerrainVariant } from "../../src/sim/terrain.js";
+import { DEFAULT_TERRAIN_VARIANT, setActiveTerrainVariant } from "@csarkosh/engine/sim/terrain";
 import { Button, type InputCommand, type Vec3 } from "../../src/sim/types.js";
 import { spiralSpawn } from "../../src/sim/spawn.js";
 import { timeLimit } from "../helpers/timeLimit.js";

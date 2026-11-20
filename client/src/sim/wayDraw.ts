@@ -15,13 +15,13 @@
  */
 import type { World } from "./world.js";
 import type { Vec3 } from "./types.js";
-import type { TrailNode } from "./trail.js";
+import type { TrailNode } from "@csarkosh/engine/sim/trail";
 import { GROUND_NORMAL_Y, PLAYER_HALF, STEP_HEIGHT } from "./constants.js";
-import { activeTerrainVariant } from "./terrain.js";
+import { activeTerrainVariant } from "@csarkosh/engine/sim/terrain";
 import { lakeShoreInto, newLakeShore } from "@csarkosh/engine/sim/lakeShape";
 import { boxesNear } from "./boxSource.js";
 import { hash2 } from "@csarkosh/engine/sim/field";
-import { stemAhead, stemNodes } from "./trailRoute.js";
+import { stemAhead, stemNodes } from "@csarkosh/engine/sim/trailRoute";
 import { makeWay, type WayDown } from "./wayDown.js";
 
 /**

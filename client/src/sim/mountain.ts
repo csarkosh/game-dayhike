@@ -10,8 +10,8 @@
  * Same contract as the coast's own stages: dx/dz are the exact analytic derivatives of h, and
  * the arithmetic is the simulation's (no trig, no Math.pow, no `**`, no hypot).
  */
-import { COVE_Z, coastGround, registerOlympic, roadCenterX, roadCorridorOverD, roadFrameAt, roadGradeAt } from "./olympic.js";
-import type { LakeSource, TerrainSample } from "./terrain.js";
+import { COVE_Z, coastGround, registerOlympic, roadCenterX, roadCorridorOverD, roadFrameAt, roadGradeAt } from "@csarkosh/engine/sim/olympic";
+import type { LakeSource, TerrainSample } from "@csarkosh/engine/sim/terrain";
 import {
   BOWL_TUNABLES, BOWL_Z_HALF, TRAIL_Z_ANCHOR, TRAILHEAD_U,
   inBowl, padD, apronWindowD, apronKeepD, APRON_BLEND_END,
@@ -19,16 +19,16 @@ import {
 import {
   TRAIL_TUNABLES, trailCorridorD, trailSinkD, trailDistance as graphTrailDistance,
   type TrailGraph,
-} from "./trail.js";
+} from "@csarkosh/engine/sim/trail";
 import { TRAIL_GRID_TUNABLES } from "./trailGrid.js";
 import { buildTrail } from "./trailBuild.js";
 import {
   LANDMARK_TUNABLES, landmarkMaskAt, type Landmark, type LandmarkMask,
-} from "./landmarks.js";
-import { FEATURE_TUNABLES, featureStageD, lakeStageD, featureMaskAt, type Feature } from "./features.js";
+} from "@csarkosh/engine/sim/landmarks";
+import { FEATURE_TUNABLES, featureStageD, lakeStageD, featureMaskAt, type Feature } from "@csarkosh/engine/sim/features";
 import { BRAID_TUNABLES, type Braid } from "./trailBraid.js";
-import { forestDensityUnmasked } from "./vegetation.js";
-import { boulderDensityUnmasked, CLUTTER_BOULDER_SLOPE_LO } from "./clutter.js";
+import { forestDensityUnmasked } from "@csarkosh/engine/sim/vegetation";
+import { boulderDensityUnmasked, CLUTTER_BOULDER_SLOPE_LO } from "@csarkosh/engine/sim/clutter";
 import { STRIP_FOREST_FLOOR, STRIP_LIFT, shoreStrip } from "./shoreStrip.js";
 
 if (TRAIL_Z_ANCHOR !== COVE_Z) throw new Error("the trail is anchored where the cove lies");

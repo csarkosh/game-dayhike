@@ -24,7 +24,7 @@
  */
 import { installChunks } from "../sim/chunkGrid.js";
 import { installPassHash, passHashCachedFor } from "../sim/forest.js";
-import { terrainVariant } from "../sim/terrain.js";
+import { terrainVariant } from "@csarkosh/engine/sim/terrain";
 import type { PreparedScene } from "./preparedScene.js";
 import type { QualityTier } from "@csarkosh/engine/game/quality";
 import type { WorldPrepReply, WorldPrepRequest, WorldSceneRequest } from "./world.worker.js";

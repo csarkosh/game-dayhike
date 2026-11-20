@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
-import { stemPointAt, route, stemNodes, stemProgress, homeDistances, forksOf } from "../../src/sim/trailRoute.js";
+import { stemPointAt, route, stemNodes, stemProgress, homeDistances, forksOf } from "@csarkosh/engine/sim/trailRoute";
 import { graph as stemGraph } from "./helpers/stemGraph.js";
-import type { TrailEdge, TrailGraph } from "../../src/sim/trail.js";
+import type { TrailEdge, TrailGraph } from "@csarkosh/engine/sim/trail";
 
 /** A diamond: 0 → 1 → 3 and 0 → 2 → 3 are exactly the same length. */
 function diamond(): TrailGraph {

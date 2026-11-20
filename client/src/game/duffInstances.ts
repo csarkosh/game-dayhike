@@ -13,8 +13,8 @@
  * meshes, and nothing here knows what a mesh is.
  */
 import { CLUTTER_SINK, instanceMatrixFor, trampleFrame, writeFoliage } from "./clutterInstances.js";
-import { DUFF_CHARACTER_COUNT } from "./duffClump.js";
-import { createDuffCollector, type DuffCell, type DuffTiers } from "./duffField.js";
+import { DUFF_CHARACTER_COUNT } from "@csarkosh/engine/game/duffClump";
+import { createDuffCollector, type DuffCell, type DuffTiers } from "@csarkosh/engine/game/duffField";
 import { KEPT_FOLIAGE, KEPT_STRIDE, createInstanceList, ensureCapacity, writeKept, type InstanceList } from "@csarkosh/engine/game/instanceLists";
 import { createKeptValues } from "@csarkosh/engine/game/keptValues";
 import type { Slices } from "@csarkosh/engine/game/syncJobs";

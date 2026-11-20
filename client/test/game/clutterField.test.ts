@@ -1,15 +1,15 @@
 import type { FadeBands } from "@csarkosh/engine/game/distanceFade";
 import { describe, expect, it } from "vitest";
-import "../../src/sim/olympic.js";
+import "@csarkosh/engine/sim/olympic";
 import {
   CLUTTER_BLADE_HANDOFF, CLUTTER_BUDGETS, CLUTTER_FADE_FRACTION, CLUTTER_MEADOW_NEAR_IN,
   CLUTTER_FADE_MIN_RAMP, CLUTTER_FAR_SPLIT, CLUTTER_RADII, COLLECTOR_SWEEP_SIZE, COVER_FAR_FROM, COVER_FAR_KEEP, COVER_FAR_RAMP,
   COVER_WIDEN, COVER_WIDEN_RAMP, clutterFadeEdges, clutterNearRadius, coverBands, coverFarBand, coverWiden, farKeep,
   clutterSeamEdges, collectClutter, collectClutterWithBudgets, createClutterCollector, rampBands, COVER_RAMP_CLASSES, COVER_RAMP_WIDTH,
-  CLUTTER_REACH, CLUTTER_REACH_LOW, clutterReachFor } from "../../src/game/clutterField.js";
+  CLUTTER_REACH, CLUTTER_REACH_LOW, clutterReachFor } from "@csarkosh/engine/game/clutterField";
 import {
   CLUTTER_CLASS_COUNT, clutterCell, CLUTTER_DRIFTWOOD, CLUTTER_GRASS, CLUTTER_GRASS_CELL, CLUTTER_JITTER,
-  CLUTTER_MEADOW, CLUTTER_FERN, CLUTTER_SHRUB, CLUTTER_BUSH, CLUTTER_ROCK, CLUTTER_BOULDER, CLUTTER_FUNGUS, CLUTTER_DRIFTLOG } from "../../src/sim/clutter.js";
+  CLUTTER_MEADOW, CLUTTER_FERN, CLUTTER_SHRUB, CLUTTER_BUSH, CLUTTER_ROCK, CLUTTER_BOULDER, CLUTTER_FUNGUS, CLUTTER_DRIFTLOG } from "@csarkosh/engine/sim/clutter";
 import { timeLimit } from "../helpers/timeLimit.js";
 
 const SEED = 0x5eed;

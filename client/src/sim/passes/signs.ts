@@ -1,6 +1,6 @@
 import { registerPass } from "../chunk.js";
 import { CHUNK_SIZE } from "@csarkosh/engine/sim/forestConstants";
-import { activeTerrainVariant, elevationSampleAt } from "../terrain.js";
+import { activeTerrainVariant, elevationSampleAt } from "@csarkosh/engine/sim/terrain";
 import { SIGN_POST_HALF, SIGN_POST_OFFSET, signPostSites } from "../signs.js";
 
 /** Pass 9. The sign posts' collision boxes, one per junction, emitted into the

@@ -1,7 +1,7 @@
 import { hash3 } from "@csarkosh/engine/sim/field";
 import { MAX_PLAYERS, PLAYER_HALF } from "../sim/constants.js";
 import type { QualityTier } from "@csarkosh/engine/game/quality";
-import { WATER_LIFE_SALT } from "./waterLifeField.js";
+import { WATER_LIFE_SALT } from "@csarkosh/engine/game/waterLifeField";
 
 /**
  * How a midge swarm moves, Babylon-free: the arithmetic the midges' vertex

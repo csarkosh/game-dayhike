@@ -26,11 +26,11 @@
  *
  * What draws the spray (`lite/surfSpray.ts`) reads these.
  */
-import { LIP_SPEED_MAX, LIP_SPEED_MIN, type LipTracker } from "./oceanBreaker.js";
+import { LIP_SPEED_MAX, LIP_SPEED_MIN, type LipTracker } from "@csarkosh/engine/game/oceanBreaker";
 import { WIND_SEA_U_PER_WIND } from "./oceanWindSea.js";
 import { SWASH_G } from "@csarkosh/engine/game/swashRunUp";
-import type { SwashCove } from "./swashTable.js";
-import { OCEAN_FOAM_ALBEDO } from "./waterShading.js";
+import type { SwashCove } from "@csarkosh/engine/game/swashTable";
+import { OCEAN_FOAM_ALBEDO } from "@csarkosh/engine/game/waterShading";
 import type { WindRecord } from "@csarkosh/engine/game/windParams";
 
 /** Sprites a burst. */

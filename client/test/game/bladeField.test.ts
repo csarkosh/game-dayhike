@@ -1,15 +1,15 @@
 import { describe, expect, it } from "vitest";
 import "../../src/sim/passes/index.js";
-import { CLUTTER_MEADOW, groundCover } from "../../src/sim/clutter.js";
+import { CLUTTER_MEADOW, groundCover } from "@csarkosh/engine/sim/clutter";
 import { bowlFor } from "../../src/sim/mountain.js";
-import { CLUTTER_FAR_SPLIT, clutterNearRadius, clutterSeamEdges } from "../../src/game/clutterField.js";
+import { CLUTTER_FAR_SPLIT, clutterNearRadius, clutterSeamEdges } from "@csarkosh/engine/game/clutterField";
 import {
   BLADE_CELL, BLADE_CHARACTER_COUNT, BLADE_CHARACTER_WEIGHTS, BLADE_FINE, BLADE_FLOWER, BLADE_FLOWER_MIN_STRENGTH,
   BLADE_FULL_BAND, BLADE_JITTER, BLADE_PAD, BLADE_REACH, BLADE_REBUILD_CELL, BLADE_SIZE_BASE, BLADE_SIZE_FULL,
   BLADE_SIZE_THIN, BLADE_STRENGTH_FLOOR, BLADE_THIN_BAND, BLADE_TIER_BAND, BLADE_TIER_EDGE,
   bladeCellAt, bladeCharacterFor, bladeSizeFor, bladeTierBands, cellDraw, collectBladeCells, createBladeCollector,
   type BladeCell,
-} from "../../src/game/bladeField.js";
+} from "@csarkosh/engine/game/bladeField";
 
 // An open-field point where the grass gate is high across a wide neighbourhood
 // (the census point clutter.test.ts uses), so every tier holds cells.

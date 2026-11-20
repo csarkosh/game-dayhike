@@ -1,6 +1,6 @@
 import { describe, it, expect, afterEach, vi } from "vitest";
 import { CAUTION_LIVE, TIER_CHOICES, listOpen, renderSettings, settingsModel, type SettingsInput } from "../../src/game/settings.js";
-import { autoPick } from "../../src/game/frameProbe.js";
+import { autoPick } from "@csarkosh/engine/game/frameProbe";
 import type { GpuSignals } from "@csarkosh/engine/game/gpuSignals";
 import { renderLanding } from "../../src/game/landing.js";
 import { landingModel } from "../../src/game/landingModel.js";

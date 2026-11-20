@@ -3,7 +3,7 @@
  * the field seats it. Shared by the placement's tests (`cliffField.test.ts`)
  * and the collider's (`passes/cliffsSweep.ts`), which sweep the same lattice.
  */
-import type { ClutterInstance } from "../../../src/sim/clutter.js";
+import type { ClutterInstance } from "@csarkosh/engine/sim/clutter";
 import {
   CLIFF_MODEL_BASE, CLIFF_MODEL_DEPTH, CLIFF_MODEL_FRONT, CLIFF_MODEL_HEIGHT, CLIFF_MODEL_RIGHT, CLIFF_MODEL_WIDTH, CLIFF_SINK,
   cliffFacing, leanPoint, type CliffPoint,

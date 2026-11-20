@@ -1,9 +1,9 @@
 import { describe, it, expect } from "vitest";
 import "../../src/sim/passes/index.js";
 import { bowlFor, olympicPreTrailSample } from "../../src/sim/mountain.js";
-import { elevationSampleAt, setActiveTerrainVariant, DEFAULT_TERRAIN_VARIANT } from "../../src/sim/terrain.js";
-import { featureStageD } from "../../src/sim/features.js";
-import { TRAIL_BED_HALF, TRAIL_SINK, TRAIL_SINK_RAMP, TRAIL_TUNABLES, trailSinkD, trailCorridorD } from "../../src/sim/trail.js";
+import { elevationSampleAt, setActiveTerrainVariant, DEFAULT_TERRAIN_VARIANT } from "@csarkosh/engine/sim/terrain";
+import { featureStageD } from "@csarkosh/engine/sim/features";
+import { TRAIL_BED_HALF, TRAIL_SINK, TRAIL_SINK_RAMP, TRAIL_TUNABLES, trailSinkD, trailCorridorD } from "@csarkosh/engine/sim/trail";
 import { SEEDS } from "./trailGateSeeds.js";
 
 /**

@@ -1,13 +1,13 @@
 import { describe, expect, it } from "vitest";
-import "../../src/sim/olympic.js";
-import { setActiveTerrainVariant } from "../../src/sim/terrain.js";
+import "@csarkosh/engine/sim/olympic";
+import { setActiveTerrainVariant } from "@csarkosh/engine/sim/terrain";
 import { createOceanFrame } from "../../src/game/oceanFrame.js";
-import { SEA_RING_FLOATS } from "../../src/game/seaLattice.js";
+import { SEA_RING_FLOATS } from "@csarkosh/engine/game/seaLattice";
 import { seedFromToken } from "@csarkosh/engine/game/seed";
 import { SEA_COMPONENT_VECS, emptySeaFrameUniforms, emptySeaUniforms, seaFrameUniforms, seaUniforms } from "../../src/game/seaUniforms.js";
-import { WATER_RING_COUNT } from "../../src/game/water.js";
-import { WATER_ROWS, waterSkinOffset } from "../../src/game/waterShading.js";
-import { advanceWater, createBumpDrift, createWaterSurface, setWaterCove, setWaterWind } from "../../src/game/waterSurface.js";
+import { WATER_RING_COUNT } from "@csarkosh/engine/game/water";
+import { WATER_ROWS, waterSkinOffset } from "@csarkosh/engine/game/waterShading";
+import { advanceWater, createBumpDrift, createWaterSurface, setWaterCove, setWaterWind } from "@csarkosh/engine/game/waterSurface";
 
 setActiveTerrainVariant("olympic");
 const SEED = seedFromToken("atmo");

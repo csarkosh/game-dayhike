@@ -3,9 +3,9 @@ import {
   CLIFF_ALT_HI, CLIFF_BENCH, CLIFF_OUT_ALT_HI, CLIFF_OUT_ALT_LO, CLIFF_PERIOD,
   cliffD, cliffMaskD,
   terraceDeltaD, terraceStepD,
-} from "../../src/sim/cliffs.js";
-import { olympicBaseSample } from "../../src/sim/olympic.js";
-import type { TerrainSample } from "../../src/sim/terrain.js";
+} from "@csarkosh/engine/sim/cliffs";
+import { olympicBaseSample } from "@csarkosh/engine/sim/olympic";
+import type { TerrainSample } from "@csarkosh/engine/sim/terrain";
 import { variantOrThrow } from "./helpers/derivatives.js";
 import { centerlineX } from "./helpers/roadLine.js";
 

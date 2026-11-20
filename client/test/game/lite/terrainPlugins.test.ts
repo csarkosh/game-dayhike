@@ -13,16 +13,16 @@ import {
 } from "@csarkosh/engine/game/groundHexParams";
 import { runBySlices } from "../../helpers/sliceRun.js";
 import { ROAD_ASPHALT_HALF, ROAD_PAINT_END, ROAD_SHOULDER_HALF } from "@csarkosh/engine/game/roadPaint";
-import { NEEDLE_BED } from "../../../src/game/terrainSurface.js";
-import { emptyTerrainUniforms, terrainUniforms, type TerrainUniformInputs } from "../../../src/game/terrainUniforms.js";
+import { NEEDLE_BED } from "@csarkosh/engine/game/terrainSurface";
+import { emptyTerrainUniforms, terrainUniforms, type TerrainUniformInputs } from "@csarkosh/engine/game/terrainUniforms";
 import {
   TRAIL_BED_EARTH, TRAIL_BED_FLOOR, TRAIL_BENCH_SHADE, TRAIL_CORE_GAIN, TRAIL_DRIFT_BAND, TRAIL_MARGIN_GAIN, TRAIL_WASH_BAND, TRAIL_WASH_DARK_LITTER,
   TRAIL_WASH_DARK_OPEN, TRAIL_WASH_ROUGH, TRAIL_WASH_WAVE,
-} from "../../../src/game/trailBenchParams.js";
-import { TRAIL_PAINT_BUCKET_MAX, TRAIL_PAINT_INDEX_ROW } from "../../../src/game/trailPaint.js";
-import { TRAIL_CORRIDOR_HALF } from "../../../src/sim/trail.js";
-import { TERRAIN_ATTRIBUTES, TERRAIN_VERTEX_SIZES, type TerrainVertices } from "../../../src/game/terrainVertices.js";
-import { WET_SWASH_VECS, emptyWetUniforms, wetUniforms } from "../../../src/game/wetSurface.js";
+} from "@csarkosh/engine/game/trailBenchParams";
+import { TRAIL_PAINT_BUCKET_MAX, TRAIL_PAINT_INDEX_ROW } from "@csarkosh/engine/game/trailPaint";
+import { TRAIL_CORRIDOR_HALF } from "@csarkosh/engine/sim/trail";
+import { TERRAIN_ATTRIBUTES, TERRAIN_VERTEX_SIZES, type TerrainVertices } from "@csarkosh/engine/game/terrainVertices";
+import { WET_SWASH_VECS, emptyWetUniforms, wetUniforms } from "@csarkosh/engine/game/wetSurface";
 import { laidOut, readUniform, standInTexture } from "./pluginFixture.js";
 
 const TEXTURES = Object.fromEntries(TERRAIN_TEXTURE_ORDER.map(([, key]) => [key, standInTexture(key)])) as unknown as TerrainTextures;

@@ -31,10 +31,10 @@ import {
   createMeshFromData, createPbrMaterial, disposeMeshGpu, removeFromScene, setPbrMetallicReflectance,
   type EngineContext, type MaterialPlugin, type PluginUniformBlock, type PbrMaterialProps, type SceneContext,
 } from "@babylonjs/lite";
-import { BLADE_ALBEDO, BLADE_CHARACTERS, bladeClumpGeometry, bladeCountFor, type BladeQuality } from "../bladeClump.js";
-import { BLADE_CHARACTER_COUNT, BLADE_REBUILD_CELL, BLADE_SIZE_COUNT, bladeTierBands } from "../bladeField.js";
+import { BLADE_ALBEDO, BLADE_CHARACTERS, bladeClumpGeometry, bladeCountFor, type BladeQuality } from "@csarkosh/engine/game/bladeClump";
+import { BLADE_CHARACTER_COUNT, BLADE_REBUILD_CELL, BLADE_SIZE_COUNT, bladeTierBands } from "@csarkosh/engine/game/bladeField";
 import { BLADE_ROUGHNESS, BLADE_TIER_COUNT, createBladeLists } from "../bladeInstances.js";
-import { FOLIAGE_PROFILES, foliageLook } from "../foliageUniforms.js";
+import { FOLIAGE_PROFILES, foliageLook } from "@csarkosh/engine/game/foliageUniforms";
 import type { CullPose } from "@csarkosh/engine/game/grassCull";
 import type { FirstBuilds } from "@csarkosh/engine/game/firstBuilds";
 import type { InstanceList } from "@csarkosh/engine/game/instanceLists";

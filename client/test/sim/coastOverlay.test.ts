@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
-import { elevationSampleAt, terrainVariant } from "../../src/sim/terrain.js";
-import type { CoastOverlay } from "../../src/sim/olympic.js";
+import { elevationSampleAt, terrainVariant } from "@csarkosh/engine/sim/terrain";
+import type { CoastOverlay } from "@csarkosh/engine/sim/olympic";
 
 /**
  * The coast as the engine has it, with no place laid over it or with one of a test's own: what
@@ -10,8 +10,8 @@ import type { CoastOverlay } from "../../src/sim/olympic.js";
  */
 async function coastWith(place: CoastOverlay | null) {
   vi.resetModules();
-  const olympic = await import("../../src/sim/olympic.js");
-  const terrain = await import("../../src/sim/terrain.js");
+  const olympic = await import("@csarkosh/engine/sim/olympic");
+  const terrain = await import("@csarkosh/engine/sim/terrain");
   olympic.registerOlympic(place);
   return { olympic, terrain, variant: terrain.activeTerrainVariant() };
 }

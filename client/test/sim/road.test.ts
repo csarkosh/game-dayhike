@@ -2,8 +2,8 @@ import { describe, it, expect } from "vitest";
 import {
   ROAD_LATTICE, ROAD_BED_HALF, ROAD_CORRIDOR_HALF,
   roadOffsetD, gradeSplineD, corridorD,
-} from "../../src/sim/road.js";
-import { olympicBaseSample, roadGradeAt } from "../../src/sim/olympic.js";
+} from "@csarkosh/engine/sim/road";
+import { olympicBaseSample, roadGradeAt } from "@csarkosh/engine/sim/olympic";
 import { centerlineX, roadOffsetDAt } from "./helpers/roadLine.js";
 import { DERIV_SEED as SEED } from "./helpers/derivatives.js";
 

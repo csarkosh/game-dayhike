@@ -1,15 +1,15 @@
 import { describe, expect, it } from "vitest";
 import "../../src/sim/passes/index.js";
-import { elevationSampleAt } from "../../src/sim/terrain.js";
+import { elevationSampleAt } from "@csarkosh/engine/sim/terrain";
 import { passHash } from "../../src/sim/forest.js";
-import { treeInCell, treesInRect } from "../../src/sim/vegetation.js";
+import { treeInCell, treesInRect } from "@csarkosh/engine/sim/vegetation";
 import {
   clutterInCell,
   clutterInRect,
   CLUTTER_CLASS_COUNT,
   CLUTTER_ROCK,
   CLUTTER_ROCK_CELL,
-} from "../../src/sim/clutter.js";
+} from "@csarkosh/engine/sim/clutter";
 
 const SEED = 0x5eed1;
 

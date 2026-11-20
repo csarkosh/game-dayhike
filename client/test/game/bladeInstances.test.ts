@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import "../../src/sim/passes/index.js";
-import { BLADE_CHARACTER_COUNT, BLADE_REBUILD_CELL, BLADE_SIZE_COUNT, createBladeCollector, type BladeCell } from "../../src/game/bladeField.js";
+import { BLADE_CHARACTER_COUNT, BLADE_REBUILD_CELL, BLADE_SIZE_COUNT, createBladeCollector, type BladeCell } from "@csarkosh/engine/game/bladeField";
 import { BLADE_CANOPY_HEIGHT, BLADE_STRENGTH_HEIGHT, BLADE_TIER_COUNT, bladeHeightScale, createBladeLists } from "../../src/game/bladeInstances.js";
 import { instanceMatrixFor, trampleFrame, writeFoliage } from "../../src/game/clutterInstances.js";
 import type { CullPose } from "@csarkosh/engine/game/grassCull";
@@ -8,7 +8,7 @@ import type { InstanceList } from "@csarkosh/engine/game/instanceLists";
 import { finish } from "@csarkosh/engine/game/syncJobs";
 import { runBySlices } from "../helpers/sliceRun.js";
 import { timeLimit } from "../helpers/timeLimit.js";
-import { elevationSampleAt } from "../../src/sim/terrain.js";
+import { elevationSampleAt } from "@csarkosh/engine/sim/terrain";
 
 // The open-field census point: every tier and every character is present.
 const SEED = 1;

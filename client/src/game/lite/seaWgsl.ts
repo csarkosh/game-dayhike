@@ -62,8 +62,8 @@
  *
  * Loads nothing.
  */
-import { HOLE_CELLS } from "../clipmap.js";
-import { WATER_RING_CELLS, WATER_RING_COUNT, WATER_UV_SCALE } from "../water.js";
+import { HOLE_CELLS } from "@csarkosh/engine/game/clipmap";
+import { WATER_RING_CELLS, WATER_RING_COUNT, WATER_UV_SCALE } from "@csarkosh/engine/game/water";
 import { waterThroughWgsl } from "./waterWgsl.js";
 import fftConstsSource from "../shaders/sea/fftConsts.wgsl?raw";
 import cascadesBranchSource from "../shaders/sea/cascadesBranch.wgsl?raw";

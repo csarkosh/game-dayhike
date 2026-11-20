@@ -6,7 +6,7 @@
  * test could build on the same flat frame.
  */
 import { type BuildFrame } from "../../../src/sim/trailBuild.js";
-import type { TerrainSample } from "../../../src/sim/terrain.js";
+import type { TerrainSample } from "@csarkosh/engine/sim/terrain";
 
 export const ROAD_X = -250;
 /**

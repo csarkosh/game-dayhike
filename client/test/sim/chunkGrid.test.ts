@@ -2,11 +2,11 @@ import { afterEach, describe, it, expect } from "vitest";
 import "../../src/sim/passes/index.js";
 import { createChunkGrid, installChunks } from "../../src/sim/chunkGrid.js";
 import { CELLS_PER_CHUNK, generateChunk, type Chunk } from "../../src/sim/chunk.js";
-import { activeTerrainVariantName } from "../../src/sim/terrain.js";
+import { activeTerrainVariantName } from "@csarkosh/engine/sim/terrain";
 import { depenetrate, raycast, sweepBox } from "../../src/sim/collision.js";
 import { PLAYER_HALF } from "../../src/sim/constants.js";
 import { CHUNK_SIZE } from "@csarkosh/engine/sim/forestConstants";
-import { elevationAt } from "../../src/sim/terrain.js";
+import { elevationAt } from "@csarkosh/engine/sim/terrain";
 import type { Vec3 } from "../../src/sim/types.js";
 import type { Aabb } from "../../src/sim/level.js";
 

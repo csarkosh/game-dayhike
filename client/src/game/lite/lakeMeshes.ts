@@ -48,25 +48,25 @@ import {
   removeFromScene, setMeshVisible, updateTextureRegion,
   type EngineContext, type MaterialPlugin, type Mesh, type PbrMaterialProps, type PluginUniformBlock, type SceneContext, type Texture2D,
 } from "@babylonjs/lite";
-import type { LakeSource } from "../../sim/terrain.js";
-import { LAKE_SURFACE_REACH } from "../bedHeight.js";
+import type { LakeSource } from "@csarkosh/engine/sim/terrain";
+import { LAKE_SURFACE_REACH } from "@csarkosh/engine/game/bedHeight";
 import { lakeCalmUnder, type CalmFade, type LakeCalmFrame } from "@csarkosh/engine/game/lakeCalmFrame";
 import { lakeSunShare } from "../lakeRipples.js";
 import { lakeDrawnFrom, lakeInViewFrom, lakeViewPoints, type ViewPlane } from "@csarkosh/engine/game/lakeSeen";
 import { MIRROR_MOTION_SMEAR, mirrorMotion } from "@csarkosh/engine/game/mirrorPass";
 import { SKYLINE_SHADE, SKYLINE_TEXELS, skylineElevations, skylineTexels, skylineTrees } from "../lakeSkyline.js";
-import { LAKE_SURFACE_SPACING, lakeSurfaceDepths, lakeSurfaceGrid } from "../lakeSurfaceGrid.js";
+import { LAKE_SURFACE_SPACING, lakeSurfaceDepths, lakeSurfaceGrid } from "@csarkosh/engine/game/lakeSurfaceGrid";
 import type { PreparedLakeSurface } from "../preparedScene.js";
 import type { QualityTier } from "@csarkosh/engine/game/quality";
 import { SUN_PEAK } from "@csarkosh/engine/game/sky";
 import type { SkyState } from "@csarkosh/engine/game/skyState";
 import { WATER_BUMP_SIZE, waterBumpData } from "@csarkosh/engine/game/waterBump";
-import { lakeSkin, lakeWaterRow, roughnessFor, waterSkinOffset } from "../waterShading.js";
+import { lakeSkin, lakeWaterRow, roughnessFor, waterSkinOffset } from "@csarkosh/engine/game/waterShading";
 import {
   advanceWater, createBumpDrift, createWaterSurface, emptyLakeMirrorUniforms, emptyLakeUniforms, emptyWaterFrameUniforms, lakeMirrorUniforms, lakeUniforms,
   setWaterCalm, setWaterLakeBody, setWaterLakeTime, setWaterMirrorMotion, setWaterPawCover, setWaterShade, setWaterWind, waterFrameUniforms, waterRoughnessDue,
   type LakeMirrorUniforms, type LakeUniforms, type WaterFrameUniforms, type WaterSurface,
-} from "../waterSurface.js";
+} from "@csarkosh/engine/game/waterSurface";
 import type { WeatherParams } from "@csarkosh/engine/game/weather";
 import type { WindRecord } from "@csarkosh/engine/game/windParams";
 import { SEE_THROUGH_ORDER } from "@csarkosh/engine/game/lite/drawOrder";
@@ -75,7 +75,7 @@ import type { LiteLakeMirror, MirrorFrame } from "./lakeMirror.js";
 import { lakePlugin } from "./lakePlugin.js";
 import type { CoverRegistry } from "./rainMap.js";
 import type { WaterBehind } from "@csarkosh/engine/game/lite/waterBehind";
-import type { LiteWaterBed } from "./waterBed.js";
+import type { LiteWaterBed } from "@csarkosh/engine/game/lite/waterBed";
 
 /** How far over its lake's level a surface stands, metres. */
 export const LAKE_SURFACE_LIFT = 0.02;

@@ -30,7 +30,7 @@
  *   it, which stands in outside the bed's square.
  */
 import type { MaterialPlugin, PluginUniformBlock, Texture2D } from "@babylonjs/lite";
-import type { LakeMirrorUniforms, LakeUniforms } from "../waterSurface.js";
+import type { LakeMirrorUniforms, LakeUniforms } from "@csarkosh/engine/game/waterSurface";
 import { frameReads } from "./frameBlock.js";
 import { uniformFields, writeUniforms } from "@csarkosh/engine/game/lite/pluginUniforms";
 import type { WaterBehind } from "@csarkosh/engine/game/lite/waterBehind";

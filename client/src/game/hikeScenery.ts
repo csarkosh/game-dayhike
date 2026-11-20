@@ -16,7 +16,7 @@
  * Nothing here loads an engine: the renderer is held by its type, and its
  * scenery by what the hike asks of it.
  */
-import { activeTerrainVariant, elevationAt } from "../sim/terrain.js";
+import { activeTerrainVariant, elevationAt } from "@csarkosh/engine/sim/terrain";
 import { signSites } from "../sim/placeNames.js";
 import { SUMMIT_LABEL, TRAIL_NAME, signPosts } from "../sim/signs.js";
 import { trailheadPlaces } from "../sim/trailhead.js";

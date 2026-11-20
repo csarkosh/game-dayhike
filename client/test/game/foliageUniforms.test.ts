@@ -3,7 +3,7 @@ import { FADE_NONE_IN, FADE_NONE_OUT } from "@csarkosh/engine/game/distanceFade"
 import {
   FOLIAGE_CANOPY_SUN, FOLIAGE_PLAYERS, FOLIAGE_PLAYER_PARKED, FOLIAGE_PROFILES, emptyFoliageUniforms, foliageLook, foliageMatched,
   foliageUniforms, setFoliageWind,
-} from "../../src/game/foliageUniforms.js";
+} from "@csarkosh/engine/game/foliageUniforms";
 import type { WindRecord } from "@csarkosh/engine/game/windParams";
 
 const STILL: WindRecord = { dirX: 1, dirZ: 0, speed: 0, lean: 0, gustAmp: 0, flutterAmp: 0, time: 0 };

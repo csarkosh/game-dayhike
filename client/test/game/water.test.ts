@@ -1,16 +1,16 @@
 import { beforeAll, describe, it, expect } from "vitest";
 import { timeLimit } from "../helpers/timeLimit.js";
-import "../../src/sim/olympic.js";
-import { setActiveTerrainVariant } from "../../src/sim/terrain.js";
+import "@csarkosh/engine/sim/olympic";
+import { setActiveTerrainVariant } from "@csarkosh/engine/sim/terrain";
 import {
   createWaterRingSamples, updateWaterRingSamples, waterHoleCellsFor,
   waterRingGeometry, waterRingSpacing, wetBounds,
   OCEAN_BOUND, WATER_RING_CELLS, WATER_RING_COUNT,
   type WaterGeometry, type WaterRingSamples,
-} from "../../src/game/water.js";
-import { HOLE_CELLS, RING_CELLS, blendWeight } from "../../src/game/clipmap.js";
+} from "@csarkosh/engine/game/water";
+import { HOLE_CELLS, RING_CELLS, blendWeight } from "@csarkosh/engine/game/clipmap";
 import { SWASH_FACE_LIFT_M, SWASH_REACH_MAX_M } from "@csarkosh/engine/game/swashRunUp";
-import { COVE_FACE_GRADE } from "../../src/sim/olympic.js";
+import { COVE_FACE_GRADE } from "@csarkosh/engine/sim/olympic";
 
 const SEED = 0x5eed;
 setActiveTerrainVariant("olympic");

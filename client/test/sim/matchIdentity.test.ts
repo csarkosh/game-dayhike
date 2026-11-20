@@ -5,7 +5,7 @@ import "../../src/sim/passes/index.js";
 import { facingYaw } from "@csarkosh/engine/sim/facing";
 import { createForest } from "../../src/sim/forest.js";
 import { trailheadStart } from "../../src/sim/spawn.js";
-import { stemAhead } from "../../src/sim/trailRoute.js";
+import { stemAhead } from "@csarkosh/engine/sim/trailRoute";
 import type { InputCommand } from "../../src/sim/types.js";
 import { createForestWorld, serializeWorldState, spawnPlayer, tickWorld, type World } from "../../src/sim/world.js";
 import { seedFromToken } from "@csarkosh/engine/game/seed";

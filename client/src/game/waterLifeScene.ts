@@ -30,7 +30,7 @@
  * camera comes back.
  */
 import { MAX_PLAYERS } from "../sim/constants.js";
-import type { LakeSource } from "../sim/terrain.js";
+import type { LakeSource } from "@csarkosh/engine/sim/terrain";
 import { nextRandom } from "../sim/types.js";
 import type { QualityTier } from "@csarkosh/engine/game/quality";
 import type { SkyState } from "@csarkosh/engine/game/skyState";
@@ -43,7 +43,7 @@ import {
   type DragonflyShare,
   type WaterLifePresence,
 } from "@csarkosh/engine/game/waterLifeParams";
-import { inShoreBand, waterLifeBed, waterLifeLayout, type WaterLifeLayout, type WaterLifeMade } from "./waterLifeField.js";
+import { inShoreBand, waterLifeBed, waterLifeLayout, type WaterLifeLayout, type WaterLifeMade } from "@csarkosh/engine/game/waterLifeField";
 import {
   HEAD_MIDGES,
   HEAD_ROW0,
@@ -59,7 +59,7 @@ import {
   type SwarmFrame,
 } from "./midgeMotion.js";
 import type { MidgeFrame } from "./midgeLook.js";
-import { DRAGONFLY_RANGE, createDragonflyBehaviour, type Dragonflies } from "./dragonflyBehaviour.js";
+import { DRAGONFLY_RANGE, createDragonflyBehaviour, type Dragonflies } from "@csarkosh/engine/game/dragonflyBehaviour";
 import { FROG_QUIET_RADIUS, createFrogChorus, type FrogCall } from "./frogChorus.js";
 import { FROG_BED_REF, FROG_RANGE, type WaterLifeSound } from "./waterLifeAudio.js";
 

@@ -8,10 +8,10 @@
  * of uniforms by name (`seaUniforms.ts`), beside the textures they make of
  * the tables and the wind sea's field.
  */
-import { coveFor } from "../sim/olympic.js";
+import { coveFor } from "@csarkosh/engine/sim/olympic";
 import { SWELL_COMPONENTS, SWELL_COMPONENTS_LOW, type SwellComponent } from "@csarkosh/engine/game/oceanSwell";
-import { OCEAN_COAST_RECENTRE, OCEAN_COAST_STEP, coastProfilesFor, writeCoastRow } from "./oceanTables.js";
-import { oceanFieldFor, swellPhases, type OceanField } from "./oceanWaves.js";
+import { OCEAN_COAST_RECENTRE, OCEAN_COAST_STEP, coastProfilesFor, writeCoastRow } from "@csarkosh/engine/game/oceanTables";
+import { oceanFieldFor, swellPhases, type OceanField } from "@csarkosh/engine/game/oceanWaves";
 import { windSeaStateFor, type WindSeaState } from "./oceanWindSea.js";
 import type { QualityTier } from "@csarkosh/engine/game/quality";
 

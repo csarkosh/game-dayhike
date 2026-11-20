@@ -3,7 +3,7 @@ import "../../src/sim/passes/index.js";
 import { createForest } from "../../src/sim/forest.js";
 import { createForestWorld, spawnPlayer, tickWorld, type World } from "../../src/sim/world.js";
 import { seedFromToken } from "@csarkosh/engine/game/seed";
-import { DEFAULT_TERRAIN_VARIANT, setActiveTerrainVariant } from "../../src/sim/terrain.js";
+import { DEFAULT_TERRAIN_VARIANT, setActiveTerrainVariant } from "@csarkosh/engine/sim/terrain";
 import { AiState, DeathCause, Phase, type EnemyState, type PlayerState } from "../../src/sim/types.js";
 import { PLAYER_EYE_OFFSET, SPRINT_SPEED, TICK_DT } from "../../src/sim/constants.js";
 import { playerSees } from "../../src/sim/hollow.js";

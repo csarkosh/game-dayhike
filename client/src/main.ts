@@ -65,7 +65,7 @@ import {
   startupTier,
   type ProbeSteps,
   type StartupTier,
-} from "./game/frameProbe.js";
+} from "@csarkosh/engine/game/frameProbe";
 import { createHud } from "./game/hud.js";
 import { createModeKeeper, type GameMode } from "./game/gameMode.js";
 import { createMuteButton, readMuted, writeMuted } from "./game/muteButton.js";

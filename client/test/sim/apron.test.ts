@@ -1,18 +1,18 @@
 import { describe, it, expect } from "vitest";
 import "../../src/sim/passes/index.js";
-import { roadFrameAt } from "../../src/sim/olympic.js";
-import { setActiveTerrainVariant, DEFAULT_TERRAIN_VARIANT, activeTerrainVariant } from "../../src/sim/terrain.js";
+import { roadFrameAt } from "@csarkosh/engine/sim/olympic";
+import { setActiveTerrainVariant, DEFAULT_TERRAIN_VARIANT, activeTerrainVariant } from "@csarkosh/engine/sim/terrain";
 import {
   BOWL_U_MAX, BOWL_Z_HALF,
   APRON_Z_HALF, APRON_Z_FADE, APRON_CLIFF_U, APRON_CLIFF_FADE,
 } from "../../src/sim/bowl.js";
 import { checkDerivatives, TOL_RATIO } from "./helpers/derivatives.js";
 import { fbm2d } from "@csarkosh/engine/sim/field";
-import { roadOffsetD } from "../../src/sim/road.js";
+import { roadOffsetD } from "@csarkosh/engine/sim/road";
 import {
   BLEND_START, BLEND_END_BAY, BLEND_END_HEADLAND,
   COAST_X, COAST_WARP_AMPLITUDE, COAST_WARP_WAVELENGTH, COAST_WARP_OCTAVES,
-} from "../../src/sim/olympic.js";
+} from "@csarkosh/engine/sim/olympic";
 import { PROBE_SEEDS } from "./apronSweep.js";
 
 /**

@@ -15,8 +15,8 @@
  * sim/ determinism rules apply: no trig, no Math.pow, no `**`, no hypot.
  */
 import { TRAIL_Z_ANCHOR } from "./bowl.js";
-import { ROAD_BED_HALF } from "./road.js";
-import { activeTerrainVariantName, terrainVariant } from "./terrain.js";
+import { ROAD_BED_HALF } from "@csarkosh/engine/sim/road";
+import { activeTerrainVariantName, terrainVariant } from "@csarkosh/engine/sim/terrain";
 
 /** Along the road from the pad, to either side, the strip is whole (m). */
 export const STRIP_HALF = 30;

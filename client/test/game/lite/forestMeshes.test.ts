@@ -1,7 +1,7 @@
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
-import { impostorQuad } from "../../../src/game/forestInstances.js";
+import { impostorQuad } from "@csarkosh/engine/game/forestInstances";
 import { cardGeometry, cardNormals } from "../../../src/game/lite/forestMeshes.js";
 
 describe("a billboard's card on Babylon Lite", () => {

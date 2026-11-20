@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   IMPOSTOR_BAKE_FAIL_MS, IMPOSTOR_BAKE_SIZE, IMPOSTOR_BAKE_WARN_MS, SNAG_BAKE_ROLL, bakePoseMatrix, impostorBakeFrame, impostorName, posedBounds,
 } from "@csarkosh/engine/game/impostorBake";
-import { deadwoodMeasure, impostorQuad, snagImpostorQuad } from "../../src/game/forestInstances.js";
+import { deadwoodMeasure, impostorQuad, snagImpostorQuad } from "@csarkosh/engine/game/forestInstances";
 
 /** A trunk lying along x from -1.5 to 2.5, its section 1 m up and 0.8 m through. */
 function trunk(): number[] {

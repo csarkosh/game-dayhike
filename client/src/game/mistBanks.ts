@@ -11,7 +11,7 @@
  */
 import type { AtmosphereRecord } from "./atmosphereParams.js";
 import { clamp01, type Rgb } from "@csarkosh/engine/game/colour";
-import { MIST_CELL, MIST_RADIUS, collectMistBanks, type MistBank } from "./mistField.js";
+import { MIST_CELL, MIST_RADIUS, collectMistBanks, type MistBank } from "@csarkosh/engine/game/mistField";
 import type { QualityTier } from "@csarkosh/engine/game/quality";
 import { mistOpacityUnder, type WeatherParams } from "@csarkosh/engine/game/weather";
 import type { WindRecord } from "@csarkosh/engine/game/windParams";

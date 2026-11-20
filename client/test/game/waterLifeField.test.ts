@@ -1,15 +1,15 @@
 import { describe, expect, it } from "vitest";
-import "../../src/sim/olympic.js";
+import "@csarkosh/engine/sim/olympic";
 import { lakeOf } from "../sim/helpers/lakes.js";
-import { marshWeightAt } from "../../src/sim/features.js";
+import { marshWeightAt } from "@csarkosh/engine/sim/features";
 import { lakeShoreInto, newLakeShore } from "@csarkosh/engine/sim/lakeShape";
-import { elevationAt, type LakeSource } from "../../src/sim/terrain.js";
-import { COHORT_SNAG, treesInRect } from "../../src/sim/vegetation.js";
-import { CLUTTER_BUSH, CLUTTER_DRIFTLOG, CLUTTER_REED, CLUTTER_SHRUB, clutterInRect } from "../../src/sim/clutter.js";
+import { elevationAt, type LakeSource } from "@csarkosh/engine/sim/terrain";
+import { COHORT_SNAG, treesInRect } from "@csarkosh/engine/sim/vegetation";
+import { CLUTTER_BUSH, CLUTTER_DRIFTLOG, CLUTTER_REED, CLUTTER_SHRUB, clutterInRect } from "@csarkosh/engine/sim/clutter";
 import {
   BEAT_LENGTH, FROG_SPACING, FROGS_MAX, FROGS_MIN, MARKER_SPACING, MARKERS_MAX, PERCH_SPACING, SHORE_BAND_IN, SHORE_BAND_OUT, SHORE_STEP,
   STEM_AREA, STEMS_MAX, WATER_LIFE_SALT, arcOf, inShoreBand, marshMid, shoreWalk, waterLifeLayout, type WaterLifeLayout,
-} from "../../src/game/waterLifeField.js";
+} from "@csarkosh/engine/game/waterLifeField";
 import { HEAD_ROW0 } from "../../src/game/midgeMotion.js";
 import { timeLimit } from "../helpers/timeLimit.js";
 import { stadiumLake, type StadiumOptions } from "../helpers/lakeShapes.js";

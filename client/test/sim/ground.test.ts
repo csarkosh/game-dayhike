@@ -1,14 +1,14 @@
 import { describe, it, expect } from "vitest";
 import "../../src/sim/passes/index.js";
 import { createGroundField, MAX_WALKABLE_GRADIENT, type GroundField } from "../../src/sim/ground.js";
-import { rockLayerAt } from "../../src/sim/rockSurface.js";
+import { rockLayerAt } from "@csarkosh/engine/sim/rockSurface";
 import { raycastGround, raycastScene } from "../../src/sim/collision.js";
 import { stepMovement, type MoveState } from "../../src/sim/movement.js";
 import {
   DEFAULT_TERRAIN_VARIANT,
   elevationSampleAt,
   setActiveTerrainVariant,
-} from "../../src/sim/terrain.js";
+} from "@csarkosh/engine/sim/terrain";
 import {
   GROUND_NORMAL_Y,
   JUMP_SPEED,

@@ -11,7 +11,7 @@
  * Renderer-only.
  */
 import { hash3 } from "@csarkosh/engine/sim/field";
-import { elevationAt } from "../sim/terrain.js";
+import { elevationAt } from "@csarkosh/engine/sim/terrain";
 import { SIM_TICK_HZ, TICK_DT } from "../sim/constants.js";
 import { clamp01 } from "@csarkosh/engine/game/colour";
 import type { WeatherParams } from "@csarkosh/engine/game/weather";

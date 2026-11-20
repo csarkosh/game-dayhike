@@ -1,5 +1,5 @@
-import type { TrailGraph } from "../../../src/sim/trail.js";
-import { segmentSegmentDistanceSq } from "../../../src/sim/trail.js";
+import type { TrailGraph } from "@csarkosh/engine/sim/trail";
+import { segmentSegmentDistanceSq } from "@csarkosh/engine/sim/trail";
 
 /**
  * Walking distance from `from` to every node reachable within `gap`, via a

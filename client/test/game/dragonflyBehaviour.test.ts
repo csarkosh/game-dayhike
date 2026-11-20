@@ -1,12 +1,12 @@
 import { describe, expect, it } from "vitest";
-import type { LakeSource } from "../../src/sim/terrain.js";
+import type { LakeSource } from "@csarkosh/engine/sim/terrain";
 import { stadiumLake } from "../helpers/lakeShapes.js";
 import { WEATHER_PRESETS, type WeatherParams } from "@csarkosh/engine/game/weather";
 import { waterLifePresenceUnder, type DragonflyShare, type WaterLifePresence } from "@csarkosh/engine/game/waterLifeParams";
-import type { DarnerBeat, Perch, WaterLifeLayout } from "../../src/game/waterLifeField.js";
+import type { DarnerBeat, Perch, WaterLifeLayout } from "@csarkosh/engine/game/waterLifeField";
 import {
   createDragonflyBehaviour, KIND_DAMSELFLY, KIND_DARNER, KIND_SKIMMER, type Dragonflies,
-} from "../../src/game/dragonflyBehaviour.js";
+} from "@csarkosh/engine/game/dragonflyBehaviour";
 import { timeLimit } from "../helpers/timeLimit.js";
 
 const SEED = 388817;

@@ -27,7 +27,7 @@ import type { ChunkGrid } from "../../sim/chunkGrid.js";
 import type { FirstBuilds } from "@csarkosh/engine/game/firstBuilds";
 import { PROP_ROUGHNESS, chunkPropBoxes, propBoxGeometry, propChunk, propChunkKey, propColour, propWindow } from "../propBoxes.js";
 import type { Slices, SyncJobs } from "@csarkosh/engine/game/syncJobs";
-import type { WetUniforms } from "../wetSurface.js";
+import type { WetUniforms } from "@csarkosh/engine/game/wetSurface";
 import { DRAW_ORDER } from "@csarkosh/engine/game/lite/drawOrder";
 import { baseColourPlugin, surfaceWetPlugin } from "./forestPlugins.js";
 import type { FrameUploads } from "@csarkosh/engine/game/lite/frameUploads";

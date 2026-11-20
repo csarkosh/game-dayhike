@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import "../../src/sim/passes/index.js";
-import { elevationSampleAt, setActiveTerrainVariant } from "../../src/sim/terrain.js";
+import { elevationSampleAt, setActiveTerrainVariant } from "@csarkosh/engine/sim/terrain";
 import { WEATHER_PRESETS } from "@csarkosh/engine/game/weather";
 import { FIRST_BIRD_SPECIES, SPECIES_BUTTERFLY } from "../../src/game/wildlifeField.js";
 import { createFirstBuilds } from "@csarkosh/engine/game/firstBuilds";

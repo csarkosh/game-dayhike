@@ -1,6 +1,6 @@
 import { afterEach, describe, it, expect } from "vitest";
 import "../../src/sim/passes/index.js";
-import { DEFAULT_TERRAIN_VARIANT, setActiveTerrainVariant } from "../../src/sim/terrain.js";
+import { DEFAULT_TERRAIN_VARIANT, setActiveTerrainVariant } from "@csarkosh/engine/sim/terrain";
 import {
   createForest,
   GEN_VERSION,

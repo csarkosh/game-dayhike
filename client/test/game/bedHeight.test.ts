@@ -1,7 +1,7 @@
 import { describe, it, expect, beforeAll } from "vitest";
-import "../../src/sim/olympic.js";
-import { elevationAt, setActiveTerrainVariant } from "../../src/sim/terrain.js";
-import { BED_GRID, LAKE_SURFACE_REACH, createBedGrid, bedOriginFor, bedNeedsRebake, bakeBed, beginBake, bakeRows, bedSquareHasWater, bedOutsideSquare } from "../../src/game/bedHeight.js";
+import "@csarkosh/engine/sim/olympic";
+import { elevationAt, setActiveTerrainVariant } from "@csarkosh/engine/sim/terrain";
+import { BED_GRID, LAKE_SURFACE_REACH, createBedGrid, bedOriginFor, bedNeedsRebake, bakeBed, beginBake, bakeRows, bedSquareHasWater, bedOutsideSquare } from "@csarkosh/engine/game/bedHeight";
 import { stadiumLake } from "../helpers/lakeShapes.js";
 import { timeLimit } from "../helpers/timeLimit.js";
 

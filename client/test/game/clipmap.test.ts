@@ -4,7 +4,7 @@ import {
   elevationSampleAt,
   registerTerrainVariant,
   setActiveTerrainVariant,
-} from "../../src/sim/terrain.js";
+} from "@csarkosh/engine/sim/terrain";
 import {
   BASE_SPACING,
   BASE_SPACING_BY_TIER,
@@ -32,12 +32,12 @@ import {
   type CoveredGround,
   type RingArrays,
   type RingSamples,
-} from "../../src/game/clipmap.js";
-import { PATCH_CELL, PATCH_REACH, PATCH_WIDE_SPACING, facePatchCells, facePatchCover, facePatchGeometry, facePatchStitch } from "../../src/game/facePatches.js";
+} from "@csarkosh/engine/game/clipmap";
+import { PATCH_CELL, PATCH_REACH, PATCH_WIDE_SPACING, facePatchCells, facePatchCover, facePatchGeometry, facePatchStitch } from "@csarkosh/engine/game/facePatches";
 import { finish as finishSlices } from "@csarkosh/engine/game/syncJobs";
-import { classifySurface, GRASS_SLOPE, SCREE_SLOPE, snowLineAt, surfaceAlbedo } from "../../src/game/terrainSurface.js";
-import { groundCover } from "../../src/sim/clutter.js";
-import { forestDensity, treesInRect } from "../../src/sim/vegetation.js";
+import { classifySurface, GRASS_SLOPE, SCREE_SLOPE, snowLineAt, surfaceAlbedo } from "@csarkosh/engine/game/terrainSurface";
+import { groundCover } from "@csarkosh/engine/sim/clutter";
+import { forestDensity, treesInRect } from "@csarkosh/engine/sim/vegetation";
 import { runBySlices } from "../helpers/sliceRun.js";
 import { timeLimit } from "../helpers/timeLimit.js";
 

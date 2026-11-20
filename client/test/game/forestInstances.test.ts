@@ -1,17 +1,17 @@
 import { describe, expect, it } from "vitest";
 import "../../src/sim/passes/index.js";
 import { FADE_NONE_IN, FADE_NONE_OUT } from "@csarkosh/engine/game/distanceFade";
-import { NEAR_RADIUS, SEAM_FAR, SEAM_FILL, SEAM_LOD0, SEAM_LOD1, UNDERSTORY_RADIUS, farTreeScale, seamNear } from "../../src/game/forestField.js";
+import { NEAR_RADIUS, SEAM_FAR, SEAM_FILL, SEAM_LOD0, SEAM_LOD1, UNDERSTORY_RADIUS, farTreeScale, seamNear } from "@csarkosh/engine/game/forestField";
 import {
   IMPOSTOR_SLICE, deadwoodMatrixBuffer, deadwoodMeasure, deadwoodRoleBuffer, fadeBandsBuffer, forestFadeBands, groundGradBuffer,
   impostorFadeBuffer, impostorMatrixSlices, impostorQuad, nurseBuffers, partitionImpostors, snagImpostorQuad, treeFoliageBuffer,
   treeMatrixBuffer,
-} from "../../src/game/forestInstances.js";
+} from "@csarkosh/engine/game/forestInstances";
 import { NURSE_FERN, nursePlants } from "@csarkosh/engine/game/nurseLog";
 import { finish } from "@csarkosh/engine/game/syncJobs";
 import { runBySlices } from "../helpers/sliceRun.js";
-import { elevationAt } from "../../src/sim/terrain.js";
-import { COHORT_GIANT, COHORT_LOG, COHORT_SAPLING, COHORT_SNAG, type TreeInstance } from "../../src/sim/vegetation.js";
+import { elevationAt } from "@csarkosh/engine/sim/terrain";
+import { COHORT_GIANT, COHORT_LOG, COHORT_SAPLING, COHORT_SNAG, type TreeInstance } from "@csarkosh/engine/sim/vegetation";
 
 const SEED = 0x51de;
 

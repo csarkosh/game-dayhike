@@ -8,7 +8,7 @@ import type { TrailheadSites } from "../../src/game/sceneryParts.js";
 import { signSites } from "../../src/sim/placeNames.js";
 import { buildSearch } from "../../src/sim/search.js";
 import { signPosts, type SignPost } from "../../src/sim/signs.js";
-import { activeTerrainVariant, elevationAt, setActiveTerrainVariant } from "../../src/sim/terrain.js";
+import { activeTerrainVariant, elevationAt, setActiveTerrainVariant } from "@csarkosh/engine/sim/terrain";
 import { trailheadPlaces } from "../../src/sim/trailhead.js";
 import type { World } from "../../src/sim/world.js";
 

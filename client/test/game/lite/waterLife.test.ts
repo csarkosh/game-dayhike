@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
-import { emptyDragonflyList, fillDragonflyList } from "../../../src/game/dragonflyShapes.js";
-import type { Dragonflies } from "../../../src/game/dragonflyBehaviour.js";
+import { emptyDragonflyList, fillDragonflyList } from "@csarkosh/engine/game/dragonflyShapes";
+import type { Dragonflies } from "@csarkosh/engine/game/dragonflyBehaviour";
 import { sphereInPlanes } from "@csarkosh/engine/game/lakeSeen";
 import { cameraAxes, restAxes, restPlanes, viewPlanes } from "@csarkosh/engine/game/lite/cameraPose";
 import { DRAGONFLY_SPHERE_M, dragonflyMatrices, unitInPlanes, vertexAlphaPlugin } from "../../../src/game/lite/dragonflyMeshes.js";

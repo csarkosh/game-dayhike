@@ -1,15 +1,15 @@
 import type { MaterialPlugin, PluginUniformBlock } from "@babylonjs/lite";
 import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
-import { COVE_END_BLEND, COVE_FACE_GRADE } from "../../../src/sim/olympic.js";
+import { COVE_END_BLEND, COVE_FACE_GRADE } from "@csarkosh/engine/sim/olympic";
 import { SWASH_FACE_LIFT_M, SWASH_REACH_MAX_M } from "@csarkosh/engine/game/swashRunUp";
-import { SWASH_COLUMNS, SWASH_STRIDE } from "../../../src/game/swashTable.js";
+import { SWASH_COLUMNS, SWASH_STRIDE } from "@csarkosh/engine/game/swashTable";
 import { emptyMaterialGradeUniforms } from "../../../src/game/materialGrade.js";
 import "../../../src/sim/passes/index.js";
 import { atmosphereUniforms, emptyAtmosphereUniforms, type AtmosphereRecord } from "../../../src/game/atmosphereParams.js";
 import { noCloud } from "../../../src/game/cloudParams.js";
 import { emptyFadeUniforms, fadeUniforms } from "@csarkosh/engine/game/distanceFade";
-import { FOLIAGE_PLAYERS, FOLIAGE_PROFILES, emptyFoliageUniforms, foliageLook, foliageUniforms, setFoliageWind } from "../../../src/game/foliageUniforms.js";
+import { FOLIAGE_PLAYERS, FOLIAGE_PROFILES, emptyFoliageUniforms, foliageLook, foliageUniforms, setFoliageWind } from "@csarkosh/engine/game/foliageUniforms";
 import { atmospherePlugin } from "../../../src/game/lite/atmospherePlugin.js";
 import { FADE_FIELDS, FOLIAGE_FIELDS, surfaceWetPlugin, vegetationPlugin, type Vegetation } from "../../../src/game/lite/forestPlugins.js";
 import {
@@ -17,16 +17,16 @@ import {
   stageClocks, stageOwn, stageReads, writeFrameBlock, type FrameValues,
 } from "../../../src/game/lite/frameBlock.js";
 import { TERRAIN_FIELDS, emptyTerrainMaterialUniforms, terrainPlugin, terrainWetPlugin } from "../../../src/game/lite/terrainPlugins.js";
-import { WET_FIELDS } from "../../../src/game/lite/wetWgsl.js";
+import { WET_FIELDS } from "@csarkosh/engine/game/lite/wetWgsl";
 import { emptyMoteUniforms } from "@csarkosh/engine/game/moteField";
 import { emptyRainUniforms } from "../../../src/game/rainField.js";
 import { emptySplashUniforms } from "../../../src/game/splashField.js";
-import { emptyTerrainUniforms, terrainUniforms } from "../../../src/game/terrainUniforms.js";
+import { emptyTerrainUniforms, terrainUniforms } from "@csarkosh/engine/game/terrainUniforms";
 import { emptySeaFrameUniforms } from "../../../src/game/seaUniforms.js";
-import { emptyWaterFrameUniforms } from "../../../src/game/waterSurface.js";
+import { emptyWaterFrameUniforms } from "@csarkosh/engine/game/waterSurface";
 import {
   WET_BAND, WET_COVE_END, WET_DRY_S, WET_NO_COVE, WET_SWASH_VECS, emptyWetUniforms, setWetCove, setWetSwash, setWetWeather, wetUniforms,
-} from "../../../src/game/wetSurface.js";
+} from "@csarkosh/engine/game/wetSurface";
 import { windRecordUnder } from "@csarkosh/engine/game/windParams";
 import { WEATHER_PRESETS } from "@csarkosh/engine/game/weather";
 import { readUniform, standInTexture } from "./pluginFixture.js";

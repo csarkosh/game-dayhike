@@ -1,6 +1,6 @@
 import { createChunkGrid, type ChunkGrid } from "./chunkGrid.js";
 import { generateChunkWith, registeredPasses, type Pass } from "./chunk.js";
-import { activeTerrainVariantName, elevationAt } from "./terrain.js";
+import { activeTerrainVariantName, elevationAt } from "@csarkosh/engine/sim/terrain";
 import { HEIGHT_QUANTUM } from "@csarkosh/engine/sim/forestConstants";
 
 const FNV_PRIME = 0x01000193;

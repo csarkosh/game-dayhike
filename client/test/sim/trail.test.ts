@@ -4,9 +4,9 @@ import {
   TRAIL_BED_HALF, TRAIL_CORRIDOR_HALF, TRAIL_TUNABLES, TRAIL_EDGE_MIN_GAP, TRAIL_PROFILE_STEP, TRAIL_PROFILE_SMOOTH,
   TRAIL_EDGE_GAP,
   type TrailNode, type TrailEdge,
-} from "../../src/sim/trail.js";
+} from "@csarkosh/engine/sim/trail";
 import { TRAIL_GRID_CELL, TRAIL_GRID_TUNABLES } from "../../src/sim/trailGrid.js";
-import { terrainVariant, type TerrainSample } from "../../src/sim/terrain.js";
+import { terrainVariant, type TerrainSample } from "@csarkosh/engine/sim/terrain";
 
 /** A hillside rising in +x at grade 0.4 with a 3 m bump at x ≈ 60. */
 function ground(x: number, z: number): TerrainSample {

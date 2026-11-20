@@ -3,7 +3,7 @@ import "../../src/sim/passes/index.js";
 import { createForest } from "../../src/sim/forest.js";
 import { createForestWorld, spawnPlayer, tickWorld } from "../../src/sim/world.js";
 import { bowlFor } from "../../src/sim/mountain.js";
-import { elevationSampleAt, setActiveTerrainVariant, DEFAULT_TERRAIN_VARIANT } from "../../src/sim/terrain.js";
+import { elevationSampleAt, setActiveTerrainVariant, DEFAULT_TERRAIN_VARIANT } from "@csarkosh/engine/sim/terrain";
 import { PLAYER_HALF } from "../../src/sim/constants.js";
 import { MAX_WALKABLE_GRADIENT } from "../../src/sim/ground.js";
 import { Phase, type InputCommand } from "../../src/sim/types.js";

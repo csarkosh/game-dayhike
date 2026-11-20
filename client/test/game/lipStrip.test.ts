@@ -1,9 +1,9 @@
 import { describe, it, expect } from "vitest";
-import { COVE_END_BLEND } from "../../src/sim/olympic.js";
-import { LIP_COLUMNS, LIP_PROFILE_VERTS, LIP_RANGE_M, LIP_SLOTS } from "../../src/game/oceanBreaker.js";
-import { LIP_COARSE_M, LIP_FINE_M, closeFreeSlots, lipColumns, lipNear, lipReach, lipStripGeometry } from "../../src/game/lipStrip.js";
-import type { SwashCove } from "../../src/game/swashTable.js";
-import { OCEAN_BOUND } from "../../src/game/water.js";
+import { COVE_END_BLEND } from "@csarkosh/engine/sim/olympic";
+import { LIP_COLUMNS, LIP_PROFILE_VERTS, LIP_RANGE_M, LIP_SLOTS } from "@csarkosh/engine/game/oceanBreaker";
+import { LIP_COARSE_M, LIP_FINE_M, closeFreeSlots, lipColumns, lipNear, lipReach, lipStripGeometry } from "@csarkosh/engine/game/lipStrip";
+import type { SwashCove } from "@csarkosh/engine/game/swashTable";
+import { OCEAN_BOUND } from "@csarkosh/engine/game/water";
 
 const COVE: SwashCove = { z0: 12, halfWidth: 90, toeD: -30, faceGrade: 0.1, coastX: (z) => -400 + 0.05 * z };
 

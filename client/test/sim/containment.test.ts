@@ -1,12 +1,12 @@
 import { describe, expect, it } from "vitest";
 import "../../src/sim/passes/index.js";
 import { ROAD_WALL_U, containAtLake, containAtRoad, lakeWallS, waterLevelAt } from "../../src/sim/containment.js";
-import { ROAD_BED_HALF } from "../../src/sim/road.js";
+import { ROAD_BED_HALF } from "@csarkosh/engine/sim/road";
 import { ENEMY_HALF, PLAYER_HALF } from "../../src/sim/constants.js";
 import { spawnHollow } from "../../src/sim/hollow.js";
 import { createForest, GEN_VERSION } from "../../src/sim/forest.js";
 import { createForestWorld, spawnPlayer, tickWorld } from "../../src/sim/world.js";
-import { activeTerrainVariant, elevationAt, type LakeSource } from "../../src/sim/terrain.js";
+import { activeTerrainVariant, elevationAt, type LakeSource } from "@csarkosh/engine/sim/terrain";
 import { lakeShelfWidth, lakeShoreInto, newLakeShore, rayToShore } from "@csarkosh/engine/sim/lakeShape";
 import { stadiumShape } from "../helpers/lakeShapes.js";
 import { LOBBY_SEEDS } from "./trailGateSeeds.js";

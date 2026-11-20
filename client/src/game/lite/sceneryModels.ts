@@ -50,7 +50,7 @@ import { modelUrl } from "../assetUrls.js";
 import { glbOcclusion, glbParts, type GlbOcclusion } from "@csarkosh/engine/game/glbParts";
 import { composeInto, quatFromEuler } from "@csarkosh/engine/game/instancePose";
 import { bakeGeometry } from "@csarkosh/engine/game/modelBake";
-import type { WetUniforms } from "../wetSurface.js";
+import type { WetUniforms } from "@csarkosh/engine/game/wetSurface";
 import { loadModelFile, type ModelPart } from "./forestModels.js";
 import { baseColourPlugin, surfaceWetPlugin } from "./forestPlugins.js";
 import carTurnsFrameSource from "../shaders/sceneryModels/carTurnsFrame.wgsl?raw";

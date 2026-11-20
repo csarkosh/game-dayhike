@@ -28,7 +28,7 @@ import {
   launchLine,
   LOADING_LINE,
   type StartupDeps,
-} from "../../src/game/frameProbe.js";
+} from "@csarkosh/engine/game/frameProbe";
 import type { GpuSignals } from "@csarkosh/engine/game/gpuSignals";
 import { landingModel } from "../../src/game/landingModel.js";
 import { DETECT_VERSION, autoTier, withGovernorDrop, type ProbeReading, type QualityTier, type VerdictEngine } from "@csarkosh/engine/game/quality";

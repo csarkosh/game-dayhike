@@ -9,7 +9,7 @@ import { createTouchModel, createTouchLayer } from "./game/touchControls.js";
 import { FixedStepAccumulator } from "./game/loop.js";
 import { capturedEye, type EyePose } from "./game/eyeBlend.js";
 import { createHud } from "./game/hud.js";
-import { RING_COUNT } from "./game/clipmap.js";
+import { RING_COUNT } from "@csarkosh/engine/game/clipmap";
 import { reportProgress } from "./game/loadReport.js";
 import {
   endSceneRunner,
@@ -64,7 +64,7 @@ import {
   elevationAt,
   setActiveTerrainVariant,
   terrainVariantNames,
-} from "./sim/terrain.js";
+} from "@csarkosh/engine/sim/terrain";
 import { connectAsClient } from "./net/peer.js";
 import { createHostSession } from "./net/hostSession.js";
 import { createHostAdmission, type HostAdmission } from "./net/hostAdmission.js";
@@ -102,7 +102,7 @@ import { FALLBACK_NOTICE_MS, answerFailures, coverWith, createSerial } from "./g
 import { createGpuFaults } from "@csarkosh/engine/game/gpuFaults";
 import { LOSS_ENDED_LINE, type LossNote } from "@csarkosh/engine/game/lossBound";
 import { GOVERNOR_IDLE_MAX_MS, actOnDrop, governHike, governorDecision, steadyFrame } from "./game/governor.js";
-import { OVER_PLAY_Z, showProbeScreen, timeIdleCadence } from "./game/probeScreen.js";
+import { OVER_PLAY_Z, showProbeScreen, timeIdleCadence } from "@csarkosh/engine/game/probeScreen";
 import { createCoveredDraw } from "@csarkosh/engine/game/coveredDraw";
 import { FIRST_BUILD_SLICE_MS } from "@csarkosh/engine/game/syncJobs";
 import { createFirstBuilds } from "@csarkosh/engine/game/firstBuilds";

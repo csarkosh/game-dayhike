@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { GAME_FOV, LENS_FAR, LENS_NEAR, lensProjection } from "@csarkosh/engine/game/gameLens";
-import { RING_CELLS, RING_COUNT, ringSpacing } from "../../src/game/clipmap.js";
+import { RING_CELLS, RING_COUNT, ringSpacing } from "@csarkosh/engine/game/clipmap";
 
 describe("the game's lens", () => {
   it("is a vertical field of view of 1.4 rad between planes at 5 cm and 10 km", () => {

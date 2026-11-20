@@ -3,7 +3,7 @@ import type { Aabb } from "./level.js";
 import type { BoxSource } from "./boxSource.js";
 import { CELLS_PER_CHUNK, generateChunk, type Chunk } from "./chunk.js";
 import { CHUNK_SIZE } from "@csarkosh/engine/sim/forestConstants";
-import { activeTerrainVariantName } from "./terrain.js";
+import { activeTerrainVariantName } from "@csarkosh/engine/sim/terrain";
 
 export type ChunkGrid = BoxSource & {
   chunkAt(cx: number, cz: number): Chunk;

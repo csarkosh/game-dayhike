@@ -8,7 +8,7 @@
  * for the cells around the eye, remembers the answers across rebuilds, and
  * splits what it gathered by distance.
  */
-import type { ClutterInstance } from "../sim/clutter.js";
+import type { ClutterInstance } from "@csarkosh/engine/sim/clutter";
 import { CLIFF_CELL, CLIFF_DENSITY, CLIFF_JITTER, CLIFF_RUN_REACH, cliffCellRuns } from "../sim/cliffField.js";
 import type { QualityTier } from "@csarkosh/engine/game/quality";
 

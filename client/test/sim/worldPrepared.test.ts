@@ -2,7 +2,7 @@ import { describe, expect, it, vi } from "vitest";
 import { timeLimit } from "../helpers/timeLimit.js";
 
 type Sim = {
-  terrain: typeof import("../../src/sim/terrain.js");
+  terrain: typeof import("@csarkosh/engine/sim/terrain");
   forest: typeof import("../../src/sim/forest.js");
   olympic: typeof import("../../src/sim/mountain.js");
   spawn: typeof import("../../src/sim/spawn.js");
@@ -10,14 +10,14 @@ type Sim = {
   chunk: typeof import("../../src/sim/chunk.js");
   chunkGrid: typeof import("../../src/sim/chunkGrid.js");
   constants: typeof import("../../src/sim/constants.js");
-  trailRoute: typeof import("../../src/sim/trailRoute.js");
+  trailRoute: typeof import("@csarkosh/engine/sim/trailRoute");
 };
 /** A sim of its own, as another thread's is: its module caches are empty. */
 async function freshSim(): Promise<Sim> {
   vi.resetModules();
   await import("../../src/sim/passes/index.js");
   return {
-    terrain: await import("../../src/sim/terrain.js"),
+    terrain: await import("@csarkosh/engine/sim/terrain"),
     forest: await import("../../src/sim/forest.js"),
     olympic: await import("../../src/sim/mountain.js"),
     spawn: await import("../../src/sim/spawn.js"),
@@ -25,7 +25,7 @@ async function freshSim(): Promise<Sim> {
     chunk: await import("../../src/sim/chunk.js"),
     chunkGrid: await import("../../src/sim/chunkGrid.js"),
     constants: await import("../../src/sim/constants.js"),
-    trailRoute: await import("../../src/sim/trailRoute.js"),
+    trailRoute: await import("@csarkosh/engine/sim/trailRoute"),
   };
 }
 const SEED = 627994160;

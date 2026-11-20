@@ -10,7 +10,7 @@
 import type { Vec3 } from "./types.js";
 import { cloneVec3 } from "./types.js";
 import type { World } from "./world.js";
-import type { TrailGraph, TrailNode } from "./trail.js";
+import type { TrailGraph, TrailNode } from "@csarkosh/engine/sim/trail";
 import { BOARD_BOX_HALF, CAR_HALF, type Board } from "./trailhead.js";
 import { hikerNames } from "./hikerNames.js";
 import { facingYaw } from "@csarkosh/engine/sim/facing";

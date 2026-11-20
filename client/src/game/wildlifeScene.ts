@@ -20,7 +20,7 @@
  * wildlifeField.ts rule). Wildlife is cosmetic and must not move the level id.
  */
 import { hash3 } from "@csarkosh/engine/sim/field";
-import { elevationAt, elevationSampleAt } from "../sim/terrain.js";
+import { elevationAt, elevationSampleAt } from "@csarkosh/engine/sim/terrain";
 import { SIM_TICK_HZ, TICK_DT } from "../sim/constants.js";
 import type { WeatherParams } from "@csarkosh/engine/game/weather";
 import { seatOnGround } from "@csarkosh/engine/game/groundTilt";

@@ -2,7 +2,7 @@ import { expect } from "vitest";
 import "../../src/sim/passes/index.js";
 import { seedFromToken } from "@csarkosh/engine/game/seed";
 import { createForest } from "../../src/sim/forest.js";
-import { elevationAt } from "../../src/sim/terrain.js";
+import { elevationAt } from "@csarkosh/engine/sim/terrain";
 import { createForestWorld, spawnPlayer, tickWorld } from "../../src/sim/world.js";
 import type { World } from "../../src/sim/world.js";
 import { isOnCorridor } from "../../src/sim/containment.js";

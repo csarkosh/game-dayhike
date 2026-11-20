@@ -32,7 +32,7 @@ import {
 import type { AtmosphereRecord } from "../atmosphereParams.js";
 import type { Rgb } from "@csarkosh/engine/game/colour";
 import { MIST_INSTANCE_FLOATS, createMistBanks, emptyMistUniforms, mistUniforms, writeMistInstances, type MistOrder } from "../mistBanks.js";
-import { MIST_TEX_SIZE, mistAlphaMap } from "../mistField.js";
+import { MIST_TEX_SIZE, mistAlphaMap } from "@csarkosh/engine/game/mistField";
 import type { QualityTier } from "@csarkosh/engine/game/quality";
 import type { WeatherParams } from "@csarkosh/engine/game/weather";
 import type { WindRecord } from "@csarkosh/engine/game/windParams";

@@ -67,7 +67,7 @@ import { CAUSTIC_DEPTH_M, CAUSTIC_GAIN, CAUSTIC_MAX, LENS_STEP_M } from "../lake
 import { SKYLINE_TEXELS } from "../lakeSkyline.js";
 import { LAKE_MOTION_SMEAR_CAP, MIRROR_DEPTH_FULL } from "@csarkosh/engine/game/mirrorView";
 import { PANORAMA_EYE_UP, PANORAMA_HEIGHT_M } from "../panoramaTurn.js";
-import { WATER_F0 } from "../waterShading.js";
+import { WATER_F0 } from "@csarkosh/engine/game/waterShading";
 import vertexSource from "../shaders/water/vertex.wgsl?raw";
 import defsSource from "../shaders/water/defs.wgsl?raw";
 import throughDefsSource from "../shaders/water/throughDefs.wgsl?raw";

@@ -29,14 +29,14 @@ import {
   createMeshFromData, createPbrMaterial, disposeMeshGpu, removeFromScene, setPbrMetallicReflectance,
   type EngineContext, type MaterialPlugin, type PluginUniformBlock, type PbrMaterialProps, type SceneContext,
 } from "@babylonjs/lite";
-import { DUFF_ALBEDO, DUFF_CHARACTERS, DUFF_CHARACTER_COUNT, DUFF_TIER_COUNTS, duffClumpGeometry } from "../duffClump.js";
-import { DUFF_REACH, DUFF_REBUILD_CELL, duffTierBands } from "../duffField.js";
+import { DUFF_ALBEDO, DUFF_CHARACTERS, DUFF_CHARACTER_COUNT, DUFF_TIER_COUNTS, duffClumpGeometry } from "@csarkosh/engine/game/duffClump";
+import { DUFF_REACH, DUFF_REBUILD_CELL, duffTierBands } from "@csarkosh/engine/game/duffField";
 import { DUFF_ROUGHNESS, DUFF_TIER_COUNT, createDuffLists } from "../duffInstances.js";
-import { FOLIAGE_PROFILES, foliageLook } from "../foliageUniforms.js";
+import { FOLIAGE_PROFILES, foliageLook } from "@csarkosh/engine/game/foliageUniforms";
 import type { FirstBuilds } from "@csarkosh/engine/game/firstBuilds";
 import type { InstanceList } from "@csarkosh/engine/game/instanceLists";
 import type { Slices, SyncJobs } from "@csarkosh/engine/game/syncJobs";
-import type { WetUniforms } from "../wetSurface.js";
+import type { WetUniforms } from "@csarkosh/engine/game/wetSurface";
 import {
   baseColourPlugin, oneSidedLightPlugin, surfaceWetPlugin, vegetationInstanceLayout, vegetationPlugin, type Vegetation,
 } from "./forestPlugins.js";

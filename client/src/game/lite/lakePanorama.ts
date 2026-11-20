@@ -43,8 +43,8 @@ import {
   disposeMeshGpu, getGpuDevice, isRenderTaskHeld, markMaterialUboDirty, removeFromScene, removeMeshFromTask, setMeshVisible, setTaskMeshVisible, setThinInstances, vec3,
   type EngineContext, type MaterialPlugin, type Mesh, type PluginUniformBlock, type RenderTaskConfig, type SceneContext, type Texture2D,
 } from "@babylonjs/lite";
-import type { LakeSource } from "../../sim/terrain.js";
-import { MIRROR_CANOPY_SHADE, mirrorGroundColour, type MirrorGroundSky } from "../mirrorGround.js";
+import type { LakeSource } from "@csarkosh/engine/sim/terrain";
+import { MIRROR_CANOPY_SHADE, mirrorGroundColour, type MirrorGroundSky } from "@csarkosh/engine/game/mirrorGround";
 import {
   PANORAMA_EYE_UP, PANORAMA_FAR, PANORAMA_HEIGHT, PANORAMA_NEAR, PANORAMA_SECTOR_WIDTH, PANORAMA_WIDTH, createPanoramaArming, createPanoramaTurn, panoramaFrustum,
   sectorYaw, type PanoramaFrustum,

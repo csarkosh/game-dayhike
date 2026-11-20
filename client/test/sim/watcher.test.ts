@@ -5,14 +5,14 @@ import { createForestWorld, createWorld, spawnPlayer, tickWorld } from "../../sr
 import type { World } from "../../src/sim/world.js";
 import { parseLevel } from "../../src/sim/level.js";
 import { seedFromToken } from "@csarkosh/engine/game/seed";
-import { setActiveTerrainVariant, DEFAULT_TERRAIN_VARIANT, elevationAt } from "../../src/sim/terrain.js";
+import { setActiveTerrainVariant, DEFAULT_TERRAIN_VARIANT, elevationAt } from "@csarkosh/engine/sim/terrain";
 import { AiState, Phase, nextRandom } from "../../src/sim/types.js";
 import type { PlayerState, Vec3 } from "../../src/sim/types.js";
 import { ENEMY_HALF, PLAYER_EYE_OFFSET, TICK_DT } from "../../src/sim/constants.js";
 import { HOLLOW_LOOK_COS, HOLLOW_STARE_FILL_S } from "../../src/sim/hollow.js";
-import { trailDistance } from "../../src/sim/trail.js";
-import type { TrailNode } from "../../src/sim/trail.js";
-import { stemAhead, stemNodes, stemProgress } from "../../src/sim/trailRoute.js";
+import { trailDistance } from "@csarkosh/engine/sim/trail";
+import type { TrailNode } from "@csarkosh/engine/sim/trail";
+import { stemAhead, stemNodes, stemProgress } from "@csarkosh/engine/sim/trailRoute";
 import { aimDirection } from "../../src/sim/view.js";
 import { isOnCorridor } from "../../src/sim/containment.js";
 import { groundSpawn } from "../../src/sim/spawn.js";

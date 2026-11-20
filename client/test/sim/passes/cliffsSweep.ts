@@ -1,7 +1,7 @@
 import { expect } from "vitest";
 import "../../../src/sim/passes/index.js";
 import type { Aabb } from "../../../src/sim/level.js";
-import { elevationSampleAt } from "../../../src/sim/terrain.js";
+import { elevationSampleAt } from "@csarkosh/engine/sim/terrain";
 import { CLIFF_CELL, CLIFF_RUN_REACH, cliffCellRuns, type CliffPoint } from "../../../src/sim/cliffField.js";
 import { cliffBuryFace, cliffModuleBoxes } from "../../../src/sim/passes/cliffs.js";
 import { drawnShell, seat } from "../helpers/cliffSolid.js";

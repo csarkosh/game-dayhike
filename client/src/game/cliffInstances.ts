@@ -11,7 +11,7 @@
  * Loads no engine.
  */
 import { CLIFF_MODEL_HEIGHT, CLIFF_MODELS, CLIFF_SINK, CLIFF_TILT_MAX, cliffFacing } from "../sim/cliffField.js";
-import type { ClutterInstance } from "../sim/clutter.js";
+import type { ClutterInstance } from "@csarkosh/engine/sim/clutter";
 import { CLIFF_FADE_BAND, CLIFF_RINGS, cliffBands, cliffOrigin, createCliffCollector } from "./cliffField.js";
 import { trampleFrame, writeFoliage } from "./clutterInstances.js";
 import { fadeBands, type FadeBands } from "@csarkosh/engine/game/distanceFade";

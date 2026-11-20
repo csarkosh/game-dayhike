@@ -37,11 +37,11 @@
  *   band (`rockSlopeBand`, the band the rock props already stand on), not
  *   the renderer's `classifySurface`.
  */
-import { CLUTTER_ROCK, rockSlopeBand, type ClutterInstance } from "./clutter.js";
+import { CLUTTER_ROCK, rockSlopeBand, type ClutterInstance } from "@csarkosh/engine/sim/clutter";
 import { GROUND_NORMAL_Y } from "./constants.js";
 import { hash3 } from "@csarkosh/engine/sim/field";
-import { lakeGroundD } from "./features.js";
-import { activeTerrainVariant, elevationSampleAt, type TerrainSample } from "./terrain.js";
+import { lakeGroundD } from "@csarkosh/engine/sim/features";
+import { activeTerrainVariant, elevationSampleAt, type TerrainSample } from "@csarkosh/engine/sim/terrain";
 
 /** Lattice cell (m). One run at most per cell. */
 export const CLIFF_CELL = 12;

@@ -4,7 +4,7 @@ import { RAIN_MAP_RINGS, RAIN_MAP_WGSL, rainMapPlugin } from "../../../src/game/
 import { TERRAIN_VERTEX_FLOATS, TERRAIN_VERTEX_LAYOUT } from "../../../src/game/lite/terrainPlugins.js";
 import { rainMapTexel } from "@csarkosh/engine/game/rainCover";
 import { RAIN_MAP } from "@csarkosh/engine/game/rainParams";
-import { TERRAIN_ATTRIBUTES } from "../../../src/game/terrainVertices.js";
+import { TERRAIN_ATTRIBUTES } from "@csarkosh/engine/game/terrainVertices";
 import { babylonText } from "../../helpers/babylonFixture.js";
 import { tight } from "./wgslText.js";
 

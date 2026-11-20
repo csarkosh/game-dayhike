@@ -6,7 +6,7 @@ import {
   generateChunk,
   quantize,
 } from "../../src/sim/chunk.js";
-import { elevationAt } from "../../src/sim/terrain.js";
+import { elevationAt } from "@csarkosh/engine/sim/terrain";
 import { HEIGHT_QUANTUM } from "@csarkosh/engine/sim/forestConstants";
 
 const SEED = 0x5eed;

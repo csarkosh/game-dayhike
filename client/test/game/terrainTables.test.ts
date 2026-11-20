@@ -1,15 +1,15 @@
 import { describe, expect, it } from "vitest";
 import {
   featurePaintTable, followRoadCentre, roadCentreTable, terrainTablesFor, trailPaintTable,
-} from "../../src/game/terrainTables.js";
-import { FEATURE_PAINT_MAX, FEATURE_TEX_ROWS, FEATURE_TEX_WIDTH, featureTable, featureTableFor, paintedLakes } from "../../src/game/featureTable.js";
+} from "@csarkosh/engine/game/terrainTables";
+import { FEATURE_PAINT_MAX, FEATURE_TEX_ROWS, FEATURE_TEX_WIDTH, featureTable, featureTableFor, paintedLakes } from "@csarkosh/engine/game/featureTable";
 import { ROAD_TABLE_N, ROAD_TABLE_RECENTRE, ROAD_TABLE_STEP, buildRoadTable, roadTableZ0 } from "@csarkosh/engine/game/roadPaint";
 import { bakeShoreAtlas } from "@csarkosh/engine/game/shoreAtlas";
-import { TRAIL_PAINT_MAX_SEGMENTS, TRAIL_PAINT_TABLE_ROWS, buildTrailTable, trailSegments } from "../../src/game/trailPaint.js";
-import type { Feature } from "../../src/sim/features.js";
+import { TRAIL_PAINT_MAX_SEGMENTS, TRAIL_PAINT_TABLE_ROWS, buildTrailTable, trailSegments } from "@csarkosh/engine/game/trailPaint";
+import type { Feature } from "@csarkosh/engine/sim/features";
 import "../../src/sim/passes/index.js";
-import { activeTerrainVariant, activeTerrainVariantName, setActiveTerrainVariant } from "../../src/sim/terrain.js";
-import type { TrailGraph } from "../../src/sim/trail.js";
+import { activeTerrainVariant, activeTerrainVariantName, setActiveTerrainVariant } from "@csarkosh/engine/sim/terrain";
+import type { TrailGraph } from "@csarkosh/engine/sim/trail";
 import { timeLimit } from "../helpers/timeLimit.js";
 
 const centerX = (_seed: number, z: number): number => -300 + 0.25 * z;

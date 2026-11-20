@@ -9,7 +9,7 @@
 import {
   CLUTTER_BOULDER, CLUTTER_BUSH, CLUTTER_DRIFTLOG, CLUTTER_DRIFTWOOD, CLUTTER_FERN, CLUTTER_FLOWER, CLUTTER_FUNGUS, CLUTTER_GRASS,
   CLUTTER_HIGHPLANT, CLUTTER_LITTER, CLUTTER_MEADOW, CLUTTER_ROCK, CLUTTER_SHRUB, CLUTTER_WETPLANT, type ClutterInstance,
-} from "../sim/clutter.js";
+} from "@csarkosh/engine/sim/clutter";
 // The boulder mesh's sink is the COLLIDER's own constants, not a second pair
 // tuned by eye: `clutter.boulder_a/b` were sized so that a mesh sunk by
 // exactly BOULDER_SINK · (that variant's own BASE_H) · scale shows a visible
@@ -24,18 +24,18 @@ import {
 // side effect is idempotent under ESM (one module instance per process), so
 // it cannot double-register pass 7.
 import { BOULDER_A_BASE_H, BOULDER_B_BASE_H, BOULDER_SINK } from "../sim/passes/clutter.js";
-import { activeTerrainVariant } from "../sim/terrain.js";
-import { forestDensity } from "../sim/vegetation.js";
+import { activeTerrainVariant } from "@csarkosh/engine/sim/terrain";
+import { forestDensity } from "@csarkosh/engine/sim/vegetation";
 import type { Rgb } from "@csarkosh/engine/game/colour";
-import { FOLIAGE_PROFILES, type FoliageProfile } from "./foliageUniforms.js";
+import { FOLIAGE_PROFILES, type FoliageProfile } from "@csarkosh/engine/game/foliageUniforms";
 import { macroNoise, macroTint } from "@csarkosh/engine/game/groundHexParams";
 import { seatOnGround } from "@csarkosh/engine/game/groundTilt";
 import { composeInto, quatAboutAxis, quatMultiply, type Quat, type Vec3 } from "@csarkosh/engine/game/instancePose";
 import { trunkSeat, type TrunkSeat } from "@csarkosh/engine/game/logSeat";
 import { ROCK_CUTS } from "@csarkosh/engine/game/rockRelief";
-import { surfaceAlbedo } from "./terrainSurface.js";
-import { TRAMPLE_BAND, trampleAt } from "./trailBenchParams.js";
-import { WET_CAP } from "./wetSurface.js";
+import { surfaceAlbedo } from "@csarkosh/engine/game/terrainSurface";
+import { TRAMPLE_BAND, trampleAt } from "@csarkosh/engine/game/trailBenchParams";
+import { WET_CAP } from "@csarkosh/engine/game/wetSurface";
 
 /**
  * Model per class per variant, by catalog id (`client/assets/catalog.json`,

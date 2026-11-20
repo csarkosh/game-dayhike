@@ -1,11 +1,11 @@
 import { describe, expect, it } from "vitest";
 import { readFileSync } from "node:fs";
 import "../../src/sim/passes/index.js";
-import { setActiveTerrainVariant, activeTerrainVariant, elevationSampleAt } from "../../src/sim/terrain.js";
-import { forestDensity, treeInCell, TREE_CELL, COHORT_GIANT, COHORT_SNAG } from "../../src/sim/vegetation.js";
-import { clutterInRect, clutterDensity, CLUTTER_BUSH, CLUTTER_FLOWER, CLUTTER_GRASS_CANOPY_LO } from "../../src/sim/clutter.js";
+import { setActiveTerrainVariant, activeTerrainVariant, elevationSampleAt } from "@csarkosh/engine/sim/terrain";
+import { forestDensity, treeInCell, TREE_CELL, COHORT_GIANT, COHORT_SNAG } from "@csarkosh/engine/sim/vegetation";
+import { clutterInRect, clutterDensity, CLUTTER_BUSH, CLUTTER_FLOWER, CLUTTER_GRASS_CANOPY_LO } from "@csarkosh/engine/sim/clutter";
 import { MAX_WALKABLE_GRADIENT } from "../../src/sim/ground.js";
-import { SAND_TOP } from "../../src/game/terrainSurface.js";
+import { SAND_TOP } from "@csarkosh/engine/game/terrainSurface";
 import {
   SPECIES_COUNT, SPECIES_ELK, SPECIES_DEER, SPECIES_RABBIT, SPECIES_SQUIRREL, SPECIES_RAVEN_ROOST,
   SPECIES_RAVEN_PAIR, SPECIES_GULL, SPECIES_EAGLE, SPECIES_BUTTERFLY, WILDLIFE_CELL, WILDLIFE_RADIUS, ELK_ROAD_CLEAR,

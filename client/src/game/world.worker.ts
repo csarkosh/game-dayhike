@@ -28,7 +28,7 @@ import { generateChunk, type Chunk } from "../sim/chunk.js";
 import { PLAYER_HALF } from "../sim/constants.js";
 import { passHash, passHashKey } from "../sim/forest.js";
 import { spawnChunkCells } from "../sim/spawn.js";
-import { activeTerrainVariant, setActiveTerrainVariant } from "../sim/terrain.js";
+import { activeTerrainVariant, setActiveTerrainVariant } from "@csarkosh/engine/sim/terrain";
 import { prepareScene, sceneTransfer, type PreparedScene } from "./preparedScene.js";
 import type { QualityTier } from "@csarkosh/engine/game/quality";
 

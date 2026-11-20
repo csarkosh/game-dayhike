@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import "../../src/sim/passes/index.js";
-import { forestDensity } from "../../src/sim/vegetation.js";
-import { LENS_CANOPY_STEP, createLensCanopy } from "../../src/game/lensCanopy.js";
+import { forestDensity } from "@csarkosh/engine/sim/vegetation";
+import { LENS_CANOPY_STEP, createLensCanopy } from "@csarkosh/engine/game/lensCanopy";
 
 const SEED = 20260914;
 

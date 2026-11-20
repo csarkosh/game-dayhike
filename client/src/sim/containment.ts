@@ -1,7 +1,7 @@
 import type { Vec3 } from "./types.js";
 import type { World } from "./world.js";
-import { ROAD_BED_HALF, ROAD_CORRIDOR_HALF } from "./road.js";
-import { activeTerrainVariant } from "./terrain.js";
+import { ROAD_BED_HALF, ROAD_CORRIDOR_HALF } from "@csarkosh/engine/sim/road";
+import { activeTerrainVariant } from "@csarkosh/engine/sim/terrain";
 import { PLAYER_HALF } from "./constants.js";
 import {
   lakeShelfWidth, lakeShoreInto, newLakeShore, TARN_SHELF_HEAD, TARN_SHELF_OUTLET_SHARE, type LakeShape,

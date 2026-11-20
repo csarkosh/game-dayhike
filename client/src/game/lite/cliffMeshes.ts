@@ -28,7 +28,7 @@ import { cliffOrigin } from "../cliffField.js";
 import { CLIFF_FAR_LOD, CLIFF_GROUND_TINT, CLIFF_LOD_NODES, createCliffLists } from "../cliffInstances.js";
 import type { InstanceList } from "@csarkosh/engine/game/instanceLists";
 import type { QualityTier } from "@csarkosh/engine/game/quality";
-import type { WetUniforms } from "../wetSurface.js";
+import type { WetUniforms } from "@csarkosh/engine/game/wetSurface";
 import { loadModel, type ModelPart } from "./forestModels.js";
 import { baseColourPlugin, surfaceWetPlugin, vegetationInstanceLayout, vegetationPlugin, type Vegetation } from "./forestPlugins.js";
 import { DRAW_ORDER, createDrawOrders } from "@csarkosh/engine/game/lite/drawOrder";

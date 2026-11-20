@@ -1,6 +1,6 @@
 import type { LakeBump, LakeFamily, LakeShape, LakeSpout } from "@csarkosh/engine/sim/lakeShape";
-import type { Lobe } from "../../src/sim/features.js";
-import type { LakeSource } from "../../src/sim/terrain.js";
+import type { Lobe } from "@csarkosh/engine/sim/features";
+import type { LakeSource } from "@csarkosh/engine/sim/terrain";
 
 /**
  * Literal lakes for the tests: a straight stadium, its spine along z through

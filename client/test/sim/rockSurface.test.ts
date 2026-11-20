@@ -1,14 +1,14 @@
 import { describe, expect, it } from "vitest";
 import "../../src/sim/passes/index.js";
 import { createGroundField } from "../../src/sim/ground.js";
-import { activeTerrainVariant, elevationAt, elevationSampleAt } from "../../src/sim/terrain.js";
-import { trailDistance } from "../../src/sim/trail.js";
+import { activeTerrainVariant, elevationAt, elevationSampleAt } from "@csarkosh/engine/sim/terrain";
+import { trailDistance } from "@csarkosh/engine/sim/trail";
 import { groundReliefD, groundWalkD } from "@csarkosh/engine/sim/faceRelief";
 import {
   GROUND_DEPTH, GROUND_LOUD_CELL, GROUND_TRAIL_CLEAR_HI, GROUND_TRAIL_CLEAR_LO, ROCK_SURFACE_TUNABLES, cornerLoudness,
   depthUnderBend, faceMask, groundBend, loudnessAt, rockLayerAt, rockOfSlope, trailClearAt,
-} from "../../src/sim/rockSurface.js";
-import * as rock from "../../src/sim/rockSurface.js";
+} from "@csarkosh/engine/sim/rockSurface";
+import * as rock from "@csarkosh/engine/sim/rockSurface";
 import { timeLimit } from "../helpers/timeLimit.js";
 
 /** The scarp by the road: the faces' reference world; its rocky hillside above the trail at (−168, −1740). */

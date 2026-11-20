@@ -7,8 +7,8 @@ import {
   elevationSampleAt,
   setActiveTerrainVariant,
   terrainVariant,
-} from "../../src/sim/terrain.js";
-import "../../src/sim/olympic.js";
+} from "@csarkosh/engine/sim/terrain";
+import "@csarkosh/engine/sim/olympic";
 import { depenetrate } from "../../src/sim/collision.js";
 import { ENEMY_HALF, ENEMY_MIN_SPAWN_DISTANCE, PLAYER_HALF } from "../../src/sim/constants.js";
 import { firstPondWorld } from "./helpers/lakes.js";

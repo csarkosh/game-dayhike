@@ -6,7 +6,7 @@ import { WATER_PRIORITY } from "../../../src/game/lite/lakePlugin.js";
 import { seaLookFor } from "../../../src/game/lite/seaMeshes.js";
 import { seaFields, seaPlugin, seaRestPlugin } from "../../../src/game/lite/seaPlugin.js";
 import { SEA_COMPONENT_VECS, emptySeaFrameUniforms, emptySeaUniforms } from "../../../src/game/seaUniforms.js";
-import { WATER_RING_COUNT } from "../../../src/game/water.js";
+import { WATER_RING_COUNT } from "@csarkosh/engine/game/water";
 import { laidOut, readUniform, standInTexture } from "./pluginFixture.js";
 
 const SHARED = { name: FRAME_BLOCK } as unknown as PluginUniformBlock;

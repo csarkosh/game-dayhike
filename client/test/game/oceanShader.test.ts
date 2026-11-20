@@ -10,8 +10,8 @@
  * fails here, and one changed in the WGSL alone fails there.
  */
 import { describe, it, expect } from "vitest";
-import { COVE_END_BLEND, COVE_FACE_GRADE, COVE_TOE_DEPTH, coveFor } from "../../src/sim/olympic.js";
-import { setActiveTerrainVariant } from "../../src/sim/terrain.js";
+import { COVE_END_BLEND, COVE_FACE_GRADE, COVE_TOE_DEPTH, coveFor } from "@csarkosh/engine/sim/olympic";
+import { setActiveTerrainVariant } from "@csarkosh/engine/sim/terrain";
 import {
   OCEAN_BUMP_HS, OCEAN_BUMP_MAX, OCEAN_CAP_CELL, OCEAN_CAP_CYCLES, OCEAN_CAP_DRIFT, OCEAN_CAP_INSET, OCEAN_CAP_PERIOD,
   OCEAN_CAP_RADIUS, OCEAN_CAP_SHARE, OCEAN_CAP_SOFT, OCEAN_COVE_END, OCEAN_DETAIL_HI, OCEAN_DETAIL_LO, OCEAN_FOAM_ALBEDO,
@@ -22,12 +22,12 @@ import {
   WATER_COX_MUNK_A, WATER_COX_MUNK_B, bumpScale, capProfile, coxMunkVariance, drawnWhitecap, foamWhite,
   oceanRingCell, resolvedShare, resolvedSlopeVariance, roughnessFor, roughnessFromVariance, slopeVariance, swellPixelKeep,
   undrawnSlopeVariance, whitecapThreshold, windFrame, windPixelKeep, windRingKeep, windSlopeLimit,
-} from "../../src/game/waterShading.js";
+} from "@csarkosh/engine/game/waterShading";
 import { WIND_DIR_PERIOD } from "@csarkosh/engine/game/windParams";
 import {
   LIP_BAND_M, LIP_BURST_S, LIP_FACE_IRIBARREN_HI, LIP_FACE_IRIBARREN_LO, LIP_FRONT, LIP_HIGHLIGHT, LIP_THROW, LIP_TILT,
   lipShadeAt, lipShadeFoam, lipShadeNormal, type LipShadeInput,
-} from "../../src/game/oceanBreaker.js";
+} from "@csarkosh/engine/game/oceanBreaker";
 import { FFT_CASCADES, FFT_N, LOOP_FRAMES, LOOP_N, LOOP_SECONDS, LOOP_SIZE, WIND_SEA_HS_COEFF } from "@csarkosh/engine/game/oceanSpectrum";
 import {
   WIND_SEA_FETCH_COEFF, WIND_SEA_U_FLOOR, WIND_SEA_U_REF, fetchShare, windSeaShare, windSeaStateFor,
@@ -38,19 +38,19 @@ import {
   OCEAN_ATLAS_ROWS, OCEAN_COAST_STEP, OCEAN_D_MIN, OCEAN_D_STEP, OCEAN_DRY_DEPTH, OCEAN_ROW_BAY_FIRST,
   OCEAN_ROW_BAY_PROFILE, OCEAN_ROW_COAST, OCEAN_ROW_COMPONENTS, OCEAN_ROW_COVE_FIRST, OCEAN_ROW_COVE_PROFILE,
   OCEAN_TABLE_SAMPLES, coastProfilesFor,
-} from "../../src/game/oceanTables.js";
+} from "@csarkosh/engine/game/oceanTables";
 import {
   OCEAN_BORE_RATIO, OCEAN_BREAK_FOAM_HI, OCEAN_BREAK_FOAM_LO, OCEAN_BREAK_FULL, OCEAN_FOAM_LIFE, OCEAN_INNER_FOAM,
   OCEAN_ROLL_WIDTH, SHELTER_CHOP, SHELTER_SWELL, SHELTER_WIDTH, coastRead, oceanFieldFor, swellAt, swellPhases,
   type OceanField,
-} from "../../src/game/oceanWaves.js";
-import { OCEAN_BOUND, WATER_BASE_SPACING, WATER_RING_CELLS, WATER_RING_COUNT, waterRingSpacing } from "../../src/game/water.js";
+} from "@csarkosh/engine/game/oceanWaves";
+import { OCEAN_BOUND, WATER_BASE_SPACING, WATER_RING_CELLS, WATER_RING_COUNT, waterRingSpacing } from "@csarkosh/engine/game/water";
 import {
   SWASH_COLUMNS, SWASH_COVE_END, SWASH_REST_EPS, SWASH_SHEET_MIN, SWASH_STRIDE, SwashTable, coveShareAt, sheetAt, sheetLiftAt, swashColumnAt,
   type SwashCove,
-} from "../../src/game/swashTable.js";
+} from "@csarkosh/engine/game/swashTable";
 import { SWASH_REACH_MAX_M } from "@csarkosh/engine/game/swashRunUp";
-import { WET_COVE_END } from "../../src/game/wetSurface.js";
+import { WET_COVE_END } from "@csarkosh/engine/game/wetSurface";
 import { oceanComponentsFor } from "../../src/game/oceanFrame.js";
 import { babylonText } from "../helpers/babylonFixture.js";
 import { timeLimit } from "../helpers/timeLimit.js";

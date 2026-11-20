@@ -12,7 +12,7 @@ import { DEPTH_AHEAD_MAX_DEGREES, depthAheadPlugin } from "../../../src/game/lit
 import { createHikeRenderer } from "../../../src/game/hikeRenderer.js";
 import type { Renderer } from "../../../src/game/rendererTypes.js";
 import { createSkyTable, type SkyTable } from "@csarkosh/engine/game/skyTable";
-import { SILENT_SURF_SOUND } from "../../../src/game/surfSound.js";
+import { SILENT_SURF_SOUND } from "@csarkosh/engine/game/surfSound";
 import { SILENT_WATER_LIFE } from "../../../src/game/waterLifeInputs.js";
 import { WEATHER_PRESETS } from "@csarkosh/engine/game/weather";
 import { windRecordUnder } from "@csarkosh/engine/game/windParams";

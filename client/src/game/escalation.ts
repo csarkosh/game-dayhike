@@ -12,8 +12,8 @@
 import { Phase, type WorldState, type Vec3 } from "../sim/types.js";
 import { isHollowState } from "../sim/hollow.js";
 import { isShadeState } from "../sim/haunt.js";
-import { trailDistance, type TrailGraph } from "../sim/trail.js";
-import { stemProgress } from "../sim/trailRoute.js";
+import { trailDistance, type TrailGraph } from "@csarkosh/engine/sim/trail";
+import { stemProgress } from "@csarkosh/engine/sim/trailRoute";
 import type { BoxProvider } from "../sim/boxSource.js";
 import type { GroundField } from "../sim/ground.js";
 import { hasLineOfSight } from "../sim/ai.js";

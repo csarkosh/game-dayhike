@@ -1,6 +1,6 @@
 import { expect } from "vitest";
 import "../../src/sim/passes/index.js";
-import { activeTerrainVariant, elevationAt } from "../../src/sim/terrain.js";
+import { activeTerrainVariant, elevationAt } from "@csarkosh/engine/sim/terrain";
 import { seedFromToken } from "@csarkosh/engine/game/seed";
 import type { Vec3 } from "../../src/sim/types.js";
 import {

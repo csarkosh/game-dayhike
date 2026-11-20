@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import "../../src/sim/olympic.js";
+import "@csarkosh/engine/sim/olympic";
 import { shoreHeight } from "../../src/sim/shoreStrip.js";
 import {
   CLUTTER_BOULDER, CLUTTER_BUSH, CLUTTER_DRIFTWOOD, CLUTTER_FUNGUS, CLUTTER_GRASS, CLUTTER_ROCK,
@@ -44,19 +44,19 @@ import {
   CLUTTER_FUNGUS_TRAIL_CLEAR, CLUTTER_FUNGUS_SLOPE_LO, CLUTTER_FUNGUS_SLOPE_HI,
   clutterCell, clutterDensity, clutterInCell, clutterInRect, rockSlopeBand,
   TRAILHEAD_CLEARING,
-} from "../../src/sim/clutter.js";
-import { SLOPE_HI, SLOPE_LO } from "../../src/sim/vegetation.js";
-import { TRAIL_BED_HALF } from "../../src/sim/trail.js";
-import { TRAIL_WEAR_W1, TRAIL_JUNCTION_W } from "../../src/game/trailBenchParams.js";
+} from "@csarkosh/engine/sim/clutter";
+import { SLOPE_HI, SLOPE_LO } from "@csarkosh/engine/sim/vegetation";
+import { TRAIL_BED_HALF } from "@csarkosh/engine/sim/trail";
+import { TRAIL_WEAR_W1, TRAIL_JUNCTION_W } from "@csarkosh/engine/game/trailBenchParams";
 import { fbm2 } from "@csarkosh/engine/sim/field";
-import { forestDensity } from "../../src/sim/vegetation.js";
-import { ROAD_BED_HALF, ROAD_CORRIDOR_HALF } from "../../src/sim/road.js";
-import { elevationSampleAt } from "../../src/sim/terrain.js";
+import { forestDensity } from "@csarkosh/engine/sim/vegetation";
+import { ROAD_BED_HALF, ROAD_CORRIDOR_HALF } from "@csarkosh/engine/sim/road";
+import { elevationSampleAt } from "@csarkosh/engine/sim/terrain";
 import { bowlFor } from "../../src/sim/mountain.js";
 import { variantOrThrow, DERIV_SEED } from "./helpers/derivatives.js";
 import { centerlineX } from "./helpers/roadLine.js";
-import { setActiveTerrainVariant, DEFAULT_TERRAIN_VARIANT, activeTerrainVariant, type TerrainSample } from "../../src/sim/terrain.js";
-import { MEADOW_RIM } from "../../src/sim/features.js";
+import { setActiveTerrainVariant, DEFAULT_TERRAIN_VARIANT, activeTerrainVariant, type TerrainSample } from "@csarkosh/engine/sim/terrain";
+import { MEADOW_RIM } from "@csarkosh/engine/sim/features";
 import { lakeShoreInto, newLakeShore, rayToShore } from "@csarkosh/engine/sim/lakeShape";
 
 const SEED = DERIV_SEED; // 0x5eed — the roadLine/derivatives helpers are bound to it
@@ -352,7 +352,7 @@ describe("clutter instances", () => {
   });
 
   it("declares every exported CLUTTER_ constant in CLUTTER_TUNABLES", async () => {
-    const mod = await import("../../src/sim/clutter.js");
+    const mod = await import("@csarkosh/engine/sim/clutter");
     for (const [k, v] of Object.entries(mod)) {
       if (k.startsWith("CLUTTER_") && typeof v === "number" && k !== "CLUTTER_CLASS_COUNT"
         && !["CLUTTER_GRASS", "CLUTTER_ROCK", "CLUTTER_BOULDER", "CLUTTER_DRIFTWOOD", "CLUTTER_FUNGUS", "CLUTTER_BUSH", "CLUTTER_MEADOW", "CLUTTER_FLOWER", "CLUTTER_LITTER"].includes(k)) {
@@ -694,7 +694,7 @@ describe("domain census — 90 km, both signs of z", () => {
 
   it("keeps driftwood on the shore band only", () => {
     // The gate is evaluated at the cell centre, not the jittered instance
-    // position (client/src/sim/clutter.ts's clutterInCell): assert the
+    // position (engine/src/sim/clutter.ts's clutterInCell): assert the
     // exact bound the gate itself promises, at the cell centre, rather
     // than at the instance's own (jittered, up to 2.1 m off-centre) spot.
     // Exhaustive over the 90 km × 4 km shore band (no early exit expected):
@@ -873,7 +873,7 @@ describe("domain census — 90 km, both signs of z", () => {
   });
 });
 
-import { landmarkMaskAt } from "../../src/sim/landmarks.js";
+import { landmarkMaskAt } from "@csarkosh/engine/sim/landmarks";
 import { timeLimit } from "../helpers/timeLimit.js";
 describe("boulders honour the landmark mask", () => {
   it("exposes a boulder multiplier the density applies (unit: mask primitive)", () => {
@@ -1443,10 +1443,10 @@ describe("the ground's cover in the strip at the trailhead", () => {
   });
 });
 
-import { CLUTTER_REED, CLUTTER_LILY } from "../../src/sim/clutter.js";
+import { CLUTTER_REED, CLUTTER_LILY } from "@csarkosh/engine/sim/clutter";
 import { firstPondWorld, lakeOf } from "./helpers/lakes.js";
-import { lobePoints, marshWeightAt, POND_SHORE } from "../../src/sim/features.js";
-import { elevationAt, type LakeSource } from "../../src/sim/terrain.js";
+import { lobePoints, marshWeightAt, POND_SHORE } from "@csarkosh/engine/sim/features";
+import { elevationAt, type LakeSource } from "@csarkosh/engine/sim/terrain";
 
 describe("the water plants", { timeout: timeLimit(120_000) }, () => {
   it("follow the model-drawn classes, which number fourteen", () => {

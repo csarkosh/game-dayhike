@@ -3,7 +3,7 @@ import { nextRandom } from "./types.js";
 import type { BoxProvider, BoxSource } from "./boxSource.js";
 import { CHUNK_SIZE } from "@csarkosh/engine/sim/forestConstants";
 import { depenetrate } from "./collision.js";
-import { activeTerrainVariant, elevationSampleAt } from "./terrain.js";
+import { activeTerrainVariant, elevationSampleAt } from "@csarkosh/engine/sim/terrain";
 import { carSite, trailheadSpawn, type Start } from "./trailhead.js";
 import { lakeShoreInto, newLakeShore } from "@csarkosh/engine/sim/lakeShape";
 

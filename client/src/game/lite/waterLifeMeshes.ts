@@ -12,11 +12,11 @@
  * drawn only while the view's planes hold it.
  */
 import type { EngineContext, MaterialPlugin, PluginUniformBlock, SceneContext } from "@babylonjs/lite";
-import type { LakeSource } from "../../sim/terrain.js";
+import type { LakeSource } from "@csarkosh/engine/sim/terrain";
 import type { ViewPlane } from "@csarkosh/engine/game/lakeSeen";
 import type { QualityTier } from "@csarkosh/engine/game/quality";
 import type { WaterLifeSound } from "../waterLifeAudio.js";
-import type { WaterLifeMade } from "../waterLifeField.js";
+import type { WaterLifeMade } from "@csarkosh/engine/game/waterLifeField";
 import { createWaterLifeScene, type WaterLifeDraws, type WaterLifeFrame } from "../waterLifeScene.js";
 import { createLiteDragonflies } from "./dragonflyMeshes.js";
 import type { FrameUploads } from "@csarkosh/engine/game/lite/frameUploads";

@@ -6,13 +6,13 @@ import {
 } from "../../src/game/mistBanks.js";
 import { skyStateFor } from "@csarkosh/engine/game/skyState";
 import { skyFixture } from "./helpers/skyFixture.js";
-import { MIST_CELL, MIST_RADIUS, collectMistBanks } from "../../src/game/mistField.js";
+import { MIST_CELL, MIST_RADIUS, collectMistBanks } from "@csarkosh/engine/game/mistField";
 import { WEATHER_PRESETS, mistOpacityUnder } from "@csarkosh/engine/game/weather";
 import { windRecordUnder } from "@csarkosh/engine/game/windParams";
 // Terrain variants register via import side effects (see mistField.test.ts);
 // collectMistBanks needs one active before it can sample elevation.
-import "../../src/sim/olympic.js";
-import { setActiveTerrainVariant } from "../../src/sim/terrain.js";
+import "@csarkosh/engine/sim/olympic";
+import { setActiveTerrainVariant } from "@csarkosh/engine/sim/terrain";
 
 setActiveTerrainVariant("olympic");
 

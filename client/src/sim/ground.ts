@@ -1,8 +1,8 @@
 import type { Vec3 } from "./types.js";
-import { elevationSampleAt } from "./terrain.js";
+import { elevationSampleAt } from "@csarkosh/engine/sim/terrain";
 import { GROUND_NORMAL_Y, ROCK_STAND_NORMAL_Y } from "./constants.js";
-import { GROUND_DEPTH, rockLayerAt, rockPaintAt, rockRiseAt, trailClearAt } from "./rockSurface.js";
-import type { TrailGraph } from "./trail.js";
+import { GROUND_DEPTH, rockLayerAt, rockPaintAt, rockRiseAt, trailClearAt } from "@csarkosh/engine/sim/rockSurface";
+import type { TrailGraph } from "@csarkosh/engine/sim/trail";
 
 /**
  * The ground the simulation collides with: the active variant's continuous

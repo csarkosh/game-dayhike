@@ -1,7 +1,7 @@
 import { registerPass } from "../chunk.js";
 import { CHUNK_SIZE } from "@csarkosh/engine/sim/forestConstants";
-import { elevationAt } from "../terrain.js";
-import { treesInRect, VEGETATION_TUNABLES, COHORT_LOG, LOG_HALF_LENGTH, LOG_SCALE_MAX, SPECIES_ALDER, logAxis } from "../vegetation.js";
+import { elevationAt } from "@csarkosh/engine/sim/terrain";
+import { treesInRect, VEGETATION_TUNABLES, COHORT_LOG, LOG_HALF_LENGTH, LOG_SCALE_MAX, SPECIES_ALDER, logAxis } from "@csarkosh/engine/sim/vegetation";
 
 export const TRUNK_HALF = 0.35;
 export const TRUNK_COLLIDER_HEIGHT = 3;

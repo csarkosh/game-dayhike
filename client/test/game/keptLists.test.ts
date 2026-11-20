@@ -10,25 +10,25 @@ vi.mock("../../src/game/clutterInstances.js", async (importOriginal) => {
   const m = await importOriginal<typeof import("../../src/game/clutterInstances.js")>();
   return { ...m, trampleFrame: vi.fn(m.trampleFrame), writeFoliage: vi.fn(m.writeFoliage), instanceMatrixFor: vi.fn(m.instanceMatrixFor) };
 });
-vi.mock("../../src/game/terrainSurface.js", async (importOriginal) => {
-  const m = await importOriginal<typeof import("../../src/game/terrainSurface.js")>();
+vi.mock("@csarkosh/engine/game/terrainSurface", async (importOriginal) => {
+  const m = await importOriginal<typeof import("@csarkosh/engine/game/terrainSurface")>();
   return { ...m, surfaceAlbedo: vi.fn(m.surfaceAlbedo) };
 });
 
 import {
   CLUTTER_BUSH, CLUTTER_CLASS_COUNT, CLUTTER_FERN, CLUTTER_FLOWER, CLUTTER_GRASS, CLUTTER_GRASS_CELL, CLUTTER_HIGHPLANT, CLUTTER_MEADOW, CLUTTER_SHRUB,
   CLUTTER_WETPLANT, type ClutterInstance,
-} from "../../src/sim/clutter.js";
-import { BLADE_REBUILD_CELL, createBladeCollector, type BladeTiers } from "../../src/game/bladeField.js";
+} from "@csarkosh/engine/sim/clutter";
+import { BLADE_REBUILD_CELL, createBladeCollector, type BladeTiers } from "@csarkosh/engine/game/bladeField";
 import { createBladeLists } from "../../src/game/bladeInstances.js";
-import { createClutterCollector, type ClutterBands } from "../../src/game/clutterField.js";
+import { createClutterCollector, type ClutterBands } from "@csarkosh/engine/game/clutterField";
 import { cutsFor, instanceMatrixFor, trampleFrame, writeFoliage } from "../../src/game/clutterInstances.js";
 import { createClutterLists } from "../../src/game/clutterLists.js";
-import { DUFF_REACH, DUFF_REBUILD_CELL, createDuffCollector, type DuffTiers } from "../../src/game/duffField.js";
+import { DUFF_REACH, DUFF_REBUILD_CELL, createDuffCollector, type DuffTiers } from "@csarkosh/engine/game/duffField";
 import { createDuffLists } from "../../src/game/duffInstances.js";
 import type { InstanceList } from "@csarkosh/engine/game/instanceLists";
 import { finish, type Slices } from "@csarkosh/engine/game/syncJobs";
-import { surfaceAlbedo } from "../../src/game/terrainSurface.js";
+import { surfaceAlbedo } from "@csarkosh/engine/game/terrainSurface";
 import { timeLimit } from "../helpers/timeLimit.js";
 
 const SEED = 1;

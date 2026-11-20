@@ -5,13 +5,13 @@ import "../../src/sim/passes/index.js";
 import { createForestWorld, type World } from "../../src/sim/world.js";
 import { createForest } from "../../src/sim/forest.js";
 import { seedFromToken } from "@csarkosh/engine/game/seed";
-import { DEFAULT_TERRAIN_VARIANT, activeTerrainVariant, setActiveTerrainVariant } from "../../src/sim/terrain.js";
+import { DEFAULT_TERRAIN_VARIANT, activeTerrainVariant, setActiveTerrainVariant } from "@csarkosh/engine/sim/terrain";
 import { GROUND_NORMAL_Y, PLAYER_HALF, STEP_HEIGHT } from "../../src/sim/constants.js";
 import { boxesNear } from "../../src/sim/boxSource.js";
 import { lakeShoreInto, newLakeShore } from "@csarkosh/engine/sim/lakeShape";
 import type { Vec3 } from "../../src/sim/types.js";
 import type { WayDown } from "../../src/sim/wayDown.js";
-import { stemAhead } from "../../src/sim/trailRoute.js";
+import { stemAhead } from "@csarkosh/engine/sim/trailRoute";
 import { DISCOVERY_RADIUS, emergePoint } from "../../src/sim/summit.js";
 import {
   WAY_APART_M, WAY_BACK_MAX_M, WAY_BODY_CLEAR_M, WAY_CREST_CLEAR_M, WAY_RATIO, WAY_START_M, WAY_WAVE_M,

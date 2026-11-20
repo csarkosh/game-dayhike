@@ -32,7 +32,7 @@
  * (Safari in Low Power Mode, a Mac running hot) is slow on every tier, and a
  * lower one would buy nothing.
  */
-import { PROBE_HOLD_MS } from "./frameProbe.js";
+import { PROBE_HOLD_MS } from "@csarkosh/engine/game/frameProbe";
 import type { QualityTier } from "@csarkosh/engine/game/quality";
 import { GOVERNOR_SWAP_READY_MAX_MS } from "./rendererSwap.js";
 import type { TierSource } from "@csarkosh/engine/game/tierChoice";

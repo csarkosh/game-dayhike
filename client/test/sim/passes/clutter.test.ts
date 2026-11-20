@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import "../../../src/sim/passes/index.js";
 import { generateChunk, registeredPasses } from "../../../src/sim/chunk.js";
 import { CHUNK_SIZE } from "@csarkosh/engine/sim/forestConstants";
-import { clutterInRect, CLUTTER_BOULDER } from "../../../src/sim/clutter.js";
+import { clutterInRect, CLUTTER_BOULDER } from "@csarkosh/engine/sim/clutter";
 import {
   BOULDER_A_BASE_HALF,
   BOULDER_A_BASE_H,
@@ -14,8 +14,8 @@ import { createForest } from "../../../src/sim/forest.js";
 import { createGroundField } from "../../../src/sim/ground.js";
 import { stepMovement } from "../../../src/sim/movement.js";
 import { PLAYER_HALF, PLAYER_EYE_OFFSET } from "../../../src/sim/constants.js";
-import { elevationAt } from "../../../src/sim/terrain.js";
-import { CLUTTER_BOULDER_SCALE_MAX } from "../../../src/sim/clutter.js";
+import { elevationAt } from "@csarkosh/engine/sim/terrain";
+import { CLUTTER_BOULDER_SCALE_MAX } from "@csarkosh/engine/sim/clutter";
 
 const SEED = 0x5eed;
 

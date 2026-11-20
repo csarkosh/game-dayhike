@@ -3,7 +3,7 @@ import {
   lakeApronEnd, lakeOutline, lakeShoreInto, newLakeShore, valleyLakeShape, type LakeShape,
 } from "@csarkosh/engine/sim/lakeShape";
 import { hash3 } from "@csarkosh/engine/sim/field";
-import { featureDraw, POND_RADIUS_MAX, POND_RADIUS_MIN } from "../../src/sim/features.js";
+import { featureDraw, POND_RADIUS_MAX, POND_RADIUS_MIN } from "@csarkosh/engine/sim/features";
 import { LOBBY_SEEDS } from "./trailGateSeeds.js";
 import { median, outlineMetrics } from "./helpers/outlineMetrics.js";
 import { timeLimit } from "../helpers/timeLimit.js";

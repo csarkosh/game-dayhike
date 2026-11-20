@@ -6,7 +6,7 @@ import { createForest } from "../../src/sim/forest.js";
 import { createForestWorld, createWorld, spawnPlayer, tickWorld, type World } from "../../src/sim/world.js";
 import { parseLevel } from "../../src/sim/level.js";
 import { seedFromToken } from "@csarkosh/engine/game/seed";
-import { DEFAULT_TERRAIN_VARIANT, elevationAt, setActiveTerrainVariant } from "../../src/sim/terrain.js";
+import { DEFAULT_TERRAIN_VARIANT, elevationAt, setActiveTerrainVariant } from "@csarkosh/engine/sim/terrain";
 import { AiState, Phase } from "../../src/sim/types.js";
 import { drawWayNow, stepWay, wayOf } from "../../src/sim/wayDraw.js";
 import { timeLimit } from "../helpers/timeLimit.js";

@@ -5,8 +5,8 @@ import "../../src/sim/passes/index.js";
 import { generateChunk } from "../../src/sim/chunk.js";
 import { createForest } from "../../src/sim/forest.js";
 import { trailheadStart } from "../../src/sim/spawn.js";
-import { activeTerrainVariant, elevationSampleAt } from "../../src/sim/terrain.js";
-import { route } from "../../src/sim/trailRoute.js";
+import { activeTerrainVariant, elevationSampleAt } from "@csarkosh/engine/sim/terrain";
+import { route } from "@csarkosh/engine/sim/trailRoute";
 import { seedFromToken } from "@csarkosh/engine/game/seed";
 
 /**

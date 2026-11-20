@@ -110,7 +110,7 @@ import {
 import {
   ARM_LENGTH, LABEL_ROUGHNESS, SIGN_ARM_OUTPUT, SIGN_POST_OUTPUT, signPlaces, squareEnd, type SignPlaces,
 } from "../signParts.js";
-import { emptyWetUniforms, type WetUniforms } from "../wetSurface.js";
+import { emptyWetUniforms, type WetUniforms } from "@csarkosh/engine/game/wetSurface";
 import { sphereInView } from "./capMesh.js";
 import type { ViewFrustumPlane } from "@csarkosh/engine/game/lite/cameraPose";
 import { DRAW_ORDER, SEE_THROUGH_ORDER, createDrawOrders } from "@csarkosh/engine/game/lite/drawOrder";
