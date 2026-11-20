@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { WEATHER_PRESETS } from "../../src/game/weather.js";
+import { WEATHER_PRESETS } from "@csarkosh/engine/game/weather";
 import {
   lampUnder, lampFlicker, lampPlace, DARK_LAMP_PLACE, LAMP_DREAD_DIM, LAMP_DREAD_TINT, LAMP_FLICKER_DEPTH, LAMP_COLOUR, LAMP_INTENSITY, LAMP_ANGLE, LAMP_EXPONENT, LAMP_RANGE,
 } from "../../src/game/lampParams.js";

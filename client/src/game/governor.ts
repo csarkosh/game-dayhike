@@ -33,9 +33,9 @@
  * lower one would buy nothing.
  */
 import { PROBE_HOLD_MS } from "./frameProbe.js";
-import type { QualityTier } from "./quality.js";
+import type { QualityTier } from "@csarkosh/engine/game/quality";
 import { GOVERNOR_SWAP_READY_MAX_MS } from "./rendererSwap.js";
-import type { TierSource } from "./tierChoice.js";
+import type { TierSource } from "@csarkosh/engine/game/tierChoice";
 
 export const GOVERNOR_START_MS = 30_000;
 export const GOVERNOR_WINDOW_MS = 10_000;

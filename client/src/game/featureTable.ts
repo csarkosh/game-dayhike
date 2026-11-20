@@ -9,9 +9,9 @@
 import {
   MEADOW_RIM, POND_SHORE, TREELINE_BAND, PEAK_RIM_FADE, treelineOf, type Feature,
 } from "../sim/features.js";
-import type { LakeShape } from "../sim/lakeShape.js";
+import type { LakeShape } from "@csarkosh/engine/sim/lakeShape";
 import { activeTerrainVariant } from "../sim/terrain.js";
-import { SHORE_ATLAS_LAKES, SHORE_ATLAS_SIZE, bakeShoreAtlas, type ShoreAtlas } from "./shoreAtlas.js";
+import { SHORE_ATLAS_LAKES, SHORE_ATLAS_SIZE, bakeShoreAtlas, type ShoreAtlas } from "@csarkosh/engine/game/shoreAtlas";
 
 /** Up to eight features paint the ground (spec §10.3: one peak, three loops, three tarns). */
 export const FEATURE_PAINT_MAX = 8;

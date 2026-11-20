@@ -2,9 +2,9 @@ import { describe, it, expect } from "vitest";
 import {
   motesUnder, presenceAt, windAt, MOTE_CAPACITY, MOTE_DREAD_GAIN, MOTE_SPECIES, MOTE_WIND_DRIFT,
   MOTE_ALPHA, MOTE_BOX_HALF, MOTE_EMIT_BOX, MOTE_TEX_SIZE, moteCapacity, moteDiscMap, moteVelocities,
-} from "../../src/game/motesParams.js";
-import { WEATHER_PRESETS } from "../../src/game/weather.js";
-import { windRecordUnder } from "../../src/game/windParams.js";
+} from "@csarkosh/engine/game/motesParams";
+import { WEATHER_PRESETS } from "@csarkosh/engine/game/weather";
+import { windRecordUnder } from "@csarkosh/engine/game/windParams";
 
 const AIR = { r: 0.5, g: 0.55, b: 0.6 };
 const WIND0 = windRecordUnder(WEATHER_PRESETS.clear, 0);

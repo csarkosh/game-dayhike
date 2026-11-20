@@ -12,9 +12,9 @@ import {
   cutModel, cutOf, cutsFor, instanceMatrixFor, seatDriftLogs, trampleFrame, writeFoliage,
 } from "../../src/game/clutterInstances.js";
 import { FOLIAGE_PROFILES } from "../../src/game/foliageUniforms.js";
-import { transformPoint } from "../../src/game/instancePose.js";
-import { trunkSeat } from "../../src/game/logSeat.js";
-import { ROCK_CUTS } from "../../src/game/rockRelief.js";
+import { transformPoint } from "@csarkosh/engine/game/instancePose";
+import { trunkSeat } from "@csarkosh/engine/game/logSeat";
+import { ROCK_CUTS } from "@csarkosh/engine/game/rockRelief";
 import { trampleAt } from "../../src/game/trailBenchParams.js";
 
 const IDENTITY_FRAME = { height: 1, lean: 0, ax: 0, az: 0, tint: { r: 1, g: 1, b: 1 } };

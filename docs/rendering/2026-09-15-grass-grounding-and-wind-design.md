@@ -61,13 +61,13 @@ Files:
 
 | File | Role |
 | --- | --- |
-| `client/src/game/windParams.ts` (new, replaces `windField.ts`) | Babylon-free: constants, `WindRecord`, `windRecordUnder(weather, seconds, override)`, `gustAt(record, x, z)`, `directionAt(seconds, preset)`. On `BABYLON_FREE_FILES`. |
+| `engine/src/game/windParams.ts` (new, replaces `windField.ts`) | Babylon-free: constants, `WindRecord`, `windRecordUnder(weather, seconds, override)`, `gustAt(record, x, z)`, `directionAt(seconds, preset)`. On `BABYLON_FREE_FILES`. |
 | `client/src/game/foliagePlugin.ts` (new, replaces `windPlugin.ts`) | The plugin class, `attachFoliage(material, profile, meshHeight)`, per-frame `setWind(record)`. |
 | `client/src/game/shaders/foliage.vertex.fx`, `foliage.fragment.fx` (new) | The GLSL, in `.fx` so the hygiene test covers it. |
 | `client/src/game/foliageLightPlugin.ts` + `shaders/foliageDiffuse.fragment.fx` (new) | Translucency on the sun's diffuse line. |
 | `client/src/game/clutterMeshes.ts` | Writes the `foliage` attribute in the rebuild; attaches both plugins. |
 | `client/src/game/forestMeshes.ts` | Attaches the foliage plugin to LOD0/LOD1 tree meshes and the understory. |
-| `client/src/game/motesParams.ts`, `mistMeshes.ts`, `rain.ts`, `ambientAudio.ts`, `weather.ts` | Read the record; the air bed and its gain go. |
+| `engine/src/game/motesParams.ts`, `mistMeshes.ts`, `rain.ts`, `ambientAudio.ts`, `weather.ts` | Read the record; the air bed and its gain go. |
 | `client/src/game/commands.ts`, `renderer.ts` | `/wind`, the per-frame record, `setWind`. |
 | `ARCHITECTURE.md` | The Rendering paragraph gains one sentence on the wind field. |
 

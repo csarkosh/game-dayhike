@@ -18,9 +18,9 @@ import type { Vec3 } from "./types.js";
 import type { TrailNode } from "./trail.js";
 import { GROUND_NORMAL_Y, PLAYER_HALF, STEP_HEIGHT } from "./constants.js";
 import { activeTerrainVariant } from "./terrain.js";
-import { lakeShoreInto, newLakeShore } from "./lakeShape.js";
+import { lakeShoreInto, newLakeShore } from "@csarkosh/engine/sim/lakeShape";
 import { boxesNear } from "./boxSource.js";
-import { hash2 } from "./field.js";
+import { hash2 } from "@csarkosh/engine/sim/field";
 import { stemAhead, stemNodes } from "./trailRoute.js";
 import { makeWay, type WayDown } from "./wayDown.js";
 

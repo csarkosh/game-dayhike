@@ -32,14 +32,14 @@
 import type { MaterialPlugin, PluginUniformBlock, Texture2D } from "@babylonjs/lite";
 import type { LakeMirrorUniforms, LakeUniforms } from "../waterSurface.js";
 import { frameReads } from "./frameBlock.js";
-import { uniformFields, writeUniforms } from "./pluginUniforms.js";
-import type { WaterBehind } from "./waterBehind.js";
+import { uniformFields, writeUniforms } from "@csarkosh/engine/game/lite/pluginUniforms";
+import type { WaterBehind } from "@csarkosh/engine/game/lite/waterBehind";
 import {
   LAKE_LENS_WGSL, LAKE_MIRROR_WGSL, LAKE_PANORAMA_WGSL, LAKE_RIPPLES_WGSL, LAKE_SHORE_WGSL, WATER_BUMP_WGSL, WATER_DEFS_WGSL, WATER_SPLIT_WGSL, WATER_THROUGH_DEFS_WGSL,
   WATER_THROUGH_FINAL_WGSL, WATER_VERTEX_WGSL, lakeComposeWgsl, lakeLightsWgsl,
 } from "./waterWgsl.js";
 import derivativeUniformitySource from "../shaders/diagnostic/derivativeUniformity.wgsl?raw";
-import { wgsl } from "../shaders/shaderText.js";
+import { wgsl } from "@csarkosh/engine/game/shaders/shaderText";
 
 /** The plugin's place among a material's: before the air's, which is laid over what it shades. */
 export const WATER_PRIORITY = 230;

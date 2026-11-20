@@ -1,8 +1,8 @@
 import { describe, expect, it } from "vitest";
 import {
   UPLOAD_BUDGET_BYTES, UPLOAD_KINDS, UPLOAD_WAIT_MS, createFrameUploads, uploadCountsCopy, type FrameUploads,
-} from "../../../src/game/lite/frameUploads.js";
-import { SYNC_BUDGET_MS, SYNC_LATE_FRAMES_MAX, createSyncJobs, finish, type Slices } from "../../../src/game/syncJobs.js";
+} from "@csarkosh/engine/game/lite/frameUploads";
+import { SYNC_BUDGET_MS, SYNC_LATE_FRAMES_MAX, createSyncJobs, finish, type Slices } from "@csarkosh/engine/game/syncJobs";
 
 const MB = 1024 * 1024;
 

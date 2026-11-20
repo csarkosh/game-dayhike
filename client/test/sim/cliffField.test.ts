@@ -3,7 +3,7 @@ import "../../src/sim/passes/index.js";
 import { registeredPasses } from "../../src/sim/chunk.js";
 import { GROUND_NORMAL_Y } from "../../src/sim/constants.js";
 import { CLUTTER_ROCK, rockSlopeBand, type ClutterInstance } from "../../src/sim/clutter.js";
-import { hash3 } from "../../src/sim/field.js";
+import { hash3 } from "@csarkosh/engine/sim/field";
 import {
   DEFAULT_TERRAIN_VARIANT, elevationSampleAt, registerTerrainVariant, setActiveTerrainVariant, type WaterBodySource,
 } from "../../src/sim/terrain.js";

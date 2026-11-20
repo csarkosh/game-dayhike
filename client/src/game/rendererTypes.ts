@@ -13,23 +13,23 @@ import type { Vec3, WorldState } from "../sim/types.js";
 import type { WayDown } from "../sim/wayDown.js";
 import type { ListenerPose } from "./ambientAudio.js";
 import type { CrowdFigure } from "./crowdField.js";
-import type { EngineHandle, EngineName } from "./engineHandle.js";
-import type { WatchEngine } from "./engineWatch.js";
+import type { EngineHandle, EngineName } from "@csarkosh/engine/game/engineHandle";
+import type { WatchEngine } from "@csarkosh/engine/game/engineWatch";
 import type { EyePose } from "./eyeBlend.js";
-import type { FirstBuilds } from "./firstBuilds.js";
-import type { GpuTimeReport } from "./gpuTimeReport.js";
+import type { FirstBuilds } from "@csarkosh/engine/game/firstBuilds";
+import type { GpuTimeReport } from "@csarkosh/engine/game/gpuTimeReport";
 import type { PaintPaletteName } from "./gradeParams.js";
-import type { ImpostorBake } from "./impostorBake.js";
+import type { ImpostorBake } from "@csarkosh/engine/game/impostorBake";
 import type { PreparedScene } from "./preparedScene.js";
-import type { QualityTier } from "./quality.js";
+import type { QualityTier } from "@csarkosh/engine/game/quality";
 import type { EndSceneNow, EndSceneSetup } from "./scenePlay.js";
-import type { SkyTable } from "./skyTable.js";
+import type { SkyTable } from "@csarkosh/engine/game/skyTable";
 import type { StareLens } from "./stareLens.js";
 import type { SurfSound } from "./surfSound.js";
 import type { WaterLifeSound } from "./waterLifeAudio.js";
-import type { WeatherParams, WeatherPresetName } from "./weather.js";
+import type { WeatherParams, WeatherPresetName } from "@csarkosh/engine/game/weather";
 import type { WildlifeEvent } from "./wildlifeBehaviour.js";
-import type { WindRecord } from "./windParams.js";
+import type { WindRecord } from "@csarkosh/engine/game/windParams";
 
 /** The free camera's view; `fov` (rad, vertical) and `roll` (rad) are a film
  * shot's, absent for the game's own lens and no roll. */

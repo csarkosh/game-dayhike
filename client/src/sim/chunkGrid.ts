@@ -2,7 +2,7 @@ import type { Vec3 } from "./types.js";
 import type { Aabb } from "./level.js";
 import type { BoxSource } from "./boxSource.js";
 import { CELLS_PER_CHUNK, generateChunk, type Chunk } from "./chunk.js";
-import { CHUNK_SIZE } from "./forestConstants.js";
+import { CHUNK_SIZE } from "@csarkosh/engine/sim/forestConstants";
 import { activeTerrainVariantName } from "./terrain.js";
 
 export type ChunkGrid = BoxSource & {

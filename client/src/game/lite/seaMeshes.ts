@@ -54,32 +54,32 @@ import {
   markMaterialUboDirty, rebuildMaterial, removeFromScene, setMeshDrawRange, setMeshVisible, updateTextureRegion,
   type EngineContext, type MaterialPlugin, type Mesh, type PluginUniformBlock, type SceneContext, type Texture2D, type Texture2DArray,
 } from "@babylonjs/lite";
-import { boxInPlanes, cornersPastBox, type ViewPlane } from "../lakeSeen.js";
+import { boxInPlanes, cornersPastBox, type ViewPlane } from "@csarkosh/engine/game/lakeSeen";
 import { createOceanFrame } from "../oceanFrame.js";
 import { OCEAN_ATLAS_ROWS, OCEAN_ROW_COAST, OCEAN_TABLE_SAMPLES } from "../oceanTables.js";
 import type { OceanField } from "../oceanWaves.js";
 import { startLoopWorker, type LoopStarter } from "../oceanLoopStart.js";
-import { LOOP_FRAMES, LOOP_N } from "../oceanSpectrum.js";
-import type { QualityTier } from "../quality.js";
+import { LOOP_FRAMES, LOOP_N } from "@csarkosh/engine/game/oceanSpectrum";
+import type { QualityTier } from "@csarkosh/engine/game/quality";
 import { createSeaEdgeStep, type SeaEdgeStep } from "../seaEdge.js";
 import { SEA_SIDE, seaBedDepths, seaLattice, seaRingRecords, seaWetBounds, seaWetRun } from "../seaLattice.js";
 import { emptySeaFrameUniforms, emptySeaUniforms, seaFrameUniforms, seaUniforms, type SeaFrameUniforms } from "../seaUniforms.js";
-import { SWASH_FACE_LIFT_M } from "../swashRunUp.js";
+import { SWASH_FACE_LIFT_M } from "@csarkosh/engine/game/swashRunUp";
 import { SWASH_COLUMNS } from "../swashTable.js";
 import { WATER_RING_COUNT, createWaterRingSamples, seaFaceZ, updateWaterRingSamples, waterHoleCellsFor, type WaterRingSamples } from "../water.js";
-import { WATER_BUMP_SIZE, waterBumpData } from "../waterBump.js";
+import { WATER_BUMP_SIZE, waterBumpData } from "@csarkosh/engine/game/waterBump";
 import { WATER_ROWS, roughnessFor, waterSkinOffset } from "../waterShading.js";
 import { advanceWater, createBumpDrift, createWaterSurface, setWaterCove, setWaterWind } from "../waterSurface.js";
-import type { WindRecord } from "../windParams.js";
+import type { WindRecord } from "@csarkosh/engine/game/windParams";
 import { createWindSeaField, type WindSeaMode } from "../windSeaField.js";
-import { SEE_THROUGH_ORDER } from "./drawOrder.js";
-import type { FrameUploads } from "./frameUploads.js";
+import { SEE_THROUGH_ORDER } from "@csarkosh/engine/game/lite/drawOrder";
+import type { FrameUploads } from "@csarkosh/engine/game/lite/frameUploads";
 import { createLiteLip, type LiteLip } from "./lipMeshes.js";
 import type { LiteSeaFft } from "./seaFft.js";
 import { seaPlugin, seaRestPlugin, type SeaTextures } from "./seaPlugin.js";
 import type { SeaLook } from "./seaWgsl.js";
 import type { LiteWaterBed } from "./waterBed.js";
-import type { WaterBehind } from "./waterBehind.js";
+import type { WaterBehind } from "@csarkosh/engine/game/lite/waterBehind";
 
 /**
  * What a tier's sea is drawn with beside its swell: the ripple bump for the wind sea on low, a field of it above:

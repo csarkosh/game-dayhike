@@ -1,5 +1,5 @@
 import { registerPass } from "../chunk.js";
-import { CHUNK_SIZE } from "../forestConstants.js";
+import { CHUNK_SIZE } from "@csarkosh/engine/sim/forestConstants";
 import { clutterInRect, CLUTTER_BOULDER, CLUTTER_TUNABLES } from "../clutter.js";
 
 /** Boulder collider shape at scale 1, PER VARIANT: half-extent (m), height

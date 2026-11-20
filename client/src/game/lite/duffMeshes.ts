@@ -33,17 +33,17 @@ import { DUFF_ALBEDO, DUFF_CHARACTERS, DUFF_CHARACTER_COUNT, DUFF_TIER_COUNTS, d
 import { DUFF_REACH, DUFF_REBUILD_CELL, duffTierBands } from "../duffField.js";
 import { DUFF_ROUGHNESS, DUFF_TIER_COUNT, createDuffLists } from "../duffInstances.js";
 import { FOLIAGE_PROFILES, foliageLook } from "../foliageUniforms.js";
-import type { FirstBuilds } from "../firstBuilds.js";
-import type { InstanceList } from "../instanceLists.js";
-import type { Slices, SyncJobs } from "../syncJobs.js";
+import type { FirstBuilds } from "@csarkosh/engine/game/firstBuilds";
+import type { InstanceList } from "@csarkosh/engine/game/instanceLists";
+import type { Slices, SyncJobs } from "@csarkosh/engine/game/syncJobs";
 import type { WetUniforms } from "../wetSurface.js";
 import {
   baseColourPlugin, oneSidedLightPlugin, surfaceWetPlugin, vegetationInstanceLayout, vegetationPlugin, type Vegetation,
 } from "./forestPlugins.js";
-import { DRAW_ORDER, createDrawOrders } from "./drawOrder.js";
-import type { FrameUploads } from "./frameUploads.js";
+import { DRAW_ORDER, createDrawOrders } from "@csarkosh/engine/game/lite/drawOrder";
+import type { FrameUploads } from "@csarkosh/engine/game/lite/frameUploads";
 import { listBytes, listMesh, showList, type ListMesh } from "./listMeshes.js";
-import { cellOrigin, createRebuilds } from "./rebuildJobs.js";
+import { cellOrigin, createRebuilds } from "@csarkosh/engine/game/lite/rebuildJobs";
 
 /** What showing the duff's lists is expected to take (ms): each bucket handed its list, one step. The scheduler
  * learns the figure on the device it runs on (`syncJobs.ts`) and trusts it where it is more. */

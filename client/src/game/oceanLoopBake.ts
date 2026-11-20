@@ -13,12 +13,12 @@
  * Every frequency is a whole number of turns in LOOP_SECONDS (`windSeaH0`'s
  * `repeat`), so the last frame runs on into the first.
  */
-import { OCEAN_G } from "./oceanPhysics.js";
-import { WIND_SEA_CHOPPINESS, windSeaFields, type SpectrumH0 } from "./oceanFft.js";
+import { OCEAN_G } from "@csarkosh/engine/game/oceanPhysics";
+import { WIND_SEA_CHOPPINESS, windSeaFields, type SpectrumH0 } from "@csarkosh/engine/game/oceanFft";
 import {
   LOOP_FRAMES, LOOP_N, LOOP_SECONDS, LOOP_SIZE, WIND_SEA_FP_COEFF, WIND_SEA_GAMMA, WIND_SEA_HS_COEFF,
   cascadeBands, jonswap, windSeaH0,
-} from "./oceanSpectrum.js";
+} from "@csarkosh/engine/game/oceanSpectrum";
 import { WIND_SEA_U_REF } from "./oceanWindSea.js";
 
 /** What the page asks the worker: the world's seed. */

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { WET_PLANT_COUNT, WET_PLANT_DEVILS_CLUB, WET_PLANT_SKUNK_CABBAGE, wetPlantGeometry } from "../../src/game/wetPlantClump.js";
+import { WET_PLANT_COUNT, WET_PLANT_DEVILS_CLUB, WET_PLANT_SKUNK_CABBAGE, wetPlantGeometry } from "@csarkosh/engine/game/wetPlantClump";
 
 describe("wetPlantGeometry", () => {
   it("is a pure function of the variant and the level of detail, with whole arrays", () => {

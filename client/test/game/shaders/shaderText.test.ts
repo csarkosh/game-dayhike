@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { fill, wgsl } from "../../../src/game/shaders/shaderText.js";
+import { fill, wgsl } from "@csarkosh/engine/game/shaders/shaderText";
 
 describe("the text of a shader file", () => {
   it("is the file's without its one final newline", () => {

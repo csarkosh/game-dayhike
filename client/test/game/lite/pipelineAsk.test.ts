@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { askRenderPipeline, type PipelineDevice } from "../../../src/game/lite/pipelineAsk.js";
+import { askRenderPipeline, type PipelineDevice } from "@csarkosh/engine/game/lite/pipelineAsk";
 
 /** A device whose asynchronous make answers `answer`, saying what it was asked. */
 function device(answer: "made" | "refused"): { device: PipelineDevice; asked: string[] } {

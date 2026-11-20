@@ -11,8 +11,8 @@ import {
 import {
   WIND_TIME_WRAP, WIND_K1, WIND_K2, WIND_OMEGA_GUST, WIND_OMEGA_GUST2, WIND_RAGGED, WIND_RAGGED_CELL,
   directionAt, gustAt, windRecordUnder,
-} from "../../src/game/windParams.js";
-import { WEATHER_PRESETS } from "../../src/game/weather.js";
+} from "@csarkosh/engine/game/windParams";
+import { WEATHER_PRESETS } from "@csarkosh/engine/game/weather";
 import { midgeHash } from "../../src/game/midgeMotion.js";
 import { babylonText } from "../helpers/babylonFixture.js";
 import { timeLimit } from "../helpers/timeLimit.js";

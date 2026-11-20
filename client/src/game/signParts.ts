@@ -9,7 +9,7 @@
  * Loads no engine: a canvas's context is the page's own.
  */
 import type { SignPost } from "../sim/signs.js";
-import { composeInto, matrixMultiply, quatFromEuler, type Quat } from "./instancePose.js";
+import { composeInto, matrixMultiply, quatFromEuler, type Quat } from "@csarkosh/engine/game/instancePose";
 import { labelWear, type LabelWear } from "./labelWear.js";
 
 export const SIGN_POST_OUTPUT = "models/sign.post.glb";

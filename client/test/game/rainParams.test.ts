@@ -4,9 +4,9 @@ import {
   RIPPLE_RADIUS, RIPPLE_TIME_WRAP, SPLASH, SPLASH_CYCLES, SPLASH_FOLD_S, SPLASH_TIERS, dripCountUnder, mapCentre, rainBoxMin,
   rainClassOf, rainCountUnder, rainDrift, rainDropAt, rainFold, rainSeeds, rippleTime, smoothedDt, splashCountUnder, splashFold,
   streakLength,
-} from "../../src/game/rainParams.js";
-import { WEATHER_PRESETS } from "../../src/game/weather.js";
-import { windRecordUnder } from "../../src/game/windParams.js";
+} from "@csarkosh/engine/game/rainParams";
+import { WEATHER_PRESETS } from "@csarkosh/engine/game/weather";
+import { windRecordUnder } from "@csarkosh/engine/game/windParams";
 
 /** A wind of `speed` blowing along +X or +Z. */
 function wind(speed: number, axis: "x" | "z") {

@@ -10,7 +10,7 @@
  */
 import type { ClutterInstance } from "../sim/clutter.js";
 import { CLIFF_CELL, CLIFF_DENSITY, CLIFF_JITTER, CLIFF_RUN_REACH, cliffCellRuns } from "../sim/cliffField.js";
-import type { QualityTier } from "./quality.js";
+import type { QualityTier } from "@csarkosh/engine/game/quality";
 
 /** The worst offset (m) between the eye and the origin the distances are
  * measured against: the rebuild snaps to `CLIFF_CELL`, so the reach edge is

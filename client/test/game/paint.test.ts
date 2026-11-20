@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, afterEach } from "vitest";
-import { afterNextPaint } from "../../src/game/paint.js";
+import { afterNextPaint } from "@csarkosh/engine/game/paint";
 
 afterEach(() => {
   vi.unstubAllGlobals();

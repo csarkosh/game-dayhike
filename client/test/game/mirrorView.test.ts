@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { cameraSpacePlane, obliqueProjection, reflectionMatrix } from "../../src/game/mirrorView.js";
+import { cameraSpacePlane, obliqueProjection, reflectionMatrix } from "@csarkosh/engine/game/mirrorView";
 import { babylonValues } from "../helpers/babylonFixture.js";
 import { carried, determinant, inverse, product } from "../helpers/ruler.js";
 

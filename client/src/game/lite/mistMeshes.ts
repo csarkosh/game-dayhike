@@ -30,21 +30,21 @@ import {
   type EngineContext, type Mesh, type PluginUniformBlock, type SceneContext, type ShaderMaterial,
 } from "@babylonjs/lite";
 import type { AtmosphereRecord } from "../atmosphereParams.js";
-import type { Rgb } from "../colour.js";
+import type { Rgb } from "@csarkosh/engine/game/colour";
 import { MIST_INSTANCE_FLOATS, createMistBanks, emptyMistUniforms, mistUniforms, writeMistInstances, type MistOrder } from "../mistBanks.js";
 import { MIST_TEX_SIZE, mistAlphaMap } from "../mistField.js";
-import type { QualityTier } from "../quality.js";
-import type { WeatherParams } from "../weather.js";
-import type { WindRecord } from "../windParams.js";
-import { DISPLAY_CURVE_WGSL, onColourPath } from "./displayCurve.js";
-import { SEE_THROUGH_ORDER } from "./drawOrder.js";
+import type { QualityTier } from "@csarkosh/engine/game/quality";
+import type { WeatherParams } from "@csarkosh/engine/game/weather";
+import type { WindRecord } from "@csarkosh/engine/game/windParams";
+import { DISPLAY_CURVE_WGSL, onColourPath } from "@csarkosh/engine/game/lite/displayCurve";
+import { SEE_THROUGH_ORDER } from "@csarkosh/engine/game/lite/drawOrder";
 import { FRAME_CONTRAST_NAME, FRAME_EXPOSURE_NAME, stageOwn, stageReads } from "./frameBlock.js";
-import type { FrameUploads } from "./frameUploads.js";
-import { shaderUniformDecls, shaderUniformWriter } from "./shaderUniforms.js";
+import type { FrameUploads } from "@csarkosh/engine/game/lite/frameUploads";
+import { shaderUniformDecls, shaderUniformWriter } from "@csarkosh/engine/game/lite/shaderUniforms";
 import varyingsSource from "../shaders/mist/varyings.wgsl?raw";
 import mistVertexSource from "../shaders/mist/mist.vertex.wgsl?raw";
 import mistFragmentSource from "../shaders/mist/mist.fragment.wgsl?raw";
-import { fill, wgsl } from "../shaders/shaderText.js";
+import { fill, wgsl } from "@csarkosh/engine/game/shaders/shaderText";
 
 /** What the two stages hand each other. */
 const VARYINGS = wgsl(varyingsSource);

@@ -14,13 +14,13 @@
  * toward +x (dir.x > 0) blows onshore.
  */
 import { TICK_DT } from "../sim/constants.js";
-import { OCEAN_G, whitecapCoverage } from "./oceanPhysics.js";
-import { LOOP_SECONDS, WIND_SEA_FP_COEFF, WIND_SEA_HS_COEFF } from "./oceanSpectrum.js";
+import { OCEAN_G, whitecapCoverage } from "@csarkosh/engine/game/oceanPhysics";
+import { LOOP_SECONDS, WIND_SEA_FP_COEFF, WIND_SEA_HS_COEFF } from "@csarkosh/engine/game/oceanSpectrum";
 
 /** The spectrum's own constants, defined beside it (`windSeaH0` reads them) and
  * importable from here too: Hs ≈ WIND_SEA_HS_COEFF·U²/g and fp ≈
  * WIND_SEA_FP_COEFF·g/U fully developed, its spreading s and its γ. */
-export { WIND_SEA_HS_COEFF, WIND_SEA_FP_COEFF, WIND_SEA_SPREAD, WIND_SEA_GAMMA } from "./oceanSpectrum.js";
+export { WIND_SEA_HS_COEFF, WIND_SEA_FP_COEFF, WIND_SEA_SPREAD, WIND_SEA_GAMMA } from "@csarkosh/engine/game/oceanSpectrum";
 
 /** m/s of U₁₀ per unit of the game's 0..1 wind speed, as `roughnessFor` reads it. */
 export const WIND_SEA_U_PER_WIND = 12;

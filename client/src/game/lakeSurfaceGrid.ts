@@ -4,7 +4,7 @@
  * build (`preparedScene.ts`); the renderer makes the mesh (`lakeSurface`).
  */
 import { elevationAt, type LakeSource } from "../sim/terrain.js";
-import { lakeShoreInto, newLakeShore, type LakeShape } from "../sim/lakeShape.js";
+import { lakeShoreInto, newLakeShore, type LakeShape } from "@csarkosh/engine/sim/lakeShape";
 import { LAKE_SURFACE_REACH } from "./bedHeight.js";
 import { WATER_UV_SCALE } from "./water.js";
 

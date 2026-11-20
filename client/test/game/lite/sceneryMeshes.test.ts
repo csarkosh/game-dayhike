@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { readFileSync } from "node:fs";
 import type { Renderer } from "../../../src/game/rendererTypes.js";
-import { cameraAxes, restAxes, restPlanes, viewPlanes, type CameraPose } from "../../../src/game/lite/cameraPose.js";
+import { cameraAxes, restAxes, restPlanes, viewPlanes, type CameraPose } from "@csarkosh/engine/game/lite/cameraPose";
 import {
   FILM_CAR_WARM_FRAMES, SCENERY_REACH_M, SIGN_REACH_M, boxInSight, deferredScenery, inSight, liteSceneryOf, sightBox, type LiteCar, type LiteScenery,
   type LiteTrailhead, type SceneryView,

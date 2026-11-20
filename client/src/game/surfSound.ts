@@ -28,7 +28,7 @@
  * Positions are in Babylon's left-handed frame; the shell mirrors z.
  */
 import type { LipTracker } from "./oceanBreaker.js";
-import { SWASH_THICK_K } from "./swashRunUp.js";
+import { SWASH_THICK_K } from "@csarkosh/engine/game/swashRunUp";
 import { SWASH_COLUMNS, SWASH_STRIDE, type SwashCove, type SwashTable } from "./swashTable.js";
 
 /** The seconds the set envelope's running mean spans. */

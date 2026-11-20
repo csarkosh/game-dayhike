@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
-import { valueNoise2, macroNoise, MACRO_WAVE, MACRO_WEIGHT } from "../../src/game/groundHexParams.js";
-import { luma } from "../../src/game/colour.js";
+import { valueNoise2, macroNoise, MACRO_WAVE, MACRO_WEIGHT } from "@csarkosh/engine/game/groundHexParams";
+import { luma } from "@csarkosh/engine/game/colour";
 import { NEEDLE_BED } from "../../src/game/terrainSurface.js";
 import {
   TRAIL_JUNCTION_W, TRAIL_WEAR_WAVE, TRAIL_WEAR_WEIGHT, TRAIL_WEAR_W0, TRAIL_WEAR_W1, TRAIL_WEAR_D0, TRAIL_WEAR_D1,

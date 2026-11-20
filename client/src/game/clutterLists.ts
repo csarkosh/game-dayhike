@@ -16,13 +16,13 @@ import {
   CLUTTER_MEADOW_NEAR_IN, COVER_RAMP_CLASSES, clutterFadeEdges, clutterSeamEdges, coverBands, coverFarBand, createClutterCollector,
 } from "./clutterField.js";
 import { CLUTTER_CULLED, FAR_LOD, FOLIAGE_BY_CLASS, NEAR_LOD, cutOf, cutsFor, instanceMatrixFor, trampleFrame, writeFoliage } from "./clutterInstances.js";
-import { fadeBands, writeFadeBands, type FadeBands } from "./distanceFade.js";
-import type { CullPose } from "./grassCull.js";
+import { fadeBands, writeFadeBands, type FadeBands } from "@csarkosh/engine/game/distanceFade";
+import type { CullPose } from "@csarkosh/engine/game/grassCull";
 import {
   KEPT_FOLIAGE, KEPT_STRIDE, commitStaged, createInstanceList, createViewCut, cutList, ensureStaging, stageKept, type InstanceList,
-} from "./instanceLists.js";
-import { createKeptValues } from "./keptValues.js";
-import { sliceDue, type Slices } from "./syncJobs.js";
+} from "@csarkosh/engine/game/instanceLists";
+import { createKeptValues } from "@csarkosh/engine/game/keptValues";
+import { sliceDue, type Slices } from "@csarkosh/engine/game/syncJobs";
 
 /** One matrix's worth of scratch floats, so an instance's matrix can be
  * composed and copied into the kept values at any offset without a

@@ -1,4 +1,4 @@
-import type { LobbyState } from "../net/lobby.js";
+import type { LobbyState } from "@csarkosh/engine/net/lobby";
 
 /** Mirrors the server's MAX_PEERS; the count shows "n / 5". */
 export const ROSTER_MAX = 5;

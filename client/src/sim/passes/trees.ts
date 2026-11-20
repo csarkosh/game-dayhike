@@ -1,5 +1,5 @@
 import { registerPass } from "../chunk.js";
-import { CHUNK_SIZE } from "../forestConstants.js";
+import { CHUNK_SIZE } from "@csarkosh/engine/sim/forestConstants";
 import { elevationAt } from "../terrain.js";
 import { treesInRect, VEGETATION_TUNABLES, COHORT_LOG, LOG_HALF_LENGTH, LOG_SCALE_MAX, SPECIES_ALDER, logAxis } from "../vegetation.js";
 

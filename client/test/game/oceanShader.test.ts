@@ -23,17 +23,17 @@ import {
   oceanRingCell, resolvedShare, resolvedSlopeVariance, roughnessFor, roughnessFromVariance, slopeVariance, swellPixelKeep,
   undrawnSlopeVariance, whitecapThreshold, windFrame, windPixelKeep, windRingKeep, windSlopeLimit,
 } from "../../src/game/waterShading.js";
-import { WIND_DIR_PERIOD } from "../../src/game/windParams.js";
+import { WIND_DIR_PERIOD } from "@csarkosh/engine/game/windParams";
 import {
   LIP_BAND_M, LIP_BURST_S, LIP_FACE_IRIBARREN_HI, LIP_FACE_IRIBARREN_LO, LIP_FRONT, LIP_HIGHLIGHT, LIP_THROW, LIP_TILT,
   lipShadeAt, lipShadeFoam, lipShadeNormal, type LipShadeInput,
 } from "../../src/game/oceanBreaker.js";
-import { FFT_CASCADES, FFT_N, LOOP_FRAMES, LOOP_N, LOOP_SECONDS, LOOP_SIZE, WIND_SEA_HS_COEFF } from "../../src/game/oceanSpectrum.js";
+import { FFT_CASCADES, FFT_N, LOOP_FRAMES, LOOP_N, LOOP_SECONDS, LOOP_SIZE, WIND_SEA_HS_COEFF } from "@csarkosh/engine/game/oceanSpectrum";
 import {
   WIND_SEA_FETCH_COEFF, WIND_SEA_U_FLOOR, WIND_SEA_U_REF, fetchShare, windSeaShare, windSeaStateFor,
 } from "../../src/game/oceanWindSea.js";
-import { OCEAN_G, WEGGEL_GAMMA_MAX, WEGGEL_GAMMA_MIN, WHITECAP_MAX } from "../../src/game/oceanPhysics.js";
-import { SWELL_Q_SUM_MAX } from "../../src/game/oceanSwell.js";
+import { OCEAN_G, WEGGEL_GAMMA_MAX, WEGGEL_GAMMA_MIN, WHITECAP_MAX } from "@csarkosh/engine/game/oceanPhysics";
+import { SWELL_Q_SUM_MAX } from "@csarkosh/engine/game/oceanSwell";
 import {
   OCEAN_ATLAS_ROWS, OCEAN_COAST_STEP, OCEAN_D_MIN, OCEAN_D_STEP, OCEAN_DRY_DEPTH, OCEAN_ROW_BAY_FIRST,
   OCEAN_ROW_BAY_PROFILE, OCEAN_ROW_COAST, OCEAN_ROW_COMPONENTS, OCEAN_ROW_COVE_FIRST, OCEAN_ROW_COVE_PROFILE,
@@ -49,7 +49,7 @@ import {
   SWASH_COLUMNS, SWASH_COVE_END, SWASH_REST_EPS, SWASH_SHEET_MIN, SWASH_STRIDE, SwashTable, coveShareAt, sheetAt, sheetLiftAt, swashColumnAt,
   type SwashCove,
 } from "../../src/game/swashTable.js";
-import { SWASH_REACH_MAX_M } from "../../src/game/swashRunUp.js";
+import { SWASH_REACH_MAX_M } from "@csarkosh/engine/game/swashRunUp";
 import { WET_COVE_END } from "../../src/game/wetSurface.js";
 import { oceanComponentsFor } from "../../src/game/oceanFrame.js";
 import { babylonText } from "../helpers/babylonFixture.js";

@@ -5,7 +5,7 @@
  * and Babylon-free: `clipmap.ts` asks it per vertex beside `groundCover`.
  */
 import { marshWeightAt } from "../sim/features.js";
-import { lakeShoreInto, newLakeShore } from "../sim/lakeShape.js";
+import { lakeShoreInto, newLakeShore } from "@csarkosh/engine/sim/lakeShape";
 import { activeTerrainVariant } from "../sim/terrain.js";
 
 export type WaterGround = { bed: number; murk: number; marsh: number; cove: number };

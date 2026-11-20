@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { LOG_DROP_MAX, LOG_SINK, LOG_STATIONS, logStationOffsets, seatLog, trunkSeat } from "../../src/game/logSeat.js";
+import { LOG_DROP_MAX, LOG_SINK, LOG_STATIONS, logStationOffsets, seatLog, trunkSeat } from "@csarkosh/engine/game/logSeat";
 
 /** A trunk along X from -2 to 2: a square section of side `d` whose underside
  * is `y = a + b·x`, and a flare hanging `flare` under it at the -X end. */

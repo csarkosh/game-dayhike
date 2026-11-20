@@ -4,7 +4,7 @@ import {
   SLICE_READ_UNITS, SLICE_TARGET_MS, SYNC_BUDGET_MS, SYNC_PATIENT_MAX_MS, SYNC_PATIENT_WAIT_FRAMES, SYNC_LATE_BUDGET_MS, SYNC_LATE_FRAMES_MAX, SYNC_LATE_MS_MAX, SYNC_OVERDUE_MS,
   createCrossing, createSyncJobs, crossingAt, finish, nextCrossing, sliceDue, sortSlices, turn,
   type Slices,
-} from "../../src/game/syncJobs.js";
+} from "@csarkosh/engine/game/syncJobs";
 
 /** `list` sorted at once by `sortSlices`. */
 function sortSlicesDone(list: number[]): number[] {

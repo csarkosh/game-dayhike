@@ -12,12 +12,12 @@ import "../../src/sim/olympic.js";
 import { depenetrate } from "../../src/sim/collision.js";
 import { ENEMY_HALF, ENEMY_MIN_SPAWN_DISTANCE, PLAYER_HALF } from "../../src/sim/constants.js";
 import { firstPondWorld } from "./helpers/lakes.js";
-import { rayToShore } from "../../src/sim/lakeShape.js";
+import { rayToShore } from "@csarkosh/engine/sim/lakeShape";
 import type { BoxProvider } from "../../src/sim/boxSource.js";
 import type { Vec3 } from "../../src/sim/types.js";
 import { timeLimit } from "../helpers/timeLimit.js";
 import { graph } from "./helpers/stemGraph.js";
-import { seedFromToken } from "../../src/game/seed.js";
+import { seedFromToken } from "@csarkosh/engine/game/seed";
 import { createForest } from "../../src/sim/forest.js";
 import { createForestWorld, spawnPlayer } from "../../src/sim/world.js";
 

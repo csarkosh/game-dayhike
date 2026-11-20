@@ -50,9 +50,9 @@ import type { LakeSource } from "../../sim/terrain.js";
 import { mirrorGroundColour, type MirrorGroundSky } from "../mirrorGround.js";
 import {
   MIRROR_LIFT, createMirrorCadence, mirrorArmed, mirrorProjection, mirrorRead, mirrorScale, mirroredPose, poseView, type MirrorPose,
-} from "../mirrorPass.js";
-import type { WeatherParams } from "../weather.js";
-import type { FrameUploads } from "./frameUploads.js";
+} from "@csarkosh/engine/game/mirrorPass";
+import type { WeatherParams } from "@csarkosh/engine/game/weather";
+import type { FrameUploads } from "@csarkosh/engine/game/lite/frameUploads";
 import { panoramaGroundPlugin, type PanoramaGroundUniforms, type ReflectionRegistry } from "./lakePanorama.js";
 
 /** The picture's format: half floats, as the game's, for lit colour ahead of the display's curve. */

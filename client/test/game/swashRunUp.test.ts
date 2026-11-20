@@ -2,7 +2,7 @@ import { describe, it, expect } from "vitest";
 import {
   SWASH_DOWN_RATIO, SWASH_G, SWASH_REACH_MAX_M, SWASH_SINK, SWASH_THICK_K,
   frontAt, overlap, reachCapAt, runUpAlongFace, runUpVertical, thicknessAt, tUpOf,
-} from "../../src/game/swashRunUp.js";
+} from "@csarkosh/engine/game/swashRunUp";
 
 describe("swashRunUp", () => {
   it("holds its constants", () => {

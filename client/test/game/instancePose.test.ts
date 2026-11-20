@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   composeInto, quatAboutAxis, quatFromEuler, quatFromUnitVectors, quatMultiply, transformPoint, type Quat,
-} from "../../src/game/instancePose.js";
+} from "@csarkosh/engine/game/instancePose";
 import { babylonValues } from "../helpers/babylonFixture.js";
 
 const fresh = (): Quat => ({ x: 0, y: 0, z: 0, w: 1 });

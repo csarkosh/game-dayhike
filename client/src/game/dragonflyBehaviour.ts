@@ -22,8 +22,8 @@
  *
  * Renderer-only by design: nothing here may migrate into sim/.
  */
-import { hash3 } from "../sim/field.js";
-import type { DragonflyShare, WaterLifePresence } from "./waterLifeParams.js";
+import { hash3 } from "@csarkosh/engine/sim/field";
+import type { DragonflyShare, WaterLifePresence } from "@csarkosh/engine/game/waterLifeParams";
 import type { DarnerBeat, HoverPoint, WaterLifeLayout } from "./waterLifeField.js";
 
 export const KIND_DARNER = 0, KIND_SKIMMER = 1, KIND_DAMSELFLY = 2;

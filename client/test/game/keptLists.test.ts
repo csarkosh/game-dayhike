@@ -26,8 +26,8 @@ import { cutsFor, instanceMatrixFor, trampleFrame, writeFoliage } from "../../sr
 import { createClutterLists } from "../../src/game/clutterLists.js";
 import { DUFF_REACH, DUFF_REBUILD_CELL, createDuffCollector, type DuffTiers } from "../../src/game/duffField.js";
 import { createDuffLists } from "../../src/game/duffInstances.js";
-import type { InstanceList } from "../../src/game/instanceLists.js";
-import { finish, type Slices } from "../../src/game/syncJobs.js";
+import type { InstanceList } from "@csarkosh/engine/game/instanceLists";
+import { finish, type Slices } from "@csarkosh/engine/game/syncJobs";
 import { surfaceAlbedo } from "../../src/game/terrainSurface.js";
 import { timeLimit } from "../helpers/timeLimit.js";
 

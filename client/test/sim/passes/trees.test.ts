@@ -2,7 +2,7 @@ import { describe, it, expect } from "vitest";
 import "../../../src/sim/passes/index.js";
 import { generateChunk, registeredPasses } from "../../../src/sim/chunk.js";
 import { registryDigest } from "../../../src/sim/forest.js";
-import { CHUNK_SIZE } from "../../../src/sim/forestConstants.js";
+import { CHUNK_SIZE } from "@csarkosh/engine/sim/forestConstants";
 import { groundSpawn } from "../../../src/sim/spawn.js";
 import { createChunkGrid } from "../../../src/sim/chunkGrid.js";
 import { PLAYER_HALF } from "../../../src/sim/constants.js";

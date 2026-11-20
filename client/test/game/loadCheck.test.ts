@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
-import { REQUIRED_FEATURES, REQUIRED_LIMITS, TURNED_AWAY_REASONS, adapterVerdict, loadVerdict } from "../../src/game/loadCheck.js";
-import { gatherSignals, readSignals, type AdapterReading, type GpuSignals } from "../../src/game/gpuSignals.js";
+import { REQUIRED_FEATURES, REQUIRED_LIMITS, TURNED_AWAY_REASONS, adapterVerdict, loadVerdict } from "@csarkosh/engine/game/loadCheck";
+import { gatherSignals, readSignals, type AdapterReading, type GpuSignals } from "@csarkosh/engine/game/gpuSignals";
 
 /** WebGPU's default limits, as its specification gives them: what a device made with no limit raised has. */
 const DEFAULTS: Record<string, number> = {

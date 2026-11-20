@@ -54,24 +54,24 @@ import {
   clutterNearLodName, cutModel, seatDriftLogs,
 } from "../clutterInstances.js";
 import { createClutterLists, type ClutterBucket, type ClutterLists } from "../clutterLists.js";
-import type { FirstBuilds } from "../firstBuilds.js";
-import { FOLIAGE_CARD_CONTRAST, coverAlbedoTint } from "../coverAlbedoParams.js";
+import type { FirstBuilds } from "@csarkosh/engine/game/firstBuilds";
+import { FOLIAGE_CARD_CONTRAST, coverAlbedoTint } from "@csarkosh/engine/game/coverAlbedoParams";
 import { foliageLook, foliageMatched, type FoliageLook, type FoliageProfile } from "../foliageUniforms.js";
-import type { CullPose } from "../grassCull.js";
-import { HIGH_PLANT_COUNT, highPlantGeometry } from "../highPlantClump.js";
-import { ROCK_CUTS, rockPlanes, rockRelief } from "../rockRelief.js";
-import { SHRUB_CHARACTERS, shrubGeometry } from "../shrubClump.js";
-import type { Slices, SyncJobs } from "../syncJobs.js";
-import { WET_PLANT_COUNT, wetPlantGeometry } from "../wetPlantClump.js";
+import type { CullPose } from "@csarkosh/engine/game/grassCull";
+import { HIGH_PLANT_COUNT, highPlantGeometry } from "@csarkosh/engine/game/highPlantClump";
+import { ROCK_CUTS, rockPlanes, rockRelief } from "@csarkosh/engine/game/rockRelief";
+import { SHRUB_CHARACTERS, shrubGeometry } from "@csarkosh/engine/game/shrubClump";
+import type { Slices, SyncJobs } from "@csarkosh/engine/game/syncJobs";
+import { WET_PLANT_COUNT, wetPlantGeometry } from "@csarkosh/engine/game/wetPlantClump";
 import type { WetUniforms } from "../wetSurface.js";
 import { loadModel, type LoadedModel, type ModelPart } from "./forestModels.js";
 import {
   baseColourPlugin, oneSidedLightPlugin, surfaceWetPlugin, vegetationInstanceLayout, vegetationPlugin, type Vegetation,
 } from "./forestPlugins.js";
-import { DRAW_ORDER, createDrawOrders } from "./drawOrder.js";
-import type { FrameUploads } from "./frameUploads.js";
+import { DRAW_ORDER, createDrawOrders } from "@csarkosh/engine/game/lite/drawOrder";
+import type { FrameUploads } from "@csarkosh/engine/game/lite/frameUploads";
 import { listBytes, listMesh, showList, type ListMesh } from "./listMeshes.js";
-import { cellOrigin, createRebuilds } from "./rebuildJobs.js";
+import { cellOrigin, createRebuilds } from "@csarkosh/engine/game/lite/rebuildJobs";
 
 /** What showing the clutter's lists is expected to take (ms): every bucket handed its list, one step. The scheduler
  * learns the figure on the device it runs on (`syncJobs.ts`) and trusts it where it is more. */

@@ -1,5 +1,5 @@
 import { ICE_TIMEOUT_MS } from "../sim/constants.js";
-import type { Transport } from "./transport.js";
+import type { Transport } from "@csarkosh/engine/net/transport";
 import {
   EVENT_CHANNEL,
   EVENT_CHANNEL_INIT,
@@ -7,7 +7,7 @@ import {
   STATE_CHANNEL_INIT,
   createDataChannelTransport,
 } from "./channels.js";
-import type { SignalingClient } from "./signaling.js";
+import type { SignalingClient } from "@csarkosh/engine/net/signaling";
 
 // STUN only. TURN is a deliberate non-goal for this milestone.
 const ICE_SERVERS: RTCIceServer[] = [

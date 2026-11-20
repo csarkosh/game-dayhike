@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import type { Rgb } from "../../src/game/colour.js";
+import type { Rgb } from "@csarkosh/engine/game/colour";
 import {
   classifySurface,
   DUFF_FLOOR_MAX,

@@ -12,8 +12,8 @@ import {
   resolveTier,
   writeAutoRecord,
   writeChoice,
-} from "../../src/game/tierChoice.js";
-import { DETECT_VERSION, autoTier, withGovernorDrop, type AutoRecord } from "../../src/game/quality.js";
+} from "@csarkosh/engine/game/tierChoice";
+import { DETECT_VERSION, autoTier, withGovernorDrop, type AutoRecord } from "@csarkosh/engine/game/quality";
 
 function memoryStorage(): Storage {
   const map = new Map<string, string>();

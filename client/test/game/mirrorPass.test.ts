@@ -3,8 +3,8 @@ import {
   MIRROR_EVERY, MIRROR_FOV_MARGIN, MIRROR_LIFT, MIRROR_MAX_HEIGHT, MIRROR_MAX_WIDTH, MIRROR_MOTION_SMEAR, MIRROR_MOTION_SMOOTH, MIRROR_MOTION_STEP_MAX_M,
   MIRROR_REACH_M, MIRROR_SCALE, createMirrorCadence, mirrorArmed, mirrorMotion, mirrorProjection, mirrorRead, mirrorScale, mirrorTargetSize, mirroredPose, poseView,
   type MirrorPose,
-} from "../../src/game/mirrorPass.js";
-import { obliqueProjectionReversed, reflectionMatrix } from "../../src/game/mirrorView.js";
+} from "@csarkosh/engine/game/mirrorPass";
+import { obliqueProjectionReversed, reflectionMatrix } from "@csarkosh/engine/game/mirrorView";
 
 /** A perspective projection whose depth runs from 1 at `near` to 0 at `far`, for a view whose z runs forward. */
 function reversedPerspective(fov: number, aspect: number, near: number, far: number): Float32Array {

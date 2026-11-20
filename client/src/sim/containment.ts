@@ -5,7 +5,7 @@ import { activeTerrainVariant } from "./terrain.js";
 import { PLAYER_HALF } from "./constants.js";
 import {
   lakeShelfWidth, lakeShoreInto, newLakeShore, TARN_SHELF_HEAD, TARN_SHELF_OUTLET_SHARE, type LakeShape,
-} from "./lakeShape.js";
+} from "@csarkosh/engine/sim/lakeShape";
 
 /**
  * The invisible wall at the road: the one place the design admits one

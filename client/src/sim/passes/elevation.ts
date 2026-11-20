@@ -1,7 +1,7 @@
 import { ROCK_SURFACE_TUNABLES } from "../rockSurface.js";
 import { CELLS_PER_CHUNK, cellCenter, quantize, registerPass } from "../chunk.js";
 import { activeTerrainVariant } from "../terrain.js";
-import { HEIGHT_QUANTUM, TERRAIN_CELL } from "../forestConstants.js";
+import { HEIGHT_QUANTUM, TERRAIN_CELL } from "@csarkosh/engine/sim/forestConstants";
 
 /**
  * Pass 1. Samples the active terrain variant's continuous field at each cell

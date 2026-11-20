@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
-import { hash3 } from "../../src/sim/field.js";
+import { hash3 } from "@csarkosh/engine/sim/field";
 import { BUTTERFLY_CUE_SPEED, PHASE_CUE, PHASE_REST } from "../../src/game/wildlifeBehaviour.js";
 import {
   SPECIES_BUTTERFLY, SPECIES_COUNT, SPECIES_DEER, SPECIES_EAGLE, SPECIES_ELK, SPECIES_GULL, SPECIES_RABBIT,

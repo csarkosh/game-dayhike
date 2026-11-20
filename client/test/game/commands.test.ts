@@ -318,7 +318,7 @@ describe("time command", () => {
     // Two defaults that must agree: `commands.ts` omits `time` from the URL at
     // this value, and the light starts there (`skyWait.ts`). If they drift, a fresh URL
     // and an explicit `time 12` produce different scenes.
-    const { DEFAULT_HOUR } = await import("../../src/game/skyWait.js");
+    const { DEFAULT_HOUR } = await import("@csarkosh/engine/game/skyWait");
     expect(findCommand("time")?.defaultValue).toBe(DEFAULT_HOUR);
   });
 

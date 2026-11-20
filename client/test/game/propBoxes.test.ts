@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { ChunkGrid } from "../../src/sim/chunkGrid.js";
-import { CHUNK_SIZE } from "../../src/sim/forestConstants.js";
+import { CHUNK_SIZE } from "@csarkosh/engine/sim/forestConstants";
 import {
   PROP_COLOURS, PROP_DRAWN_ELSEWHERE, PROP_MESH_RADIUS_CHUNKS, PROP_ROUGHNESS, brushBoxes, chunkPropBoxes, propBoxGeometry, propBoxesGeometry, propChunk,
   propChunkKey, propColour, propWindow,

@@ -10,7 +10,7 @@ import {
 import { TRAIL_GRID_CAP } from "../../src/sim/trailGrid.js";
 import type { TerrainSample } from "../../src/sim/terrain.js";
 import { stadiumShape } from "../helpers/lakeShapes.js";
-import { lakeShoreInto, newLakeShore } from "../../src/sim/lakeShape.js";
+import { lakeShoreInto, newLakeShore } from "@csarkosh/engine/sim/lakeShape";
 
 const flat: TerrainSample = { h: 100, dx: 0, dz: 0 };
 const tilted = (x: number, z: number): TerrainSample => ({ h: 50 + 0.1 * x - 0.05 * z, dx: 0.1, dz: -0.05 });

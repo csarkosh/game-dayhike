@@ -39,9 +39,9 @@ import { modelUrl } from "../assetUrls.js";
 import { creatureRoleGroups, resolveCreatureAssets, type CreatureAsset } from "../creatureAssets.js";
 import { stepClip, type ClipClock } from "../entityPoses.js";
 import { expectModels } from "../loadReport.js";
-import type { FirstBuilds } from "../firstBuilds.js";
-import { composeInto, type Quat } from "../instancePose.js";
-import { writeClipParams, type BakedClip } from "../skinInstances.js";
+import type { FirstBuilds } from "@csarkosh/engine/game/firstBuilds";
+import { composeInto, type Quat } from "@csarkosh/engine/game/instancePose";
+import { writeClipParams, type BakedClip } from "@csarkosh/engine/game/skinInstances";
 import type { ClipRole, PlayerPoint, WildlifeEvent } from "../wildlifeBehaviour.js";
 import type { MatchState, View } from "../wildlifeDirector.js";
 import { FIRST_BIRD_SPECIES, SPECIES_BUTTERFLY, SPECIES_COUNT } from "../wildlifeField.js";
@@ -49,11 +49,11 @@ import {
   BIRD_ASSET, BIRD_PERCHED_ASSET, BUTTERFLY_COLOURWAYS, SPECIES_ASSET, birdBucketOmega, butterflyGeometry, createWildlifeScene,
   type BirdBucket, type ViewPlane, type WildlifeScene,
 } from "../wildlifeScene.js";
-import type { WeatherParams } from "../weather.js";
-import { DRAW_ORDER, createDrawOrders } from "./drawOrder.js";
+import type { WeatherParams } from "@csarkosh/engine/game/weather";
+import { DRAW_ORDER, createDrawOrders } from "@csarkosh/engine/game/lite/drawOrder";
 import { loadModel } from "./forestModels.js";
 import { oneSidedLightPlugin } from "./forestPlugins.js";
-import type { FrameUploads } from "./frameUploads.js";
+import type { FrameUploads } from "@csarkosh/engine/game/lite/frameUploads";
 import { MATRIX_BYTES } from "./listMeshes.js";
 import { loadSkinnedModel, type SkinClock, type SkinnedModel } from "./skinnedModels.js";
 import { WING_AMP_AT, WING_COLOURWAY_AT, WING_PHASE_AT, wingPlugin } from "./wingPlugin.js";

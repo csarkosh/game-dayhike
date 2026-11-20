@@ -2,13 +2,13 @@ import type { MaterialPlugin, PluginUniformBlock } from "@babylonjs/lite";
 import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 import { COVE_END_BLEND, COVE_FACE_GRADE } from "../../../src/sim/olympic.js";
-import { SWASH_FACE_LIFT_M, SWASH_REACH_MAX_M } from "../../../src/game/swashRunUp.js";
+import { SWASH_FACE_LIFT_M, SWASH_REACH_MAX_M } from "@csarkosh/engine/game/swashRunUp";
 import { SWASH_COLUMNS, SWASH_STRIDE } from "../../../src/game/swashTable.js";
 import { emptyMaterialGradeUniforms } from "../../../src/game/materialGrade.js";
 import "../../../src/sim/passes/index.js";
 import { atmosphereUniforms, emptyAtmosphereUniforms, type AtmosphereRecord } from "../../../src/game/atmosphereParams.js";
 import { noCloud } from "../../../src/game/cloudParams.js";
-import { emptyFadeUniforms, fadeUniforms } from "../../../src/game/distanceFade.js";
+import { emptyFadeUniforms, fadeUniforms } from "@csarkosh/engine/game/distanceFade";
 import { FOLIAGE_PLAYERS, FOLIAGE_PROFILES, emptyFoliageUniforms, foliageLook, foliageUniforms, setFoliageWind } from "../../../src/game/foliageUniforms.js";
 import { atmospherePlugin } from "../../../src/game/lite/atmospherePlugin.js";
 import { FADE_FIELDS, FOLIAGE_FIELDS, surfaceWetPlugin, vegetationPlugin, type Vegetation } from "../../../src/game/lite/forestPlugins.js";
@@ -18,7 +18,7 @@ import {
 } from "../../../src/game/lite/frameBlock.js";
 import { TERRAIN_FIELDS, emptyTerrainMaterialUniforms, terrainPlugin, terrainWetPlugin } from "../../../src/game/lite/terrainPlugins.js";
 import { WET_FIELDS } from "../../../src/game/lite/wetWgsl.js";
-import { emptyMoteUniforms } from "../../../src/game/moteField.js";
+import { emptyMoteUniforms } from "@csarkosh/engine/game/moteField";
 import { emptyRainUniforms } from "../../../src/game/rainField.js";
 import { emptySplashUniforms } from "../../../src/game/splashField.js";
 import { emptyTerrainUniforms, terrainUniforms } from "../../../src/game/terrainUniforms.js";
@@ -27,8 +27,8 @@ import { emptyWaterFrameUniforms } from "../../../src/game/waterSurface.js";
 import {
   WET_BAND, WET_COVE_END, WET_DRY_S, WET_NO_COVE, WET_SWASH_VECS, emptyWetUniforms, setWetCove, setWetSwash, setWetWeather, wetUniforms,
 } from "../../../src/game/wetSurface.js";
-import { windRecordUnder } from "../../../src/game/windParams.js";
-import { WEATHER_PRESETS } from "../../../src/game/weather.js";
+import { windRecordUnder } from "@csarkosh/engine/game/windParams";
+import { WEATHER_PRESETS } from "@csarkosh/engine/game/weather";
 import { readUniform, standInTexture } from "./pluginFixture.js";
 
 /** The floats a field of `type` is, and the boundary it sits on, as WGSL lays a uniform struct out. */

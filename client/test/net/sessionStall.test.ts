@@ -2,7 +2,7 @@ import { describe, it, expect } from "vitest";
 import { createHostSession } from "../../src/net/hostSession.js";
 import { createClientSession, type SessionEnd } from "../../src/net/clientSession.js";
 import { FakeNetwork } from "../../src/net/fakeNetwork.js";
-import { PERFECT_NETWORK, type NetworkConditions } from "../../src/net/transport.js";
+import { PERFECT_NETWORK, type NetworkConditions } from "@csarkosh/engine/net/transport";
 import { parseLevel } from "../../src/sim/level.js";
 import { TICK_DT } from "../../src/sim/constants.js";
 import type { InputCommand } from "../../src/sim/types.js";

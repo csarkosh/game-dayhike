@@ -3,8 +3,8 @@ import {
   atmosphereUnder, atmosphereUniforms, emptyAtmosphereUniforms, fogGradientAt, fogGradientUnder, heightFogAmount, GRADIENT_MID_STEP, GRADIENT_STEPS,
 } from "../../src/game/atmosphereParams.js";
 import { cloudFor, cloudUniforms, noCloud } from "../../src/game/cloudParams.js";
-import { WEATHER_PRESETS, airColourUnder, fogDensityUnder } from "../../src/game/weather.js";
-import { skyStateFor } from "../../src/game/skyState.js";
+import { WEATHER_PRESETS, airColourUnder, fogDensityUnder } from "@csarkosh/engine/game/weather";
+import { skyStateFor } from "@csarkosh/engine/game/skyState";
 import { skyFixture } from "./helpers/skyFixture.js";
 
 const CLEAR = WEATHER_PRESETS.clear;

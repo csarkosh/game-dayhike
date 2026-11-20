@@ -6,14 +6,14 @@ import {
   buildSkyTables,
   buildSlice,
   type SkySlice,
-} from "../../src/game/skyModel.js";
+} from "@csarkosh/engine/game/skyModel";
 import {
   NOON_ALTITUDE_DEG,
   buildSkyTableSync,
   createSkyTable,
   sliceBracket,
   sliceOrder,
-} from "../../src/game/skyTable.js";
+} from "@csarkosh/engine/game/skyTable";
 import { timeLimit } from "../helpers/timeLimit.js";
 
 /** A slice whose every texel holds `v`, every ring value v + 1, and whose derived colours are v + 2 to v + 4. */

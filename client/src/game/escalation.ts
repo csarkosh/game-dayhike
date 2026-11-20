@@ -18,8 +18,8 @@ import type { BoxProvider } from "../sim/boxSource.js";
 import type { GroundField } from "../sim/ground.js";
 import { hasLineOfSight } from "../sim/ai.js";
 import { PLAYER_EYE_OFFSET } from "../sim/constants.js";
-import { WEATHER_PRESETS, lerpWeather, type WeatherParams } from "./weather.js";
-import { clamp01 } from "./colour.js";
+import { WEATHER_PRESETS, lerpWeather, type WeatherParams } from "@csarkosh/engine/game/weather";
+import { clamp01 } from "@csarkosh/engine/game/colour";
 import { actsUnder } from "../sim/acts.js";
 export { actsUnder, DUSK_AT, NIGHT_SPAN, WET_AT, WET_SPAN } from "../sim/acts.js";
 

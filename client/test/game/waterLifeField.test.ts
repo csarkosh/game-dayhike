@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import "../../src/sim/olympic.js";
 import { lakeOf } from "../sim/helpers/lakes.js";
 import { marshWeightAt } from "../../src/sim/features.js";
-import { lakeShoreInto, newLakeShore } from "../../src/sim/lakeShape.js";
+import { lakeShoreInto, newLakeShore } from "@csarkosh/engine/sim/lakeShape";
 import { elevationAt, type LakeSource } from "../../src/sim/terrain.js";
 import { COHORT_SNAG, treesInRect } from "../../src/sim/vegetation.js";
 import { CLUTTER_BUSH, CLUTTER_DRIFTLOG, CLUTTER_REED, CLUTTER_SHRUB, clutterInRect } from "../../src/sim/clutter.js";

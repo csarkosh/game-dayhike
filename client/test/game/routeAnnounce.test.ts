@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { createRouteAnnouncer } from "../../src/game/routeAnnounce.js";
+import { createRouteAnnouncer } from "@csarkosh/engine/game/routeAnnounce";
 
 /** A paint scheduler the test fires by hand, standing in for `afterNextPaint`. */
 function manualPaint() {

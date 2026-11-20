@@ -13,13 +13,13 @@
  * Pure and Babylon-free; `lite/terrainMeshes.ts` hands the output to the GPU.
  */
 import { groundCover } from "../sim/clutter.js";
-import { FACE_SLOPE_HI } from "../sim/faceRelief.js";
+import { FACE_SLOPE_HI } from "@csarkosh/engine/sim/faceRelief";
 import { elevationSampleAt } from "../sim/terrain.js";
 import { forestDensity } from "../sim/vegetation.js";
 import { classifySurface } from "./terrainSurface.js";
 import { waterGroundAt } from "./waterGround.js";
-import type { QualityTier } from "./quality.js";
-import { finish, sliceDue, type Slices } from "./syncJobs.js";
+import type { QualityTier } from "@csarkosh/engine/game/quality";
+import { finish, sliceDue, type Slices } from "@csarkosh/engine/game/syncJobs";
 
 export const RING_CELLS = 128;
 export const RING_COUNT = 7;

@@ -5,11 +5,11 @@ import { BASE_SPACING_BY_TIER, RING_COUNT, createRingSamples } from "../../src/g
 import { WATER_RING_COUNT, createWaterRingSamples, type WaterGeometry } from "../../src/game/water.js";
 import { BED_GRID, bakeBed, createBedGrid } from "../../src/game/bedHeight.js";
 import { oceanFieldFor } from "../../src/game/oceanWaves.js";
-import { SWELL_COMPONENTS, SWELL_COMPONENTS_LOW } from "../../src/game/oceanSwell.js";
+import { SWELL_COMPONENTS, SWELL_COMPONENTS_LOW } from "@csarkosh/engine/game/oceanSwell";
 import {
   fittingBed, fittingFeatureTable, fittingLake, fittingOcean, fittingRings, fittingWaterBump, fittingWaterFirst, fittingWaterRings, type PreparedLake, type PreparedScene,
 } from "../../src/game/preparedScene.js";
-import type { QualityTier } from "../../src/game/quality.js";
+import type { QualityTier } from "@csarkosh/engine/game/quality";
 import { FEATURE_TEX_ROWS, FEATURE_TEX_WIDTH } from "../../src/game/featureTable.js";
 import { stadiumLake } from "../helpers/lakeShapes.js";
 import { timeLimit } from "../helpers/timeLimit.js";

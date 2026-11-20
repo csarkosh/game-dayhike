@@ -1,7 +1,7 @@
 import { expect } from "vitest";
 import "../../src/sim/passes/index.js";
 import { generateChunk } from "../../src/sim/chunk.js";
-import { CHUNK_SIZE } from "../../src/sim/forestConstants.js";
+import { CHUNK_SIZE } from "@csarkosh/engine/sim/forestConstants";
 import { setActiveTerrainVariant, DEFAULT_TERRAIN_VARIANT, terrainVariant, activeTerrainVariant } from "../../src/sim/terrain.js";
 import {
   BOARD_BOX_HALF, CAR_HALF, bedGap, boardBoxes, boardSite, carSite, trailEntrance, trailheadPlaces,

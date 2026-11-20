@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import "../../../src/sim/passes/index.js";
 import { generateChunk, registeredPasses } from "../../../src/sim/chunk.js";
-import { CHUNK_SIZE } from "../../../src/sim/forestConstants.js";
+import { CHUNK_SIZE } from "@csarkosh/engine/sim/forestConstants";
 import { clutterInRect, CLUTTER_BOULDER } from "../../../src/sim/clutter.js";
 import {
   BOULDER_A_BASE_HALF,

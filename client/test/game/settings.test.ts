@@ -1,10 +1,10 @@
 import { describe, it, expect, afterEach, vi } from "vitest";
 import { CAUTION_LIVE, TIER_CHOICES, listOpen, renderSettings, settingsModel, type SettingsInput } from "../../src/game/settings.js";
 import { autoPick } from "../../src/game/frameProbe.js";
-import type { GpuSignals } from "../../src/game/gpuSignals.js";
+import type { GpuSignals } from "@csarkosh/engine/game/gpuSignals";
 import { renderLanding } from "../../src/game/landing.js";
 import { landingModel } from "../../src/game/landingModel.js";
-import type { TierChoice } from "../../src/game/tierChoice.js";
+import type { TierChoice } from "@csarkosh/engine/game/tierChoice";
 import { StandInElement, StandInOption, StandInSelect, asHtml, installStandInDom } from "./helpers/standInDom.js";
 
 const MODES = (selected: string) => [

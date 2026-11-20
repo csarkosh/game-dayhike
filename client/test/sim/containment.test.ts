@@ -7,7 +7,7 @@ import { spawnHollow } from "../../src/sim/hollow.js";
 import { createForest, GEN_VERSION } from "../../src/sim/forest.js";
 import { createForestWorld, spawnPlayer, tickWorld } from "../../src/sim/world.js";
 import { activeTerrainVariant, elevationAt, type LakeSource } from "../../src/sim/terrain.js";
-import { lakeShelfWidth, lakeShoreInto, newLakeShore, rayToShore } from "../../src/sim/lakeShape.js";
+import { lakeShelfWidth, lakeShoreInto, newLakeShore, rayToShore } from "@csarkosh/engine/sim/lakeShape";
 import { stadiumShape } from "../helpers/lakeShapes.js";
 import { LOBBY_SEEDS } from "./trailGateSeeds.js";
 import { CAR_HALF, CAR_ROAD_U } from "../../src/sim/trailhead.js";

@@ -161,7 +161,7 @@ Rejected:
 
 ## 4. The shore
 
-Lives in a new `client/src/sim/lakeShape.ts`; `features.ts` and every
+Lives in a new `engine/src/sim/lakeShape.ts`; `features.ts` and every
 consumer import it.
 
 ### 4.1 The shape record

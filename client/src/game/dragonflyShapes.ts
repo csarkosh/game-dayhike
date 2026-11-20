@@ -5,10 +5,10 @@
  * phase and amplitude, a colourway). `dragonflyBehaviour.ts` decides where
  * every unit is; `lite/dragonflyMeshes.ts` draws these.
  */
-import { hash3 } from "../sim/field.js";
+import { hash3 } from "@csarkosh/engine/sim/field";
 import type { Dragonflies } from "./dragonflyBehaviour.js";
-import { composeInto, quatFromEuler, type Quat } from "./instancePose.js";
-import { WING_TIME_WRAP } from "./wingParams.js";
+import { composeInto, quatFromEuler, type Quat } from "@csarkosh/engine/game/instancePose";
+import { WING_TIME_WRAP } from "@csarkosh/engine/game/wingParams";
 
 /** Body length (m) by kind: darner, skimmer, damselfly. */
 export const DRAGONFLY_LENGTH: readonly [number, number, number] = [0.07, 0.045, 0.03];

@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import "../../src/sim/passes/index.js";
 import { elevationAt, setActiveTerrainVariant } from "../../src/sim/terrain.js";
 import { SPRINT_SPEED, SIM_TICK_HZ } from "../../src/sim/constants.js";
-import { WEATHER_PRESETS } from "../../src/game/weather.js";
+import { WEATHER_PRESETS } from "@csarkosh/engine/game/weather";
 import { treeInCell, TREE_CELL, COHORT_GIANT } from "../../src/sim/vegetation.js";
 import {
   SPECIES_ELK, SPECIES_RABBIT, SPECIES_SQUIRREL, SPECIES_RAVEN_ROOST, SPECIES_GULL, SPECIES_EAGLE, SPECIES_BUTTERFLY,

@@ -1,8 +1,8 @@
 import { describe, expect, it } from "vitest";
 import type { LakeSource } from "../../src/sim/terrain.js";
 import { stadiumLake } from "../helpers/lakeShapes.js";
-import { WEATHER_PRESETS, type WeatherParams } from "../../src/game/weather.js";
-import { waterLifePresenceUnder, type DragonflyShare, type WaterLifePresence } from "../../src/game/waterLifeParams.js";
+import { WEATHER_PRESETS, type WeatherParams } from "@csarkosh/engine/game/weather";
+import { waterLifePresenceUnder, type DragonflyShare, type WaterLifePresence } from "@csarkosh/engine/game/waterLifeParams";
 import type { DarnerBeat, Perch, WaterLifeLayout } from "../../src/game/waterLifeField.js";
 import {
   createDragonflyBehaviour, KIND_DAMSELFLY, KIND_DARNER, KIND_SKIMMER, type Dragonflies,

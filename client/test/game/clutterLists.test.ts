@@ -7,9 +7,9 @@ import {
 } from "../../src/game/clutterField.js";
 import { CLUTTER_MODEL_IDS, FAR_LOD, FOLIAGE_BY_CLASS, NEAR_LOD, cutOf, cutsFor, instanceMatrixFor, trampleFrame, writeFoliage } from "../../src/game/clutterInstances.js";
 import { clutterBucketFade, createClutterLists, type ClutterBucket } from "../../src/game/clutterLists.js";
-import { FADE_NONE_IN } from "../../src/game/distanceFade.js";
-import type { CullPose } from "../../src/game/grassCull.js";
-import { finish } from "../../src/game/syncJobs.js";
+import { FADE_NONE_IN } from "@csarkosh/engine/game/distanceFade";
+import type { CullPose } from "@csarkosh/engine/game/grassCull";
+import { finish } from "@csarkosh/engine/game/syncJobs";
 import { runBySlices } from "../helpers/sliceRun.js";
 import { timeLimit } from "../helpers/timeLimit.js";
 

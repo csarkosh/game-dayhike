@@ -38,7 +38,7 @@ import { TRAIL_CLEAR } from "../../src/sim/trail.js";
 import type { TerrainSample } from "../../src/sim/terrain.js";
 import { bowlFor } from "../../src/sim/olympic.js";
 import { MEADOW_RIM } from "../../src/sim/features.js";
-import { rayToShore } from "../../src/sim/lakeShape.js";
+import { rayToShore } from "@csarkosh/engine/sim/lakeShape";
 
 const SEED = 0x5eed;
 const flat = (h: number, g = 0.1): TerrainSample => ({ h, dx: g, dz: 0 });

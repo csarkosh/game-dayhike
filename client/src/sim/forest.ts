@@ -2,7 +2,7 @@ import "./passes/index.js";
 import { createChunkGrid, type ChunkGrid } from "./chunkGrid.js";
 import { generateChunkWith, registeredPasses, type Pass } from "./chunk.js";
 import { activeTerrainVariantName, elevationAt } from "./terrain.js";
-import { HEIGHT_QUANTUM } from "./forestConstants.js";
+import { HEIGHT_QUANTUM } from "@csarkosh/engine/sim/forestConstants";
 
 const FNV_PRIME = 0x01000193;
 const FNV_OFFSET = 0x811c9dc5;

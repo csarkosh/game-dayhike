@@ -1,8 +1,8 @@
 import { describe, expect, it } from "vitest";
-import { NIGHT_SKY } from "../../src/game/sky.js";
-import { SKY_DOME_SIZE, createSkyTableUploads, emptySkyDomeUniforms, skyDomeUniforms } from "../../src/game/skyDomeParams.js";
-import { skyStateFor } from "../../src/game/skyState.js";
-import { WEATHER_PRESETS } from "../../src/game/weather.js";
+import { NIGHT_SKY } from "@csarkosh/engine/game/sky";
+import { SKY_DOME_SIZE, createSkyTableUploads, emptySkyDomeUniforms, skyDomeUniforms } from "@csarkosh/engine/game/skyDomeParams";
+import { skyStateFor } from "@csarkosh/engine/game/skyState";
+import { WEATHER_PRESETS } from "@csarkosh/engine/game/weather";
 import { babylonText, babylonValues } from "../helpers/babylonFixture.js";
 import { skyFixture } from "./helpers/skyFixture.js";
 

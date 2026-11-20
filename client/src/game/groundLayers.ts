@@ -39,7 +39,7 @@ import rockR from "../../assets/textures/ground.rock.rah.webp?url";
 import sandR from "../../assets/textures/ground.sand.rah.webp?url";
 import pebbleR from "../../assets/textures/ground.pebble.rah.webp?url";
 import asphaltR from "../../assets/textures/ground.asphalt.rah.webp?url";
-import { fetchRetried } from "./fetchRetry.js";
+import { fetchRetried } from "@csarkosh/engine/game/fetchRetry";
 
 export const GROUND_LAYERS = 6;
 export const GROUND_MAP_SIZE = 512;

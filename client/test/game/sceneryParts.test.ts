@@ -1,7 +1,7 @@
 import { describe, it, expect } from "vitest";
 import { readFileSync } from "node:fs";
 import { BOARD_FACE } from "../../src/game/boardFace.js";
-import { glbParts } from "../../src/game/glbParts.js";
+import { glbParts } from "@csarkosh/engine/game/glbParts";
 import {
   BOARD_FACE_LIFT, BODY_OUTPUT, BODY_STAND_IN, CAB_PARTS, CAB_SKY, FILM_CAR_OUTPUT, TRAILHEAD_CAR_OUTPUT, TRAILHEAD_KIOSK_OUTPUT, boardFaceCorners, boardYaw,
   carYaw,

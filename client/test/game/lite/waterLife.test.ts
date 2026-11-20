@@ -1,10 +1,10 @@
 import { describe, expect, it } from "vitest";
 import { emptyDragonflyList, fillDragonflyList } from "../../../src/game/dragonflyShapes.js";
 import type { Dragonflies } from "../../../src/game/dragonflyBehaviour.js";
-import { sphereInPlanes } from "../../../src/game/lakeSeen.js";
-import { cameraAxes, restAxes, restPlanes, viewPlanes } from "../../../src/game/lite/cameraPose.js";
+import { sphereInPlanes } from "@csarkosh/engine/game/lakeSeen";
+import { cameraAxes, restAxes, restPlanes, viewPlanes } from "@csarkosh/engine/game/lite/cameraPose";
 import { DRAGONFLY_SPHERE_M, dragonflyMatrices, unitInPlanes, vertexAlphaPlugin } from "../../../src/game/lite/dragonflyMeshes.js";
-import { SEE_THROUGH_ORDER } from "../../../src/game/lite/drawOrder.js";
+import { SEE_THROUGH_ORDER } from "@csarkosh/engine/game/lite/drawOrder";
 import { MIDGE_WGSL } from "../../../src/game/lite/midgeMeshes.js";
 import { WING_AMP_AT, WING_COLOURWAY_AT, WING_PHASE_AT } from "../../../src/game/lite/wingPlugin.js";
 import { MIDGE_HEAD_FLOATS, swarmSphere } from "../../../src/game/midgeLook.js";

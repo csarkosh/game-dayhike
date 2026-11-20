@@ -7,13 +7,13 @@ import {
   atlasRead, boreArrivals, coastRead, crestAt, oceanFieldFor, oceanFieldFromState, shelterAt, swellAt, swellAtInto,
   swellBreakInto, swellNormal, swellPhases, swellScratch, type OceanField,
 } from "../../src/game/oceanWaves.js";
-import { seedFromToken } from "../../src/game/seed.js";
+import { seedFromToken } from "@csarkosh/engine/game/seed";
 import {
   OCEAN_COAST_STEP, OCEAN_D_MIN, OCEAN_DRY_DEPTH, OCEAN_PHASE_BLEND, OCEAN_ROW_BAY_FIRST, OCEAN_ROW_COAST,
   OCEAN_ROW_COVE_FIRST, OCEAN_ROW_COVE_PROFILE, coastProfilesFor, writeCoastRow,
 } from "../../src/game/oceanTables.js";
-import { SWELL_Q_SUM_MAX, type SwellState } from "../../src/game/oceanSwell.js";
-import { WEGGEL_GAMMA_MAX, breakerIndex } from "../../src/game/oceanPhysics.js";
+import { SWELL_Q_SUM_MAX, type SwellState } from "@csarkosh/engine/game/oceanSwell";
+import { WEGGEL_GAMMA_MAX, breakerIndex } from "@csarkosh/engine/game/oceanPhysics";
 import { LOBBY_SEEDS } from "../sim/trailGateSeeds.js";
 import { timeLimit } from "../helpers/timeLimit.js";
 

@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { whenWorldIn } from "../../src/game/worldWait.js";
+import { whenWorldIn } from "@csarkosh/engine/game/worldWait";
 
 describe("a renderer's wait for its world", () => {
   beforeEach(() => vi.useFakeTimers());

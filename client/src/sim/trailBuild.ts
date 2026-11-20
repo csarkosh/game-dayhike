@@ -22,7 +22,7 @@
  *
  * sim/ determinism rules: no trig, no Math.pow, no `**`, no hypot.
  */
-import { hash3 } from "./field.js";
+import { hash3 } from "@csarkosh/engine/sim/field";
 import {
   BOWL_U_MIN, BOWL_U_MAX, BOWL_Z_HALF, TRAIL_Z_ANCHOR, TRAILHEAD_U, TRAILHEAD_RADIUS, TRAILHEAD_FADE,
 } from "./bowl.js";
@@ -41,7 +41,7 @@ import {
   type BuildFrame, type Heights, type Attempt, type GraphState, type StemSample,
 } from "./trailPlan.js";
 export type { BuildFrame } from "./trailPlan.js";
-import { lakeShoreInto, newLakeShore, rayToShore, valleyLakeShape, LAKE_OUTLET_REACH, type LakeShape } from "./lakeShape.js";
+import { lakeShoreInto, newLakeShore, rayToShore, valleyLakeShape, LAKE_OUTLET_REACH, type LakeShape } from "@csarkosh/engine/sim/lakeShape";
 import { buildStrands, buildRungs, stemPose, type Braid } from "./trailBraid.js";
 import { homeDistances, forksOf } from "./trailRoute.js";
 import {

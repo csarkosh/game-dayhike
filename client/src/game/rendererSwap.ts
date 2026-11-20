@@ -26,10 +26,10 @@
  * (`Renderer.ownWatch`) is put on only once its rung stands (`watch`): a
  * rung that failed is never watched.
  */
-import type { WatchEngine } from "./engineWatch.js";
-import type { QualityTier } from "./quality.js";
+import type { WatchEngine } from "@csarkosh/engine/game/engineWatch";
+import type { QualityTier } from "@csarkosh/engine/game/quality";
 import type { Renderer } from "./rendererTypes.js";
-import type { TierChoice } from "./tierChoice.js";
+import type { TierChoice } from "@csarkosh/engine/game/tierChoice";
 
 /**
  * How long the Settings Apply's "Applying…" ground waits for the new scene

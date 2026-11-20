@@ -4,7 +4,7 @@ import { describe, it, expect } from "vitest";
 import { createHostSession } from "../../src/net/hostSession.js";
 import { classifyLevelMismatch, createClientSession, type SessionEnd } from "../../src/net/clientSession.js";
 import { FakeNetwork } from "../../src/net/fakeNetwork.js";
-import { PERFECT_NETWORK, type NetworkConditions } from "../../src/net/transport.js";
+import { PERFECT_NETWORK, type NetworkConditions } from "@csarkosh/engine/net/transport";
 import { parseLevel } from "../../src/sim/level.js";
 import { createForest } from "../../src/sim/forest.js";
 import { MAX_UNACKED_INPUTS, PLAYER_MAX_HEALTH, TICK_DT } from "../../src/sim/constants.js";

@@ -1,4 +1,4 @@
-import type { NetworkConditions, StateHandler, Transport } from "./transport.js";
+import type { NetworkConditions, StateHandler, Transport } from "@csarkosh/engine/net/transport";
 import { nextRandom } from "../sim/types.js";
 
 export const STATE_CHANNEL = "state";

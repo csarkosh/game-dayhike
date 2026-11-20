@@ -4,7 +4,7 @@ import {
   isNewer,
   parseLatest,
   formatSize,
-} from "../../src/net/desktopRelease.js";
+} from "@csarkosh/engine/net/desktopRelease";
 
 const LATEST = {
   version: "1.2.0",

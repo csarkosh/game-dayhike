@@ -1,5 +1,5 @@
 import type { Brush } from "./level.js";
-import { CHUNK_SIZE, HEIGHT_QUANTUM, TERRAIN_CELL } from "./forestConstants.js";
+import { CHUNK_SIZE, HEIGHT_QUANTUM, TERRAIN_CELL } from "@csarkosh/engine/sim/forestConstants";
 
 export const CELLS_PER_CHUNK = CHUNK_SIZE / TERRAIN_CELL;
 

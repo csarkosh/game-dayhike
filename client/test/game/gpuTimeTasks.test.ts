@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
-import { gpuTimeLine } from "../../src/game/gpuTimeReport.js";
-import { taskTimeReport } from "../../src/game/gpuTimeTasks.js";
+import { gpuTimeLine } from "@csarkosh/engine/game/gpuTimeReport";
+import { taskTimeReport } from "@csarkosh/engine/game/gpuTimeTasks";
 
 const base = { build: "dev", renderWidth: 1470, renderHeight: 956 };
 

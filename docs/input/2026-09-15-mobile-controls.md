@@ -282,10 +282,10 @@ New:
 
 Changed:
 
-- `client/src/game/platform.ts`: `isTouchDevice`.
+- `engine/src/game/platform.ts`: `isTouchDevice`.
 - `client/src/game/input.ts`: engaged state, `onEngagedChange`, `engage`/`disengage`, the
   `TouchSource` merged into `sample()` and `sprinting`.
-- `client/src/game/freecam.ts`, `client/src/app.ts`: read `engaged`; `app.ts` wires the touch
+- `engine/src/game/freecam.ts`, `client/src/app.ts`: read `engaged`; `app.ts` wires the touch
   layer, the prompt, `registerInteractables`, and the visibility-change disengage.
 - `client/src/game/renderer.ts`: `project`.
 - `client/src/net/clientSession.ts`: `readonly world`.

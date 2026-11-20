@@ -94,7 +94,7 @@ import { BOARD_FACE_BIAS, BOARD_FACE_ROUGHNESS, drawBoard, loadBoardImage, type 
 import { TURNED_PART_NAMES, TURN_ROW_FLOATS, partNumbers, poseVertices, restTurns, turnPoint, turnSlots, writeTurns, type PartsPose, type TurnSlot, type VertexRun } from "../carParts.js";
 import { CAR_SHADOW_BIAS, CAR_SHADOW_HALF, carShadowGrid } from "../carShadow.js";
 import { TAIL_LAMP_COLOUR } from "../endScene.js";
-import { quatFromEuler, type Quat } from "../instancePose.js";
+import { quatFromEuler, type Quat } from "@csarkosh/engine/game/instancePose";
 import { PROP_ROUGHNESS, propBoxGeometry, propColour, type PropBox } from "../propBoxes.js";
 import type { Renderer } from "../rendererTypes.js";
 import type { CarHandle } from "../scenePlay.js";
@@ -112,10 +112,10 @@ import {
 } from "../signParts.js";
 import { emptyWetUniforms, type WetUniforms } from "../wetSurface.js";
 import { sphereInView } from "./capMesh.js";
-import type { ViewFrustumPlane } from "./cameraPose.js";
-import { DRAW_ORDER, SEE_THROUGH_ORDER, createDrawOrders } from "./drawOrder.js";
+import type { ViewFrustumPlane } from "@csarkosh/engine/game/lite/cameraPose";
+import { DRAW_ORDER, SEE_THROUGH_ORDER, createDrawOrders } from "@csarkosh/engine/game/lite/drawOrder";
 import { baseColourPlugin, surfaceWetPlugin } from "./forestPlugins.js";
-import type { FrameUploads } from "./frameUploads.js";
+import type { FrameUploads } from "@csarkosh/engine/game/lite/frameUploads";
 import { loadSceneActor, type SceneActor } from "./sceneActor.js";
 import {
   CAR_TURNS_BLOCK, CAR_TURNS_ROWS, carTurnsFields, carTurnsPlugin, dress, farthestFirst, listPanes, loadSceneryModel, partBytes, partMesh, placeMatrix, readsTangents,

@@ -7,7 +7,7 @@ import "../sim/passes/index.js";
 import { DEFAULT_TERRAIN_VARIANT, terrainVariantNames } from "../sim/terrain.js";
 import { registerTerrainVariants } from "./commands.js";
 import { lastEntry, parseScript, splitEntries } from "./script.js";
-import { seedFromToken } from "./seed.js";
+import { seedFromToken } from "@csarkosh/engine/game/seed";
 
 /**
  * The seed and the terrain variant of the hike at `token` whose address has

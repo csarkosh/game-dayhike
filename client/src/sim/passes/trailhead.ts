@@ -1,5 +1,5 @@
 import { registerPass } from "../chunk.js";
-import { CHUNK_SIZE } from "../forestConstants.js";
+import { CHUNK_SIZE } from "@csarkosh/engine/sim/forestConstants";
 import { activeTerrainVariant, elevationSampleAt } from "../terrain.js";
 import type { Vec3 } from "../types.js";
 import { SHORE_STRIP_TUNABLES } from "../shoreStrip.js";

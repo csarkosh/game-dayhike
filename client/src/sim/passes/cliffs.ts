@@ -1,5 +1,5 @@
 import { registerPass, type Chunk } from "../chunk.js";
-import { CHUNK_SIZE } from "../forestConstants.js";
+import { CHUNK_SIZE } from "@csarkosh/engine/sim/forestConstants";
 import type { Aabb } from "../level.js";
 import type { ClutterInstance } from "../clutter.js";
 import { activeTerrainVariantName, elevationSampleAt } from "../terrain.js";

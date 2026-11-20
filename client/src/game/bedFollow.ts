@@ -9,7 +9,7 @@ import {
   BED_GRID, bakeBed, bakeRows, bedNeedsRebake, bedOutsideSquare, bedSquareHasWater, beginBake, createBedGrid,
   type BedBake, type BedGrid, type BedPond,
 } from "./bedHeight.js";
-import type { QualityTier } from "./quality.js";
+import type { QualityTier } from "@csarkosh/engine/game/quality";
 
 /** Rows of the bed grid baked per frame: a whole 256² grid measured 260 to 295 ms. */
 export const BED_ROWS_PER_FRAME = 1;

@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
-import { createFirstBuilds } from "../../../src/game/firstBuilds.js";
-import { cellOrigin, createRebuilds, type Rebuilds } from "../../../src/game/lite/rebuildJobs.js";
-import { SYNC_LATE_FRAMES_MAX, createSyncJobs, type Slices, type SyncJobs } from "../../../src/game/syncJobs.js";
+import { createFirstBuilds } from "@csarkosh/engine/game/firstBuilds";
+import { cellOrigin, createRebuilds, type Rebuilds } from "@csarkosh/engine/game/lite/rebuildJobs";
+import { SYNC_LATE_FRAMES_MAX, createSyncJobs, type Slices, type SyncJobs } from "@csarkosh/engine/game/syncJobs";
 
 const CELL = 3;
 

@@ -1,5 +1,18 @@
 import tseslint from "typescript-eslint";
 
+const SIM = [
+  { group: ["@babylonjs/*"], message: "sim/ must not depend on Babylon." },
+  { group: ["**/net/**", "**/game/**"], message: "sim/ must not depend on net/ or game/." },
+];
+const NET = [
+  { group: ["@babylonjs/*"], message: "net/ must not depend on Babylon." },
+  { group: ["**/game/**"], message: "net/ must not depend on game/." },
+];
+const ENGINE = [
+  { group: ["**/client/**", "**/server/**"], message: "The engine must not depend on a game or on the server." },
+  { group: ["@csarkosh/engine", "@csarkosh/engine/**"], message: "Inside the engine, name a module by its relative path." },
+];
+
 export default tseslint.config(
   // `.claude/worktrees/` holds whole second checkouts of this repository. Each
   // carries its own tsconfig.json, which gives typescript-eslint a second
@@ -17,24 +30,25 @@ export default tseslint.config(
   ...tseslint.configs.recommended,
   {
     files: ["client/src/sim/**/*.ts"],
-    rules: {
-      "no-restricted-imports": ["error", {
-        patterns: [
-          { group: ["@babylonjs/*"], message: "sim/ must not depend on Babylon." },
-          { group: ["**/net/**", "**/game/**"], message: "sim/ must not depend on net/ or game/." },
-        ],
-      }],
-    },
+    rules: { "no-restricted-imports": ["error", { patterns: [...SIM] }] },
   },
   {
     files: ["client/src/net/**/*.ts"],
-    rules: {
-      "no-restricted-imports": ["error", {
-        patterns: [
-          { group: ["@babylonjs/*"], message: "net/ must not depend on Babylon." },
-          { group: ["**/game/**"], message: "net/ must not depend on game/." },
-        ],
-      }],
-    },
+    rules: { "no-restricted-imports": ["error", { patterns: [...NET] }] },
+  },
+  // The engine is no game's: nothing in it reaches the client or the server, by a path or by a
+  // package's name, and it names its own modules by their paths, never as the package a game
+  // imports. A file matched twice takes the last rule whole, so the engine's layers repeat it.
+  {
+    files: ["engine/**/*.ts"],
+    rules: { "no-restricted-imports": ["error", { patterns: [...ENGINE] }] },
+  },
+  {
+    files: ["engine/src/sim/**/*.ts"],
+    rules: { "no-restricted-imports": ["error", { patterns: [...ENGINE, ...SIM] }] },
+  },
+  {
+    files: ["engine/src/net/**/*.ts"],
+    rules: { "no-restricted-imports": ["error", { patterns: [...ENGINE, ...NET] }] },
   },
 );

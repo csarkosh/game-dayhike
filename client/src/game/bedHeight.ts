@@ -15,8 +15,8 @@
  * true, then uses it as the spare for the next bake.
  */
 import { elevationAt } from "../sim/terrain.js";
-import { lakeShoreInto, newLakeShore, type LakeShape } from "../sim/lakeShape.js";
-import type { QualityTier } from "./quality.js";
+import { lakeShoreInto, newLakeShore, type LakeShape } from "@csarkosh/engine/sim/lakeShape";
+import type { QualityTier } from "@csarkosh/engine/game/quality";
 
 export type BedGrid = {
   texels: number;

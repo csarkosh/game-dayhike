@@ -15,9 +15,9 @@
 import { CLUTTER_SINK, instanceMatrixFor, trampleFrame, writeFoliage } from "./clutterInstances.js";
 import { DUFF_CHARACTER_COUNT } from "./duffClump.js";
 import { createDuffCollector, type DuffCell, type DuffTiers } from "./duffField.js";
-import { KEPT_FOLIAGE, KEPT_STRIDE, createInstanceList, ensureCapacity, writeKept, type InstanceList } from "./instanceLists.js";
-import { createKeptValues } from "./keptValues.js";
-import type { Slices } from "./syncJobs.js";
+import { KEPT_FOLIAGE, KEPT_STRIDE, createInstanceList, ensureCapacity, writeKept, type InstanceList } from "@csarkosh/engine/game/instanceLists";
+import { createKeptValues } from "@csarkosh/engine/game/keptValues";
+import type { Slices } from "@csarkosh/engine/game/syncJobs";
 
 /** The distance tiers a clump is drawn in: near, far. */
 export const DUFF_TIER_COUNT = 2;

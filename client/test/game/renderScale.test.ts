@@ -10,7 +10,7 @@ import {
   RENDER_SCALE_WINDOW_S,
   createRenderScale,
   type RenderScale,
-} from "../../src/game/renderScale.js";
+} from "@csarkosh/engine/game/renderScale";
 
 /** Feeds `seconds` of play at `hz`; how many times the scale changed. */
 function play(r: RenderScale, hz: number, seconds: number): number {

@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { actionForSignalingError } from "../../src/net/signalingPolicy.js";
+import { actionForSignalingError } from "@csarkosh/engine/net/signalingPolicy";
 
 describe("actionForSignalingError", () => {
   it("ends the session when the host is gone before peers connect", () => {

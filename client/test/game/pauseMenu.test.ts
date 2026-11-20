@@ -3,8 +3,8 @@ import {
   PAUSE_START, createPauseMenu, createPlayGate, pauseMenuModel, pauseStep, type PauseSettings, type PauseState,
 } from "../../src/game/pauseMenu.js";
 import { settingsModel } from "../../src/game/settings.js";
-import type { TierChoice } from "../../src/game/tierChoice.js";
-import { whenWorldIn } from "../../src/game/worldWait.js";
+import type { TierChoice } from "@csarkosh/engine/game/tierChoice";
+import { whenWorldIn } from "@csarkosh/engine/game/worldWait";
 import { StandInSelect, asHtml, installStandInDom } from "./helpers/standInDom.js";
 
 describe("pauseMenuModel", () => {

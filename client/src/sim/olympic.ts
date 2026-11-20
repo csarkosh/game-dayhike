@@ -18,7 +18,7 @@
  * harness needs no special pleading at band edges. sim/ determinism rules:
  * no trig, no Math.pow, no `**`, no hypot.
  */
-import { fbm2d, hash3 } from "./field.js";
+import { fbm2d, hash3 } from "@csarkosh/engine/sim/field";
 import { DENSE_VARIANT_TUNABLES, denseSample } from "./montane.js";
 import {
   ROAD_WINDOW_FRACTION, ROAD_WOBBLE, ROAD_WOBBLE_WAVELENGTH, ROAD_WOBBLE_OCTAVES,

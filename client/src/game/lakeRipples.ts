@@ -14,7 +14,7 @@
  * whole number of cycles in the wrap, and the paws' drift is crossed over the
  * wrap's last life (`lakePaw`), so the wrap moves nothing.
  */
-import { WIND_DIR_PERIOD, WIND_TIME_WRAP, gustAt, type WindRecord } from "./windParams.js";
+import { WIND_DIR_PERIOD, WIND_TIME_WRAP, gustAt, type WindRecord } from "@csarkosh/engine/game/windParams";
 import { midgeHash } from "./midgeMotion.js";
 
 /** The paws' features (m), their drift downwind (m/s, the gusts' own), their soft edge (m) and a patch's life (s). */

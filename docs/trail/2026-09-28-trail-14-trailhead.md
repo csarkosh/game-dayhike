@@ -228,8 +228,8 @@ to it was.
 
 | File | Change |
 | --- | --- |
-| `client/src/sim/facing.ts` | New. The trig-free facing, moved out of the search module. |
-| `client/src/sim/boxGap.ts` | New. Distances in the ground plane between a point, a segment and a box, for the car's slide. |
+| `engine/src/sim/facing.ts` | New. The trig-free facing, moved out of the search module. |
+| `engine/src/sim/boxGap.ts` | New. Distances in the ground plane between a point, a segment and a box, for the car's slide. |
 | `client/src/sim/passes/trailhead.ts` | The car's place along the road and its slide (§3.1); `carSite`. |
 | `client/src/sim/spawn.ts` | `trailheadSpawn(graph, car)`: S and the facing (§3.2). |
 | `client/src/sim/world.ts` | `pickSpawn` centres on S; `spawnPlayer` sets the yaw. |

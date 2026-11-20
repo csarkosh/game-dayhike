@@ -16,7 +16,7 @@
  * fragment is a soft round light, its colour times its level (the vertex
  * colour's alpha), added to what lies behind.
  */
-import type { Rgb } from "./colour.js";
+import type { Rgb } from "@csarkosh/engine/game/colour";
 import { presenceOf, type CrowdFigure } from "./crowdField.js";
 import { HOLLOW_EYE_COLOR, HOLLOW_FIGURE_M } from "./hollowLook.js";
 

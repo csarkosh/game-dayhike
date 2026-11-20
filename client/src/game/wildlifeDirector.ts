@@ -11,7 +11,7 @@
  * to ask "how high is the terrain here" — production hands in the real
  * heightfield, a test hands in a flat plane or a wall.
  */
-import { hash3 } from "../sim/field.js";
+import { hash3 } from "@csarkosh/engine/sim/field";
 import { SIM_TICK_HZ } from "../sim/constants.js";
 import { DAWN_DUSK_WINDOW, DAWN_HOUR, DUSK_HOUR, PHASE_CUE, cueSpeedFor } from "./wildlifeBehaviour.js";
 import {

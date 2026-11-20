@@ -10,7 +10,7 @@ import {
 } from "../sim/world.js";
 import type { Forest } from "../sim/forest.js";
 import { INTERP_DELAY_MS, MAX_UNACKED_INPUTS, TELEPORT_M } from "../sim/constants.js";
-import type { Transport } from "./transport.js";
+import type { Transport } from "@csarkosh/engine/net/transport";
 import {
   MessageType,
   PROTOCOL_VERSION,

@@ -4,8 +4,8 @@ import {
   WIND_SEA_U_PER_WIND, WIND_SEA_U_REF, createSeaWindLag, fetchShare, hourFactor, lagSeaWind, loopTimeAfter, sharedSeconds, windSeaAtSpeed, windSeaShare,
   windSeaStateFor,
 } from "../../src/game/oceanWindSea.js";
-import { LOOP_SECONDS } from "../../src/game/oceanSpectrum.js";
-import { whitecapCoverage } from "../../src/game/oceanPhysics.js";
+import { LOOP_SECONDS } from "@csarkosh/engine/game/oceanSpectrum";
+import { whitecapCoverage } from "@csarkosh/engine/game/oceanPhysics";
 import { FixedStepAccumulator } from "../../src/game/loop.js";
 import { TICK_DT } from "../../src/sim/constants.js";
 

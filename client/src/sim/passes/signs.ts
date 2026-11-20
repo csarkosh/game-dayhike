@@ -1,5 +1,5 @@
 import { registerPass } from "../chunk.js";
-import { CHUNK_SIZE } from "../forestConstants.js";
+import { CHUNK_SIZE } from "@csarkosh/engine/sim/forestConstants";
 import { activeTerrainVariant, elevationSampleAt } from "../terrain.js";
 import { SIGN_POST_HALF, SIGN_POST_OFFSET, signPostSites } from "../signs.js";
 

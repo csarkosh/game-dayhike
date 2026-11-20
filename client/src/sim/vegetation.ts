@@ -10,14 +10,14 @@
  * sim/ determinism rules apply: no trig, no Math.pow, no `**`, no hypot.
  * Math.sqrt is IEEE-exact and allowed.
  */
-import { fbm2, hash3 } from "./field.js";
+import { fbm2, hash3 } from "@csarkosh/engine/sim/field";
 import { activeTerrainVariant, elevationSampleAt, type TerrainSample } from "./terrain.js";
 import { TRAIL_CLEAR } from "./trail.js";
 import { shoreStrip, STRIP_FOREST_FLOOR, STRIP_LIFT } from "./shoreStrip.js";
-import { facingDir } from "./facing.js";
-import { seepOffset } from "./seep.js";
+import { facingDir } from "@csarkosh/engine/sim/facing";
+import { seepOffset } from "@csarkosh/engine/sim/seep";
 import { POND_TREE_MARGIN } from "./features.js";
-import { lakeShoreInto, newLakeShore } from "./lakeShape.js";
+import { lakeShoreInto, newLakeShore } from "@csarkosh/engine/sim/lakeShape";
 
 /** Scratch for the alders' read of a lake's shore. */
 const ALDER_SHORE = newLakeShore();

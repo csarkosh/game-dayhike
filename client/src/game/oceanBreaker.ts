@@ -21,7 +21,7 @@
  * events the surf's sound plays, from the swell's own sum at the shared clock,
  * so every peer sees the same wave plunge.
  */
-import { OCEAN_G } from "./oceanPhysics.js";
+import { OCEAN_G } from "@csarkosh/engine/game/oceanPhysics";
 import {
   OCEAN_BREAK_FULL, atlasRead, coastRead, swellAt, swellAtInto, swellBreakInto, swellScratch, type OceanField,
 } from "./oceanWaves.js";

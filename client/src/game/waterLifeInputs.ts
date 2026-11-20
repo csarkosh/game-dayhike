@@ -5,8 +5,8 @@
  * Whoever steps the life (`waterLifeScene.ts`) fills its frame from these.
  */
 import type { Vec3 } from "../sim/types.js";
-import { luma } from "./colour.js";
-import type { SkyState } from "./skyState.js";
+import { luma } from "@csarkosh/engine/game/colour";
+import type { SkyState } from "@csarkosh/engine/game/skyState";
 import type { WaterLifeSound } from "./waterLifeAudio.js";
 
 /** `value` and every object it holds, frozen. */

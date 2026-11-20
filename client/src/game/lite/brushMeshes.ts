@@ -20,8 +20,8 @@ import {
   type EngineContext, type MaterialPlugin, type Mesh, type PbrMaterialProps, type SceneContext,
 } from "@babylonjs/lite";
 import { PROP_ROUGHNESS, propBoxesGeometry, propColour, type PropBox } from "../propBoxes.js";
-import { DRAW_ORDER, createDrawOrders } from "./drawOrder.js";
-import type { FrameUploads } from "./frameUploads.js";
+import { DRAW_ORDER, createDrawOrders } from "@csarkosh/engine/game/lite/drawOrder";
+import type { FrameUploads } from "@csarkosh/engine/game/lite/frameUploads";
 
 export type LiteBrushes = {
   /** The brushes' colour and roughness under the weather's wet: written where either has moved. True where it wrote. */

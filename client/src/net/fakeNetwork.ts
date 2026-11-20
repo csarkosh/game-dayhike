@@ -1,5 +1,5 @@
 import { nextRandom } from "../sim/types.js";
-import type { NetworkConditions, StateHandler, Transport } from "./transport.js";
+import type { NetworkConditions, StateHandler, Transport } from "@csarkosh/engine/net/transport";
 
 type Delivery = { at: number; order: number; deliver: () => void };
 

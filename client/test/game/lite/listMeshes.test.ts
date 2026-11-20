@@ -1,7 +1,7 @@
 import { setThinInstanceCount, setThinInstances, type Mesh } from "@babylonjs/lite";
 import { describe, expect, it } from "vitest";
-import type { ListBuffers } from "../../../src/game/instanceLists.js";
-import { createFrameUploads } from "../../../src/game/lite/frameUploads.js";
+import type { ListBuffers } from "@csarkosh/engine/game/instanceLists";
+import { createFrameUploads } from "@csarkosh/engine/game/lite/frameUploads";
 import { KEPT_INSTANCES, MATRIX_BYTES, listBytes, sameFloats, showList, writeListData, type ListMesh } from "../../../src/game/lite/listMeshes.js";
 import type { VegetationInstanceLayout } from "../../../src/game/lite/forestPlugins.js";
 

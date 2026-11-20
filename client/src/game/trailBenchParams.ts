@@ -1,5 +1,5 @@
-import { latticeHash, valueNoise2 } from "./groundHexParams.js";
-import { luma, type Rgb } from "./colour.js";
+import { latticeHash, valueNoise2 } from "@csarkosh/engine/game/groundHexParams";
+import { luma, type Rgb } from "@csarkosh/engine/game/colour";
 import { DUFF_FLOOR_MAX, NEEDLE_BED } from "./terrainSurface.js";
 import { TRAIL_BED_HALF } from "../sim/trail.js";
 

@@ -1,7 +1,7 @@
 // client/test/game/oceanLoopBake.test.ts
 import { describe, it, expect, vi } from "vitest";
-import { LOOP_FRAMES, LOOP_N, LOOP_SECONDS, LOOP_SIZE, cascadeBands, windSeaH0 } from "../../src/game/oceanSpectrum.js";
-import { WIND_SEA_CHOPPINESS, windSeaFields } from "../../src/game/oceanFft.js";
+import { LOOP_FRAMES, LOOP_N, LOOP_SECONDS, LOOP_SIZE, cascadeBands, windSeaH0 } from "@csarkosh/engine/game/oceanSpectrum";
+import { WIND_SEA_CHOPPINESS, windSeaFields } from "@csarkosh/engine/game/oceanFft";
 import { windSeaStateFor } from "../../src/game/oceanWindSea.js";
 import {
   bakeWindSeaLoop, fromHalf, loopFrame, loopSpectrum, loopStats, toHalf, windSeaBandStats, type LoopReply,

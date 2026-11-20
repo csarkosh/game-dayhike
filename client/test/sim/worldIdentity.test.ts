@@ -7,7 +7,7 @@ import { createForest } from "../../src/sim/forest.js";
 import { trailheadStart } from "../../src/sim/spawn.js";
 import { activeTerrainVariant, elevationSampleAt } from "../../src/sim/terrain.js";
 import { route } from "../../src/sim/trailRoute.js";
-import { seedFromToken } from "../../src/game/seed.js";
+import { seedFromToken } from "@csarkosh/engine/game/seed";
 
 /**
  * A world as it stood on 2026-11-19, by its digest: its id, where a hiker arrives, its ground

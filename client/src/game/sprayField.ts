@@ -28,10 +28,10 @@
  */
 import { LIP_SPEED_MAX, LIP_SPEED_MIN, type LipTracker } from "./oceanBreaker.js";
 import { WIND_SEA_U_PER_WIND } from "./oceanWindSea.js";
-import { SWASH_G } from "./swashRunUp.js";
+import { SWASH_G } from "@csarkosh/engine/game/swashRunUp";
 import type { SwashCove } from "./swashTable.js";
 import { OCEAN_FOAM_ALBEDO } from "./waterShading.js";
-import type { WindRecord } from "./windParams.js";
+import type { WindRecord } from "@csarkosh/engine/game/windParams";
 
 /** Sprites a burst. */
 export const SURF_SPRAY_PER_BURST = 60;

@@ -4,12 +4,12 @@ import { lakeOf } from "../sim/helpers/lakes.js";
 import type { Dragonflies } from "../../src/game/dragonflyBehaviour.js";
 import { MIDGE_TABLE_FLOATS, type MidgeFrame } from "../../src/game/midgeLook.js";
 import { HEAD_ROW0, MIDGE_SWARMS_MAX } from "../../src/game/midgeMotion.js";
-import { skyStateFor } from "../../src/game/skyState.js";
+import { skyStateFor } from "@csarkosh/engine/game/skyState";
 import { SILENT_WATER_LIFE, createPlayerSlots, pixelAtOneMetre, skyLumaOf } from "../../src/game/waterLifeInputs.js";
 import { waterLifeLayout } from "../../src/game/waterLifeField.js";
 import { createWaterLifeScene, type WaterLifeDraws, type WaterLifeFrame } from "../../src/game/waterLifeScene.js";
-import { WEATHER_PRESETS, type WeatherParams } from "../../src/game/weather.js";
-import { windRecordUnder } from "../../src/game/windParams.js";
+import { WEATHER_PRESETS, type WeatherParams } from "@csarkosh/engine/game/weather";
+import { windRecordUnder } from "@csarkosh/engine/game/windParams";
 import { skyFixture } from "./helpers/skyFixture.js";
 import { timeLimit } from "../helpers/timeLimit.js";
 

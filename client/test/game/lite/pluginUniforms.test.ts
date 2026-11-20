@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { uniformFields, wgslType, writeUniforms } from "../../../src/game/lite/pluginUniforms.js";
+import { uniformFields, wgslType, writeUniforms } from "@csarkosh/engine/game/lite/pluginUniforms";
 
 describe("a material plugin's uniforms from a record by name", () => {
   it("declares one field a name, in the record's order, its type by how many floats it has", () => {

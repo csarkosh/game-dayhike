@@ -12,7 +12,7 @@
  * elk: a rabbit on a cliff face or a squirrel's tree standing on the beach are
  * wrong for the same reason an elk herd there is.
  */
-import { hash3 } from "../sim/field.js";
+import { hash3 } from "@csarkosh/engine/sim/field";
 import { activeTerrainVariant, elevationSampleAt, type TerrainSample } from "../sim/terrain.js";
 import { COHORT_GIANT, COHORT_SNAG, forestDensity, TREE_CELL, treeInCell } from "../sim/vegetation.js";
 import {

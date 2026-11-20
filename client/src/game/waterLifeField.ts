@@ -1,6 +1,6 @@
-import { hash3 } from "../sim/field.js";
+import { hash3 } from "@csarkosh/engine/sim/field";
 import { marshWeightAt } from "../sim/features.js";
-import { lakeOutline, lakeShelfWidth, lakeShoreInto, newLakeShore, rayToShore, type LakeShape } from "../sim/lakeShape.js";
+import { lakeOutline, lakeShelfWidth, lakeShoreInto, newLakeShore, rayToShore, type LakeShape } from "@csarkosh/engine/sim/lakeShape";
 import { elevationAt, type LakeSource } from "../sim/terrain.js";
 import { COHORT_SNAG, treesInRect } from "../sim/vegetation.js";
 import {

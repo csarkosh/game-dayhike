@@ -8,11 +8,11 @@
  * into sim/ or a tunables registry.
  */
 import type { AtmosphereRecord } from "./atmosphereParams.js";
-import { clamp01 } from "./colour.js";
-import type { QualityTier } from "./quality.js";
+import { clamp01 } from "@csarkosh/engine/game/colour";
+import type { QualityTier } from "@csarkosh/engine/game/quality";
 import type { RainLamp } from "./rainField.js";
-import { RAIN_LAMP_GAIN, RAIN_MAP, SPLASH_TIERS, rainSeeds, splashCountUnder, splashFold } from "./rainParams.js";
-import type { WeatherParams } from "./weather.js";
+import { RAIN_LAMP_GAIN, RAIN_MAP, SPLASH_TIERS, rainSeeds, splashCountUnder, splashFold } from "@csarkosh/engine/game/rainParams";
+import type { WeatherParams } from "@csarkosh/engine/game/weather";
 
 /** The seed buffer's hash seed: the splashes' layout is the same on every load. */
 export const SPLASH_SEED = 0x53706c73;

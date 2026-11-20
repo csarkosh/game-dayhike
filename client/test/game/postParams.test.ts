@@ -3,7 +3,7 @@ import {
   postFeaturesFor,
   PAINT_JOINT_SHARPNESS, PAINT_RADIUS_HIGH, PAINT_RADIUS_MEDIUM, PAINT_REACH, PAINT_ROWS, PAINT_SCALE, paintRadiusFor, paintTargetSize, paintTexelRadius,
   TAA_BLEND, TAA_BLEND_STILL, TAA_CLIP, TAA_MOVING_PX, TAA_NEAR, TAA_SAMPLES, TAA_SHARPEN, halton, taaBlendFor, taaCameraPixels, taaJitter,
-} from "../../src/game/postParams.js";
+} from "@csarkosh/engine/game/postParams";
 
 describe("postFeaturesFor", () => {
   it("high gets the pipeline, halation, the lens and the temporal anti-aliasing, medium the pipeline, the lens and the anti-aliasing, low nothing", () => {

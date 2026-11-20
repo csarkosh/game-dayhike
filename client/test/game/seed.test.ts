@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { seedFromToken } from "../../src/game/seed.js";
+import { seedFromToken } from "@csarkosh/engine/game/seed";
 
 describe("seedFromToken", () => {
   it("is stable for the same token", () => {

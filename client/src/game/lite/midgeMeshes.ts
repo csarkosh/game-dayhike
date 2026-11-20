@@ -29,16 +29,16 @@ import {
   setThinInstances, updateStorageBuffer,
   type EngineContext, type Mesh, type SceneContext,
 } from "@babylonjs/lite";
-import { sphereInPlanes, type ViewPlane } from "../lakeSeen.js";
+import { sphereInPlanes, type ViewPlane } from "@csarkosh/engine/game/lakeSeen";
 import { MIDGE_FRAME_FLOATS, midgeSlots, packMidgeFrame, swarmSphere, type MidgeFrame } from "../midgeLook.js";
 import { MIDGE_SWARMS_MAX, SWARM_ROW_FLOATS } from "../midgeMotion.js";
-import { SEE_THROUGH_ORDER } from "./drawOrder.js";
-import type { FrameUploads } from "./frameUploads.js";
+import { SEE_THROUGH_ORDER } from "@csarkosh/engine/game/lite/drawOrder";
+import type { FrameUploads } from "@csarkosh/engine/game/lite/frameUploads";
 import dataSource from "../shaders/midge/data.wgsl?raw";
 import varyingsSource from "../shaders/midge/varyings.wgsl?raw";
 import midgeVertexSource from "../shaders/midge/midge.vertex.wgsl?raw";
 import midgeFragmentSource from "../shaders/midge/midge.fragment.wgsl?raw";
-import { fill, wgsl } from "../shaders/shaderText.js";
+import { fill, wgsl } from "@csarkosh/engine/game/shaders/shaderText";
 
 /** The frame's floats as the stages read them: `packMidgeFrame`'s five vec4s, then the table. */
 const DATA = fill(wgsl(dataSource), { swarmVecs: (SWARM_ROW_FLOATS * MIDGE_SWARMS_MAX) / 4 });

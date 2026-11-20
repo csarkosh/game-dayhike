@@ -1,5 +1,5 @@
 import { describe, it, expect, vi } from "vitest";
-import type { QualityTier } from "../../src/game/quality.js";
+import type { QualityTier } from "@csarkosh/engine/game/quality";
 import type { Renderer } from "../../src/game/rendererTypes.js";
 import {
   APPLY_SWAP_READY_MAX_MS,

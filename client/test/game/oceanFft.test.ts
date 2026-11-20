@@ -2,8 +2,8 @@ import { describe, it, expect } from "vitest";
 import {
   WIND_SEA_CHOPPINESS, fftWaveIndex, fftInverseLine, fft2dInverse, dft2dInverse, evolveSpectrum, windSeaFields,
   type SpectrumH0,
-} from "../../src/game/oceanFft.js";
-import { cascadeBands, windSeaH0 } from "../../src/game/oceanSpectrum.js";
+} from "@csarkosh/engine/game/oceanFft";
+import { cascadeBands, windSeaH0 } from "@csarkosh/engine/game/oceanSpectrum";
 import { timeLimit } from "../helpers/timeLimit.js";
 
 /** Deterministic numbers in [−1, 1) (mulberry32). */

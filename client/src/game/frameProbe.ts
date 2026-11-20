@@ -34,8 +34,8 @@
  * nothing written.
  */
 import { elevationAt } from "../sim/terrain.js";
-import { CLASS_TIERS, classifyGpu, gpuIdentity, type GpuClass } from "./gpuClass.js";
-import type { GpuSignals } from "./gpuSignals.js";
+import { CLASS_TIERS, classifyGpu, gpuIdentity, type GpuClass } from "@csarkosh/engine/game/gpuClass";
+import type { GpuSignals } from "@csarkosh/engine/game/gpuSignals";
 import {
   autoTier,
   holdingVerdict,
@@ -47,8 +47,8 @@ import {
   type ProbeReading,
   type QualityTier,
   type VerdictEngine,
-} from "./quality.js";
-import { seedFromToken } from "./seed.js";
+} from "@csarkosh/engine/game/quality";
+import { seedFromToken } from "@csarkosh/engine/game/seed";
 import {
   parseProbeOverride,
   parseTierOverride,
@@ -57,7 +57,7 @@ import {
   writeAutoRecord,
   type TierChoice,
   type TierSource,
-} from "./tierChoice.js";
+} from "@csarkosh/engine/game/tierChoice";
 
 /** A tier holds at a mean interval up to this: the 60 Hz budget (16.67 ms)
  * plus 5 %, room for a timer's jitter and one garbage collection in 120

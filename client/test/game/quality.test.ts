@@ -20,9 +20,9 @@ import {
   type AutoVerdict,
   type Capabilities,
   type QualityTier,
-} from "../../src/game/quality.js";
-import { CLASS_TIERS, type GpuClass } from "../../src/game/gpuClass.js";
-import { AUTO_KEY, readAutoRecord } from "../../src/game/tierChoice.js";
+} from "@csarkosh/engine/game/quality";
+import { CLASS_TIERS, type GpuClass } from "@csarkosh/engine/game/gpuClass";
+import { AUTO_KEY, readAutoRecord } from "@csarkosh/engine/game/tierChoice";
 
 describe("QUALITY", () => {
   it("matches the quality tier table", () => {

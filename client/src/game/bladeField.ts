@@ -1,10 +1,10 @@
 import { CLUTTER_MEADOW, groundCover, type ClutterInstance } from "../sim/clutter.js";
 import { activeTerrainVariant } from "../sim/terrain.js";
 import { forestDensity } from "../sim/vegetation.js";
-import { latticeHash } from "./groundHexParams.js";
+import { latticeHash } from "@csarkosh/engine/game/groundHexParams";
 import { CLUTTER_FAR_SPLIT, clutterNearRadius, clutterSeamEdges } from "./clutterField.js";
-import { finish, nextCrossing, sliceDue, sortSlices, type Slices } from "./syncJobs.js";
-import { createCellWindow, inWindow, moveWindow, prefetchWindow, walkEveryCell, type CellRows } from "./cellWindow.js";
+import { finish, nextCrossing, sliceDue, sortSlices, type Slices } from "@csarkosh/engine/game/syncJobs";
+import { createCellWindow, inWindow, moveWindow, prefetchWindow, walkEveryCell, type CellRows } from "@csarkosh/engine/game/cellWindow";
 
 /**
  * The blade field: the near-field lattice the blade clumps stand on, walked

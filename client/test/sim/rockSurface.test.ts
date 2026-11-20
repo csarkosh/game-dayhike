@@ -3,7 +3,7 @@ import "../../src/sim/passes/index.js";
 import { createGroundField } from "../../src/sim/ground.js";
 import { activeTerrainVariant, elevationAt, elevationSampleAt } from "../../src/sim/terrain.js";
 import { trailDistance } from "../../src/sim/trail.js";
-import { groundReliefD, groundWalkD } from "../../src/sim/faceRelief.js";
+import { groundReliefD, groundWalkD } from "@csarkosh/engine/sim/faceRelief";
 import {
   GROUND_DEPTH, GROUND_LOUD_CELL, GROUND_TRAIL_CLEAR_HI, GROUND_TRAIL_CLEAR_LO, ROCK_SURFACE_TUNABLES, cornerLoudness,
   depthUnderBend, faceMask, groundBend, loudnessAt, rockLayerAt, rockOfSlope, trailClearAt,

@@ -1,5 +1,5 @@
-import { type Rgb } from "./colour.js";
-import { latticeHash } from "./groundHexParams.js";
+import { type Rgb } from "@csarkosh/engine/game/colour";
+import { latticeHash } from "@csarkosh/engine/game/groundHexParams";
 import { BLADE_TRIS, BLADE_VERTS, createStripWriter, type StripArrays } from "./bladeClump.js";
 
 /**

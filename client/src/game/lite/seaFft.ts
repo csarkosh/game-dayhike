@@ -40,13 +40,13 @@ import {
 import {
   OCEAN_FFT_DISPATCH, OCEAN_FFT_EVOLVE_BINDINGS, OCEAN_FFT_H0_BYTES, OCEAN_FFT_PARAM_FLOATS, OCEAN_FFT_PASS_BINDINGS, OCEAN_FFT_RESOLVE_BINDINGS,
   OCEAN_FFT_SPECTRA_BYTES, fftParams, fftSeconds, gpuWindSeaH0, type FftBinding,
-} from "../oceanFftPasses.js";
-import { FFT_CASCADES, FFT_N } from "../oceanSpectrum.js";
+} from "@csarkosh/engine/game/oceanFftPasses";
+import { FFT_CASCADES, FFT_N } from "@csarkosh/engine/game/oceanSpectrum";
 import evolveSource from "../shaders/oceanFftEvolve.compute.wgsl?raw";
 import passSource from "../shaders/oceanFftPass.compute.wgsl?raw";
 import resolveSource from "../shaders/oceanFftResolve.compute.wgsl?raw";
 import type { WindSeaFftField } from "../windSeaField.js";
-import type { FrameUploads } from "./frameUploads.js";
+import type { FrameUploads } from "@csarkosh/engine/game/lite/frameUploads";
 
 /** The wind sea's FFT as the sea's material reads it and the renderer runs it. */
 export type LiteSeaFft = WindSeaFftField<Texture2DArray> & {

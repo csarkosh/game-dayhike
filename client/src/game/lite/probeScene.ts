@@ -40,12 +40,12 @@ import { DEFAULT_TERRAIN_VARIANT, setActiveTerrainVariant } from "../../sim/terr
 import { createWorld } from "../../sim/world.js";
 import { PROBE_HOUR, PROBE_READY_MAX_MS, PROBE_SEED_TOKEN, createProbeMeter, probePose } from "../frameProbe.js";
 import { pageProbe, type PageProbe } from "../probePage.js";
-import { containerPixels, type ProbeReading, type QualityTier } from "../quality.js";
+import { containerPixels, type ProbeReading, type QualityTier } from "@csarkosh/engine/game/quality";
 import type { Renderer, RendererOptions } from "../rendererTypes.js";
-import { seedFromToken } from "../seed.js";
-import type { SkyTable } from "../skyTable.js";
-import type { SkySource } from "../skyWorker.js";
-import { WEATHER_PRESETS } from "../weather.js";
+import { seedFromToken } from "@csarkosh/engine/game/seed";
+import type { SkyTable } from "@csarkosh/engine/game/skyTable";
+import type { SkySource } from "@csarkosh/engine/game/skyWorker";
+import { WEATHER_PRESETS } from "@csarkosh/engine/game/weather";
 import { createLiteRenderer } from "./renderer.js";
 
 export type LiteProbeScene = { renderer: Renderer; frame(): void; dispose(): void };

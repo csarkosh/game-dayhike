@@ -6,7 +6,7 @@ import { LIP_COLUMNS, LIP_SLOTS } from "../../src/game/oceanBreaker.js";
 import { SwashTable, type SwashCove } from "../../src/game/swashTable.js";
 import { COVE_FACE_GRADE, COVE_TOE_DEPTH, coveFor } from "../../src/sim/olympic.js";
 import { coastRead, oceanFieldFor, swellPhases } from "../../src/game/oceanWaves.js";
-import { seedFromToken } from "../../src/game/seed.js";
+import { seedFromToken } from "@csarkosh/engine/game/seed";
 import { timeLimit } from "../helpers/timeLimit.js";
 
 /** A cove 300 m wide about z = 100, its waterline on x = 500 + 0.1·z, the toe 24 m seaward on a 1:12 face. */

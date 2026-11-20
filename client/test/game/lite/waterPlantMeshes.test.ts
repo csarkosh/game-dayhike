@@ -1,8 +1,8 @@
 import { describe, expect, it } from "vitest";
 import "../../../src/sim/olympic.js";
 import { firstPondWorld, lakeOf } from "../../sim/helpers/lakes.js";
-import { boxInPlanes } from "../../../src/game/lakeSeen.js";
-import { cameraAxes, restAxes, restPlanes, viewPlanes } from "../../../src/game/lite/cameraPose.js";
+import { boxInPlanes } from "@csarkosh/engine/game/lakeSeen";
+import { cameraAxes, restAxes, restPlanes, viewPlanes } from "@csarkosh/engine/game/lite/cameraPose";
 import { LILY_AROUND_M, PLANT_SLACK_M, REED_AROUND_M, REED_TOP_M } from "../../../src/game/lite/waterPlantMeshes.js";
 import { waterPlantPlacements } from "../../../src/game/waterPlantField.js";
 import { PLANT_CELL_M, REED_CHARACTERS, plantBoxes, waterPlantLists } from "../../../src/game/waterPlantShapes.js";

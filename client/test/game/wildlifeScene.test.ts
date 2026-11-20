@@ -1,9 +1,9 @@
 import { describe, expect, it } from "vitest";
 import "../../src/sim/passes/index.js";
 import { elevationSampleAt, setActiveTerrainVariant } from "../../src/sim/terrain.js";
-import { WEATHER_PRESETS } from "../../src/game/weather.js";
+import { WEATHER_PRESETS } from "@csarkosh/engine/game/weather";
 import { FIRST_BIRD_SPECIES, SPECIES_BUTTERFLY } from "../../src/game/wildlifeField.js";
-import { createFirstBuilds } from "../../src/game/firstBuilds.js";
+import { createFirstBuilds } from "@csarkosh/engine/game/firstBuilds";
 import {
   BIRD_ASSET, BIRD_PERCHED_ASSET, FOOT_LIFT, SLOT_STRIDE, SPECIES_ASSET, WILDLIFE_REBUILD_STEP, createWildlifeScene, creatureInView,
   type ViewPlane, type WildlifePorts,

@@ -3,8 +3,8 @@ import {
   LAKE_DIRECTIONS, apronAt, apronWidthFor, apronWidths, fitApron, harmonicPair, harmonicSum, lakeApronEnd, lakeBound,
   lakeDepthD, lakeOutline, lakeShoreInto, lakeWobble, measureLake, newLakeShore, quantile3, rayToShore, shoelace,
   smin, smootherstepD, spineMetricInto, type LakeShape,
-} from "../../src/sim/lakeShape.js";
-import { fbm2d } from "../../src/sim/field.js";
+} from "@csarkosh/engine/sim/lakeShape";
+import { fbm2d } from "@csarkosh/engine/sim/field";
 import { stadiumShape } from "../helpers/lakeShapes.js";
 import { H, TOL_RATIO } from "./helpers/derivatives.js";
 import { timeLimit } from "../helpers/timeLimit.js";

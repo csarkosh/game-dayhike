@@ -17,7 +17,7 @@ import {
   inGiantSet,
   QUARTER_TURN,
   SAPLING_BARKS,
-} from "../../src/game/barkParams.js";
+} from "@csarkosh/engine/game/barkParams";
 
 describe("the bark sets", () => {
   it("have the scans' footprints, the cedar's and the alder's plates twice as tall as wide", () => {

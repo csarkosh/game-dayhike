@@ -1,7 +1,7 @@
 import { describe, it, expect } from "vitest";
 import {
   LENS, LENS_TRAIL, lensDrops, lensDropletMap, lensSmooth, lensStrengthUnder, smoothstep,
-} from "../../src/game/lensParams.js";
+} from "@csarkosh/engine/game/lensParams";
 
 describe("the lens's numbers", () => {
   it("is a 128-texel map of 40 drops of 2 to 5 percent, tiled twice, refracting by 0.012, smoothed over a second, floored at 0.02, 60 percent looking ahead", () => {

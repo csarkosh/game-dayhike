@@ -15,11 +15,11 @@
  * the window is shut at every z of the lake's bank.
  */
 import { WET_SWASH_VECS, emptyWetUniforms, type WetUniforms } from "../wetSurface.js";
-import { uniformFields, writeUniforms, type UniformField, type UniformOffsets, type UniformRecord } from "./pluginUniforms.js";
+import { uniformFields, writeUniforms, type UniformField, type UniformOffsets, type UniformRecord } from "@csarkosh/engine/game/lite/pluginUniforms";
 import defsSource from "../shaders/wet/defs.wgsl?raw";
 import weatherSource from "../shaders/wet/weather.wgsl?raw";
 import lightsSource from "../shaders/wet/lights.wgsl?raw";
-import { wgsl } from "../shaders/shaderText.js";
+import { wgsl } from "@csarkosh/engine/game/shaders/shaderText";
 
 /** The wet look's constants and functions: a material's fragment definitions. */
 export const WET_WGSL = wgsl(defsSource);

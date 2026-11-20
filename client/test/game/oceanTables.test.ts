@@ -8,8 +8,8 @@ import {
   OCEAN_PHASE_BLEND, OCEAN_ROW_COVE_PROFILE, OCEAN_TABLE_SAMPLES,
   buildOceanTables, coastProfilesFor, deepWeight, writeCoastRow, type CoastProfiles, type OceanTables,
 } from "../../src/game/oceanTables.js";
-import { refraction, shoalingFactor, waveNumber, weggelCoefficients, OCEAN_G } from "../../src/game/oceanPhysics.js";
-import { swellComponents, swellStateFor, type SwellComponent } from "../../src/game/oceanSwell.js";
+import { refraction, shoalingFactor, waveNumber, weggelCoefficients, OCEAN_G } from "@csarkosh/engine/game/oceanPhysics";
+import { swellComponents, swellStateFor, type SwellComponent } from "@csarkosh/engine/game/oceanSwell";
 import { LOBBY_SEEDS } from "../sim/trailGateSeeds.js";
 import { timeLimit } from "../helpers/timeLimit.js";
 

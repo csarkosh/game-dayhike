@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { CLIP_DRIFT_FRAMES, CLIP_FLOATS, SKIN_CLOCK_FOLD, clipRow, writeBodyMatrix, writeClipParams, type BakedClip } from "../../src/game/skinInstances.js";
+import { CLIP_DRIFT_FRAMES, CLIP_FLOATS, SKIN_CLOCK_FOLD, clipRow, writeBodyMatrix, writeClipParams, type BakedClip } from "@csarkosh/engine/game/skinInstances";
 
 /** A clip of 83 rows at 60 a second from row 153: 82 frames and the first again. */
 const WALK: BakedClip = { fromRow: 153, frames: 83, fps: 60, seconds: 82 / 60 };

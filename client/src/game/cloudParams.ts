@@ -1,6 +1,6 @@
 import { HOLLOW_FIGURE_M } from "./hollowLook.js";
-import { clamp01, type Rgb } from "./colour.js";
-import { hash2 } from "../sim/field.js";
+import { clamp01, type Rgb } from "@csarkosh/engine/game/colour";
+import { hash2 } from "@csarkosh/engine/sim/field";
 
 /**
  * The pure arithmetic of the ground cloud (docs/rendering/2026-10-07-ground-cloud-volume-design.md):

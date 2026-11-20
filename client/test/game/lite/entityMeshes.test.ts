@@ -4,7 +4,7 @@ import { SHADE_EYES_DULL, SHADE_EYES_SHADE, eyeLevelOf } from "../../../src/game
 import { HOLLOW_EYE_INTENSITY } from "../../../src/game/hollowLook.js";
 import { emptyAtmosphereUniforms } from "../../../src/game/atmosphereParams.js";
 import { ATMOSPHERE_PRIORITY, atmospherePlugin } from "../../../src/game/lite/atmospherePlugin.js";
-import { DRAW_ORDER, DRAW_PLACES, SEE_THROUGH_ORDER } from "../../../src/game/lite/drawOrder.js";
+import { DRAW_ORDER, DRAW_PLACES, SEE_THROUGH_ORDER } from "@csarkosh/engine/game/lite/drawOrder";
 import {
   BODY_PLACES, CAPSULE_COLOUR, CAPSULE_ROUGHNESS, EYE_LEVEL_BYTES, HOLLOW_CAPACITY, RANGER_CAPACITY, eyeLevelPlugin, setEyeLevel,
 } from "../../../src/game/lite/entityMeshes.js";

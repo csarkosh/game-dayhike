@@ -12,10 +12,10 @@
  * mesh in the cap's own frame. The half sphere and the cylinder are Babylon.js's own
  * (`CreateSphereVertexData`, `CreateCylinderVertexData`), vertex for vertex.
  */
-import { hash2 } from "../sim/field.js";
+import { hash2 } from "@csarkosh/engine/sim/field";
 import type { TrailGraph } from "../sim/trail.js";
 import { stemPointAt } from "../sim/trailRoute.js";
-import { composeInto, quatFromEuler, type Quat } from "./instancePose.js";
+import { composeInto, quatFromEuler, type Quat } from "@csarkosh/engine/game/instancePose";
 
 /** How far up the stem the cap lies (0 the pad, 1 the crest), how far off the path, and how near the player must come to it. */
 export const CAP_PROGRESS = 0.2;

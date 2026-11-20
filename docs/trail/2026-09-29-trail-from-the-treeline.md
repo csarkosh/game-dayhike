@@ -234,7 +234,7 @@ The pass hash is re-pinned in `client/test/sim/groundGradient.test.ts` and
 | `client/src/sim/vegetation.ts` | The shore rule reads `shoreHeight`; the floor of §3.3. |
 | `client/src/sim/clutter.ts` | The shore rules read `shoreHeight`; the clearing. |
 | `client/src/sim/trailGrid.ts`, `client/src/sim/trailBuild.ts` | The doorway. |
-| `client/src/sim/facing.ts`, `client/src/sim/trailhead.ts` | The way a yaw faces, as a direction; the board's place judged by its further end. |
+| `engine/src/sim/facing.ts`, `client/src/sim/trailhead.ts` | The way a yaw faces, as a direction; the board's place judged by its further end. |
 | `client/src/game/terrainSurface.ts` | The sand's paint reads `shoreHeight`. |
 | `client/src/game/wildlifeField.ts` | An animal's ground reads `shoreHeight`. |
 | `client/src/sim/forest.ts` | `GEN_VERSION`, the probe's record. |

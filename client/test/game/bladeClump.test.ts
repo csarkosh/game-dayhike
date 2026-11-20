@@ -8,7 +8,7 @@ import {
   BLADE_CELL, BLADE_CHARACTER_COUNT, BLADE_FINE, BLADE_FLOWER, BLADE_PAD, BLADE_REACH, BLADE_SIZE_FULL,
   BLADE_TIER_BAND, BLADE_TIER_EDGE, BLADE_TUSSOCK, BLADE_WEED,
 } from "../../src/game/bladeField.js";
-import { latticeHash } from "../../src/game/groundHexParams.js";
+import { latticeHash } from "@csarkosh/engine/game/groundHexParams";
 
 describe("the character and tier tables", () => {
   it("match the spec", () => {

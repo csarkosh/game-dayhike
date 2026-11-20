@@ -39,7 +39,7 @@
  */
 import { CLUTTER_ROCK, rockSlopeBand, type ClutterInstance } from "./clutter.js";
 import { GROUND_NORMAL_Y } from "./constants.js";
-import { hash3 } from "./field.js";
+import { hash3 } from "@csarkosh/engine/sim/field";
 import { lakeGroundD } from "./features.js";
 import { activeTerrainVariant, elevationSampleAt, type TerrainSample } from "./terrain.js";
 

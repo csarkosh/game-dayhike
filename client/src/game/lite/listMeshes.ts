@@ -30,9 +30,9 @@
  * the plugin data Lite will send for them.
  */
 import { addToScene, markThinInstancePluginData, setMeshVisible, setThinInstanceCount, setThinInstances, type Mesh, type SceneContext } from "@babylonjs/lite";
-import type { ListBuffers } from "../instanceLists.js";
+import type { ListBuffers } from "@csarkosh/engine/game/instanceLists";
 import { writeVegetationInstances, type VegetationInstanceLayout } from "./forestPlugins.js";
-import type { FrameUploads } from "./frameUploads.js";
+import type { FrameUploads } from "@csarkosh/engine/game/lite/frameUploads";
 
 /** Bytes an instance's matrix is on the GPU. */
 export const MATRIX_BYTES = 64;

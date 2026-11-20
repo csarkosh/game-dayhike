@@ -3,10 +3,10 @@ import {
   FADE_END, FADE_START, LAYER_F0, LAYER_ROUGHNESS, TEXTURE_MEAN, TILING_METRES,
   TERRAIN_SURFACE, emptyTerrainUniforms, terrainCoverFor, terrainSurfaceUnder, terrainUniforms, type TerrainUniformInputs,
 } from "../../src/game/terrainUniforms.js";
-import { WEATHER_PRESETS, WET_ALBEDO_LOSS, WET_ROUGHNESS_LOSS } from "../../src/game/weather.js";
+import { WEATHER_PRESETS, WET_ALBEDO_LOSS, WET_ROUGHNESS_LOSS } from "@csarkosh/engine/game/weather";
 import { featurePaintTable, followRoadCentre, roadCentreTable, trailPaintTable } from "../../src/game/terrainTables.js";
 import { FEATURE_TEX_ROWS, FEATURE_TEX_WIDTH } from "../../src/game/featureTable.js";
-import { ROAD_TABLE_HALF_SPAN, ROAD_TABLE_N, ROAD_TABLE_RECENTRE, ROAD_TABLE_STEP } from "../../src/game/roadPaint.js";
+import { ROAD_TABLE_HALF_SPAN, ROAD_TABLE_N, ROAD_TABLE_RECENTRE, ROAD_TABLE_STEP } from "@csarkosh/engine/game/roadPaint";
 import { TRAIL_PAINT_BUCKET, TRAIL_PAINT_GRID } from "../../src/game/trailPaint.js";
 import type { Feature } from "../../src/sim/features.js";
 import type { TrailGraph } from "../../src/sim/trail.js";

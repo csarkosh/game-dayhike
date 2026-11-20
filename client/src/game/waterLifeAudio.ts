@@ -40,10 +40,10 @@
  * context is unlocked, and nothing is queued: a frame's frog calls are that
  * frame's alone, so the first frame after unlock plays none from before it.
  */
-import { hash3 } from "../sim/field.js";
+import { hash3 } from "@csarkosh/engine/sim/field";
 import { LOOP_GAIN_RAMP_S, type AmbientAudio, type LoopEmitter, type VoiceSource } from "./ambientAudio.js";
 import { audioUrl } from "./assetUrls.js";
-import { pageTurns } from "./downloadTurns.js";
+import { pageTurns } from "@csarkosh/engine/game/downloadTurns";
 import type { FrogCall } from "./frogChorus.js";
 import {
   FROG_CALL_S, FROG_CARRIER_HZ, RUSTLE_LOUD_S, RUSTLE_S, frogCallVoice, humVoice, rustleVoice,

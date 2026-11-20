@@ -1,5 +1,5 @@
-import { clamp01, type Rgb } from "./colour.js";
-import { latticeHash } from "./groundHexParams.js";
+import { clamp01, type Rgb } from "@csarkosh/engine/game/colour";
+import { latticeHash } from "@csarkosh/engine/game/groundHexParams";
 import { BLADE_CHARACTER_COUNT } from "./bladeField.js";
 
 /**

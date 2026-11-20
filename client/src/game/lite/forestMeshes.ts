@@ -81,30 +81,30 @@ import { TREE_CELL, type TreeInstance } from "../../sim/vegetation.js";
 import { modelUrl, textureUrl } from "../assetUrls.js";
 import {
   GIANT_SETS, SAPLING_BARKS, barkLook, barkSize, barkUv, inGiantSet, type BarkDressing, type BarkLook,
-} from "../barkParams.js";
-import { FOLIAGE_CARD_CONTRAST, coverAlbedoTint } from "../coverAlbedoParams.js";
-import { DEADWOOD_BARK, DEADWOOD_TONE } from "../deadwoodParams.js";
-import type { FadeBands } from "../distanceFade.js";
+} from "@csarkosh/engine/game/barkParams";
+import { FOLIAGE_CARD_CONTRAST, coverAlbedoTint } from "@csarkosh/engine/game/coverAlbedoParams";
+import { DEADWOOD_BARK, DEADWOOD_TONE } from "@csarkosh/engine/game/deadwoodParams";
+import type { FadeBands } from "@csarkosh/engine/game/distanceFade";
 import { FOLIAGE_PROFILES, foliageLook, type FoliageLook } from "../foliageUniforms.js";
-import type { FirstBuilds } from "../firstBuilds.js";
+import type { FirstBuilds } from "@csarkosh/engine/game/firstBuilds";
 import { NEAR_RADIUS, bandsOrigin, createBandCollector, type ForestBands } from "../forestField.js";
 import {
   NURSE_BANDS, deadwoodMatrixBuffer, deadwoodMeasure, deadwoodRoleBuffer, fadeBandsBuffer, forestFadeBands, groundGradBuffer, impostorFadeBuffer,
   impostorMatrixSlices, impostorQuad, nurseBuffers, partitionImpostors, snagImpostorQuad, treeMatrixBuffer,
   type DeadwoodMeasure, type ImpostorQuad,
 } from "../forestInstances.js";
-import { CROWN_SKY, TREE_SPECULAR_WEIGHT, treeSkyLook } from "../forestLookParams.js";
+import { CROWN_SKY, TREE_SPECULAR_WEIGHT, treeSkyLook } from "@csarkosh/engine/game/forestLookParams";
 import {
   IMPOSTOR_BAKE_FAIL_MS, IMPOSTOR_BAKE_SIZE, IMPOSTOR_BAKE_WARN_MS, SNAG_BAKE_ROLL, bakePoseMatrix, impostorBakeFrame, impostorName, posedBounds,
   type ImpostorBake,
-} from "../impostorBake.js";
-import { IMPOSTOR_FIELD_CUT } from "../impostorField.js";
-import { createFieldMaker } from "../impostorFieldWorker.js";
-import type { Vec3 } from "../instancePose.js";
-import { MOSS_OUTPUT } from "../mossParams.js";
-import { seedlingGeometry } from "../nurseLog.js";
-import type { QualityTier } from "../quality.js";
-import { finish, nextCrossing, type Slices, type SyncJobs } from "../syncJobs.js";
+} from "@csarkosh/engine/game/impostorBake";
+import { IMPOSTOR_FIELD_CUT } from "@csarkosh/engine/game/impostorField";
+import { createFieldMaker } from "@csarkosh/engine/game/impostorFieldWorker";
+import type { Vec3 } from "@csarkosh/engine/game/instancePose";
+import { MOSS_OUTPUT } from "@csarkosh/engine/game/mossParams";
+import { seedlingGeometry } from "@csarkosh/engine/game/nurseLog";
+import type { QualityTier } from "@csarkosh/engine/game/quality";
+import { finish, nextCrossing, type Slices, type SyncJobs } from "@csarkosh/engine/game/syncJobs";
 import type { WetUniforms } from "../wetSurface.js";
 import { loadKtx2Map, loadModel, type LoadedModel, type ModelPart } from "./forestModels.js";
 import {
@@ -112,12 +112,12 @@ import {
   vegetationPlugin,
   type Vegetation, type VegetationInstanceLayout,
 } from "./forestPlugins.js";
-import { DRAW_ORDER, createDrawOrders } from "./drawOrder.js";
-import type { FrameUploads } from "./frameUploads.js";
-import { createImpostorBaker, type BakeMesh } from "./impostorBake.js";
+import { DRAW_ORDER, createDrawOrders } from "@csarkosh/engine/game/lite/drawOrder";
+import type { FrameUploads } from "@csarkosh/engine/game/lite/frameUploads";
+import { createImpostorBaker, type BakeMesh } from "@csarkosh/engine/game/lite/impostorBake";
 import type { ReflectionRegistry } from "./lakePanorama.js";
 import { KEPT_INSTANCES, MATRIX_BYTES, listBytes, sameFloats, writeListData } from "./listMeshes.js";
-import { createRebuilds } from "./rebuildJobs.js";
+import { createRebuilds } from "@csarkosh/engine/game/lite/rebuildJobs";
 
 /** The canopy giants' models by `TreeInstance.species`: the fir, then the pine. */
 const GIANT_MODELS = ["models/tree.giant_fir.glb", "models/tree.giant_pine.glb"];

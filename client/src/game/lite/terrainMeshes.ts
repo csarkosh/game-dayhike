@@ -85,12 +85,12 @@ import {
   patchStitchBits,
   type FacePatch, type PatchCell, type PatchReach, type PatchStitch,
 } from "../facePatches.js";
-import { buildAtOnce, type FirstBuilds } from "../firstBuilds.js";
-import type { QualityTier } from "../quality.js";
-import { createCrossing, crossingAt, finish, nextCrossing, type Slices, type SyncJobs } from "../syncJobs.js";
+import { buildAtOnce, type FirstBuilds } from "@csarkosh/engine/game/firstBuilds";
+import type { QualityTier } from "@csarkosh/engine/game/quality";
+import { createCrossing, crossingAt, finish, nextCrossing, type Slices, type SyncJobs } from "@csarkosh/engine/game/syncJobs";
 import { facePatchVertices, ringVertices, type TerrainVertices } from "../terrainVertices.js";
-import { DRAW_ORDER, DRAW_PLACES } from "./drawOrder.js";
-import type { FrameUploads } from "./frameUploads.js";
+import { DRAW_ORDER, DRAW_PLACES } from "@csarkosh/engine/game/lite/drawOrder";
+import type { FrameUploads } from "@csarkosh/engine/game/lite/frameUploads";
 import {
   createMarkedRun, createPatchPool, firstDifference, patchIndexCapacity, patchIndexCount, patchVertexCount, writePatchTriangles,
   type DrawnPatch, type PatchSlot,

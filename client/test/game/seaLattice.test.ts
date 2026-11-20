@@ -6,8 +6,8 @@ import { coastProfilesFor } from "../../src/game/oceanTables.js";
 import {
   SEA_HOLE_LOW, SEA_RING_FLOATS, SEA_SIDE, seaBedDepths, seaLattice, seaRingRecords, seaVertexAt, seaWetBounds, seaWetRun, type SeaVertex,
 } from "../../src/game/seaLattice.js";
-import { seedFromToken } from "../../src/game/seed.js";
-import { SWASH_FACE_LIFT_M } from "../../src/game/swashRunUp.js";
+import { seedFromToken } from "@csarkosh/engine/game/seed";
+import { SWASH_FACE_LIFT_M } from "@csarkosh/engine/game/swashRunUp";
 import {
   WATER_RING_CELLS, WATER_RING_COUNT, createWaterRingSamples, seaFaceZ, updateWaterRingSamples, waterHoleCellsFor, waterRingGeometry, wetBounds,
   type WaterRingSamples,

@@ -9,7 +9,7 @@ import {
   type WildlifeEvent,
 } from "../../src/game/wildlifeBehaviour.js";
 import { SPECIES_ELK, SPECIES_GULL, SPECIES_SQUIRREL } from "../../src/game/wildlifeField.js";
-import { WEATHER_PRESETS } from "../../src/game/weather.js";
+import { WEATHER_PRESETS } from "@csarkosh/engine/game/weather";
 
 /**
  * `unlocked: false` models the real startup order: the shell is built at

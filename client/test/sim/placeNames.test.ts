@@ -7,7 +7,7 @@ import { FIRST_NAMES, hikerNames } from "../../src/sim/hikerNames.js";
 import type { Feature } from "../../src/sim/features.js";
 import { createWorld } from "../../src/sim/world.js";
 import { parseLevel } from "../../src/sim/level.js";
-import { seedFromToken } from "../../src/game/seed.js";
+import { seedFromToken } from "@csarkosh/engine/game/seed";
 import { timeLimit } from "../helpers/timeLimit.js";
 
 setActiveTerrainVariant(DEFAULT_TERRAIN_VARIANT);

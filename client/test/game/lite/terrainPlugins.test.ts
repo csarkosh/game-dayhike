@@ -10,9 +10,9 @@ import {
   FAR_COVER_TILT, FAR_DRIFT_AO, FAR_DRIFT_CELL, FAR_DRIFT_SALT, FAR_DRIFT_TILT, FAR_DRIFT_WEIGHT, FAR_LITTER, FAR_MACRO_CELL, FAR_MACRO_SALT, FAR_MACRO_WEIGHT,
   FAR_SELF_SHADOW, FAR_SPEC_CUT, FAR_SUN_GAIN_MAX, FAR_SWARD, FAR_SWARD_COVER, FAR_SWARD_MAX,
   HEX_LATTICE, HEX_SHARPNESS, HEX_SKEW, HEX_UNSKEW, MACRO_DRY, MACRO_LUSH, MACRO_SLOPE, MACRO_WAVE, MACRO_WEIGHT,
-} from "../../../src/game/groundHexParams.js";
+} from "@csarkosh/engine/game/groundHexParams";
 import { runBySlices } from "../../helpers/sliceRun.js";
-import { ROAD_ASPHALT_HALF, ROAD_PAINT_END, ROAD_SHOULDER_HALF } from "../../../src/game/roadPaint.js";
+import { ROAD_ASPHALT_HALF, ROAD_PAINT_END, ROAD_SHOULDER_HALF } from "@csarkosh/engine/game/roadPaint";
 import { NEEDLE_BED } from "../../../src/game/terrainSurface.js";
 import { emptyTerrainUniforms, terrainUniforms, type TerrainUniformInputs } from "../../../src/game/terrainUniforms.js";
 import {

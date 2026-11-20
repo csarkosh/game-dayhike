@@ -26,7 +26,7 @@ import { installChunks } from "../sim/chunkGrid.js";
 import { installPassHash, passHashCachedFor } from "../sim/forest.js";
 import { terrainVariant } from "../sim/terrain.js";
 import type { PreparedScene } from "./preparedScene.js";
-import type { QualityTier } from "./quality.js";
+import type { QualityTier } from "@csarkosh/engine/game/quality";
 import type { WorldPrepReply, WorldPrepRequest, WorldSceneRequest } from "./world.worker.js";
 
 /** How long the start waits for the worker before the page makes the world

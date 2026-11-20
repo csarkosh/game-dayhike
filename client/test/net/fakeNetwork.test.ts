@@ -1,6 +1,6 @@
 import { describe, it, expect } from "vitest";
 import { FakeNetwork } from "../../src/net/fakeNetwork.js";
-import { PERFECT_NETWORK } from "../../src/net/transport.js";
+import { PERFECT_NETWORK } from "@csarkosh/engine/net/transport";
 
 function payload(n: number): ArrayBuffer {
   const b = new ArrayBuffer(1);

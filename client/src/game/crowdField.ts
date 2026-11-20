@@ -13,8 +13,8 @@
  * are tested as arithmetic: how many the way wants, what each figure is, where
  * one may stand. The renderer draws what it holds.
  */
-import type { QualityTier } from "./quality.js";
-import { hash2 } from "../sim/field.js";
+import type { QualityTier } from "@csarkosh/engine/game/quality";
+import { hash2 } from "@csarkosh/engine/sim/field";
 import { Outcome, Phase, nextRandom } from "../sim/types.js";
 import { WAY_FLOOR_M, WAY_RIM_M } from "../sim/wayDown.js";
 

@@ -7,10 +7,10 @@
  * Trigonometry and exp are fine here (renderer-only; nothing crosses the
  * wire). See docs/rendering/2026-09-29-water-material-design.md §5.
  */
-import { clamp01 } from "./colour.js";
+import { clamp01 } from "@csarkosh/engine/game/colour";
 import { CLUTTER_WATER_MURK_HI, CLUTTER_WATER_MURK_LO } from "../sim/clutter.js";
 import { WATER_BASE_SPACING, WATER_RING_CELLS } from "./water.js";
-import { OCEAN_G } from "./oceanPhysics.js";
+import { OCEAN_G } from "@csarkosh/engine/game/oceanPhysics";
 import { OCEAN_ROLL_WIDTH } from "./oceanWaves.js";
 
 /** One body of water, from the world at build time (spec §7). */

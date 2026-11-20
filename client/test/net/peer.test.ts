@@ -1,7 +1,7 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { acceptAsHost, connectAsClient } from "../../src/net/peer.js";
 import { ICE_TIMEOUT_MS } from "../../src/sim/constants.js";
-import type { SignalingClient } from "../../src/net/signaling.js";
+import type { SignalingClient } from "@csarkosh/engine/net/signaling";
 
 /**
  * The handshakes are mostly browser plumbing, but their failure path is not:

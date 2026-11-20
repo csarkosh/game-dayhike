@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { pointBoxGap, pointSegmentGap, segmentBoxGap } from "../../src/sim/boxGap.js";
+import { pointBoxGap, pointSegmentGap, segmentBoxGap } from "@csarkosh/engine/sim/boxGap";
 
 const unit = { x: 1, z: 1 };
 const origin = { x: 0, z: 0 };

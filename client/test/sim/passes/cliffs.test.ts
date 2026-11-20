@@ -2,7 +2,7 @@ import { createGroundField } from "../../../src/sim/ground.js";
 import { describe, expect, it } from "vitest";
 import "../../../src/sim/passes/index.js";
 import { generateChunk, registeredPasses } from "../../../src/sim/chunk.js";
-import { CHUNK_SIZE } from "../../../src/sim/forestConstants.js";
+import { CHUNK_SIZE } from "@csarkosh/engine/sim/forestConstants";
 import type { Aabb } from "../../../src/sim/level.js";
 import { depenetrate, sweepBox } from "../../../src/sim/collision.js";
 import { GROUND_NORMAL_Y, PLAYER_HALF } from "../../../src/sim/constants.js";

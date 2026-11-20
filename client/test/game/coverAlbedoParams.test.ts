@@ -14,7 +14,7 @@ import {
   FOLIAGE_SHADOW_FLOOR,
   coverAlbedoGain,
   coverAlbedoTint,
-} from "../../src/game/coverAlbedoParams.js";
+} from "@csarkosh/engine/game/coverAlbedoParams";
 
 describe("the cover's albedo gain", () => {
   it("holds the target, the measured table and the gain's range as literals", () => {

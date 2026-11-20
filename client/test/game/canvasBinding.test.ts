@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { bindCanvas } from "../../src/game/canvasBinding.js";
+import { bindCanvas } from "@csarkosh/engine/game/canvasBinding";
 
 function target() {
   const live = new Map<string, EventListener>();

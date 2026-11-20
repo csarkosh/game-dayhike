@@ -1,14 +1,14 @@
 import { describe, expect, it } from "vitest";
 import "../../src/sim/passes/index.js";
-import { FADE_NONE_IN, FADE_NONE_OUT } from "../../src/game/distanceFade.js";
+import { FADE_NONE_IN, FADE_NONE_OUT } from "@csarkosh/engine/game/distanceFade";
 import { NEAR_RADIUS, SEAM_FAR, SEAM_FILL, SEAM_LOD0, SEAM_LOD1, UNDERSTORY_RADIUS, farTreeScale, seamNear } from "../../src/game/forestField.js";
 import {
   IMPOSTOR_SLICE, deadwoodMatrixBuffer, deadwoodMeasure, deadwoodRoleBuffer, fadeBandsBuffer, forestFadeBands, groundGradBuffer,
   impostorFadeBuffer, impostorMatrixSlices, impostorQuad, nurseBuffers, partitionImpostors, snagImpostorQuad, treeFoliageBuffer,
   treeMatrixBuffer,
 } from "../../src/game/forestInstances.js";
-import { NURSE_FERN, nursePlants } from "../../src/game/nurseLog.js";
-import { finish } from "../../src/game/syncJobs.js";
+import { NURSE_FERN, nursePlants } from "@csarkosh/engine/game/nurseLog";
+import { finish } from "@csarkosh/engine/game/syncJobs";
 import { runBySlices } from "../helpers/sliceRun.js";
 import { elevationAt } from "../../src/sim/terrain.js";
 import { COHORT_GIANT, COHORT_LOG, COHORT_SAPLING, COHORT_SNAG, type TreeInstance } from "../../src/sim/vegetation.js";

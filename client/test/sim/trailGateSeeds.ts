@@ -1,4 +1,4 @@
-import { seedFromToken } from "../../src/game/seed.js";
+import { seedFromToken } from "@csarkosh/engine/game/seed";
 
 /**
  * The 227-seed sweep set shared by every test that has to hold on the REAL,

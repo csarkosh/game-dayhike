@@ -50,7 +50,7 @@ include, with a Babylon-free mirror of the noise for the tufts.
 | File | Role |
 | --- | --- |
 | `client/src/game/shaders/groundHex.fragment.fx` (new) | The hex lattice, the lattice hash, the three-sample weights, the two-octave macro noise, the lush/dry tint. Spliced at the plugin's fragment definitions. |
-| `client/src/game/groundHexParams.ts` (new, Babylon-free) | The constants and the TypeScript mirrors: `hexWeights(uv)`, `latticeHash(ci, cj)`, `macroNoise(x, z)`, `macroTint(x, z, slope)`. On `BABYLON_FREE_FILES`. |
+| `engine/src/game/groundHexParams.ts` (new, Babylon-free) | The constants and the TypeScript mirrors: `hexWeights(uv)`, `latticeHash(ci, cj)`, `macroNoise(x, z)`, `macroTint(x, z, slope)`. On `BABYLON_FREE_FILES`. |
 | `client/src/game/terrainTexture.ts` | The blend block samples the grass layer through the hex function, adds the detail scale and the between-blades occlusion, applies the macro tint and the horizon tint; binds the new uniforms. |
 | `client/src/game/clutterMeshes.ts` | `writeFoliage` multiplies the tuft's ground colour by `macroTint` so tuft and floor agree. |
 | `client/src/game/foliagePlugin.ts` | Unchanged this pass. `TUFT_ALBEDO` lives in `groundHexParams.ts`; the blade-clump sub-project reads it from there later. |

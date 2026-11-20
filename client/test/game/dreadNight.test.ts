@@ -2,9 +2,9 @@ import { describe, it, expect } from "vitest";
 import {
   WEATHER_PRESETS, fogDensityUnder, saturationUnder, ambientCollapseUnder,
   FOG_DREAD_GAIN, FOG_MIST_GAIN, AMBIENT_COLLAPSE, DREAD_SATURATION_DROP, DREAD_FOG_PULL,
-} from "../../src/game/weather.js";
-import { fogDensityFor } from "../../src/game/sky.js";
-import { skyStateFor } from "../../src/game/skyState.js";
+} from "@csarkosh/engine/game/weather";
+import { fogDensityFor } from "@csarkosh/engine/game/sky";
+import { skyStateFor } from "@csarkosh/engine/game/skyState";
 import {
   gradeRecordUnder, LIFT_DREAD, VIGNETTE_PULSE, VIGNETTE_PULSE_PERIOD, PURKINJE_MAX,
 } from "../../src/game/gradeParams.js";

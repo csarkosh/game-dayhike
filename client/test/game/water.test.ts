@@ -9,7 +9,7 @@ import {
   type WaterGeometry, type WaterRingSamples,
 } from "../../src/game/water.js";
 import { HOLE_CELLS, RING_CELLS, blendWeight } from "../../src/game/clipmap.js";
-import { SWASH_FACE_LIFT_M, SWASH_REACH_MAX_M } from "../../src/game/swashRunUp.js";
+import { SWASH_FACE_LIFT_M, SWASH_REACH_MAX_M } from "@csarkosh/engine/game/swashRunUp";
 import { COVE_FACE_GRADE } from "../../src/sim/olympic.js";
 
 const SEED = 0x5eed;

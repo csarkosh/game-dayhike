@@ -11,7 +11,7 @@
  * Loads no engine: nothing here knows what a mesh is.
  */
 import type { ChunkGrid } from "../sim/chunkGrid.js";
-import { CHUNK_SIZE } from "../sim/forestConstants.js";
+import { CHUNK_SIZE } from "@csarkosh/engine/sim/forestConstants";
 
 /** Props are drawn in a square of chunks this many either side of the chunk the place is in. */
 export const PROP_MESH_RADIUS_CHUNKS = 3;

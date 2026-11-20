@@ -8,14 +8,14 @@
  *
  * sim/ determinism rules apply: no trig, no Math.pow, no `**`, no hypot.
  */
-import { fbm2, hash3, valueNoise2 } from "./field.js";
+import { fbm2, hash3, valueNoise2 } from "@csarkosh/engine/sim/field";
 import { activeTerrainVariant, elevationSampleAt, type TerrainSample, type WaterBodySource } from "./terrain.js";
 import { shoreHeight } from "./shoreStrip.js";
 import { TRAIL_Z_ANCHOR, TRAILHEAD_U } from "./bowl.js";
 import { forestDensity, SLOPE_HI, SLOPE_LO } from "./vegetation.js";
 import { NO_FEATURE_MASK, marshWeightAt, POND_SHORE, type FeatureMask } from "./features.js";
-import { SEEP_OCTAVES, SEEP_SALT, SEEP_WAVELENGTH, seepOffset } from "./seep.js";
-import { lakeShoreInto, newLakeShore } from "./lakeShape.js";
+import { SEEP_OCTAVES, SEEP_SALT, SEEP_WAVELENGTH, seepOffset } from "@csarkosh/engine/sim/seep";
+import { lakeShoreInto, newLakeShore } from "@csarkosh/engine/sim/lakeShape";
 
 // ---- Class ids (not tunables) ---------------------------------------------
 export const CLUTTER_GRASS = 0;

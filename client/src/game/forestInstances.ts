@@ -14,14 +14,14 @@
  */
 import { elevationAt } from "../sim/terrain.js";
 import { COHORT_GIANT, COHORT_LOG, COHORT_SAPLING, COHORT_SNAG, forestDensity, type TreeInstance } from "../sim/vegetation.js";
-import { fadeBands, writeFadeBands, type FadeBands } from "./distanceFade.js";
+import { fadeBands, writeFadeBands, type FadeBands } from "@csarkosh/engine/game/distanceFade";
 import { SEAM_FAR, SEAM_FILL, SEAM_LOD0, SEAM_LOD1, UNDERSTORY_RADIUS, farTreeScale, seamNear } from "./forestField.js";
-import { macroNoise, macroTint } from "./groundHexParams.js";
-import { groundNormalTilt, groundNormalY, seatOnGround } from "./groundTilt.js";
-import { composeInto, quatAboutAxis, quatFromEuler, quatMultiply, transformPoint, type Quat, type Vec3 } from "./instancePose.js";
-import { LOG_STATIONS, logStationOffsets, seatLog, trunkSeat, trunkTop, type TrunkSeat } from "./logSeat.js";
-import { NURSE_FERN, nursePlants } from "./nurseLog.js";
-import { sliceDue, type Slices } from "./syncJobs.js";
+import { macroNoise, macroTint } from "@csarkosh/engine/game/groundHexParams";
+import { groundNormalTilt, groundNormalY, seatOnGround } from "@csarkosh/engine/game/groundTilt";
+import { composeInto, quatAboutAxis, quatFromEuler, quatMultiply, transformPoint, type Quat, type Vec3 } from "@csarkosh/engine/game/instancePose";
+import { LOG_STATIONS, logStationOffsets, seatLog, trunkSeat, trunkTop, type TrunkSeat } from "@csarkosh/engine/game/logSeat";
+import { NURSE_FERN, nursePlants } from "@csarkosh/engine/game/nurseLog";
+import { sliceDue, type Slices } from "@csarkosh/engine/game/syncJobs";
 import { surfaceAlbedo } from "./terrainSurface.js";
 
 const UP: Vec3 = { x: 0, y: 1, z: 0 };

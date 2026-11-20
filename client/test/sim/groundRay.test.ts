@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import "../../src/sim/passes/index.js";
 import { createForest } from "../../src/sim/forest.js";
 import { createForestWorld } from "../../src/sim/world.js";
-import { seedFromToken } from "../../src/game/seed.js";
+import { seedFromToken } from "@csarkosh/engine/game/seed";
 import { setActiveTerrainVariant, DEFAULT_TERRAIN_VARIANT } from "../../src/sim/terrain.js";
 import { raycastGround } from "../../src/sim/collision.js";
 import { GROUND_RAY_REFINEMENTS, GROUND_RAY_STEP } from "../../src/sim/constants.js";

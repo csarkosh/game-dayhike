@@ -5,11 +5,11 @@
  * matrices, a list a mesh. `lite/waterPlantMeshes.ts` draws them.
  */
 import { CLUTTER_LILY_PATCH_WAVE, CLUTTER_LILY_SALT, type ClutterInstance } from "../sim/clutter.js";
-import { hash3 } from "../sim/field.js";
+import { hash3 } from "@csarkosh/engine/sim/field";
 import type { LakeSource } from "../sim/terrain.js";
 import { BLADE_VERTS, bladeClumpGeometry, type BladeCharacter, type BladeClumpGeometry } from "./bladeClump.js";
-import type { Rgb } from "./colour.js";
-import { composeInto, quatFromEuler, type Quat } from "./instancePose.js";
+import type { Rgb } from "@csarkosh/engine/game/colour";
+import { composeInto, quatFromEuler, type Quat } from "@csarkosh/engine/game/instancePose";
 import { REED_VARIANTS, waterPlantPlacements, type WaterPlantPlacements } from "./waterPlantField.js";
 
 /** The reed class's variants, by `ClutterInstance.variant`: two reeds and a

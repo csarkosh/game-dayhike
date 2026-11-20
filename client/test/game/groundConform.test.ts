@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { GROUND_CONFORM_OVERSHOOT, GROUND_CONFORM_RAMP, conformDisplacement, conformUniforms } from "../../src/game/groundConform.js";
+import { GROUND_CONFORM_OVERSHOOT, GROUND_CONFORM_RAMP, conformDisplacement, conformUniforms } from "@csarkosh/engine/game/groundConform";
 
 describe("the base conform's uniforms", () => {
   it("are its two constants, by name", () => {

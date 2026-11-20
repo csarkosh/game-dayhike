@@ -9,7 +9,7 @@
  */
 import { COVE_FACE_GRADE, COVE_TOE_DEPTH, coveFor } from "../sim/olympic.js";
 import { LipTracker } from "./oceanBreaker.js";
-import { SWELL_COMPONENTS } from "./oceanSwell.js";
+import { SWELL_COMPONENTS } from "@csarkosh/engine/game/oceanSwell";
 import { coastProfilesFor } from "./oceanTables.js";
 import { swellPhases, type OceanField } from "./oceanWaves.js";
 import { SwashTable, type SwashCove } from "./swashTable.js";

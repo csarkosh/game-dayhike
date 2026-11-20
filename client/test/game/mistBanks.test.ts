@@ -4,11 +4,11 @@ import {
   MIST_CAP_BY_TIER, MIST_DRIFT, MIST_EDGE_FADE_SPAN, MIST_INSTANCE_FLOATS, MIST_NEAR_FADE_SPAN, MIST_NEAR_FADE_START, MIST_SHOWN_FLOOR, MIST_WRAP_FADE,
   createMistBanks, emptyMistUniforms, mistBankShown, mistUniforms, writeMistInstances, type DrawnMistBank, type MistOrder,
 } from "../../src/game/mistBanks.js";
-import { skyStateFor } from "../../src/game/skyState.js";
+import { skyStateFor } from "@csarkosh/engine/game/skyState";
 import { skyFixture } from "./helpers/skyFixture.js";
 import { MIST_CELL, MIST_RADIUS, collectMistBanks } from "../../src/game/mistField.js";
-import { WEATHER_PRESETS, mistOpacityUnder } from "../../src/game/weather.js";
-import { windRecordUnder } from "../../src/game/windParams.js";
+import { WEATHER_PRESETS, mistOpacityUnder } from "@csarkosh/engine/game/weather";
+import { windRecordUnder } from "@csarkosh/engine/game/windParams";
 // Terrain variants register via import side effects (see mistField.test.ts);
 // collectMistBanks needs one active before it can sample elevation.
 import "../../src/sim/olympic.js";

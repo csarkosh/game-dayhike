@@ -2,7 +2,7 @@ import { describe, it, expect } from "vitest";
 import "../../src/sim/passes/index.js";
 import { GROUND_NORMAL_Y } from "../../src/sim/constants.js";
 import { groundCover, rockSlopeBand, type ClutterInstance } from "../../src/sim/clutter.js";
-import { hash3 } from "../../src/sim/field.js";
+import { hash3 } from "@csarkosh/engine/sim/field";
 import { elevationSampleAt } from "../../src/sim/terrain.js";
 import { forestDensity } from "../../src/sim/vegetation.js";
 import {
@@ -12,7 +12,7 @@ import {
 import {
   CLIFF_BUDGET, CLIFF_PAD, CLIFF_RINGS, cliffBands, cliffOrigin, collectCliffs, createCliffCollector,
 } from "../../src/game/cliffField.js";
-import { seatOnGroundCapped } from "../../src/game/groundTilt.js";
+import { seatOnGroundCapped } from "@csarkosh/engine/game/groundTilt";
 import { classifySurface } from "../../src/game/terrainSurface.js";
 import { CLIFF_LAID } from "../sim/helpers/cliffLaid.js";
 import { babylonValues } from "../helpers/babylonFixture.js";

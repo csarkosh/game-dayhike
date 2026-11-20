@@ -3,8 +3,8 @@ import {
   WIND_TIME_WRAP, WIND_OMEGA_GUST, WIND_OMEGA_GUST2, WIND_OMEGA_FLUTTER, WIND_K1, WIND_K2,
   WIND_BASE, WIND_CLOUD, WIND_RAIN, WIND_LEAN_MAX, WIND_GUST_MAX, WIND_FLUTTER_MAX,
   WIND_DIR_PERIOD, windSpeedUnder, windRecordUnder, directionAt, gustAt, omegaMultiple,
-} from "../../src/game/windParams.js";
-import { WEATHER_PRESETS } from "../../src/game/weather.js";
+} from "@csarkosh/engine/game/windParams";
+import { WEATHER_PRESETS } from "@csarkosh/engine/game/weather";
 
 describe("wind frequencies", () => {
   it("are exact multiples of 2π / WIND_TIME_WRAP so the time wrap is phase-continuous", () => {

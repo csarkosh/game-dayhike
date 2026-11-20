@@ -1,11 +1,11 @@
 import { CLUTTER_LITTER, groundCover, type ClutterInstance } from "../sim/clutter.js";
 import { activeTerrainVariant } from "../sim/terrain.js";
 import { forestDensity } from "../sim/vegetation.js";
-import { latticeHash } from "./groundHexParams.js";
+import { latticeHash } from "@csarkosh/engine/game/groundHexParams";
 import { DUFF_CHARACTER_COUNT, DUFF_TWIG } from "./duffClump.js";
 import { GROW_NONE, type BladeEdges } from "./bladeField.js";
-import { finish, nextCrossing, sliceDue, sortSlices, type Slices } from "./syncJobs.js";
-import { createCellWindow, inWindow, moveWindow, prefetchWindow, walkEveryCell, type CellRows } from "./cellWindow.js";
+import { finish, nextCrossing, sliceDue, sortSlices, type Slices } from "@csarkosh/engine/game/syncJobs";
+import { createCellWindow, inWindow, moveWindow, prefetchWindow, walkEveryCell, type CellRows } from "@csarkosh/engine/game/cellWindow";
 
 /**
  * The duff field: the counterpart of `bladeField.ts` for the ground's dead

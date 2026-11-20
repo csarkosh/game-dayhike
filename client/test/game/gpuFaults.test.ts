@@ -26,10 +26,10 @@ import {
   type GpuFaultDeps,
   type PictureRead,
   type RendererFacts,
-} from "../../src/game/gpuFaults.js";
-import type { HeldCounts } from "../../src/game/deviceHeld.js";
-import { createLossRecord } from "../../src/game/lossBound.js";
-import type { Fields } from "../../src/net/telemetry.js";
+} from "@csarkosh/engine/game/gpuFaults";
+import type { HeldCounts } from "@csarkosh/engine/game/deviceHeld";
+import { createLossRecord } from "@csarkosh/engine/game/lossBound";
+import type { Fields } from "@csarkosh/engine/net/telemetry";
 
 // The browser's own classes, by the names it gives them.
 class GPUValidationError { constructor(readonly message: string) {} }

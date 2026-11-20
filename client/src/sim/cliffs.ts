@@ -20,7 +20,7 @@
  * sim/ determinism rules apply: no trig, no Math.pow, no `**`, no hypot.
  */
 
-import { fbm2d } from "./field.js";
+import { fbm2d } from "@csarkosh/engine/sim/field";
 import type { TerrainSample } from "./terrain.js";
 
 // ---- Tunables (all join the olympic variant record) --------

@@ -1,4 +1,4 @@
-import type { LakeBump, LakeFamily, LakeShape, LakeSpout } from "../../src/sim/lakeShape.js";
+import type { LakeBump, LakeFamily, LakeShape, LakeSpout } from "@csarkosh/engine/sim/lakeShape";
 import type { Lobe } from "../../src/sim/features.js";
 import type { LakeSource } from "../../src/sim/terrain.js";
 

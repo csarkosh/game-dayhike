@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   CULL_MARGIN, CULL_MOVE, CULL_PUSHBACK, CULL_RADIUS, CULL_ROLL, CULL_TURN,
   cullInvalidate, cullPlanes, cullPrefix, cullSet, needsCull, viewPlanes, type CullPose,
-} from "../../src/game/grassCull.js";
+} from "@csarkosh/engine/game/grassCull";
 import { BOB_ROLL, MAX_BOB_SCALE } from "../../src/game/viewBob.js";
 import { inCone } from "../../src/game/wildlifeDirector.js";
 import { CLUTTER_CULLED } from "../../src/game/clutterInstances.js";

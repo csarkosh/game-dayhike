@@ -9,11 +9,11 @@
  * the tables and the wind sea's field.
  */
 import { coveFor } from "../sim/olympic.js";
-import { SWELL_COMPONENTS, SWELL_COMPONENTS_LOW, type SwellComponent } from "./oceanSwell.js";
+import { SWELL_COMPONENTS, SWELL_COMPONENTS_LOW, type SwellComponent } from "@csarkosh/engine/game/oceanSwell";
 import { OCEAN_COAST_RECENTRE, OCEAN_COAST_STEP, coastProfilesFor, writeCoastRow } from "./oceanTables.js";
 import { oceanFieldFor, swellPhases, type OceanField } from "./oceanWaves.js";
 import { windSeaStateFor, type WindSeaState } from "./oceanWindSea.js";
-import type { QualityTier } from "./quality.js";
+import type { QualityTier } from "@csarkosh/engine/game/quality";
 
 /**
  * Where an absent headland tip is written (x, metres, at z = 0): far inland.

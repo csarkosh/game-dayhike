@@ -13,7 +13,7 @@
 import type { TrailGraph } from "./trail.js";
 import type { Landmark, LandmarkMask } from "./landmarks.js";
 import type { FeatureMask, Lobe } from "./features.js";
-import type { LakeShape } from "./lakeShape.js";
+import type { LakeShape } from "@csarkosh/engine/sim/lakeShape";
 
 export type TerrainSample = {
   /** Height in metres. */

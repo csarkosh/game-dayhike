@@ -1,8 +1,8 @@
 import { describe, expect, it } from "vitest";
 import {
   lakeApronEnd, lakeOutline, lakeShoreInto, newLakeShore, valleyLakeShape, type LakeShape,
-} from "../../src/sim/lakeShape.js";
-import { hash3 } from "../../src/sim/field.js";
+} from "@csarkosh/engine/sim/lakeShape";
+import { hash3 } from "@csarkosh/engine/sim/field";
 import { featureDraw, POND_RADIUS_MAX, POND_RADIUS_MIN } from "../../src/sim/features.js";
 import { LOBBY_SEEDS } from "./trailGateSeeds.js";
 import { median, outlineMetrics } from "./helpers/outlineMetrics.js";

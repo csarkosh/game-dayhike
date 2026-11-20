@@ -2,7 +2,7 @@ import { describe, it, expect } from "vitest";
 import { readFileSync } from "node:fs";
 import "../../src/sim/olympic.js";
 import { denseSample } from "../../src/sim/montane.js";
-import { fbm2d } from "../../src/sim/field.js";
+import { fbm2d } from "@csarkosh/engine/sim/field";
 import { roadOffsetD, gradeSplineD, ROAD_CORRIDOR_HALF, ROAD_BED_HALF, ROAD_LATTICE } from "../../src/sim/road.js";
 import {
   olympicBaseSample, roadGradeAt, duneD, DUNE_AMPLITUDE, DUNE_ROAD_NEAR, DUNE_ROAD_FAR, SEA_LEVEL,

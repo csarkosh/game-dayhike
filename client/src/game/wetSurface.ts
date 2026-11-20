@@ -6,7 +6,7 @@
  * `lite/wetWgsl.ts` draws the look and binds these to a material; this
  * module loads no engine.
  */
-import { clamp01 } from "./colour.js";
+import { clamp01 } from "@csarkosh/engine/game/colour";
 import type { WaterBody } from "./waterShading.js";
 import { SWASH_COLUMNS, SWASH_STRIDE } from "./swashTable.js";
 

@@ -3,7 +3,7 @@ import { createHash } from "node:crypto";
 import { readFileSync } from "node:fs";
 
 import catalog from "../../assets/catalog.json" with { type: "json" };
-import { glbOutline } from "../../src/game/glbParts.js";
+import { glbOutline } from "@csarkosh/engine/game/glbParts";
 import { babylonValues } from "../helpers/babylonFixture.js";
 
 type Entry = { id: string; kind: string; output: string; animations?: Record<string, string> };

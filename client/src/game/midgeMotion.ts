@@ -1,6 +1,6 @@
-import { hash3 } from "../sim/field.js";
+import { hash3 } from "@csarkosh/engine/sim/field";
 import { MAX_PLAYERS, PLAYER_HALF } from "../sim/constants.js";
-import type { QualityTier } from "./quality.js";
+import type { QualityTier } from "@csarkosh/engine/game/quality";
 import { WATER_LIFE_SALT } from "./waterLifeField.js";
 
 /**

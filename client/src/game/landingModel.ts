@@ -1,4 +1,4 @@
-import { formatSize, isNewer, PLATFORMS, type DesktopRelease, type Platform } from "../net/desktopRelease.js";
+import { formatSize, isNewer, PLATFORMS, type DesktopRelease, type Platform } from "@csarkosh/engine/net/desktopRelease";
 import { settingsModel, type SettingsInput, type SettingsView } from "./settings.js";
 
 // Ad-hoc signed until a Developer ID exists: macOS blocks the first open with

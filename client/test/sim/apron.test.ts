@@ -7,7 +7,7 @@ import {
   APRON_Z_HALF, APRON_Z_FADE, APRON_CLIFF_U, APRON_CLIFF_FADE,
 } from "../../src/sim/bowl.js";
 import { checkDerivatives, TOL_RATIO } from "./helpers/derivatives.js";
-import { fbm2d } from "../../src/sim/field.js";
+import { fbm2d } from "@csarkosh/engine/sim/field";
 import { roadOffsetD } from "../../src/sim/road.js";
 import {
   BLEND_START, BLEND_END_BAY, BLEND_END_HEADLAND,

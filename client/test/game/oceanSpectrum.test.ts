@@ -3,8 +3,8 @@ import {
   FFT_N, FFT_CASCADES, LOOP_N, LOOP_SIZE, LOOP_FRAMES, LOOP_SECONDS, WIND_SEA_SALT,
   WIND_SEA_HS_COEFF, WIND_SEA_FP_COEFF, WIND_SEA_SPREAD, WIND_SEA_GAMMA, WIND_SEA_REPEAT,
   jonswap, spreading, cascadeBands, windSeaCascadeSeed, windSeaH0,
-} from "../../src/game/oceanSpectrum.js";
-import { evolveSpectrum, fft2dInverse, fftWaveIndex } from "../../src/game/oceanFft.js";
+} from "@csarkosh/engine/game/oceanSpectrum";
+import { evolveSpectrum, fft2dInverse, fftWaveIndex } from "@csarkosh/engine/game/oceanFft";
 import { timeLimit } from "../helpers/timeLimit.js";
 
 /** ∫ S df by the midpoint rule over [lo, hi). */

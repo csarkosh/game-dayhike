@@ -7,7 +7,7 @@ import {
   cloudFor, cloudMarchSteps, cloudOn, cloudUniforms, emptyCloudUniforms, noCloud, writeCloudGround,
   CLOUD_GROUND_REBUILD_M, CLOUD_STEPS_HIGH, CLOUD_STEPS_MEDIUM, cloudDensityNow, cloudGroundDue, cloudStepsFor,
 } from "../../src/game/cloudParams.js";
-import { postFeaturesFor } from "../../src/game/postParams.js";
+import { postFeaturesFor } from "@csarkosh/engine/game/postParams";
 
 describe("the ground cloud's density", () => {
   it("is the night's with no haunt on, lifted by the haunt, the chase's by its cast, and nothing by day", () => {

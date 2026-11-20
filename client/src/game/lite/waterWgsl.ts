@@ -65,7 +65,7 @@
  */
 import { CAUSTIC_DEPTH_M, CAUSTIC_GAIN, CAUSTIC_MAX, LENS_STEP_M } from "../lakeRipples.js";
 import { SKYLINE_TEXELS } from "../lakeSkyline.js";
-import { LAKE_MOTION_SMEAR_CAP, MIRROR_DEPTH_FULL } from "../mirrorView.js";
+import { LAKE_MOTION_SMEAR_CAP, MIRROR_DEPTH_FULL } from "@csarkosh/engine/game/mirrorView";
 import { PANORAMA_EYE_UP, PANORAMA_HEIGHT_M } from "../panoramaTurn.js";
 import { WATER_F0 } from "../waterShading.js";
 import vertexSource from "../shaders/water/vertex.wgsl?raw";
@@ -83,7 +83,7 @@ import lakeLightsSource from "../shaders/water/lakeLights.wgsl?raw";
 import splitSource from "../shaders/water/split.wgsl?raw";
 import lakeMirrorReadSource from "../shaders/water/lakeMirrorRead.wgsl?raw";
 import lakeComposeSource from "../shaders/water/lakeCompose.wgsl?raw";
-import { fill, wgsl } from "../shaders/shaderText.js";
+import { fill, wgsl } from "@csarkosh/engine/game/shaders/shaderText";
 import throughFinalSource from "../shaders/water/throughFinal.wgsl?raw";
 
 /** Babylon.js's dielectric F0 at an F0 factor of 1: water's F0 is the factor's share of it. */

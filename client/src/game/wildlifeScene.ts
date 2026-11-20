@@ -19,14 +19,14 @@
  * Renderer-only by design: nothing here may migrate into sim/ (the
  * wildlifeField.ts rule). Wildlife is cosmetic and must not move the level id.
  */
-import { hash3 } from "../sim/field.js";
+import { hash3 } from "@csarkosh/engine/sim/field";
 import { elevationAt, elevationSampleAt } from "../sim/terrain.js";
 import { SIM_TICK_HZ, TICK_DT } from "../sim/constants.js";
-import type { WeatherParams } from "./weather.js";
-import { seatOnGround } from "./groundTilt.js";
-import { fadeWeight } from "./distanceFade.js";
-import { composeInto, quatFromEuler, type Quat } from "./instancePose.js";
-import { WING_TIME_WRAP } from "./wingParams.js";
+import type { WeatherParams } from "@csarkosh/engine/game/weather";
+import { seatOnGround } from "@csarkosh/engine/game/groundTilt";
+import { fadeWeight } from "@csarkosh/engine/game/distanceFade";
+import { composeInto, quatFromEuler, type Quat } from "@csarkosh/engine/game/instancePose";
+import { WING_TIME_WRAP } from "@csarkosh/engine/game/wingParams";
 import {
   createWildlifeCollector, DIRECTOR_POOL, FIRST_BIRD_SPECIES, SPECIES_BUTTERFLY, SPECIES_COUNT, SPECIES_DEER,
   SPECIES_ELK, SPECIES_RAVEN_PAIR, SPECIES_RAVEN_ROOST, speciesGround, WILDLIFE_RADIUS, type WildlifeUnit,
@@ -35,8 +35,8 @@ import {
   createUnitState, PHASE_REST, startCue, stepUnit, wildlifePresenceUnder,
   type ClipRole, type PlayerPoint, type UnitState, type WildlifeEvent,
 } from "./wildlifeBehaviour.js";
-import { buildAtOnce, type FirstBuilds } from "./firstBuilds.js";
-import type { Slices } from "./syncJobs.js";
+import { buildAtOnce, type FirstBuilds } from "@csarkosh/engine/game/firstBuilds";
+import type { Slices } from "@csarkosh/engine/game/syncJobs";
 import {
   createDirectorState, DIRECTOR_ID_BASE, onScreen, PLACE_BODY_H, step as stepDirector,
   type Candidate, type CueEvent, type Ground, type MatchState, type View,

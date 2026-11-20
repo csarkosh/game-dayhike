@@ -15,14 +15,14 @@
  * across rebuilds so a camera move re-samples only the cells newly inside
  * some class's disc. Pure and Babylon-free, like `forestField.ts`.
  */
-import type { FadeBands } from "./distanceFade.js";
+import type { FadeBands } from "@csarkosh/engine/game/distanceFade";
 import {
   clutterInCell, clutterCell, CLUTTER_CLASS_COUNT, CLUTTER_GRASS_CELL, CLUTTER_MEADOW, type ClutterInstance, CLUTTER_GRASS, CLUTTER_BUSH, CLUTTER_FLOWER, CLUTTER_LITTER, CLUTTER_FERN, CLUTTER_SHRUB, CLUTTER_WETPLANT, CLUTTER_HIGHPLANT,
 } from "../sim/clutter.js";
-import { finish, nextCrossing, sliceDue, type Slices } from "./syncJobs.js";
+import { finish, nextCrossing, sliceDue, type Slices } from "@csarkosh/engine/game/syncJobs";
 import {
   createCellWindow, inWindow, moveWindow, prefetchWindow, walkEveryCell, type CellRows, type CellWindow,
-} from "./cellWindow.js";
+} from "@csarkosh/engine/game/cellWindow";
 
 /**
  * Per-class scatter radius (m), indexed by class id (CLUTTER_GRASS = 0 ..

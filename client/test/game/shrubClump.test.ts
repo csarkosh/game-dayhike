@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { SHRUB_CHARACTERS, shrubGeometry } from "../../src/game/shrubClump.js";
+import { SHRUB_CHARACTERS, shrubGeometry } from "@csarkosh/engine/game/shrubClump";
 
 describe("shrubGeometry", () => {
   it("is a pure function of the character and the level of detail", () => {

@@ -32,17 +32,17 @@
 import { MAX_PLAYERS } from "../sim/constants.js";
 import type { LakeSource } from "../sim/terrain.js";
 import { nextRandom } from "../sim/types.js";
-import type { QualityTier } from "./quality.js";
-import type { SkyState } from "./skyState.js";
-import type { WeatherParams } from "./weather.js";
-import type { WindRecord } from "./windParams.js";
+import type { QualityTier } from "@csarkosh/engine/game/quality";
+import type { SkyState } from "@csarkosh/engine/game/skyState";
+import type { WeatherParams } from "@csarkosh/engine/game/weather";
+import type { WindRecord } from "@csarkosh/engine/game/windParams";
 import {
   midgeHumPitch,
   summerTemperature,
   waterLifePresenceUnder,
   type DragonflyShare,
   type WaterLifePresence,
-} from "./waterLifeParams.js";
+} from "@csarkosh/engine/game/waterLifeParams";
 import { inShoreBand, waterLifeBed, waterLifeLayout, type WaterLifeLayout, type WaterLifeMade } from "./waterLifeField.js";
 import {
   HEAD_MIDGES,

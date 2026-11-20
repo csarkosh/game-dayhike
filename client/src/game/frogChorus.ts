@@ -36,7 +36,7 @@
  * loudness come from the world's seed. Nothing is allocated per step: the
  * state is typed arrays made once, and `calls` holds one reused entry a voice.
  */
-import { hash3 } from "../sim/field.js";
+import { hash3 } from "@csarkosh/engine/sim/field";
 import { FROG_CALL_S } from "./insectVoices.js";
 import type { FrogVoice } from "./waterLifeField.js";
 

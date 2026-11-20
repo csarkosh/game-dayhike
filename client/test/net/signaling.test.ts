@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
-import { createSignalingClient, type WebSocketLike } from "../../src/net/signaling.js";
+import { createSignalingClient, type WebSocketLike } from "@csarkosh/engine/net/signaling";
 
 /** A hand-driven stand-in for a browser WebSocket. */
 class FakeSocket implements WebSocketLike {

@@ -1,14 +1,14 @@
-import { clamp01 } from "./colour.js";
-import { gustAt, type WindRecord } from "./windParams.js";
+import { clamp01 } from "@csarkosh/engine/game/colour";
+import { gustAt, type WindRecord } from "@csarkosh/engine/game/windParams";
 import { createStareAudio, MUFFLE_OPEN_HZ, muffleGain, muffleHz, type StareAudio } from "./stareAudio.js";
 import type { StareLens } from "./stareLens.js";
 import { makeOddSound, ODD_LEVEL } from "./oddSounds.js";
 import { createChaseAudio, type ChaseAudio } from "./chaseAudio.js";
 import { createCarAudio, type CarAudio, type CarPlace, type EarFrame } from "./carAudio.js";
-import type { OddCue } from "./woodsSounds.js";
+import type { OddCue } from "@csarkosh/engine/game/woodsSounds";
 import {
   DEFAULT_WEATHER, WEATHER_PRESETS, rainHissCentreHz, rainWindCut, type WeatherParams,
-} from "./weather.js";
+} from "@csarkosh/engine/game/weather";
 
 /** Peak gain for the rain layer, applied on top of the weather's rain value
  * (`ambientGainsUnder`'s `rain`, computed inline here since `setWind`

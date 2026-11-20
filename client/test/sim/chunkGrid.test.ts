@@ -5,7 +5,7 @@ import { CELLS_PER_CHUNK, generateChunk, type Chunk } from "../../src/sim/chunk.
 import { activeTerrainVariantName } from "../../src/sim/terrain.js";
 import { depenetrate, raycast, sweepBox } from "../../src/sim/collision.js";
 import { PLAYER_HALF } from "../../src/sim/constants.js";
-import { CHUNK_SIZE } from "../../src/sim/forestConstants.js";
+import { CHUNK_SIZE } from "@csarkosh/engine/sim/forestConstants";
 import { elevationAt } from "../../src/sim/terrain.js";
 import type { Vec3 } from "../../src/sim/types.js";
 import type { Aabb } from "../../src/sim/level.js";

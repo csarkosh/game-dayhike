@@ -1,12 +1,12 @@
 import { describe, expect, it } from "vitest";
 import { createWorldLight } from "../../../src/game/lite/worldLight.js";
 import { atmosphereUnder } from "../../../src/game/atmosphereParams.js";
-import { sunPositionAt } from "../../../src/game/sky.js";
-import { sceneLightsUnder } from "../../../src/game/sceneLights.js";
-import { skyStateFor } from "../../../src/game/skyState.js";
-import { createSkyTable } from "../../../src/game/skyTable.js";
-import { DEFAULT_HOUR } from "../../../src/game/skyWait.js";
-import { DEFAULT_WEATHER, WEATHER_PRESETS, exposureUnder, lerpWeather } from "../../../src/game/weather.js";
+import { sunPositionAt } from "@csarkosh/engine/game/sky";
+import { sceneLightsUnder } from "@csarkosh/engine/game/sceneLights";
+import { skyStateFor } from "@csarkosh/engine/game/skyState";
+import { createSkyTable } from "@csarkosh/engine/game/skyTable";
+import { DEFAULT_HOUR } from "@csarkosh/engine/game/skyWait";
+import { DEFAULT_WEATHER, WEATHER_PRESETS, exposureUnder, lerpWeather } from "@csarkosh/engine/game/weather";
 import { skyFixture } from "../helpers/skyFixture.js";
 
 const VIEW = 4000;

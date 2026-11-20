@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import type { JoinedInfo, SignalingClient } from "../../src/net/signaling.js";
+import type { JoinedInfo, SignalingClient } from "@csarkosh/engine/net/signaling";
 import {
   createLobby,
   joinLobby,
@@ -7,7 +7,7 @@ import {
   parseLobbyMessage,
   sanitiseName,
   type LobbyState,
-} from "../../src/net/lobby.js";
+} from "@csarkosh/engine/net/lobby";
 
 const LOBBY = "3f2504e0-4f89-41d3-9a0c-0305e82c3301";
 

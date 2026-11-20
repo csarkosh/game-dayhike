@@ -1,4 +1,4 @@
-import { clamp01 } from "./colour.js";
+import { clamp01 } from "@csarkosh/engine/game/colour";
 import { WALK_SPEED } from "../sim/constants.js";
 
 /**

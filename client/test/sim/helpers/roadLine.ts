@@ -8,7 +8,7 @@
  * Registers the olympic variant as a side effect so callers don't have to.
  */
 import "../../../src/sim/olympic.js";
-import { fbm2d } from "../../../src/sim/field.js";
+import { fbm2d } from "@csarkosh/engine/sim/field";
 import { roadOffsetD } from "../../../src/sim/road.js";
 import { DERIV_SEED as SEED, variantOrThrow } from "./derivatives.js";
 

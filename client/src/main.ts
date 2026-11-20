@@ -15,16 +15,16 @@ import {
   hostRoute,
   stripOverrides,
   type Route,
-} from "./game/router.js";
+} from "@csarkosh/engine/game/router";
 import { renderLanding, type LandingHandle, type LandingPanel } from "./game/landing.js";
-import { afterNextPaint } from "./game/paint.js";
+import { afterNextPaint } from "@csarkosh/engine/game/paint";
 import { createIntroOverlay, type CutReason, type IntroOverlay } from "./game/introOverlay.js";
-import { pageTurns, turnsLine } from "./game/downloadTurns.js";
+import { pageTurns, turnsLine } from "@csarkosh/engine/game/downloadTurns";
 import { INTRO_CAPTIONS } from "./game/scene/intro.js";
 import { setLoadProgress } from "./game/loadReport.js";
-import { markedProgress } from "./game/loadProgress.js";
+import { markedProgress } from "@csarkosh/engine/game/loadProgress";
 import { titleStillUrl, titleVideoUrl, videoUrl } from "./game/assetUrls.js";
-import { createRouteAnnouncer } from "./game/routeAnnounce.js";
+import { createRouteAnnouncer } from "@csarkosh/engine/game/routeAnnounce";
 import { createTitleLoop, titleLoopEnv, type TitleLoop } from "./game/titleLoop.js";
 import { createFilmHead, fetchFilmHead, filmHeadWanted, onCellular, warmWhenLoaded } from "./game/filmHead.js";
 import { worldInputs } from "./game/worldInputs.js";
@@ -33,24 +33,24 @@ import type { PreparedScene } from "./game/preparedScene.js";
 import { runLiteSceneRoute } from "./game/lite/sceneRoute.js";
 import { liteProbeDeps } from "./game/lite/probeScene.js";
 import { landingModel, type LandingInput } from "./game/landingModel.js";
-import { isDesktop, isTouchDevice, hostPlatform, desktopVersion } from "./game/platform.js";
-import { inviteLink, parseJoinLink } from "./game/joinLink.js";
+import { isDesktop, isTouchDevice, hostPlatform, desktopVersion } from "@csarkosh/engine/game/platform";
+import { inviteLink, parseJoinLink } from "@csarkosh/engine/game/joinLink";
 import { loadName, saveName } from "./game/playerName.js";
 import { createRoster } from "./game/roster.js";
 import { rosterModel, attemptPending } from "./game/rosterModel.js";
 import { startAttemptClock, type AttemptClock } from "./game/attemptClock.js";
-import { parseLatest, type DesktopRelease } from "./net/desktopRelease.js";
-import { createSignalingClient, type SignalingClient } from "./net/signaling.js";
-import { signalingUrl } from "./net/signalingUrl.js";
-import { createLobby, joinLobby, lobbyErrorMessage, type Lobby } from "./net/lobby.js";
-import { browserDeps, createTelemetry, installErrorCapture, referrerOf, telemetryUrl, testerMark, visitorId, type EarlyCatch, type Telemetry } from "./net/telemetry.js";
+import { parseLatest, type DesktopRelease } from "@csarkosh/engine/net/desktopRelease";
+import { createSignalingClient, type SignalingClient } from "@csarkosh/engine/net/signaling";
+import { signalingUrl } from "@csarkosh/engine/net/signalingUrl";
+import { createLobby, joinLobby, lobbyErrorMessage, type Lobby } from "@csarkosh/engine/net/lobby";
+import { browserDeps, createTelemetry, installErrorCapture, referrerOf, telemetryUrl, testerMark, visitorId, type EarlyCatch, type Telemetry } from "@csarkosh/engine/net/telemetry";
 import { PROTOCOL_VERSION } from "./net/protocol.js";
 import { GEN_VERSION } from "./sim/forest.js";
 import { startGame, type GameHandle } from "./app.js";
 import type { EngineOnCanvas } from "./game/rendererSwap.js";
-import { LOSS_ENDED_LINE, createLossRecord } from "./game/lossBound.js";
-import { browserEnv, browserMajor, hostOs, isMobile, offersWebGpu, readSignals, type GpuSignals, type NavigatorLike } from "./game/gpuSignals.js";
-import { adapterVerdict, loadVerdict, type LoadVerdict } from "./game/loadCheck.js";
+import { LOSS_ENDED_LINE, createLossRecord } from "@csarkosh/engine/game/lossBound";
+import { browserEnv, browserMajor, hostOs, isMobile, offersWebGpu, readSignals, type GpuSignals, type NavigatorLike } from "@csarkosh/engine/game/gpuSignals";
+import { adapterVerdict, loadVerdict, type LoadVerdict } from "@csarkosh/engine/game/loadCheck";
 import { creditsEntries } from "./game/credits.js";
 import { renderTurnedAway, type TurnedAwayHandle } from "./game/turnedAway.js";
 import { turnedAwayModel, visitorDevice, type TurnedAwayView } from "./game/turnedAwayModel.js";
@@ -69,7 +69,7 @@ import {
 import { createHud } from "./game/hud.js";
 import { createModeKeeper, type GameMode } from "./game/gameMode.js";
 import { createMuteButton, readMuted, writeMuted } from "./game/muteButton.js";
-import { containerPixels, withGovernorDrop, type QualityTier, type VerdictEngine } from "./game/quality.js";
+import { containerPixels, withGovernorDrop, type QualityTier, type VerdictEngine } from "@csarkosh/engine/game/quality";
 import type { AutoSummary } from "./game/settings.js";
 import {
   createChoiceKeeper,
@@ -83,8 +83,8 @@ import {
   writeAutoRecord,
   type TierChoice,
   type TierSource,
-} from "./game/tierChoice.js";
-import { createVeil, VEIL_CUT_COVER_MS, VEIL_CUT_LIFT_MS } from "./game/veil.js";
+} from "@csarkosh/engine/game/tierChoice";
+import { createVeil, VEIL_CUT_COVER_MS, VEIL_CUT_LIFT_MS } from "@csarkosh/engine/game/veil";
 
 const found = document.querySelector<HTMLDivElement>("#app");
 if (!found) throw new Error("#app not found");

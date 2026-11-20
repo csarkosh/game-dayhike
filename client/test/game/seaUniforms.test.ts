@@ -3,7 +3,7 @@ import "../../src/sim/olympic.js";
 import { setActiveTerrainVariant } from "../../src/sim/terrain.js";
 import { createOceanFrame } from "../../src/game/oceanFrame.js";
 import { SEA_RING_FLOATS } from "../../src/game/seaLattice.js";
-import { seedFromToken } from "../../src/game/seed.js";
+import { seedFromToken } from "@csarkosh/engine/game/seed";
 import { SEA_COMPONENT_VECS, emptySeaFrameUniforms, emptySeaUniforms, seaFrameUniforms, seaUniforms } from "../../src/game/seaUniforms.js";
 import { WATER_RING_COUNT } from "../../src/game/water.js";
 import { WATER_ROWS, waterSkinOffset } from "../../src/game/waterShading.js";

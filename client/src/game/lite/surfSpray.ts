@@ -33,17 +33,17 @@ import {
   SURF_SPRAY_STRETCH_M, createSprayBursts, emptySprayUniforms, sprayBurstName, sprayColour, sprayInstances, sprayUniforms, sprayWind,
   type SprayLight, type SprayThrown,
 } from "../sprayField.js";
-import type { WindRecord } from "../windParams.js";
-import { DISPLAY_CURVE_WGSL, onColourPath } from "./displayCurve.js";
-import { SEE_THROUGH_ORDER } from "./drawOrder.js";
+import type { WindRecord } from "@csarkosh/engine/game/windParams";
+import { DISPLAY_CURVE_WGSL, onColourPath } from "@csarkosh/engine/game/lite/displayCurve";
+import { SEE_THROUGH_ORDER } from "@csarkosh/engine/game/lite/drawOrder";
 import { wgslFloat } from "./forestPlugins.js";
 import { FRAME_CONTRAST_NAME, FRAME_EXPOSURE_NAME, stageOwn, stageReads } from "./frameBlock.js";
-import type { FrameUploads } from "./frameUploads.js";
-import { shaderUniformDecls, shaderUniformWriter } from "./shaderUniforms.js";
+import type { FrameUploads } from "@csarkosh/engine/game/lite/frameUploads";
+import { shaderUniformDecls, shaderUniformWriter } from "@csarkosh/engine/game/lite/shaderUniforms";
 import varyingsSource from "../shaders/surfSpray/varyings.wgsl?raw";
 import surfSprayVertexSource from "../shaders/surfSpray/surfSpray.vertex.wgsl?raw";
 import surfSprayFragmentSource from "../shaders/surfSpray/surfSpray.fragment.wgsl?raw";
-import { fill, wgsl } from "../shaders/shaderText.js";
+import { fill, wgsl } from "@csarkosh/engine/game/shaders/shaderText";
 
 const f = wgslFloat;
 

@@ -18,15 +18,15 @@ import { BASE_SPACING_BY_TIER, RING_COUNT, createRingSamples, ringSpacing, snapO
 import { FEATURE_TEX_ROWS, FEATURE_TEX_WIDTH, featureTableFor } from "./featureTable.js";
 import { skylineElevations, skylineTrees } from "./lakeSkyline.js";
 import { lakeSurfaceDepths, lakeSurfaceGrid } from "./lakeSurfaceGrid.js";
-import { SWELL_COMPONENTS, SWELL_COMPONENTS_LOW } from "./oceanSwell.js";
+import { SWELL_COMPONENTS, SWELL_COMPONENTS_LOW } from "@csarkosh/engine/game/oceanSwell";
 import { oceanFieldFor, type OceanField } from "./oceanWaves.js";
-import type { QualityTier } from "./quality.js";
-import { SWASH_FACE_LIFT_M } from "./swashRunUp.js";
+import type { QualityTier } from "@csarkosh/engine/game/quality";
+import { SWASH_FACE_LIFT_M } from "@csarkosh/engine/game/swashRunUp";
 import {
   WATER_RING_COUNT, createWaterRingSamples, seaFaceZ, waterHoleCellsFor, waterRingGeometry, waterRingSpacing, wetBounds,
   type WaterGeometry, type WaterRingSamples,
 } from "./water.js";
-import { WATER_BUMP_SIZE, waterBumpData } from "./waterBump.js";
+import { WATER_BUMP_SIZE, waterBumpData } from "@csarkosh/engine/game/waterBump";
 import { waterLifeBed, waterLifeLayout, type WaterLifeMade } from "./waterLifeField.js";
 import { waterPlantPlacements, type WaterPlantPlacements } from "./waterPlantField.js";
 

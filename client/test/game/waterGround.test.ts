@@ -4,7 +4,7 @@ import { activeTerrainVariant, elevationAt } from "../../src/sim/terrain.js";
 import { lobePoints, marshWeightAt } from "../../src/sim/features.js";
 import { TRAIL_Z_ANCHOR } from "../../src/sim/bowl.js";
 import { firstPondWorld, lakeOf } from "../sim/helpers/lakes.js";
-import { rayToShore } from "../../src/sim/lakeShape.js";
+import { rayToShore } from "@csarkosh/engine/sim/lakeShape";
 import { NO_WATER_GROUND, waterGroundAt } from "../../src/game/waterGround.js";
 import { timeLimit } from "../helpers/timeLimit.js";
 

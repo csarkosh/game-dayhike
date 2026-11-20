@@ -8,7 +8,7 @@ import { collectBladeCells, createBladeCollector } from "../../src/game/bladeFie
 import { createRingSamples, updateRingSamples } from "../../src/game/clipmap.js";
 import { collectClutter, createClutterCollector } from "../../src/game/clutterField.js";
 import { DUFF_REACH, collectDuffCells, createDuffCollector } from "../../src/game/duffField.js";
-import { finish as finishSlices } from "../../src/game/syncJobs.js";
+import { finish as finishSlices } from "@csarkosh/engine/game/syncJobs";
 import { timeLimit } from "../helpers/timeLimit.js";
 
 const SEED = 1;

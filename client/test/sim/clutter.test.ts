@@ -48,7 +48,7 @@ import {
 import { SLOPE_HI, SLOPE_LO } from "../../src/sim/vegetation.js";
 import { TRAIL_BED_HALF } from "../../src/sim/trail.js";
 import { TRAIL_WEAR_W1, TRAIL_JUNCTION_W } from "../../src/game/trailBenchParams.js";
-import { fbm2 } from "../../src/sim/field.js";
+import { fbm2 } from "@csarkosh/engine/sim/field";
 import { forestDensity } from "../../src/sim/vegetation.js";
 import { ROAD_BED_HALF, ROAD_CORRIDOR_HALF } from "../../src/sim/road.js";
 import { elevationSampleAt } from "../../src/sim/terrain.js";
@@ -57,7 +57,7 @@ import { variantOrThrow, DERIV_SEED } from "./helpers/derivatives.js";
 import { centerlineX } from "./helpers/roadLine.js";
 import { setActiveTerrainVariant, DEFAULT_TERRAIN_VARIANT, activeTerrainVariant, type TerrainSample } from "../../src/sim/terrain.js";
 import { MEADOW_RIM } from "../../src/sim/features.js";
-import { lakeShoreInto, newLakeShore, rayToShore } from "../../src/sim/lakeShape.js";
+import { lakeShoreInto, newLakeShore, rayToShore } from "@csarkosh/engine/sim/lakeShape";
 
 const SEED = DERIV_SEED; // 0x5eed — the roadLine/derivatives helpers are bound to it
 

@@ -6,7 +6,7 @@
  * rough low tone dragged down, a breath the noise opened and shut like a
  * mouth, and so on. The fly is the day's: a buzz that passes the ear.
  */
-import type { OddCue } from "./woodsSounds.js";
+import type { OddCue } from "@csarkosh/engine/game/woodsSounds";
 
 /** The level each kind plays at for a cue's level of 1, under the master volume. */
 export const ODD_LEVEL: Readonly<Record<OddCue["kind"], number>> = {

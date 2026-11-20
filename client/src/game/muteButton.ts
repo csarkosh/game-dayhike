@@ -20,7 +20,7 @@
  * speaker, as the HUD's Pause button and lamp hint carry theirs (`hud.ts`).
  */
 import { aimedAtFormControl } from "./input.js";
-import { lineIcon } from "./icons.js";
+import { lineIcon } from "@csarkosh/engine/game/icons";
 
 export const MUTE_KEY = "dayhike.muted";
 

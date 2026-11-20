@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { SKIN_WRAP, skinWrapLambert } from "../../src/game/skinParams.js";
+import { SKIN_WRAP, skinWrapLambert } from "@csarkosh/engine/game/skinParams";
 
 describe("skinWrapLambert: the wrap term of the skin's shading", () => {
   it("is energy-conserving: never above Lambert at full light, lifts the terminator, zero well behind it", () => {

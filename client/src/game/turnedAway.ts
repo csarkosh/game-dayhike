@@ -19,7 +19,7 @@
  * Built with DOM APIs, never markup: a release's version and a GPU's
  * shortfall are text from outside the page.
  */
-import type { Platform } from "../net/desktopRelease.js";
+import type { Platform } from "@csarkosh/engine/net/desktopRelease";
 import { creditItem, type CreditEntry } from "./credits.js";
 import type { TurnedAwayView } from "./turnedAwayModel.js";
 

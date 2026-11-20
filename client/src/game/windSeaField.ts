@@ -20,8 +20,8 @@
  * The fields' pictures are whatever the renderer that makes them holds them
  * as (`T`): this module hands them on and never reads one.
  */
-import type { QualityTier } from "./quality.js";
-import { FFT_CASCADES, FFT_N, cascadeBands } from "./oceanSpectrum.js";
+import type { QualityTier } from "@csarkosh/engine/game/quality";
+import { FFT_CASCADES, FFT_N, cascadeBands } from "@csarkosh/engine/game/oceanSpectrum";
 import { windSeaBandStats } from "./oceanLoopBake.js";
 import { createSeaWindLag, loopTimeAfter, type WindSeaState } from "./oceanWindSea.js";
 

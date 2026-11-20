@@ -15,13 +15,13 @@ import {
   DETAIL_TILING, DETAIL_FADE, DETAIL_NORMAL, DETAIL_AO, DETAIL_AO_RANGE,
   HORIZON, HORIZON_MAX, TUFT_ALBEDO,
   SWARD_FLOOR, SWARD_MAX, SWARD_COVER, SWARD_FADE,
-} from "./groundHexParams.js";
-import { rippleTime } from "./rainParams.js";
-import { ROAD_TABLE_N, ROAD_TABLE_STEP, roadTableZ0 } from "./roadPaint.js";
-import type { QualityTier } from "./quality.js";
+} from "@csarkosh/engine/game/groundHexParams";
+import { rippleTime } from "@csarkosh/engine/game/rainParams";
+import { ROAD_TABLE_N, ROAD_TABLE_STEP, roadTableZ0 } from "@csarkosh/engine/game/roadPaint";
+import type { QualityTier } from "@csarkosh/engine/game/quality";
 import type { FeaturePaintTable, RoadCentreTable, TrailPaintTable } from "./terrainTables.js";
 import { TRAIL_PAINT_BUCKET, TRAIL_PAINT_GRID } from "./trailPaint.js";
-import { wetSurfaceUnder, type WeatherParams } from "./weather.js";
+import { wetSurfaceUnder, type WeatherParams } from "@csarkosh/engine/game/weather";
 
 /** Mean luminance every ground texture was normalised to when it was made.
  * Measured back off the five committed WebPs as

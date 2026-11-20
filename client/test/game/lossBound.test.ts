@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { LOSS_BOUND_COUNT, LOSS_BOUND_WINDOW_MS, LOSS_ENDED_LINE, createLossRecord } from "../../src/game/lossBound.js";
+import { LOSS_BOUND_COUNT, LOSS_BOUND_WINDOW_MS, LOSS_ENDED_LINE, createLossRecord } from "@csarkosh/engine/game/lossBound";
 
 const MINUTE = 60_000;
 

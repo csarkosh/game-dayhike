@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { FIRST_NAMES, HIKER_FIRST_NAMES, LAST_NAMES, hikerNames } from "../../src/sim/hikerNames.js";
-import { seedFromToken } from "../../src/game/seed.js";
+import { seedFromToken } from "@csarkosh/engine/game/seed";
 
 describe("hikerNames", () => {
   it("draws the same names for the same seed and different ones for another", () => {

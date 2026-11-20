@@ -15,13 +15,13 @@
  * canvas (`lite/probeScene.ts`).
  */
 import { PROBE_HOUR, probeReadingLine, type StartupDeps } from "./frameProbe.js";
-import { afterNextPaint } from "./paint.js";
+import { afterNextPaint } from "@csarkosh/engine/game/paint";
 import { showProbeScreen, timeIdleCadence } from "./probeScreen.js";
-import { containerPixels, type ProbeReading, type QualityTier } from "./quality.js";
-import type { SkyTable } from "./skyTable.js";
-import { sunAltitudeDeg } from "./skyWait.js";
-import { startSkySource, type SkySource } from "./skyWorker.js";
-import { pageStorage } from "./tierChoice.js";
+import { containerPixels, type ProbeReading, type QualityTier } from "@csarkosh/engine/game/quality";
+import type { SkyTable } from "@csarkosh/engine/game/skyTable";
+import { sunAltitudeDeg } from "@csarkosh/engine/game/skyWait";
+import { startSkySource, type SkySource } from "@csarkosh/engine/game/skyWorker";
+import { pageStorage } from "@csarkosh/engine/game/tierChoice";
 
 /** The page's `StartupDeps` for a container, with `abort()` to stop a probe at
  * once when the page moves on (the render that replaces it calls it first). */

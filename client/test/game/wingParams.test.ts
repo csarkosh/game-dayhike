@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { WING_TIME_WRAP, wingAngle, wingHalfSpan, wingTime } from "../../src/game/wingParams.js";
+import { WING_TIME_WRAP, wingAngle, wingHalfSpan, wingTime } from "@csarkosh/engine/game/wingParams";
 
 describe("a wing's beat as numbers", () => {
   it("counts its clock in seconds and wraps it", () => {

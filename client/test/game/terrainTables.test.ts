@@ -3,8 +3,8 @@ import {
   featurePaintTable, followRoadCentre, roadCentreTable, terrainTablesFor, trailPaintTable,
 } from "../../src/game/terrainTables.js";
 import { FEATURE_PAINT_MAX, FEATURE_TEX_ROWS, FEATURE_TEX_WIDTH, featureTable, featureTableFor, paintedLakes } from "../../src/game/featureTable.js";
-import { ROAD_TABLE_N, ROAD_TABLE_RECENTRE, ROAD_TABLE_STEP, buildRoadTable, roadTableZ0 } from "../../src/game/roadPaint.js";
-import { bakeShoreAtlas } from "../../src/game/shoreAtlas.js";
+import { ROAD_TABLE_N, ROAD_TABLE_RECENTRE, ROAD_TABLE_STEP, buildRoadTable, roadTableZ0 } from "@csarkosh/engine/game/roadPaint";
+import { bakeShoreAtlas } from "@csarkosh/engine/game/shoreAtlas";
 import { TRAIL_PAINT_MAX_SEGMENTS, TRAIL_PAINT_TABLE_ROWS, buildTrailTable, trailSegments } from "../../src/game/trailPaint.js";
 import type { Feature } from "../../src/sim/features.js";
 import "../../src/sim/passes/index.js";

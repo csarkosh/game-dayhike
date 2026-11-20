@@ -25,11 +25,11 @@
  * is a function of the crest's local phase: the roll on a broken crest's front,
  * the foam aged since the crest passed, the inner surf's floor.
  */
-import { OCEAN_G, WEGGEL_GAMMA_MAX, WEGGEL_GAMMA_MIN } from "./oceanPhysics.js";
+import { OCEAN_G, WEGGEL_GAMMA_MAX, WEGGEL_GAMMA_MIN } from "@csarkosh/engine/game/oceanPhysics";
 import {
   SWELL_COMPONENTS, SWELL_Q_SUM_MAX, swellComponents, swellStateFor, swellTravelDirection,
   type SwellComponent, type SwellState,
-} from "./oceanSwell.js";
+} from "@csarkosh/engine/game/oceanSwell";
 import {
   OCEAN_COAST_STEP, OCEAN_D_MIN, OCEAN_D_STEP, OCEAN_DRY_DEPTH,
   OCEAN_ROW_BAY_FIRST, OCEAN_ROW_BAY_PROFILE, OCEAN_ROW_COAST, OCEAN_ROW_COMPONENTS,

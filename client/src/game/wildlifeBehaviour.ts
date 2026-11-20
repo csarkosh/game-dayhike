@@ -10,11 +10,11 @@
  * regardless of when each one's UnitState was created.
  * Renderer-only.
  */
-import { hash3 } from "../sim/field.js";
+import { hash3 } from "@csarkosh/engine/sim/field";
 import { elevationAt } from "../sim/terrain.js";
 import { SIM_TICK_HZ, TICK_DT } from "../sim/constants.js";
-import { clamp01 } from "./colour.js";
-import type { WeatherParams } from "./weather.js";
+import { clamp01 } from "@csarkosh/engine/game/colour";
+import type { WeatherParams } from "@csarkosh/engine/game/weather";
 import {
   FIRST_BIRD_SPECIES, GIANT_TRUNK_RADIUS_PER_SCALE, SPECIES_BUTTERFLY, SPECIES_COUNT, SPECIES_DEER, SPECIES_EAGLE,
   SPECIES_ELK, SPECIES_GULL, SPECIES_RABBIT, SPECIES_RAVEN_PAIR, SPECIES_RAVEN_ROOST, SPECIES_SQUIRREL,

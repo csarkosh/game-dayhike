@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { cameraAxes, projectToCanvas, restAxes, restPlanes, viewCorners, viewPlanes, type CameraPose } from "../../../src/game/lite/cameraPose.js";
+import { cameraAxes, projectToCanvas, restAxes, restPlanes, viewCorners, viewPlanes, type CameraPose } from "@csarkosh/engine/game/lite/cameraPose";
 
 import { babylonValues } from "../../helpers/babylonFixture.js";
 

@@ -7,7 +7,7 @@
  */
 import { generateChunkWith, registeredPasses, type Chunk, type Pass } from "../../../src/sim/chunk.js";
 import type { BoxSource } from "../../../src/sim/boxSource.js";
-import { CHUNK_SIZE } from "../../../src/sim/forestConstants.js";
+import { CHUNK_SIZE } from "@csarkosh/engine/sim/forestConstants";
 import type { Aabb } from "../../../src/sim/level.js";
 import type { Vec3 } from "../../../src/sim/types.js";
 import {

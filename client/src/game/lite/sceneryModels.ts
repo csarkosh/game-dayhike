@@ -47,15 +47,15 @@ import {
 } from "@babylonjs/lite";
 import { TURN_ROW_FLOATS } from "../carParts.js";
 import { modelUrl } from "../assetUrls.js";
-import { glbOcclusion, glbParts, type GlbOcclusion } from "../glbParts.js";
-import { composeInto, quatFromEuler } from "../instancePose.js";
-import { bakeGeometry } from "../modelBake.js";
+import { glbOcclusion, glbParts, type GlbOcclusion } from "@csarkosh/engine/game/glbParts";
+import { composeInto, quatFromEuler } from "@csarkosh/engine/game/instancePose";
+import { bakeGeometry } from "@csarkosh/engine/game/modelBake";
 import type { WetUniforms } from "../wetSurface.js";
 import { loadModelFile, type ModelPart } from "./forestModels.js";
 import { baseColourPlugin, surfaceWetPlugin } from "./forestPlugins.js";
 import carTurnsFrameSource from "../shaders/sceneryModels/carTurnsFrame.wgsl?raw";
 import carTurnsSource from "../shaders/sceneryModels/carTurns.wgsl?raw";
-import { fill, wgsl } from "../shaders/shaderText.js";
+import { fill, wgsl } from "@csarkosh/engine/game/shaders/shaderText";
 
 /** The LOD of a placed model that is drawn: these stand in one place and are seen up close. */
 export const SCENERY_LOD = "LOD0";

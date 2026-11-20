@@ -26,7 +26,7 @@ import {
   COHORT_LOG,
   type TreeInstance,
 } from "../sim/vegetation.js";
-import { finish, sliceDue, sortSlices, type Slices } from "./syncJobs.js";
+import { finish, sliceDue, sortSlices, type Slices } from "@csarkosh/engine/game/syncJobs";
 
 /** Near band radius (m) — full-geometry trees; quality tiers may shrink it
  * via `collectBands`' `nearRadius` parameter (low runs 140 m).

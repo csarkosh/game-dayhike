@@ -14,8 +14,8 @@ import type { Feature } from "../sim/features.js";
 import { activeTerrainVariant } from "../sim/terrain.js";
 import type { TrailGraph } from "../sim/trail.js";
 import { FEATURE_PAINT_MAX, FEATURE_TEX_ROWS, FEATURE_TEX_WIDTH, featureTable, paintedLakes } from "./featureTable.js";
-import { ROAD_TABLE_N, buildRoadTable, roadTableStale, type RoadCenterX } from "./roadPaint.js";
-import { bakeShoreAtlas } from "./shoreAtlas.js";
+import { ROAD_TABLE_N, buildRoadTable, roadTableStale, type RoadCenterX } from "@csarkosh/engine/game/roadPaint";
+import { bakeShoreAtlas } from "@csarkosh/engine/game/shoreAtlas";
 import { TRAIL_PAINT_MAX_SEGMENTS, TRAIL_PAINT_TABLE_ROWS, buildTrailTable, trailSegments } from "./trailPaint.js";
 
 /** A table as its texture is made: `width` × `height` texels of `channels`

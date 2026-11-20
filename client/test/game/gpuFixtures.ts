@@ -1,4 +1,4 @@
-import type { AdapterInfo } from "../../src/game/gpuSignals.js";
+import type { AdapterInfo } from "@csarkosh/engine/game/gpuSignals";
 
 export const M4 = "ANGLE (Apple, ANGLE Metal Renderer: Apple M4, Unspecified Version)";
 export const M3_MAX = "ANGLE (Apple, ANGLE Metal Renderer: Apple M3 Max, Unspecified Version)";

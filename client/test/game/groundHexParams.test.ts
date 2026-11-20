@@ -10,7 +10,7 @@ import {
   FAR_COVER_TILT, FAR_SELF_SHADOW, FAR_SUN_GAIN_MAX, FAR_SPEC_CUT,
   farCoverWeight, farClumpOctave, farClump, farCoverTarget, farSunFactor, farSpecWeight, farDrift, farMacro,
   FAR_DRIFT_CELL, FAR_DRIFT_SALT, FAR_DRIFT_WEIGHT, FAR_DRIFT_AO,
-} from "../../src/game/groundHexParams.js";
+} from "@csarkosh/engine/game/groundHexParams";
 import { timeLimit } from "../helpers/timeLimit.js";
 
 describe("constants are the spec's", () => {

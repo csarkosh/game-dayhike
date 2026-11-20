@@ -19,7 +19,7 @@ import {
   LAKE_TRAIL_CLEAR,
   planFeatures,
 } from "../../src/sim/features.js";
-import { lakeShoreInto, newLakeShore } from "../../src/sim/lakeShape.js";
+import { lakeShoreInto, newLakeShore } from "@csarkosh/engine/sim/lakeShape";
 import { SEEDS } from "./trailGateSeeds.js";
 import { timeLimit } from "../helpers/timeLimit.js";
 

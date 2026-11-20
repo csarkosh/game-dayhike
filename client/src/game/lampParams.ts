@@ -1,5 +1,5 @@
-import { mixRgb, type Rgb } from "./colour.js";
-import { dreadLensUnder, dreadWorldUnder, type WeatherParams } from "./weather.js";
+import { mixRgb, type Rgb } from "@csarkosh/engine/game/colour";
+import { dreadLensUnder, dreadWorldUnder, type WeatherParams } from "@csarkosh/engine/game/weather";
 
 /**
  * The headlamp's cone, a spot light's. Two levers, tuned by eye in the

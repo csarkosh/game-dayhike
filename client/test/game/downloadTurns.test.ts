@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   createDownloadTurns, FILM_HIGH_S, FILM_LOW_S, HOLD_BOUND_MS, HOLD_GIVE_UP, LOOK_MS, turnsLine, WIDTH_OPEN, WIDTH_START, WIDTH_TRIAL_MS,
   type FilmState, type TurnsClock, type TurnsCourse,
-} from "../../src/game/downloadTurns.js";
+} from "@csarkosh/engine/game/downloadTurns";
 
 /** A clock moved by hand: `pass(ms)` runs every call that falls due on the way. */
 function fakeClock(): TurnsClock & { pass(ms: number): void } {

@@ -33,8 +33,8 @@ import {
   COVE_END_BLEND, SHELF_BREAK_DEPTH, SHELF_BREAK_WIDTH, coveFor, coveProfileD, shoreProfileD,
 } from "../sim/olympic.js";
 import { activeTerrainVariant } from "../sim/terrain.js";
-import { refraction, shoalingFactor, waveNumber, weggelCoefficients } from "./oceanPhysics.js";
-import { SWELL_COMPONENTS, type SwellComponent } from "./oceanSwell.js";
+import { refraction, shoalingFactor, waveNumber, weggelCoefficients } from "@csarkosh/engine/game/oceanPhysics";
+import { SWELL_COMPONENTS, type SwellComponent } from "@csarkosh/engine/game/oceanSwell";
 
 export const OCEAN_D_MIN = -1000;
 export const OCEAN_D_STEP = 1;

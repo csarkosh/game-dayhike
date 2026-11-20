@@ -88,7 +88,7 @@ import lightsWindSource from "../shaders/sea/lightsWind.wgsl?raw";
 import lightsCapSource from "../shaders/sea/lightsCap.wgsl?raw";
 import lightsSource from "../shaders/sea/lights.wgsl?raw";
 import composeSource from "../shaders/sea/compose.wgsl?raw";
-import { fill, wgsl } from "../shaders/shaderText.js";
+import { fill, wgsl } from "@csarkosh/engine/game/shaders/shaderText";
 
 /** What a tier's sea is drawn with beside its swell. */
 export type SeaLook = {

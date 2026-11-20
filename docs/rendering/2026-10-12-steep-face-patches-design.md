@@ -76,7 +76,7 @@ Non-goals:
   the texture's stones do not break the relief's rocks back into cobbles
   (§4.5).
 
-## 3. The relief function (`client/src/sim/faceRelief.ts`)
+## 3. The relief function (`engine/src/sim/faceRelief.ts`)
 
 Pure, trig-free, seeded, with exact derivatives. Everything below is a
 function of the world position alone, so it is the same whoever samples it.
@@ -635,7 +635,7 @@ reflections and the shadows are the ground's. The height field, the collision an
 are the ones the game had; the level id moved once, when the cliff modules' density went to
 zero.
 
-**The relief** (`client/src/sim/faceRelief.ts`) is a weighted blend over the nine sites around a
+**The relief** (`engine/src/sim/faceRelief.ts`) is a weighted blend over the nine sites around a
 point, each site a tilted plane (`FACE_VALUE_SPAN` 0.6, `FACE_TILT` 0.35), at three scales:
 columns of 5 m cells with 0.5 m joints or blocks of 6 m with 1.4 m joints over a 3 m octave,
 chosen by a 150 m noise, under forms of 20 m with 3.5 m borders at one and a half times the
@@ -677,7 +677,7 @@ The sun's cast shadows had one edge everywhere: the cascaded shadow generator's
 percentage-closer filter at Babylon's default quality, a 5 × 5 texel kernel, blurs a trunk's
 contact and a canopy's shadow alike, 16 cm across in the first cascade. On the high tier the
 generator now takes Babylon's percentage-closer soft shadow (`shadowSoftEdges` in
-`client/src/game/quality.ts`, true on high alone; `shadowFilterFor` and `SUN_LIGHT_SIZE_UV` in
+`engine/src/game/quality.ts`, true on high alone; `shadowFilterFor` and `SUN_LIGHT_SIZE_UV` in
 `client/src/game/lighting.ts`): for each shadowed fragment it searches the shadow map's depth
 round the sample, sixteen taps, for the casters above the receiver, and sizes a filter of
 thirty-two taps by their average height above it, so a shadow is a texel wide at the contact and

@@ -34,7 +34,7 @@ import {
   type RingSamples,
 } from "../../src/game/clipmap.js";
 import { PATCH_CELL, PATCH_REACH, PATCH_WIDE_SPACING, facePatchCells, facePatchCover, facePatchGeometry, facePatchStitch } from "../../src/game/facePatches.js";
-import { finish as finishSlices } from "../../src/game/syncJobs.js";
+import { finish as finishSlices } from "@csarkosh/engine/game/syncJobs";
 import { classifySurface, GRASS_SLOPE, SCREE_SLOPE, snowLineAt, surfaceAlbedo } from "../../src/game/terrainSurface.js";
 import { groundCover } from "../../src/sim/clutter.js";
 import { forestDensity, treesInRect } from "../../src/sim/vegetation.js";

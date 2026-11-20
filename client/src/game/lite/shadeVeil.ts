@@ -32,12 +32,12 @@ import {
 import { SHADE_BLUR, SHADE_DARK, SHADE_MONSTER_DARK } from "../postFrame.js";
 import { VEIL_GAMMA } from "../shadeVeilParams.js";
 import type { StareShade } from "../stareLens.js";
-import { SEE_THROUGH_ORDER } from "./drawOrder.js";
+import { SEE_THROUGH_ORDER } from "@csarkosh/engine/game/lite/drawOrder";
 import { wgslFloat } from "./forestPlugins.js";
-import { SHADE_BLOCK_WGSL, SHADE_HELPERS_WGSL, STARE_BLOCK_WGSL } from "./postWgsl.js";
+import { SHADE_BLOCK_WGSL, SHADE_HELPERS_WGSL, STARE_BLOCK_WGSL } from "@csarkosh/engine/game/lite/postWgsl";
 import veilVertexSource from "../shaders/shadeVeil/veil.vertex.wgsl?raw";
 import veilFragmentSource from "../shaders/shadeVeil/veil.fragment.wgsl?raw";
-import { fill, wgsl } from "../shaders/shaderText.js";
+import { fill, wgsl } from "@csarkosh/engine/game/shaders/shaderText";
 
 /** The veil's uniforms, by the grade's names for them. */
 export type VeilUniforms = { shadeShape: [number, number, number, number]; shadeMonster: [number]; stareShade: [number, number, number, number] };

@@ -9,7 +9,7 @@
  * The renderer reads the vectors (`lite/displayCurve.ts`).
  */
 import { CHASE_SHADOW_DENSITY, CHASE_SHADOW_HUE, VIGNETTE_COLOUR, type GradeRecord } from "./gradeParams.js";
-import { gradeUnder, saturationUnder, type WeatherParams } from "./weather.js";
+import { gradeUnder, saturationUnder, type WeatherParams } from "@csarkosh/engine/game/weather";
 
 /** One band of the curves, on Babylon.js's own scales: a hue in degrees, a density and a saturation each within -100 to 100. */
 export type CurveBand = { hue: number; density: number; saturation: number };

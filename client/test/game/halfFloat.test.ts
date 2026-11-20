@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { rgbToHalfRgba, toHalf } from "../../src/game/halfFloat.js";
+import { rgbToHalfRgba, toHalf } from "@csarkosh/engine/game/halfFloat";
 
 /** A half's value, decoded the long way: sign, exponent and mantissa. */
 function fromHalf(bits: number): number {

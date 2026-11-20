@@ -2,13 +2,13 @@ import { createHash } from "node:crypto";
 import { describe, expect, it } from "vitest";
 import { timeLimit } from "../helpers/timeLimit.js";
 import "../../src/sim/passes/index.js";
-import { facingYaw } from "../../src/sim/facing.js";
+import { facingYaw } from "@csarkosh/engine/sim/facing";
 import { createForest } from "../../src/sim/forest.js";
 import { trailheadStart } from "../../src/sim/spawn.js";
 import { stemAhead } from "../../src/sim/trailRoute.js";
 import type { InputCommand } from "../../src/sim/types.js";
 import { createForestWorld, serializeWorldState, spawnPlayer, tickWorld, type World } from "../../src/sim/world.js";
-import { seedFromToken } from "../../src/game/seed.js";
+import { seedFromToken } from "@csarkosh/engine/game/seed";
 
 /**
  * Two scripted matches as they played out on 2026-11-19, by the digest of the host's whole state

@@ -7,7 +7,7 @@
  * shade from here.
  */
 import { NEEDLE_BED } from "./terrainSurface.js";
-import { ambientCollapseUnder, type WeatherParams } from "./weather.js";
+import { ambientCollapseUnder, type WeatherParams } from "@csarkosh/engine/game/weather";
 
 /** How much darker the ground draws under a full canopy in a lake's reflections: `lakeMirrorTerrain.fragment.glsl`'s LAKE_MIRROR_CANOPY_SHADE. */
 export const MIRROR_CANOPY_SHADE = 0.5;

@@ -1,4 +1,4 @@
-import { hash2, hash3 } from "../sim/field.js";
+import { hash2, hash3 } from "@csarkosh/engine/sim/field";
 import { elevationSampleAt } from "../sim/terrain.js";
 
 /**

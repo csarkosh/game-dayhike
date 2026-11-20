@@ -3,11 +3,11 @@ import "../../src/sim/olympic.js";
 import { coveFor } from "../../src/sim/olympic.js";
 import { setActiveTerrainVariant } from "../../src/sim/terrain.js";
 import { OCEAN_NO_TIP, createOceanFrame, oceanComponentsFor, oceanTipsFor, type WindSeaDrawn } from "../../src/game/oceanFrame.js";
-import { SWELL_COMPONENTS, SWELL_COMPONENTS_LOW } from "../../src/game/oceanSwell.js";
+import { SWELL_COMPONENTS, SWELL_COMPONENTS_LOW } from "@csarkosh/engine/game/oceanSwell";
 import { OCEAN_COAST_RECENTRE, OCEAN_COAST_STEP, coastProfilesFor } from "../../src/game/oceanTables.js";
 import { oceanFieldFor, swellPhases } from "../../src/game/oceanWaves.js";
 import { windSeaAtSpeed, windSeaStateFor, type WindSeaState } from "../../src/game/oceanWindSea.js";
-import { seedFromToken } from "../../src/game/seed.js";
+import { seedFromToken } from "@csarkosh/engine/game/seed";
 
 setActiveTerrainVariant("olympic");
 const SEED = seedFromToken("atmo");

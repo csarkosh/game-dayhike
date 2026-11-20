@@ -1,10 +1,10 @@
 import { afterEach, describe, expect, it } from "vitest";
-import { FADE_NONE_IN, FADE_NONE_OUT } from "../../src/game/distanceFade.js";
+import { FADE_NONE_IN, FADE_NONE_OUT } from "@csarkosh/engine/game/distanceFade";
 import {
   FOLIAGE_CANOPY_SUN, FOLIAGE_PLAYERS, FOLIAGE_PLAYER_PARKED, FOLIAGE_PROFILES, emptyFoliageUniforms, foliageLook, foliageMatched,
   foliageUniforms, setFoliageWind,
 } from "../../src/game/foliageUniforms.js";
-import type { WindRecord } from "../../src/game/windParams.js";
+import type { WindRecord } from "@csarkosh/engine/game/windParams";
 
 const STILL: WindRecord = { dirX: 1, dirZ: 0, speed: 0, lean: 0, gustAmp: 0, flutterAmp: 0, time: 0 };
 const parked = (): Float32Array => {

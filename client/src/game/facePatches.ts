@@ -20,7 +20,7 @@
  * covers [ci·16, (ci+1)·16] × [cj·16, (cj+1)·16].
  */
 import { groundCover } from "../sim/clutter.js";
-import { FACE_HALF_DEPTH, faceReliefD, groundReliefD } from "../sim/faceRelief.js";
+import { FACE_HALF_DEPTH, faceReliefD, groundReliefD } from "@csarkosh/engine/sim/faceRelief";
 import {
   GROUND_BEND_SHARE, GROUND_CURVE_STEP, GROUND_DEPTH, GROUND_MASK_STEP, GROUND_ROCK_MIN, bendFrom, depthUnderBend,
   faceMask, groundBend, loudnessAt, maskSlopeAt, rockOfSlope, trailClearAt,
@@ -30,13 +30,13 @@ export {
   GROUND_BEND_SHARE, GROUND_DEPTH, GROUND_EXTENT_RADIUS, GROUND_LOUD_FLOOR, GROUND_LOUD_HI, GROUND_LOUD_LO,
   GROUND_ROCK_MIN, faceMask, groundBend, groundLoudness, maskSlopeAt, rockExtent, rockOfSlope,
 } from "../sim/rockSurface.js";
-import { stepT, stepTd } from "../sim/lakeShape.js";
+import { stepT, stepTd } from "@csarkosh/engine/sim/lakeShape";
 import { elevationSampleAt, type TerrainSample } from "../sim/terrain.js";
 import type { TrailGraph } from "../sim/trail.js";
 import { forestDensity } from "../sim/vegetation.js";
 import { WEIGHTS2_STRIDE, type CoveredGround } from "./clipmap.js";
-import type { QualityTier } from "./quality.js";
-import { finish, sliceDue, type Slices } from "./syncJobs.js";
+import type { QualityTier } from "@csarkosh/engine/game/quality";
+import { finish, sliceDue, type Slices } from "@csarkosh/engine/game/syncJobs";
 import { classifySurface } from "./terrainSurface.js";
 import { waterGroundAt } from "./waterGround.js";
 

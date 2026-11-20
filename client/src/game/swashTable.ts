@@ -34,12 +34,12 @@
  * costs a few multiplies a component a column.
  */
 import { COVE_END_BLEND } from "../sim/olympic.js";
-import { OCEAN_G } from "./oceanPhysics.js";
-import { SWELL_COMPONENTS, type SwellComponent } from "./oceanSwell.js";
+import { OCEAN_G } from "@csarkosh/engine/game/oceanPhysics";
+import { SWELL_COMPONENTS, type SwellComponent } from "@csarkosh/engine/game/oceanSwell";
 import { swellAtInto, swellBreakInto, swellScratch, type OceanField } from "./oceanWaves.js";
 import {
   SWASH_DOWN_RATIO, frontAt, overlap, reachCapAt, runUpAlongFace, thicknessAt, tUpOf,
-} from "./swashRunUp.js";
+} from "@csarkosh/engine/game/swashRunUp";
 
 /** One a metre of shore, column 0 at z0 − SWASH_COLUMNS/2. */
 export const SWASH_COLUMNS = 512;

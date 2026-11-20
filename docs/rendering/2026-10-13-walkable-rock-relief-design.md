@@ -44,7 +44,7 @@ Non-goals:
 - The rock and boulder models (`rockRelief.ts` cuts those at load).
 - The rock paint itself: the texture, its repeat and the grey are the faces'.
 
-## 3. The relief function (`client/src/sim/faceRelief.ts`, `groundReliefD`)
+## 3. The relief function (`engine/src/sim/faceRelief.ts`, `groundReliefD`)
 
 The cellular field of the faces (§3.1 of the faces' design) blends, over the
 sites with weight about a point, each site's plane: its value at the site

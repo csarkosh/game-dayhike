@@ -1,7 +1,7 @@
-import { clamp01, mixRgb, type Rgb } from "./colour.js";
-import type { Vec3 } from "./sky.js";
-import type { SkyState } from "./skyState.js";
-import { airColourUnder, dreadWorldUnder, fogDensityUnder, type WeatherParams } from "./weather.js";
+import { clamp01, mixRgb, type Rgb } from "@csarkosh/engine/game/colour";
+import type { Vec3 } from "@csarkosh/engine/game/sky";
+import type { SkyState } from "@csarkosh/engine/game/skyState";
+import { airColourUnder, dreadWorldUnder, fogDensityUnder, type WeatherParams } from "@csarkosh/engine/game/weather";
 import { cloudUniforms, emptyCloudUniforms, type CloudState, type CloudUniforms } from "./cloudParams.js";
 
 /**

@@ -35,17 +35,17 @@ import { BLADE_ALBEDO, BLADE_CHARACTERS, bladeClumpGeometry, bladeCountFor, type
 import { BLADE_CHARACTER_COUNT, BLADE_REBUILD_CELL, BLADE_SIZE_COUNT, bladeTierBands } from "../bladeField.js";
 import { BLADE_ROUGHNESS, BLADE_TIER_COUNT, createBladeLists } from "../bladeInstances.js";
 import { FOLIAGE_PROFILES, foliageLook } from "../foliageUniforms.js";
-import type { CullPose } from "../grassCull.js";
-import type { FirstBuilds } from "../firstBuilds.js";
-import type { InstanceList } from "../instanceLists.js";
-import type { SyncJobs } from "../syncJobs.js";
+import type { CullPose } from "@csarkosh/engine/game/grassCull";
+import type { FirstBuilds } from "@csarkosh/engine/game/firstBuilds";
+import type { InstanceList } from "@csarkosh/engine/game/instanceLists";
+import type { SyncJobs } from "@csarkosh/engine/game/syncJobs";
 import {
   baseColourPlugin, oneSidedLightPlugin, surfaceSplitPlugin, vegetationInstanceLayout, vegetationPlugin, type Vegetation,
 } from "./forestPlugins.js";
-import { DRAW_ORDER, createDrawOrders } from "./drawOrder.js";
-import type { FrameUploads } from "./frameUploads.js";
+import { DRAW_ORDER, createDrawOrders } from "@csarkosh/engine/game/lite/drawOrder";
+import type { FrameUploads } from "@csarkosh/engine/game/lite/frameUploads";
 import { listMesh, showList, type ListMesh } from "./listMeshes.js";
-import { cellOrigin, createRebuilds } from "./rebuildJobs.js";
+import { cellOrigin, createRebuilds } from "@csarkosh/engine/game/lite/rebuildJobs";
 
 export function bladeMeshName(character: number, tier: number, size: number): string {
   return `blade_clumps_c${character}_t${tier}_s${size}`;

@@ -12,7 +12,7 @@
 import type { Live, QueryName, Range, Row, Source } from "./source.js";
 import { calendarDate } from "./timeline.js";
 import { buildTrailFor, type DrawableTrail } from "./trail.js";
-import { LOSS_ENDED_LINE } from "../game/lossBound.js";
+import { LOSS_ENDED_LINE } from "@csarkosh/engine/game/lossBound";
 import { GEN_VERSION } from "../sim/forest.js";
 import { DEFAULT_TERRAIN_VARIANT } from "../sim/terrain.js";
 

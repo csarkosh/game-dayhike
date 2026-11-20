@@ -10,15 +10,15 @@
  * Loads no engine: the shell that draws the grass hands these arrays to its
  * meshes, and nothing here knows what a mesh is.
  */
-import type { Rgb } from "./colour.js";
+import type { Rgb } from "@csarkosh/engine/game/colour";
 import { BLADE_CHARACTER_COUNT, BLADE_SIZE_COUNT, createBladeCollector, type BladeCell, type BladeTiers } from "./bladeField.js";
 import { instanceMatrixFor, trampleFrame, writeFoliage } from "./clutterInstances.js";
-import type { CullPose } from "./grassCull.js";
+import type { CullPose } from "@csarkosh/engine/game/grassCull";
 import {
   KEPT_FOLIAGE, KEPT_STRIDE, commitStaged, createInstanceList, createViewCut, cutList, ensureStaging, stageKept, type InstanceList,
-} from "./instanceLists.js";
-import { createKeptValues } from "./keptValues.js";
-import { sliceDue, type Slices } from "./syncJobs.js";
+} from "@csarkosh/engine/game/instanceLists";
+import { createKeptValues } from "@csarkosh/engine/game/keptValues";
+import { sliceDue, type Slices } from "@csarkosh/engine/game/syncJobs";
 
 /** The distance tiers a clump is drawn in: fine, mid, coarse. */
 export const BLADE_TIER_COUNT = 3;

@@ -2,7 +2,7 @@ import { beforeAll, describe, expect, it } from "vitest";
 import "../../src/sim/passes/index.js";
 import { createForest } from "../../src/sim/forest.js";
 import { createForestWorld, spawnPlayer, tickWorld, type World } from "../../src/sim/world.js";
-import { seedFromToken } from "../../src/game/seed.js";
+import { seedFromToken } from "@csarkosh/engine/game/seed";
 import { setActiveTerrainVariant, DEFAULT_TERRAIN_VARIANT } from "../../src/sim/terrain.js";
 import { AiState, Button, DeathCause, Phase, type PlayerState } from "../../src/sim/types.js";
 import { TICK_DT } from "../../src/sim/constants.js";

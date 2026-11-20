@@ -29,15 +29,15 @@
  */
 import type { MaterialPlugin, PluginUniformBlock, Texture2D } from "@babylonjs/lite";
 import type { AtmosphereUniforms } from "../atmosphereParams.js";
-import { DISPLAY_ENCODE_WGSL, GRADE_BLOCK, MATERIAL_GRADE_WGSL } from "./displayCurve.js";
+import { DISPLAY_ENCODE_WGSL, GRADE_BLOCK, MATERIAL_GRADE_WGSL } from "@csarkosh/engine/game/lite/displayCurve";
 import { frameReads } from "./frameBlock.js";
-import { uniformFields, writeUniforms } from "./pluginUniforms.js";
+import { uniformFields, writeUniforms } from "@csarkosh/engine/game/lite/pluginUniforms";
 import cloudFogSource from "../shaders/atmosphere/cloudFog.wgsl?raw";
 import fogSource from "../shaders/atmosphere/fog.wgsl?raw";
 import cloudSource from "../shaders/atmosphere/cloud.wgsl?raw";
 import foggedColourSource from "../shaders/atmosphere/foggedColour.wgsl?raw";
 import gradeSource from "../shaders/atmosphere/grade.wgsl?raw";
-import { fill, wgsl } from "../shaders/shaderText.js";
+import { fill, wgsl } from "@csarkosh/engine/game/shaders/shaderText";
 
 const atmWgsl = (cloud: boolean): string => fill(wgsl(fogSource), { cloudDefs: cloud ? ATM_CLOUD_WGSL : "", cloudFog: cloud ? wgsl(cloudFogSource) : "return fogged;" });
 

@@ -306,12 +306,12 @@ const STYLE = `
 `;
 
 import type { GameMode } from "./gameMode.js";
-import type { Platform } from "../net/desktopRelease.js";
+import type { Platform } from "@csarkosh/engine/net/desktopRelease";
 import { creditsEntries, renderCredits } from "./credits.js";
 import { landingPanelFocus, type LandingPanel, type LandingView } from "./landingModel.js";
 import { openerOf, renderSettings, type Opener } from "./settings.js";
-import { tokensLink } from "./tokens.js";
-import type { TierChoice } from "./tierChoice.js";
+import { tokensLink } from "@csarkosh/engine/game/tokens";
+import type { TierChoice } from "@csarkosh/engine/game/tierChoice";
 
 export type { LandingPanel } from "./landingModel.js";
 

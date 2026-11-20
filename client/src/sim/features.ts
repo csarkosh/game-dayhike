@@ -1,15 +1,15 @@
 import type { TerrainSample } from "./terrain.js";
-import { fbm2d, hash3 } from "./field.js";
+import { fbm2d, hash3 } from "@csarkosh/engine/sim/field";
 import {
   apronAt, lakeShoreInto, newLakeShore, stepT, stepTd,
   LAKE_BANK_EASE, LAKE_BANK_GRADE_GENTLE, LAKE_BANK_GRADE_STEEP, LAKE_BANK_WIDTH_GENTLE, LAKE_BANK_WIDTH_STEEP,
   LAKE_SHAPE_TUNABLES, lakeShelfWidth, rayToShore,
   type LakeShape,
-} from "./lakeShape.js";
+} from "@csarkosh/engine/sim/lakeShape";
 // The bed's constants and profile live with the shore and are read from here as they were.
 export {
   LAKE_SHELF_DEPTH, LAKE_SHELF_WIDTH, LAKE_SLOPE_WIDTH, LAKE_DEPTH_MURKY, LAKE_DEPTH_CLEAR, lakeMiddleDepth, lakeDepthD,
-} from "./lakeShape.js";
+} from "@csarkosh/engine/sim/lakeShape";
 
 /**
  * The made features of the trail system: one peak per

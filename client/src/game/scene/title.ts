@@ -3,7 +3,7 @@
  * joined by dissolves into the title page's 30 s loop (`docs/gameplay/2026-10-01-title-loop.md`
  * §2). A pure function of the world's places; no people, no car, no captions.
  */
-import { WEATHER_PRESETS } from "../weather.js";
+import { WEATHER_PRESETS } from "@csarkosh/engine/game/weather";
 import { cutList, drift, holdLookingAt, type Cut, type Look } from "./shots.js";
 import type { Scene } from "./timeline.js";
 

@@ -9,7 +9,7 @@
  */
 import type { AmbientAudio } from "./ambientAudio.js";
 import { audioUrl } from "./assetUrls.js";
-import { pageTurns } from "./downloadTurns.js";
+import { pageTurns } from "@csarkosh/engine/game/downloadTurns";
 import type { VoiceLine } from "./innerVoice.js";
 
 /** The clips' level on the voice bus. */

@@ -25,8 +25,8 @@
  */
 import { elevationSampleAt, type TerrainSample } from "./terrain.js";
 import { trailDistance, type TrailGraph } from "./trail.js";
-import { FACE_RELIEF_TUNABLES, FACE_SLOPE_HI, FACE_SLOPE_LO, groundWalkD, type ReliefSample } from "./faceRelief.js";
-import { stepT } from "./lakeShape.js";
+import { FACE_RELIEF_TUNABLES, FACE_SLOPE_HI, FACE_SLOPE_LO, groundWalkD, type ReliefSample } from "@csarkosh/engine/sim/faceRelief";
+import { stepT } from "@csarkosh/engine/sim/lakeShape";
 import { SLOPE_HI, SLOPE_LO } from "./vegetation.js";
 
 // ---- Tunables (every one appears in ROCK_SURFACE_TUNABLES) ------------------

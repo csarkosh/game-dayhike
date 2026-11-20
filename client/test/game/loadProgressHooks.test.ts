@@ -1,8 +1,8 @@
 import { describe, expect, it, vi } from "vitest";
-import { createLoadProgress } from "../../src/game/loadProgress.js";
+import { createLoadProgress } from "@csarkosh/engine/game/loadProgress";
 import { reportLayer, reportProgress, setLoadProgress } from "../../src/game/loadReport.js";
 import { reportCall } from "../../src/game/wildlifeAudio.js";
-import { stepSlices } from "../../src/game/syncJobs.js";
+import { stepSlices } from "@csarkosh/engine/game/syncJobs";
 
 /** A progress model no model has been asked of, so the line reads the next stage. */
 function beforeModels() {

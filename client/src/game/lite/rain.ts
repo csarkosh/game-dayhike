@@ -43,26 +43,26 @@ import {
   type EngineContext, type Mesh, type PluginUniformBlock, type SceneContext, type ShaderMaterial, type Texture2D,
 } from "@babylonjs/lite";
 import type { AtmosphereRecord } from "../atmosphereParams.js";
-import type { QualityTier } from "../quality.js";
+import type { QualityTier } from "@csarkosh/engine/game/quality";
 import {
   RAIN_TEX_H, RAIN_TEX_W, createRainField, emptyRainStageUniforms, rainInstances, rainInstancesDrawn, rainStageUniforms, rainStreakMap,
   type RainLamp,
 } from "../rainField.js";
-import { DRIP, RAIN_FADE_FAR, RAIN_FADE_NEAR, RAIN_LENGTH, RAIN_MAP, RAIN_SKY_FADE, RAIN_SKY_RAMP, RAIN_STRETCH, dripCountUnder, rainCountUnder } from "../rainParams.js";
-import type { WeatherParams } from "../weather.js";
-import type { WindRecord } from "../windParams.js";
-import { DISPLAY_CURVE_WGSL, onColourPath } from "./displayCurve.js";
-import { SEE_THROUGH_ORDER } from "./drawOrder.js";
+import { DRIP, RAIN_FADE_FAR, RAIN_FADE_NEAR, RAIN_LENGTH, RAIN_MAP, RAIN_SKY_FADE, RAIN_SKY_RAMP, RAIN_STRETCH, dripCountUnder, rainCountUnder } from "@csarkosh/engine/game/rainParams";
+import type { WeatherParams } from "@csarkosh/engine/game/weather";
+import type { WindRecord } from "@csarkosh/engine/game/windParams";
+import { DISPLAY_CURVE_WGSL, onColourPath } from "@csarkosh/engine/game/lite/displayCurve";
+import { SEE_THROUGH_ORDER } from "@csarkosh/engine/game/lite/drawOrder";
 import { wgslFloat } from "./forestPlugins.js";
 import { FRAME_CONTRAST_NAME, FRAME_EXPOSURE_NAME, stageClocks, stageOwn, stageReads, type StageRecord } from "./frameBlock.js";
-import type { FrameUploads } from "./frameUploads.js";
-import { shaderUniformDecls, shaderUniformWriter } from "./shaderUniforms.js";
+import type { FrameUploads } from "@csarkosh/engine/game/lite/frameUploads";
+import { shaderUniformDecls, shaderUniformWriter } from "@csarkosh/engine/game/lite/shaderUniforms";
 import varyingsSource from "../shaders/rain/varyings.wgsl?raw";
 import coveredSource from "../shaders/rain/covered.wgsl?raw";
 import openSource from "../shaders/rain/open.wgsl?raw";
 import rainVertexSource from "../shaders/rain/rain.vertex.wgsl?raw";
 import rainFragmentSource from "../shaders/rain/rain.fragment.wgsl?raw";
-import { fill, wgsl } from "../shaders/shaderText.js";
+import { fill, wgsl } from "@csarkosh/engine/game/shaders/shaderText";
 
 const f = wgslFloat;
 

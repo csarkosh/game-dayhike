@@ -11,9 +11,9 @@
  * Also the ripple bump's drift (`createBumpDrift`): how far the bump's
  * picture has slid under the low tier's sea and under the lakes.
  */
-import { MIRROR_OFFSET_K } from "./mirrorView.js";
+import { MIRROR_OFFSET_K } from "@csarkosh/engine/game/mirrorView";
 import { roughnessFor, type WaterRow } from "./waterShading.js";
-import { WIND_TIME_WRAP } from "./windParams.js";
+import { WIND_TIME_WRAP } from "@csarkosh/engine/game/windParams";
 
 /** Bump-texture UV drift per second — u and v deliberately unequal so the
  * ripples drift diagonally instead of tracking an axis. */

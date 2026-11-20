@@ -1,6 +1,6 @@
 # Temporal anti-aliasing: the leaf cards' edges settled over frames
 
-**Status:** built and measured (2026-10-28); `client/src/game/post.ts`, `client/src/game/postParams.ts`,
+**Status:** built and measured (2026-10-28); `client/src/game/post.ts`, `engine/src/game/postParams.ts`,
 `client/src/game/shaders/taa.fragment.fx`, `client/src/game/shaders/taaSharpen.fragment.fx`.
 
 ## What remained after the shadow cascade was held still

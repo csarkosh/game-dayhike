@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
-import { matrixMultiply } from "../../src/game/instancePose.js";
-import { bakeGeometry, boundsOf, chainMatrix, mirrors, type PlacedNode } from "../../src/game/modelBake.js";
+import { matrixMultiply } from "@csarkosh/engine/game/instancePose";
+import { bakeGeometry, boundsOf, chainMatrix, mirrors, type PlacedNode } from "@csarkosh/engine/game/modelBake";
 import { babylonValues } from "../helpers/babylonFixture.js";
 
 /**

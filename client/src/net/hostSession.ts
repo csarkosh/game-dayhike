@@ -25,7 +25,7 @@ const PING_INTERVAL_MS = 1000;
 
 /** Hard cap on a peer's queued inputs. Bounds memory against a flooding peer. */
 const MAX_PENDING_INPUTS = MAX_UNACKED_INPUTS * 2;
-import type { Transport } from "./transport.js";
+import type { Transport } from "@csarkosh/engine/net/transport";
 import {
   MessageType,
   PROTOCOL_VERSION,

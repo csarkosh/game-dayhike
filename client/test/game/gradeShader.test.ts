@@ -5,8 +5,8 @@ import {
   AGX_INSET, AGX_OUTSET, SRGB_TO_REC2020, REC2020_TO_SRGB, AGX_MIN_EV, AGX_MAX_EV,
   SPLIT_TONE_DENSITY_SCALE, SPLIT_TONE_SATURATION_SCALE, AGX_CONTRAST, type Mat3,
 } from "../../src/game/gradeParams.js";
-import { DITHER_LSB, HALATION_THRESHOLD, HALATION_CAP } from "../../src/game/postParams.js";
-import { HALATION_EXTRACT_WGSL, gradeWgsl } from "../../src/game/lite/postWgsl.js";
+import { DITHER_LSB, HALATION_THRESHOLD, HALATION_CAP } from "@csarkosh/engine/game/postParams";
+import { HALATION_EXTRACT_WGSL, gradeWgsl } from "@csarkosh/engine/game/lite/postWgsl";
 
 function wgslFloat(n: number): string {
   return Number.isInteger(n) ? `${n}.0` : `${n}`;

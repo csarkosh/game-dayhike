@@ -9,7 +9,7 @@ import {
   featureStageD, lakeStageD, lobePoints, marshWeightAt, LAKE_SILL, LAKE_NOTCH_FADE, LAKE_TRAIL_CLEAR,
   MARSH_MURK_MIN, POND_SHORE, type Feature,
 } from "../../src/sim/features.js";
-import { lakeOutline, lakeShelfWidth, lakeShoreInto, newLakeShore, type LakeShape } from "../../src/sim/lakeShape.js";
+import { lakeOutline, lakeShelfWidth, lakeShoreInto, newLakeShore, type LakeShape } from "@csarkosh/engine/sim/lakeShape";
 import { CLUTTER_LILY, clutterInRect } from "../../src/sim/clutter.js";
 import { LOBBY_SEEDS } from "./trailGateSeeds.js";
 import { seedPart } from "../helpers/seedPart.js";

@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { signalingUrl } from "../../src/net/signalingUrl.js";
+import { signalingUrl } from "@csarkosh/engine/net/signalingUrl";
 
 describe("signalingUrl", () => {
   it("prefers the configured override", () => {

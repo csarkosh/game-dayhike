@@ -8,9 +8,9 @@ import { fileURLToPath } from "node:url";
 import { CLUTTER_CULLED } from "../../../src/game/clutterInstances.js";
 import { CLUTTER_GRASS, CLUTTER_GRASS_SCALE_MAX } from "../../../src/sim/clutter.js";
 import { BLADE_CHARACTERS, BLADE_TIER_COUNTS, BLADE_SIZE_FACTOR, bladeClumpGeometry } from "../../../src/game/bladeClump.js";
-import { WIND_FLUTTER_MAX, WIND_GUST_MAX, WIND_LEAN_MAX } from "../../../src/game/windParams.js";
+import { WIND_FLUTTER_MAX, WIND_GUST_MAX, WIND_LEAN_MAX } from "@csarkosh/engine/game/windParams";
 import { FOLIAGE_BEND, FOLIAGE_TILT } from "../../../src/game/foliageUniforms.js";
-import type { CullPose } from "../../../src/game/grassCull.js";
+import type { CullPose } from "@csarkosh/engine/game/grassCull";
 
 /**
  * How far any vertex of a culled instance can be drawn from its translation:

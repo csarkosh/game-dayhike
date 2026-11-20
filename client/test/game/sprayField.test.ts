@@ -5,7 +5,7 @@ import {
   SURF_SPRAY_BURSTS, SURF_SPRAY_LIFE_S, SURF_SPRAY_NEVER_AGE, SURF_SPRAY_PER_BURST, SURF_SPRAY_RANGE_M, SURF_SPRAY_SLOT_FLOATS, SURF_SPRAY_THROW,
   SURF_SPRAY_SEED, createSprayBursts, createSprayThrow, emptySprayUniforms, sprayBurstName, sprayColour, sprayInstances, spraySeeds, spraySlots, sprayUniforms, sprayWind,
 } from "../../src/game/sprayField.js";
-import { SWASH_G } from "../../src/game/swashRunUp.js";
+import { SWASH_G } from "@csarkosh/engine/game/swashRunUp";
 import type { SwashCove } from "../../src/game/swashTable.js";
 import { OCEAN_FOAM_ALBEDO } from "../../src/game/waterShading.js";
 

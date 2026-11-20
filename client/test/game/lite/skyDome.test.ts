@@ -1,8 +1,8 @@
 import { describe, expect, it } from "vitest";
 import { FRAME_BLOCK, stageOwn, stageReads } from "../../../src/game/lite/frameBlock.js";
 import { SKY_DOME_WGSL, SKY_FRAME_READS, SKY_RADIANCE_WGSL, SKY_TABLE_BYTES } from "../../../src/game/lite/skyDome.js";
-import { emptySkyDomeUniforms } from "../../../src/game/skyDomeParams.js";
-import { SLICE_AZIMUTHS, SLICE_ELEVATIONS } from "../../../src/game/skyModel.js";
+import { emptySkyDomeUniforms } from "@csarkosh/engine/game/skyDomeParams";
+import { SLICE_AZIMUTHS, SLICE_ELEVATIONS } from "@csarkosh/engine/game/skyModel";
 import { babylonText } from "../../helpers/babylonFixture.js";
 
 /** The dome's fragment stage on Babylon.js (`skyDome.fragment.glsl`), its text recorded. */

@@ -3,7 +3,7 @@ import { createForest } from "./sim/forest.js";
 import { createHikeRenderer } from "./game/hikeRenderer.js";
 import type { FreecamView, Renderer } from "./game/rendererTypes.js";
 import type { EndSceneSetup } from "./game/scenePlay.js";
-import { parseGpuTime } from "./game/gpuTimeReport.js";
+import { parseGpuTime } from "@csarkosh/engine/game/gpuTimeReport";
 import { createInputSampler } from "./game/input.js";
 import { createTouchModel, createTouchLayer } from "./game/touchControls.js";
 import { FixedStepAccumulator } from "./game/loop.js";
@@ -16,11 +16,11 @@ import {
   END_FADE_AT_S, END_LANDING_AT_S, END_ROAD_AT_S, ESCAPE_FROM_M, ESCAPE_SETTLE_S, ESCAPE_WAIT_S, MASTER_FADE_S, PULL_AWAY_AT_S, RUN_MAX_S, TITLE_AT_S, WORLD_FADE_S, carHeard,
   endMistShare,
 } from "./game/endScene.js";
-import { READY_MAX_MS, startReady } from "./game/startReady.js";
-import { ENGAGE_MAX_MS, whenEngaged } from "./game/engageWait.js";
-import { createNetgraph, RateCounter } from "./game/netgraph.js";
-import { navigateToLanding } from "./game/router.js";
-import { createCommandBar } from "./game/commandBar.js";
+import { READY_MAX_MS, startReady } from "@csarkosh/engine/game/startReady";
+import { ENGAGE_MAX_MS, whenEngaged } from "@csarkosh/engine/game/engageWait";
+import { createNetgraph, RateCounter } from "@csarkosh/engine/game/netgraph";
+import { navigateToLanding } from "@csarkosh/engine/game/router";
+import { createCommandBar } from "@csarkosh/engine/game/commandBar";
 import { createPauseMenu, createPlayGate } from "./game/pauseMenu.js";
 import {
   findCommand,
@@ -37,9 +37,9 @@ import {
   splitEntries,
   type ScriptEntry,
 } from "./game/script.js";
-import { aimAt, stepFreecam, type FreecamState } from "./game/freecam.js";
-import { DEFAULT_HOUR, sunAltitudeDeg } from "./game/skyWait.js";
-import { startSkySource } from "./game/skyWorker.js";
+import { aimAt, stepFreecam, type FreecamState } from "@csarkosh/engine/game/freecam";
+import { DEFAULT_HOUR, sunAltitudeDeg } from "@csarkosh/engine/game/skyWait";
+import { startSkySource } from "@csarkosh/engine/game/skyWorker";
 import { worldInputs } from "./game/worldInputs.js";
 import { createAmbientAudio } from "./game/ambientAudio.js";
 import { createWildlifeAudio, listenerToAudio } from "./game/wildlifeAudio.js";
@@ -47,7 +47,7 @@ import { createWaterLifeAudio } from "./game/waterLifeAudio.js";
 import { createSurfAudio } from "./game/surfAudio.js";
 import { wildlifePresenceUnder } from "./game/wildlifeBehaviour.js";
 import { DEFAULT_BOB_SCALE } from "./game/viewBob.js";
-import { DEFAULT_WEATHER, WEATHER_PRESETS, type WeatherParams, type WeatherPresetName } from "./game/weather.js";
+import { DEFAULT_WEATHER, WEATHER_PRESETS, type WeatherParams, type WeatherPresetName } from "@csarkosh/engine/game/weather";
 import { DEFAULT_PAINT_PALETTE, PAINT_PALETTES, type PaintPaletteName } from "./game/gradeParams.js";
 import { actsUnder,
   ESCALATION_REST,
@@ -70,9 +70,9 @@ import { createHostSession } from "./net/hostSession.js";
 import { createHostAdmission, type HostAdmission } from "./net/hostAdmission.js";
 import { createClientSession } from "./net/clientSession.js";
 import { degradeTransport, parseNetConditions } from "./net/channels.js";
-import type { Transport } from "./net/transport.js";
-import { isTouchDevice } from "./game/platform.js";
-import { isMobile } from "./game/gpuSignals.js";
+import type { Transport } from "@csarkosh/engine/net/transport";
+import { isTouchDevice } from "@csarkosh/engine/game/platform";
+import { isMobile } from "@csarkosh/engine/game/gpuSignals";
 import { createInteractPrompt, promptModel } from "./game/interactPrompt.js";
 import { createPosterPanel, posterModel } from "./game/posterPanel.js";
 import { DEATH_LINE, DEATH_TITLE, DEATH_FADE_AFTER_MS, DEATH_SOUND_FADE_S, END_LANDING_MS, WON_LINE, WON_TITLE, atRoadWall } from "./game/passages.js";
@@ -83,12 +83,12 @@ import { createHikeBody, createHikeSigns, loadFilmCar, type HikeSigns } from "./
 import { carDirection, doorSpot, trailEntrance, trailheadPlaces } from "./sim/trailhead.js";
 import { placeNames } from "./sim/placeNames.js";
 import { createTrace, type Trace } from "./game/trace.js";
-import { afterNextPaint } from "./game/paint.js";
-import type { QualityTier } from "./game/quality.js";
+import { afterNextPaint } from "@csarkosh/engine/game/paint";
+import type { QualityTier } from "@csarkosh/engine/game/quality";
 import { settingsModel, type AutoSummary } from "./game/settings.js";
 import { DEFAULT_MODE, isGameMode, peaceful, type GameMode } from "./game/gameMode.js";
 import { EXPLORE_HOUR_S, exploreHour, exploreNight, exploreWeather } from "./game/exploreDay.js";
-import { resolveTier, type TierChoice, type TierSource } from "./game/tierChoice.js";
+import { resolveTier, type TierChoice, type TierSource } from "@csarkosh/engine/game/tierChoice";
 import {
   buildFirstRenderer,
   buildOrUndo,
@@ -99,14 +99,14 @@ import {
   type SwapBindings,
 } from "./game/rendererSwap.js";
 import { FALLBACK_NOTICE_MS, answerFailures, coverWith, createSerial } from "./game/engineFailure.js";
-import { createGpuFaults } from "./game/gpuFaults.js";
-import { LOSS_ENDED_LINE, type LossNote } from "./game/lossBound.js";
+import { createGpuFaults } from "@csarkosh/engine/game/gpuFaults";
+import { LOSS_ENDED_LINE, type LossNote } from "@csarkosh/engine/game/lossBound";
 import { GOVERNOR_IDLE_MAX_MS, actOnDrop, governHike, governorDecision, steadyFrame } from "./game/governor.js";
 import { OVER_PLAY_Z, showProbeScreen, timeIdleCadence } from "./game/probeScreen.js";
-import { createCoveredDraw } from "./game/coveredDraw.js";
-import { FIRST_BUILD_SLICE_MS } from "./game/syncJobs.js";
-import { createFirstBuilds } from "./game/firstBuilds.js";
-import { extrasLater } from "./game/extrasLater.js";
+import { createCoveredDraw } from "@csarkosh/engine/game/coveredDraw";
+import { FIRST_BUILD_SLICE_MS } from "@csarkosh/engine/game/syncJobs";
+import { createFirstBuilds } from "@csarkosh/engine/game/firstBuilds";
+import { extrasLater } from "@csarkosh/engine/game/extrasLater";
 import { connectFailure, createConnectPanel, sessionEndOutcome } from "./game/connectPanel.js";
 import { pressedEdges, resolveInteract } from "./sim/interact.js";
 import { Button, DeathCause, Outcome, Phase, type InputCommand, type PlayerState, type Vec3, type WorldState } from "./sim/types.js";
@@ -150,10 +150,10 @@ const CAP_LINE_DELAY_MS = 1100;
 const LENS_SIGHT_MS = 100;
 import { HOLLOW_CALL_CLIP, stepWoods, WOODS_REST, type WoodsState } from "./game/woodsVoice.js";
 import { loadBirdBed } from "./game/birdBed.js";
-import { stepWoodsSounds, WOODS_SOUNDS_REST, woodsSoundsFrom, type WoodsSoundsState } from "./game/woodsSounds.js";
+import { stepWoodsSounds, WOODS_SOUNDS_REST, woodsSoundsFrom, type WoodsSoundsState } from "@csarkosh/engine/game/woodsSounds";
 import type { World } from "./sim/world.js";
-import type { Lobby } from "./net/lobby.js";
-import { worldVersionOf, type Fields, type Telemetry } from "./net/telemetry.js";
+import type { Lobby } from "@csarkosh/engine/net/lobby";
+import { worldVersionOf, type Fields, type Telemetry } from "@csarkosh/engine/net/telemetry";
 import { DUSK_AT, MIST_AT, WET_AT } from "./sim/acts.js";
 import sandbox01 from "../levels/sandbox01.json" with { type: "json" };
 

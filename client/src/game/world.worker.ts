@@ -30,7 +30,7 @@ import { passHash, passHashKey } from "../sim/forest.js";
 import { spawnChunkCells } from "../sim/spawn.js";
 import { activeTerrainVariant, setActiveTerrainVariant } from "../sim/terrain.js";
 import { prepareScene, sceneTransfer, type PreparedScene } from "./preparedScene.js";
-import type { QualityTier } from "./quality.js";
+import type { QualityTier } from "@csarkosh/engine/game/quality";
 
 /** `skip`: what the page already holds and the worker leaves out. */
 export type WorldPrepRequest = { id: number; seed: number; variant: string; skip?: { prepared?: boolean; passHash?: boolean } };

@@ -13,7 +13,7 @@ import type { World } from "./world.js";
 import type { TrailGraph, TrailNode } from "./trail.js";
 import { BOARD_BOX_HALF, CAR_HALF, type Board } from "./trailhead.js";
 import { hikerNames } from "./hikerNames.js";
-import { facingYaw } from "./facing.js";
+import { facingYaw } from "@csarkosh/engine/sim/facing";
 
 export const POSTER_RADIUS = 0.4;
 /** How far along the board's own line, from its centre, the poster's sheet is centred. */

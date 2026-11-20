@@ -1,6 +1,6 @@
-import type { Lobby } from "./lobby.js";
-import type { SignalingClient } from "./signaling.js";
-import type { Transport } from "./transport.js";
+import type { Lobby } from "@csarkosh/engine/net/lobby";
+import type { SignalingClient } from "@csarkosh/engine/net/signaling";
+import type { Transport } from "@csarkosh/engine/net/transport";
 import { acceptAsHost } from "./peer.js";
 
 /** The part of a host session that admitting a lobby's members needs. */

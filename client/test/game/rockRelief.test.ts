@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   ROCK_CAP_SHARE, ROCK_CUTS, ROCK_DEPTH, ROCK_LUMA, ROCK_PLANES, ROCK_ROUGH,
   rockPlaneCandidates, rockPlanes, rockRelief, type RockArrays, type RockCut, type RockPlane,
-} from "../../src/game/rockRelief.js";
+} from "@csarkosh/engine/game/rockRelief";
 
 /** A unit icosphere with `sub` subdivisions, as the arrays a GLB mesh hands over. */
 function icosphere(sub: number): RockArrays {

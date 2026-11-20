@@ -14,11 +14,11 @@ import { CLIFF_MODEL_HEIGHT, CLIFF_MODELS, CLIFF_SINK, CLIFF_TILT_MAX, cliffFaci
 import type { ClutterInstance } from "../sim/clutter.js";
 import { CLIFF_FADE_BAND, CLIFF_RINGS, cliffBands, cliffOrigin, createCliffCollector } from "./cliffField.js";
 import { trampleFrame, writeFoliage } from "./clutterInstances.js";
-import { fadeBands, type FadeBands } from "./distanceFade.js";
-import { seatOnGroundCapped } from "./groundTilt.js";
-import { composeInto, type Quat } from "./instancePose.js";
-import { createInstanceList, ensureCapacity, type InstanceList } from "./instanceLists.js";
-import type { QualityTier } from "./quality.js";
+import { fadeBands, type FadeBands } from "@csarkosh/engine/game/distanceFade";
+import { seatOnGroundCapped } from "@csarkosh/engine/game/groundTilt";
+import { composeInto, type Quat } from "@csarkosh/engine/game/instancePose";
+import { createInstanceList, ensureCapacity, type InstanceList } from "@csarkosh/engine/game/instanceLists";
+import type { QualityTier } from "@csarkosh/engine/game/quality";
 
 /** The LOD roots inside each model's file, by bucket. */
 export const CLIFF_LOD_NODES: readonly [string, string, string] = ["LOD0", "LOD1", "LOD2"];

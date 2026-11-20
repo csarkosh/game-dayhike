@@ -23,18 +23,18 @@ import {
   type EngineContext, type Mesh, type SceneContext, type ShaderMaterial,
 } from "@babylonjs/lite";
 import type { WayDown } from "../../sim/wayDown.js";
-import type { Rgb } from "../colour.js";
+import type { Rgb } from "@csarkosh/engine/game/colour";
 import { WAY_DEPTH_SLOPE, wayMistFrame } from "../wayLight.js";
 import { createWayFieldFollow, emptyWayFieldUniforms } from "../wayMistField.js";
 import { fieldIndices } from "../wayMistFieldGeometry.js";
-import { SEE_THROUGH_ORDER } from "./drawOrder.js";
-import type { FrameUploads } from "./frameUploads.js";
-import { shaderUniformDecls, shaderUniformWriter } from "./shaderUniforms.js";
+import { SEE_THROUGH_ORDER } from "@csarkosh/engine/game/lite/drawOrder";
+import type { FrameUploads } from "@csarkosh/engine/game/lite/frameUploads";
+import { shaderUniformDecls, shaderUniformWriter } from "@csarkosh/engine/game/lite/shaderUniforms";
 import { PREMULTIPLIED_BLEND, wayNoiseTexture } from "./wayLightMeshes.js";
 import varyingsSource from "../shaders/wayField/varyings.wgsl?raw";
 import wayFieldVertexSource from "../shaders/wayField/wayField.vertex.wgsl?raw";
 import wayFieldFragmentSource from "../shaders/wayField/wayField.fragment.wgsl?raw";
-import { fill, wgsl } from "../shaders/shaderText.js";
+import { fill, wgsl } from "@csarkosh/engine/game/shaders/shaderText";
 
 /** What the two stages hand each other: the vertex's place in the world, its four numbers, and its place from the eye. */
 const VARYINGS = wgsl(varyingsSource);

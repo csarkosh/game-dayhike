@@ -9,8 +9,8 @@
 import { createRenderTexture2D, updateTextureRegion, type EngineContext, type Texture2D } from "@babylonjs/lite";
 import { createBedFollow } from "../bedFollow.js";
 import type { BedGrid, BedPond } from "../bedHeight.js";
-import type { QualityTier } from "../quality.js";
-import type { FrameUploads } from "./frameUploads.js";
+import type { QualityTier } from "@csarkosh/engine/game/quality";
+import type { FrameUploads } from "@csarkosh/engine/game/lite/frameUploads";
 
 export type LiteWaterBed = {
   /** The heights, one 32-bit float a texel. */

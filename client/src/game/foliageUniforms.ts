@@ -5,9 +5,9 @@
  * frame's wind and the players that bend it, and the uniforms as one record
  * by name. Loads no engine.
  */
-import { FADE_NONE_IN, FADE_NONE_OUT } from "./distanceFade.js";
+import { FADE_NONE_IN, FADE_NONE_OUT } from "@csarkosh/engine/game/distanceFade";
 import type { BladeEdges } from "./bladeField.js";
-import type { WindRecord } from "./windParams.js";
+import type { WindRecord } from "@csarkosh/engine/game/windParams";
 
 /** The foliage's WGSL is written with these (`lite/forestPlugins.ts`). */
 export const FOLIAGE_TILT = 0.04;

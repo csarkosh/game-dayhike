@@ -33,7 +33,7 @@
  */
 import { LOOP_GAIN_RAMP_S, type AmbientAudio, type LoopEmitter, type VoiceSource } from "./ambientAudio.js";
 import { audioUrl } from "./assetUrls.js";
-import { pageTurns } from "./downloadTurns.js";
+import { pageTurns } from "@csarkosh/engine/game/downloadTurns";
 import { SURF_EVENTS, SURF_RANGE_M, type SurfSound } from "./surfSound.js";
 
 export { SURF_RANGE_M };

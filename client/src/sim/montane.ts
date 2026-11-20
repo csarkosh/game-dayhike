@@ -28,7 +28,7 @@
  * sim/ determinism rules apply: no trig, no Math.pow, no `**`, no hypot.
  * Math.sqrt is IEEE-exact and allowed.
  */
-import { fbm2d, gradientNoise2 } from "./field.js";
+import { fbm2d, gradientNoise2 } from "@csarkosh/engine/sim/field";
 import { registerTerrainVariant, type TerrainSample } from "./terrain.js";
 
 // ---- Tunables (starting points, not values to defend) ---------

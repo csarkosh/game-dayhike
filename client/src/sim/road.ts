@@ -7,7 +7,7 @@
  *
  * sim/ determinism rules apply: everything here is polynomial plus fbm2d.
  */
-import { fbm2d } from "./field.js";
+import { fbm2d } from "@csarkosh/engine/sim/field";
 import type { TerrainSample } from "./terrain.js";
 
 // ---- Tunables (all join the olympic variant record) ------------------------

@@ -15,7 +15,7 @@
  * square roots, which WebAssembly defines to the bit on every engine, and nothing else.
  */
 import { FIELD_WASM_BASE64 } from "./kernel/fieldWasm.js";
-import type { NoiseSample } from "./field.js";
+import type { NoiseSample } from "@csarkosh/engine/sim/field";
 import type { TerrainSample } from "./terrain.js";
 
 /** A montane config's numbers in the order the kernel reads them: the pipeline's tunables, then its flags, by

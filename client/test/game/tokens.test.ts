@@ -2,7 +2,7 @@ import { describe, it, expect, afterEach, vi } from "vitest";
 import { createHud } from "../../src/game/hud.js";
 import { renderLanding } from "../../src/game/landing.js";
 import { landingModel } from "../../src/game/landingModel.js";
-import { TOKENS_PALETTE, TOKENS_PIXELS, TOKENS_URL } from "../../src/game/tokens.js";
+import { TOKENS_PALETTE, TOKENS_PIXELS, TOKENS_URL } from "@csarkosh/engine/game/tokens";
 import { StandInElement, asHtml, installStandInDom } from "./helpers/standInDom.js";
 
 /** Every link on the page to the donate page's door. */

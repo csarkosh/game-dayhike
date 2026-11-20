@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { ENGAGE_MAX_MS, whenEngaged } from "../../src/game/engageWait.js";
+import { ENGAGE_MAX_MS, whenEngaged } from "@csarkosh/engine/game/engageWait";
 
 beforeEach(() => vi.useFakeTimers());
 afterEach(() => vi.useRealTimers());

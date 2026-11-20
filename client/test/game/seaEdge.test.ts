@@ -3,11 +3,11 @@ import "../../src/sim/olympic.js";
 import { COVE_FACE_GRADE, COVE_TOE_DEPTH, coveFor } from "../../src/sim/olympic.js";
 import { setActiveTerrainVariant } from "../../src/sim/terrain.js";
 import { LipTracker } from "../../src/game/oceanBreaker.js";
-import { SWELL_COMPONENTS } from "../../src/game/oceanSwell.js";
+import { SWELL_COMPONENTS } from "@csarkosh/engine/game/oceanSwell";
 import { coastProfilesFor } from "../../src/game/oceanTables.js";
 import { oceanFieldFor, swellPhases } from "../../src/game/oceanWaves.js";
 import { createSeaEdgeStep, swashCoveFor } from "../../src/game/seaEdge.js";
-import { seedFromToken } from "../../src/game/seed.js";
+import { seedFromToken } from "@csarkosh/engine/game/seed";
 import { SwashTable } from "../../src/game/swashTable.js";
 
 setActiveTerrainVariant("olympic");
