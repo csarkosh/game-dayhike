@@ -5,7 +5,7 @@ import {
   serialiseScript,
   setEntry,
   splitEntries,
-} from "../../src/game/script.js";
+} from "@csarkosh/engine/game/script";
 import { registerTerrainVariants } from "@csarkosh/engine/game/commands";
 import "../../src/game/hikeCommands.js";
 

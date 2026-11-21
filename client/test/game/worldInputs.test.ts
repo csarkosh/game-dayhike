@@ -2,7 +2,7 @@ import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 import { seedFromToken } from "@csarkosh/engine/game/seed";
 import "../../src/sim/passes/index.js";
-import { worldInputs } from "../../src/game/worldInputs.js";
+import { worldInputs } from "@csarkosh/engine/game/worldInputs";
 import { sourceText } from "../helpers/source.js";
 
 describe("the seed and the terrain a hike's world is made from", () => {

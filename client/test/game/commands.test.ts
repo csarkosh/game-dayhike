@@ -10,7 +10,7 @@ import {
   RETIRED_COMMANDS,
 } from "@csarkosh/engine/game/commands";
 import { HIKE_COMMANDS } from "../../src/game/hikeCommands.js";
-import { parseScript } from "../../src/game/script.js";
+import { parseScript } from "@csarkosh/engine/game/script";
 import { sourceText } from "../helpers/source.js";
 
 describe("parseCommandLine", () => {

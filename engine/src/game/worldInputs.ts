@@ -3,10 +3,10 @@
  * and the terrain. One rule, so the world's worker (`worldPrep.ts`), started
  * before the game is, prepares the world the build then makes.
  */
-import { DEFAULT_TERRAIN_VARIANT, terrainVariantNames } from "@csarkosh/engine/sim/terrain";
-import { registerTerrainVariants } from "@csarkosh/engine/game/commands";
+import { DEFAULT_TERRAIN_VARIANT, terrainVariantNames } from "../sim/terrain.js";
+import { registerTerrainVariants } from "./commands.js";
 import { lastEntry, parseScript, splitEntries } from "./script.js";
-import { seedFromToken } from "@csarkosh/engine/game/seed";
+import { seedFromToken } from "./seed.js";
 
 /**
  * The seed and the terrain variant of the hike at `token` whose address has

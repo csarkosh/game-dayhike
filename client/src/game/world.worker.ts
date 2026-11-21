@@ -10,7 +10,7 @@
  */
 import "../sim/passes/index.js";
 import { spawnChunkCells, trailheadStart } from "../sim/spawn.js";
-import { serveWorldWork, type WorldWorkGame } from "./worldWork.js";
+import { serveWorldWork, type WorldWorkGame } from "@csarkosh/engine/game/worldWork";
 
 /** Day Hike's part of the world's work: where the player first stands, and the chunk cells the first spawn reads. */
 export const HIKE_WORLD_WORK: WorldWorkGame = { startOf: trailheadStart, spawnCells: spawnChunkCells };

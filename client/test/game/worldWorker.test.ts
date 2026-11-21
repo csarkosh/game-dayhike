@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it } from "vitest";
-import { prepareSceneReply, prepareWorld, type WorldPrepReply, type WorldWorkGame } from "../../src/game/worldWork.js";
+import { prepareSceneReply, prepareWorld, type WorldPrepReply, type WorldWorkGame } from "@csarkosh/engine/game/worldWork";
 import { HIKE_WORLD_WORK } from "../../src/game/world.worker.js";
 import { sourceText } from "../helpers/source.js";
 import { RING_COUNT } from "@csarkosh/engine/game/clipmap";

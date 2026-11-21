@@ -1,11 +1,11 @@
 import { readFileSync } from "node:fs";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import "../../src/sim/passes/index.js";
-import { WORLD_PREP_TIMEOUT_MS, sceneLine, startWorldPrep, worldPrepLine, type WorldPrepOutcome } from "../../src/game/worldPrep.js";
+import { WORLD_PREP_TIMEOUT_MS, sceneLine, startWorldPrep, worldPrepLine, type WorldPrepOutcome } from "@csarkosh/engine/game/worldPrep";
 import type { PreparedScene } from "@csarkosh/engine/game/preparedScene";
 import type { QualityTier } from "@csarkosh/engine/game/quality";
 import { startHikeWorldWorker } from "../../src/game/hikeWorldWorker.js";
-import type { WorldPrepReply } from "../../src/game/worldWork.js";
+import type { WorldPrepReply } from "@csarkosh/engine/game/worldWork";
 import { installPassHash, passHash, passHashCachedFor, passHashKey } from "@csarkosh/engine/sim/forest";
 import { bowlFor, type Bowl } from "../../src/sim/mountain.js";
 import { generateChunk } from "@csarkosh/engine/sim/chunk";
