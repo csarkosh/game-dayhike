@@ -79,6 +79,8 @@ import type { Presence } from "@csarkosh/engine/game/wildlifeBehaviour";
 import type { PlayGate } from "@csarkosh/engine/game/pauseMenu";
 import type { Hud } from "./game/hud.js";
 import type { HikeAudio } from "./game/hikeAudio.js";
+import { createTrace, type Trace } from "./game/trace.js";
+import { placeNames } from "./sim/placeNames.js";
 
 /** The way down's draw: milliseconds of it a frame through the climb, and once the scene or the chase is on; and the tick it starts at, ten seconds in, so nothing of it runs under the intro. */
 const WAY_DRAW_MS = 1.5;
@@ -1096,35 +1098,118 @@ export function createHike(h: HikeHost) {
     return true;
   }
 
+  /** The trace of where this player goes (`game/trace.ts`), made at the match's start. */
+  let trace: Trace | null = null;
+
+  /**
+   * A command as the hike lets it through to a tick: held still in a scene,
+   * run to the car at the end, and marked taken where this screen's crowd
+   * has the player.
+   */
+  function command(sample: InputCommand, me: PlayerState | undefined, world: World): InputCommand {
+    return taken(ranToCar(stilled(sample, me, world), me));
+  }
+
+  /** Before a frame's ticks: the `escape` look's step, where this screen hosts. */
+  function beforeTicks(): void {
+    escapeStep?.();
+  }
+
+  /** What the renderer's sync reads of the hike, stepped before it: the way's light, the crowd, the way's draw, the acts. */
+  function beforeSync(world: World, state: WorldState, localId: number, dt: number): void {
+    syncWayLight(world, dt);
+    syncCrowd(world, state, localId, dt);
+    syncWayDraw(world, state);
+    syncAtmosphere(world, state, localId, dt);
+  }
+
+  /** The hike's own sound of a frame, once the listener is placed and the drips are set: the stare, whose lens the sync stepped. */
+  function sound(): void {
+    h.ambient.setStare(h.renderer.stare(), escalation.haunt);
+  }
+
+  /** Whether the local player's lamp is on, for the page's lamp button; off with no player. */
+  function lampOn(self: PlayerState | undefined): boolean {
+    return self?.lamp.on ?? false;
+  }
+
+  /** The hike's reading of a frame after the sync and the world's sound: the prompt, the poster, the road's line, a death, the outcome, the end scene. */
+  function afterSync(world: World, state: WorldState, localId: number, self: PlayerState | undefined, cmd: InputCommand | null): void {
+    syncPrompt(world, self);
+    if (cmd !== null) syncPoster(world, self, cmd);
+    syncRoadLine(self, state);
+    syncDeath(self, state, world);
+    syncOutcome(state, localId);
+    syncEndScene();
+  }
+
+  /** What the hike reports of a match as one starts, and the trace made for it. */
+  function matchStarted(world: World): void {
+    hikeReportAtRest();
+    // The trace names places as the sign posts do, never under the missing
+    // hiker's own first name (`placeNames`).
+    const graph = world.trail;
+    const hikerFirst = world.search?.hiker.name.split(" ")[0] ?? "";
+    trace = createTrace(graph, graph === null ? new Map() : placeNames(h.seed, graph.features, hikerFirst));
+  }
+
+  /**
+   * The trace of where this player goes (`game/trace.ts`): a sample every
+   * two seconds of sim time when they have moved, and a row at each
+   * transition of the route. A frame's last step before the draw; one
+   * integer compare a frame until a sample is due.
+   */
+  function report(state: WorldState, self: PlayerState | undefined, sprinting: boolean): void {
+    if (h.telemetry === null || trace === null) return;
+    const frame = {
+      tick: state.tick,
+      offTrail: lastTargets?.offTrail ?? 0,
+      lens: escalation.lens,
+      near: lastTargets?.near ?? 0,
+      sprinting,
+      progress: escalation.progressMax,
+    };
+    for (const e of trace.step(self, frame)) h.telemetry.event(e.n, e.fields);
+  }
+
+  /** The hike's own going with the page's, and its trace with it. */
+  function dispose(): void {
+    trace = null;
+    disposeHike();
+  }
+
   return {
+    // A session's start and end.
+    atRest: hikeAtRest,
+    hostStarted: hikeHostLooks,
+    matchStarted,
+    dispose,
+    // A frame, in the order the page calls them.
+    beforeTicks,
+    command,
+    beforeSync,
+    sound,
+    lampOn,
+    afterSync,
+    report,
+    // What the page asks of the hike's state.
+    /** The match is decided on this screen. */
+    decided: (): boolean => ended,
+    /** Play is over for this player: the match is decided, or they are dead. */
+    over: (): boolean => ended || dead,
+    /** A scene of the hike's has the frame, and a renderer must not be swapped under it: the end scene's run. */
+    holdsFrame: (): boolean => endRunDoor !== null,
+    /** The party's climb so far, 0 to 1. */
+    progress: (): number => escalation.progressMax,
+    /** What a match's last row says of how it ended on this screen. */
+    matchEnd: (): { ended: boolean; dead: boolean } => ({ ended, dead }),
+    // The console's commands of the hike's own.
     applyOwnView,
-    get escalation() { return escalation; },
-    taken,
-    get lastTargets() { return lastTargets; },
-    get escapeStep() { return escapeStep; },
-    get endRunDoor() { return endRunDoor; },
-    ranToCar,
-    stilled,
-    syncPrompt,
-    syncWayDraw,
-    syncCrowd,
-    syncWayLight,
-    syncAtmosphere,
-    get signs() { return signs; },
-    get body() { return body; },
+    // The signs and the body, built for a renderer and let go with it.
     buildExtras,
     disposeExtras,
-    syncPoster,
-    syncRoadLine,
-    get dead() { return dead; },
-    syncDeath,
-    get ended() { return ended; },
-    syncOutcome,
-    syncEndScene,
-    hikeReportAtRest,
-    disposeHike,
-    hikeAtRest,
-    hikeHostLooks,
+    /** Whether either is built. */
+    extrasStand: (): boolean => signs !== null || body !== null,
   };
 }
 

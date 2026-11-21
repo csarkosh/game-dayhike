@@ -99,7 +99,8 @@ describe("the world's way down", SUITE, () => {
     const app = readFileSync(clientFile("src/app.ts"), "utf8");
     const hike = readFileSync(clientFile("src/hike.ts"), "utf8");
     // One frame, which the host and a client both run (`appFrame.test.ts`).
-    expect(app).toContain("    hike.syncWayDraw(live.world, state);\n    hike.syncAtmosphere(live.world, state, live.localEntityId, dt);");
+    expect(app).toContain("    hike.beforeSync(live.world, state, live.localEntityId, dt);");
+    expect(hike).toContain("    syncWayDraw(world, state);\n    syncAtmosphere(world, state, localId, dt);");
     expect(app).toContain("frame(host, state, cmd, dt);");
     expect(app).toContain("frame(client, state, cmd, dt);");
     // Never under the intro: the climb's first ten seconds. A find before then (a console's `summit`) starts it at once.
@@ -118,7 +119,8 @@ describe("the world's way down", SUITE, () => {
     // The look is asked for again every tick of the threshold, from where the player is: a way that was not drawn at the find is turned to once it is, and the run follows it.
     expect(hike).toContain("      const fresh = wayDownFrom(me, sim);\n      if (fresh !== null) downLook = fresh;");
     // One tick step, which the host and a client both run (`appFrame.test.ts`).
-    expect(app).toContain("cmd = hike.taken(hike.ranToCar(hike.stilled(input.sample(++seq), me, live.world), me));");
+    expect(app).toContain("cmd = hike.command(input.sample(++seq), me, live.world);");
+    expect(hike).toContain("    return taken(ranToCar(stilled(sample, me, world), me));");
     expect(app).toContain("const cmd = stepTicks(host, ticks);");
     expect(app).toContain("const cmd = stepTicks(client, ticks);");
     expect(hike).toContain("const look = thresholdLook(stage, lastLook, downLook);");

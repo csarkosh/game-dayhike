@@ -44,8 +44,6 @@ import { isTouchDevice } from "@csarkosh/engine/game/platform";
 import { isMobile } from "@csarkosh/engine/game/gpuSignals";
 import { trailheadStart } from "./sim/spawn.js";
 import type { PreparedScene } from "@csarkosh/engine/game/preparedScene";
-import { placeNames } from "./sim/placeNames.js";
-import { createTrace, type Trace } from "./game/trace.js";
 import { afterNextPaint } from "@csarkosh/engine/game/paint";
 import type { QualityTier } from "@csarkosh/engine/game/quality";
 import { settingsModel, type AutoSummary } from "@csarkosh/engine/game/settings";
@@ -62,7 +60,7 @@ import { FIRST_BUILD_SLICE_MS } from "@csarkosh/engine/game/syncJobs";
 import { createFirstBuilds } from "@csarkosh/engine/game/firstBuilds";
 import { extrasLater } from "@csarkosh/engine/game/extrasLater";
 import { connectFailure, createConnectPanel, sessionEndOutcome } from "@csarkosh/engine/game/connectPanel";
-import { HIKE_ACTIONS, type InputCommand, type PlayerState, type WorldState } from "./sim/types.js";
+import { HIKE_ACTIONS, type InputCommand, type WorldState } from "./sim/types.js";
 import { PLAYER_EYE_OFFSET, PLAYER_HALF } from "@csarkosh/engine/sim/constants";
 import { loadBirdBed } from "@csarkosh/engine/game/birdBed";
 import type { World } from "./sim/world.js";
@@ -457,8 +455,6 @@ function buildGame(
   let base: AtmosphereBase = { weather: WEATHER_PRESETS[DEFAULT_WEATHER], hour: DEFAULT_HOUR };
   let worstFrameMs = 0;
   let stalls = 0;
-  /** The trace of where this player goes (`game/trace.ts`), made at the match's start. */
-  let trace: Trace | null = null;
   // The page's mute: the ambient master follows it from now to the hike's end.
   made(options.mute.bind((on) => ambient.setMuted(on)));
   // Recomputed when the weather does: on a `weather` command directly below,
@@ -740,7 +736,7 @@ function buildGame(
     ambient.setDrip(renderer.canopyWater(), renderer.canopyOver());
     // The stare rides the same call: `sync` stepped its lens, and the
     // listener `syncWind` placed is where its whispers circle.
-    ambient.setStare(renderer.stare(), hike.escalation.haunt);
+    hike.sound();
   }
 
   /**
@@ -853,8 +849,8 @@ function buildGame(
     touchModel.tick(performance.now());
     touchModel.setLampOn(lampOn);
     touchLayer.sync();
-    hud.setLamp(touchStart || hike.ended || hike.dead ? null : { key: "F", on: lampOn });
-    hud.setPause(touchStart || hike.ended || hike.dead ? null : { key: "Esc" });
+    hud.setLamp(touchStart || hike.over() ? null : { key: "F", on: lampOn });
+    hud.setPause(touchStart || hike.over() ? null : { key: "Esc" });
   }
 
   /**
@@ -903,7 +899,7 @@ function buildGame(
     engaged: () => input.engaged,
     barOpen: () => bar.isOpen,
     menuOpen: () => menu.isOpen,
-    ended: () => hike.ended,
+    ended: () => hike.decided(),
     showMenu: () => menu.show(),
     hideMenu: () => menu.hide(),
     setSuppressed: (on) => input.setSuppressed(on),
@@ -1123,7 +1119,7 @@ function buildGame(
 
   /** The party's climb so far, to three places: what every match row carries. */
   function progressRounded(): number {
-    return Math.round(hike.escalation.progressMax * 1000) / 1000;
+    return Math.round(hike.progress() * 1000) / 1000;
   }
 
   /**
@@ -1134,14 +1130,9 @@ function buildGame(
    */
   function matchStarted(role: "host" | "client", world: World, stats: () => { rtt: number; pe: number }): void {
     if (telemetry === null) return;
-    hike.hikeReportAtRest();
+    hike.matchStarted(world);
     worstFrameMs = 0;
     stalls = 0;
-    // The trace names places as the sign posts do, never under the missing
-    // hiker's own first name (`placeNames`).
-    const graph = world.trail;
-    const hikerFirst = world.search?.hiker.name.split(" ")[0] ?? "";
-    trace = createTrace(graph, graph === null ? new Map() : placeNames(seed, graph.features, hikerFirst));
     telemetry.event("match_start", { role, party: lobby?.state.members.length ?? 1, lobby: lobby?.state.id ?? "" });
     telemetry.sample(() => {
       const s = stats();
@@ -1157,25 +1148,6 @@ function buildGame(
       stalls = 0;
       return sample;
     });
-  }
-
-  /**
-   * The trace of where this player goes (`game/trace.ts`): a sample every
-   * two seconds of sim time when they have moved, and a row at each
-   * transition of the route. Both loops, after the outcome; one integer
-   * compare a frame until a sample is due.
-   */
-  function syncTelemetry(world: World, state: WorldState, self: PlayerState | undefined, sprinting: boolean): void {
-    if (telemetry === null || trace === null) return;
-    const frame = {
-      tick: state.tick,
-      offTrail: hike.lastTargets?.offTrail ?? 0,
-      lens: hike.escalation.lens,
-      near: hike.lastTargets?.near ?? 0,
-      sprinting,
-      progress: hike.escalation.progressMax,
-    };
-    for (const e of trace.step(self, frame)) telemetry.event(e.n, e.fields);
   }
 
   // Kept so dispose() can cancel it. Without that, a session ending seconds
@@ -1235,7 +1207,7 @@ function buildGame(
     let cmd: InputCommand | null = null;
     for (let i = 0; i < ticks; i++) {
       const me = live.world.state.players.get(live.localEntityId);
-      cmd = hike.taken(hike.ranToCar(hike.stilled(input.sample(++seq), me, live.world), me));
+      cmd = hike.command(input.sample(++seq), me, live.world);
       if (i === ticks - 1) eyeBefore = me === undefined ? null : capturedEye(me, eyeBeforeScratch);
       live.tick(cmd);
     }
@@ -1250,24 +1222,16 @@ function buildGame(
    */
   function frame(live: Live, state: WorldState, cmd: InputCommand | null, dt: number): void {
     const self = state.players.get(live.localEntityId);
-    hike.syncWayLight(live.world, dt);
-    hike.syncCrowd(live.world, state, live.localEntityId, dt);
-    hike.syncWayDraw(live.world, state);
-    hike.syncAtmosphere(live.world, state, live.localEntityId, dt);
+    hike.beforeSync(live.world, state, live.localEntityId, dt);
     renderer.sync(state, live.localEntityId, accumulator.alpha, { dt, sprinting: input.sprinting, before: eyeBefore });
     playWildlifeAudio();
     syncWind();
     syncDrip();
     syncWaterLife();
     syncSurf();
-    syncTouch(self?.lamp.on ?? false);
-    hike.syncPrompt(live.world, self);
-    if (cmd !== null) hike.syncPoster(live.world, self, cmd);
-    hike.syncRoadLine(self, state);
-    hike.syncDeath(self, state, live.world);
-    hike.syncOutcome(state, live.localEntityId);
-    hike.syncEndScene();
-    syncTelemetry(live.world, state, self, input.sprinting);
+    syncTouch(hike.lampOn(self));
+    hike.afterSync(live.world, state, live.localEntityId, self, cmd);
+    hike.report(state, self, input.sprinting);
     // True exactly when `sync` took its player-following branch, which is
     // the only case in which `renderer.cameraPosition()` is an eye position
     // a pending freecam can adopt.
@@ -1288,11 +1252,11 @@ function buildGame(
       hostPeerId: selfPeerId,
       peaceful: calm,
     });
-    hike.hikeHostLooks(host);
+    hike.hostStarted(host);
     session = host;
     matchStarted("host", host.world, () => ({ rtt: 0, pe: 0 }));
     governor?.restart(performance.now());
-    hike.hikeAtRest();
+    hike.atRest();
     hud.setStatus(null);
     // The host names itself: its own Named pairing only goes out to followers.
     names.set(host.localEntityId, selfPeerId);
@@ -1306,7 +1270,7 @@ function buildGame(
     if (firstBuilds === undefined) hike.buildExtras(renderer);
     else extrasToCome = extrasLater({
       build: () => hike.buildExtras(asked),
-      still: () => !disposed && !broken && renderer === asked && hike.signs === null && hike.body === null,
+      still: () => !disposed && !broken && renderer === asked && !hike.extrasStand(),
       // The task is outside the start's catch: the hike goes on without its signs, and the console
       // (which telemetry reads) says so.
       failed: (error) => console.error("The trailhead's signs could not be built.", error),
@@ -1325,7 +1289,7 @@ function buildGame(
       const dt = frameSeconds();
       feedGovernor(dt);
       const ticks = accumulator.advance(dt);
-      hike.escapeStep?.();
+      hike.beforeTicks();
       const cmd = stepTicks(host, ticks);
       stepFreecamView(dt);
 
@@ -1392,7 +1356,7 @@ function buildGame(
     session = client;
     matchStarted("client", client.world, () => ({ rtt: client.stats.rttMs, pe: client.stats.lastPredictionError }));
     governor?.restart(performance.now());
-    hike.hikeAtRest();
+    hike.atRest();
     registerInteractables(client.world);
     activeWorld = client.world;
     hike.buildExtras(renderer);
@@ -1640,7 +1604,7 @@ function buildGame(
     // be under way.
     if (disposed || broken || !serial.idle) return;
     // Not under the end: a renderer built anew would have no scene to play.
-    if (hike.ended || hike.endRunDoor !== null) return;
+    if (hike.decided() || hike.holdsFrame()) return;
     if (target === tier) {
       options.quality.save(choice);
       return;
@@ -1833,7 +1797,7 @@ function buildGame(
     if (governor === null) return;
     const decision = governorDecision(governor.verdict, tier, tierSource);
     // Nor under the end scene, the console's look at it too: a renderer built anew would have no scene.
-    if (decision === null || disposed || broken || !serial.idle || lowering || landingTimer !== null || hike.endRunDoor !== null) return;
+    if (decision === null || disposed || broken || !serial.idle || lowering || landingTimer !== null || hike.holdsFrame()) return;
     lowering = true;
     let done: () => void = () => undefined;
     void serial.track(new Promise<void>((resolve) => (done = resolve)));
@@ -1912,11 +1876,10 @@ function buildGame(
       firstBuilds?.dispose();
       if (telemetry !== null) {
         telemetry.sample(null);
-        telemetry.event("match_end", { p: progressRounded(), ended: hike.ended, dead: hike.dead });
+        telemetry.event("match_end", { p: progressRounded(), ...hike.matchEnd() });
         // The match is over: the rows after this one name no game.
         telemetry.context({ game: null, world: null, seed: null });
       }
-      trace = null;
       options.onPauseChange(false);
       window.removeEventListener("resize", onResize);
       window.removeEventListener("keydown", onDebugKey);
@@ -1935,7 +1898,7 @@ function buildGame(
       bar.dispose();
       menu.dispose();
       connectPanel.dispose();
-      hike.disposeHike();
+      hike.dispose();
       touchLayer.dispose();
       input.dispose();
       if (!broken) {
