@@ -1,6 +1,6 @@
-import { bindCanvas } from "@csarkosh/engine/game/canvasBinding";
-import type { InputCommand } from "@csarkosh/engine/sim/core";
-import { MoveButton, NO_ACTIONS, type ActionBits } from "@csarkosh/engine/sim/core";
+import { bindCanvas } from "./canvasBinding.js";
+import type { InputCommand } from "../sim/core.js";
+import { MoveButton, NO_ACTIONS, type ActionBits } from "../sim/core.js";
 import type { TouchSource } from "./touchControls.js";
 
 const MOUSE_SENSITIVITY = 0.0022;

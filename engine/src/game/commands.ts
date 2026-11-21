@@ -1,6 +1,6 @@
-import { DEFAULT_WEATHER, WEATHER_NAMES } from "@csarkosh/engine/game/weather";
-import { DEFAULT_PAINT_PALETTE, PAINT_PALETTE_NAMES } from "@csarkosh/engine/game/gradeParams";
-import { DEFAULT_BOB_SCALE, MAX_BOB_SCALE } from "@csarkosh/engine/game/viewBob";
+import { DEFAULT_WEATHER, WEATHER_NAMES } from "./weather.js";
+import { DEFAULT_PAINT_PALETTE, PAINT_PALETTE_NAMES } from "./gradeParams.js";
+import { DEFAULT_BOB_SCALE, MAX_BOB_SCALE } from "./viewBob.js";
 
 export type CommandKind = "view" | "world";
 

@@ -6,7 +6,7 @@ import {
   setEntry,
   splitEntries,
 } from "../../src/game/script.js";
-import { registerTerrainVariants } from "../../src/game/commands.js";
+import { registerTerrainVariants } from "@csarkosh/engine/game/commands";
 import "../../src/game/hikeCommands.js";
 
 beforeEach(() => registerTerrainVariants(["montane"]));

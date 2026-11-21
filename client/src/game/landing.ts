@@ -308,7 +308,7 @@ const STYLE = `
 import type { Platform } from "@csarkosh/engine/net/desktopRelease";
 import { creditsEntries, renderCredits } from "./credits.js";
 import { landingPanelFocus, type LandingPanel, type LandingView } from "./landingModel.js";
-import { openerOf, renderSettings, type Opener } from "./settings.js";
+import { openerOf, renderSettings, type Opener } from "@csarkosh/engine/game/settings";
 import { tokensLink } from "@csarkosh/engine/game/tokens";
 import type { TierChoice } from "@csarkosh/engine/game/tierChoice";
 

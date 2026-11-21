@@ -5,7 +5,7 @@
  */
 import "../sim/passes/index.js";
 import { DEFAULT_TERRAIN_VARIANT, terrainVariantNames } from "@csarkosh/engine/sim/terrain";
-import { registerTerrainVariants } from "./commands.js";
+import { registerTerrainVariants } from "@csarkosh/engine/game/commands";
 import { lastEntry, parseScript, splitEntries } from "./script.js";
 import { seedFromToken } from "@csarkosh/engine/game/seed";
 

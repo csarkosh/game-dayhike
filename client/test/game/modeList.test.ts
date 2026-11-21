@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { createModeKeeper, isMode, readMode, writeMode, type ModeList } from "../../src/game/modeList.js";
+import { createModeKeeper, isMode, readMode, writeMode, type ModeList } from "@csarkosh/engine/game/modeList";
 
 const LIST: ModeList = {
   modes: [

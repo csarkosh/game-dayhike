@@ -1,5 +1,5 @@
-import * as modes from "./modeList.js";
-import type { ModeList } from "./modeList.js";
+import * as modes from "@csarkosh/engine/game/modeList";
+import type { ModeList } from "@csarkosh/engine/game/modeList";
 
 /**
  * The mode a hike runs in: `game`, the hike as it is, the climb's three acts

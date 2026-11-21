@@ -236,7 +236,7 @@ to it was.
 | `client/src/sim/signs.ts` | `TRAIL_NAME`; `trailSign(graph, board, spawn)`: the post's place and the plank's direction (§3.3). |
 | `client/src/sim/passes/signs.ts` | Emits the trail sign's box with the junction posts'. |
 | `client/src/sim/search.ts` | The renamed module (§5). |
-| `client/src/game/input.ts` | The sampler takes a starting yaw. |
+| `engine/src/game/input.ts` | The sampler takes a starting yaw. |
 | `client/src/game/signMeshes.ts` | Draws the trail sign as a post with one arm. |
 | `client/src/game/posterPanel.ts` | The poster's line, from `TRAIL_NAME`. |
 | `client/src/app.ts` | Gives the input the spawn's facing; draws the trail sign; reads the poster's line from the panel's model; the renames. |

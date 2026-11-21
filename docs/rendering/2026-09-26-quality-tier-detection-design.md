@@ -670,7 +670,7 @@ the engine choice after it. Where the two meet:
 
 ### 8.2 The Settings screen
 
-One component, `client/src/game/settings.ts`, as `credits.ts` is: a pure
+One component, `engine/src/game/settings.ts`, as `credits.ts` is: a pure
 `settingsModel(input): SettingsView` that decides everything, and
 `renderSettings(root, view, handlers)` that paints it with DOM calls and
 `textContent` only, into whichever panel hosts it.

@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
-import { createInputSampler } from "../../src/game/input.js";
-import { createTouchModel } from "../../src/game/touchControls.js";
+import { createInputSampler } from "@csarkosh/engine/game/input";
+import { createTouchModel } from "@csarkosh/engine/game/touchControls";
 import { HIKE_ACTIONS } from "../../src/sim/types.js";
 import { sourceText } from "../helpers/source.js";
 import { installStandInDom } from "./helpers/standInDom.js";
@@ -32,7 +32,7 @@ afterEach(() => {
   delete (globalThis as Record<string, unknown>).document;
 });
 
-function sampler(opts: { touch?: import("../../src/game/touchControls.js").TouchSource; touchMode?: boolean; startYaw?: number; actions?: { interact: number; lamp: number } } = {}) {
+function sampler(opts: { touch?: import("@csarkosh/engine/game/touchControls").TouchSource; touchMode?: boolean; startYaw?: number; actions?: { interact: number; lamp: number } } = {}) {
   const canvas = { ...fakeTarget(), requestPointerLock: () => undefined };
   // The hike's own bits for the two presses the sampler raises beyond movement, unless a test names others.
   return { input: createInputSampler(canvas as unknown as HTMLCanvasElement, { actions: HIKE_ACTIONS, ...opts }), canvas };
@@ -747,7 +747,7 @@ describe("the starting yaw", () => {
       moveX: 0, moveZ: 0, sprinting: false,
       takeLook: () => ({ yaw: 0.5, pitch: 0 }),
       takeButtons: () => 0,
-    } as unknown as import("../../src/game/touchControls.js").TouchSource;
+    } as unknown as import("@csarkosh/engine/game/touchControls").TouchSource;
     const { input } = sampler({ touch, touchMode: true, startYaw: 1.25 });
     expect(input.sample(1).yaw).toBe(1.75);
   });

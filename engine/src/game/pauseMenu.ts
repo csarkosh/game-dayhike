@@ -1,6 +1,6 @@
-import { APPLY_SWAP_READY_MAX_MS } from "@csarkosh/engine/game/rendererSwap";
+import { APPLY_SWAP_READY_MAX_MS } from "./rendererSwap.js";
 import { listOpen, openerOf, renderSettings, type Opener, type SettingsView } from "./settings.js";
-import type { TierChoice } from "@csarkosh/engine/game/tierChoice";
+import type { TierChoice } from "./tierChoice.js";
 
 const STYLE = `
   .pausemenu {

@@ -1,5 +1,5 @@
 import { GAME_MODES } from "./gameMode.js";
-import { registerCommands, type CommandSpec } from "./commands.js";
+import { registerCommands, type CommandSpec } from "@csarkosh/engine/game/commands";
 
 /** Day Hike's own console commands, found after the engine's. */
 export const HIKE_COMMANDS: readonly CommandSpec[] = [

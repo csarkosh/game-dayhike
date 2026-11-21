@@ -12,7 +12,7 @@ import {
   FLICK_MIN_SPEED,
   FLICK_FULL_SPEED,
   type TouchModel,
-} from "../../src/game/touchControls.js";
+} from "@csarkosh/engine/game/touchControls";
 import { Button, HIKE_ACTIONS } from "../../src/sim/types.js";
 
 const VIEW = { width: 800, height: 400 };

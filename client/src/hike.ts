@@ -72,11 +72,11 @@ import { stepWoodsSounds, WOODS_SOUNDS_REST, woodsSoundsFrom, type WoodsSoundsSt
 import type { World } from "./sim/world.js";
 import { type Telemetry } from "@csarkosh/engine/net/telemetry";
 import { DUSK_AT, MIST_AT, WET_AT } from "./sim/acts.js";
-import type { InputSampler } from "./game/input.js";
+import type { InputSampler } from "@csarkosh/engine/game/input";
 import type { WildlifeAudio } from "@csarkosh/engine/game/wildlifeAudio";
-import type { TouchModel } from "./game/touchControls.js";
+import type { TouchModel } from "@csarkosh/engine/game/touchControls";
 import type { Presence } from "@csarkosh/engine/game/wildlifeBehaviour";
-import type { PlayGate } from "./game/pauseMenu.js";
+import type { PlayGate } from "@csarkosh/engine/game/pauseMenu";
 import type { Hud } from "./game/hud.js";
 import type { HikeAudio } from "./game/hikeAudio.js";
 

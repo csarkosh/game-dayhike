@@ -8,7 +8,7 @@ import {
   registerTerrainVariants,
   registerCommands,
   RETIRED_COMMANDS,
-} from "../../src/game/commands.js";
+} from "@csarkosh/engine/game/commands";
 import { HIKE_COMMANDS } from "../../src/game/hikeCommands.js";
 import { parseScript } from "../../src/game/script.js";
 import { sourceText } from "../helpers/source.js";

@@ -4,7 +4,7 @@ import {
   validateCommand,
   RETIRED_COMMANDS,
   type ParsedCommand,
-} from "./commands.js";
+} from "@csarkosh/engine/game/commands";
 
 export type ScriptEntry = ParsedCommand;
 

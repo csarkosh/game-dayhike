@@ -68,9 +68,9 @@ import {
 } from "@csarkosh/engine/game/frameProbe";
 import { createHud } from "./game/hud.js";
 import { HIKE_MODES, createModeKeeper, isGameMode, type GameMode } from "./game/gameMode.js";
-import { createMuteButton, readMuted, writeMuted } from "./game/muteButton.js";
+import { createMuteButton, readMuted, writeMuted } from "@csarkosh/engine/game/muteButton";
 import { containerPixels, withGovernorDrop, type QualityTier, type VerdictEngine } from "@csarkosh/engine/game/quality";
-import type { AutoSummary } from "./game/settings.js";
+import type { AutoSummary } from "@csarkosh/engine/game/settings";
 import {
   createChoiceKeeper,
   leaveNotice,

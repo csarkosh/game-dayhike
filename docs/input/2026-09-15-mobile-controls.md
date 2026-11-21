@@ -275,7 +275,7 @@ and **667 × 375** landscape.
 
 New:
 
-- `client/src/game/touchControls.ts`: the pure model (`createTouchModel`) and the layer
+- `engine/src/game/touchControls.ts`: the pure model (`createTouchModel`) and the layer
   (`createTouchLayer`).
 - `client/src/game/interactPrompt.ts`: `promptModel` and `createInteractPrompt`.
 - `client/test/game/touchControls.test.ts`, `client/test/game/interactPrompt.test.ts`.
@@ -283,7 +283,7 @@ New:
 Changed:
 
 - `engine/src/game/platform.ts`: `isTouchDevice`.
-- `client/src/game/input.ts`: engaged state, `onEngagedChange`, `engage`/`disengage`, the
+- `engine/src/game/input.ts`: engaged state, `onEngagedChange`, `engage`/`disengage`, the
   `TouchSource` merged into `sample()` and `sprinting`.
 - `engine/src/game/freecam.ts`, `client/src/app.ts`: read `engaged`; `app.ts` wires the touch
   layer, the prompt, `registerInteractables`, and the visibility-change disengage.

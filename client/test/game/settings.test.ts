@@ -1,10 +1,10 @@
 import { describe, it, expect, afterEach, vi } from "vitest";
 import "../../src/sim/passes/index.js";
-import { CAUTION_LIVE, TIER_CHOICES, listOpen, renderSettings, settingsModel, type SettingsInput } from "../../src/game/settings.js";
+import { CAUTION_LIVE, TIER_CHOICES, listOpen, renderSettings, settingsModel, type SettingsInput } from "@csarkosh/engine/game/settings";
 import { autoPick } from "@csarkosh/engine/game/frameProbe";
 import type { GpuSignals } from "@csarkosh/engine/game/gpuSignals";
 import { HIKE_MODES } from "../../src/game/gameMode.js";
-import type { ModeList } from "../../src/game/modeList.js";
+import type { ModeList } from "@csarkosh/engine/game/modeList";
 import { sourceText } from "../helpers/source.js";
 import { renderLanding } from "../../src/game/landing.js";
 import { landingModel } from "../../src/game/landingModel.js";

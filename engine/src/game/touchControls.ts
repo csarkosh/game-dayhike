@@ -1,6 +1,6 @@
-import { lineIcon } from "@csarkosh/engine/game/icons";
-import { bindCanvas } from "@csarkosh/engine/game/canvasBinding";
-import { MoveButton, NO_ACTIONS, type ActionBits } from "@csarkosh/engine/sim/core";
+import { lineIcon } from "./icons.js";
+import { bindCanvas } from "./canvasBinding.js";
+import { MoveButton, NO_ACTIONS, type ActionBits } from "../sim/core.js";
 
 /** Thumb travel from the base centre that reads as full deflection, CSS px. */
 export const STICK_RADIUS = 60;

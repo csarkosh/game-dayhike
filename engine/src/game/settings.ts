@@ -14,8 +14,8 @@
  * for what is the component's own: the label, the select and its list, and
  * the caption lines.
  */
-import type { QualityTier } from "@csarkosh/engine/game/quality";
-import type { TierChoice } from "@csarkosh/engine/game/tierChoice";
+import type { QualityTier } from "./quality.js";
+import type { TierChoice } from "./tierChoice.js";
 import type { ModeList } from "./modeList.js";
 
 /** The choices, in the order the screen offers them: Auto first, and the default. */
