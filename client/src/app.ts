@@ -2096,6 +2096,23 @@ function buildGame(
     for (const lift of [...onSessionOver]) lift();
   }
 
+  /**
+   * The hike as a session starts it, the host's and a follower's alike: the
+   * acts, the woods and the inner voice at rest, no cap dropped, no chase
+   * seen, no scene held and no look down the trail, and the woods' other
+   * sounds drawn afresh.
+   */
+  function hikeAtRest(): void {
+    escalation = ESCALATION_REST;
+    woods = WOODS_REST;
+    voice = voiceRest(seed ^ 0x5a11);
+    capAt = undefined;
+    wasChase = false;
+    sceneUntil = -1;
+    downLook = null;
+    woodsSounds = woodsSoundsFrom(seed ^ (Date.now() | 0));
+  }
+
   /** A session a frame is stepped and drawn for: the host's or a follower's. */
   type Live = { readonly world: World; readonly localEntityId: number; tick(cmd: InputCommand): void };
 
@@ -2245,14 +2262,7 @@ function buildGame(
     session = host;
     matchStarted("host", host.world, () => ({ rtt: 0, pe: 0 }));
     governor?.restart(performance.now());
-    escalation = ESCALATION_REST;
-    woods = WOODS_REST;
-    voice = voiceRest(seed ^ 0x5a11);
-    capAt = undefined;
-    wasChase = false;
-    sceneUntil = -1;
-    downLook = null;
-    woodsSounds = woodsSoundsFrom(seed ^ (Date.now() | 0));
+    hikeAtRest();
     hud.setStatus(null);
     // The host names itself: its own Named pairing only goes out to followers.
     names.set(host.localEntityId, selfPeerId);
@@ -2352,14 +2362,7 @@ function buildGame(
     session = client;
     matchStarted("client", client.world, () => ({ rtt: client.stats.rttMs, pe: client.stats.lastPredictionError }));
     governor?.restart(performance.now());
-    escalation = ESCALATION_REST;
-    woods = WOODS_REST;
-    voice = voiceRest(seed ^ 0x5a11);
-    capAt = undefined;
-    wasChase = false;
-    sceneUntil = -1;
-    downLook = null;
-    woodsSounds = woodsSoundsFrom(seed ^ (Date.now() | 0));
+    hikeAtRest();
     registerInteractables(client.world);
     activeWorld = client.world;
     buildExtras(renderer);

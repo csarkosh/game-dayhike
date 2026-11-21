@@ -58,3 +58,23 @@ describe("a session's frame", () => {
     expect(app).toMatch(/const ticks = accumulator\.advance\(dt\);\s+const cmd = stepTicks\(client, ticks\);/);
   });
 });
+
+describe("a session's start", () => {
+  it("puts the hike back at rest in one place, for the host's session and a follower's alike", () => {
+    const rest = bodyOf("hikeAtRest");
+    for (const line of [
+      "escalation = ESCALATION_REST;", "woods = WOODS_REST;", "voice = voiceRest(seed ^ 0x5a11);", "capAt = undefined;",
+      "wasChase = false;", "sceneUntil = -1;", "downLook = null;", "woodsSounds = woodsSoundsFrom(seed ^ (Date.now() | 0));",
+    ]) {
+      expect(rest, line).toContain(line);
+    }
+    // Written once: the two sessions used to carry a copy each.
+    expect(app.split("woods = WOODS_REST;").length - 1).toBe(1);
+    expect(app.split("voice = voiceRest(seed ^ 0x5a11);").length - 1).toBe(1);
+    // After the match is announced and the governor restarted, before the session's world is wired to the page.
+    for (const who of ["host", "client"]) {
+      expect(app, who).toMatch(new RegExp(`matchStarted\\("${who}", ${who}\\.world, [^\\n]+\\n    governor\\?\\.restart\\(performance\\.now\\(\\)\\);\\n    hikeAtRest\\(\\);`));
+    }
+    expect(calls(app, "hikeAtRest")).toBe(2);
+  });
+});
