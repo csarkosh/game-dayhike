@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import "../../src/sim/passes/index.js";
 import { AiState, Outcome, Phase, type EnemyState, type PlayerState, type WorldState } from "../../src/sim/types.js";
-import { createWildlifeInputs, type MatchReader } from "../../src/game/wildlifeInputs.js";
+import { createWildlifeInputs, type MatchReader } from "@csarkosh/engine/game/wildlifeInputs";
 import { readHikeMatch } from "../../src/game/hikeWildlife.js";
 import type { WildlifeEvent } from "@csarkosh/engine/game/wildlifeBehaviour";
 

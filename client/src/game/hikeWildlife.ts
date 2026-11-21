@@ -1,6 +1,6 @@
 import { isHollow } from "../sim/hollow.js";
 import { AiState, type WorldState } from "../sim/types.js";
-import type { MatchReader } from "./wildlifeInputs.js";
+import type { MatchReader } from "@csarkosh/engine/game/wildlifeInputs";
 
 /**
  * Finds the nearest Hollow (`isHollow`: `AiState` Emerge, Hunt, Stand or Watch) to

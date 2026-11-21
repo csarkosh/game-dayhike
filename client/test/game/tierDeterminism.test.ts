@@ -16,7 +16,7 @@ import { createHikeRenderer } from "../../src/game/hikeRenderer.js";
 import type { QualityTier } from "@csarkosh/engine/game/quality";
 import { bodiesInShot } from "../../src/game/shotBodies.js";
 import { createPlayerSlots } from "@csarkosh/engine/game/waterLifeInputs";
-import { createWildlifeInputs } from "../../src/game/wildlifeInputs.js";
+import { createWildlifeInputs } from "@csarkosh/engine/game/wildlifeInputs";
 import { readHikeMatch } from "../../src/game/hikeWildlife.js";
 import { skyFixture } from "./helpers/skyFixture.js";
 import { timeLimit } from "../helpers/timeLimit.js";

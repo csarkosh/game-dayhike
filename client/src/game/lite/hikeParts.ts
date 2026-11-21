@@ -30,7 +30,7 @@ import { wayHazeInto } from "../wayHaze.js";
 import { wayDimAt } from "../wayLevel.js";
 import type { WayColourPath } from "../wayLight.js";
 import { wayTint } from "../wayLightGeometry.js";
-import { createWildlifeInputs } from "../wildlifeInputs.js";
+import { createWildlifeInputs } from "@csarkosh/engine/game/wildlifeInputs";
 import { readHikeMatch } from "../hikeWildlife.js";
 import { createCapMesh, type CapMesh } from "./capMesh.js";
 import { createLiteCrowdCards, type LiteCrowdCards } from "./crowdCardMeshes.js";

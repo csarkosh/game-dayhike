@@ -6,8 +6,8 @@
  * drained for whoever voices them. Each is one object reused across
  * frames: the wildlife's update is a per-frame path.
  */
-import type { PlayerPoint, WildlifeEvent } from "@csarkosh/engine/game/wildlifeBehaviour";
-import type { MatchState, View } from "@csarkosh/engine/game/wildlifeDirector";
+import type { PlayerPoint, WildlifeEvent } from "./wildlifeBehaviour.js";
+import type { MatchState, View } from "./wildlifeDirector.js";
 
 /** What a game says of its match for the animals, for a view at (x, z): it writes `phase`, `hollowDistance` and `hollowHunting` into `match`. */
 export type MatchReader<S> = (state: S, x: number, z: number, match: MatchState) => void;
