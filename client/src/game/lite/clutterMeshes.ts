@@ -67,10 +67,10 @@ import type { WetUniforms } from "@csarkosh/engine/game/wetSurface";
 import { loadModel, type LoadedModel, type ModelPart } from "./forestModels.js";
 import {
   baseColourPlugin, oneSidedLightPlugin, surfaceWetPlugin, vegetationInstanceLayout, vegetationPlugin, type Vegetation,
-} from "./forestPlugins.js";
+} from "@csarkosh/engine/game/lite/forestPlugins";
 import { DRAW_ORDER, createDrawOrders } from "@csarkosh/engine/game/lite/drawOrder";
 import type { FrameUploads } from "@csarkosh/engine/game/lite/frameUploads";
-import { listBytes, listMesh, showList, type ListMesh } from "./listMeshes.js";
+import { listBytes, listMesh, showList, type ListMesh } from "@csarkosh/engine/game/lite/listMeshes";
 import { cellOrigin, createRebuilds } from "@csarkosh/engine/game/lite/rebuildJobs";
 
 /** What showing the clutter's lists is expected to take (ms): every bucket handed its list, one step. The scheduler

@@ -1,8 +1,8 @@
 import { describe, expect, it } from "vitest";
 import "../../../src/sim/passes/index.js";
 import { babylonText } from "../../helpers/babylonFixture.js";
-import { FRAME_BLOCK, stageClocks, stageOwn, stageReads } from "../../../src/game/lite/frameBlock.js";
-import { MOTES_FRAME_READS, MOTES_WGSL } from "../../../src/game/lite/motes.js";
+import { FRAME_BLOCK, stageClocks, stageOwn, stageReads } from "@csarkosh/engine/game/lite/frameBlock";
+import { MOTES_FRAME_READS, MOTES_WGSL } from "@csarkosh/engine/game/lite/motes";
 import { MOTE_BOX, MOTE_SALT, emptyMoteUniforms } from "@csarkosh/engine/game/moteField";
 import { inOrder, tight } from "./wgslText.js";
 

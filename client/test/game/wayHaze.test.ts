@@ -1,7 +1,7 @@
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
-import { emptyAtmosphereUniforms } from "../../src/game/atmosphereParams.js";
+import { emptyAtmosphereUniforms } from "@csarkosh/engine/game/atmosphereParams";
 import { WAY_HAZE_DENSITY, WAY_HAZE_SHARE, wayHazeInto } from "../../src/game/wayHaze.js";
 
 const clientFile = (path: string): string => fileURLToPath(new URL(`../../${path}`, import.meta.url));

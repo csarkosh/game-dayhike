@@ -52,11 +52,11 @@ import {
 import type { WeatherParams } from "@csarkosh/engine/game/weather";
 import { DRAW_ORDER, createDrawOrders } from "@csarkosh/engine/game/lite/drawOrder";
 import { loadModel } from "./forestModels.js";
-import { oneSidedLightPlugin } from "./forestPlugins.js";
+import { oneSidedLightPlugin } from "@csarkosh/engine/game/lite/forestPlugins";
 import type { FrameUploads } from "@csarkosh/engine/game/lite/frameUploads";
-import { MATRIX_BYTES } from "./listMeshes.js";
+import { MATRIX_BYTES } from "@csarkosh/engine/game/lite/listMeshes";
 import { loadSkinnedModel, type SkinClock, type SkinnedModel } from "./skinnedModels.js";
-import { WING_AMP_AT, WING_COLOURWAY_AT, WING_PHASE_AT, wingPlugin } from "./wingPlugin.js";
+import { WING_AMP_AT, WING_COLOURWAY_AT, WING_PHASE_AT, wingPlugin } from "@csarkosh/engine/game/lite/wingPlugin";
 
 /** The most members of one ground species drawn at once. */
 export const SPECIES_CAPACITY = 64;

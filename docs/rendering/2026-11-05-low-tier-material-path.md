@@ -1,7 +1,7 @@
 # Low on the material path: the veil, the silent exposure, the phone's numbers
 
 **Status:** built and measured on the owner's Pixel 9 (2026-11-05); `client/src/game/lighting.ts`
-(`writeExposureSilently`), `client/src/game/shadeVeil.ts`, `client/src/game/shadeVeilParams.ts`,
+(`writeExposureSilently`), `client/src/game/shadeVeil.ts`, `engine/src/game/shadeVeilParams.ts`,
 `client/src/game/shaders/shadeVeil.fragment.fx`, `engine/src/game/syncJobs.ts` (the counters),
 `tools/frame-budget/phone.mjs`.
 

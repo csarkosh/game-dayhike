@@ -1,11 +1,11 @@
 import { describe, expect, it } from "vitest";
 import "../../../src/sim/passes/index.js";
-import { ATMOSPHERE_PRIORITY } from "../../../src/game/lite/atmospherePlugin.js";
+import { ATMOSPHERE_PRIORITY } from "@csarkosh/engine/game/lite/atmospherePlugin";
 import {
   TERRAIN_ARRAY_TEXTURES, TERRAIN_FIELDS, TERRAIN_TEXTURE_ORDER, TERRAIN_VERTEX_FLOATS, TERRAIN_VERTEX_LAYOUT, TERRAIN_WET_FIELDS,
   emptyTerrainMaterialUniforms, terrainPlugin, terrainSplitPlugin, terrainVertexData, terrainVertexDataSlices, terrainWetPlugin,
   type TerrainPaints, type TerrainTextures,
-} from "../../../src/game/lite/terrainPlugins.js";
+} from "@csarkosh/engine/game/lite/terrainPlugins";
 import {
   FAR_BARE_AO, FAR_CANOPY_SHADE, FAR_CLUMP_AO, FAR_CLUMP_CELL, FAR_CLUMP_SALT, FAR_CLUMP_TILT, FAR_CLUMP_WEIGHT, FAR_CLUMP_WRAP, FAR_COVER_BAND, FAR_COVER_BAND_LOW,
   FAR_COVER_TILT, FAR_DRIFT_AO, FAR_DRIFT_CELL, FAR_DRIFT_SALT, FAR_DRIFT_TILT, FAR_DRIFT_WEIGHT, FAR_LITTER, FAR_MACRO_CELL, FAR_MACRO_SALT, FAR_MACRO_WEIGHT,

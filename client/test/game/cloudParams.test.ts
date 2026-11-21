@@ -6,7 +6,7 @@ import {
   CLOUD_SIGMA, CLOUD_TRAIL_SHARE, CLOUD_WIND_MPS,
   cloudFor, cloudMarchSteps, cloudOn, cloudUniforms, emptyCloudUniforms, noCloud, writeCloudGround,
   CLOUD_GROUND_REBUILD_M, CLOUD_STEPS_HIGH, CLOUD_STEPS_MEDIUM, cloudDensityNow, cloudGroundDue, cloudStepsFor,
-} from "../../src/game/cloudParams.js";
+} from "@csarkosh/engine/game/cloudParams";
 import { postFeaturesFor } from "@csarkosh/engine/game/postParams";
 
 describe("the ground cloud's density", () => {

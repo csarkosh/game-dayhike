@@ -3,9 +3,9 @@ import { readFileSync } from "node:fs";
 import "../../../src/sim/passes/index.js";
 import { babylonText } from "../../helpers/babylonFixture.js";
 import { CAR_SHADOW_BIAS, CAR_SHADOW_HALF, CAR_SHADOW_LIFT, carShadowGrid } from "../../../src/game/carShadow.js";
-import { ATMOSPHERE_PRIORITY } from "../../../src/game/lite/atmospherePlugin.js";
-import { stageOwn, stageReads } from "../../../src/game/lite/frameBlock.js";
-import { MIST_WGSL } from "../../../src/game/lite/mistMeshes.js";
+import { ATMOSPHERE_PRIORITY } from "@csarkosh/engine/game/lite/atmospherePlugin";
+import { stageOwn, stageReads } from "@csarkosh/engine/game/lite/frameBlock";
+import { MIST_WGSL } from "@csarkosh/engine/game/lite/mistMeshes";
 import {
   ATLAS_ROWS, PATCH_FRAME_READS, PATCH_WGSL, TAIL_FRAME_READS, TAIL_LAMP_INDICES, TAIL_WGSL, faceGeometry, labelAtlas, labelGeometry, paintAlphaPlugin, patchGeometry, unlitBlackPlugin,
   tailLampCorners,

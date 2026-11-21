@@ -27,7 +27,7 @@
  * head is built WAY_HEAD times as high as that).
  */
 import type { Rgb } from "@csarkosh/engine/game/colour";
-import { CLOUD_NOISE_LARGE_M, CLOUD_NOISE_SMALL_M, CLOUD_WIND_MPS } from "./cloudParams.js";
+import { CLOUD_NOISE_LARGE_M, CLOUD_NOISE_SMALL_M, CLOUD_WIND_MPS } from "@csarkosh/engine/game/cloudParams";
 
 /**
  * Across the way, in metres from its line: the mist is the path's thin share

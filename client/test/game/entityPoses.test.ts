@@ -8,7 +8,7 @@ import {
   HOLLOW_MAX_MEASURED_SPEED, RANGER_IDS, REACH_S, SHADE_FADE_IN_S, SHADE_FADE_OUT_S, WALK_RATIO_MAX, WALK_RATIO_MIN, WALK_THRESHOLD,
   advanceTrack, createEntityPoses, eyeLevelOf, opacityOf, placeTrack, stepClip, strideFor, type EntityModels,
 } from "../../src/game/entityPoses.js";
-import { HOLLOW_SCALE, HOLLOW_WALK_CLIP_SPEED, RANGER_WALK_CLIP_SPEED } from "../../src/game/hollowLook.js";
+import { HOLLOW_SCALE, HOLLOW_WALK_CLIP_SPEED, RANGER_WALK_CLIP_SPEED } from "@csarkosh/engine/game/hollowLook";
 
 function player(id: number, x = id, z = 0): PlayerState {
   return {

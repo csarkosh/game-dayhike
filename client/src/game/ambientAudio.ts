@@ -1,7 +1,7 @@
 import { clamp01 } from "@csarkosh/engine/game/colour";
 import { gustAt, type WindRecord } from "@csarkosh/engine/game/windParams";
 import { createStareAudio, MUFFLE_OPEN_HZ, muffleGain, muffleHz, type StareAudio } from "./stareAudio.js";
-import type { StareLens } from "./stareLens.js";
+import type { StareLens } from "@csarkosh/engine/game/stareLens";
 import { makeOddSound, ODD_LEVEL } from "./oddSounds.js";
 import { createChaseAudio, type ChaseAudio } from "./chaseAudio.js";
 import { createCarAudio, type CarAudio, type CarPlace, type EarFrame } from "./carAudio.js";

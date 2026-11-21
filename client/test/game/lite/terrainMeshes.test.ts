@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import "../../../src/sim/passes/index.js";
 import { DRAW_ORDER } from "@csarkosh/engine/game/lite/drawOrder";
-import { patchPlace } from "../../../src/game/lite/terrainMeshes.js";
+import { patchPlace } from "@csarkosh/engine/game/lite/terrainMeshes";
 
 describe("the terrain's meshes on Babylon Lite", () => {
   it("draws a patch at its cell's place, after every ring and before the trees, the same whenever its mesh was made", () => {

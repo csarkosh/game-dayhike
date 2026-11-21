@@ -111,12 +111,12 @@ import {
   baseColourPlugin, directOcclusionPlugin, impostorBakePlugin, oneSidedLightPlugin, surfaceSplitPlugin, surfaceWetPlugin, vegetationInstanceLayout,
   vegetationPlugin,
   type Vegetation, type VegetationInstanceLayout,
-} from "./forestPlugins.js";
+} from "@csarkosh/engine/game/lite/forestPlugins";
 import { DRAW_ORDER, createDrawOrders } from "@csarkosh/engine/game/lite/drawOrder";
 import type { FrameUploads } from "@csarkosh/engine/game/lite/frameUploads";
 import { createImpostorBaker, type BakeMesh } from "@csarkosh/engine/game/lite/impostorBake";
-import type { ReflectionRegistry } from "./lakePanorama.js";
-import { KEPT_INSTANCES, MATRIX_BYTES, listBytes, sameFloats, writeListData } from "./listMeshes.js";
+import type { ReflectionRegistry } from "@csarkosh/engine/game/lite/lakePanorama";
+import { KEPT_INSTANCES, MATRIX_BYTES, listBytes, sameFloats, writeListData } from "@csarkosh/engine/game/lite/listMeshes";
 import { createRebuilds } from "@csarkosh/engine/game/lite/rebuildJobs";
 
 /** The canopy giants' models by `TreeInstance.species`: the fir, then the pine. */

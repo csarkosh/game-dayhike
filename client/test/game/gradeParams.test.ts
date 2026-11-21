@@ -3,12 +3,12 @@ import { CHASE_LIFT, CHASE_TINT,
   agx, gradeRecordUnder, whitePointMatrix, hueToRgb, IDENTITY,
   DEFAULT_PAINT_PALETTE, mixPalette, PAINT_AMBER, PAINT_ASH, PAINT_NONE, PAINT_OILS, PAINT_PALETTE_NAMES, PAINT_PALETTES,
   HALATION_BASE, AGX_MIN_EV, AGX_MAX_EV, STARE_DIM, sightUnder,
-} from "../../src/game/gradeParams.js";
+} from "@csarkosh/engine/game/gradeParams";
 import { WEATHER_PRESETS, exposureUnder, vignetteWeightUnder, VIGNETTE_WEIGHT_BASE } from "@csarkosh/engine/game/weather";
 import { sunPositionAt } from "@csarkosh/engine/game/sky";
 import { skyStateFor } from "@csarkosh/engine/game/skyState";
 import { skyFixture } from "./helpers/skyFixture.js";
-import { STARE_LENS_REST, STARE_SIDE_SHIFT, stareReach, type StareLens } from "../../src/game/stareLens.js";
+import { STARE_LENS_REST, STARE_SIDE_SHIFT, stareReach, type StareLens } from "@csarkosh/engine/game/stareLens";
 
 const CLEAR = WEATHER_PRESETS.clear;
 const EERIE = WEATHER_PRESETS.eerie;

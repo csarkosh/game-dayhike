@@ -30,12 +30,12 @@ import type { InstanceList } from "@csarkosh/engine/game/instanceLists";
 import type { QualityTier } from "@csarkosh/engine/game/quality";
 import type { WetUniforms } from "@csarkosh/engine/game/wetSurface";
 import { loadModel, type ModelPart } from "./forestModels.js";
-import { baseColourPlugin, surfaceWetPlugin, vegetationInstanceLayout, vegetationPlugin, type Vegetation } from "./forestPlugins.js";
+import { baseColourPlugin, surfaceWetPlugin, vegetationInstanceLayout, vegetationPlugin, type Vegetation } from "@csarkosh/engine/game/lite/forestPlugins";
 import { DRAW_ORDER, createDrawOrders } from "@csarkosh/engine/game/lite/drawOrder";
 import type { FrameUploads } from "@csarkosh/engine/game/lite/frameUploads";
-import type { ReflectionRegistry } from "./lakePanorama.js";
-import type { CoverRegistry } from "./rainMap.js";
-import { listMesh, showList, type ListMesh } from "./listMeshes.js";
+import type { ReflectionRegistry } from "@csarkosh/engine/game/lite/lakePanorama";
+import type { CoverRegistry } from "@csarkosh/engine/game/lite/rainMap";
+import { listMesh, showList, type ListMesh } from "@csarkosh/engine/game/lite/listMeshes";
 
 export function cliffMeshName(model: number, lod: number): string {
   return `cliff_m${model}_l${lod}`;

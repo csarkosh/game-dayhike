@@ -1,17 +1,17 @@
 import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 import "../../../src/sim/passes/index.js";
-import { SHADE_BLUR, SHADE_DARK, SHADE_MONSTER_DARK } from "../../../src/game/postFrame.js";
-import { GRADE_SHADE_BLOCK, GRADE_STARE_BLOCK, VEIL_GAMMA } from "../../../src/game/shadeVeilParams.js";
+import { SHADE_BLUR, SHADE_DARK, SHADE_MONSTER_DARK } from "@csarkosh/engine/game/postFrame";
+import { GRADE_SHADE_BLOCK, GRADE_STARE_BLOCK, VEIL_GAMMA } from "@csarkosh/engine/game/shadeVeilParams";
 import { SHADE_BLOCK_WGSL, STARE_BLOCK_WGSL, gradeWgsl } from "@csarkosh/engine/game/lite/postWgsl";
-import { SHADE_VEIL_WGSL, holdTexture, veilShown, veilUniforms } from "../../../src/game/lite/shadeVeil.js";
+import { SHADE_VEIL_WGSL, holdTexture, veilShown, veilUniforms } from "@csarkosh/engine/game/lite/shadeVeil";
 import { binder, picture } from "./textureClaims.js";
 import { babylonText } from "../../helpers/babylonFixture.js";
 import { tight } from "./wgslText.js";
 
 /** The veil's fragment stage on Babylon.js (`shadeVeil.fragment.glsl`), its text recorded. */
 const GLSL = babylonText("stages/shadeVeil.fragment.glsl");
-const src = readFileSync(new URL("../../../src/game/lite/shadeVeil.ts", import.meta.url), "utf8");
+const src = readFileSync(new URL("../../../../engine/src/game/lite/shadeVeil.ts", import.meta.url), "utf8");
 
 describe("the shade veil on Babylon Lite", () => {
   it("carries the grade's shade block and its stare block, the very text the grade's pass runs", () => {

@@ -14,14 +14,14 @@ import {
 import { conformUniforms } from "@csarkosh/engine/game/groundConform";
 import { babylonText, babylonValues } from "../../helpers/babylonFixture.js";
 import type { ImpostorBakeMode } from "@csarkosh/engine/game/impostorBake";
-import { ATMOSPHERE_PRIORITY } from "../../../src/game/lite/atmospherePlugin.js";
+import { ATMOSPHERE_PRIORITY } from "@csarkosh/engine/game/lite/atmospherePlugin";
 import {
   BAKE_MODE_FIELD, CONFORM_FIELDS, DEADWOOD_FIELDS, FADE_FIELDS, FADE_ROWS_FIELD, FOLIAGE_FIELDS, PASS_EYE, PLAYERS_FIELD, baseColourPlugin,
   directOcclusionPlugin, impostorBakePlugin, oneSidedLightPlugin, surfaceSplitPlugin, surfaceWetPlugin, vegetationInstanceLayout, vegetationPlugin,
   wgslFloat, writeVegetationInstances,
   type Vegetation,
-} from "../../../src/game/lite/forestPlugins.js";
-import { FRAME_BLOCK } from "../../../src/game/lite/frameBlock.js";
+} from "@csarkosh/engine/game/lite/forestPlugins";
+import { FRAME_BLOCK } from "@csarkosh/engine/game/lite/frameBlock";
 import { WET_FIELDS } from "@csarkosh/engine/game/lite/wetWgsl";
 import { MOSS_ROUGHNESS, MOSS_TILE } from "@csarkosh/engine/game/mossParams";
 import { WET_CAP, WET_SWASH_VECS, emptyWetUniforms, wetUniforms } from "@csarkosh/engine/game/wetSurface";

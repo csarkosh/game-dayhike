@@ -38,7 +38,7 @@ import { CAR_SHADOW_BIAS, CAR_SHADOW_TEX, carShadowAlphaMap, type CarShadowGrid 
 import { TAIL_LAMP_APART, TAIL_LAMP_BACK, TAIL_LAMP_H, TAIL_LAMP_UP, TAIL_LAMP_W } from "../endScene.js";
 import { LABEL_TEXTURE, paintLabel, type LabelFace } from "../signParts.js";
 import { DISPLAY_CURVE_WGSL, onColourPath } from "@csarkosh/engine/game/lite/displayCurve";
-import { FRAME_CONTRAST_NAME, FRAME_EXPOSURE_NAME, stageOwn, stageReads } from "./frameBlock.js";
+import { FRAME_CONTRAST_NAME, FRAME_EXPOSURE_NAME, stageOwn, stageReads } from "@csarkosh/engine/game/lite/frameBlock";
 import { shaderUniformDecls, shaderUniformWriter } from "@csarkosh/engine/game/lite/shaderUniforms";
 import paintAlphaSource from "../shaders/sceneryPaint/paintAlpha.wgsl?raw";
 import patchVaryingsSource from "../shaders/sceneryPaint/patchVaryings.wgsl?raw";

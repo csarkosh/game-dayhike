@@ -1,11 +1,11 @@
 import { describe, expect, it } from "vitest";
-import { readFileSync } from "node:fs";
 import "../../../src/sim/passes/index.js";
 import { REST_BONES_APART, floatsApart } from "../../../src/game/lite/sceneActor.js";
 import { CORD_COLOUR, CORD_ROUGHNESS } from "../../../src/game/lite/sceneryMeshes.js";
 import { babylonText } from "../../helpers/babylonFixture.js";
+import { sourceText } from "../../helpers/source.js";
 
-const read = (path: string): string => readFileSync(new URL(`../../../src/game/${path}`, import.meta.url), "utf8");
+const read = (path: string): string => sourceText(`game/${path}`);
 
 describe("a staged scene's actor on Babylon Lite", () => {
   it("tells how far two runs of floats stand apart, and two of different lengths as wholly apart", () => {

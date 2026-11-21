@@ -32,7 +32,7 @@ import {
   addToScene, createMeshFromData, createShaderMaterial, createTexture2DFromPixels, disposeMeshGpu, removeFromScene, setMeshVisible, setShaderTexture,
   type EngineContext, type Mesh, type SceneContext, type ShaderMaterial,
 } from "@babylonjs/lite";
-import { CLOUD_NOISE_SIZE, cloudNoiseMap } from "../cloudParams.js";
+import { CLOUD_NOISE_SIZE, cloudNoiseMap } from "@csarkosh/engine/game/cloudParams";
 import type { Rgb } from "@csarkosh/engine/game/colour";
 import type { Slices, SyncJobs } from "@csarkosh/engine/game/syncJobs";
 import { WAY_DEPTH_SLOPE, emptyWayLightUniforms, standWayChunk, wayMistFrame, type WayColourPath } from "../wayLight.js";

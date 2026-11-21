@@ -1,11 +1,11 @@
 import type { PluginTextureBinding, PluginUniformBlock, Texture2D } from "@babylonjs/lite";
 import { describe, expect, it } from "vitest";
 import "../../../src/sim/passes/index.js";
-import { ATMOSPHERE_PRIORITY } from "../../../src/game/lite/atmospherePlugin.js";
-import { FRAME_BLOCK, FRAME_FIELDS, SEA_RINGS_NAME, inFrameBlock } from "../../../src/game/lite/frameBlock.js";
-import { WATER_PRIORITY } from "../../../src/game/lite/lakePlugin.js";
-import { seaLookFor } from "../../../src/game/lite/seaMeshes.js";
-import { seaFields, seaPlugin, seaRestPlugin } from "../../../src/game/lite/seaPlugin.js";
+import { ATMOSPHERE_PRIORITY } from "@csarkosh/engine/game/lite/atmospherePlugin";
+import { FRAME_BLOCK, FRAME_FIELDS, SEA_RINGS_NAME, inFrameBlock } from "@csarkosh/engine/game/lite/frameBlock";
+import { WATER_PRIORITY } from "@csarkosh/engine/game/lite/lakePlugin";
+import { seaLookFor } from "@csarkosh/engine/game/lite/seaMeshes";
+import { seaFields, seaPlugin, seaRestPlugin } from "@csarkosh/engine/game/lite/seaPlugin";
 import { SEA_COMPONENT_VECS, emptySeaFrameUniforms, emptySeaUniforms } from "@csarkosh/engine/game/seaUniforms";
 import { WATER_RING_COUNT } from "@csarkosh/engine/game/water";
 import { laidOut, readUniform, standInTexture } from "./pluginFixture.js";

@@ -48,7 +48,7 @@ import { createSurfAudio } from "./game/surfAudio.js";
 import { wildlifePresenceUnder } from "@csarkosh/engine/game/wildlifeBehaviour";
 import { DEFAULT_BOB_SCALE } from "@csarkosh/engine/game/viewBob";
 import { DEFAULT_WEATHER, WEATHER_PRESETS, type WeatherParams, type WeatherPresetName } from "@csarkosh/engine/game/weather";
-import { DEFAULT_PAINT_PALETTE, PAINT_PALETTES, type PaintPaletteName } from "./game/gradeParams.js";
+import { DEFAULT_PAINT_PALETTE, PAINT_PALETTES, type PaintPaletteName } from "@csarkosh/engine/game/gradeParams";
 import { actsUnder,
   ESCALATION_REST,
   escalationAt,

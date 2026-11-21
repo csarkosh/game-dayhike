@@ -7,7 +7,7 @@ import {
   WAY_SHEET_TOP_M, WAY_SHEET_VERTICES, WAY_STRATA_M, WAY_TINT, WAY_VEILS, WAY_VEIL_STRENGTH, WAY_WIDTH_M, WAY_WIND_SCALE,
   wayCastOnMaterial, wayChunk, wayChunks, wayDrift, wayFinTop, wayGroundOf, wayHeavePhases, wayMistColour, wayVeilAt, type WayShape,
 } from "../../src/game/wayLightGeometry.js";
-import { CLOUD_NOISE_LARGE_M, CLOUD_NOISE_SMALL_M, CLOUD_WIND_MPS } from "../../src/game/cloudParams.js";
+import { CLOUD_NOISE_LARGE_M, CLOUD_NOISE_SMALL_M, CLOUD_WIND_MPS } from "@csarkosh/engine/game/cloudParams";
 
 /** A straight way along +x, a point every 2 m, `n` points. */
 function straight(n: number): WayShape {

@@ -1,19 +1,19 @@
-import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
-import { CHASE_LIFT, CHASE_TINT, PAINT_AMBER, PAINT_ASH, PAINT_OILS, gradeRecordUnder } from "../../src/game/gradeParams.js";
+import { CHASE_LIFT, CHASE_TINT, PAINT_AMBER, PAINT_ASH, PAINT_OILS, gradeRecordUnder } from "@csarkosh/engine/game/gradeParams";
 import { LENS } from "@csarkosh/engine/game/lensParams";
 import {
   FAR_CLOUD_UNIFORMS, FAR_SOFT_BAND, FAR_SOFT_RADIUS, HALATION_RATIO, LENS_FOLD_S, LENS_IDLE_S, SHADE_BLUR, SHADE_DARK, SHADE_MONSTER_DARK,
   composeUniforms, createLensGate, createPaletteFade, createTaaFrame, endBlurKernel, extractUniforms, farSoftUniforms, gradeUniforms, lensUniforms,
   paintUniforms, paintUniformsDrawn, postPasses, sharpenUniforms, type PostView,
-} from "../../src/game/postFrame.js";
+} from "@csarkosh/engine/game/postFrame";
 import {
   PAINT_RADIUS_MEDIUM, PAINT_SCALE, PAINT_STRENGTH, TAA_BLEND, TAA_BLEND_STILL, TAA_CLIP, TAA_SHARPEN, paintTexelRadius, postFeaturesFor, taaJitter,
 } from "@csarkosh/engine/game/postParams";
-import { STARE_LENS_REST } from "../../src/game/stareLens.js";
+import { STARE_LENS_REST } from "@csarkosh/engine/game/stareLens";
 import { WEATHER_PRESETS } from "@csarkosh/engine/game/weather";
+import { sourceText } from "../helpers/source.js";
 
-const src = (name: string): string => readFileSync(new URL(`../../src/game/${name}`, import.meta.url), "utf8");
+const src = (name: string): string => sourceText(`game/${name}`);
 
 /** A camera at (1, 2, 3) looking along +Z, a right-angle lens on a frame twice as wide as tall. */
 const VIEW: PostView = { eye: { x: 1, y: 2, z: 3 }, forward: { x: 0, y: 0, z: 1 }, right: { x: 1, y: 0, z: 0 }, up: { x: 0, y: 1, z: 0 }, fov: Math.PI / 2, aspect: 2 };

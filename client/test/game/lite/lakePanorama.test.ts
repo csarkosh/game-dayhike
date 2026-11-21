@@ -1,20 +1,19 @@
 import type { PluginUniformBlock } from "@babylonjs/lite";
-import { readFileSync } from "node:fs";
-import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
 import "../../../src/sim/passes/index.js";
-import { FRAME_BLOCK, inFrameBlock } from "../../../src/game/lite/frameBlock.js";
-import { PANORAMA_FORMAT, PANORAMA_GROUND_WGSL, panoramaGroundPlugin } from "../../../src/game/lite/lakePanorama.js";
-import { REFLECTED_RINGS } from "../../../src/game/lite/terrainMeshes.js";
-import { TERRAIN_VERTEX_FLOATS, TERRAIN_VERTEX_LAYOUT } from "../../../src/game/lite/terrainPlugins.js";
+import { FRAME_BLOCK, inFrameBlock } from "@csarkosh/engine/game/lite/frameBlock";
+import { PANORAMA_FORMAT, PANORAMA_GROUND_WGSL, panoramaGroundPlugin } from "@csarkosh/engine/game/lite/lakePanorama";
+import { REFLECTED_RINGS } from "@csarkosh/engine/game/lite/terrainMeshes";
+import { TERRAIN_VERTEX_FLOATS, TERRAIN_VERTEX_LAYOUT } from "@csarkosh/engine/game/lite/terrainPlugins";
 import { MIRROR_CANOPY_SHADE } from "@csarkosh/engine/game/mirrorGround";
 import { laidOut, readUniform } from "./pluginFixture.js";
 import { babylonText } from "../../helpers/babylonFixture.js";
 import { inOrder, tight } from "./wgslText.js";
+import { sourceText } from "../../helpers/source.js";
 
 /** A stage of the game's GLSL on Babylon.js, whole, as recorded from its `.fx` file. */
 const fx = (name: string): string => babylonText(`stages/${name.replace(/\.fx$/, ".glsl")}`);
-const src = (name: string): string => readFileSync(fileURLToPath(new URL(`../../../src/game/${name}`, import.meta.url)), "utf8");
+const src = (name: string): string => sourceText(`game/${name}`);
 const SHARED = { name: FRAME_BLOCK } as unknown as PluginUniformBlock;
 
 describe("the ground in a lake's shore panorama on Babylon Lite", () => {

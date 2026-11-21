@@ -38,7 +38,7 @@ import { CLIP_FLOATS, SKIN_CLOCK_FOLD, type BakedClip } from "@csarkosh/engine/g
 import type { FrameUploads } from "@csarkosh/engine/game/lite/frameUploads";
 import { fetchRetried } from "@csarkosh/engine/game/fetchRetry";
 import { modelLoadTold } from "../loadReport.js";
-import { MATRIX_BYTES } from "./listMeshes.js";
+import { MATRIX_BYTES } from "@csarkosh/engine/game/lite/listMeshes";
 
 /** The clock every baked mesh's rows are read by, seconds, folded. */
 export type SkinClock = {

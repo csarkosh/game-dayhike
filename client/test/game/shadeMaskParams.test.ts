@@ -1,12 +1,12 @@
-import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 import {
   SHADE_MASK_RATIO, SHADE_SMOKE_FOLD_S, SHADE_SMOKE_FRAY, SHADE_SMOKE_SWELL_M, shadeMaskColour, shadeMaskSide, shadeMaskSize, shadeSmokeSeconds, shadeSmokeUniforms,
-} from "../../src/game/shadeMaskParams.js";
+} from "@csarkosh/engine/game/shadeMaskParams";
 
 import { babylonValues } from "../helpers/babylonFixture.js";
+import { sourceText } from "../helpers/source.js";
 
-const src = (name: string): string => readFileSync(new URL(`../../src/game/${name}`, import.meta.url), "utf8");
+const src = (name: string): string => sourceText(`game/${name}`);
 
 describe("what the haunt's figures are drawn into their mask with", () => {
   it("sizes the mask as Babylon.js sizes a render target given the mask's ratio, at every frame's size", () => {

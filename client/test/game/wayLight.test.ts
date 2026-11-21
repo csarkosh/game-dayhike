@@ -5,7 +5,7 @@ import {
   WAY_MIST_REACH, WAY_NEAR_DAMP, WAY_PATH_SHARE, WAY_PATH_TOP_M, WAY_POINT_GROUNDS, WAY_POINT_VERTICES, WAY_POST_LIFT, WAY_SHEET_STRENGTH, WAY_STRATA_M, WAY_VEIL_STRENGTH,
   wayCastOnMaterial, wayChunk, wayChunks, wayDrift, wayHeavePhases, wayMistColour, type WayShape,
 } from "../../src/game/wayLightGeometry.js";
-import { CHASE_TINT } from "../../src/game/gradeParams.js";
+import { CHASE_TINT } from "@csarkosh/engine/game/gradeParams";
 
 /** A straight way along +x, a point every 2 m, `n` points. */
 function straight(n: number): WayShape {

@@ -2,9 +2,9 @@ import { describe, expect, it } from "vitest";
 import "../../../src/sim/passes/index.js";
 import { MAX_PLAYERS } from "@csarkosh/engine/sim/constants";
 import { SHADE_EYES_DULL, SHADE_EYES_SHADE, eyeLevelOf } from "../../../src/game/entityPoses.js";
-import { HOLLOW_EYE_INTENSITY } from "../../../src/game/hollowLook.js";
-import { emptyAtmosphereUniforms } from "../../../src/game/atmosphereParams.js";
-import { ATMOSPHERE_PRIORITY, atmospherePlugin } from "../../../src/game/lite/atmospherePlugin.js";
+import { HOLLOW_EYE_INTENSITY } from "@csarkosh/engine/game/hollowLook";
+import { emptyAtmosphereUniforms } from "@csarkosh/engine/game/atmosphereParams";
+import { ATMOSPHERE_PRIORITY, atmospherePlugin } from "@csarkosh/engine/game/lite/atmospherePlugin";
 import { DRAW_ORDER, DRAW_PLACES, SEE_THROUGH_ORDER } from "@csarkosh/engine/game/lite/drawOrder";
 import {
   BODY_PLACES, CAPSULE_COLOUR, CAPSULE_ROUGHNESS, EYE_LEVEL_BYTES, HOLLOW_CAPACITY, RANGER_CAPACITY, eyeLevelPlugin, setEyeLevel,

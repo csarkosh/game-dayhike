@@ -33,7 +33,7 @@
  */
 import { presenceOf, type CrowdFigure } from "./crowdField.js";
 import { SHADE_FAR_M, SHADE_FAR_SHARE, SHADE_NEAR_M } from "./entityPoses.js";
-import { HOLLOW_FIGURE_M } from "./hollowLook.js";
+import { HOLLOW_FIGURE_M } from "@csarkosh/engine/game/hollowLook";
 import { hash2 } from "@csarkosh/engine/sim/field";
 
 /** A card's width, as a share of its height (the vertex and fragment stages lay the figure out in a half of this either side of its middle). */

@@ -6,7 +6,7 @@ import { CROWD_CARD_WIDE } from "../../../src/game/crowdCards.js";
 import { tight } from "./wgslText.js";
 
 const src = readFileSync(new URL("../../../src/game/lite/crowdCardMeshes.ts", import.meta.url), "utf8");
-const mask = readFileSync(new URL("../../../src/game/lite/shadeMask.ts", import.meta.url), "utf8");
+const mask = readFileSync(new URL("../../../../engine/src/game/lite/shadeMask.ts", import.meta.url), "utf8");
 const VERTEX = tight(CROWD_CARD_WGSL.vertex);
 const FRAGMENT = tight(CROWD_CARD_WGSL.fragment);
 

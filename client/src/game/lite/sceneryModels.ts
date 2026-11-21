@@ -52,7 +52,7 @@ import { composeInto, quatFromEuler } from "@csarkosh/engine/game/instancePose";
 import { bakeGeometry } from "@csarkosh/engine/game/modelBake";
 import type { WetUniforms } from "@csarkosh/engine/game/wetSurface";
 import { loadModelFile, type ModelPart } from "./forestModels.js";
-import { baseColourPlugin, surfaceWetPlugin } from "./forestPlugins.js";
+import { baseColourPlugin, surfaceWetPlugin } from "@csarkosh/engine/game/lite/forestPlugins";
 import carTurnsFrameSource from "../shaders/sceneryModels/carTurnsFrame.wgsl?raw";
 import carTurnsSource from "../shaders/sceneryModels/carTurns.wgsl?raw";
 import { fill, wgsl } from "@csarkosh/engine/game/shaders/shaderText";

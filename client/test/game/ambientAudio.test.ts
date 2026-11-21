@@ -9,7 +9,7 @@ import {
 import { frogCallVoice, humVoice, rustleVoice } from "../../src/game/insectVoices.js";
 import { ambientGainsUnder, WEATHER_PRESETS } from "@csarkosh/engine/game/weather";
 import { MUFFLE_OPEN_HZ, MUFFLE_SHUT_HZ, MUFFLE_GAIN, HEART_LEVEL, WHISPER_LEVEL, WHISPER_VOICES, WHISPER_MAX_SPEAKING } from "../../src/game/stareAudio.js";
-import { HEART_DUB_AT, STARE_LENS_REST } from "../../src/game/stareLens.js";
+import { HEART_DUB_AT, STARE_LENS_REST } from "@csarkosh/engine/game/stareLens";
 import { gustAt, windRecordUnder } from "@csarkosh/engine/game/windParams";
 import { ODD_KINDS } from "@csarkosh/engine/game/woodsSounds";
 import { ODD_LEVEL } from "../../src/game/oddSounds.js";

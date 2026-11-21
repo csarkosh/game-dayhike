@@ -1,9 +1,9 @@
 import { describe, expect, it } from "vitest";
 import "../../../src/sim/passes/index.js";
 import { babylonText } from "../../helpers/babylonFixture.js";
-import { FRAME_BLOCK, stageOwn, stageReads } from "../../../src/game/lite/frameBlock.js";
-import { MIST_FRAME_READS, MIST_INSTANCE_BYTES, MIST_WGSL } from "../../../src/game/lite/mistMeshes.js";
-import { emptyMistUniforms } from "../../../src/game/mistBanks.js";
+import { FRAME_BLOCK, stageOwn, stageReads } from "@csarkosh/engine/game/lite/frameBlock";
+import { MIST_FRAME_READS, MIST_INSTANCE_BYTES, MIST_WGSL } from "@csarkosh/engine/game/lite/mistMeshes";
+import { emptyMistUniforms } from "@csarkosh/engine/game/mistBanks";
 import { inOrder, tight } from "./wgslText.js";
 
 /** The Standard material's fragment stage and the fog it includes, as Babylon.js installs them (recorded). */

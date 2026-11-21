@@ -2,6 +2,7 @@ import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 import { seedFromToken } from "@csarkosh/engine/game/seed";
 import { worldInputs } from "../../src/game/worldInputs.js";
+import { sourceText } from "../helpers/source.js";
 
 describe("the seed and the terrain a hike's world is made from", () => {
   it("takes the seed from the token, and the default terrain", () => {
@@ -25,7 +26,7 @@ describe("the seed and the terrain a hike's world is made from", () => {
   });
 
   it("is the rule the build itself reads its seed and terrain by", () => {
-    const code = (file: string): string => readFileSync(new URL(`../../src/${file}`, import.meta.url), "utf8").replace(/\/\*[\s\S]*?\*\//g, "").replace(/\/\/.*$/gm, "");
+    const code = (file: string): string => sourceText(`${file}`).replace(/\/\*[\s\S]*?\*\//g, "").replace(/\/\/.*$/gm, "");
     const app = code("app.ts");
     expect(app).toContain("const { seed, variant } = worldInputs(token, location.search);");
     expect(app).toContain("setActiveTerrainVariant(variant);");

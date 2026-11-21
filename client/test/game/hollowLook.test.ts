@@ -2,7 +2,7 @@ import { describe, it, expect } from "vitest";
 import {
   HOLLOW_ALBEDO, HOLLOW_EMISSIVE, HOLLOW_EYE_COLOR, HOLLOW_EYE_INTENSITY, HOLLOW_MATERIAL, HOLLOW_ROUGHNESS,
   HOLLOW_SCALE, HOLLOW_WALK_CLIP_SPEED, RANGER_WALK_CLIP_SPEED,
-} from "../../src/game/hollowLook.js";
+} from "@csarkosh/engine/game/hollowLook";
 
 describe("the Hollow's model", () => {
   it("is drawn at twice the model's player height", () => {

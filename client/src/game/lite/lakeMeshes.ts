@@ -71,9 +71,9 @@ import type { WeatherParams } from "@csarkosh/engine/game/weather";
 import type { WindRecord } from "@csarkosh/engine/game/windParams";
 import { SEE_THROUGH_ORDER } from "@csarkosh/engine/game/lite/drawOrder";
 import type { FrameUploads } from "@csarkosh/engine/game/lite/frameUploads";
-import type { LiteLakeMirror, MirrorFrame } from "./lakeMirror.js";
-import { lakePlugin } from "./lakePlugin.js";
-import type { CoverRegistry } from "./rainMap.js";
+import type { LiteLakeMirror, MirrorFrame } from "@csarkosh/engine/game/lite/lakeMirror";
+import { lakePlugin } from "@csarkosh/engine/game/lite/lakePlugin";
+import type { CoverRegistry } from "@csarkosh/engine/game/lite/rainMap";
 import type { WaterBehind } from "@csarkosh/engine/game/lite/waterBehind";
 import type { LiteWaterBed } from "@csarkosh/engine/game/lite/waterBed";
 

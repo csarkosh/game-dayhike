@@ -26,7 +26,7 @@ import {
   addToScene, createSpotLight, markLightDirty, rebuildSceneRenderables, removeFromScene,
   type SceneContext, type SpotLight,
 } from "@babylonjs/lite";
-import { LAMP_ANGLE, LAMP_COLOUR, LAMP_EXPONENT, LAMP_RANGE, type LampState } from "../lampParams.js";
+import { LAMP_ANGLE, LAMP_COLOUR, LAMP_EXPONENT, LAMP_RANGE, type LampState } from "@csarkosh/engine/game/lampParams";
 import type { WornLamp } from "./entityMeshes.js";
 
 export type WornLamps = {

@@ -5,7 +5,7 @@ import {
   PATCH_SPACINGS, createMarkedRun, createPatchPool, firstDifference, patchIndexCapacity, patchIndexCount, patchVertexCount, writePatchTriangles,
   type DrawnPatch,
 } from "@csarkosh/engine/game/lite/patchPool";
-import { PATCH_POOL_VERTICES, patchPlace } from "../../../src/game/lite/terrainMeshes.js";
+import { PATCH_POOL_VERTICES, patchPlace } from "@csarkosh/engine/game/lite/terrainMeshes";
 
 /** A band's triangles as a patch has them: a grid of `n` squares a side, two triangles a square, in the game's winding. */
 function gridTriangles(spacing: number): Uint16Array {
