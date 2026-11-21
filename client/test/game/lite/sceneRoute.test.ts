@@ -1,4 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
+import "../../../src/game/dayhikeAssets.js";
 import "../../../src/sim/passes/index.js";
 import { SETTLE_FRAMES, SETTLE_STRETCH, startLiteSceneRoute, type LiteSceneRouteDeps } from "../../../src/game/lite/sceneRoute.js";
 import type { LiteActor, LiteCar, SceneryHost } from "../../../src/game/lite/sceneryMeshes.js";

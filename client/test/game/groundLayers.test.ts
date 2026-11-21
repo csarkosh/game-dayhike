@@ -1,4 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
+import "../../src/game/dayhikeAssets.js";
 import {
   GROUND_ALBEDOS, GROUND_LAYERS, GROUND_LAYER_URLS, GROUND_MAP_SIZE, NEUTRAL_NORMAL, NEUTRAL_RAH,
   decodeGroundLayer, flipRowsY, interleaveLayers,

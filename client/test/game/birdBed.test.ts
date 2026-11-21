@@ -1,4 +1,5 @@
 import { describe, it, expect, vi } from "vitest";
+import "../../src/game/dayhikeAssets.js";
 import { BIRD_BED_CLIP, loadBirdBed } from "../../src/game/birdBed.js";
 import { audioUrl } from "../../src/game/assetUrls.js";
 

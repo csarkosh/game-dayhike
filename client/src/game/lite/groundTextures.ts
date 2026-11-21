@@ -16,7 +16,7 @@ import {
   type EngineContext, type Texture2D, type Texture2DArray,
 } from "@babylonjs/lite";
 import { CLOUD_NOISE_SIZE, cloudNoiseMap, writeCloudGround, type CloudGround } from "@csarkosh/engine/game/cloudParams";
-import { GROUND_ALBEDOS, GROUND_LAYER_URLS, GROUND_MAP_SIZE, decodeGroundLayer, interleaveLayers } from "../groundLayers.js";
+import { GROUND_ALBEDOS, GROUND_LAYERS, GROUND_LAYER_URLS, GROUND_MAP_SIZE, decodeGroundLayer, interleaveLayers } from "../groundLayers.js";
 import { reportGroundImage } from "../loadReport.js";
 import type { FloatTable } from "@csarkosh/engine/game/terrainTables";
 import type { TerrainTextures } from "@csarkosh/engine/game/lite/terrainPlugins";
@@ -25,7 +25,7 @@ import type { TerrainTextures } from "@csarkosh/engine/game/lite/terrainPlugins"
 export type GroundArrays = Pick<TerrainTextures, "grass" | "floor" | "rock" | "sand" | "pebble" | "asphalt" | "normals" | "rah">;
 
 /** How many images the ground's arrays are decoded from. */
-export const GROUND_IMAGES = Object.keys(GROUND_ALBEDOS).length + GROUND_LAYER_URLS.normal.length + GROUND_LAYER_URLS.rah.length;
+export const GROUND_IMAGES = Object.keys(GROUND_ALBEDOS).length + 2 * GROUND_LAYERS;
 
 /**
  * The ground's arrays, once every image has been fetched and decoded.

@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import "../../src/game/dayhikeAssets.js";
 import "../../src/sim/passes/index.js";
 import { SHOTS } from "../../src/game/cutscene.js";
 import { createEntityPoses, type EntityFrame, type EntityModels } from "../../src/game/entityPoses.js";

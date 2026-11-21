@@ -23,7 +23,7 @@ import { pageTurns, turnsLine } from "@csarkosh/engine/game/downloadTurns";
 import { INTRO_CAPTIONS } from "./game/scene/intro.js";
 import { setLoadProgress } from "./game/loadReport.js";
 import { markedProgress } from "@csarkosh/engine/game/loadProgress";
-import { titleStillUrl, titleVideoUrl, videoUrl } from "./game/assetUrls.js";
+import { titleStillUrl, titleVideoUrl, videoUrl } from "./game/dayhikeAssets.js";
 import { createRouteAnnouncer } from "@csarkosh/engine/game/routeAnnounce";
 import { createTitleLoop, titleLoopEnv, type TitleLoop } from "./game/titleLoop.js";
 import { createFilmHead, fetchFilmHead, filmHeadWanted, onCellular, warmWhenLoaded } from "./game/filmHead.js";

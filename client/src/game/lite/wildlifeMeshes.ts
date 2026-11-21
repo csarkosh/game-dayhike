@@ -34,8 +34,7 @@ import {
   setThinInstanceCount, setThinInstances,
   type EngineContext, type MaterialPlugin, type Mesh, type PbrMaterialProps, type PluginUniformBlock, type SceneContext, type Texture2D,
 } from "@babylonjs/lite";
-import catalog from "../../../assets/catalog.json" with { type: "json" };
-import { modelUrl } from "../assetUrls.js";
+import { assetCatalog, modelUrl } from "../assetUrls.js";
 import { creatureRoleGroups, resolveCreatureAssets, type CreatureAsset } from "../creatureAssets.js";
 import { stepClip, type ClipClock } from "../entityPoses.js";
 import { expectModels } from "../loadReport.js";
@@ -127,7 +126,7 @@ export function createLiteWildlifeMeshes(engine: EngineContext, scene: SceneCont
   );
 
   // The ground species: every creature the catalog ships, each landing on its own.
-  for (const asset of resolveCreatureAssets(catalog)) {
+  for (const asset of resolveCreatureAssets(assetCatalog())) {
     const entry: Species = { asset, model: null, roles: null, count: 0, moved: false, reclipped: false };
     species.set(asset.id, entry);
     waiting++;
@@ -175,7 +174,7 @@ export function createLiteWildlifeMeshes(engine: EngineContext, scene: SceneCont
 
   /** The catalog `output` for an asset id, or null where the catalog has no such entry. */
   function outputFor(assetId: string): string | null {
-    const entries = (catalog as { assets?: { id?: unknown; output?: unknown }[] }).assets ?? [];
+    const entries = assetCatalog().assets ?? [];
     const found = entries.find((entry) => entry.id === assetId);
     return found !== undefined && typeof found.output === "string" ? found.output : null;
   }

@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
+import "../../../src/game/dayhikeAssets.js";
 import "../../../src/sim/passes/index.js";
 import { PLAYER_EYE_OFFSET } from "@csarkosh/engine/sim/constants";
 import { CAP_SCENE_S, LENS_24, LENS_32, SHOTS, SUMMIT_SCENE_S, capStand, summitShot } from "../../../src/game/cutscene.js";

@@ -4,6 +4,7 @@ import { fileURLToPath } from "node:url";
 
 // The terrain field lives behind the variant registry; a test that builds a
 // forest without `app.ts` has to register the passes itself.
+import "../../src/game/dayhikeAssets.js";
 import "../../src/sim/passes/index.js";
 import { PLAYER_EYE_OFFSET } from "@csarkosh/engine/sim/constants";
 import { createForest } from "@csarkosh/engine/sim/forest";

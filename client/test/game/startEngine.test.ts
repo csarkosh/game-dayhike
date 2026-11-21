@@ -1,4 +1,5 @@
 import { describe, it, expect } from "vitest";
+import "../../src/game/dayhikeAssets.js";
 import "../../src/sim/passes/index.js";
 import { startGame, type GameOptions } from "../../src/app.js";
 

@@ -1,4 +1,5 @@
 import { describe, it, expect } from "vitest";
+import "../../src/game/dayhikeAssets.js";
 import { audioUrl, modelBytes, modelUrl } from "../../src/game/assetUrls.js";
 import catalog from "../../assets/catalog.json" with { type: "json" };
 
@@ -62,7 +63,7 @@ describe("modelUrl", () => {
     expect(() => modelUrl("models/enemy.nonexistent.glb")).toThrow(
       /models\/enemy\.nonexistent\.glb/,
     );
-    expect(() => modelUrl("models/enemy.nonexistent.glb")).toThrow(/client\/assets\//);
+    expect(() => modelUrl("models/enemy.nonexistent.glb")).toThrow(/assets\//);
     expect(() => modelUrl("models/enemy.nonexistent.glb")).toThrow(/catalog\.json/);
   });
 
@@ -99,7 +100,7 @@ describe("audioUrl", () => {
     // Every call is shipped and in the catalog, so this uses a made-up clip as its
     // "unshipped" example.
     expect(() => audioUrl("audio/call.nonexistent.mp3")).toThrow(/unknown audio clip/);
-    expect(() => audioUrl("audio/call.nonexistent.mp3")).toThrow(/client\/assets\//);
+    expect(() => audioUrl("audio/call.nonexistent.mp3")).toThrow(/assets\//);
     expect(() => audioUrl("audio/call.nonexistent.mp3")).toThrow(/catalog\.json/);
   });
 
@@ -141,14 +142,15 @@ describe("textureUrl", () => {
     }
   });
 
-  it("throws on a map it does not ship, the ground textures' among them, naming both places it must exist", () => {
+  it("throws on a map it does not ship, naming both places it must exist", () => {
     expect(() => textureUrl("textures/bark.oak.2k.ktx2")).toThrow(/unknown texture "textures\/bark\.oak\.2k\.ktx2"/);
-    expect(() => textureUrl("textures/bark.oak.2k.ktx2")).toThrow(/client\/assets\//);
+    expect(() => textureUrl("textures/bark.oak.2k.ktx2")).toThrow(/assets\//);
     expect(() => textureUrl("textures/bark.oak.2k.ktx2")).toThrow(/catalog\.json/);
     // The moss ships at 1k alone.
     expect(() => textureUrl("textures/moss.wood.2k.ktx2")).toThrow(/unknown texture "textures\/moss\.wood\.2k\.ktx2"/);
-    // The ground layers go through their own imports, not this map.
-    expect(() => textureUrl("textures/ground.grass.webp")).toThrow(/unknown texture/);
+    // The ground layers are in this map too, and a layer the game does not ship is not.
+    expect(textureUrl("textures/ground.grass.webp")).toMatch(/ground\.grass/);
+    expect(() => textureUrl("textures/ground.mud.webp")).toThrow(/unknown texture/);
     for (const key of ["toString", "constructor", "valueOf", "hasOwnProperty", "__proto__"]) {
       expect(() => textureUrl(key)).toThrow(/unknown texture/);
     }
@@ -164,7 +166,7 @@ describe("assetBytes", () => {
   });
 });
 
-import { titleStillUrl, titleVideoUrl, videoUrl } from "../../src/game/assetUrls.js";
+import { titleStillUrl, titleVideoUrl, videoUrl } from "../../src/game/dayhikeAssets.js";
 
 describe("the intro's files", () => {
   it("gives the film's url when it ships, and null when it does not", () => {

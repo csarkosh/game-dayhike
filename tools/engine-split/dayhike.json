@@ -102,11 +102,11 @@
     "net/hostSession.ts",
     "net/clientSession.ts",
     "net/dayhikeGame.ts",
-    "game/stareAudio.ts"
+    "game/stareAudio.ts",
+    "game/dayhikeAssets.ts"
   ],
   "hold": {
     "env.d.ts": "the client's own ambient types",
-    "sim/kernel/fieldWasm.ts": "written by tools/rust/build.mjs at this path; moves with the kernel's build",
-    "game/assetUrls.ts": "globs client/assets by a relative path; moves when the assets are split"
+    "sim/kernel/fieldWasm.ts": "written by tools/rust/build.mjs at this path; moves with the kernel's build"
   }
 }

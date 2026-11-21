@@ -1,6 +1,7 @@
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
+import "../../../src/game/dayhikeAssets.js";
 import "../../../src/sim/passes/index.js";
 import { impostorQuad } from "@csarkosh/engine/game/forestInstances";
 import { cardGeometry, cardNormals } from "../../../src/game/lite/forestMeshes.js";

@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import "../../../src/game/dayhikeAssets.js";
 import "../../../src/sim/passes/index.js";
 import { MAX_PLAYERS } from "@csarkosh/engine/sim/constants";
 import { SHADE_EYES_DULL, SHADE_EYES_SHADE, eyeLevelOf } from "../../../src/game/entityPoses.js";

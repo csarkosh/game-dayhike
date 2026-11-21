@@ -21,46 +21,34 @@
  * Babylon-free: `lite/groundTextures.ts` makes the albedos' textures and
  * the arrays.
  */
-import grassUrl from "../../assets/textures/ground.grass.webp?url";
-import floorUrl from "../../assets/textures/ground.forest_floor.webp?url";
-import rockUrl from "../../assets/textures/ground.rock.webp?url";
-import sandUrl from "../../assets/textures/ground.sand.webp?url";
-import pebbleUrl from "../../assets/textures/ground.pebble.webp?url";
-import asphaltUrl from "../../assets/textures/ground.asphalt.webp?url";
-import grassN from "../../assets/textures/ground.grass.normal.webp?url";
-import floorN from "../../assets/textures/ground.forest_floor.normal.webp?url";
-import rockN from "../../assets/textures/ground.rock.normal.webp?url";
-import sandN from "../../assets/textures/ground.sand.normal.webp?url";
-import pebbleN from "../../assets/textures/ground.pebble.normal.webp?url";
-import asphaltN from "../../assets/textures/ground.asphalt.normal.webp?url";
-import grassR from "../../assets/textures/ground.grass.rah.webp?url";
-import floorR from "../../assets/textures/ground.forest_floor.rah.webp?url";
-import rockR from "../../assets/textures/ground.rock.rah.webp?url";
-import sandR from "../../assets/textures/ground.sand.rah.webp?url";
-import pebbleR from "../../assets/textures/ground.pebble.rah.webp?url";
-import asphaltR from "../../assets/textures/ground.asphalt.rah.webp?url";
+import { textureUrl } from "./assetUrls.js";
 import { fetchRetried } from "@csarkosh/engine/game/fetchRetry";
 
 export const GROUND_LAYERS = 6;
 export const GROUND_MAP_SIZE = 512;
 
+/** A ground image's address by its file's middle name: asked when it is read, since a game registers its files as its page starts. */
+const ground = (name: string): string => textureUrl(`textures/ground.${name}.webp`);
+/** The six layers' files, in layer order. */
+const GROUND_FILES = ["grass", "forest_floor", "rock", "sand", "pebble", "asphalt"] as const;
+
 /** Each layer's albedo: its image, and the sampler the terrain's fragment
  * stage reads it under. The asphalt is the road paint's, bound only in a
  * world with a road. */
 export const GROUND_ALBEDOS = {
-  grass: { url: grassUrl, sampler: "terrainGrass" },
-  floor: { url: floorUrl, sampler: "terrainFloor" },
-  rock: { url: rockUrl, sampler: "terrainRock" },
-  sand: { url: sandUrl, sampler: "terrainSand" },
-  pebble: { url: pebbleUrl, sampler: "terrainPebble" },
-  asphalt: { url: asphaltUrl, sampler: "roadAsphalt" },
+  grass: { get url() { return ground("grass"); }, sampler: "terrainGrass" },
+  floor: { get url() { return ground("forest_floor"); }, sampler: "terrainFloor" },
+  rock: { get url() { return ground("rock"); }, sampler: "terrainRock" },
+  sand: { get url() { return ground("sand"); }, sampler: "terrainSand" },
+  pebble: { get url() { return ground("pebble"); }, sampler: "terrainPebble" },
+  asphalt: { get url() { return ground("asphalt"); }, sampler: "roadAsphalt" },
 } as const;
 
 /** The two arrays' images, a layer each, in layer order: `normal` goes into
  * the array read as `terrainNormals` (tangent space), `rah` into `terrainRAH`. */
 export const GROUND_LAYER_URLS = {
-  normal: [grassN, floorN, rockN, sandN, pebbleN, asphaltN],
-  rah: [grassR, floorR, rockR, sandR, pebbleR, asphaltR],
+  get normal(): string[] { return GROUND_FILES.map((file) => ground(`${file}.normal`)); },
+  get rah(): string[] { return GROUND_FILES.map((file) => ground(`${file}.rah`)); },
 };
 /** A flat, +Z tangent-space normal. */
 export const NEUTRAL_NORMAL: Uint8ClampedArray = Uint8ClampedArray.from([128, 128, 255, 255]);

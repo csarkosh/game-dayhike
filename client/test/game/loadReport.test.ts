@@ -1,4 +1,5 @@
 import { afterEach, describe, expect, it } from "vitest";
+import "../../src/game/dayhikeAssets.js";
 import { modelBytes, modelUrl } from "../../src/game/assetUrls.js";
 import { createLoadProgress, markedProgress, type LoadProgress, type Stage } from "@csarkosh/engine/game/loadProgress";
 import {
