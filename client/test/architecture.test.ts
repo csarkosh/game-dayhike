@@ -277,7 +277,7 @@ describe("layer boundaries", () => {
     expect(main).toContain("launch(onCanvas, route.token, decided, () => hikeCanvasNow(), opening, takeSampled);");
     // The scene route is drawn by the same renderer, on a canvas of the same kind: the one other caller.
     expect(main).toContain("    void hikeCanvas().then(");
-    expect(main).toContain("runLiteSceneRoute({ canvas, container, tier }, parseSceneSearch(location.search), route.name);");
+    expect(main).toContain("page.scene({ canvas, container, tier }, parseSceneSearch(location.search), route.name);");
     expect([...main.matchAll(/\bhikeCanvas\(/g)].length).toBe(3);
     // A switch or a rebuild takes its canvas at once (`hikeCanvasNow`): the start's promise is made of the same.
     expect([...main.matchAll(/\bhikeCanvasNow\(/g)].length).toBe(3);
@@ -346,11 +346,13 @@ describe("layer boundaries", () => {
   it("measures every step of the tier check on the hike's own renderer: the page makes no engine, for a step or for anything", () => {
     const main = stripComments(readFileSync(at("main.ts"), "utf8"));
     // The page's deps are the probe's on the hike's own renderer, which makes each step's renderer, canvas and engine
-    // and lets them go with the step.
-    expect(main).toContain("  const probe = liteProbeDeps(container);");
-    expect([...main.matchAll(/\bliteProbeDeps\(/g)].length).toBe(1);
-    expect(importsOf(at("main.ts"))).toContain("./game/lite/probeScene.js");
-    expect(importsOf(at("main.ts"))).not.toContain("./game/probeScene.js");
+    // and lets them go with the step. The page asks the game for them (`page.probe`); the game's page names the probe.
+    expect(main).toContain("  const probe = page.probe(container);");
+    expect([...main.matchAll(/\bpage\.probe\(/g)].length).toBe(1);
+    const game = stripComments(readFileSync(at("hikePageGame.ts"), "utf8"));
+    expect([...game.matchAll(/\bliteProbeDeps\(/g)].length).toBe(1);
+    expect(importsOf(at("hikePageGame.ts"))).toContain("./game/lite/probeScene.js");
+    expect(importsOf(at("hikePageGame.ts"))).not.toContain("./game/probeScene.js");
     // No step is handed an engine.
     expect(main).not.toMatch(/\b(?:probeDeps|probeStepEngine|probeStepCanSettle|measureOnRuleEngine)\b/);
     // Nor does the page make an engine any other way: no rule is asked which or handed anything to decide by, and
@@ -380,10 +382,10 @@ describe("layer boundaries", () => {
     expect(main).not.toMatch(/\b(recordFailure|writeFallback)\(/);
   });
 
-  it("loads no Babylon.js with the page: nothing main.ts imports for itself reaches it, by an import or a dynamic one", () => {
+  it("loads no Babylon.js with the page: nothing main.ts and the game's page (hikePageGame.ts) import for themselves reaches it, by an import or a dynamic one", () => {
     // The page's own imports, each followed through everything it loads, static or dynamic, name no module of
     // Babylon.js (the hike, which is the engine's page that runs a session, `app.ts`, and the game it is handed,
-    // `hikeGame.ts`, has its own test below and is left out here). Babylon Lite, which the hike
+    // `hikeGame.ts`, imported by the game's page, `hikePageGame.ts`, has its own test below and is left out here). Babylon Lite, which the hike
     // is drawn with, is another library.
     const code = (file: string): string => stripComments(readFileSync(file, "utf8"));
     const loads = (file: string): string[] => [
@@ -392,11 +394,20 @@ describe("layer boundaries", () => {
     ];
     const main = at("main.ts");
     const own = loads(main);
+    // The shell names the game only as `hikePageGame.ts`, which names the hike: its own loads stand in for that one.
+    const gamePage = at("hikePageGame.ts");
+    const ofGame = loads(gamePage);
+    expect(own, "./hikePageGame.js").toContain("./hikePageGame.js");
     const ofHike = [`${ENGINE_PACKAGE}app`, "./hikeGame.js"];
-    for (const spec of ofHike) expect(own, spec).toContain(spec);
+    expect(own, ofHike[0]).toContain(ofHike[0] as string);
+    expect(ofGame, ofHike[1]).toContain(ofHike[1] as string);
     expect(own.filter((spec) => !spec.startsWith(".") && !spec.startsWith(ENGINE_PACKAGE))).toEqual([]);
+    expect(ofGame.filter((spec) => !spec.startsWith(".") && !spec.startsWith(ENGINE_PACKAGE))).toEqual([]);
     const seen = new Map<string, string | null>();
-    const stack: [string, string | null][] = own.filter((spec) => !ofHike.includes(spec)).map((spec) => [followed(main, spec) as string, null]);
+    const stack: [string, string | null][] = [
+      ...own.filter((spec) => !ofHike.includes(spec) && spec !== "./hikePageGame.js").map((spec): [string, null] => [followed(main, spec) as string, null]),
+      ...ofGame.filter((spec) => !ofHike.includes(spec)).map((spec): [string, null] => [followed(gamePage, spec) as string, null]),
+    ];
     const bad: string[] = [];
     while (stack.length > 0) {
       const [file, from] = stack.pop() as [string, string | null];
@@ -481,7 +492,7 @@ describe("layer boundaries", () => {
     const body = main.slice(main.indexOf("function render(container: HTMLDivElement): void {"), main.indexOf("\nfunction launch("));
     const wait = body.indexOf("  if (!isLandingRoute(route) && signals === null) {");
     expect(wait).toBeGreaterThan(0);
-    for (const start of ["void hikeCanvas().then(", "runLiteSceneRoute(", "hikePage.openingFor(", "startWorldPrep(", "liteProbeDeps(container)", "void startHike<EngineOnCanvas>("]) {
+    for (const start of ["void hikeCanvas().then(", "page.scene(", "hikePage.openingFor(", "startWorldPrep(", "page.probe(container)", "void startHike<EngineOnCanvas>("]) {
       expect(body.indexOf(start), start).toBeGreaterThan(wait);
       expect(body.lastIndexOf(start), start).toBe(body.indexOf(start));
     }

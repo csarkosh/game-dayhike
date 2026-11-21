@@ -38,7 +38,7 @@ describe("the seed and the terrain a hike's world is made from", () => {
   it("is what the page starts the world's worker with, which the start waits for and a start left ends", () => {
     const main = readFileSync(new URL("../../src/main.ts", import.meta.url), "utf8").replace(/\/\*[\s\S]*?\*\//g, "").replace(/\/\/.*$/gm, "");
     expect(main.match(/\bstartWorldPrep\(/g)).toEqual(["startWorldPrep("]);
-    expect(main).toContain("const prep = startWorldPrep(worldInputs(route.token, location.search), startHikeWorldWorker);");
+    expect(main).toContain("const prep = startWorldPrep(worldInputs(route.token, location.search), page.worldWorker);");
     expect(main).toContain("prepOutcome = await prep.ready;");
     // A render that moves on, and a start that fails, end the worker; a start that built lets go of it and its scene.
     expect(main.match(/prep\.dispose\(\);/g)).toHaveLength(3);
@@ -79,6 +79,7 @@ describe("the seed and the terrain a hike's world is made from", () => {
   });
 
   it("is handed the way to start the world's worker by the page", () => {
-    expect(sourceText("main.ts")).toContain("startWorldPrep(worldInputs(route.token, location.search), startHikeWorldWorker)");
+    expect(sourceText("main.ts")).toContain("startWorldPrep(worldInputs(route.token, location.search), page.worldWorker)");
+    expect(sourceText("hikePageGame.ts")).toContain("worldWorker: startHikeWorldWorker,");
   });
 });

@@ -9,24 +9,14 @@ import { createTitleLoop, titleLoopEnv, type TitleLoop } from "./game/titleLoop.
 import { createFilmHead, fetchFilmHead, filmHeadWanted, onCellular, warmWhenLoaded } from "./game/filmHead.js";
 import { landingModel, type LandingInput } from "./game/landingModel.js";
 import { loadName, saveName } from "./game/playerName.js";
-import { type DesktopRelease } from "@csarkosh/engine/net/desktopRelease";
-import { type Lobby } from "@csarkosh/engine/net/lobby";
-import { type Telemetry } from "@csarkosh/engine/net/telemetry";
-import { type GameHandle } from "@csarkosh/engine/app";
-import { hostOs, isMobile, type GpuSignals, type NavigatorLike } from "@csarkosh/engine/game/gpuSignals";
-import { type LoadVerdict } from "@csarkosh/engine/game/loadCheck";
+import { hostOs, isMobile, type NavigatorLike } from "@csarkosh/engine/game/gpuSignals";
 import { creditsEntries } from "./game/credits.js";
 import { renderTurnedAway, type TurnedAwayHandle } from "./game/turnedAway.js";
 import { turnedAwayModel, visitorDevice, type TurnedAwayView } from "./game/turnedAwayModel.js";
 import { HIKE_MODES, createModeKeeper, isGameMode, type GameMode } from "./game/gameMode.js";
-import type { LoadProgress } from "@csarkosh/engine/game/loadProgress";
-import type { AutoSummary } from "@csarkosh/engine/game/settings";
-import { pageStorage, parseTierOverride, type TierChoice, pageSessionStorage, takeNotice } from "@csarkosh/engine/game/tierChoice";
+import { pageStorage, parseTierOverride, pageSessionStorage, takeNotice } from "@csarkosh/engine/game/tierChoice";
 import { VEIL_CUT_COVER_MS, VEIL_CUT_LIFT_MS } from "@csarkosh/engine/game/veil";
-import type { Veil } from "@csarkosh/engine/game/veil";
-import type { Roster } from "@csarkosh/engine/game/roster";
-import type { Platform } from "@csarkosh/engine/net/desktopRelease";
-import type { MuteButton } from "@csarkosh/engine/game/muteButton";
+import type { LandingShell, Opening, PageHost, PageSide, TurnedAway } from "@csarkosh/engine/game/pageGame";
 
 /**
  * The intro over a start (`introOverlay.ts`). Made on Play, in the click,
@@ -47,74 +37,12 @@ export type IntroRun = {
   untell: () => void;
 };
 
-/** What the landing page asks of the page's shell. */
-export type LandingShell = {
-  /** Play was pressed. */
-  play(): void;
-  /** An invite link or lobby id was entered; false where the text is neither. */
-  join(text: string): boolean;
-  toPanel(panel: "downloads" | "settings" | "credits"): void;
-  /** A graphics choice was picked: kept. */
-  chooseTier(choice: TierChoice): void;
-  back(): void;
-};
-
-/**
- * A session's opening, as the shell holds it while it starts the session
- * under it: for Day Hike the intro's film.
- */
-export type Opening = {
-  /** The bar the loads report to. */
-  readonly progress: LoadProgress;
-  /** Before the engine is made: the film's first buffer. */
-  beforeEngine(): Promise<void>;
-  /** Before the build: the film's top-up. */
-  beforeBuild(): Promise<void>;
-  /** The start failed: the opening ends. */
-  failed(): void;
-  /** The connect panel is up: the opening gives way to it. */
-  connectPanel(): void;
-  /** The session is launched under the opening, and covered until its cut. */
-  launched(handle: { ready: Promise<void>; cover(): () => void; engage(): Promise<boolean> }): void;
-};
-
-/**
- * What Day Hike's own of the page reads of the page's shell, and the few of its variables it
- * writes: the shell's own, handed over as they stand each time they are read.
- */
-export type HikePageHost = {
-  readonly app: HTMLDivElement;
-  readonly veil: Veil;
-  readonly VEIL_SETTLE_MS: number;
-  readonly mute: MuteButton;
-  running: { dispose(): void } | null;
-  game: GameHandle | null;
-  paused: boolean;
-  readonly desktop: boolean;
-  readonly touch: boolean;
-  readonly host: Platform | "other";
-  readonly appVersion: string | undefined;
-  readonly latest: DesktopRelease | null;
-  readonly latestReady: Promise<void>;
-  readonly telemetry: Telemetry;
-  readonly signals: GpuSignals | null;
-  readonly currentChoice: () => TierChoice;
-  readonly choiceStored: () => boolean;
-  readonly choiceNotice: string | null;
-  readonly autoSummary: () => AutoSummary | null;
-  renderToken: number;
-  readonly lobby: Lobby | null;
-  readonly launching: boolean;
-  readonly roster: Roster;
-  readonly shownPage: "landing" | "game" | "scene" | null;
-};
-
 /**
  * Day Hike's own of the page: the intro's film, the title's loop, the landing page, the page for
  * those turned away, the player's name and the mode. The page's shell (`main.ts`) makes it once
  * and calls it at its own points.
  */
-export function createHikePage(h: HikePageHost) {
+export function createHikePage(h: PageHost): PageSide {
   let landing: LandingHandle | null = null;
   /** The title page's loop behind its still, while the title page is up. */
   let titleLoop: TitleLoop | null = null;
@@ -128,7 +56,7 @@ export function createHikePage(h: HikePageHost) {
   let turnedAway: TurnedAwayHandle | null = null;
 
   /** What the page for those turned away shows now (`turnedAwayModel`). */
-  function turnedAwayView(why: Exclude<LoadVerdict, { play: true }>): TurnedAwayView {
+  function turnedAwayView(why: TurnedAway): TurnedAwayView {
     const nav = navigator as NavigatorLike;
     return turnedAwayModel({
       reason: why.reason,
@@ -319,7 +247,7 @@ export function createHikePage(h: HikePageHost) {
    * first, and nothing of a hike is asked for after. The address is left as
    * it is, so the same link works once the visitor has a browser that plays.
    */
-  function showTurnedAway(container: HTMLDivElement, route: Route, why: Exclude<LoadVerdict, { play: true }>): void {
+  function showTurnedAway(container: HTMLDivElement, route: Route, why: TurnedAway): void {
     // Whatever start was waiting on this page is no longer the page's.
     h.renderToken += 1;
     h.telemetry.mark("turned-away");
@@ -505,7 +433,7 @@ export function createHikePage(h: HikePageHost) {
   }
 
   /** A verdict of "cannot play" come while the page for those turned away is up: it is shown what the verdict adds. False where that page is not up. */
-  function turnedAwayNow(next: Exclude<LoadVerdict, { play: true }>): boolean {
+  function turnedAwayNow(next: TurnedAway): boolean {
     if (turnedAway === null) return false;
     turnedAway.setView(turnedAwayView(next));
     return true;
@@ -543,7 +471,9 @@ export function createHikePage(h: HikePageHost) {
     name: (): string => selfName,
     rename,
     mode: currentMode,
-    saveMode,
+    saveMode: (mode: string): void => {
+      if (isGameMode(mode)) saveMode(mode);
+    },
   };
 }
 

@@ -24,12 +24,9 @@ import "./game/dayhikeAssets.js";
 // Day Hike's terrain registers as this is imported, before the world is read or prepared.
 import "./sim/passes/index.js";
 import { createRouteAnnouncer } from "@csarkosh/engine/game/routeAnnounce";
-import { startHikeWorldWorker } from "./game/hikeWorldWorker.js";
 import { worldInputs } from "@csarkosh/engine/game/worldInputs";
 import { sceneLine, startWorldPrep, worldPrepLine, type WorldPrepOutcome } from "@csarkosh/engine/game/worldPrep";
 import type { PreparedScene } from "@csarkosh/engine/game/preparedScene";
-import { runLiteSceneRoute } from "./game/lite/sceneRoute.js";
-import { liteProbeDeps } from "./game/lite/probeScene.js";
 import { isDesktop, isTouchDevice, hostPlatform, desktopVersion } from "@csarkosh/engine/game/platform";
 import { inviteLink, parseJoinLink } from "@csarkosh/engine/game/joinLink";
 import { createRoster } from "@csarkosh/engine/game/roster";
@@ -40,16 +37,13 @@ import { createSignalingClient, type SignalingClient } from "@csarkosh/engine/ne
 import { signalingUrl } from "@csarkosh/engine/net/signalingUrl";
 import { createLobby, joinLobby, lobbyErrorMessage, type Lobby } from "@csarkosh/engine/net/lobby";
 import { browserDeps, createTelemetry, installErrorCapture, referrerOf, telemetryUrl, testerMark, visitorId, type EarlyCatch, type Telemetry } from "@csarkosh/engine/net/telemetry";
-import { PROTOCOL_VERSION } from "./net/protocol.js";
 import { GEN_VERSION } from "@csarkosh/engine/sim/forest";
-import { HIKE_GAME } from "./hikeGame.js";
 import { startGame, type GameHandle } from "@csarkosh/engine/app";
 import type { EngineOnCanvas } from "@csarkosh/engine/game/rendererSwap";
 import { LOSS_ENDED_LINE, createLossRecord } from "@csarkosh/engine/game/lossBound";
 import { browserEnv, browserMajor, offersWebGpu, readSignals, type GpuSignals, type NavigatorLike } from "@csarkosh/engine/game/gpuSignals";
 import { adapterVerdict, loadVerdict, type LoadVerdict } from "@csarkosh/engine/game/loadCheck";
 import { LOADING_LINE, START_FAILED_LINE, autoPick, launchLine, liteProbeSteps, startFallbacks, startHike, startupTier, type ProbeSteps, type StartupTier } from "@csarkosh/engine/game/frameProbe";
-import { createHud } from "./game/hud.js";
 import { createMuteButton, readMuted, writeMuted } from "@csarkosh/engine/game/muteButton";
 import { containerPixels, withGovernorDrop, type QualityTier, type VerdictEngine } from "@csarkosh/engine/game/quality";
 import type { AutoSummary } from "@csarkosh/engine/game/settings";
@@ -66,12 +60,16 @@ import {
   type TierSource,
 } from "@csarkosh/engine/game/tierChoice";
 import { createVeil } from "@csarkosh/engine/game/veil";
-import { createHikePage, type Opening } from "./hikePage.js";
+import type { Opening } from "@csarkosh/engine/game/pageGame";
+import { HIKE_PAGE } from "./hikePageGame.js";
+
+/** The game this page is of, as one definition (`pageGame.ts`): all the shell knows of it. */
+const page = HIKE_PAGE;
 
 const found = document.querySelector<HTMLDivElement>("#app");
 
-/** Day Hike's own of the page (`hikePage.ts`): made here, once everything of the shell's it reads while it is made stands. */
-const hikePage = createHikePage({
+/** The game's own of the page (`PageSide`): made here, once everything of the shell's it reads while it is made stands. */
+const hikePage = page.side({
   get app() { return app; },
   get veil() { return veil; },
   get VEIL_SETTLE_MS() { return VEIL_SETTLE_MS; },
@@ -170,7 +168,7 @@ const telemetry: Telemetry = createTelemetry(
     build: import.meta.env.VITE_BUILD_SHA || "dev",
     // The tag of Babylon Lite the build pins, which the hike is drawn with.
     lite: __LITE_VERSION__,
-    proto: PROTOCOL_VERSION,
+    proto: page.protocol,
     gen: GEN_VERSION,
     desktop,
     shell: appVersion ?? "",
@@ -786,13 +784,13 @@ function render(container: HTMLDivElement): void {
   // A change of page goes behind the veil (veil.ts): it comes down first,
   // this render runs again under it, and it lifts once the page is up. The
   // intro's own film carries the title into the game, so it goes without.
-  const page = pageOf(route);
-  if (shownPage !== null && page !== shownPage && !veil.down && !hikePage.carriesToGame()) {
+  const asked = pageOf(route);
+  if (shownPage !== null && asked !== shownPage && !veil.down && !hikePage.carriesToGame()) {
     void veil.cover().then(() => render(container));
     return;
   }
-  const switched = shownPage !== page;
-  shownPage = page;
+  const switched = shownPage !== asked;
+  shownPage = asked;
   if (switched && veil.down) setTimeout(() => veil.lift(), VEIL_SETTLE_MS);
   const token = ++renderToken;
   // One row a navigation: which page, and which of the landing's panels. Sent
@@ -850,7 +848,7 @@ function render(container: HTMLDivElement): void {
   // this render is no longer the page's; else the route is rendered again,
   // now with the signals, as the same navigation.
   if (!isLandingRoute(route) && signals === null) {
-    const line = createHud(container);
+    const line = page.statusLine(container);
     line.setStatus(LOADING_LINE);
     // The film Play started stays in the page meanwhile: taken out of it, it would stop.
     hikePage.keepOpening(container);
@@ -876,7 +874,7 @@ function render(container: HTMLDivElement): void {
       ({ canvas }) => {
         if (token !== renderToken) return;
         container.appendChild(canvas);
-        const scene = runLiteSceneRoute({ canvas, container, tier }, parseSceneSearch(location.search), route.name);
+        const scene = page.scene({ canvas, container, tier }, parseSceneSearch(location.search), route.name);
         running = { dispose: () => scene.dispose() };
       },
       (error: unknown) => console.error("The scene could not be drawn.", error),
@@ -935,7 +933,7 @@ function render(container: HTMLDivElement): void {
   // the tier is decided, the film buffers and the engine starts: the build
   // waits for them (`beforeBuild`) and finds them made. With no worker, or
   // one that fails, the build makes them as it always did (`worldPrep.ts`).
-  const prep = startWorldPrep(worldInputs(route.token, location.search), startHikeWorldWorker);
+  const prep = startWorldPrep(worldInputs(route.token, location.search), page.worldWorker);
   let prepOutcome: WorldPrepOutcome | null = null;
   // The hike's first scene (`preparedScene.ts`): asked of the same worker
   // once the tier is decided, waited for before the build, and taken by the
@@ -958,7 +956,7 @@ function render(container: HTMLDivElement): void {
   // (`runLiteProbeStep`): the page makes no engine for it. A step whose
   // renderer cannot be made, or whose device fails under it, reads nothing;
   // the game's failure handling never hears of it.
-  const probe = liteProbeDeps(container);
+  const probe = page.probe(container);
   running = {
     dispose: () => {
       probe.abort();
@@ -982,7 +980,7 @@ function render(container: HTMLDivElement): void {
     signals: signalsReady,
     current: () => !cancelled(),
     showLoading: () => {
-      const line = createHud(container);
+      const line = page.statusLine(container);
       line.setStatus(LOADING_LINE);
       return line;
     },
@@ -1054,7 +1052,7 @@ function render(container: HTMLDivElement): void {
       // Whichever canvas the start left: a renderer that fell back to a lower
       // tier builds on a fresh one in the first one's place.
       for (const left of container.querySelectorAll("canvas")) left.remove();
-      const line = createHud(container);
+      const line = page.statusLine(container);
       line.setStatus(START_FAILED_LINE);
       running = { dispose: () => line.dispose() };
     },
@@ -1119,7 +1117,7 @@ function launch(
         };
       },
     },
-  }, HIKE_GAME);
+  }, page.game);
   game = handle;
   console.info(launchLine(decided, handle.graphics()));
   running = handle;

@@ -111,7 +111,8 @@
     "game/hikeAudio.ts",
     "hike.ts",
     "hikeGame.ts",
-    "hikePage.ts"
+    "hikePage.ts",
+    "hikePageGame.ts"
   ],
   "hold": {
     "env.d.ts": "the client's own ambient types",
