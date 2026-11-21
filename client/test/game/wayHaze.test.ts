@@ -60,12 +60,14 @@ describe("the chase's haze on the tiers with no post chain", () => {
 });
 
 describe("the renderer", () => {
-  const renderer = readFileSync(clientFile("src/game/lite/renderer.ts"), "utf8");
+  // The renderer, and Day Hike's side of it (`lite/hikeParts.ts`), where what is this game's own in a frame is written.
+  const renderer = readFileSync(clientFile("src/game/lite/renderer.ts"), "utf8") + readFileSync(clientFile("src/game/lite/hikeParts.ts"), "utf8");
 
   it("lays the haze on the frame's air only where no chain grades the frame, in the mist's own colour under the chase's cast", () => {
-    expect(renderer).toContain('if (made.chain === null) wayHazeInto(airValues, wayLevel, wayTint("material", cloudColourUnder(nearColour), 1, chaseCast, CHASE_TINT));');
+    expect(renderer).toContain("if (made.chain === null) side.haze(airValues);");
+    expect(renderer).toContain('wayHazeInto(air, wayLevel, wayTint("material", cloudColourUnder(host.nearColour()), 1, look.cast, CHASE_TINT));');
     // After the air's record is written for the frame, so it never builds on itself.
-    expect(renderer.indexOf("atmosphereUniforms(light.air, cloud,")).toBeLessThan(renderer.indexOf("wayHazeInto(airValues"));
+    expect(renderer.indexOf("atmosphereUniforms(light.air, cloud,")).toBeLessThan(renderer.indexOf("side.haze(airValues"));
     expect(renderer.match(/wayHazeInto\(/g)).toHaveLength(1);
   });
 });

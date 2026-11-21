@@ -28,7 +28,10 @@
  */
 import type { WatchEngine } from "@csarkosh/engine/game/engineWatch";
 import type { QualityTier } from "@csarkosh/engine/game/quality";
-import type { Renderer } from "./rendererTypes.js";
+import type { WorldRenderer } from "./rendererTypes.js";
+
+/** A renderer as a swap holds it: the engine's own members, whatever a game's renderer adds to them. */
+type Renderer = WorldRenderer<never>;
 import type { TierChoice } from "@csarkosh/engine/game/tierChoice";
 
 /**

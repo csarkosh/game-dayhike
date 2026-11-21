@@ -49,7 +49,10 @@
  * day its part is drawn. `NOT_DRAWN` names each part with the members that
  * stand in for it, and the two are held to each other by the tests.
  */
-import type { Renderer } from "../rendererTypes.js";
+import type { WorldRenderer } from "../rendererTypes.js";
+
+/** The renderer's own members, whatever state a game hands its `sync`. */
+type Renderer = WorldRenderer<never>;
 
 /** A part of the world not drawn yet, and the members of `Renderer` answered as nothing for it. */
 export type NotDrawn = { readonly what: string; readonly members: readonly (keyof Renderer)[] };

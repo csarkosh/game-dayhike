@@ -6,7 +6,9 @@
 import type { Forest } from "@csarkosh/engine/sim/forest";
 import type { Level } from "@csarkosh/engine/sim/level";
 import { createLiteRenderer } from "./lite/renderer.js";
-import type { Renderer, RendererOptions } from "./rendererTypes.js";
+import type { Renderer } from "./hikeRendererTypes.js";
+import { hikeParts } from "./lite/hikeParts.js";
+import type { RendererOptions } from "./rendererTypes.js";
 
 /**
  * A hike's renderer, as the hike holds it: the one drawn with Babylon Lite
@@ -21,5 +23,5 @@ export function createHikeRenderer(
   forest: Forest | null = null,
   options: RendererOptions = {},
 ): Renderer {
-  return createLiteRenderer(canvas, level, forest, options);
+  return createLiteRenderer(canvas, level, forest, options, hikeParts);
 }

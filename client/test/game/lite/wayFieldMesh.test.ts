@@ -6,7 +6,8 @@ import { emptyWayFieldUniforms } from "../../../src/game/wayMistField.js";
 import { tight } from "./wgslText.js";
 
 const src = readFileSync(new URL("../../../src/game/lite/wayFieldMesh.ts", import.meta.url), "utf8");
-const renderer = readFileSync(new URL("../../../src/game/lite/renderer.ts", import.meta.url), "utf8");
+// The renderer, and Day Hike's side of it (`hikeParts.ts`), where what is this game's own in a frame is written.
+const renderer = readFileSync(new URL("../../../src/game/lite/renderer.ts", import.meta.url), "utf8") + readFileSync(new URL("../../../src/game/lite/hikeParts.ts", import.meta.url), "utf8");
 const VERTEX = tight(WAY_FIELD_WGSL.vertex);
 const FRAGMENT = tight(WAY_FIELD_WGSL.fragment);
 
@@ -63,8 +64,8 @@ describe("the mist beyond the way on Babylon Lite", () => {
   });
 
   it("is made only where no ground cloud is marched to stand beyond the banks: a forest's tiers with no chain", () => {
-    expect(renderer).toContain("const wayField = forest === null || chained ? null : createLiteWayField(engine, scene, uploads);");
-    expect(renderer).toContain("standing.wayField?.update(pose, wayLevel, wayMist, seconds, chaseCast, way, wayHeightAt);");
-    expect(renderer).toContain("made.wayField?.dispose();");
+    expect(renderer).toContain("wayField = forest === null || chained ? null : createLiteWayField(engine, scene, uploads);");
+    expect(renderer).toContain("wayField?.update(pose, wayLevel, wayMist, seconds, look.cast, way, wayHeightAt);");
+    expect(renderer).toContain("wayField?.dispose();");
   });
 });

@@ -95,7 +95,8 @@ describe("the crowd's cost in the ground's admissions", () => {
 });
 
 describe("the renderer and the app", () => {
-  const renderer = readFileSync(clientFile("src/game/lite/renderer.ts"), "utf8");
+  // The renderer, and Day Hike's side of it (`lite/hikeParts.ts`), where what is this game's own in a frame is written.
+  const renderer = readFileSync(clientFile("src/game/lite/renderer.ts"), "utf8") + readFileSync(clientFile("src/game/lite/hikeParts.ts"), "utf8");
   const app = readFileSync(clientFile("src/app.ts"), "utf8");
   const commands = readFileSync(clientFile("src/game/commands.ts"), "utf8");
 
@@ -120,21 +121,21 @@ describe("the renderer and the app", () => {
     expect(app).toContain("renderer.setChaseThreat(threat);");
     expect(app).toContain("threat = Math.max(threat, threatOf(eyeAt, f.x, f.z, presenceOf(f, seconds)));");
     expect(app).toContain("for (const e of state.enemies.values()) threat = Math.max(threat, threatOf(eyeAt, e.pos.x, e.pos.z));");
-    expect(renderer).toContain("stareLens = stepStareLens(stareLens, stare, side, dt, chaseThreat);");
+    expect(renderer).toContain("stareLens = stepStareLens(stareLens, stare, towards, dt, chaseThreat);");
     expect(app).toContain("crowdHeld !== null ? crowdHeld > 0 : crowdOn(state.phase, state.outcome, wayShown)");
     // Each screen's own: its stream is seeded from the world's seed and whose screen it is, never the sim's.
     expect(app).toContain("newCrowd((seed ^ Math.imul(localId + 1, 0x9e3779b1)) >>> 0)");
   });
 
   it("the renderer draws the crowd as cards, in the frame and in the shade mask, and as eyes, where there is a mask, and disposes both", () => {
-    expect(renderer).toContain("const crowdCards = mask === null ? null : createLiteCrowdCards(engine, scene, CROWD_MOST_ANY, uploads);");
-    expect(renderer).toContain("const crowdEyes = mask === null ? null : createLiteCrowdEyes(engine, scene, CROWD_MOST_ANY, uploads);");
-    expect(renderer).toContain("if (mask !== null && crowdCards !== null) mask.addCards(crowdCards.mesh, crowdCards.maskMaterial);");
-    for (const part of ["crowdCards", "crowdEyes"]) expect(renderer).toContain(`made.${part}?.dispose();`);
-    expect(renderer).toContain("const cards = standing.crowdCards.sync(shown, heights, pose, seconds, CROWD_NONE_HELD, 0, CROWD_CARDS_TO_M, tint);\n      standing.mask?.cards(cards > 0);");
-    expect(renderer).toContain("standing.crowdEyes.sync(shown, heights, pose, seconds, CROWD_NONE_HELD);");
+    expect(renderer).toContain("crowdCards = made === null ? null : createLiteCrowdCards(engine, scene, CROWD_MOST_ANY, uploads);");
+    expect(renderer).toContain("crowdEyes = made === null ? null : createLiteCrowdEyes(engine, scene, CROWD_MOST_ANY, uploads);");
+    expect(renderer).toContain("if (made !== null && crowdCards !== null) made.addCards(crowdCards.mesh, crowdCards.maskMaterial);");
+    for (const part of ["crowdCards", "crowdEyes"]) expect(renderer).toContain(`${part}?.dispose();`);
+    expect(renderer).toContain("const cards = crowdCards.sync(shown, heights, pose, seconds, CROWD_NONE_HELD, 0, CROWD_CARDS_TO_M, tint);\n      mask?.cards(cards > 0);");
+    expect(renderer).toContain("crowdEyes.sync(shown, heights, pose, seconds, CROWD_NONE_HELD);");
     // A figure's rim is lit by the way's mist, toned for the tier's path as the mist is.
-    expect(renderer).toContain("const tint = wayTint(wayPath, cloudColourUnder(nearColour), 1 / wayDimAt(wayLevel), chaseCast, CHASE_TINT);");
+    expect(renderer).toContain("const tint = wayTint(wayPath, cloudColourUnder(host.nearColour()), 1 / wayDimAt(wayLevel), look.cast, CHASE_TINT);");
   });
 
   it("the renderer draws the chase's killers among the crowd while it is up, and not as the model: first in what is shown, from where their bodies stand each frame", () => {

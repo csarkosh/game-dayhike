@@ -26,7 +26,7 @@ import { BOARD_IMAGE_URLS } from "./boardImages.js";
 import { boardDrawingOf } from "./boardDraw.js";
 import { POSTER_LAST_SEEN } from "./posterPanel.js";
 import { liteSceneryOf, type LiteTrailhead } from "./lite/sceneryMeshes.js";
-import type { Renderer } from "./rendererTypes.js";
+import type { Renderer } from "./hikeRendererTypes.js";
 import type { CarHandle } from "./scenePlay.js";
 
 /** The junction posts and the trailhead's car and board, as the hike holds them. */

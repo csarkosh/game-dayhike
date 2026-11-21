@@ -1,7 +1,8 @@
 import { parseLevel } from "@csarkosh/engine/sim/level";
 import { createForest } from "@csarkosh/engine/sim/forest";
 import { createHikeRenderer } from "./game/hikeRenderer.js";
-import type { FreecamView, Renderer } from "./game/rendererTypes.js";
+import type { FreecamView } from "./game/rendererTypes.js";
+import type { Renderer } from "./game/hikeRendererTypes.js";
 import type { EndSceneSetup } from "./game/scenePlay.js";
 import { parseGpuTime } from "@csarkosh/engine/game/gpuTimeReport";
 import { createInputSampler } from "./game/input.js";
@@ -443,7 +444,7 @@ function buildGame(
   made(() => faults.dispose());
   /** The ladders' hooks for the engine: listen to one that stands, and take
    * the old one's listener off before it goes. */
-  const engineBindings: Pick<SwapBindings, "watch" | "unwatch"> = {
+  const engineBindings: Pick<SwapBindings<Renderer>, "watch" | "unwatch"> = {
     watch: (r, detector) => {
       stopWatching();
       // The renderer that stands is the one the hike's record of GPU faults hears.
@@ -2580,7 +2581,7 @@ function buildGame(
     watchCompiles(r);
   }
 
-  const swapBindings: SwapBindings = {
+  const swapBindings: SwapBindings<Renderer> = {
     // The renderer makes its own engine from the canvas it is built on: the
     // one made for the switch (`options.engineFor`), which `freshCanvas`
     // hands out first.
@@ -2646,7 +2647,7 @@ function buildGame(
       if (broken) return tier;
       // The canvas made for the switch is the first the swap takes.
       let engineCanvas: HTMLCanvasElement | null = next.canvas;
-      const bindings: SwapBindings = {
+      const bindings: SwapBindings<Renderer> = {
         ...swapBindings,
         freshCanvas: () => {
           const fresh = engineCanvas ?? document.createElement("canvas");
@@ -2654,7 +2655,7 @@ function buildGame(
           return fresh;
         },
       };
-      let got: ReturnType<typeof swapRenderer>;
+      let got: ReturnType<typeof swapRenderer<Renderer>>;
       try {
         got = swapRenderer(
           { renderer, canvas },

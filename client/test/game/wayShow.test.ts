@@ -77,33 +77,34 @@ describe("the mist over the way", () => {
 });
 
 describe("the renderer and the app", () => {
-  const renderer = readFileSync(clientFile("src/game/lite/renderer.ts"), "utf8");
+  // The renderer, and Day Hike's side of it (`lite/hikeParts.ts`), where what is this game's own in a frame is written.
+  const renderer = readFileSync(clientFile("src/game/lite/renderer.ts"), "utf8") + readFileSync(clientFile("src/game/lite/hikeParts.ts"), "utf8");
   const chain = readFileSync(clientFile("../engine/src/game/lite/postChain.ts"), "utf8");
   const app = readFileSync(clientFile("src/app.ts"), "utf8");
 
   it("the renderer makes the way's mist once, for a forest, toned for the tier's colour path, and disposes it", () => {
     expect(renderer.match(/createLiteWayLight\(/g)).toHaveLength(1);
-    expect(renderer).toContain("const wayLight = forest === null ? null : createLiteWayLight(engine, scene, wayPath, jobs, uploads);");
+    expect(renderer).toContain("wayLight = forest === null ? null : createLiteWayLight(engine, scene, wayPath, jobs, uploads);");
     expect(renderer).toContain('const wayPath: WayColourPath = chained ? "post" : "material";');
-    expect(renderer).toContain("made.wayLight?.dispose();");
+    expect(renderer).toContain("wayLight?.dispose();");
   });
 
   it("the renderer dims the frame by the mist's level on both colour paths and gives the mist the dim to undo", () => {
     // With no chain the exposure every material ends with carries it, beside the stare's.
-    expect(renderer).toContain("(chained ? light.exposure : light.exposure * sightUnder(shownStare.level) * wayDimAt(wayLevel))");
+    expect(renderer).toContain("(chained ? light.exposure : light.exposure * sightUnder(shownStare.level) * side.look.dim)");
     // With one the grade's does.
-    expect(renderer).toContain("standing.chain?.setDim(wayDimAt(wayLevel));\n        standing.chain?.update(");
+    expect(renderer).toContain("standing.chain?.setDim(side.look.dim);\n        standing.chain?.update(");
     expect(chain).toContain("if (dim !== 1) record = { ...record, exposure: record.exposure * dim };");
     // The way's mist is a shade of the ground mist's own colour, which every tier has, and drifts on the frame's clock.
-    expect(renderer).toContain("const wayMist = cloudColourUnder(nearColour);");
-    expect(renderer).toContain("standing.wayLight.update(wayLevel, 1 / wayDimAt(wayLevel), wayMist, seconds, chaseCast);");
+    expect(renderer).toContain("const wayMist = cloudColourUnder(host.nearColour());");
+    expect(renderer).toContain("wayLight.update(wayLevel, 1 / wayDimAt(wayLevel), wayMist, seconds, look.cast);");
   });
 
   it("the renderer feeds the ground cloud's map the way in place of the trail while the mist is up, and builds it again when that changes", () => {
     expect(renderer).toContain("const over = way !== null && wayLevel > 0 ? way : null;");
     expect(renderer).toContain("if (cloudGroundDue(cloudGroundAt, pose.x, pose.z) || (over !== null) !== wayMistBuilt) {");
     // Only as far as the mist's fade reaches: 4,096 places a rebuild, most of them far from the way.
-    expect(renderer).toContain("(x, z) => wayDistanceWithin(over, x, z, WAY_MIST_FADE_M), CLOUD_GROUND_SIZE, CLOUD_GROUND_SPAN, WAY_MIST_EDGE_M, WAY_MIST_FADE_M)");
+    expect(renderer).toContain("cloudWayPath = { distance: (x, z) => wayDistanceWithin(over, x, z, WAY_MIST_FADE_M), edge: WAY_MIST_EDGE_M, fade: WAY_MIST_FADE_M };");
   });
 
   it("the app gives every renderer the world's way, and the level every frame; a renderer still being made takes the way when it stands", () => {
@@ -112,8 +113,8 @@ describe("the renderer and the app", () => {
     expect(app).toContain("renderer.setWay(world.way, (x, z) => ground.heightAt(x, z));");
     expect(app).toContain("renderer.setWayLevel(wayShown);");
     expect(app).toContain("wayShown = wayHeld ?? wayLevelFor(world, sceneInto, wayShown, dt);");
-    expect(renderer).toContain("standing?.wayLight?.setWay(next, heightAt);");
-    expect(renderer).toContain("if (way !== null && wayHeightAt !== null) wayLight?.setWay(way, wayHeightAt);\n    standing = made;");
+    expect(renderer).toContain("if (host.stands()) wayLight?.setWay(next, heightAt);");
+    expect(renderer).toContain("if (way !== null && wayHeightAt !== null) wayLight?.setWay(way, wayHeightAt);");
   });
 
   it("the app reports the way once it is settled: its length, its straight line and whether it is the fallback", () => {

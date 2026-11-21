@@ -1010,7 +1010,7 @@ describe("layer boundaries", () => {
     expect(seen.size).toBeGreaterThan(ENGINE_FREE.length);
     expect(bad).toEqual([]);
     // On Lite the frame's bodies take up who the scene shows in the frame that says so.
-    expect(readFileSync(at("game/lite/renderer.ts"), "utf8")).toContain("bodies = bodiesInShot(poses, bodies, now, state, localId, alpha, standing?.entities?.models ?? null);");
+    expect(readFileSync(at("game/lite/hikeParts.ts"), "utf8")).toContain("bodies = bodiesInShot(poses, bodies, now, state, localId, alpha, host.stands() ? (entities?.models ?? null) : null);");
   });
 
   /**
@@ -1146,8 +1146,9 @@ describe("layer boundaries", () => {
       "game/lite/skinnedModels.ts", "game/lite/skyCapture.ts", "game/lite/skyDome.ts", "game/lite/surfSpray.ts", "game/lite/terrainMeshes.ts", "game/lite/waterBed.ts", "game/lite/waterBehind.ts", "game/lite/waterPlantMeshes.ts", "game/lite/wayFieldMesh.ts", "game/lite/wayLightMeshes.ts", "game/lite/wildlifeMeshes.ts", "game/lite/wornLamps.ts",
     ]);
     // And the hike is handed that renderer by a module that loads it and nothing else that draws.
-    expect(readFileSync(at("game/hikeRenderer.ts"), "utf8")).toContain("  return createLiteRenderer(canvas, level, forest, options);");
-    expect(loaded(at("game/hikeRenderer.ts"))).toEqual(["./lite/renderer.js"]);
+    // With Day Hike's side of it (`lite/hikeParts.ts`), which the renderer calls at its own points.
+    expect(readFileSync(at("game/hikeRenderer.ts"), "utf8")).toContain("  return createLiteRenderer(canvas, level, forest, options, hikeParts);");
+    expect(loaded(at("game/hikeRenderer.ts"))).toEqual(["./lite/renderer.js", "./lite/hikeParts.js"]);
   });
 
   /**
@@ -1164,16 +1165,23 @@ describe("layer boundaries", () => {
     expect(importsOf(types).length).toBeGreaterThan(10);
     expect(importsOf(types).filter((spec) => spec.startsWith("@babylonjs"))).toEqual([]);
     const text = readFileSync(types, "utf8");
-    for (const name of ["FreecamView", "FrameView", "Renderer", "RendererOptions"]) expect(text, name).toContain(`export type ${name} = {`);
+    for (const name of ["FreecamView", "FrameView", "RendererOptions"]) expect(text, name).toContain(`export type ${name} = {`);
+    // The engine's renderer of the world, whatever state a game hands it; the hike's own is that over Day Hike's state
+    // with Day Hike's own methods beside it, in a module of types as bare.
+    expect(text).toContain("export type WorldRenderer<S> = {");
+    const hike = at("game/hikeRendererTypes.ts");
+    expect(loaded(hike)).toEqual([]);
+    expect(importsOf(hike).filter((spec) => spec.startsWith("@babylonjs"))).toEqual([]);
+    expect(readFileSync(hike, "utf8")).toContain("export type Renderer = WorldRenderer<WorldState> & HikeApi;");
     // Each of them is defined once in src/.
     const defined = sourceFiles(SRC).flatMap((file) =>
       [...stripComments(readFileSync(file, "utf8")).matchAll(/\bexport type (?:FreecamView|FrameView|Renderer|RendererOptions) =/g)].map(() => logical(file)),
     );
-    expect(defined).toEqual(["game/rendererTypes.ts", "game/rendererTypes.ts", "game/rendererTypes.ts", "game/rendererTypes.ts"]);
+    expect(defined.sort()).toEqual(["game/hikeRendererTypes.ts", "game/rendererTypes.ts", "game/rendererTypes.ts", "game/rendererTypes.ts"]);
     // Who holds a renderer takes the types from there.
     for (const holder of ["app.ts", "game/hikeRenderer.ts", "game/rendererSwap.ts", "game/lite/renderer.ts", "game/lite/notDrawn.ts", "game/lite/probeScene.ts", "game/lite/sceneRoute.ts", "game/lite/sceneStage.ts", "game/lite/sceneryMeshes.ts"]) {
       const specs = importsOf(at(holder));
-      expect(specs.some((spec) => spec.endsWith("/rendererTypes.js")), holder).toBe(true);
+      expect(specs.some((spec) => spec.endsWith("/rendererTypes.js") || spec.endsWith("/hikeRendererTypes.js")), holder).toBe(true);
     }
   });
 
