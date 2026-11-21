@@ -153,6 +153,8 @@ describe("the renderer and the app", () => {
 
   it("the console holds the crowd on, off or at a count, as it holds the way's mist", () => {
     expect(commands).toContain('name: "crowd",');
-    expect(app).toContain('} else if (name === "crowd") {');
+    // The hike applies its own commands (`applyOwnView`, `hike.ts`), which the page asks before its own.
+    expect(hike).toContain('} else if (name === "crowd") {');
+    expect(app).toContain("if (hike.applyOwnView(name, args)) return;");
   });
 });

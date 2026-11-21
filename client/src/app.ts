@@ -42,7 +42,6 @@ import { degradeTransport, parseNetConditions } from "@csarkosh/engine/net/chann
 import type { Transport } from "@csarkosh/engine/net/transport";
 import { isTouchDevice } from "@csarkosh/engine/game/platform";
 import { isMobile } from "@csarkosh/engine/game/gpuSignals";
-import { DEATH_LINE, DEATH_TITLE } from "./game/passages.js";
 import { trailheadStart } from "./sim/spawn.js";
 import type { PreparedScene } from "@csarkosh/engine/game/preparedScene";
 import { placeNames } from "./sim/placeNames.js";
@@ -64,7 +63,6 @@ import { createFirstBuilds } from "@csarkosh/engine/game/firstBuilds";
 import { extrasLater } from "@csarkosh/engine/game/extrasLater";
 import { connectFailure, createConnectPanel, sessionEndOutcome } from "@csarkosh/engine/game/connectPanel";
 import { HIKE_ACTIONS, type InputCommand, type PlayerState, type WorldState } from "./sim/types.js";
-import { CROWD_MOST } from "./game/crowdField.js";
 import { PLAYER_EYE_OFFSET, PLAYER_HALF } from "@csarkosh/engine/sim/constants";
 import { loadBirdBed } from "@csarkosh/engine/game/birdBed";
 import type { World } from "./sim/world.js";
@@ -613,6 +611,7 @@ function buildGame(
    */
   function applyView(name: string, args: readonly string[], options: { instant?: boolean } = {}): void {
     const value = findCommand(name)?.scriptValue?.(args);
+    if (hike.applyOwnView(name, args)) return;
     if (name === "aim") {
       if (typeof value === "string" && value !== "") {
         const [x, y, z] = value.split(" ").map(Number) as [number, number, number];
@@ -645,50 +644,6 @@ function buildGame(
     } else if (name === "skin") {
       skin = value !== false;
       renderer.setSkinShading(skin);
-    } else if (name === "escalation") {
-      // The world's escalation, held at a value or let go (escalation.ts).
-      hike.escalationHold = args.length === 0 ? null : Number(args[0]);
-      hud.setStatus(hike.escalationHold === null ? "escalation: the climb's" : `escalation held at ${hike.escalationHold.toFixed(2)}`);
-    } else if (name === "mist") {
-      // The ground cloud's density, held or let go (cloudParams.ts); the status says what is drawn.
-      const held = args.length === 0 ? null : Number(args[0]);
-      const drawn = renderer.setMist(held);
-      hud.setStatus(held === null ? `mist: the night's, now ${drawn.toFixed(2)}` : `mist held at ${held.toFixed(2)}`);
-    } else if (name === "way") {
-      // The way down's light, held whole or out, or let go to the chase (wayLevel.ts).
-      hike.wayHeld = args.length === 0 ? null : args[0] === "on" ? 1 : 0;
-      hud.setStatus(hike.wayHeld === null ? "way: the chase's" : `way held ${hike.wayHeld === 1 ? "on" : "off"}`);
-    } else if (name === "crowd") {
-      // This screen's crowd, held at a count or let go to the chase (crowdField.ts).
-      hike.crowdHeld = args.length === 0 ? null : args[0] === "on" ? CROWD_MOST[tier] : args[0] === "off" ? 0 : Number(args[0]);
-      hud.setStatus(hike.crowdHeld === null ? "crowd: the chase's" : `crowd held at ${hike.crowdHeld}`);
-    } else if (name === "summit") {
-      // The summit scene for a look (cutscene.ts): the host's own player stands at the body, and the next tick is the find.
-      if (hike.summitPreview === null) hud.setStatus("summit: the host's to call");
-      else hike.summitPreview();
-    } else if (name === "escape") {
-      // The end scene for a look (endScene.ts): the host's own player stands on the pad short of the car, and the next tick is the win.
-      if (hike.escapeLook === null) hud.setStatus("escape: the host's to call");
-      else hike.escapeLook();
-    } else if (name === "stand") {
-      // The host's own player at a place, to play from there.
-      const [x, z, yaw = 0] = args.map(Number) as [number, number, number?];
-      if (hike.standAt === null) hud.setStatus("stand: the host's to call");
-      else hike.standAt(x, z, yaw);
-    } else if (name === "lamp") {
-      // The host's own player's lamp, on unless asked off.
-      if (hike.setLamp === null) hud.setStatus("lamp: the host's to call");
-      else hike.setLamp(args[0] !== "off");
-    } else if (name === "end") {
-      // The ending, on the spot, nothing of the match: won, the end scene from where the player
-      // stands, with the trailhead's car, and no landing after it (endScene.ts);
-      // died, the death's camera and line (ending.ts).
-      if (args[0] === "won") {
-        if (!hike.startEndScene(false)) hud.setStatus("end won: this world has no road to leave by");
-      } else {
-        renderer.setEnding("died");
-        hud.setEnding({ title: DEATH_TITLE, line: DEATH_LINE });
-      }
     } else if (name === "time") {
       // Instant, like every other view command: the sun moves, the world is not
       // rebuilt. Validation has already bounded this to [0, 24), so the fallback

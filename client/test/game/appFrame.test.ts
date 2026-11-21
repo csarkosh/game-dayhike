@@ -113,3 +113,19 @@ describe("the hike's own hands on a session", () => {
   });
 });
 
+describe("the console's commands on a hike", () => {
+  const OWN = ["escalation", "mist", "way", "crowd", "summit", "escape", "stand", "lamp", "end"];
+
+  it("the hike applies its own, and the page asks it before its own", () => {
+    const own = bodyOf("applyOwnView", hikeSrc);
+    for (const name of OWN) expect(own, name).toContain(`name === "${name}"`);
+    // The hike says whether the command was one of its own.
+    expect(own).toContain("return false;");
+    const page = bodyOf("applyView");
+    expect(page).toMatch(/const value = findCommand\(name\)\?\.scriptValue\?\.\(args\);\n    if \(hike\.applyOwnView\(name, args\)\) return;/);
+    for (const name of OWN) expect(page, name).not.toContain(`name === "${name}"`);
+    // The page's own are still its own.
+    for (const name of ["aim", "freecam", "wireframe", "skin", "time", "palette", "weather", "bob", "unsettle", "wind", "volume"]) expect(page, name).toContain(`name === "${name}"`);
+  });
+});
+

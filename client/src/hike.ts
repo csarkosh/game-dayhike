@@ -1039,20 +1039,68 @@ export function createHike(h: HikeHost) {
     };
   }
 
+  /**
+   * A view command of the hike's own, applied: the acts, the mist, the way
+   * and the crowd held or let go, the host's looks (the summit, the escape,
+   * a stand, the lamp) and an ending on the spot. False where the command is
+   * not one of the hike's, which the page then applies as its own.
+   */
+  function applyOwnView(name: string, args: readonly string[]): boolean {
+    if (name === "escalation") {
+      // The world's escalation, held at a value or let go (escalation.ts).
+      escalationHold = args.length === 0 ? null : Number(args[0]);
+      h.hud.setStatus(escalationHold === null ? "escalation: the climb's" : `escalation held at ${escalationHold.toFixed(2)}`);
+    } else if (name === "mist") {
+      // The ground cloud's density, held or let go (cloudParams.ts); the status says what is drawn.
+      const held = args.length === 0 ? null : Number(args[0]);
+      const drawn = h.renderer.setMist(held);
+      h.hud.setStatus(held === null ? `mist: the night's, now ${drawn.toFixed(2)}` : `mist held at ${held.toFixed(2)}`);
+    } else if (name === "way") {
+      // The way down's light, held whole or out, or let go to the chase (wayLevel.ts).
+      wayHeld = args.length === 0 ? null : args[0] === "on" ? 1 : 0;
+      h.hud.setStatus(wayHeld === null ? "way: the chase's" : `way held ${wayHeld === 1 ? "on" : "off"}`);
+    } else if (name === "crowd") {
+      // This screen's crowd, held at a count or let go to the chase (crowdField.ts).
+      crowdHeld = args.length === 0 ? null : args[0] === "on" ? CROWD_MOST[h.tier] : args[0] === "off" ? 0 : Number(args[0]);
+      h.hud.setStatus(crowdHeld === null ? "crowd: the chase's" : `crowd held at ${crowdHeld}`);
+    } else if (name === "summit") {
+      // The summit scene for a look (cutscene.ts): the host's own player stands at the body, and the next tick is the find.
+      if (summitPreview === null) h.hud.setStatus("summit: the host's to call");
+      else summitPreview();
+    } else if (name === "escape") {
+      // The end scene for a look (endScene.ts): the host's own player stands on the pad short of the car, and the next tick is the win.
+      if (escapeLook === null) h.hud.setStatus("escape: the host's to call");
+      else escapeLook();
+    } else if (name === "stand") {
+      // The host's own player at a place, to play from there.
+      const [x, z, yaw = 0] = args.map(Number) as [number, number, number?];
+      if (standAt === null) h.hud.setStatus("stand: the host's to call");
+      else standAt(x, z, yaw);
+    } else if (name === "lamp") {
+      // The host's own player's lamp, on unless asked off.
+      if (setLamp === null) h.hud.setStatus("lamp: the host's to call");
+      else setLamp(args[0] !== "off");
+    } else if (name === "end") {
+      // The ending, on the spot, nothing of the match: won, the end scene from where the player
+      // stands, with the trailhead's car, and no landing after it (endScene.ts);
+      // died, the death's camera and line (ending.ts).
+      if (args[0] === "won") {
+        if (!startEndScene(false)) h.hud.setStatus("end won: this world has no road to leave by");
+      } else {
+        h.renderer.setEnding("died");
+        h.hud.setEnding({ title: DEATH_TITLE, line: DEATH_LINE });
+      }
+    } else {
+      return false;
+    }
+    return true;
+  }
+
   return {
+    applyOwnView,
     get escalation() { return escalation; },
-    get escalationHold() { return escalationHold; },
-    set escalationHold(value) { escalationHold = value; },
-    get wayHeld() { return wayHeld; },
-    set wayHeld(value) { wayHeld = value; },
-    get crowdHeld() { return crowdHeld; },
-    set crowdHeld(value) { crowdHeld = value; },
     taken,
     get lastTargets() { return lastTargets; },
-    get summitPreview() { return summitPreview; },
-    get escapeLook() { return escapeLook; },
-    get standAt() { return standAt; },
-    get setLamp() { return setLamp; },
     get escapeStep() { return escapeStep; },
     get endRunDoor() { return endRunDoor; },
     ranToCar,
@@ -1072,7 +1120,6 @@ export function createHike(h: HikeHost) {
     syncDeath,
     get ended() { return ended; },
     syncOutcome,
-    startEndScene,
     syncEndScene,
     hikeReportAtRest,
     disposeHike,
