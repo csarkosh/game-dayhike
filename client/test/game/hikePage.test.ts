@@ -2,13 +2,13 @@ import { describe, expect, it } from "vitest";
 import { sourceText } from "../helpers/source.js";
 
 /**
- * The page's shell (`main.ts`: the routes, the lobby, the start of a session) calls Day Hike's own
+ * The page's shell (`shell.ts`, the engine's: the routes, the lobby, the start of a session) calls Day Hike's own
  * of the page (`hikePage.ts`: the intro's film, the title's loop, the landing page, the page for
  * those turned away, the name, the mode) at the page's own points, by names that say what the point
  * is. The shell reads and writes none of Day Hike's variables.
  */
 
-const shell = sourceText("main.ts");
+const shell = sourceText("shell.ts");
 const own = sourceText("hikePage.ts");
 
 /** The body of a function of Day Hike's own of the page, from its opening brace to the brace that closes it. */
@@ -35,7 +35,7 @@ describe("the page's shell and Day Hike's own of the page", () => {
   });
 
   it("Play stops the title's loop and starts the film, to be carried into the game", () => {
-    expect(shell).toMatch(/  telemetry\.event\("play", [^\n]+\n(?:  \/\/[^\n]*\n)*  hikePage\.played\(\);\n  hikePage\.repaint\(\);/);
+    expect(shell).toMatch(/    telemetry\.event\("play", [^\n]+\n(?:    \/\/[^\n]*\n)*    hikePage\.played\(\);\n    hikePage\.repaint\(\);/);
     const played = bodyOf("played");
     expect(played.indexOf("titleLoop?.stop();")).toBeGreaterThan(0);
     expect(played.indexOf("pendingIntro = startIntro(src, false);")).toBeGreaterThan(played.indexOf("titleLoop?.stop();"));
@@ -43,20 +43,20 @@ describe("the page's shell and Day Hike's own of the page", () => {
   });
 
   it("the landing page is shown by Day Hike's own, with the shell's handlers", () => {
-    expect(shell).toMatch(/  if \(isLandingRoute\(route\)\) \{\n    running = hikePage\.showLanding\(container, route, \{/);
+    expect(shell).toMatch(/    if \(isLandingRoute\(route\)\) \{\n      running = hikePage\.showLanding\(container, route, \{/);
     const show = bodyOf("showLanding");
     const order = ["endIntro(pendingIntro);", "titleLoop = createTitleLoop(", "warmFilmHead();", "landingNotice = takeNotice(", "renderLanding(", "landing = handle;", "void h.latestReady.then("];
     const places = order.map((line) => show.indexOf(line));
     expect(places.every((at) => at >= 0), order.filter((_, i) => (places[i] as number) < 0).join(" | ")).toBe(true);
     expect(places).toEqual([...places].sort((a, b) => a - b));
     // A page already up only changes its panel; a page left lets the landing go and ends the film playing.
-    expect(shell).toContain("  if (isLandingRoute(route) && hikePage.landingUp()) {\n    hikePage.showPanel(route);");
+    expect(shell).toContain("    if (isLandingRoute(route) && hikePage.landingUp()) {\n      hikePage.showPanel(route);");
     expect(bodyOf("left")).toMatch(/landing = null;\n\s+endIntro\(activeIntro\);/);
-    expect(shell).toMatch(/  paused = false;\n  hikePage\.left\(\);\n  container\.replaceChildren\(\);/);
+    expect(shell).toMatch(/    paused = false;\n    hikePage\.left\(\);\n    container\.replaceChildren\(\);/);
   });
 
   it("a game's route takes its opening from Day Hike's own: the film Play started, or a follower's, mounted", () => {
-    expect(shell).toContain('  const opening = hikePage.openingFor(container, lobby !== null && lobby.state.role === "client");');
+    expect(shell).toContain('    const opening = hikePage.openingFor(container, lobby !== null && lobby.state.role === "client");');
     const take = bodyOf("openingFor");
     const order = ["let intro = pendingIntro;", "pendingIntro = null;", "intro = startIntro(src, true);", "activeIntro = intro;", "intro.overlay.mount(container);"];
     const places = order.map((line) => take.indexOf(line));
@@ -71,17 +71,17 @@ describe("the page's shell and Day Hike's own of the page", () => {
   });
 
   it("a visitor turned away is told once and shown the page, by Day Hike's own", () => {
-    expect(shell).toContain("  if (!hikePage.turnedAwayNow(next)) render(app);");
+    expect(shell).toContain("    if (!hikePage.turnedAwayNow(next)) render(app);");
     const now = bodyOf("turnedAwayNow");
     expect(now).toContain("turnedAway.setView(turnedAwayView(next));");
-    expect(shell).toContain("  if (hikePage.awayShown()) return;");
+    expect(shell).toContain("    if (hikePage.awayShown()) return;");
     // The row is the shell's, sent once.
     expect(shell.split('telemetry.event("turned_away"').length - 1).toBe(1);
   });
 
   it("the name and the mode are asked of Day Hike's own", () => {
-    expect(shell).toContain("    lobby?.setName(hikePage.rename(raw));");
-    expect(shell).toContain("      selfName: hikePage.name(),");
-    expect(shell).toContain("    mode: { choice: hikePage.mode, save: hikePage.saveMode },");
+    expect(shell).toContain("      lobby?.setName(hikePage.rename(raw));");
+    expect(shell).toContain("        selfName: hikePage.name(),");
+    expect(shell).toContain("      mode: { choice: hikePage.mode, save: hikePage.saveMode },");
   });
 });

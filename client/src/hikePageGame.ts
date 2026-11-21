@@ -1,5 +1,5 @@
 /**
- * Day Hike as the page's shell is handed it (`main.ts`): the one definition
+ * Day Hike as the page's shell is handed it (`shell.ts`): the one definition
  * of the game on a page. The shell names nothing of Day Hike's by itself;
  * the game a session is of, Day Hike's own of the page and what the shell
  * starts for it reach it through this.

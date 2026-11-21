@@ -31,8 +31,8 @@ describe("the version of Babylon Lite the page is built with", () => {
     expect(config).toContain('__LITE_VERSION__: JSON.stringify(liteVersion(readFileSync(new URL("package.json", import.meta.url), "utf8"))),');
     expect(readFileSync(new URL('src/env.d.ts', CLIENT), 'utf8')).toContain('declare const __LITE_VERSION__: string;');
     // The page names it once, in what every telemetry row carries.
-    const main = readFileSync(new URL('src/main.ts', CLIENT), 'utf8');
-    expect(main.match(/__LITE_VERSION__/g)).toHaveLength(1);
-    expect(main).toContain('    lite: __LITE_VERSION__,');
+    const shell = readFileSync(new URL('src/shell.ts', CLIENT), 'utf8');
+    expect(shell.match(/__LITE_VERSION__/g)).toHaveLength(1);
+    expect(shell).toContain('      lite: __LITE_VERSION__,');
   });
 });

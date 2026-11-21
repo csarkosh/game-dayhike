@@ -61,7 +61,7 @@ describe("the page that runs a hike", () => {
     // Whatever game: its world, state, player, renderer, bus, HUD and sessions are the definition's type parameters.
     expect(app).toContain(">(canvas: HTMLCanvasElement, token: string, options: GameOptions, game: SessionGame<W, S, P, R, A, H, HostS, ClientS>): GameHandle {");
     expect(sourceText("hikeGame.ts")).toContain("export const HIKE_GAME: SessionGame<World, WorldState, PlayerState, Renderer, HikeAudio, Hud, HostSession, ClientSession> = {");
-    expect(sourceText("main.ts")).toMatch(/const handle = startGame\(onCanvas\.canvas, worldToken, \{[\s\S]*?\n {2}\}, page\.game\);/);
+    expect(sourceText("shell.ts")).toMatch(/const handle = startGame\(onCanvas\.canvas, worldToken, \{[\s\S]*?\n {4}\}, page\.game\);/);
     expect(sourceText("main.ts")).toContain('import { HIKE_PAGE } from "./hikePageGame.js";');
     expect(sourceText("hikePageGame.ts")).toContain("  game: HIKE_GAME,");
   });

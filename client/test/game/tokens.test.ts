@@ -14,7 +14,7 @@ const doors = (root: StandInElement): StandInElement[] =>
 describe("the title screen's Buy me tokens line", () => {
   afterEach(() => vi.unstubAllGlobals());
 
-  /** The title screen on its home panel, as main.ts mounts it. */
+  /** The title screen on its home panel, as shell.ts mounts it. */
   function title() {
     const doc = installStandInDom();
     const container = doc.createElement("div");
@@ -90,7 +90,7 @@ describe("the title screen's Buy me tokens line", () => {
 
   it("leaves with the title screen: a hike's HUD carries none", () => {
     const { doc, container } = title();
-    // The route change into a hike clears the container (main.ts) before the HUD is built.
+    // The route change into a hike clears the container (shell.ts) before the HUD is built.
     container.replaceChildren();
     const hud = createHud(asHtml(container), { onPause: () => {} });
     hud.setPause({ key: "Esc" });

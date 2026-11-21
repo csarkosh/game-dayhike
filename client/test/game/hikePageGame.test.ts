@@ -9,7 +9,7 @@ import { PROTOCOL_VERSION } from "../../src/net/protocol.js";
 import { sourceText } from "../helpers/source.js";
 
 /**
- * The page's shell (`main.ts`: the routes, the lobby, the start of a session) is handed the game as
+ * The page's shell (`shell.ts`: the routes, the lobby, the start of a session) is handed the game as
  * one definition and names nothing of Day Hike's by itself: the game a session is of, Day Hike's own
  * of the page, the wire's version, the status line, the world's worker, the staged scenes and the
  * tier check's steps reach it through that object.
@@ -41,25 +41,43 @@ describe("Day Hike as the page's shell is handed it", () => {
 });
 
 describe("the page's shell", () => {
-  const shell = sourceText("main.ts");
+  const shell = sourceText("shell.ts");
+  const entry = sourceText("main.ts");
 
-  it("imports nothing of Day Hike's but its registrations and the one definition", () => {
-    const specs = [...shell.matchAll(/^import [^\n]*?"([^"]+)";$/gm)].map((m) => m[1] as string);
+  it("is one function a game's entry calls with the game, and imports nothing of a game's", () => {
+    expect(shell).toContain(">(page: PageGame<W, S, P, R, A, H, HostS, ClientS>): void {");
+    expect(shell.split("export function startShell<").length - 1).toBe(1);
+    // Nothing of it runs as it is imported: every statement but its imports stands inside the function.
+    const after = shell.slice(shell.indexOf("export function startShell<"));
+    expect(after.slice(after.indexOf("): void {\n")).split("\n").filter((line) => line !== "" && !line.startsWith("  ") && line !== "): void {" && line !== "}")).toEqual([]);
+    const specs = [...shell.matchAll(/^(?:import [^\n]*?|\} from )"([^"]+)";$/gm)].map((m) => m[1] as string);
     expect(specs.length).toBeGreaterThan(30);
-    expect(specs.filter((spec) => spec.startsWith("."))).toEqual(["./game/dayhikeAssets.js", "./sim/passes/index.js", "./hikePageGame.js"]);
-    // A multi-line import is the engine's router alone.
-    expect([...shell.matchAll(/^\} from "([^"]+)";$/gm)].map((m) => m[1])).toEqual(["@csarkosh/engine/game/router", "@csarkosh/engine/game/tierChoice"]);
+    expect(specs.filter((spec) => !spec.startsWith("@csarkosh/engine/"))).toEqual([]);
+  });
+
+  it("is started by Day Hike's entry, after its registrations, with Day Hike's definition", () => {
+    const code = entry.replace(/\/\*[\s\S]*?\*\//g, "").replace(/^\/\/.*\n/gm, "").trim();
+    expect(code).toBe(
+      [
+        'import "./game/dayhikeAssets.js";',
+        'import "./sim/passes/index.js";',
+        'import { HIKE_PAGE } from "./hikePageGame.js";',
+        'import { startShell } from "./shell.js";',
+        "",
+        "startShell(HIKE_PAGE);",
+      ].join("\n"),
+    );
   });
 
   it("reaches the game through the definition at every point it once named Day Hike", () => {
-    expect(shell).toContain("const hikePage = page.side({");
-    expect(shell).toContain("    proto: page.protocol,");
+    expect(shell).toContain("  const hikePage = page.side({");
+    expect(shell).toContain("      proto: page.protocol,");
     expect(shell.split("page.statusLine(container)").length - 1).toBe(3);
     expect(shell).toContain("startWorldPrep(worldInputs(route.token, location.search), page.worldWorker)");
     expect(shell).toContain("const scene = page.scene({ canvas, container, tier }, parseSceneSearch(location.search), route.name);");
     expect(shell).toContain("const probe = page.probe(container);");
-    expect(shell).toMatch(/const handle = startGame\(onCanvas\.canvas, worldToken, \{[\s\S]*?\n {2}\}, page\.game\);/);
-    for (const named of ["createHud", "PROTOCOL_VERSION", "startHikeWorldWorker", "runLiteSceneRoute", "liteProbeDeps", "HIKE_GAME", "createHikePage"]) {
+    expect(shell).toMatch(/const handle = startGame\(onCanvas\.canvas, worldToken, \{[\s\S]*?\n {4}\}, page\.game\);/);
+    for (const named of ["createHud", "PROTOCOL_VERSION", "startHikeWorldWorker", "runLiteSceneRoute", "liteProbeDeps", "HIKE_GAME", "HIKE_PAGE", "createHikePage"]) {
       expect(shell, named).not.toMatch(new RegExp(`\\b${named}\\b`));
     }
   });
