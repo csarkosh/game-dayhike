@@ -43,7 +43,7 @@ import { buildFirstRenderer, buildOrUndo, swapRenderer, switchOutcome, whenStand
 import { FALLBACK_NOTICE_MS, answerFailures, coverWith, createSerial } from "./game/engineFailure.js";
 import { createGpuFaults } from "./game/gpuFaults.js";
 import { LOSS_ENDED_LINE, type LossNote } from "./game/lossBound.js";
-import { GOVERNOR_IDLE_MAX_MS, actOnDrop, governHike, governorDecision, steadyFrame } from "./game/governor.js";
+import { GOVERNOR_IDLE_MAX_MS, actOnDrop, governSession, governorDecision, steadyFrame } from "./game/governor.js";
 import { OVER_PLAY_Z, showProbeScreen, timeIdleCadence } from "./game/probeScreen.js";
 import { createCoveredDraw } from "./game/coveredDraw.js";
 import { FIRST_BUILD_SLICE_MS } from "./game/syncJobs.js";
@@ -85,7 +85,7 @@ export type GameHandle = {
   ready: Promise<void>;
   /** Covers play as the probe's screen does (the controls held, the pause
    * menu kept), until the function returned is called: what an intro playing
-   * over the start holds the hike with. */
+   * over the start holds the session with. */
   cover(): () => void;
   /** Engages the controls (the pointer's lock), as the pause menu's Resume
    * does: the intro's cut to the world. Resolves once they are engaged, or
@@ -107,7 +107,7 @@ export type GameOptions = {
   /** A follower whose connection to the host failed chose to play alone:
    * leave the party and start a fresh world. */
   onContinueOffline(): void;
-  /** The connect-failure panel is up: whatever covers the hike (an intro
+  /** The connect-failure panel is up: whatever covers the session (an intro
    * playing over the start) must give way to it. */
   onConnectPanel?(): void;
   /** The pause menu opened (true) or closed (false); false again on dispose. */
@@ -117,30 +117,30 @@ export type GameOptions = {
    * for a start with an intro playing over it, whose frames the build must
    * not take. Absent, the terrain is built with the renderer, as always. */
   deferClipmap?: boolean;
-  /** Takes the hike's first scene as the world's worker sampled it for
+  /** Takes the session's first scene as the world's worker sampled it for
    * `tier` (`preparedScene.ts`, `worldPrep.ts`), once: the first renderer
    * made calls it as it is built and takes the arrays as its own, and every
    * call after finds none. A function, never the scene: these options live
-   * as long as the hike, and a scene held here would stand, dead, beside
+   * as long as the session, and a scene held here would stand, dead, beside
    * every renderer made after the first. Absent, or with none to give, the
    * renderer samples the ground itself, as always. */
   takePrepared?: () => PreparedScene | null;
-  /** A fresh canvas for a renderer at `tier` (`shell.ts`'s `hikeCanvasNow`):
+  /** A fresh canvas for a renderer at `tier` (`shell.ts`'s `sessionCanvasNow`):
    * what a switch of tier, and a rebuild after a failure, builds on. It
    * carries no engine: the renderer makes its own from it. It throws where
-   * the page lets no hike be drawn. */
+   * the page lets no session be drawn. */
   engineFor(tier: QualityTier): EngineOnCanvas;
   /** A failure of the running WebGPU engine, a GPU error (`"pipeline"`) or a
    * lost device: the page sends its row. */
   engineFailed(reason: "pipeline" | "lost"): void;
   /** The page's record of lost devices (`lossBound.ts`): `note` takes one
-   * down as the hike's renderer loses its device and says what the bound on
-   * rebuilds makes of it; `ended` is called as the hike ends by that bound,
+   * down as the session's renderer loses its device and says what the bound on
+   * rebuilds makes of it; `ended` is called as the session ends by that bound,
    * for the landing page's line. */
   losses: { note(): LossNote; ended(): void };
   /** The tier `shell.ts` decided (`startupTier`): `?tier=`, the player's
-   * choice, or Auto. The hike starts at it; the pause screen's Settings can
-   * change it while the hike runs. */
+   * choice, or Auto. The session starts at it; the pause screen's Settings can
+   * change it while the session runs. */
   tier: QualityTier;
   /** Where `tier` came from: `?tier=`, the player's choice, or Auto. */
   tierSource: TierSource;
@@ -149,12 +149,12 @@ export type GameOptions = {
   fallbackTiers: readonly QualityTier[];
   /**
    * A tier failed to build, at the start or on a switch: `built` is the tier
-   * that did (null when none did and the hike is ending). The page records it
-   * (`recordFallback`) so it is not tried again each hike.
+   * that did (null when none did and the session is ending). The page records it
+   * (`recordFallback`) so it is not tried again each session.
    */
   onTierFallback(fallback: { attempted: QualityTier; built: QualityTier | null; source: TierSource }): void;
   /** The governor lowered Auto's tier from `running` (`governor.ts`): the page
-   * records it (`withGovernorDrop`) so the next hike starts there too. Never
+   * records it (`withGovernorDrop`) so the next session starts there too. Never
    * called while `GOVERNOR_ENABLED` is off. */
   onGovernorDrop(running: QualityTier): void;
   /** The page's telemetry (`net/telemetry.ts`): the match's start and end,
@@ -179,9 +179,9 @@ export type GameOptions = {
     choice(): string;
     save(mode: string): void;
   };
-  /** The page's mute (`muteButton.ts`): `bind` hands the hike's ambient a
+  /** The page's mute (`muteButton.ts`): `bind` hands the session's ambient a
    * setter, calls it with the state now and on every change, and returns the
-   * unbinding, called at the hike's end. */
+   * unbinding, called at the session's end. */
   mute: {
     bind(apply: (muted: boolean) => void): () => void;
   };
@@ -198,7 +198,7 @@ function worldStageTotal(deferred: boolean): number {
 }
 
 /**
- * Starts a hike on `canvas`. A start that throws part-way leaves nothing it
+ * Starts a session on `canvas`. A start that throws part-way leaves nothing it
  * made behind (`buildOrUndo`): above all no engine, and no global plugin
  * registration for the next renderer to meet.
  */
@@ -231,7 +231,7 @@ function buildGame<
   game: SessionGame<W, S, P, R, A, H, HostS, ClientS>,
   made: (undo: () => void) => void,
 ): GameHandle {
-  // The renderer and its canvas are replaced when the tier changes mid-hike
+  // The renderer and its canvas are replaced when the tier changes mid-session
   // (`applyTier`); everything reads them through these bindings when it runs.
   let canvas = firstCanvas;
   // The sim registry is the source of truth for variant names; the command
@@ -288,7 +288,7 @@ function buildGame<
   // build began would read as a stall.
   reportProgress()?.done("world", "trail");
   reportProgress()?.done("world", "check");
-  // Where this hike's players start, from the seed alone, as the sim places them (`pickSpawn`):
+  // Where this session's players start, from the seed alone, as the sim places them (`pickSpawn`):
   // the first renderer builds its terrain and its water around it, and the look starts facing
   // the way it faces. Null for a world with no trail.
   const start = game.startOf(seed);
@@ -302,9 +302,9 @@ function buildGame<
     // A session started with overrides is not an ordinary one: say which.
     if (entries.length > 0) telemetry.event("cmd", { names: entries.map((e) => e.name).join(",") });
   }
-  // The sky's slices, made off the main thread once for the whole hike and
+  // The sky's slices, made off the main thread once for the whole session and
   // handed to every renderer it builds, a swap of tier's included, so no
-  // swap makes them again. Made from the hour the script starts the hike at
+  // swap makes them again. Made from the hour the script starts the session at
   // outward (`sliceOrder`): the first frame waits only for the slices either
   // side of noon and of that hour. The hour is read as `applyView`'s `time`
   // branch reads it, before that branch applies it to the renderer.
@@ -315,7 +315,7 @@ function buildGame<
   made(() => skySource.dispose());
   /** Stops listening to the running renderer's engine for failures (`Renderer.ownWatch`). */
   let stopWatching = (): void => undefined;
-  /** When the page was last shown (ms, the page's clock), whether the intro's film is over the hike, whether the
+  /** When the page was last shown (ms, the page's clock), whether the intro's film is over the session, whether the
    * world is in, and whether a rebuild after a failure is under its cover: what a row about the GPU says was happening. */
   let shownAt = performance.now();
   let filmOver = false;
@@ -324,16 +324,16 @@ function buildGame<
   /** When the failure being answered came (ms). */
   let failedAt = 0;
   /**
-   * What the GPU says went wrong under this hike (`gpuFaults.ts`): every
-   * renderer the hike builds tells it of its device's errors and of a loss
-   * it did not ask for, and the rows it sends are bounded for the hike. A
+   * What the GPU says went wrong under this session (`gpuFaults.ts`): every
+   * renderer the session builds tells it of its device's errors and of a loss
+   * it did not ask for, and the rows it sends are bounded for the session. A
    * loss is noted on the page's record whatever is sent: the bound on
    * rebuilds reads it (`answerFailure`).
    */
   const faults = createGpuFaults({
     enabled: telemetry?.enabled ?? false,
     send: (name, fields) => telemetry?.event(name, fields),
-    hike: hikeNow,
+    session: sessionNow,
     loss: () => options.losses.note(),
     heapMb: () => {
       const used = (performance as { memory?: { usedJSHeapSize?: number } }).memory?.usedJSHeapSize;
@@ -351,7 +351,7 @@ function buildGame<
   const engineBindings: Pick<SwapBindings<R>, "watch" | "unwatch"> = {
     watch: (r, detector) => {
       stopWatching();
-      // The renderer that stands is the one the hike's record of GPU faults hears.
+      // The renderer that stands is the one the session's record of GPU faults hears.
       faults.attach(r);
       const engine = r.engine;
       stopWatching = detector(engine, (reason) => void answerFailure(engine, reason));
@@ -364,7 +364,7 @@ function buildGame<
   // The tier asked for, and should it fail to build, the class's start tier
   // and then low, each on a fresh canvas: only the renderer is retried, not
   // the world, which is built once. Each renderer makes its own engine from
-  // its canvas and lets it go with itself: the hike is handed none.
+  // its canvas and lets it go with itself: the session is handed none.
   // A start under the intro's film steps its first builds rather than running each whole
   // (`firstBuilds.ts`): the film's captions and bar keep moving while the forest, the ground cover
   // and the props fill. With no film there is nothing to keep moving, and they build as always.
@@ -398,10 +398,10 @@ function buildGame<
   let tierSource: TierSource = options.tierSource;
   // The governor (`governor.ts`): where `GOVERNOR_ENABLED` is on, fed every
   // frame of play, restarted when the session starts and after a switch,
-  // stopped when it ends, acting at most once per hike. Off, it is null: the
+  // stopped when it ends, acting at most once per session. Off, it is null: the
   // tier was decided at launch, and only the player changes it during the
-  // hike, in Settings.
-  const governor = governHike(performance.now(), () => void lowerTier());
+  // session, in Settings.
+  const governor = governSession(performance.now(), () => void lowerTier());
   /** A tier is being switched: no frame of it is steady play. */
   let switching = false;
   /** The governor is acting: timing the page's idle frames, then its switch. */
@@ -415,7 +415,7 @@ function buildGame<
   let compiledSinceFrame = false;
   let unwatchCompiles: (() => void) | null = null;
   /** Marks the frames a shader compiled in, on the renderer now running
-   * (`onShaderCompiled`: on the hike's renderer, each frame that asked its
+   * (`onShaderCompiled`: on the session's renderer, each frame that asked its
    * device for a shader module or a pipeline). */
   function watchCompiles(r: R): void {
     unwatchCompiles?.();
@@ -464,7 +464,7 @@ function buildGame<
   let base: AtmosphereBase = { weather: WEATHER_PRESETS[DEFAULT_WEATHER], hour: DEFAULT_HOUR };
   let worstFrameMs = 0;
   let stalls = 0;
-  // The page's mute: the ambient master follows it from now to the hike's end.
+  // The page's mute: the ambient master follows it from now to the session's end.
   made(options.mute.bind((on) => ambient.setMuted(on)));
   // Recomputed when the weather does: on a `weather` command directly below,
   // and on a forest world every frame by `syncAtmosphere`, as the escalation
@@ -540,7 +540,7 @@ function buildGame<
   // it is flipping. On by default: skin shading starts enabled.
   let skin = true;
   // Mirrors of what the view commands and the free camera last told the
-  // renderer and nothing else keeps, so a renderer built mid-hike (`applyTier`)
+  // renderer and nothing else keeps, so a renderer built mid-session (`applyTier`)
   // is told them again.
   let bobScale = DEFAULT_BOB_SCALE;
   let unsettleLevel = 1;
@@ -616,7 +616,7 @@ function buildGame<
    */
   function applyView(name: string, args: readonly string[], options: { instant?: boolean } = {}): void {
     const value = findCommand(name)?.scriptValue?.(args);
-    if (hike.applyOwnView(name, args)) return;
+    if (side.applyOwnView(name, args)) return;
     if (name === "aim") {
       if (typeof value === "string" && value !== "") {
         const [x, y, z] = value.split(" ").map(Number) as [number, number, number];
@@ -745,7 +745,7 @@ function buildGame<
     ambient.setDrip(renderer.canopyWater(), renderer.canopyOver());
     // The stare rides the same call: `sync` stepped its lens, and the
     // listener `syncWind` placed is where its whispers circle.
-    hike.sound();
+    side.sound();
   }
 
   /**
@@ -776,8 +776,8 @@ function buildGame<
     surfAudio.update(renderer.surfSound(), renderer.listener());
   }
 
-  /** The game's own half of the hike: made here, where what it adds to the page joins it. */
-  const hike = game.side({
+  /** The game's own half of the session: made here, where what it adds to the page joins it. */
+  const side = game.side({
     get made() { return made; },
     get canvas() { return canvas; },
     get seed() { return seed; },
@@ -836,8 +836,8 @@ function buildGame<
     touchModel.tick(performance.now());
     touchModel.setLampOn(lampOn);
     touchLayer.sync();
-    hud.setLamp(touchStart || hike.over() ? null : { key: "F", on: lampOn });
-    hud.setPause(touchStart || hike.over() ? null : { key: "Esc" });
+    hud.setLamp(touchStart || side.over() ? null : { key: "F", on: lampOn });
+    hud.setPause(touchStart || side.over() ? null : { key: "Esc" });
   }
 
   /**
@@ -886,7 +886,7 @@ function buildGame<
     engaged: () => input.engaged,
     barOpen: () => bar.isOpen,
     menuOpen: () => menu.isOpen,
-    ended: () => hike.decided(),
+    ended: () => side.decided(),
     showMenu: () => menu.show(),
     hideMenu: () => menu.hide(),
     setSuppressed: (on) => input.setSuppressed(on),
@@ -960,7 +960,7 @@ function buildGame<
         if (!disposed) options.onExit();
       });
     },
-    // Apply keeps the choice and switches the running hike to it, live: the
+    // Apply keeps the choice and switches the running session to it, live: the
     // menu holds on "Applying…" until the promise `applyTier` returns settles.
     settings: {
       saved: () => options.quality.choice(),
@@ -983,7 +983,7 @@ function buildGame<
       onChoose: () => {
         swapError = null;
       },
-      // A new mode is kept, and the hike started over on it: a world entry,
+      // A new mode is kept, and the session started over on it: a world entry,
       // re-initialised through the path `shell.ts` listens on, as `/mode` is.
       onChooseMode: (picked) => {
         // A value that is not one of the game's modes is ignored.
@@ -1086,9 +1086,9 @@ function buildGame<
   const wrap = (t: Transport): Transport =>
     degradation === null ? t : degradeTransport(t, degradation);
 
-  /** The frame's draw: every frame, or one every `COVERED_DRAW_MS` while the intro's film covers the hike. */
+  /** The frame's draw: every frame, or one every `COVERED_DRAW_MS` while the intro's film covers the session. */
   const filmDraw = createCoveredDraw();
-  function drawHike(): void {
+  function drawSession(): void {
     if (filmDraw.due(performance.now())) renderer.drawFrame();
   }
 
@@ -1106,7 +1106,7 @@ function buildGame<
 
   /** The party's climb so far, to three places: what every match row carries. */
   function progressRounded(): number {
-    return Math.round(hike.progress() * 1000) / 1000;
+    return Math.round(side.progress() * 1000) / 1000;
   }
 
   /**
@@ -1117,7 +1117,7 @@ function buildGame<
    */
   function matchStarted(role: "host" | "client", world: W, stats: () => { rtt: number; pe: number }): void {
     if (telemetry === null) return;
-    hike.matchStarted(world);
+    side.matchStarted(world);
     worstFrameMs = 0;
     stalls = 0;
     telemetry.event("match_start", { role, party: lobby?.state.members.length ?? 1, lobby: lobby?.state.id ?? "" });
@@ -1157,10 +1157,10 @@ function buildGame<
   }
 
   /**
-   * What was happening in the hike, for a row about a GPU error or a lost
+   * What was happening in the session, for a row about a GPU error or a lost
    * device (`gpuFaults.ts`): read when a row is made, and kept by no frame.
    */
-  function hikeNow(): Fields & { hidden: boolean } {
+  function sessionNow(): Fields & { hidden: boolean } {
     return {
       ready: worldIn,
       busy: rebuilding ? "rebuild" : lowering ? "drop" : switching ? "switch" : "",
@@ -1186,7 +1186,7 @@ function buildGame<
 
   /**
    * A frame's ticks, the host's and a follower's alike: each tick's command
-   * sampled, filtered by the hike (held still in a scene, run to the car,
+   * sampled, filtered by the session (held still in a scene, run to the car,
    * taken by the crowd) and handed to the session. Returns the last command,
    * or null for a frame with no tick.
    */
@@ -1194,7 +1194,7 @@ function buildGame<
     let cmd: InputCommand | null = null;
     for (let i = 0; i < ticks; i++) {
       const me = live.world.state.players.get(live.localEntityId);
-      cmd = hike.command(input.sample(++seq), me, live.world);
+      cmd = side.command(input.sample(++seq), me, live.world);
       if (i === ticks - 1) eyeBefore = me === undefined ? null : capturedEye(me, eyeBeforeScratch);
       live.tick(cmd);
     }
@@ -1204,26 +1204,26 @@ function buildGame<
   /**
    * A frame after its ticks, the host's and a follower's alike, from the state
    * it draws (the host's own, a follower's blended one). The order is the
-   * hike's: what the renderer's sync reads is stepped before it, the world's
-   * sound after it, then the hike's own reading of the frame, then the draw.
+   * session's: what the renderer's sync reads is stepped before it, the world's
+   * sound after it, then the session's own reading of the frame, then the draw.
    */
   function frame(live: Live, state: S, cmd: InputCommand | null, dt: number): void {
     const self = state.players.get(live.localEntityId);
-    hike.beforeSync(live.world, state, live.localEntityId, dt);
+    side.beforeSync(live.world, state, live.localEntityId, dt);
     renderer.sync(state, live.localEntityId, accumulator.alpha, { dt, sprinting: input.sprinting, before: eyeBefore });
     playWildlifeAudio();
     syncWind();
     syncDrip();
     syncWaterLife();
     syncSurf();
-    syncTouch(hike.lampOn(self));
-    hike.afterSync(live.world, state, live.localEntityId, self, cmd);
-    hike.report(state, self, input.sprinting);
+    syncTouch(side.lampOn(self));
+    side.afterSync(live.world, state, live.localEntityId, self, cmd);
+    side.report(state, self, input.sprinting);
     // True exactly when `sync` took its player-following branch, which is
     // the only case in which `renderer.cameraPosition()` is an eye position
     // a pending freecam can adopt.
     cameraOnPlayer = self !== undefined && freecam === null;
-    drawHike();
+    drawSession();
   }
 
   /**
@@ -1239,30 +1239,30 @@ function buildGame<
       hostPeerId: selfPeerId,
       mode,
     });
-    hike.hostStarted(host);
+    side.hostStarted(host);
     session = host;
     matchStarted("host", host.world, () => ({ rtt: 0, pe: 0 }));
     governor?.restart(performance.now());
-    hike.atRest();
+    side.atRest();
     hud.setStatus(null);
     // The host names itself: its own Named pairing only goes out to followers.
     names.set(host.localEntityId, selfPeerId);
 
-    hike.worldIn(host.world);
+    side.worldIn(host.world);
     activeWorld = host.world;
     // Under the intro's film no frame shows the signs: they are built in the task after this one,
     // out of the build's own (`extrasLater.ts`), for the renderer that stands now and only if it
     // still stands then with none built meanwhile. A start with no film builds them here, as always.
     const asked = renderer;
-    if (firstBuilds === undefined) hike.buildExtras(renderer);
+    if (firstBuilds === undefined) side.buildExtras(renderer);
     else extrasToCome = extrasLater({
-      build: () => hike.buildExtras(asked),
-      still: () => !disposed && !broken && renderer === asked && !hike.extrasStand(),
-      // The task is outside the start's catch: the hike goes on without its signs, and the console
+      build: () => side.buildExtras(asked),
+      still: () => !disposed && !broken && renderer === asked && !side.extrasStand(),
+      // The task is outside the start's catch: the session goes on without its signs, and the console
       // (which telemetry reads) says so.
       failed: (error) => console.error("The trailhead's signs could not be built.", error),
     });
-    hike.hears(host);
+    side.hears(host);
 
     admission = createHostAdmission(host, {
       wrap,
@@ -1274,7 +1274,7 @@ function buildGame<
       const dt = frameSeconds();
       feedGovernor(dt);
       const ticks = accumulator.advance(dt);
-      hike.beforeTicks();
+      side.beforeTicks();
       const cmd = stepTicks(host, ticks);
       stepFreecamView(dt);
 
@@ -1291,7 +1291,7 @@ function buildGame<
         rttMs: 0,
         snapshotsPerSecond: 0,
         bytesPerSecond: 0,
-        entities: hike.entities(state),
+        entities: side.entities(state),
         unackedInputs: 0,
         predictionError: 0,
       });
@@ -1341,17 +1341,17 @@ function buildGame<
     session = client;
     matchStarted("client", client.world, () => ({ rtt: client.stats.rttMs, pe: client.stats.lastPredictionError }));
     governor?.restart(performance.now());
-    hike.atRest();
-    hike.worldIn(client.world);
+    side.atRest();
+    side.worldIn(client.world);
     activeWorld = client.world;
-    hike.buildExtras(renderer);
+    side.buildExtras(renderer);
     // Every peer names itself, host or follower. The host does echo a
     // newcomer's own pairing back to it, so this is belt and braces — but it
     // means "You" never depends on that echo arriving.
     names.set(client.localEntityId, selfPeerId);
     // Safe this late: `onNamed` replays the pairings already received.
     client.onNamed((e) => names.set(e.entityId, e.peerId));
-    hike.hears(client);
+    side.hears(client);
     // Each end is explained where the player can act on it: the host's own
     // reason, or a move to another world, on the status line on the way to
     // the landing page; a different build on the panel, in plain words, with
@@ -1415,7 +1415,7 @@ function buildGame<
         rttMs: s.rttMs,
         snapshotsPerSecond: snapshotRate.perSecond(now),
         bytesPerSecond: byteRate.perSecond(now),
-        entities: hike.entities(state),
+        entities: side.entities(state),
         unackedInputs: s.unackedInputs,
         predictionError: s.lastPredictionError,
       });
@@ -1457,7 +1457,7 @@ function buildGame<
       // Not connected yet: keep the frame clock from accumulating a huge first
       // delta, and still draw the empty level behind the HUD.
       frameSeconds();
-      drawHike();
+      drawSession();
       return;
     }
     stepAndRender();
@@ -1530,7 +1530,7 @@ function buildGame<
   window.addEventListener("resize", onResize);
   made(() => window.removeEventListener("resize", onResize));
 
-  // ---- the tier, changed mid-hike ------------------------------------------------
+  // ---- the tier, changed mid-session ------------------------------------------------
   // Apply on the pause screen rebuilds the renderer at the new tier on a fresh
   // canvas (`rendererSwap.ts`), with the session, its connections, the input
   // and the HUD carrying on. The rebuild is one synchronous job: for its length
@@ -1564,7 +1564,7 @@ function buildGame<
     // hands out first.
     build: (next, target) => game.renderer(next, level, forest, { tier: target, skyTable: skySource.table, gpuTime: parseGpuTime(location.search), paced: isMobile(navigator) }),
     freshCanvas: () => document.createElement("canvas"),
-    extras: { dispose: hike.disposeExtras, build: hike.buildExtras },
+    extras: { dispose: side.disposeExtras, build: side.buildExtras },
     rebind: (next) => {
       input.rebind(next);
       touchLayer.rebind(next);
@@ -1577,7 +1577,7 @@ function buildGame<
   };
 
   /**
-   * Switches the running hike to the tier `choice` resolves to, the player's
+   * Switches the running session to the tier `choice` resolves to, the player's
    * Apply on the pause screen, waiting at most `readyMaxMs` for the new scene.
    * The choice is kept only when the switch reaches its tier (`switchTo`).
    */
@@ -1587,7 +1587,7 @@ function buildGame<
     // be under way.
     if (disposed || broken || !serial.idle) return;
     // Not under the end: a renderer built anew would have no scene to play.
-    if (hike.decided() || hike.holdsFrame()) return;
+    if (side.decided() || side.holdsFrame()) return;
     if (target === tier) {
       options.quality.save(choice);
       return;
@@ -1597,14 +1597,14 @@ function buildGame<
   }
 
   /**
-   * Switches the running hike to `target`: the page paints first (the pause
+   * Switches the running session to `target`: the page paints first (the pause
    * screen's opaque ground, or a cover over play), then the canvas the new
    * renderer is built on is made (`options.engineFor`) while the old renderer
    * still draws, then the synchronous swap, then the wait for the new scene.
    * `save`, when given, is kept only when the switch reaches `target`; a
    * fallback keeps the choice as it was, says so, and reports the tier that
    * failed so it is not tried again. When no tier builds at all, the Settings page and the landing say why,
-   * and the hike ends. The wait for the new scene is bounded by `readyMaxMs`,
+   * and the session ends. The wait for the new scene is bounded by `readyMaxMs`,
    * which each caller passes for the cover it put up
    * (`APPLY_SWAP_READY_MAX_MS`, `GOVERNOR_SWAP_READY_MAX_MS`). Returns the
    * tier now running.
@@ -1642,7 +1642,7 @@ function buildGame<
         );
       } catch (error) {
         broken = true;
-        // Each failed rung has taken itself down, and the hike's renderer
+        // Each failed rung has taken itself down, and the session's renderer
         // registers nothing outside itself: a throw from the old one's own
         // dispose leaves nothing to take back.
         console.error("quality: the renderer could not be rebuilt at any tier.", error);
@@ -1711,7 +1711,7 @@ function buildGame<
       options.engineFailed(reason);
     },
     // The loss that is one too many in too short a time is not answered by another renderer (`lossBound.ts`): the
-    // hike ends as one whose graphics could not be restarted does, with its line here and on the landing page.
+    // session ends as one whose graphics could not be restarted does, with its line here and on the landing page.
     ends: (reason) => reason === "lost" && faults.lastLoss?.end === true,
     end: () => {
       const loss = faults.lastLoss;
@@ -1773,14 +1773,14 @@ function buildGame<
    * and the bar stays shut (`gate`); it lifts at once if the session ends.
    * The loop stops while the page's idle frames are timed; a page drawing
    * below 60 Hz by itself is left as it is. Otherwise the drop is remembered
-   * for the next hike and applied now through the live switch, once, with a
+   * for the next session and applied now through the live switch, once, with a
    * line saying so.
    */
   async function lowerTier(): Promise<void> {
     if (governor === null) return;
     const decision = governorDecision(governor.verdict, tier, tierSource);
     // Nor under the end scene, the console's look at it too: a renderer built anew would have no scene.
-    if (decision === null || disposed || broken || !serial.idle || lowering || landingTimer !== null || hike.holdsFrame()) return;
+    if (decision === null || disposed || broken || !serial.idle || lowering || landingTimer !== null || side.holdsFrame()) return;
     lowering = true;
     let done: () => void = () => undefined;
     void serial.track(new Promise<void>((resolve) => (done = resolve)));
@@ -1796,7 +1796,7 @@ function buildGame<
         },
         idleCadence: () => timeIdleCadence(AbortSignal.timeout(GOVERNOR_IDLE_MAX_MS)),
         record: (running) => options.onGovernorDrop(running),
-        // A switch that builds no tier has ended the hike and said so.
+        // A switch that builds no tier has ended the session and said so.
         switchTo: (next, readyMaxMs) => switchTo(next, "auto", null, readyMaxMs),
         flash: (line, ms) => hud.flash(line, ms),
         log: (line) => console.info(line),
@@ -1818,7 +1818,7 @@ function buildGame<
     ready,
     cover() {
       const release = gate.cover();
-      // The intro's film is over the hike: drawn slowly until the cut (`coveredDraw.ts`).
+      // The intro's film is over the session: drawn slowly until the cut (`coveredDraw.ts`).
       const lift = filmDraw.cover();
       filmOver = true;
       return () => {
@@ -1855,11 +1855,11 @@ function buildGame<
     },
     dispose() {
       disposed = true;
-      // Nothing steps against a hike that is going: the first builds still queued are dropped.
+      // Nothing steps against a session that is going: the first builds still queued are dropped.
       firstBuilds?.dispose();
       if (telemetry !== null) {
         telemetry.sample(null);
-        telemetry.event("match_end", { p: progressRounded(), ...hike.matchEnd() });
+        telemetry.event("match_end", { p: progressRounded(), ...side.matchEnd() });
         // The match is over: the rows after this one name no game.
         telemetry.context({ game: null, world: null, seed: null });
       }
@@ -1881,12 +1881,12 @@ function buildGame<
       bar.dispose();
       menu.dispose();
       connectPanel.dispose();
-      hike.dispose();
+      side.dispose();
       touchLayer.dispose();
       input.dispose();
       if (!broken) {
         unwatchCompiles?.();
-        // The renderer goes with its engine: none is kept for the next hike.
+        // The renderer goes with its engine: none is kept for the next session.
         renderer.dispose();
       }
       skySource.dispose();

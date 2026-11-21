@@ -9,7 +9,7 @@ import { sourceText } from "../helpers/source.js";
  */
 
 const app = sourceText("app.ts");
-/** The hike's own half (`createHike`): what `app.ts` calls as `hike.<name>`. A variable of `app.ts` it reads is written `h.<name>` there. */
+/** The hike's own half (`createHike`): what `app.ts` calls as `side.<name>`. A variable of `app.ts` it reads is written `h.<name>` there. */
 const hikeSrc = sourceText("hike.ts");
 
 /** The body of a function declared in `app.ts` (or, given `hike.ts`'s text, in `hike.ts`), from its opening brace to the brace that closes it. */
@@ -26,10 +26,10 @@ function calls(text: string, call: string): number {
   return [...text.matchAll(new RegExp(`(?<!function |\\.)\\b${call.replace(/[.$]/g, "\\$&")}\\(`, "g"))].length;
 }
 
-// The page calls the hike's steps in groups, `hike.<group>`; the world's sound and the touch layer stay in `app.ts`.
-const BEFORE_SYNC = ["hike.beforeSync"];
+// The page calls the hike's steps in groups, `side.<group>`; the world's sound and the touch layer stay in `app.ts`.
+const BEFORE_SYNC = ["side.beforeSync"];
 const WORLD_SOUND = ["playWildlifeAudio", "syncWind", "syncDrip", "syncWaterLife", "syncSurf"];
-const AFTER_SYNC = ["syncTouch", "hike.afterSync", "hike.report"];
+const AFTER_SYNC = ["syncTouch", "side.afterSync", "side.report"];
 // Inside the hike, each group runs its own steps in this order (`hike.ts`, where each is called as `<name>`).
 const HIKE_BEFORE_SYNC = ["syncWayLight", "syncCrowd", "syncWayDraw", "syncAtmosphere"];
 const HIKE_AFTER_SYNC = ["syncPrompt", "syncPoster", "syncRoadLine", "syncDeath", "syncOutcome", "syncEndScene"];
@@ -37,7 +37,7 @@ const HIKE_AFTER_SYNC = ["syncPrompt", "syncPoster", "syncRoadLine", "syncDeath"
 describe("a session's frame", () => {
   it("runs its steps in the hike's order: what the sync reads, the sync, the world's sound, the hike's reading of the frame, the draw", () => {
     const frame = bodyOf("frame");
-    const order = [...BEFORE_SYNC, "renderer.sync", ...WORLD_SOUND, ...AFTER_SYNC, "drawHike"];
+    const order = [...BEFORE_SYNC, "renderer.sync", ...WORLD_SOUND, ...AFTER_SYNC, "drawSession"];
     const places = order.map((step) => frame.search(new RegExp(`\\b${step.replace(".", "\\.")}\\(`)));
     expect(places.every((at) => at >= 0), `each of ${order.join(", ")} is called in frame()`).toBe(true);
     expect(places).toEqual([...places].sort((a, b) => a - b));
@@ -53,13 +53,13 @@ describe("a session's frame", () => {
   });
 
   it("is the one place a frame's steps are called from: the host and a follower both run it", () => {
-    for (const step of [...BEFORE_SYNC, ...WORLD_SOUND, ...AFTER_SYNC, "hike.lampOn", "hike.sound", "hike.command"]) expect(calls(app, step), step).toBe(1);
+    for (const step of [...BEFORE_SYNC, ...WORLD_SOUND, ...AFTER_SYNC, "side.lampOn", "side.sound", "side.command"]) expect(calls(app, step), step).toBe(1);
     // The lamp's state is read through the hike, for the touch layer, in the frame's one touch step.
-    expect(bodyOf("frame")).toContain("syncTouch(hike.lampOn(self));");
+    expect(bodyOf("frame")).toContain("syncTouch(side.lampOn(self));");
     // The hike's stare rides the drip's call, after the drips are set.
     const drip = bodyOf("syncDrip");
     expect(drip).toContain("ambient.setDrip(");
-    expect(drip.indexOf("hike.sound();")).toBeGreaterThan(drip.indexOf("ambient.setDrip("));
+    expect(drip.indexOf("side.sound();")).toBeGreaterThan(drip.indexOf("ambient.setDrip("));
     // Each of the hike's steps is called once in `hike.ts`, in its group's body.
     for (const step of [...HIKE_BEFORE_SYNC, ...HIKE_AFTER_SYNC]) expect(calls(hikeSrc, step), step).toBe(1);
     expect(calls(app, "renderer.sync")).toBe(1);
@@ -71,14 +71,14 @@ describe("a session's frame", () => {
 
   it("steps a frame's ticks in one place: each command sampled, filtered by the hike and handed to the session", () => {
     const ticks = bodyOf("stepTicks");
-    expect(ticks).toContain("cmd = hike.command(input.sample(++seq), me, live.world);");
+    expect(ticks).toContain("cmd = side.command(input.sample(++seq), me, live.world);");
     // The hike's own filter of a command, in the hike's `command`: held still in a scene, run to the car, marked taken.
     expect(bodyOf("command", hikeSrc)).toContain("return taken(ranToCar(stilled(sample, me, world), me));");
     expect(ticks).toContain("live.tick(cmd);");
     // The one other sample is the free camera's look at the command just sampled, which takes no new sequence number.
     expect(app.match(/input\.sample\(\+\+seq\)/g)).toHaveLength(1);
     // The host's look at the end scene steps after the frame's ticks are counted and before they run.
-    expect(bodyOf("runAsHost")).toMatch(/const ticks = accumulator\.advance\(dt\);\s+hike\.beforeTicks\(\);\s+const cmd = stepTicks\(host, ticks\);/);
+    expect(bodyOf("runAsHost")).toMatch(/const ticks = accumulator\.advance\(dt\);\s+side\.beforeTicks\(\);\s+const cmd = stepTicks\(host, ticks\);/);
     expect(bodyOf("beforeTicks", hikeSrc)).toContain("escapeStep?.();");
     expect(app).toMatch(/const ticks = accumulator\.advance\(dt\);\s+const cmd = stepTicks\(client, ticks\);/);
   });
@@ -100,9 +100,9 @@ describe("a session's start", () => {
     expect(app).not.toContain("voice = voiceRest(");
     // After the match is announced and the governor restarted, before the session's world is wired to the page.
     for (const who of ["host", "client"]) {
-      expect(app, who).toMatch(new RegExp(`matchStarted\\("${who}", ${who}\\.world, [^\\n]+\\n    governor\\?\\.restart\\(performance\\.now\\(\\)\\);\\n    hike\\.atRest\\(\\);`));
+      expect(app, who).toMatch(new RegExp(`matchStarted\\("${who}", ${who}\\.world, [^\\n]+\\n    governor\\?\\.restart\\(performance\\.now\\(\\)\\);\\n    side\\.atRest\\(\\);`));
     }
-    expect(calls(app, "hike.atRest")).toBe(2);
+    expect(calls(app, "side.atRest")).toBe(2);
   });
 });
 
@@ -114,13 +114,13 @@ describe("the hike's own hands on a session", () => {
       expect(bodyOf("runAsHost"), hand).not.toContain(hand);
     }
     expect(hikeSrc).toContain("    hostStarted: hikeHostLooks,");
-    expect(bodyOf("runAsHost")).toMatch(/mode,\n    \}\);\n    hike\.hostStarted\(host\);\n    session = host;/);
+    expect(bodyOf("runAsHost")).toMatch(/mode,\n    \}\);\n    side\.hostStarted\(host\);\n    session = host;/);
   });
 
   it("puts what the hike reports of a match back at rest in a function of the hike's, when a match starts", () => {
     const rest = bodyOf("hikeReportAtRest", hikeSrc);
     for (const line of ["actsReported = 0;", "lastPhase = Phase.Climb;", "hollowSeen = false;", "lastTargets = null;"]) expect(rest, line).toContain(line);
-    expect(bodyOf("matchStarted")).toMatch(/if \(telemetry === null\) return;\n    hike\.matchStarted\(world\);/);
+    expect(bodyOf("matchStarted")).toMatch(/if \(telemetry === null\) return;\n    side\.matchStarted\(world\);/);
     // The hike's `matchStarted` puts its reading at rest first, then makes the trace with the hike's seed.
     const started = bodyOf("matchStarted", hikeSrc);
     expect(started).toContain("hikeReportAtRest();");
@@ -139,7 +139,7 @@ describe("the hike's own hands on a session", () => {
     const disposeBody = bodyOf("dispose", hikeSrc);
     expect(disposeBody).toContain("trace = null;");
     expect(disposeBody.indexOf("trace = null;")).toBeLessThan(disposeBody.indexOf("disposeHike();"));
-    expect(app).toMatch(/connectPanel\.dispose\(\);\n      hike\.dispose\(\);\n      touchLayer\.dispose\(\);\n      input\.dispose\(\);/);
+    expect(app).toMatch(/connectPanel\.dispose\(\);\n      side\.dispose\(\);\n      touchLayer\.dispose\(\);\n      input\.dispose\(\);/);
     // Every clear of the death's fade timer, all in `hike.ts`, is one the timer being set guards.
     expect(hikeSrc.split("clearTimeout(deathFadeTimer)").length - 1).toBeLessThanOrEqual(hikeSrc.split("deathFadeTimer !== null) clearTimeout(deathFadeTimer)").length - 1);
   });
@@ -154,7 +154,7 @@ describe("the console's commands on a hike", () => {
     // The hike says whether the command was one of its own.
     expect(own).toContain("return false;");
     const page = bodyOf("applyView");
-    expect(page).toMatch(/const value = findCommand\(name\)\?\.scriptValue\?\.\(args\);\n    if \(hike\.applyOwnView\(name, args\)\) return;/);
+    expect(page).toMatch(/const value = findCommand\(name\)\?\.scriptValue\?\.\(args\);\n    if \(side\.applyOwnView\(name, args\)\) return;/);
     for (const name of OWN) expect(page, name).not.toContain(`name === "${name}"`);
     // The page's own are still its own.
     for (const name of ["aim", "freecam", "wireframe", "skin", "time", "palette", "weather", "bob", "unsettle", "wind", "volume"]) expect(page, name).toContain(`name === "${name}"`);
@@ -166,13 +166,13 @@ describe("the hike's own details of a session", () => {
     const page = app;
     for (const gone of ["world.interactables.set(", ".onInteracted(", "state.enemies.size"]) expect(page, gone).not.toContain(gone);
     // The page calls the hike at the points it did those itself: a session's world in, its events, the netgraph's row.
-    expect(page.split("hike.worldIn(").length - 1).toBe(2);
-    expect(page).toContain("    hike.worldIn(host.world);\n    activeWorld = host.world;");
-    expect(page).toContain("    hike.worldIn(client.world);\n    activeWorld = client.world;");
-    expect(page.split("hike.hears(").length - 1).toBe(2);
-    expect(page).toContain("    hike.hears(host);");
-    expect(page).toContain("    hike.hears(client);");
-    expect(page.split("entities: hike.entities(state),").length - 1).toBe(2);
+    expect(page.split("side.worldIn(").length - 1).toBe(2);
+    expect(page).toContain("    side.worldIn(host.world);\n    activeWorld = host.world;");
+    expect(page).toContain("    side.worldIn(client.world);\n    activeWorld = client.world;");
+    expect(page.split("side.hears(").length - 1).toBe(2);
+    expect(page).toContain("    side.hears(host);");
+    expect(page).toContain("    side.hears(client);");
+    expect(page.split("entities: side.entities(state),").length - 1).toBe(2);
     expect(bodyOf("worldIn", hikeSrc)).toContain("world.interactables.set(1, {");
     expect(bodyOf("worldIn", hikeSrc)).toContain("if (!h.debugOn) return;");
     expect(bodyOf("hears", hikeSrc)).toContain('if (h.debugOn) console.info("[debug] interacted", e);');

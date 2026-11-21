@@ -91,7 +91,7 @@ function record(over: Partial<GpuFaultDeps> = {}) {
   const deps: GpuFaultDeps = {
     enabled: true,
     send: (n, f) => void sent.push({ n, f }),
-    hike: () => ({ ...hike }),
+    session: () => ({ ...hike }),
     loss: () => losses.note(clock.now),
     heapMb: () => 311.04,
     now: () => clock.now,

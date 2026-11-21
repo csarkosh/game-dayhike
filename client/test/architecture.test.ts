@@ -271,16 +271,16 @@ describe("layer boundaries", () => {
     // The tier comes from the start's decision (`startupTier`), never from
     // the older rule, and the engine from the tier decided.
     expect(main).not.toContain("detectTier");
-    expect([...main.matchAll(/\bstartHike</g)].length).toBe(1);
+    expect([...main.matchAll(/\bstartSession</g)].length).toBe(1);
     // A hike's canvas carries no engine: its renderer makes its own from it, at the start and for every switch after.
-    expect(main).toContain("      engine: () => hikeCanvas(),");
-    expect(main).toContain("launch(onCanvas, route.token, decided, () => hikeCanvasNow(), opening, takeSampled);");
+    expect(main).toContain("      engine: () => sessionCanvas(),");
+    expect(main).toContain("launch(onCanvas, route.token, decided, () => sessionCanvasNow(), opening, takeSampled);");
     // The scene route is drawn by the same renderer, on a canvas of the same kind: the one other caller.
-    expect(main).toContain("      void hikeCanvas().then(");
+    expect(main).toContain("      void sessionCanvas().then(");
     expect(main).toContain("page.scene({ canvas, container, tier }, parseSceneSearch(location.search), route.name);");
-    expect([...main.matchAll(/\bhikeCanvas\(/g)].length).toBe(3);
-    // A switch or a rebuild takes its canvas at once (`hikeCanvasNow`): the start's promise is made of the same.
-    expect([...main.matchAll(/\bhikeCanvasNow\(/g)].length).toBe(3);
+    expect([...main.matchAll(/\bsessionCanvas\(/g)].length).toBe(3);
+    // A switch or a rebuild takes its canvas at once (`sessionCanvasNow`): the start's promise is made of the same.
+    expect([...main.matchAll(/\bsessionCanvasNow\(/g)].length).toBe(3);
     // Nothing of the start hangs off a promise outside the chain's catch.
     expect(main).not.toMatch(/makeWebGpu\([^)]*\)\.then\(/);
   });
@@ -313,10 +313,10 @@ describe("layer boundaries", () => {
     // What `governor.test.ts` cannot see: the page's side of the switch.
     const app = stripComments(readFileSync(at("app.ts"), "utf8"));
     const body = (from: string): string => app.slice(app.indexOf(from), app.indexOf("\n  }\n", app.indexOf(from)));
-    // The one governor a hike has comes from `governHike`, null while
+    // The one governor a hike has comes from `governSession`, null while
     // `GOVERNOR_ENABLED` is off; none is made any other way.
-    expect([...app.matchAll(/\bgovernHike\(/g)].length).toBe(1);
-    expect(app).toContain("  const governor = governHike(performance.now(), () => void lowerTier());");
+    expect([...app.matchAll(/\bgovernSession\(/g)].length).toBe(1);
+    expect(app).toContain("  const governor = governSession(performance.now(), () => void lowerTier());");
     expect(app).not.toMatch(/\bcreateGovernor\(/);
     // Without one, a frame feeds nothing, no compile is marked for it, and no
     // drop is decided, covered, timed, recorded or switched to.
@@ -356,7 +356,7 @@ describe("layer boundaries", () => {
     // No step is handed an engine.
     expect(main).not.toMatch(/\b(?:probeDeps|probeStepEngine|probeStepCanSettle|measureOnRuleEngine)\b/);
     // Nor does the page make an engine any other way: no rule is asked which or handed anything to decide by, and
-    // the only canvas it makes is a hike's (`hikeCanvas`).
+    // the only canvas it makes is a hike's (`sessionCanvas`).
     expect(main).not.toMatch(/\b(?:makeWebGpu|engineForTier|resolveWebGpu|chooseEngine|startWebGpu|loadTranslators|engineInput)\b/);
     expect(main).not.toMatch(/\bengineFor\(/);
     expect(main).not.toContain("gpuEngine");
@@ -491,7 +491,7 @@ describe("layer boundaries", () => {
     expect(main).toContain("  function settleVerdict(next: LoadVerdict): void {\n    verdict = next;\n    if (next.play) return;");
     // Every route is refused in one place, before anything of it is looked at: the page for those turned away.
     expect(main).toContain(
-      "  function render(container: HTMLDivElement): void {\n    const route = parseRoute(location.pathname);\n    if (verdict !== null && !verdict.play) {\n      hikePage.showTurnedAway(container, route, verdict);\n      return;\n    }",
+      "  function render(container: HTMLDivElement): void {\n    const route = parseRoute(location.pathname);\n    if (verdict !== null && !verdict.play) {\n      side.showTurnedAway(container, route, verdict);\n      return;\n    }",
     );
     // The page itself is Day Hike's own of the page (`hikePage.ts`), drawn in one place there and nowhere in the shell.
     expect([...readFileSync(at("hikePage.ts"), "utf8").matchAll(/\brenderTurnedAway\(/g)].length).toBe(1);
@@ -501,7 +501,7 @@ describe("layer boundaries", () => {
     const body = main.slice(main.indexOf("function render(container: HTMLDivElement): void {"), main.indexOf("\n  function launch("));
     const wait = body.indexOf("    if (!isLandingRoute(route) && signals === null) {");
     expect(wait).toBeGreaterThan(0);
-    for (const start of ["void hikeCanvas().then(", "page.scene(", "hikePage.openingFor(", "startWorldPrep(", "page.probe(container)", "void startHike<EngineOnCanvas>("]) {
+    for (const start of ["void sessionCanvas().then(", "page.scene(", "side.openingFor(", "startWorldPrep(", "page.probe(container)", "void startSession<EngineOnCanvas>("]) {
       expect(body.indexOf(start), start).toBeGreaterThan(wait);
       expect(body.lastIndexOf(start), start).toBe(body.indexOf(start));
     }
@@ -1343,9 +1343,9 @@ describe("layer boundaries", () => {
     // The page makes a canvas and nothing more, and the swap holds it as that.
     // A switch is handed its canvas at once, and one the page refuses is a throw; a start's chain takes the same canvas as a promise.
     const main = code("shell.ts");
-    expect(main).toContain('  function hikeCanvasNow(): EngineOnCanvas {\n    if (verdict !== null && !verdict.play) throw new Error(`this browser cannot draw a hike (${verdict.reason})`);\n    return { canvas: document.createElement("canvas") };\n  }');
-    expect(main).toContain("    return new Promise((resolve) => resolve(hikeCanvasNow()));");
-    expect(main).toContain("        launch(onCanvas, route.token, decided, () => hikeCanvasNow(), opening, takeSampled);");
+    expect(main).toContain('  function sessionCanvasNow(): EngineOnCanvas {\n    if (verdict !== null && !verdict.play) throw new Error(`this browser cannot draw a hike (${verdict.reason})`);\n    return { canvas: document.createElement("canvas") };\n  }');
+    expect(main).toContain("    return new Promise((resolve) => resolve(sessionCanvasNow()));");
+    expect(main).toContain("        launch(onCanvas, route.token, decided, () => sessionCanvasNow(), opening, takeSampled);");
     expect(app).toContain("  engineFor(tier: QualityTier): EngineOnCanvas;");
     const swap = code("game/rendererSwap.ts");
     expect(swap).toContain("export type EngineOnCanvas = { canvas: HTMLCanvasElement };");
