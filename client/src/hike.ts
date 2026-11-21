@@ -121,6 +121,8 @@ export type HikeHost = {
   readonly made: (undo: () => void) => void;
   readonly canvas: HTMLCanvasElement;
   readonly seed: number;
+  /** `?cmd=debug` is in the address: the hike registers its debug marker and logs interactions. */
+  readonly debugOn: boolean;
   /** The mode this world is played in, one of the hike's (`gameMode.ts`). */
   readonly mode: string;
   readonly telemetry: Telemetry | null;
@@ -1102,6 +1104,36 @@ export function createHike(h: HikeHost) {
     return true;
   }
 
+  /**
+   * The world's interactables, registered identically on the host and on a
+   * client's predicted world so both can resolve what is in reach. Nothing
+   * crosses the wire: the registry is seeded like everything else. Today that
+   * is only the debug pad marker: a lone interactable 2 m out from the
+   * pad's centre at chest height, in reach from the pad's centre when facing
+   * it. A player arrives a little off the centre, facing the trail, and
+   * walks to it.
+   */
+  function worldIn(world: World): void {
+    if (!h.debugOn) return;
+    const th = activeTerrainVariant().trailGraph?.(h.seed).trailhead;
+    if (th === undefined) return;
+    const y = elevationAt(h.seed, th.x + 2, th.z) + 0.5;
+    world.interactables.set(1, {
+      id: 1,
+      pos: { x: th.x + 2, y, z: th.z },
+      radius: 0.5,
+      kind: 0,
+      onInteract: (id) => console.info("[debug] interact by", id),
+    });
+  }
+
+  /** A session's own events, heard: under `?cmd=debug` an interaction is logged, so Interact can be proven end to end in the browser. */
+  function hears(session: { onInteracted(handler: (e: unknown) => void): void }): void {
+    session.onInteracted((e) => {
+      if (h.debugOn) console.info("[debug] interacted", e);
+    });
+  }
+
   /** The trace of where this player goes (`game/trace.ts`), made at the match's start. */
   let trace: Trace | null = null;
 
@@ -1186,6 +1218,8 @@ export function createHike(h: HikeHost) {
     // A session's start and end.
     atRest: hikeAtRest,
     hostStarted: hikeHostLooks,
+    worldIn,
+    hears,
     matchStarted,
     dispose,
     // A frame, in the order the page calls them.
@@ -1197,6 +1231,8 @@ export function createHike(h: HikeHost) {
     afterSync,
     report,
     // What the page asks of the hike's state.
+    /** How many entities a state holds, for the netgraph's row: the players and the Hollows. */
+    entities: (state: WorldState): number => state.players.size + state.enemies.size,
     /** The match is decided on this screen. */
     decided: (): boolean => ended,
     /** Play is over for this player: the match is decided, or they are dead. */

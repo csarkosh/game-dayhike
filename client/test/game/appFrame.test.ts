@@ -161,3 +161,22 @@ describe("the console's commands on a hike", () => {
   });
 });
 
+describe("the hike's own details of a session", () => {
+  it("registers what a world's players can interact with, hears the session's own events and counts its entities, where the page did", () => {
+    const page = app;
+    for (const gone of ["world.interactables.set(", ".onInteracted(", "state.enemies.size"]) expect(page, gone).not.toContain(gone);
+    // The page calls the hike at the points it did those itself: a session's world in, its events, the netgraph's row.
+    expect(page.split("hike.worldIn(").length - 1).toBe(2);
+    expect(page).toContain("    hike.worldIn(host.world);\n    activeWorld = host.world;");
+    expect(page).toContain("    hike.worldIn(client.world);\n    activeWorld = client.world;");
+    expect(page.split("hike.hears(").length - 1).toBe(2);
+    expect(page).toContain("    hike.hears(host);");
+    expect(page).toContain("    hike.hears(client);");
+    expect(page.split("entities: hike.entities(state),").length - 1).toBe(2);
+    expect(bodyOf("worldIn", hikeSrc)).toContain("world.interactables.set(1, {");
+    expect(bodyOf("worldIn", hikeSrc)).toContain("if (!h.debugOn) return;");
+    expect(bodyOf("hears", hikeSrc)).toContain('if (h.debugOn) console.info("[debug] interacted", e);');
+    expect(hikeSrc).toContain("entities: (state: WorldState): number => state.players.size + state.enemies.size,");
+  });
+});
+

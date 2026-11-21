@@ -29,7 +29,7 @@ import { DEFAULT_BOB_SCALE } from "@csarkosh/engine/game/viewBob";
 import { DEFAULT_WEATHER, WEATHER_PRESETS, type WeatherParams, type WeatherPresetName } from "@csarkosh/engine/game/weather";
 import { DEFAULT_PAINT_PALETTE, PAINT_PALETTES, type PaintPaletteName } from "@csarkosh/engine/game/gradeParams";
 import type { AtmosphereBase } from "./game/escalation.js";
-import { activeTerrainVariant, elevationAt, setActiveTerrainVariant, terrainVariantNames } from "@csarkosh/engine/sim/terrain";
+import { elevationAt, setActiveTerrainVariant, terrainVariantNames } from "@csarkosh/engine/sim/terrain";
 import { connectAsClient } from "@csarkosh/engine/net/peer";
 import { createHostAdmission, type HostAdmission } from "@csarkosh/engine/net/hostAdmission";
 import { degradeTransport, parseNetConditions } from "@csarkosh/engine/net/channels";
@@ -756,34 +756,12 @@ function buildGame(
     surfAudio.update(renderer.surfSound(), renderer.listener());
   }
 
-  /**
-   * The world's interactables, registered identically on the host and on a
-   * client's predicted world so both can resolve what is in reach. Nothing
-   * crosses the wire: the registry is seeded like everything else. Today that
-   * is only the debug pad marker: a lone interactable 2 m out from the
-   * pad's centre at chest height, in reach from the pad's centre when facing
-   * it. A player arrives a little off the centre, facing the trail, and
-   * walks to it.
-   */
-  function registerInteractables(world: World): void {
-    if (!debugOn) return;
-    const th = activeTerrainVariant().trailGraph?.(seed).trailhead;
-    if (th === undefined) return;
-    const y = elevationAt(seed, th.x + 2, th.z) + 0.5;
-    world.interactables.set(1, {
-      id: 1,
-      pos: { x: th.x + 2, y, z: th.z },
-      radius: 0.5,
-      kind: 0,
-      onInteract: (id) => console.info("[debug] interact by", id),
-    });
-  }
-
   /** The game's own half of the hike: made here, where what it adds to the page joins it. */
   const hike = game.side({
     get made() { return made; },
     get canvas() { return canvas; },
     get seed() { return seed; },
+    get debugOn() { return debugOn; },
     get mode() { return mode; },
     get telemetry() { return telemetry; },
     get renderer() { return renderer; },
@@ -1250,7 +1228,7 @@ function buildGame(
     // The host names itself: its own Named pairing only goes out to followers.
     names.set(host.localEntityId, selfPeerId);
 
-    registerInteractables(host.world);
+    hike.worldIn(host.world);
     activeWorld = host.world;
     // Under the intro's film no frame shows the signs: they are built in the task after this one,
     // out of the build's own (`extrasLater.ts`), for the renderer that stands now and only if it
@@ -1264,9 +1242,7 @@ function buildGame(
       // (which telemetry reads) says so.
       failed: (error) => console.error("The trailhead's signs could not be built.", error),
     });
-    host.onInteracted((e) => {
-      if (debugOn) console.info("[debug] interacted", e);
-    });
+    hike.hears(host);
 
     admission = createHostAdmission(host, {
       wrap,
@@ -1295,7 +1271,7 @@ function buildGame(
         rttMs: 0,
         snapshotsPerSecond: 0,
         bytesPerSecond: 0,
-        entities: state.players.size + state.enemies.size,
+        entities: hike.entities(state),
         unackedInputs: 0,
         predictionError: 0,
       });
@@ -1346,7 +1322,7 @@ function buildGame(
     matchStarted("client", client.world, () => ({ rtt: client.stats.rttMs, pe: client.stats.lastPredictionError }));
     governor?.restart(performance.now());
     hike.atRest();
-    registerInteractables(client.world);
+    hike.worldIn(client.world);
     activeWorld = client.world;
     hike.buildExtras(renderer);
     // Every peer names itself, host or follower. The host does echo a
@@ -1355,9 +1331,7 @@ function buildGame(
     names.set(client.localEntityId, selfPeerId);
     // Safe this late: `onNamed` replays the pairings already received.
     client.onNamed((e) => names.set(e.entityId, e.peerId));
-    client.onInteracted((e) => {
-      if (debugOn) console.info("[debug] interacted", e);
-    });
+    hike.hears(client);
     // Each end is explained where the player can act on it: the host's own
     // reason, or a move to another world, on the status line on the way to
     // the landing page; a different build on the panel, in plain words, with
@@ -1421,7 +1395,7 @@ function buildGame(
         rttMs: s.rttMs,
         snapshotsPerSecond: snapshotRate.perSecond(now),
         bytesPerSecond: byteRate.perSecond(now),
-        entities: state.players.size + state.enemies.size,
+        entities: hike.entities(state),
         unackedInputs: s.unackedInputs,
         predictionError: s.lastPredictionError,
       });
