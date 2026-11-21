@@ -32,7 +32,7 @@ describe("the telemetry role and the store", () => {
 
   it("serves the admin routes in the telemetry role only, however the process was given them", async () => {
     const data: AdminData = {
-      live: () => Promise.resolve({ at: 0, instances: [], rooms: [] }),
+      live: () => Promise.resolve({ at: 0, instances: [], rooms: [], playing: null }),
       query: () => Promise.resolve([]),
       lookup: () => Promise.resolve([]),
       kpis: () => Promise.reject(new Error("not asked")),

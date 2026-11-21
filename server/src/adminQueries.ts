@@ -16,12 +16,17 @@ import { readFileSync } from "node:fs";
 import { join } from "node:path";
 
 /** The queries over a range, each a card on the page (`kpis` is the index card too). */
-export const QUERY_NAMES = ["funnel", "lobbies", "progress", "errors", "health", "paths", "kpis", "visitors"] as const;
+export const QUERY_NAMES = ["funnel", "lobbies", "progress", "errors", "players", "paths", "kpis", "places"] as const;
+/** The query over csarko.sh's analytics, not this game's telemetry, so without the shared exclusion (`places.sql`). */
+export const OTHER_SOURCE_QUERIES: readonly QueryName[] = ["places"];
 export type QueryName = (typeof QUERY_NAMES)[number];
 
 /** The queries over one id: a session, a visitor (a browser) or a match (a game). */
 export const LOOKUP_NAMES = ["session", "visitor", "match"] as const;
 export type LookupName = (typeof LOOKUP_NAMES)[number];
+
+/** The query with no range and no id: the sessions heard from in the last two minutes, for the live view (`now.sql`). */
+export const NOW_QUERY = "now";
 
 export function isQueryName(name: string): name is QueryName {
   return (QUERY_NAMES as readonly string[]).includes(name);
@@ -104,6 +109,6 @@ export function queriesDir(root: string = process.cwd()): string {
   return join(root, "tools", "telemetry", "queries");
 }
 
-export function readQuery(name: QueryName | LookupName, dir: string = queriesDir()): string {
+export function readQuery(name: QueryName | LookupName | typeof NOW_QUERY, dir: string = queriesDir()): string {
   return readFileSync(join(dir, `${name}.sql`), "utf8");
 }

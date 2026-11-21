@@ -22,13 +22,13 @@ describe("the admin routes' source", () => {
   it("names the viewer's zone on every request, so every day a query reads is theirs", async () => {
     useZone("America/Los_Angeles");
     const source = remoteSource("https://telemetry.example");
-    await source.query("lobbies", 1);
+    await source.query("players", 1);
     await source.live();
     await source.session("s-1");
     await source.visitor("v-1");
     await source.match("g-1");
     expect(asked).toEqual([
-      "https://telemetry.example/admin/query/lobbies?days=1&tz=America%2FLos_Angeles",
+      "https://telemetry.example/admin/query/players?days=1&tz=America%2FLos_Angeles",
       "https://telemetry.example/admin/live?tz=America%2FLos_Angeles",
       "https://telemetry.example/admin/session/s-1?tz=America%2FLos_Angeles",
       "https://telemetry.example/admin/visitor/v-1?tz=America%2FLos_Angeles",

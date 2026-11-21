@@ -91,13 +91,14 @@ build on (older rows keep the time the batch arrived).
 | File | Answers |
 |---|---|
 | `funnel.sql` | Of the sessions that landed, how many pressed Play, started a match, and reached an outcome, and how many the load check turned away; one line `all`, and one a build. |
-| `lobbies.sql` | How many parties formed, how big they were, and how joins failed, by calendar day (New York's pasted, the viewer's on the page). |
-| `progress.sql` | One line a match: its host's session, its players, how far they got, which acts they reached, and how it ended. |
+| `lobbies.sql` | How many parties formed, how big they were, and how joins failed, by calendar day (New York's pasted, the viewer's when the route runs it). Pasted, not on the page since 2026-11-21: the page's playing-now mark says when a lobby is open. |
+| `progress.sql` | One line a match: its host's session, its players, how far they got, which acts they reached, and how it ended. Pasted, not on the page since 2026-11-21: a match's players are in the Players card and its trail in a session's. |
 | `errors.sql` | What threw, where, on which build, and how many sessions it touched, errors before warnings, with the distinct totals. |
-| `health.sql` | Load times by tier and engine, frame rates, and how sessions ended: clean, troubled, unknown, silent, or to the background. |
+| `players.sql` | One line a player over the range, everything the admin page's Players card says of one person: their sessions and days, whether they are returning (seen on more than one day in the last ninety, as `kpis.sql` counts them, whatever the range), how many played and reached an end, the farthest they climbed and how their matches ended, their load time and frame rate and worst frame, the machine they were last seen on, and where they were last placed (`place` rows, never an address). Replaced `health.sql` and `visitors.sql` on 2026-11-21. |
+| `places.sql` | Where Day Hike's visitors are, one line a city: its coordinates (to a tenth of a degree, for the page's globe), their visits and how many reached a game, from csarko.sh's analytics (lib-visits' rows in `csarko-sh.csarko_visits`), whose collector writes the country, region and city from its bundled city database and never the address. Not this dataset's, so it has no `real` exclusion of its own: it drops the collector's bots and deploy checks. |
+| `now.sql` | The sessions playing this moment: one line a session whose heartbeat was heard in the last two minutes, a solo hike among them, with its player, build, tier, how far up it is and its frame rate. No range. The admin page's playing-now mark (`GET /admin/live`). |
 | `paths.sql` | Every position sample and the route's events, one world at a time: what the admin page draws over the trail. |
 | `kpis.sql` | The index card on the shared admin host (`GET /admin/kpis`) and the page's Visitors card: sessions, matches, clean sessions, sessions with an error, visitors and returning visitors, by ISO week, for the last seven days against the seven before, and for the whole range. |
-| `visitors.sql` | One line a browser over the range: its sessions, days, matches, last build and machine, and the last session to open. |
 | `session.sql` | One session's trail: every row the page sent with its payload, and its lobby's signaling rows, ordered by `timestamp`, read over a window a day either side of the session's own span. Replace `SID`. |
 | `visitor.sql` | Every row of every session of one browser, in order, each with its session, match and lobby ids. Replace `VID`. |
 | `match.sql` | Every row of every session that was in one match, in order, the sessions side by side. Replace `GAME`. |

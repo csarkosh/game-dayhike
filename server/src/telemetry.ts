@@ -23,6 +23,7 @@
 import type { IncomingMessage, ServerResponse } from "node:http";
 import { anyIpInRanges, clientIpOf, isAllowedOrigin, type IpRange } from "./admission.js";
 import { row, type LogRow, type LogSink, type Severity } from "./log.js";
+import { PlacedSessions, type Place, type Placer } from "./place.js";
 import { TokenBucket } from "./tokenBucket.js";
 
 /** The one path. Short and plain on purpose: the request is a beacon from a
@@ -229,6 +230,17 @@ export function rowsOf(batch: Batch, meta: ReceiptMeta): LogRow[] {
   });
 }
 
+/**
+ * A session's place as its own row: the batch's envelope (its session,
+ * visitor, build and machine, so every query's exclusion reads it as it reads
+ * the session's other rows), the owner's or a preview's marks, and the
+ * country, region and city. Never the address.
+ */
+export function placeRow(batch: Batch, meta: ReceiptMeta, place: Place, at: number): LogRow {
+  const fields = { ...batch.envelope, ...meta.stamp, ...place, t: 0, at, sbuild: meta.serverBuild, svc: "telemetry" };
+  return row("INFO", "place", fields, `place: ${[place.ct, place.rg, place.cc].filter(Boolean).join(", ")}`, new Date(at).toISOString());
+}
+
 export type PostLimiterOptions = {
   /** Batches one address may send in a burst. */
   capacity?: number;
@@ -303,6 +315,12 @@ export type TelemetryRouteOptions = {
    * the errors their testing meets are kept, to be read and fixed.
    */
   ignore?: readonly IpRange[];
+  /**
+   * Places a new session's address by city (`place.ts`): the first batch of
+   * each session is followed by one `place` row with its country, region and
+   * city, never the address. Absent, nothing is placed.
+   */
+  placer?: Placer;
   now?: () => number;
   maxBatchBytes?: number;
 };
@@ -367,6 +385,7 @@ function answer(res: ServerResponse, status: number, headers: Record<string, str
 export function telemetryRoute(options: TelemetryRouteOptions): (req: IncomingMessage, res: ServerResponse, path: string) => boolean {
   const now = options.now ?? (() => Date.now());
   const maxBytes = options.maxBatchBytes ?? MAX_BATCH_BYTES;
+  const placed = new PlacedSessions();
   return (req, res, path) => {
     if (path !== TELEMETRY_PATH) return false;
     const origin = req.headers.origin;
@@ -416,6 +435,13 @@ export function telemetryRoute(options: TelemetryRouteOptions): (req: IncomingMe
       const meta: ReceiptMeta = { serverBuild: options.serverBuild, receivedAt: now(), ...(stamp ? { stamp } : {}) };
       for (const entry of rowsOf(parsed.batch, meta)) options.log(entry);
       answer(res, 204, cors);
+      // The session's place, after the answer: the page never waits on it.
+      const sid = parsed.batch.envelope.sid;
+      if (options.placer !== undefined && typeof sid === "string" && sid !== "" && placed.first(sid)) {
+        void options.placer(ip).then((place) => {
+          if (place !== null) options.log(placeRow(parsed.batch, meta, place, now()));
+        });
+      }
     });
     return true;
   };

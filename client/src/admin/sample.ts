@@ -64,85 +64,19 @@ function kpis(): Row[] {
 }
 
 /** The visitors query's rows: the browsers of the range, the most recently seen first. */
-function visitors(): Row[] {
-  const r = rng(17);
-  const rows: Row[] = [];
-  const machines = ["darwin-arm64 155", "win32-x64 141", "win32-x64 157", "linux-x64 140", "darwin-arm64 26"];
-  for (let i = 0; i < 16; i++) {
-    const sessions = i === 0 ? 11 : 1 + Math.floor(r() * 4);
-    const last = NOW - i * 5_400_000 - 300_000;
-    rows.push({
-      vid: `v${(0x7a10 + i * 0x61).toString(16)}-${(0x1000 + i).toString(16)}`,
-      sessions,
-      days: Math.min(sessions, 1 + Math.floor(r() * 3)),
-      played: Math.max(0, sessions - Math.floor(r() * 2)),
-      finished: Math.floor(sessions / 2),
-      build: i < 12 ? BUILDS[1]! : BUILDS[0]!,
-      machine: machines[i % machines.length]!,
-      last_sid: `s${(1000 + i * 37).toString(16)}`,
-      first_seen: iso(last - sessions * 3_600_000),
-      last_seen: iso(last),
-    });
-  }
-  return rows;
-}
-
-function lobbies(): Row[] {
-  const r = rng(7);
-  const rows: Row[] = [];
-  for (let i = 6; i >= 0; i--) {
-    const party = i === 0;
-    const lobbies = party ? 23 : Math.floor(r() * 4);
-    rows.push({
-      day: day(NOW - i * DAY),
-      lobbies,
-      lobbies_joined: party ? 19 : Math.min(lobbies, Math.floor(r() * 3)),
-      largest: party ? 5 : lobbies === 0 ? null : 1 + Math.floor(r() * 3),
-      median_life_min: lobbies === 0 ? null : Math.round((party ? 24 : 8 + r() * 20) * 10) / 10,
-      refused_full: party ? 3 : 0,
-      refused_stale_invite: party ? 2 : Math.floor(r() * 2),
-      refused_host_away: party ? 1 : 0,
-      hosts_lost: party ? 2 : 0,
-    });
-  }
-  return rows;
-}
-
-function progress(): Row[] {
-  const r = rng(11);
-  const rows: Row[] = [];
-  const results = ["won", "lost", "lost", "won", null] as const;
-  for (let i = 0; i < 28; i++) {
-    const farthest = Math.min(1, Math.round(Math.pow(r(), 0.6) * 1000) / 1000);
-    const chase = farthest >= 0.98;
-    const result = chase ? results[i % 4] : i % 5 === 0 ? "lost" : null;
-    const died = result === "lost" || r() < 0.2;
-    const minutes = Math.round((4 + farthest * 22 + r() * 6) * 10) / 10;
-    const started = NOW - i * 1_800_000 - 600_000;
-    const party = 1 + Math.floor(r() * 5);
-    rows.push({
-      sid: `s${(1000 + i * 37).toString(16)}`,
-      game: `g${(5000 + i * 91).toString(16)}`,
-      build: i < 22 ? BUILDS[1]! : BUILDS[0]!,
-      world: WORLD,
-      players: Math.max(1, party - (r() < 0.3 ? 1 : 0)),
-      party,
-      farthest,
-      wet: farthest >= 0.1,
-      dusk: farthest >= 0.3,
-      mist: farthest >= 0.4,
-      summit: chase,
-      chase,
-      died,
-      result: result ?? null,
-      left_by: result === null && i % 7 !== 3 ? (["end", "exit", "session_end"] as const)[i % 3]! : null,
-      minutes,
-      started_at: iso(started),
-      last_seen: iso(started + minutes * 60_000),
-    });
-  }
-  return rows;
-}
+/** The sample's places, one a player in turn, as the collector's city database names them; the last is not placed. */
+const PLACES: { city: string | null; region: string | null; country: string | null }[] = [
+  { city: "Seattle", region: "Washington", country: "US" },
+  { city: "Port Angeles", region: "Washington", country: "US" },
+  { city: "Brooklyn", region: "New York", country: "US" },
+  { city: "London", region: "England", country: "GB" },
+  { city: "Toronto", region: "Ontario", country: "CA" },
+  { city: "Berlin", region: "Land Berlin", country: "DE" },
+  { city: "Portland", region: "Oregon", country: "US" },
+  { city: null, region: null, country: null },
+];
+const placeAt = (i: number): (typeof PLACES)[number] => PLACES[i % PLACES.length]!;
+const GPUS = ["Apple M2", "ANGLE (NVIDIA, NVIDIA GeForce RTX 3060 (0x00002503) Direct3D11 vs_5_0 ps_5_0, D3D11)", "ANGLE (Intel, Intel(R) UHD Graphics 620 (0x00005917) Direct3D11 vs_5_0 ps_5_0, D3D11)", "ANGLE (AMD, AMD Radeon RX 6700 XT (radeonsi navi22 LLVM 17.0.6), OpenGL 4.6)", "Apple GPU"];
 
 function errors(): Row[] {
   // The totals are distinct over the range and the same on every row.
@@ -164,32 +98,82 @@ function errors(): Row[] {
   ];
 }
 
-function health(): Row[] {
-  const line = (build: string, tier: string, engine: string, sessions: number, played: number, ended: number, clean: number, silent: number, backgrounded: number, timing: number[]): Row => ({
-    build,
-    tier,
-    engine,
-    sessions,
-    played,
-    ended,
-    clean,
-    troubled: ended - clean,
-    unknown: sessions - ended,
-    backgrounded,
-    ended_silently: silent,
-    p50_start_ms: timing[0]!,
-    p90_start_ms: timing[1]!,
-    p50_ready_ms: timing[2]!,
-    p50_fps: timing[3]!,
-    p90_worst_frame_ms: timing[4]!,
+/**
+ * Twelve players' load times and frame rates, one a visitor of the sample's
+ * list, spread over good, slow and bad so every mark shows: most load in a few
+ * seconds and run near 60 fps, a few laptops crawl, one phone does both, and
+ * one left before the world was in.
+ */
+/**
+ * Where the sample's visitors are, as the collector's city database places them: a handful of
+ * cities, a few with one visit, and the visits from before the database, which have no place.
+ */
+/**
+ * Sixteen players, one a visitor of the sample's lists, as the Players card reads them: a third
+ * only looked, the rest played, some to an end; most load in seconds at near 60 fps, a few laptops
+ * and a phone crawl, one left before the world was in; each placed in turn, the last of the
+ * places not placed at all.
+ */
+function players(): Row[] {
+  const r = rng(17);
+  // [load ms, median fps, worst frame ms] a player; null where they never got that far.
+  const timing: [number | null, number | null, number | null][] = [
+    [7_200, 59.8, 120], [9_600, 59.1, 180], [19_900, 41.5, 520], [48_400, 24.3, 1_400], [6_900, 60, 90], [11_800, 58.2, 240],
+    [12_400, 33.0, 610], [8_800, 59.9, 110], [null, null, null], [22_600, 56.4, 300], [10_100, 27.8, 900], [7_400, 60, 100],
+    [8_100, 59.5, 140], [14_200, 52.0, 380], [9_000, 60, 120], [31_500, 45.0, 700],
+  ];
+  const machines: [string, string, string][] = [
+    ["darwin-arm64", "high", "webgpu"], ["win32-x64", "high", "webgpu"], ["win32-x64", "low", "webgpu"], ["linux-x64", "high", "webgpu"], ["darwin-arm64", "low", "webgl2"],
+  ];
+  return timing.map(([load, fps, worst], i) => {
+    const sessions = i === 0 ? 11 : 1 + Math.floor(r() * 4);
+    const days = Math.min(sessions, 1 + Math.floor(r() * 3));
+    const looked = fps === null || i % 3 === 2;
+    const played = looked ? 0 : Math.max(1, sessions - Math.floor(r() * 2));
+    const finished = looked || i % 4 === 1 ? 0 : Math.min(played, Math.floor(sessions / 2) || 1);
+    const farthest = looked ? null : finished > 0 ? (i % 5 === 0 ? 1 : 0.98) : Math.round((0.1 + r() * 0.8) * 1000) / 1000;
+    const [os, tier, engine] = machines[i % machines.length]!;
+    const last = NOW - i * 5_400_000 - 300_000;
+    return {
+      vid: `v${(0x7a10 + i * 0x61).toString(16)}-${(0x1000 + i).toString(16)}`,
+      sessions,
+      days,
+      // Returning over the last ninety days: everyone seen on two days here, and a few seen once here but on other days before.
+      returning: days > 1 || i % 5 === 3,
+      played,
+      finished,
+      farthest,
+      result: finished === 0 ? null : farthest === 1 ? "won" : "lost",
+      died: finished > 0 && farthest !== 1,
+      party: looked ? null : 1 + (i % 4),
+      load_ms: looked ? null : load,
+      fps: looked ? null : fps,
+      worst_frame_ms: looked ? null : worst,
+      build: i < 12 ? BUILDS[1]! : BUILDS[0]!,
+      os,
+      gpu: GPUS[i % GPUS.length]!,
+      tier,
+      engine,
+      ...placeAt(i),
+      first_seen: iso(last - sessions * 3_600_000),
+      last_seen: iso(last),
+    };
   });
+}
+
+function places(): Row[] {
+  const at = (h: number): string => iso(NOW - h * 3_600_000);
   return [
-    line("9557492d", "high", "webgpu", 21, 19, 19, 17, 1, 1, [2640, 4810, 6100, 59.8, 180]),
-    line("9557492d", "high", "webgl2", 14, 13, 13, 12, 0, 1, [2210, 3900, 5400, 58.9, 260]),
-    line("9557492d", "medium", "webgl2", 25, 18, 22, 20, 2, 1, [1980, 3600, 4900, 57.5, 410]),
-    line("9557492d", "low", "webgl2", 6, 4, 5, 4, 1, 0, [1720, 3100, 4200, 44.2, 900]),
-    line("5759b340", "high", "webgpu", 9, 8, 8, 7, 1, 0, [2890, 5200, 6500, 59.6, 210]),
-    line("5759b340", "medium", "webgl2", 8, 7, 8, 7, 0, 0, [2050, 3700, 5000, 56.8, 450]),
+    { city: "Seattle", region: "Washington", country: "US", lat: 47.6, lon: -122.3, visits: 9, played: 6, last_seen: at(1) },
+    { city: "Port Angeles", region: "Washington", country: "US", lat: 48.1, lon: -123.4, visits: 6, played: 5, last_seen: at(3) },
+    { city: "Brooklyn", region: "New York", country: "US", lat: 40.7, lon: -73.9, visits: 5, played: 2, last_seen: at(5) },
+    { city: "London", region: "England", country: "GB", lat: 51.5, lon: -0.1, visits: 4, played: 1, last_seen: at(9) },
+    { city: "Toronto", region: "Ontario", country: "CA", lat: 43.7, lon: -79.4, visits: 3, played: 2, last_seen: at(14) },
+    { city: "Berlin", region: "Land Berlin", country: "DE", lat: 52.5, lon: 13.4, visits: 3, played: 0, last_seen: at(20) },
+    { city: "Portland", region: "Oregon", country: "US", lat: 45.5, lon: -122.7, visits: 2, played: 2, last_seen: at(26) },
+    { city: "Sydney", region: "New South Wales", country: "AU", lat: -33.9, lon: 151.2, visits: 1, played: 1, last_seen: at(31) },
+    { city: "São Paulo", region: "São Paulo", country: "BR", lat: -23.5, lon: -46.6, visits: 1, played: 0, last_seen: at(40) },
+    { city: null, region: null, country: null, lat: null, lon: null, visits: 7, played: 4, last_seen: at(60) },
   ];
 }
 
@@ -310,6 +294,11 @@ function live(): Live {
       { id: "3f2504e0-4f89-41d3-9a0c-0305e82c3301", hostId: "h-a1", createdAt: at - 14 * 60_000, hostDroppedAt: null, peers: 4 },
       { id: "9a0c0305-e82c-4330-8f25-04e04f8941d3", hostId: "h-b7", createdAt: at - 3 * 60_000, hostDroppedAt: null, peers: 2 },
       { id: "c1d2e3f4-1111-4222-8333-444444444444", hostId: "h-c2", createdAt: at - 41 * 60_000, hostDroppedAt: at - 20_000, peers: 1 },
+    ],
+    // Two hikes heard from just now: the four-player lobby's host, and a solo hike, which opens no lobby.
+    playing: [
+      { sid: "s7a10", vid: "v7a10-1000", build: "9557492d", tier: "high", p: 0.42, fps: 59.6, heard_at: iso(at - 12_000) },
+      { sid: "s41b2", vid: "v7b32-1002", build: "9557492d", tier: "low", p: 0.08, fps: 38.2, heard_at: iso(at - 25_000) },
     ],
   };
 }
@@ -508,10 +497,10 @@ export type TrailFor = (world: string, seed: number) => Promise<DrawableTrail | 
 export function sampleSource(trailFor: TrailFor = (world, seed) => Promise.resolve(buildTrailFor(world, seed))): Source {
   let pathRows: Promise<Row[]> | null = null;
   const tables: Record<QueryName, () => Row[] | Promise<Row[]>> = {
-    funnel, lobbies, progress, errors, health, kpis, visitors,
+    funnel, places, errors, players, kpis,
     paths: () => (pathRows ??= trailFor(WORLD, SEED).then(paths)),
   };
-  const dated: Partial<Record<QueryName, string>> = { lobbies: "day", progress: "started_at", errors: "last_seen", funnel: "last_seen", visitors: "last_seen" };
+  const dated: Partial<Record<QueryName, string>> = { players: "last_seen", places: "last_seen", errors: "last_seen", funnel: "last_seen" };
   return {
     kind: "sample",
     query: async (name, range) => {

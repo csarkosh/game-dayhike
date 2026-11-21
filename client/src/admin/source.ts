@@ -16,13 +16,15 @@ export type Range = 1 | 7 | 30 | 90;
 
 export type Row = Record<string, string | number | boolean | null>;
 
-export type QueryName = "funnel" | "lobbies" | "progress" | "errors" | "health" | "paths" | "kpis" | "visitors";
+export type QueryName = "funnel" | "places" | "errors" | "players" | "paths" | "kpis";
 
 /** What the signaling registry holds right now (`server/src/sharedRegistry.ts`). */
 export type Live = {
   at: number;
   instances: { id: string; seenAt: number }[];
   rooms: { id: string; hostId: string; createdAt: number; hostDroppedAt: number | null; peers: number }[];
+  /** The sessions heard from in the last two minutes, a solo hike among them (`now.sql`); null when that read failed. */
+  playing: Row[] | null;
 };
 
 export interface Source {

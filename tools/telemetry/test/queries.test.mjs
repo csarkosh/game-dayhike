@@ -19,7 +19,8 @@ describe('telemetry queries', () => {
     it(`${name} reads the bucket's view and explains itself`, () => {
       const sql = readFileSync(`${dir}${name}`, 'utf8');
       expect(sql.startsWith('--')).toBe(true);
-      expect(sql).toContain('`fps-csarko.global.dayhike-telemetry._AllLogs`');
+      // places.sql reads csarko.sh's analytics instead, where the game's pages report their visits.
+      expect(sql).toContain(name === 'places.sql' ? '`csarko-sh.csarko_visits._AllLogs`' : '`fps-csarko.global.dayhike-telemetry._AllLogs`');
       if (sql.includes("= 'telemetry'")) expect(sql).toContain("!= 'verify'");
     });
   }

@@ -8,11 +8,12 @@ describe('checkQueries', () => {
     const seen = [];
     const problems = await checkQueries(queries, 'p', 'd', async (sql, params) => {
       seen.push({ sql, params });
-      if (sql.includes('WITH real AS')) return;
+      // The queries over a range: the telemetry's, and the places, over csarko.sh's analytics.
+      if (sql.includes('WITH real AS') || sql.includes('csarko_visits')) return;
       throw new Error(`Syntax error at [1:1]`);
     });
     for (const { sql } of seen) {
-      expect(sql).toContain('`p.d._AllLogs`');
+      expect(sql).toContain(sql.includes('csarko_visits') ? '`csarko-sh.csarko_visits._AllLogs`' : '`p.d._AllLogs`');
       expect(sql).not.toContain('global.dayhike-telemetry');
       expect(sql).not.toContain('-- range');
       expect(sql).not.toContain('America/New_York');

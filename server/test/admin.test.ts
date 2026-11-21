@@ -4,7 +4,7 @@ import { fileURLToPath } from "node:url";
 import { exportJWK, generateKeyPair, SignJWT, type JWK } from "jose";
 import { createLocalJWKSet } from "jose";
 import { createAdminAuth, parseAllowlist } from "../src/adminAuth.js";
-import { forBigQuery, LOOKUP_NAMES, QUERY_NAMES, readQuery, zoneOf } from "../src/adminQueries.js";
+import { forBigQuery, LOOKUP_NAMES, OTHER_SOURCE_QUERIES, QUERY_NAMES, readQuery, zoneOf } from "../src/adminQueries.js";
 import type { AdminData, LiveView } from "../src/admin.js";
 import { plain } from "../src/adminData.js";
 import { shapeKpis } from "../src/adminKpis.js";
@@ -75,7 +75,9 @@ describe("the saved queries for BigQuery", () => {
   it("rename the table, parameterise the range and the zone, and turn each lookup's placeholder into its parameter", () => {
     for (const name of QUERY_NAMES) {
       const out = forBigQuery(readQuery(name, QUERIES), "fps-csarko", "dayhike_telemetry");
-      expect(out.sql).toContain("`fps-csarko.dayhike_telemetry._AllLogs`");
+      // The places read csarko.sh's analytics by their full name, which the rewrite leaves alone.
+      if (OTHER_SOURCE_QUERIES.includes(name)) expect(out.sql).toContain("`csarko-sh.csarko_visits._AllLogs`");
+      else expect(out.sql).toContain("`fps-csarko.dayhike_telemetry._AllLogs`");
       expect(out.sql).not.toContain("global.dayhike-telemetry");
       expect(out.sql).toContain("INTERVAL @days DAY), @tz)");
       expect(out.sql).not.toContain("-- range");
@@ -104,7 +106,7 @@ describe("the saved queries for BigQuery", () => {
     expect(first).toContain("IFNULL(JSON_VALUE(json_payload.ua), '') NOT LIKE '%HeadlessChrome%'");
     expect(first).toContain("IFNULL(JSON_VALUE(json_payload.wd), '') != 'true'");
     expect(first).toContain("JSON_VALUE(json_payload.n) = 'cmd'");
-    for (const name of QUERY_NAMES) expect(block(readQuery(name, QUERIES)), `${name}.sql's exclusion differs`).toBe(first);
+    for (const name of QUERY_NAMES.filter((n) => !OTHER_SOURCE_QUERIES.includes(n))) expect(block(readQuery(name, QUERIES)), `${name}.sql's exclusion differs`).toBe(first);
   });
 
   it("are written in New York calendar days, so a pasted query's one day is today there", () => {
@@ -153,7 +155,7 @@ describe("plain", () => {
 describe("the admin routes", () => {
   let server: SignalingServer;
   let base: string;
-  const live: LiveView = { at: 1, instances: [{ id: "i1", seenAt: 1 }], rooms: [{ id: "r1", hostId: "h", createdAt: 0, hostDroppedAt: null, peers: 2 }] };
+  const live: LiveView = { at: 1, instances: [{ id: "i1", seenAt: 1 }], rooms: [{ id: "r1", hostId: "h", createdAt: 0, hostDroppedAt: null, peers: 2 }], playing: [{ sid: "s1", vid: "v1", build: "b", tier: "high", p: 0.4, fps: 60, heard_at: "2026-11-21T10:00:00Z" }] };
   const asked: string[] = [];
   const kpis = shapeKpis([{ kind: "window", period: "current", week_start: null, sessions: 3, matches: 2, ended: 2, clean: 2, erred: 0 }], 1, Date.UTC(2026, 9, 12));
   const data: AdminData = {

@@ -6,6 +6,7 @@ import { FirestoreStore } from "./firestoreStore.js";
 import { SharedRegistry } from "./sharedRegistry.js";
 import { createAdminAuth, parseAllowlist } from "./adminAuth.js";
 import { createAdminData } from "./adminData.js";
+import { createPlacer } from "./place.js";
 
 const PORT = Number(process.env.PORT ?? 8080);
 
@@ -68,6 +69,13 @@ try {
   process.exit(1);
 }
 
+// Where a new session's address is placed by city: csarko.sh's analytics
+// collector's place route and its token (`place.ts`). Without both, no
+// session is placed; the address never leaves for anywhere else.
+const PLACE_URL = process.env.PLACE_URL ?? "";
+const PLACE_TOKEN = process.env.PLACE_TOKEN ?? "";
+const placer = PLACE_URL !== "" && PLACE_TOKEN !== "" ? createPlacer({ url: PLACE_URL, token: PLACE_TOKEN }) : null;
+
 // A failed promise nobody awaited is logged, not fatal: the rooms are in the
 // store, so a restart buys nothing a log line does not, and a service that
 // scales from zero should not be made to start again for one refused call.
@@ -85,6 +93,7 @@ const server = createSignalingServer(PORT, {
   role: ROLE,
   serverBuild: BUILD_SHA,
   ignoreIps,
+  ...(placer !== null ? { placer } : {}),
   ...(store !== null && ROLE !== "telemetry" ? { registry: (o) => new SharedRegistry(store, { ...o, instance: INSTANCE }) } : {}),
   ...(ADMIN
     ? {
@@ -97,6 +106,7 @@ const server = createSignalingServer(PORT, {
 });
 console.log(`allowing origins: ${allowedOrigins.join(", ")}`);
 if (ignoreIps.length > 0) console.log(`ignoring telemetry from ${ignoreIps.length} address range(s)`);
+if (placer !== null) console.log("placing each new session by city through the analytics collector");
 const serving = [ROLE !== "telemetry" ? `signaling on ${SIGNALING_PATH}` : null, ROLE !== "signaling" ? `telemetry on ${TELEMETRY_PATH}` : null]
   .filter((line) => line !== null)
   .join(", ");
