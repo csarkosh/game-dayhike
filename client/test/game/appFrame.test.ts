@@ -78,3 +78,32 @@ describe("a session's start", () => {
     expect(calls(app, "hikeAtRest")).toBe(2);
   });
 });
+
+describe("the hike's own hands on a session", () => {
+  it("installs the host's looks in a function of the hike's, where the host's session is made", () => {
+    const looks = bodyOf("hikeHostLooks");
+    for (const hand of ["summitPreview = () => {", "standAt = (x, z, yaw) => {", "setLamp = (on) => {", "escapeLook = () => {", "escapeStep = () => {"]) {
+      expect(looks, hand).toContain(hand);
+      expect(bodyOf("runAsHost"), hand).not.toContain(hand);
+    }
+    expect(bodyOf("runAsHost")).toMatch(/peaceful: calm,\n    \}\);\n    hikeHostLooks\(host\);\n    session = host;/);
+  });
+
+  it("puts what the hike reports of a match back at rest in a function of the hike's, when a match starts", () => {
+    const rest = bodyOf("hikeReportAtRest");
+    for (const line of ["actsReported = 0;", "lastPhase = Phase.Climb;", "hollowSeen = false;", "lastTargets = null;"]) expect(rest, line).toContain(line);
+    expect(bodyOf("matchStarted")).toMatch(/if \(telemetry === null\) return;\n    hikeReportAtRest\(\);/);
+    expect(bodyOf("matchStarted")).not.toContain("hollowSeen");
+  });
+
+  it("lets go of the hike's panels, timers and extras in a function of the hike's, when the page lets go of the hike", () => {
+    const gone = bodyOf("disposeHike");
+    const order = ["posterPanel.dispose();", "clearTimeout(deathFadeTimer)", "clearTimeout(deathSoundTimer)", "clearTimeout(endFadeTimer)", "for (const timer of endBeatTimers) clearTimeout(timer);", "disposeExtras();", "prompt.dispose();"];
+    const places = order.map((line) => gone.indexOf(line));
+    expect(places.every((at) => at >= 0)).toBe(true);
+    expect(places).toEqual([...places].sort((a, b) => a - b));
+    expect(app).toMatch(/connectPanel\.dispose\(\);\n      disposeHike\(\);\n      touchLayer\.dispose\(\);\n      input\.dispose\(\);/);
+    expect(app.split("clearTimeout(deathFadeTimer)").length - 1).toBeLessThanOrEqual(app.split("deathFadeTimer !== null) clearTimeout(deathFadeTimer)").length - 1);
+  });
+});
+

@@ -37,7 +37,9 @@ describe("the signs and the body of a hike the film covers", () => {
     expect(dispose).toContain("    extrasToCome?.cancel();\n    extrasToCome = null;");
     // The swap's bindings and the handle's dispose both go through it.
     expect(src).toContain("    extras: { dispose: disposeExtras, build: buildExtras },");
-    expect(src.slice(src.lastIndexOf("    dispose() {\n      disposed = true;"))).toContain("disposeExtras();");
+    // The handle's dispose lets go of the hike's own through one function of the hike's (`disposeHike`), which goes through it.
+    expect(src.slice(src.lastIndexOf("    dispose() {\n      disposed = true;"))).toContain("disposeHike();");
+    expect(slice("  function disposeHike(): void {", "  /**\n   * The hike as a session starts it")).toContain("    disposeExtras();");
   });
 
   it("are a follower's as they were: built in its own continuation, once its world is in", () => {

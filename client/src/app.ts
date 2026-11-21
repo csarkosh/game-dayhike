@@ -67,7 +67,7 @@ import {
   terrainVariantNames,
 } from "@csarkosh/engine/sim/terrain";
 import { connectAsClient } from "@csarkosh/engine/net/peer";
-import { createHostSession } from "./net/hostSession.js";
+import { createHostSession, type HostSession } from "./net/hostSession.js";
 import { createHostAdmission, type HostAdmission } from "@csarkosh/engine/net/hostAdmission";
 import { createClientSession } from "./net/clientSession.js";
 import { degradeTransport, parseNetConditions } from "@csarkosh/engine/net/channels";
@@ -2005,12 +2005,9 @@ function buildGame(
    */
   function matchStarted(role: "host" | "client", world: World, stats: () => { rtt: number; pe: number }): void {
     if (telemetry === null) return;
-    actsReported = 0;
-    lastPhase = Phase.Climb;
+    hikeReportAtRest();
     worstFrameMs = 0;
     stalls = 0;
-    hollowSeen = false;
-    lastTargets = null;
     // The trace names places as the sign posts do, never under the missing
     // hiker's own first name (`placeNames`).
     const graph = world.trail;
@@ -2096,6 +2093,25 @@ function buildGame(
     for (const lift of [...onSessionOver]) lift();
   }
 
+  /** What the hike reports of a match as one starts: no act reported, the climb, no Hollow seen, no targets yet. */
+  function hikeReportAtRest(): void {
+    actsReported = 0;
+    lastPhase = Phase.Climb;
+    hollowSeen = false;
+    lastTargets = null;
+  }
+
+  /** The hike's own going with the page's: its panels, its timers, its signs and body, its prompt. */
+  function disposeHike(): void {
+    posterPanel.dispose();
+    if (deathFadeTimer !== null) clearTimeout(deathFadeTimer);
+    if (deathSoundTimer !== null) clearTimeout(deathSoundTimer);
+    if (endFadeTimer !== null) clearTimeout(endFadeTimer);
+    for (const timer of endBeatTimers) clearTimeout(timer);
+    disposeExtras();
+    prompt.dispose();
+  }
+
   /**
    * The hike as a session starts it, the host's and a follower's alike: the
    * acts, the woods and the inner voice at rest, no cap dropped, no chase
@@ -2113,72 +2129,12 @@ function buildGame(
     woodsSounds = woodsSoundsFrom(seed ^ (Date.now() | 0));
   }
 
-  /** A session a frame is stepped and drawn for: the host's or a follower's. */
-  type Live = { readonly world: World; readonly localEntityId: number; tick(cmd: InputCommand): void };
-
   /**
-   * A frame's ticks, the host's and a follower's alike: each tick's command
-   * sampled, filtered by the hike (held still in a scene, run to the car,
-   * taken by the crowd) and handed to the session. Returns the last command,
-   * or null for a frame with no tick.
+   * The hike's hands on the host's own player, installed with the host's
+   * session: the console's looks (`summit`, `stand`, `lamp`, `escape`) and
+   * the `escape` look's step before a frame's ticks. A follower has none.
    */
-  function stepTicks(live: Live, ticks: number): InputCommand | null {
-    let cmd: InputCommand | null = null;
-    for (let i = 0; i < ticks; i++) {
-      const me = live.world.state.players.get(live.localEntityId);
-      cmd = taken(ranToCar(stilled(input.sample(++seq), me, live.world), me));
-      if (i === ticks - 1) eyeBefore = me === undefined ? null : capturedEye(me, eyeBeforeScratch);
-      live.tick(cmd);
-    }
-    return cmd;
-  }
-
-  /**
-   * A frame after its ticks, the host's and a follower's alike, from the state
-   * it draws (the host's own, a follower's blended one). The order is the
-   * hike's: what the renderer's sync reads is stepped before it, the world's
-   * sound after it, then the hike's own reading of the frame, then the draw.
-   */
-  function frame(live: Live, state: WorldState, cmd: InputCommand | null, dt: number): void {
-    const self = state.players.get(live.localEntityId);
-    syncWayLight(live.world, dt);
-    syncCrowd(live.world, state, live.localEntityId, dt);
-    syncWayDraw(live.world, state);
-    syncAtmosphere(live.world, state, live.localEntityId, dt);
-    renderer.sync(state, live.localEntityId, accumulator.alpha, { dt, sprinting: input.sprinting, before: eyeBefore });
-    playWildlifeAudio();
-    syncWind();
-    syncDrip();
-    syncWaterLife();
-    syncSurf();
-    syncTouch(self?.lamp.on ?? false);
-    syncPrompt(live.world, self);
-    if (cmd !== null) syncPoster(live.world, self, cmd);
-    syncRoadLine(self, state);
-    syncDeath(self, state, live.world);
-    syncOutcome(state, live.localEntityId);
-    syncEndScene();
-    syncTelemetry(live.world, state, self, input.sprinting);
-    // True exactly when `sync` took its player-following branch, which is
-    // the only case in which `renderer.cameraPosition()` is an eye position
-    // a pending freecam can adopt.
-    cameraOnPlayer = self !== undefined && freecam === null;
-    drawHike();
-  }
-
-  /**
-   * Hosting covers solo play too: a host session with zero peers is exactly a
-   * local game, so the only difference a lobby makes is whether offers are
-   * answered — and the lobby can arrive at any time.
-   */
-  function runAsHost(): void {
-    // `hostPeerId` stamps the host's own Named pairing, so a follower can
-    // match it against the lobby.
-    const host = createHostSession(level, seed, () => performance.now(), {
-      forest,
-      hostPeerId: selfPeerId,
-      peaceful: calm,
-    });
+  function hikeHostLooks(host: HostSession): void {
     summitPreview = () => {
       const me = host.world.state.players.get(host.localEntityId);
       const body = host.world.search?.body.pos;
@@ -2259,6 +2215,75 @@ function buildGame(
       wasChase = true;
       if (world.state.phase === Phase.Climb) world.state.phase = Phase.Chase;
     };
+  }
+
+  /** A session a frame is stepped and drawn for: the host's or a follower's. */
+  type Live = { readonly world: World; readonly localEntityId: number; tick(cmd: InputCommand): void };
+
+  /**
+   * A frame's ticks, the host's and a follower's alike: each tick's command
+   * sampled, filtered by the hike (held still in a scene, run to the car,
+   * taken by the crowd) and handed to the session. Returns the last command,
+   * or null for a frame with no tick.
+   */
+  function stepTicks(live: Live, ticks: number): InputCommand | null {
+    let cmd: InputCommand | null = null;
+    for (let i = 0; i < ticks; i++) {
+      const me = live.world.state.players.get(live.localEntityId);
+      cmd = taken(ranToCar(stilled(input.sample(++seq), me, live.world), me));
+      if (i === ticks - 1) eyeBefore = me === undefined ? null : capturedEye(me, eyeBeforeScratch);
+      live.tick(cmd);
+    }
+    return cmd;
+  }
+
+  /**
+   * A frame after its ticks, the host's and a follower's alike, from the state
+   * it draws (the host's own, a follower's blended one). The order is the
+   * hike's: what the renderer's sync reads is stepped before it, the world's
+   * sound after it, then the hike's own reading of the frame, then the draw.
+   */
+  function frame(live: Live, state: WorldState, cmd: InputCommand | null, dt: number): void {
+    const self = state.players.get(live.localEntityId);
+    syncWayLight(live.world, dt);
+    syncCrowd(live.world, state, live.localEntityId, dt);
+    syncWayDraw(live.world, state);
+    syncAtmosphere(live.world, state, live.localEntityId, dt);
+    renderer.sync(state, live.localEntityId, accumulator.alpha, { dt, sprinting: input.sprinting, before: eyeBefore });
+    playWildlifeAudio();
+    syncWind();
+    syncDrip();
+    syncWaterLife();
+    syncSurf();
+    syncTouch(self?.lamp.on ?? false);
+    syncPrompt(live.world, self);
+    if (cmd !== null) syncPoster(live.world, self, cmd);
+    syncRoadLine(self, state);
+    syncDeath(self, state, live.world);
+    syncOutcome(state, live.localEntityId);
+    syncEndScene();
+    syncTelemetry(live.world, state, self, input.sprinting);
+    // True exactly when `sync` took its player-following branch, which is
+    // the only case in which `renderer.cameraPosition()` is an eye position
+    // a pending freecam can adopt.
+    cameraOnPlayer = self !== undefined && freecam === null;
+    drawHike();
+  }
+
+  /**
+   * Hosting covers solo play too: a host session with zero peers is exactly a
+   * local game, so the only difference a lobby makes is whether offers are
+   * answered — and the lobby can arrive at any time.
+   */
+  function runAsHost(): void {
+    // `hostPeerId` stamps the host's own Named pairing, so a follower can
+    // match it against the lobby.
+    const host = createHostSession(level, seed, () => performance.now(), {
+      forest,
+      hostPeerId: selfPeerId,
+      peaceful: calm,
+    });
+    hikeHostLooks(host);
     session = host;
     matchStarted("host", host.world, () => ({ rtt: 0, pe: 0 }));
     governor?.restart(performance.now());
@@ -2905,14 +2930,8 @@ function buildGame(
       bar.dispose();
       menu.dispose();
       connectPanel.dispose();
-      posterPanel.dispose();
-      if (deathFadeTimer !== null) clearTimeout(deathFadeTimer);
-      if (deathSoundTimer !== null) clearTimeout(deathSoundTimer);
-      if (endFadeTimer !== null) clearTimeout(endFadeTimer);
-      for (const timer of endBeatTimers) clearTimeout(timer);
-      disposeExtras();
+      disposeHike();
       touchLayer.dispose();
-      prompt.dispose();
       input.dispose();
       if (!broken) {
         unwatchCompiles?.();
