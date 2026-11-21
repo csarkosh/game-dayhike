@@ -7,6 +7,7 @@ import {
   splitEntries,
 } from "../../src/game/script.js";
 import { registerTerrainVariants } from "../../src/game/commands.js";
+import "../../src/game/hikeCommands.js";
 
 beforeEach(() => registerTerrainVariants(["montane"]));
 

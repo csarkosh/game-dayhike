@@ -100,7 +100,7 @@ describe("the renderer and the app", () => {
   const app = readFileSync(clientFile("src/app.ts"), "utf8");
   // The crowd's own half of the frame is the hike's (`hike.ts`, where a variable of `app.ts` is written `h.<name>`); `app.ts` calls it as `hike.<name>`.
   const hike = readFileSync(clientFile("src/hike.ts"), "utf8");
-  const commands = readFileSync(clientFile("src/game/commands.ts"), "utf8");
+  const commands = readFileSync(clientFile("src/game/hikeCommands.ts"), "utf8");
 
   it("the app steps this screen's crowd every frame on the host and on a client, before the renderer's own sync", () => {
     expect(app).toContain("    hike.syncCrowd(live.world, state, live.localEntityId, dt);\n    hike.syncWayDraw(live.world, state);");

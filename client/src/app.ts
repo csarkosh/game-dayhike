@@ -18,6 +18,7 @@ import { navigateToLanding } from "@csarkosh/engine/game/router";
 import { createCommandBar } from "@csarkosh/engine/game/commandBar";
 import { createPauseMenu, createPlayGate } from "./game/pauseMenu.js";
 import { findCommand, parseCommandLine, registerTerrainVariants, resolveTypedArgs, validateCommand } from "./game/commands.js";
+import "./game/hikeCommands.js";
 import { lastEntry, parseScript, serialiseScript, setEntry, splitEntries, type ScriptEntry } from "./game/script.js";
 import { aimAt, stepFreecam, type FreecamState } from "@csarkosh/engine/game/freecam";
 import { DEFAULT_HOUR, sunAltitudeDeg } from "@csarkosh/engine/game/skyWait";

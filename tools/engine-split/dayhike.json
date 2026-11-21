@@ -3,6 +3,7 @@
   "dayhike": [
     "app.ts",
     "main.ts",
+    "game/hikeCommands.ts",
     "admin/*",
     "sim/acts.ts",
     "sim/ai.ts",

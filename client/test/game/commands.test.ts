@@ -6,9 +6,12 @@ import {
   validateCommand,
   findCommand,
   registerTerrainVariants,
+  registerCommands,
   RETIRED_COMMANDS,
 } from "../../src/game/commands.js";
+import { HIKE_COMMANDS } from "../../src/game/hikeCommands.js";
 import { parseScript } from "../../src/game/script.js";
+import { sourceText } from "../helpers/source.js";
 
 describe("parseCommandLine", () => {
   it("splits a name from its arguments", () => {
@@ -382,5 +385,27 @@ describe("/wind", () => {
     expect(spec?.scriptValue?.([])).toBe(false);
     expect(spec?.scriptValue?.(["25"])).toBe(25);
     expect(spec?.defaultValue).toBe(false);
+  });
+});
+
+describe("a game's own commands", () => {
+  const HIKE_NAMES = ["mode", "end", "summit", "escape", "stand", "escalation", "mist", "way", "crowd", "lamp"];
+
+  it("are found only once registered, and the engine's are found either way", () => {
+    registerCommands([]);
+    try {
+      for (const name of HIKE_NAMES) expect(findCommand(name)).toBeUndefined();
+      expect(findCommand("weather")).toBeDefined();
+    } finally {
+      registerCommands(HIKE_COMMANDS);
+    }
+    for (const name of HIKE_NAMES) expect(findCommand(name)?.name).toBe(name);
+    expect(HIKE_COMMANDS.map((s) => s.name)).toEqual(HIKE_NAMES);
+    expect(findCommand("weather")).toBeDefined();
+  });
+
+  it("keeps commands.ts free of the game's modes and the app registering the hike's", () => {
+    expect(sourceText("game/commands.ts")).not.toContain("gameMode");
+    expect(sourceText("app.ts")).toContain('import "./game/hikeCommands.js";');
   });
 });
