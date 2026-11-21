@@ -1,4 +1,5 @@
 import { describe, it, expect } from "vitest";
+import "../../src/sim/passes/index.js";
 import {
   trailCorridorD, segmentDistance, segmentSegmentDistanceSq, buildProfile, profileAt,
   TRAIL_BED_HALF, TRAIL_CORRIDOR_HALF, TRAIL_TUNABLES, TRAIL_EDGE_MIN_GAP, TRAIL_PROFILE_STEP, TRAIL_PROFILE_SMOOTH,

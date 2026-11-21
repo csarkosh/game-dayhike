@@ -1,4 +1,5 @@
 import { describe, it, expect, beforeAll } from "vitest";
+import "../../src/sim/passes/index.js";
 import "@csarkosh/engine/sim/olympic";
 import { elevationAt, setActiveTerrainVariant } from "@csarkosh/engine/sim/terrain";
 import { BED_GRID, LAKE_SURFACE_REACH, createBedGrid, bedOriginFor, bedNeedsRebake, bakeBed, beginBake, bakeRows, bedSquareHasWater, bedOutsideSquare } from "@csarkosh/engine/game/bedHeight";

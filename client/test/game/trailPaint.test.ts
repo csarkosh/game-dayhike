@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import "../../src/sim/passes/index.js";
 import {
   TRAIL_PAINT_BUCKET, TRAIL_PAINT_BUCKET_MAX, TRAIL_PAINT_MAX_SEGMENTS, TRAIL_PAINT_GRID,
   TRAIL_PAINT_INDEX_ROW, TRAIL_PAINT_TABLE_ROWS,

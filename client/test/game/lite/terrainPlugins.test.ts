@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import "../../../src/sim/passes/index.js";
 import { ATMOSPHERE_PRIORITY } from "../../../src/game/lite/atmospherePlugin.js";
 import {
   TERRAIN_ARRAY_TEXTURES, TERRAIN_FIELDS, TERRAIN_TEXTURE_ORDER, TERRAIN_VERTEX_FLOATS, TERRAIN_VERTEX_LAYOUT, TERRAIN_WET_FIELDS,

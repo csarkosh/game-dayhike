@@ -1,4 +1,5 @@
 import { describe, it, expect, afterEach } from "vitest";
+import "../../src/sim/passes/index.js";
 import "@csarkosh/engine/sim/montane";
 import {
   activeTerrainVariantName,

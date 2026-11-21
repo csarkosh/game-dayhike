@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import "../../src/sim/passes/index.js";
 import {
   PANORAMA_EYE_UP, PANORAMA_HEIGHT, PANORAMA_HEIGHT_M, PANORAMA_SECTORS, PANORAMA_SECTOR_WIDTH, PANORAMA_WIDTH, TURN_HOLD, TURN_IDLE, createPanoramaArming,
   createPanoramaTurn, panoramaFrustum, sectorYaw,

@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import "../../src/sim/passes/index.js";
 import {
   SILENT_SURF_SOUND, SURF_ENVELOPE_S, SURF_EVENTS, SURF_RANGE_M, createSurfSound, fillSurfSound, type SurfSound,
 } from "@csarkosh/engine/game/surfSound";

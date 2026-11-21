@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import "../../src/sim/passes/index.js";
 import {
   CULL_MARGIN, CULL_MOVE, CULL_PUSHBACK, CULL_RADIUS, CULL_ROLL, CULL_TURN,
   cullInvalidate, cullPlanes, cullPrefix, cullSet, needsCull, viewPlanes, type CullPose,

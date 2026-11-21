@@ -1,4 +1,5 @@
 import { describe, it, expect } from "vitest";
+import "../../src/sim/passes/index.js";
 import "@csarkosh/engine/sim/olympic";
 import { COVE_END_BLEND, coveFor, coveProfileD, shoreProfileD } from "@csarkosh/engine/sim/olympic";
 import { activeTerrainVariant } from "@csarkosh/engine/sim/terrain";

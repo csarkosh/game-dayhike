@@ -1,4 +1,5 @@
 import { describe, it, expect } from "vitest";
+import "../../src/sim/passes/index.js";
 import { COVE_FACE_GRADE, COVE_TOE_DEPTH, coveFor } from "@csarkosh/engine/sim/olympic";
 import {
   boreArrivals, coastRead, oceanFieldFor, oceanFieldFromState, swellAt, swellPhases, type OceanField,

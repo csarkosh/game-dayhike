@@ -1,4 +1,5 @@
 import { beforeAll, describe, expect, it } from "vitest";
+import "../../src/sim/passes/index.js";
 import {
   ROCK_CAP_SHARE, ROCK_CUTS, ROCK_DEPTH, ROCK_PLANES,
   rockPlaneCandidates, rockPlanes, rockRelief, type RockArrays, type RockPlane,

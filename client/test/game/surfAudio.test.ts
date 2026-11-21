@@ -1,4 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
+import "../../src/sim/passes/index.js";
 import type { VoiceSource } from "../../src/game/ambientAudio.js";
 import {
   SURF_BACKWASH_VOICES, SURF_BED_HOLD_S, SURF_BED_LOOP_S, SURF_CANOPY_LOWPASS, SURF_GAIN_STEP, SURF_LEVEL,

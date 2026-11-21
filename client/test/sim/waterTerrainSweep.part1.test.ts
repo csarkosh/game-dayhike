@@ -1,4 +1,5 @@
 import { describe, it } from "vitest";
+import "../../src/sim/passes/index.js";
 import { WATER_CHECKS, WATER_PARTS } from "./waterTerrainSweep.js";
 import { timeLimit } from "../helpers/timeLimit.js";
 

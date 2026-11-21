@@ -1,4 +1,5 @@
 import { describe, it, expect } from "vitest";
+import "../../src/sim/passes/index.js";
 import "@csarkosh/engine/sim/olympic";
 import { coveFor } from "@csarkosh/engine/sim/olympic";
 import { elevationAt } from "@csarkosh/engine/sim/terrain";

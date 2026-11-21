@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import "../../src/sim/passes/index.js";
 import "@csarkosh/engine/sim/olympic";
 import { coveFor } from "@csarkosh/engine/sim/olympic";
 import { setActiveTerrainVariant } from "@csarkosh/engine/sim/terrain";

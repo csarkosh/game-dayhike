@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import "../../src/sim/passes/index.js";
 import { lakeGroundD, LAKE_SILL } from "@csarkosh/engine/sim/features";
 import { valleyLakeShape, type LakeShape } from "@csarkosh/engine/sim/lakeShape";
 import { LOBBY_SEEDS } from "./trailGateSeeds.js";

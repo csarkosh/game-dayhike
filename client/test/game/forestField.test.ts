@@ -1,4 +1,5 @@
 import { describe, it, expect } from "vitest";
+import "../../src/sim/passes/index.js";
 import "@csarkosh/engine/sim/olympic";
 import { setActiveTerrainVariant } from "@csarkosh/engine/sim/terrain";
 import { runBySlices } from "../helpers/sliceRun.js";

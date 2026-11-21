@@ -1,4 +1,5 @@
 import { describe, it, expect } from "vitest";
+import "../../src/sim/passes/index.js";
 import "@csarkosh/engine/sim/olympic";
 import { setActiveTerrainVariant, DEFAULT_TERRAIN_VARIANT, terrainVariant } from "@csarkosh/engine/sim/terrain";
 import { roadFrameAt } from "@csarkosh/engine/sim/olympic";

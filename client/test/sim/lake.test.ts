@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import "../../src/sim/passes/index.js";
 import "@csarkosh/engine/sim/olympic";
 import { bowlFor } from "../../src/sim/mountain.js";
 import { featureStageD, marshWeightAt, lobePoints, MARSH_AMP, MARSH_MURK_MIN } from "@csarkosh/engine/sim/features";

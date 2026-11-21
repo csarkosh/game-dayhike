@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import "../../src/sim/passes/index.js";
 import {
   FADE_END, FADE_START, LAYER_F0, LAYER_ROUGHNESS, TEXTURE_MEAN, TILING_METRES,
   TERRAIN_SURFACE, emptyTerrainUniforms, terrainCoverFor, terrainSurfaceUnder, terrainUniforms, type TerrainUniformInputs,

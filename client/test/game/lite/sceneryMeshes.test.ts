@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { readFileSync } from "node:fs";
+import "../../../src/sim/passes/index.js";
 import type { Renderer } from "../../../src/game/rendererTypes.js";
 import { cameraAxes, restAxes, restPlanes, viewPlanes, type CameraPose } from "@csarkosh/engine/game/lite/cameraPose";
 import {

@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import "../../../src/sim/passes/index.js";
 import { babylonText } from "../../helpers/babylonFixture.js";
 import { FRAME_BLOCK, stageClocks, stageOwn, stageReads } from "../../../src/game/lite/frameBlock.js";
 import { SPLASH_FRAME_READS, SPLASH_WGSL } from "../../../src/game/lite/rainSplash.js";

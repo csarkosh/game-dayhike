@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import "../../src/sim/passes/index.js";
 import { MAX_PLAYERS } from "@csarkosh/engine/sim/constants";
 import {
   HEAD_ROW0, MIDGE_AMPS, MIDGE_BLOCK_MAX, MIDGE_SWARMS_MAX, MIDGE_TIER_MAX, SWARM_ROW_FLOATS,

@@ -1,4 +1,5 @@
 import { describe, it, expect } from "vitest";
+import "../../src/sim/passes/index.js";
 import { lakeOf } from "../sim/helpers/lakes.js";
 import {
   SAPLING_MODEL_HEIGHT, SKYLINE_CROWN, SKYLINE_EYE_UP, SKYLINE_REACH, SKYLINE_RIM_DIRECTIONS, SKYLINE_RIM_MARGIN, SKYLINE_RIM_STEP,

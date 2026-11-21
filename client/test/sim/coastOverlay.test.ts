@@ -1,4 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
+import "../../src/sim/passes/index.js";
 import { elevationSampleAt, terrainVariant } from "@csarkosh/engine/sim/terrain";
 import type { CoastOverlay } from "@csarkosh/engine/sim/olympic";
 
@@ -6,7 +7,7 @@ import type { CoastOverlay } from "@csarkosh/engine/sim/olympic";
  * The coast as the engine has it, with no place laid over it or with one of a test's own: what
  * a second game starts from. Each world here is a sim of its own, as another thread's is, since
  * a thread registers the coast once; the world every other test sees is Day Hike's, the coast
- * with the mountain on it (`test/helpers/dayhikeWorld.ts`).
+ * with the mountain on it (the import of `sim/passes/index.js` below).
  */
 async function coastWith(place: CoastOverlay | null) {
   vi.resetModules();

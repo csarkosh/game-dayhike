@@ -1,5 +1,6 @@
 import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
+import "../../../src/sim/passes/index.js";
 import { SHADE_BLUR, SHADE_DARK, SHADE_MONSTER_DARK } from "../../../src/game/postFrame.js";
 import { GRADE_SHADE_BLOCK, GRADE_STARE_BLOCK, VEIL_GAMMA } from "../../../src/game/shadeVeilParams.js";
 import { SHADE_BLOCK_WGSL, STARE_BLOCK_WGSL, gradeWgsl } from "@csarkosh/engine/game/lite/postWgsl";

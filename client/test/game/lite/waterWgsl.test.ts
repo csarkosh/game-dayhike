@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import "../../../src/sim/passes/index.js";
 import { SKYLINE_TEXELS } from "@csarkosh/engine/game/lakeSkyline";
 import { PANORAMA_EYE_UP, PANORAMA_HEIGHT_M } from "@csarkosh/engine/game/panoramaTurn";
 import {

@@ -1,3 +1,4 @@
+import "../../src/sim/passes/index.js";
 import type { FadeBands } from "@csarkosh/engine/game/distanceFade";
 import { describe, expect, it } from "vitest";
 import "@csarkosh/engine/sim/olympic";

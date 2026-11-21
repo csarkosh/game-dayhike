@@ -1,4 +1,5 @@
 import { describe, it, expect, vi } from "vitest";
+import "../../src/sim/passes/index.js";
 import {
   GOVERNOR_IDLE_MAX_MS, GOVERNOR_LIMIT_MS, GOVERNOR_LINE_MS, GOVERNOR_START_MS, GOVERNOR_STALL_MS, GOVERNOR_WINDOW_MS, GOVERNOR_WINDOWS,
   GOVERNOR_ENABLED, actOnDrop, createGovernor, governHike, governorDecision, governorLine, steadyFrame, type DropDeps, type Governor,

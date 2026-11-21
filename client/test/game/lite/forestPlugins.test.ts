@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { MaterialPlugin, PluginUniformBlock } from "@babylonjs/lite";
+import "../../../src/sim/passes/index.js";
 import { BLADE_SOFT } from "@csarkosh/engine/game/bladeClump";
 import { CLIFF_GROUND_TINT } from "@csarkosh/engine/game/cliffInstances";
 import { bladeTierBands } from "@csarkosh/engine/game/bladeField";

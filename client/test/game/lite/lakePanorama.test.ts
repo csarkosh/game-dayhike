@@ -2,6 +2,7 @@ import type { PluginUniformBlock } from "@babylonjs/lite";
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
+import "../../../src/sim/passes/index.js";
 import { FRAME_BLOCK, inFrameBlock } from "../../../src/game/lite/frameBlock.js";
 import { PANORAMA_FORMAT, PANORAMA_GROUND_WGSL, panoramaGroundPlugin } from "../../../src/game/lite/lakePanorama.js";
 import { REFLECTED_RINGS } from "../../../src/game/lite/terrainMeshes.js";

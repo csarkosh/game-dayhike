@@ -6,6 +6,7 @@
  * plunges from the swell's sum.
  */
 import { describe, it, expect } from "vitest";
+import "../../src/sim/passes/index.js";
 import "@csarkosh/engine/sim/olympic";
 import { setActiveTerrainVariant } from "@csarkosh/engine/sim/terrain";
 import { COVE_FACE_GRADE, COVE_TOE_DEPTH, coveFor } from "@csarkosh/engine/sim/olympic";

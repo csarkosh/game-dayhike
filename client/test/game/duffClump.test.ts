@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import "../../src/sim/passes/index.js";
 import {
   DUFF_ALBEDO, DUFF_BRANCH, DUFF_CHARACTERS, DUFF_CHARACTER_COUNT, DUFF_CLUMP_RADIUS, DUFF_HEIGHT_MAX, DUFF_LEAF, DUFF_TIER_COUNTS, DUFF_TWIG,
   DUFF_VERTEX_BUDGET,

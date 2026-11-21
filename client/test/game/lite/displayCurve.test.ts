@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import "../../../src/sim/passes/index.js";
 import { babylonText } from "../../helpers/babylonFixture.js";
 import { DISPLAY_CURVE_WGSL, DISPLAY_ENCODE_WGSL, DISPLAY_SHOWN_WGSL, GRADE_BLOCK, LINEAR_COLOUR_WGSL, MATERIAL_GRADE_WGSL, onColourPath } from "@csarkosh/engine/game/lite/displayCurve";
 import { FRAME_BLOCK, inFrameBlock } from "../../../src/game/lite/frameBlock.js";

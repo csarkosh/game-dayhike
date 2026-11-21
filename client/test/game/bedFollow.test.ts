@@ -1,4 +1,5 @@
 import { beforeAll, describe, expect, it } from "vitest";
+import "../../src/sim/passes/index.js";
 import "@csarkosh/engine/sim/olympic";
 import { setActiveTerrainVariant } from "@csarkosh/engine/sim/terrain";
 import { BED_ROWS_PER_FRAME, createBedFollow } from "@csarkosh/engine/game/bedFollow";

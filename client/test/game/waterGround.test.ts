@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import "../../src/sim/passes/index.js";
 import "@csarkosh/engine/sim/olympic";
 import { activeTerrainVariant, elevationAt } from "@csarkosh/engine/sim/terrain";
 import { lobePoints, marshWeightAt } from "@csarkosh/engine/sim/features";

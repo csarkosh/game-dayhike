@@ -1,4 +1,5 @@
 import { describe, it, expect } from "vitest";
+import "../../src/sim/passes/index.js";
 import { COVE_END_BLEND } from "@csarkosh/engine/sim/olympic";
 import { LIP_COLUMNS, LIP_PROFILE_VERTS, LIP_RANGE_M, LIP_SLOTS } from "@csarkosh/engine/game/oceanBreaker";
 import { LIP_COARSE_M, LIP_FINE_M, closeFreeSlots, lipColumns, lipNear, lipReach, lipStripGeometry } from "@csarkosh/engine/game/lipStrip";

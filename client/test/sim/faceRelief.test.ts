@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import "../../src/sim/passes/index.js";
 import * as relief from "@csarkosh/engine/sim/faceRelief";
 import {
   cellularD, cellularSite, faceKindD, faceReliefD, groundReliefD, groundPatchD, FACE_RELIEF_TUNABLES,

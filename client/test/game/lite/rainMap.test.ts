@@ -1,5 +1,6 @@
 import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
+import "../../../src/sim/passes/index.js";
 import { RAIN_MAP_RINGS, RAIN_MAP_WGSL, rainMapPlugin } from "../../../src/game/lite/rainMap.js";
 import { TERRAIN_VERTEX_FLOATS, TERRAIN_VERTEX_LAYOUT } from "../../../src/game/lite/terrainPlugins.js";
 import { rainMapTexel } from "@csarkosh/engine/game/rainCover";

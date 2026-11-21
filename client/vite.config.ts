@@ -90,9 +90,6 @@ export default defineConfig({
   test: {
     environment: "node",
     include: ["test/**/*.test.ts"],
-    // Every test file starts with Day Hike's world registered, as every thread of the game does
-    // (`src/sim/passes/index.ts`): the engine's modules register no terrain of their own.
-    setupFiles: ["test/helpers/dayhikeWorld.ts"],
     // vitest's own defaults (5 s a test, 10 s a hook), scaled like every
     // explicit limit. Only under vitest, which sets VITEST before it loads this
     // file: `vite dev` and `vite build` load it too, and must not read or

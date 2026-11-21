@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { createHash } from "node:crypto";
 import { readFileSync } from "node:fs";
+import "../../../src/sim/passes/index.js";
 import environmentBrdf from "../../../src/game/lite/environmentBrdf.png?inline";
 import { SKY_CAPTURE_BYTES, SKY_CAPTURE_WGSL, faceValues, skyCaptureValues } from "../../../src/game/lite/skyCapture.js";
 import { SKY_RADIANCE_WGSL } from "../../../src/game/lite/skyDome.js";

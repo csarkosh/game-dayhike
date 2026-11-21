@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import "../../src/sim/passes/index.js";
 import { WATER_ROWS, lakeWaterRow, roughnessFor } from "@csarkosh/engine/game/waterShading";
 import {
   LAKE_BUMP_DRIFT, WATER_ROUGHNESS_STEP, advanceWater, createBumpDrift, createWaterSurface, emptyLakeUniforms, emptyWaterFrameUniforms,

@@ -1,4 +1,5 @@
 import { describe, it, expect } from "vitest";
+import "../../src/sim/passes/index.js";
 import { stepMovement, wishDirection, type MoveState } from "@csarkosh/engine/sim/movement";
 import type { Aabb } from "@csarkosh/engine/sim/level";
 import type { InputCommand } from "../../src/sim/types.js";

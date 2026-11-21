@@ -1,5 +1,6 @@
 // client/test/sim/dense.test.ts
 import { describe, expect, it } from "vitest";
+import "../../src/sim/passes/index.js";
 import "@csarkosh/engine/sim/montane";
 import { TREELINE_LO } from "@csarkosh/engine/sim/vegetation";
 import { variantOrThrow } from "./helpers/derivatives.js";

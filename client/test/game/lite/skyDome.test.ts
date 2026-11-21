@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import "../../../src/sim/passes/index.js";
 import { FRAME_BLOCK, stageOwn, stageReads } from "../../../src/game/lite/frameBlock.js";
 import { SKY_DOME_WGSL, SKY_FRAME_READS, SKY_RADIANCE_WGSL, SKY_TABLE_BYTES } from "../../../src/game/lite/skyDome.js";
 import { emptySkyDomeUniforms } from "@csarkosh/engine/game/skyDomeParams";

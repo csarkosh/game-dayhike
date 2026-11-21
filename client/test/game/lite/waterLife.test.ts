@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import "../../../src/sim/passes/index.js";
 import { emptyDragonflyList, fillDragonflyList } from "@csarkosh/engine/game/dragonflyShapes";
 import type { Dragonflies } from "@csarkosh/engine/game/dragonflyBehaviour";
 import { sphereInPlanes } from "@csarkosh/engine/game/lakeSeen";

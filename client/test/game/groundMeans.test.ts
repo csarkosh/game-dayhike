@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import { fileURLToPath } from "node:url";
 import sharp from "sharp";
 
+import "../../src/sim/passes/index.js";
 import { LAYER_MEAN_RGB, layerMeanInverse } from "@csarkosh/engine/game/terrainUniforms";
 
 /**

@@ -1,4 +1,5 @@
 import { describe, it, expect } from "vitest";
+import "../../src/sim/passes/index.js";
 import { LIP_SPEED_MAX, LIP_SPEED_MIN, type LipTracker } from "@csarkosh/engine/game/oceanBreaker";
 import { WIND_SEA_U_PER_WIND } from "@csarkosh/engine/game/oceanWindSea";
 import {

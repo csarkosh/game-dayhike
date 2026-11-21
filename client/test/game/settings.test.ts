@@ -1,4 +1,5 @@
 import { describe, it, expect, afterEach, vi } from "vitest";
+import "../../src/sim/passes/index.js";
 import { CAUTION_LIVE, TIER_CHOICES, listOpen, renderSettings, settingsModel, type SettingsInput } from "../../src/game/settings.js";
 import { autoPick } from "@csarkosh/engine/game/frameProbe";
 import type { GpuSignals } from "@csarkosh/engine/game/gpuSignals";

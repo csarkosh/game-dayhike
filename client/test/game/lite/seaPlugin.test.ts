@@ -1,5 +1,6 @@
 import type { PluginTextureBinding, PluginUniformBlock, Texture2D } from "@babylonjs/lite";
 import { describe, expect, it } from "vitest";
+import "../../../src/sim/passes/index.js";
 import { ATMOSPHERE_PRIORITY } from "../../../src/game/lite/atmospherePlugin.js";
 import { FRAME_BLOCK, FRAME_FIELDS, SEA_RINGS_NAME, inFrameBlock } from "../../../src/game/lite/frameBlock.js";
 import { WATER_PRIORITY } from "../../../src/game/lite/lakePlugin.js";

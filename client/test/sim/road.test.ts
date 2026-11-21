@@ -1,4 +1,5 @@
 import { describe, it, expect } from "vitest";
+import "../../src/sim/passes/index.js";
 import {
   ROAD_LATTICE, ROAD_BED_HALF, ROAD_CORRIDOR_HALF,
   roadOffsetD, gradeSplineD, corridorD,

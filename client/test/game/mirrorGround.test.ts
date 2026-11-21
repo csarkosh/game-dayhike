@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import "../../src/sim/passes/index.js";
 import { MIRROR_CANOPY_SHADE, mirrorGroundColour } from "@csarkosh/engine/game/mirrorGround";
 import { NEEDLE_BED } from "@csarkosh/engine/game/terrainSurface";
 import { WEATHER_PRESETS, ambientCollapseUnder } from "@csarkosh/engine/game/weather";

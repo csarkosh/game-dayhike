@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import "../../src/sim/passes/index.js";
 import "@csarkosh/engine/sim/olympic";
 import {
   coveFor, coveProfileD, COVE_WIDTH_MIN, COVE_WIDTH_MAX, COVE_FACE_GRADE, COVE_BED_GRADE, COVE_CREST,

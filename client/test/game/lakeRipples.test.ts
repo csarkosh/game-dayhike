@@ -1,5 +1,6 @@
 // client/test/game/lakeRipples.test.ts
 import { describe, it, expect } from "vitest";
+import "../../src/sim/passes/index.js";
 import {
   PAW_FEATURE_M, PAW_SPEED, PAW_EDGE_M, PAW_LIFE_S, PAW_GUST_FLOOR, PAW_COVER_TABLE, OCTAVE_FLOOR,
   LAKE_RING_REACH, LAKE_RING_FADE_M, LAKE_RING_CELL, LAKE_RING_SPEED, LAKE_RING_LAMBDA, LAKE_RING_TAU, LAKE_RING_AMP,

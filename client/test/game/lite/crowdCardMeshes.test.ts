@@ -1,5 +1,6 @@
 import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
+import "../../../src/sim/passes/index.js";
 import { CROWD_CARD_WGSL, CROWD_PASS } from "../../../src/game/lite/crowdCardMeshes.js";
 import { CROWD_CARD_WIDE } from "../../../src/game/crowdCards.js";
 import { tight } from "./wgslText.js";

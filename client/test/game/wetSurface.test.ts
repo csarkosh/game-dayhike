@@ -1,4 +1,5 @@
 import { afterEach, describe, expect, it } from "vitest";
+import "../../src/sim/passes/index.js";
 import {
   WET_BAND, WET_COVE_END, WET_DRY_S, WET_LINE_ABOVE, WET_NO_COVE, WET_RADIUS_MAX, WET_SPECKLE, WET_SPECKLE_S, WET_SWASH_VECS,
   emptyWetUniforms, setWetCove, setWetSwash, setWetWeather, wetBelowLine, wetBodyIsSea, wetLineFor, wetLookAt, wetUniforms,

@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import "../../../src/sim/passes/index.js";
 import { HOLE_CELLS } from "@csarkosh/engine/game/clipmap";
 import {
   SEA_ALBEDO_WGSL, SEA_BUMP_WGSL, SEA_COMPOSE_WGSL, SEA_LIP_SHAPE_WGSL, SEA_LIP_VERTEX_WGSL, SEA_RAIN_WGSL, SEA_VERTEX_WGSL, seaLightsWgsl, seaRestVertexWgsl,

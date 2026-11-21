@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import "../../src/sim/passes/index.js";
 import "@csarkosh/engine/sim/olympic";
 import { lakeOf } from "../sim/helpers/lakes.js";
 import type { Dragonflies } from "@csarkosh/engine/game/dragonflyBehaviour";

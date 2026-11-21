@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
+import "../../src/sim/passes/index.js";
 import {
   createWildlifeAudio, listenerToAudio, CALL_CLIP, CALL_RANGE,
 } from "../../src/game/wildlifeAudio.js";

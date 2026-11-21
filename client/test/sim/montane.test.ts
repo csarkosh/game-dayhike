@@ -1,4 +1,5 @@
 import { describe, it, expect } from "vitest";
+import "../../src/sim/passes/index.js";
 import "@csarkosh/engine/sim/montane";
 import { PEAK_HEIGHT, MONTANE_TUNABLES } from "@csarkosh/engine/sim/montane";
 import { terrainVariant } from "@csarkosh/engine/sim/terrain";

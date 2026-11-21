@@ -1,4 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
+import "../../src/sim/passes/index.js";
 import { pageProbe, type StepMeasure } from "@csarkosh/engine/game/probePage";
 import type { ProbeReading } from "@csarkosh/engine/game/quality";
 import { createSkyTable } from "@csarkosh/engine/game/skyTable";

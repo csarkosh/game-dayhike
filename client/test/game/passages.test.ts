@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import "../../src/sim/passes/index.js";
 import {
   DEATH_FADE_AFTER_MS, DEATH_LINE, DEATH_SOUND_FADE_S, DEATH_TITLE, WON_LINE, WON_TITLE, ROAD_LINE_U, atRoadWall,
 } from "../../src/game/passages.js";

@@ -1,4 +1,5 @@
 import { describe, it, expect } from "vitest";
+import "../../src/sim/passes/index.js";
 import type { Rgb } from "@csarkosh/engine/game/colour";
 import {
   classifySurface,

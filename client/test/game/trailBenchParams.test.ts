@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import "../../src/sim/passes/index.js";
 import { valueNoise2, macroNoise, MACRO_WAVE, MACRO_WEIGHT } from "@csarkosh/engine/game/groundHexParams";
 import { luma } from "@csarkosh/engine/game/colour";
 import { NEEDLE_BED } from "@csarkosh/engine/game/terrainSurface";

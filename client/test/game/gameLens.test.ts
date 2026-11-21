@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import "../../src/sim/passes/index.js";
 import { GAME_FOV, LENS_FAR, LENS_NEAR, lensProjection } from "@csarkosh/engine/game/gameLens";
 import { RING_CELLS, RING_COUNT, ringSpacing } from "@csarkosh/engine/game/clipmap";
 

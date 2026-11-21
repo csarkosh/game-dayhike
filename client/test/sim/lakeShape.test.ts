@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import "../../src/sim/passes/index.js";
 import {
   LAKE_DIRECTIONS, apronAt, apronWidthFor, apronWidths, fitApron, harmonicPair, harmonicSum, lakeApronEnd, lakeBound,
   lakeDepthD, lakeOutline, lakeShoreInto, lakeWobble, measureLake, newLakeShore, quantile3, rayToShore, shoelace,

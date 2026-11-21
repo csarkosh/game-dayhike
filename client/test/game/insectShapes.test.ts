@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import "../../src/sim/passes/index.js";
 import type { Dragonflies } from "@csarkosh/engine/game/dragonflyBehaviour";
 import {
   DRAGONFLY_COLOURS, DRAGONFLY_DRAWN_SCALE, DRAGONFLY_WING_AMP, dragonflyGeometry, dragonflyHalfSpan, emptyDragonflyList, fillDragonflyList,

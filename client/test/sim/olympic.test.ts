@@ -1,5 +1,6 @@
 import { describe, it, expect } from "vitest";
 import { readFileSync } from "node:fs";
+import "../../src/sim/passes/index.js";
 import "@csarkosh/engine/sim/olympic";
 import { denseSample } from "@csarkosh/engine/sim/montane";
 import { fbm2d } from "@csarkosh/engine/sim/field";

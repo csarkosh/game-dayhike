@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import "../../src/sim/passes/index.js";
 import { AiState, Outcome, Phase, type EnemyState, type PlayerState, type WorldState } from "../../src/sim/types.js";
 import { createWildlifeInputs } from "../../src/game/wildlifeInputs.js";
 import type { WildlifeEvent } from "@csarkosh/engine/game/wildlifeBehaviour";

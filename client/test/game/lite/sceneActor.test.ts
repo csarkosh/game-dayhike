@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { readFileSync } from "node:fs";
+import "../../../src/sim/passes/index.js";
 import { REST_BONES_APART, floatsApart } from "../../../src/game/lite/sceneActor.js";
 import { CORD_COLOUR, CORD_ROUGHNESS } from "../../../src/game/lite/sceneryMeshes.js";
 import { babylonText } from "../../helpers/babylonFixture.js";

@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import "../../src/sim/passes/index.js";
 import { GRADIENT_MID_STEP, atmosphereUnder, fogGradientAt } from "../../src/game/atmosphereParams.js";
 import {
   MIST_CAP_BY_TIER, MIST_DRIFT, MIST_EDGE_FADE_SPAN, MIST_INSTANCE_FLOATS, MIST_NEAR_FADE_SPAN, MIST_NEAR_FADE_START, MIST_SHOWN_FLOOR, MIST_WRAP_FADE,

@@ -1,5 +1,6 @@
 import { setThinInstanceCount, setThinInstances, type Mesh } from "@babylonjs/lite";
 import { describe, expect, it } from "vitest";
+import "../../../src/sim/passes/index.js";
 import type { ListBuffers } from "@csarkosh/engine/game/instanceLists";
 import { createFrameUploads } from "@csarkosh/engine/game/lite/frameUploads";
 import { KEPT_INSTANCES, MATRIX_BYTES, listBytes, sameFloats, showList, writeListData, type ListMesh } from "../../../src/game/lite/listMeshes.js";

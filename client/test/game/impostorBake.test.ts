@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import "../../src/sim/passes/index.js";
 import {
   IMPOSTOR_BAKE_FAIL_MS, IMPOSTOR_BAKE_SIZE, IMPOSTOR_BAKE_WARN_MS, SNAG_BAKE_ROLL, bakePoseMatrix, impostorBakeFrame, impostorName, posedBounds,
 } from "@csarkosh/engine/game/impostorBake";

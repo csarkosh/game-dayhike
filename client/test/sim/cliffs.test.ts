@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import "../../src/sim/passes/index.js";
 import {
   CLIFF_ALT_HI, CLIFF_BENCH, CLIFF_OUT_ALT_HI, CLIFF_OUT_ALT_LO, CLIFF_PERIOD,
   cliffD, cliffMaskD,
