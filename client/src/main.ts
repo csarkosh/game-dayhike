@@ -67,7 +67,7 @@ import {
   type StartupTier,
 } from "@csarkosh/engine/game/frameProbe";
 import { createHud } from "./game/hud.js";
-import { createModeKeeper, type GameMode } from "./game/gameMode.js";
+import { HIKE_MODES, createModeKeeper, isGameMode, type GameMode } from "./game/gameMode.js";
 import { createMuteButton, readMuted, writeMuted } from "./game/muteButton.js";
 import { containerPixels, withGovernorDrop, type QualityTier, type VerdictEngine } from "@csarkosh/engine/game/quality";
 import type { AutoSummary } from "./game/settings.js";
@@ -839,6 +839,7 @@ function landingInput(over: Partial<LandingInput> = {}): LandingInput {
       stored: choiceStored(),
       notice: choiceNotice ?? undefined,
       mode: currentMode(),
+      modes: HIKE_MODES,
     },
     notice: landingNotice ?? undefined,
     ...over,
@@ -1166,6 +1167,8 @@ function render(container: HTMLDivElement): void {
           repaintLanding();
         },
         onChooseMode: (mode) => {
+          // A value that is not one of the hike's modes is ignored.
+          if (!isGameMode(mode)) return;
           saveMode(mode);
           repaintLanding();
         },

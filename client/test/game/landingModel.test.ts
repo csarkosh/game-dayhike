@@ -1,4 +1,5 @@
 import { describe, it, expect } from "vitest";
+import { HIKE_MODES } from "../../src/game/gameMode.js";
 import {
   DOWNLOADS_UNAVAILABLE,
   FIRST_OPEN_NOTE,
@@ -153,7 +154,7 @@ describe("the Settings entry", () => {
   it("paints the player's choice and Auto's pick on the Settings page", () => {
     const view = landingModel({
       desktop: false, host: "darwin-arm64", latest: null,
-      quality: { choice: "low", auto: { tier: "medium", probePending: false }, override: null, stored: true },
+      quality: { choice: "low", auto: { tier: "medium", probePending: false }, override: null, stored: true, modes: HIKE_MODES },
     });
     expect(view.settingsPage.choices.map((c) => c.selected)).toEqual([false, false, false, true]);
     expect(view.settingsPage.lines).toEqual(["Auto picks Medium on this computer."]);

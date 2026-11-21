@@ -3,6 +3,9 @@ import "../../src/sim/passes/index.js";
 import { CAUTION_LIVE, TIER_CHOICES, listOpen, renderSettings, settingsModel, type SettingsInput } from "../../src/game/settings.js";
 import { autoPick } from "@csarkosh/engine/game/frameProbe";
 import type { GpuSignals } from "@csarkosh/engine/game/gpuSignals";
+import { HIKE_MODES } from "../../src/game/gameMode.js";
+import type { ModeList } from "../../src/game/modeList.js";
+import { sourceText } from "../helpers/source.js";
 import { renderLanding } from "../../src/game/landing.js";
 import { landingModel } from "../../src/game/landingModel.js";
 import type { TierChoice } from "@csarkosh/engine/game/tierChoice";
@@ -25,7 +28,7 @@ describe("settingsModel", () => {
   it("offers Auto first, then High, Medium and Low, and names what Auto picked", () => {
     expect(TIER_CHOICES).toEqual(["auto", "high", "medium", "low"]);
     expect(
-      settingsModel({ context: "title", choice: "auto", auto: { tier: "medium", probePending: false }, override: null, stored: true }),
+      settingsModel({ modes: HIKE_MODES, context: "title", choice: "auto", auto: { tier: "medium", probePending: false }, override: null, stored: true }),
     ).toEqual({
       heading: "Settings",
       group: "Graphics",
@@ -37,14 +40,14 @@ describe("settingsModel", () => {
   });
 
   it("says when Auto will test the machine, and says nothing of Auto before the signals land", () => {
-    const pending = settingsModel({ context: "title", choice: "high", auto: { tier: "medium", probePending: true }, override: null, stored: true });
+    const pending = settingsModel({ modes: HIKE_MODES, context: "title", choice: "high", auto: { tier: "medium", probePending: true }, override: null, stored: true });
     expect(pending.choices).toEqual(CHOICES("high"));
     expect(pending.lines).toEqual(["Auto tests this computer when your next hike starts."]);
-    expect(settingsModel({ context: "title", choice: "auto", auto: null, override: null, stored: true }).lines).toEqual([]);
+    expect(settingsModel({ modes: HIKE_MODES, context: "title", choice: "auto", auto: null, override: null, stored: true }).lines).toEqual([]);
   });
 
   it("puts the override first and the storage line last", () => {
-    const v = settingsModel({ context: "title", choice: "low", auto: { tier: "high", probePending: false }, override: "high", stored: false });
+    const v = settingsModel({ modes: HIKE_MODES, context: "title", choice: "low", auto: { tier: "high", probePending: false }, override: "high", stored: false });
     expect(v.lines).toEqual([
       "The address sets High (?tier=high), which overrides this setting.",
       "Auto picks High on this computer.",
@@ -53,13 +56,13 @@ describe("settingsModel", () => {
   });
 
   it("on the pause screen, names the tier the hike is running on", () => {
-    const v = settingsModel({ context: "pause", choice: "auto", auto: { tier: "medium", probePending: false }, running: "high", override: null, stored: true });
+    const v = settingsModel({ modes: HIKE_MODES, context: "pause", choice: "auto", auto: { tier: "medium", probePending: false }, running: "high", override: null, stored: true });
     expect(v.lines).toEqual(["Auto picks Medium on this computer.", "This hike is using High."]);
   });
 
   it("says a switch that failed, after the other lines", () => {
     const v = settingsModel({
-      context: "pause", choice: "high", selectionTier: "high", auto: null, running: "medium", override: null, stored: false,
+      modes: HIKE_MODES, context: "pause", choice: "high", selectionTier: "high", auto: null, running: "medium", override: null, stored: false,
       error: "Could not switch; still using Medium.",
     });
     expect(v.lines).toEqual([
@@ -78,18 +81,18 @@ describe("settingsModel", () => {
     const caption = (stepSettles: boolean) => {
       const pick = autoPick(firefox, { record: null, pixels: 2_073_600, now: 1_790_000_000_000, stepSettles });
       const auto = { tier: pick.tier, probePending: pick.probeFrom !== null, ceiling: pick.ceiling };
-      return settingsModel({ context: "title", choice: "auto", auto, override: null, stored: true }).lines;
+      return settingsModel({ modes: HIKE_MODES, context: "title", choice: "auto", auto, override: null, stored: true }).lines;
     };
     expect(caption(false)).toEqual(["Auto picks Medium on this computer."]);
     expect(caption(true)).toEqual(["Auto tests this computer when your next hike starts."]);
   });
 
   it("has no Apply on the title screen, where a choice is kept as it is picked", () => {
-    expect(settingsModel({ context: "title", choice: "high", auto: null, override: null, stored: true }).apply).toBe(undefined);
+    expect(settingsModel({ modes: HIKE_MODES, context: "title", choice: "high", auto: null, override: null, stored: true }).apply).toBe(undefined);
   });
 
   it("on the pause screen, offers Apply only for a selection that changes the running tier", () => {
-    const base = { context: "pause" as const, auto: { tier: "medium" as const, probePending: false }, running: "medium" as const, override: null, stored: true };
+    const base = { modes: HIKE_MODES, context: "pause" as const, auto: { tier: "medium" as const, probePending: false }, running: "medium" as const, override: null, stored: true };
     expect(settingsModel({ ...base, choice: "low", selectionTier: "low" }).apply).toEqual({ label: "Apply", disabled: false });
     expect(settingsModel({ ...base, choice: "medium", selectionTier: "medium" }).apply).toEqual({ label: "Apply", disabled: true });
     expect(settingsModel({ ...base, choice: "auto", selectionTier: "medium" }).apply).toEqual({ label: "Apply", disabled: true });
@@ -102,7 +105,7 @@ describe("settingsModel", () => {
   });
 
   it("while applying, reads Applying… and holds every control", () => {
-    const v = settingsModel({ context: "pause", choice: "high", selectionTier: "high", auto: null, running: "medium", override: null, stored: true, applying: true });
+    const v = settingsModel({ modes: HIKE_MODES, context: "pause", choice: "high", selectionTier: "high", auto: null, running: "medium", override: null, stored: true, applying: true });
     expect(v.apply).toEqual({ label: "Applying…", disabled: true });
     expect(v.back).toEqual({ label: "Back", disabled: true });
     expect(v.choices.every((c) => c.disabled)).toBe(true);
@@ -113,24 +116,24 @@ describe("a choice above what this computer is recommended", () => {
   const auto = { tier: "medium" as const, probePending: false, ceiling: "medium" as const };
 
   it("is honoured, with one quiet line under the choices", () => {
-    const high = settingsModel({ context: "title", choice: "high", auto, override: null, stored: true });
+    const high = settingsModel({ modes: HIKE_MODES, context: "title", choice: "high", auto, override: null, stored: true });
     expect(high.choices.find((c) => c.selected)!.choice).toBe("high");
     expect(high.caution).toBe("Higher than recommended for this computer.");
-    const paused = settingsModel({ context: "pause", choice: "high", selectionTier: "high", auto, running: "medium", override: null, stored: true });
+    const paused = settingsModel({ modes: HIKE_MODES, context: "pause", choice: "high", selectionTier: "high", auto, running: "medium", override: null, stored: true });
     expect(paused.caution).toBe("Higher than recommended for this computer.");
   });
 
   it("says nothing for Auto, for a tier within the recommendation, or before the signals are in", () => {
     for (const choice of ["auto", "medium", "low"] as const) {
-      expect(settingsModel({ context: "title", choice, auto, override: null, stored: true }).caution).toBe(undefined);
+      expect(settingsModel({ modes: HIKE_MODES, context: "title", choice, auto, override: null, stored: true }).caution).toBe(undefined);
     }
-    expect(settingsModel({ context: "title", choice: "high", auto: null, override: null, stored: true }).caution).toBe(undefined);
-    expect(settingsModel({ context: "title", choice: "high", auto: { tier: "high", probePending: false, ceiling: "high" }, override: null, stored: true }).caution).toBe(undefined);
+    expect(settingsModel({ modes: HIKE_MODES, context: "title", choice: "high", auto: null, override: null, stored: true }).caution).toBe(undefined);
+    expect(settingsModel({ modes: HIKE_MODES, context: "title", choice: "high", auto: { tier: "high", probePending: false, ceiling: "high" }, override: null, stored: true }).caution).toBe(undefined);
   });
 
   it("measures against the low cap too", () => {
     const capped = { tier: "low" as const, probePending: false, ceiling: "low" as const };
-    expect(settingsModel({ context: "title", choice: "medium", auto: capped, override: null, stored: true }).caution).toBe("Higher than recommended for this computer.");
+    expect(settingsModel({ modes: HIKE_MODES, context: "title", choice: "medium", auto: capped, override: null, stored: true }).caution).toBe("Higher than recommended for this computer.");
   });
 });
 
@@ -144,11 +147,11 @@ describe("a choice put back on Auto", () => {
   it("says so under Auto's line, on both screens, until the next choice", () => {
     const auto = { tier: "medium" as const, probePending: false };
     const notice = "High did not start on this computer, so Settings is back on Auto (Recommended).";
-    expect(settingsModel({ context: "title", choice: "auto", auto, override: null, stored: true, notice }).lines).toEqual([
+    expect(settingsModel({ modes: HIKE_MODES, context: "title", choice: "auto", auto, override: null, stored: true, notice }).lines).toEqual([
       "Auto picks Medium on this computer.",
       notice,
     ]);
-    expect(settingsModel({ context: "pause", choice: "auto", selectionTier: "medium", auto, running: "medium", override: null, stored: true, notice }).lines)
+    expect(settingsModel({ modes: HIKE_MODES, context: "pause", choice: "auto", selectionTier: "medium", auto, running: "medium", override: null, stored: true, notice }).lines)
       .toEqual(["Auto picks Medium on this computer.", notice, "This hike is using Medium."]);
   });
 });
@@ -173,7 +176,7 @@ describe("the stand-in document these screens are tested against", () => {
     const root = doc.createElement("div");
     doc.body.append(root);
     const modes: string[] = [];
-    const view = settingsModel({ context: "title", choice: "auto", auto: null, override: null, stored: true, mode: "explore" });
+    const view = settingsModel({ modes: HIKE_MODES, context: "title", choice: "auto", auto: null, override: null, stored: true, mode: "explore" });
     expect(view.mode.lines).toEqual(["No one in the woods and nothing to dread; the weather turns with the hour."]);
     const ui = renderSettings(asHtml(root), view, { onChoose: () => {}, onChooseMode: (m) => modes.push(m), onBack: () => {} });
     const selects = root.descendants().filter((el) => el.tagName === "SELECT") as StandInSelect[];
@@ -184,7 +187,7 @@ describe("the stand-in document these screens are tested against", () => {
     mode.choose("freecam");
     expect(modes).toEqual(["freecam"]);
     // The pause screen says a pick starts the hike over.
-    ui.setView(settingsModel({ context: "pause", choice: "auto", auto: null, override: null, stored: true, running: "high", mode: "game" }));
+    ui.setView(settingsModel({ modes: HIKE_MODES, context: "pause", choice: "auto", auto: null, override: null, stored: true, running: "high", mode: "game" }));
     expect(mode.value).toBe("game");
     const lines = root.descendants().filter((el) => el.classList.contains("line") && !el.classList.contains("caution")).map((el) => el.textContent);
     expect(lines).toEqual(["This hike is using High.", "The hike as it is.", "Picking another mode restarts the hike at its trailhead."]);
@@ -337,7 +340,7 @@ describe("the stand-in document, where a browser is strict", () => {
 describe("the Graphics select", () => {
   afterEach(() => vi.unstubAllGlobals());
 
-  const title = (over: Partial<SettingsInput> = {}): SettingsInput => ({ context: "title", choice: "auto", auto: null, override: null, stored: true, ...over });
+  const title = (over: Partial<SettingsInput> = {}): SettingsInput => ({ context: "title", choice: "auto", auto: null, override: null, stored: true, modes: HIKE_MODES, ...over });
 
   function mount(input: SettingsInput) {
     const doc = installStandInDom();
@@ -394,7 +397,7 @@ describe("the Graphics select", () => {
 
   it("is held while a choice is applied, and freed after", () => {
     const pause = (applying: boolean): SettingsInput => ({
-      context: "pause", choice: "high", selectionTier: "high", auto: null, running: "medium", override: null, stored: true, applying,
+      context: "pause", choice: "high", selectionTier: "high", auto: null, running: "medium", override: null, stored: true, applying, modes: HIKE_MODES,
     });
     const { ui, select, chosen } = mount(pause(true));
     expect(select.disabled).toBe(true);
@@ -450,7 +453,7 @@ describe("the heading's focus ring", () => {
     const doc = installStandInDom();
     const root = doc.createElement("div");
     doc.body.append(root);
-    const view = settingsModel({ context: "title", choice: "auto", auto: null, override: null, stored: true });
+    const view = settingsModel({ modes: HIKE_MODES, context: "title", choice: "auto", auto: null, override: null, stored: true });
     renderSettings(asHtml(root), view, { onChoose: () => {}, onBack: () => {} });
     const css = root.querySelector("style")!.textContent.replace(/\/\*[\s\S]*?\*\//g, "");
     const rules = [...css.matchAll(/([^{}]*h2[^{}]*)\{([^}]*)\}/g)].filter((m) => /outline:\s*none/.test(m[2]!));
@@ -488,7 +491,7 @@ describe("the title screen's Settings panel", () => {
     doc.body.append(container);
     const kept: TierChoice[] = [];
     const noop = () => {};
-    const view = landingModel({ desktop: false, host: "darwin-arm64", latest: null, quality: { choice: "medium", auto: null, override: null, stored: true } });
+    const view = landingModel({ desktop: false, host: "darwin-arm64", latest: null, quality: { choice: "medium", auto: null, override: null, stored: true, modes: HIKE_MODES } });
     const page = renderLanding(asHtml(container), view, {
       onCreate: noop, onJoin: noop, onDownloads: noop, onCredits: noop, onBack: noop,
       onSettings: () => page.setPanel("settings"),
@@ -524,5 +527,42 @@ describe("the title screen's Settings panel", () => {
     page.setPanel("home");
     page.setPanel("settings");
     expect(doc.activeElement).toBe(heading);
+  });
+});
+
+describe("the mode group", () => {
+  const LIST: ModeList = {
+    modes: [
+      { id: "calm", label: "Calm", line: "Nothing happens." },
+      { id: "busy", label: "Busy", line: "Everything happens." },
+    ],
+    initial: "calm",
+    key: "test.mode",
+    restarts: "Picking another restarts.",
+  };
+  const base = { choice: "auto", auto: null, override: null, stored: true, modes: LIST } as const;
+
+  it("is built from the list handed in, with the initial mode selected where none is chosen", () => {
+    const v = settingsModel({ context: "title", ...base });
+    expect(v.mode.choices).toEqual([
+      { mode: "calm", label: "Calm", selected: true, disabled: false },
+      { mode: "busy", label: "Busy", selected: false, disabled: false },
+    ]);
+    expect(v.mode.lines).toEqual(["Nothing happens."]);
+    expect(settingsModel({ context: "title", ...base, mode: "busy" }).mode.choices.map((c) => c.selected)).toEqual([false, true]);
+  });
+
+  it("says what a pick does on the pause screen, in the list's words", () => {
+    const v = settingsModel({ context: "pause", ...base, mode: "busy" });
+    expect(v.mode.lines).toEqual(["Everything happens.", "Picking another restarts."]);
+  });
+
+  it("is Day Hike's own in the hike's list", () => {
+    expect(HIKE_MODES.restarts).toBe("Picking another mode restarts the hike at its trailhead.");
+  });
+
+  it("keeps settings.ts and pauseMenu.ts free of the game's modes", () => {
+    expect(sourceText("game/settings.ts")).not.toContain("gameMode.js");
+    expect(sourceText("game/pauseMenu.ts")).not.toContain("gameMode.js");
   });
 });

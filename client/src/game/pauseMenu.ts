@@ -1,4 +1,3 @@
-import type { GameMode } from "./gameMode.js";
 import { APPLY_SWAP_READY_MAX_MS } from "@csarkosh/engine/game/rendererSwap";
 import { listOpen, openerOf, renderSettings, type Opener, type SettingsView } from "./settings.js";
 import type { TierChoice } from "@csarkosh/engine/game/tierChoice";
@@ -330,9 +329,9 @@ export type PauseSettings = {
   /** A choice was picked (the selection changed): what the last Apply said
    * can be let go. */
   onChoose?(choice: TierChoice): void;
-  /** A mode was picked (`gameMode.ts`): kept and applied at once, which
+  /** A mode was picked (`modeList.ts`): kept and applied at once, which
    * starts the hike over at its trailhead. */
-  onChooseMode?(mode: GameMode): void;
+  onChooseMode?(mode: string): void;
 };
 
 export type PauseMenu = {

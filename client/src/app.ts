@@ -50,7 +50,7 @@ import { createTrace, type Trace } from "./game/trace.js";
 import { afterNextPaint } from "@csarkosh/engine/game/paint";
 import type { QualityTier } from "@csarkosh/engine/game/quality";
 import { settingsModel, type AutoSummary } from "./game/settings.js";
-import { DEFAULT_MODE, isGameMode, peaceful, type GameMode } from "./game/gameMode.js";
+import { DEFAULT_MODE, HIKE_MODES, isGameMode, peaceful, type GameMode } from "./game/gameMode.js";
 import { resolveTier, type TierChoice, type TierSource } from "@csarkosh/engine/game/tierChoice";
 import { buildFirstRenderer, buildOrUndo, swapRenderer, switchOutcome, whenStandingSkyHeld, type EngineOnCanvas, type SwapBindings } from "@csarkosh/engine/game/rendererSwap";
 import { FALLBACK_NOTICE_MS, answerFailures, coverWith, createSerial } from "@csarkosh/engine/game/engineFailure";
@@ -1039,6 +1039,7 @@ function buildGame(
           error: swapError ?? undefined,
           notice: options.quality.notice() ?? undefined,
           mode,
+          modes: HIKE_MODES,
         }),
       onApply: (choice, readyMaxMs) => applyTier(choice, readyMaxMs),
       onChoose: () => {
@@ -1046,7 +1047,10 @@ function buildGame(
       },
       // A new mode is kept, and the hike started over on it: a world entry,
       // re-initialised through the path `main.ts` listens on, as `/mode` is.
-      onChooseMode: (chosen) => {
+      onChooseMode: (picked) => {
+        // A value that is not one of the hike's modes is ignored.
+        if (!isGameMode(picked)) return;
+        const chosen = picked;
         options.mode.save(chosen);
         if (chosen === mode) return;
         persist("mode", [chosen]);
