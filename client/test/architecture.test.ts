@@ -36,11 +36,6 @@ function followed(file: string, spec: string): string | null {
   return null;
 }
 
-/** How the hike and the page, at the top of the game's source, name a module: by its path where it is the game's, by the package where it is the engine's. */
-function named(path: string): string {
-  return existsSync(join(SRC, `${path}.ts`)) ? `./${path}.js` : `${ENGINE_PACKAGE}${path}`;
-}
-
 function filesUnder(dir: string): string[] {
   if (!existsSync(dir)) return [];
   const out: string[] = [];
@@ -387,7 +382,8 @@ describe("layer boundaries", () => {
 
   it("loads no Babylon.js with the page: nothing main.ts imports for itself reaches it, by an import or a dynamic one", () => {
     // The page's own imports, each followed through everything it loads, static or dynamic, name no module of
-    // Babylon.js (the hike, `app.ts`, has its own test below and is left out here). Babylon Lite, which the hike
+    // Babylon.js (the hike, which is the engine's page that runs a session, `app.ts`, and the game it is handed,
+    // `hikeGame.ts`, has its own test below and is left out here). Babylon Lite, which the hike
     // is drawn with, is another library.
     const code = (file: string): string => stripComments(readFileSync(file, "utf8"));
     const loads = (file: string): string[] => [
@@ -396,10 +392,11 @@ describe("layer boundaries", () => {
     ];
     const main = at("main.ts");
     const own = loads(main);
-    expect(own).toContain("./app.js");
+    const ofHike = [`${ENGINE_PACKAGE}app`, "./hikeGame.js"];
+    for (const spec of ofHike) expect(own, spec).toContain(spec);
     expect(own.filter((spec) => !spec.startsWith(".") && !spec.startsWith(ENGINE_PACKAGE))).toEqual([]);
     const seen = new Map<string, string | null>();
-    const stack: [string, string | null][] = own.filter((spec) => spec !== "./app.js").map((spec) => [followed(main, spec) as string, null]);
+    const stack: [string, string | null][] = own.filter((spec) => !ofHike.includes(spec)).map((spec) => [followed(main, spec) as string, null]);
     const bad: string[] = [];
     while (stack.length > 0) {
       const [file, from] = stack.pop() as [string, string | null];
@@ -428,9 +425,10 @@ describe("layer boundaries", () => {
     expect(code(main)).not.toMatch(/engineFailure\.js|NOTICE_RESTARTED/);
     // How long the line shows is the answer's too, and the measurement mode's flag is the measurement's
     // (`gpuTimeReport.ts`).
-    const hike = importsOf(at("app.ts"));
-    expect(hike).toContain(named("game/engineFailure"));
-    expect(hike).toContain(named("game/gpuTimeReport"));
+    // The page that runs a session is the engine's now and names its neighbours by path: each import is followed to its file.
+    const hike = importsOf(at("app.ts")).map((spec) => followed(at("app.ts"), spec)).filter((to): to is string => to !== null).map(logical);
+    expect(hike).toContain("game/engineFailure.ts");
+    expect(hike).toContain("game/gpuTimeReport.ts");
     expect(importsOf(at("game/engineFailure.ts"))).toEqual(["./rendererSwap.js"]);
   });
 
@@ -1240,8 +1238,12 @@ describe("layer boundaries", () => {
     // What the hike is told by is taken where it is computed, and its scenery is asked of its renderer alone.
     // `app.ts`, `hike.ts` (the hike's own half) and `hikeGame.ts` (the game as the page is handed it) are told by them
     // between them.
-    const app = [...importsOf(at("app.ts")), ...importsOf(at("hike.ts")), ...importsOf(at("hikeGame.ts"))];
-    for (const home of ["game/skyWait", "game/droppedCap", "game/loadReport", "game/hikeRenderer", "game/hikeScenery"].map(named)) expect(app, home).toContain(home);
+    // Each import is followed to its file, since the page's half is the engine's and names its neighbours by path
+    // where the game names them by the package.
+    const told = [at("app.ts"), at("hike.ts"), at("hikeGame.ts")].flatMap((file) =>
+      importsOf(file).map((spec) => followed(file, spec)).filter((to): to is string => to !== null).map(logical),
+    );
+    for (const home of ["game/skyWait.ts", "game/droppedCap.ts", "game/loadReport.ts", "game/hikeRenderer.ts", "game/hikeScenery.ts"]) expect(told, home).toContain(home);
     expect(loads(at("game/hikeScenery.ts")).filter((spec) => spec.startsWith("./"))).toEqual(["./boardImages.js", "./boardDraw.js", "./posterPanel.js", "./lite/sceneryMeshes.js"]);
   });
 

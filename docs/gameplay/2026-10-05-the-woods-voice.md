@@ -90,7 +90,7 @@ A screen that joins a chase already under way has no reveal.
 - `engine/src/game/ambientAudio.ts`: the bed's bus and loop (`setBirdBed`, `setBirds`), and the
   call (`hollowCall`).
 - `engine/src/game/birdBed.ts`: fetches the bed and hands it over once the audio is unlocked.
-- `client/src/app.ts`: steps the woods beside the escalation on a forest world with a search,
+- `engine/src/app.ts`: steps the woods beside the escalation on a forest world with a search,
   and nowhere else.
 
 ## 5. Tests

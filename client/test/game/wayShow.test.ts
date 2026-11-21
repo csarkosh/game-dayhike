@@ -81,7 +81,7 @@ describe("the renderer and the app", () => {
   const renderer = readFileSync(clientFile("../engine/src/game/lite/renderer.ts"), "utf8") + readFileSync(clientFile("src/game/lite/hikeParts.ts"), "utf8");
   const chain = readFileSync(clientFile("../engine/src/game/lite/postChain.ts"), "utf8");
   // The way's half of the frame is the hike's own (`hike.ts`, where a variable of `app.ts` is written `h.<name>`).
-  const app = readFileSync(clientFile("src/app.ts"), "utf8");
+  const app = readFileSync(clientFile("../engine/src/app.ts"), "utf8");
   const hike = readFileSync(clientFile("src/hike.ts"), "utf8");
 
   it("the renderer makes the way's mist once, for a forest, toned for the tier's colour path, and disposes it", () => {

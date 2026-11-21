@@ -6,25 +6,25 @@
  * these and names no game; a game's own world, state, player, renderer,
  * sound's bus and HUD are the definition's type parameters.
  */
-import type { AmbientAudio } from "@csarkosh/engine/game/ambientAudio";
-import type { FreecamState } from "@csarkosh/engine/game/freecam";
-import type { InputSampler } from "@csarkosh/engine/game/input";
-import type { RenderPlayer, RenderState } from "@csarkosh/engine/game/lite/renderGame";
-import type { ModeList } from "@csarkosh/engine/game/modeList";
-import type { PlayGate } from "@csarkosh/engine/game/pauseMenu";
-import type { QualityTier } from "@csarkosh/engine/game/quality";
-import type { RendererOptions, WorldRenderer } from "@csarkosh/engine/game/rendererTypes";
-import type { TouchModel } from "@csarkosh/engine/game/touchControls";
-import type { WeatherParams, WeatherPresetName } from "@csarkosh/engine/game/weather";
-import type { WildlifeAudio } from "@csarkosh/engine/game/wildlifeAudio";
-import type { Presence } from "@csarkosh/engine/game/wildlifeBehaviour";
-import type { ClientSession } from "@csarkosh/engine/net/client";
-import type { HostSession } from "@csarkosh/engine/net/host";
-import type { Telemetry } from "@csarkosh/engine/net/telemetry";
-import type { Transport } from "@csarkosh/engine/net/transport";
-import type { ActionBits, InputCommand } from "@csarkosh/engine/sim/core";
-import type { Forest } from "@csarkosh/engine/sim/forest";
-import type { Level } from "@csarkosh/engine/sim/level";
+import type { AmbientAudio } from "./ambientAudio.js";
+import type { FreecamState } from "./freecam.js";
+import type { InputSampler } from "./input.js";
+import type { RenderPlayer, RenderState } from "./lite/renderGame.js";
+import type { ModeList } from "./modeList.js";
+import type { PlayGate } from "./pauseMenu.js";
+import type { QualityTier } from "./quality.js";
+import type { RendererOptions, WorldRenderer } from "./rendererTypes.js";
+import type { TouchModel } from "./touchControls.js";
+import type { WeatherParams, WeatherPresetName } from "./weather.js";
+import type { WildlifeAudio } from "./wildlifeAudio.js";
+import type { Presence } from "./wildlifeBehaviour.js";
+import type { ClientSession } from "../net/client.js";
+import type { HostSession } from "../net/host.js";
+import type { Telemetry } from "../net/telemetry.js";
+import type { Transport } from "../net/transport.js";
+import type { ActionBits, InputCommand } from "../sim/core.js";
+import type { Forest } from "../sim/forest.js";
+import type { Level } from "../sim/level.js";
 
 /** The console's hour and weather: what shows where a game's own sky departs from nothing, and what it departs from where it does. */
 export type AtmosphereBase = { weather: WeatherParams; hour: number };

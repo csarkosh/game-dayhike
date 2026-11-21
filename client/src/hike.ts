@@ -73,7 +73,7 @@ import type { HikeAudio } from "./game/hikeAudio.js";
 import { createTrace, type Trace } from "./game/trace.js";
 import { placeNames } from "./sim/placeNames.js";
 import { isGameMode, peaceful } from "./game/gameMode.js";
-import type { SessionHost } from "./game/sessionGame.js";
+import type { SessionHost } from "@csarkosh/engine/game/sessionGame";
 
 /** The way down's draw: milliseconds of it a frame through the climb, and once the scene or the chase is on; and the tick it starts at, ten seconds in, so nothing of it runs under the intro. */
 const WAY_DRAW_MS = 1.5;

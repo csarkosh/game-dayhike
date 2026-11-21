@@ -9,7 +9,7 @@ import type { Level } from "@csarkosh/engine/sim/level";
 import type { Forest } from "@csarkosh/engine/sim/forest";
 import type { Transport } from "@csarkosh/engine/net/transport";
 import { HIKE_MODES, isGameMode, peaceful } from "./game/gameMode.js";
-import type { SessionGame } from "./game/sessionGame.js";
+import type { SessionGame } from "@csarkosh/engine/game/sessionGame";
 import type { HikeAudio } from "./game/hikeAudio.js";
 import type { Renderer } from "./game/hikeRendererTypes.js";
 import type { Hud } from "./game/hud.js";

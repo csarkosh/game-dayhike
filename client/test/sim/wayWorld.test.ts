@@ -96,7 +96,7 @@ describe("the world's way down", SUITE, () => {
 
   it("the app steps the draw every frame on the host and on a client, from ten seconds in", () => {
     // The frame's call is in `app.ts` (which calls the hike's own half as `hike.<name>`), the draw's step and its constants in `hike.ts`.
-    const app = readFileSync(clientFile("src/app.ts"), "utf8");
+    const app = readFileSync(clientFile("../engine/src/app.ts"), "utf8");
     const hike = readFileSync(clientFile("src/hike.ts"), "utf8");
     // One frame, which the host and a client both run (`appFrame.test.ts`).
     expect(app).toContain("    hike.beforeSync(live.world, state, live.localEntityId, dt);");
@@ -110,7 +110,7 @@ describe("the world's way down", SUITE, () => {
 
   it("the app has the way drawn by the threshold, and turns the player to it and runs them down it, wherever it then lies", () => {
     // The threshold is the hike's own (`hike.ts`); the sessions' ticks that step it are in `app.ts`.
-    const app = readFileSync(clientFile("src/app.ts"), "utf8");
+    const app = readFileSync(clientFile("../engine/src/app.ts"), "utf8");
     const hike = readFileSync(clientFile("src/hike.ts"), "utf8");
     // A draw the find came too soon for takes most of a frame while the scene's shots play, and is finished at the threshold's cut.
     expect(hike).toContain("const WAY_DRAW_SCENE_MS = 10;");

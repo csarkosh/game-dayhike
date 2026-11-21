@@ -7,7 +7,7 @@ import { fileURLToPath } from "node:url";
  * here can start a hike under Node: the sky's wiring is read from the source, as
  * `wildlifeAudio.test.ts` reads the audio's.
  */
-const src = readFileSync(fileURLToPath(new URL("../../src/app.ts", import.meta.url)), "utf8");
+const src = readFileSync(fileURLToPath(new URL("../../../engine/src/app.ts", import.meta.url)), "utf8");
 // The escalation's sync is the hike's own (`hike.ts`, where a variable of `app.ts` is written `h.<name>`); the swap's restore stays in `app.ts`.
 const hikeSrc = readFileSync(fileURLToPath(new URL("../../src/hike.ts", import.meta.url)), "utf8");
 

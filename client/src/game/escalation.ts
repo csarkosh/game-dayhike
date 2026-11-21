@@ -9,7 +9,7 @@
  * dread the grade and the wildlife read. Nothing here is authoritative;
  * nothing crosses the wire.
  */
-import type { AtmosphereBase } from "./sessionGame.js";
+import type { AtmosphereBase } from "@csarkosh/engine/game/sessionGame";
 import { Phase, type WorldState, type Vec3 } from "../sim/types.js";
 import { isHollowState } from "../sim/hollow.js";
 import { isShadeState } from "../sim/haunt.js";

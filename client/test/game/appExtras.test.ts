@@ -9,7 +9,7 @@ import { fileURLToPath } from "node:url";
  * build and dispose are in `hike.ts`, where a variable of `app.ts` is written `h.<name>`.
  * How a build is put off is `extrasLater.test.ts`'s.
  */
-const src = readFileSync(fileURLToPath(new URL("../../src/app.ts", import.meta.url)), "utf8");
+const src = readFileSync(fileURLToPath(new URL("../../../engine/src/app.ts", import.meta.url)), "utf8");
 const hikeSrc = readFileSync(fileURLToPath(new URL("../../src/hike.ts", import.meta.url)), "utf8");
 const slice = (from: string, to: string, text: string = src): string => text.slice(text.indexOf(from), text.indexOf(to, text.indexOf(from)));
 

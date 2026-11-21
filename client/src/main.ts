@@ -50,7 +50,7 @@ import { browserDeps, createTelemetry, installErrorCapture, referrerOf, telemetr
 import { PROTOCOL_VERSION } from "./net/protocol.js";
 import { GEN_VERSION } from "@csarkosh/engine/sim/forest";
 import { HIKE_GAME } from "./hikeGame.js";
-import { startGame, type GameHandle } from "./app.js";
+import { startGame, type GameHandle } from "@csarkosh/engine/app";
 import type { EngineOnCanvas } from "@csarkosh/engine/game/rendererSwap";
 import { LOSS_ENDED_LINE, createLossRecord } from "@csarkosh/engine/game/lossBound";
 import { browserEnv, browserMajor, hostOs, isMobile, offersWebGpu, readSignals, type GpuSignals, type NavigatorLike } from "@csarkosh/engine/game/gpuSignals";

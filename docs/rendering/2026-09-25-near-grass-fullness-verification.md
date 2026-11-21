@@ -12,11 +12,11 @@ and a control detached at the `main` it branched from. Two small measurement
 patches are applied to both for a check and reverted after it; they are never
 committed:
 
-- a pose patch to `client/src/app.ts` and `client/src/game/renderer.ts` that
+- a pose patch to `engine/src/app.ts` and `client/src/game/renderer.ts` that
   exposes `__fcSet(x, y, z, yaw, pitch)`, pinning the free camera at a pose
   every frame (positive pitch looks down), and `__scene` / `__engine` for the
   layer isolation and the frame timing;
-- a tier patch to `client/src/app.ts` that reads `?tier=low|medium|high`, because
+- a tier patch to `engine/src/app.ts` that reads `?tier=low|medium|high`, because
   a desktop browser reports at most 8 GB of device memory and detection alone
   lands on medium.
 

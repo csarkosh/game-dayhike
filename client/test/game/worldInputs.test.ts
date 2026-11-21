@@ -62,7 +62,7 @@ describe("the seed and the terrain a hike's world is made from", () => {
   });
 
   it("hands the scene to the hike's first renderer at the tier asked for, and to no other", () => {
-    const app = readFileSync(new URL("../../src/app.ts", import.meta.url), "utf8").replace(/\/\*[\s\S]*?\*\//g, "").replace(/\/\/.*$/gm, "");
+    const app = readFileSync(new URL("../../../engine/src/app.ts", import.meta.url), "utf8").replace(/\/\*[\s\S]*?\*\//g, "").replace(/\/\/.*$/gm, "");
     // The one renderer made with it: the ladder's first attempt, which takes it as it is built.
     expect(app.match(/prepared: /g)).toEqual(["prepared: "]);
     const first = app.slice(app.indexOf("const first = buildFirstRenderer("), app.indexOf("let renderer: R = first.renderer;"));

@@ -62,7 +62,7 @@ describe('the set that can move together', () => {
 
 describe('a reference after a move', () => {
   it('names an engine module by the package from outside it, and by a relative path from inside', () => {
-    expect(specifierFor('/r/client/src/app.ts', '/r/engine/src/sim/field.ts', 'module', '', roots)).toBe('@csarkosh/engine/sim/field');
+    expect(specifierFor('/r/engine/src/app.ts', '/r/engine/src/sim/field.ts', 'module', '', roots)).toBe('@csarkosh/engine/sim/field');
     expect(specifierFor('/r/client/test/sim/a.test.ts', '/r/engine/src/sim/field.ts', 'module', '', roots)).toBe('@csarkosh/engine/sim/field');
     expect(specifierFor('/r/engine/src/game/sky.ts', '/r/engine/src/sim/field.ts', 'module', '', roots)).toBe('../sim/field.js');
     expect(specifierFor('/r/engine/src/game/sky.ts', '/r/engine/src/game/skyState.ts', 'module', '', roots)).toBe('./skyState.js');

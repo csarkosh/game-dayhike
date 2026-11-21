@@ -9,6 +9,8 @@ import { HIKE_MODES } from "../../src/game/gameMode.js";
 import { trailheadStart } from "../../src/sim/spawn.js";
 import { HIKE_ACTIONS } from "../../src/sim/types.js";
 import { findCommand } from "@csarkosh/engine/game/commands";
+import { existsSync } from "node:fs";
+import { fileURLToPath } from "node:url";
 import { sourceText } from "../helpers/source.js";
 
 /**
@@ -45,12 +47,14 @@ describe("Day Hike as the page is handed it", () => {
 describe("the page that runs a hike", () => {
   const app = sourceText("app.ts");
 
-  it("loads nothing of the game's by itself: every import of a module beside it is of types alone", () => {
-    const beside = [...app.matchAll(/^import ([^\n]*?)from "(\.[^"]+)";$/gm)].map((m) => ({ clause: m[1] as string, spec: m[2] as string }));
-    expect(beside.length).toBeGreaterThan(0);
-    for (const { clause, spec } of beside) expect(clause.startsWith("type "), spec).toBe(true);
-    // And none for its effect alone.
-    expect(app).not.toMatch(/^import "\.[^"]+";$/m);
+  it("is the engine's and names no game: every module it imports is the engine's own", () => {
+    // It stands in the engine's package, where no module may import the game's (`architecture.test.ts`), and
+    // its own imports are of its neighbours there alone.
+    expect(existsSync(fileURLToPath(new URL("../../../engine/src/app.ts", import.meta.url)))).toBe(true);
+    expect(existsSync(fileURLToPath(new URL("../../src/app.ts", import.meta.url)))).toBe(false);
+    const specs = [...app.matchAll(/^import [^\n]*?from "([^"]+)";$/gm)].map((m) => m[1] as string);
+    expect(specs.length).toBeGreaterThan(40);
+    for (const spec of specs) expect(spec.startsWith("./"), spec).toBe(true);
   });
 
   it("is handed the game, and the game's page hands it Day Hike", () => {

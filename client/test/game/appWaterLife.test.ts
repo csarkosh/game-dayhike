@@ -9,7 +9,7 @@ import { fileURLToPath } from "node:url";
  * failure it guards is the silent one: a voice built and never fed hums
  * nothing, and the game looks the same.
  */
-const src = readFileSync(fileURLToPath(new URL("../../src/app.ts", import.meta.url)), "utf8");
+const src = readFileSync(fileURLToPath(new URL("../../../engine/src/app.ts", import.meta.url)), "utf8");
 
 describe("the lake's sound in app.ts", () => {
   it("voices the lake after renderer.sync and the drips, in the one frame the host and a follower run", () => {
