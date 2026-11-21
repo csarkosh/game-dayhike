@@ -397,7 +397,7 @@ import type { Forest } from "@csarkosh/engine/sim/forest";
 import { FOG_DISTANCE } from "@csarkosh/engine/sim/forestConstants";
 import type { Level } from "@csarkosh/engine/sim/level";
 import { activeTerrainVariant, elevationAt, type LakeSource } from "@csarkosh/engine/sim/terrain";
-import type { ListenerPose } from "../ambientAudio.js";
+import type { ListenerPose } from "../listenerPose.js";
 import { GRADIENT_MID_STEP, atmosphereUniforms, emptyAtmosphereUniforms, fogGradientAt } from "@csarkosh/engine/game/atmosphereParams";
 import { BASE_SPACING_BY_TIER } from "@csarkosh/engine/game/clipmap";
 import { clutterReachFor } from "@csarkosh/engine/game/clutterField";

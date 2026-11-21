@@ -10,7 +10,7 @@
  * the hike's makes its own (`hikeRenderer.ts`).
  */
 import type { Vec3 } from "@csarkosh/engine/sim/core";
-import type { ListenerPose } from "./ambientAudio.js";
+import type { ListenerPose } from "./listenerPose.js";
 import type { EngineHandle, EngineName } from "@csarkosh/engine/game/engineHandle";
 import type { WatchEngine } from "@csarkosh/engine/game/engineWatch";
 import type { EyePose } from "./eyeBlend.js";

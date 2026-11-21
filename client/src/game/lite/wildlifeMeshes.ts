@@ -36,7 +36,7 @@ import {
 } from "@babylonjs/lite";
 import { assetCatalog, modelUrl } from "@csarkosh/engine/game/assetUrls";
 import { creatureRoleGroups, resolveCreatureAssets, type CreatureAsset } from "@csarkosh/engine/game/creatureAssets";
-import { stepClip, type ClipClock } from "../entityPoses.js";
+import { stepClip, type ClipClock } from "../clipClock.js";
 import { expectModels } from "@csarkosh/engine/game/loadReport";
 import type { FirstBuilds } from "@csarkosh/engine/game/firstBuilds";
 import { composeInto, type Quat } from "@csarkosh/engine/game/instancePose";

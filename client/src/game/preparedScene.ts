@@ -11,7 +11,6 @@
  *
  * Babylon-free, as everything it imports is: it runs in a worker.
  */
-import { trailheadStart } from "../sim/spawn.js";
 import { activeTerrainVariant, activeTerrainVariantName, setActiveTerrainVariant, type LakeSource } from "@csarkosh/engine/sim/terrain";
 import { BED_GRID, bakeBed, bedOriginFor, createBedGrid, type BedGrid } from "@csarkosh/engine/game/bedHeight";
 import { BASE_SPACING_BY_TIER, RING_COUNT, createRingSamples, ringSpacing, snapOrigin, type RingSamples } from "@csarkosh/engine/game/clipmap";
@@ -87,12 +86,12 @@ export function lakesFor(seed: number): LakeSource[] {
 /**
  * Samples it all, the active terrain set to `variant` first (an unknown one
  * throws). Everything centred on the camera is sampled where the hike's
- * player starts, `trailheadStart(seed)`, or at the origin on a terrain with
- * no trailhead.
+ * player starts, which the game says (`startOf`, asked once the terrain is set), or at the origin where it
+ * says nowhere.
  */
-export function prepareScene(seed: number, variant: string, tier: QualityTier): PreparedScene {
+export function prepareScene(seed: number, variant: string, tier: QualityTier, startOf: (seed: number) => { x: number; z: number } | null): PreparedScene {
   setActiveTerrainVariant(variant);
-  const at = trailheadStart(seed);
+  const at = startOf(seed);
   const start = { x: at?.x ?? 0, z: at?.z ?? 0 };
   const rings: RingSamples[] = [];
   for (let level = 0; level < RING_COUNT; level++) {

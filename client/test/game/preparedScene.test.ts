@@ -32,7 +32,7 @@ const lakesOf = (seed: number): LakeSource[] => {
 
 /** The low tier's scene of the lake world, sampled once for the tests that only read it. */
 let lowScene: PreparedScene | null = null;
-const low = (): PreparedScene => (lowScene ??= prepareScene(seedWithLake(), "olympic", "low"));
+const low = (): PreparedScene => (lowScene ??= prepareScene(seedWithLake(), "olympic", "low", trailheadStart));
 
 describe("a hike's first scene, sampled ahead", () => {
   it("samples the rings, the water and each lake as the builders do, around the hike's start", () => {
@@ -98,7 +98,7 @@ describe("a hike's first scene, sampled ahead", () => {
 
   it("draws no skyline for the high tier, and takes its base spacing, its bed and its swell from the tier", () => {
     const seed = seedWithLake();
-    const scene = prepareScene(seed, "olympic", "high");
+    const scene = prepareScene(seed, "olympic", "high", trailheadStart);
     expect(scene.tier).toBe("high");
     expect(scene.lakes.length).toBeGreaterThan(0);
     for (const lake of scene.lakes) expect(lake.skyline).toBeNull();
@@ -109,7 +109,7 @@ describe("a hike's first scene, sampled ahead", () => {
   }, timeLimit(180_000));
 
   it("has no water and no lakes on a terrain without them, and leaves that terrain active", () => {
-    const scene = prepareScene(7, "montane", "low");
+    const scene = prepareScene(7, "montane", "low", trailheadStart);
     expect(activeTerrainVariantName()).toBe("montane");
     expect(scene.start).toEqual({ x: 0, z: 0 });
     expect(scene.rings).toHaveLength(RING_COUNT);
@@ -124,11 +124,11 @@ describe("a hike's first scene, sampled ahead", () => {
   }, timeLimit(180_000));
 
   it("refuses a terrain the sim does not know", () => {
-    expect(() => prepareScene(7, "nowhere", "low")).toThrow(/unknown terrain variant/);
+    expect(() => prepareScene(7, "nowhere", "low", trailheadStart)).toThrow(/unknown terrain variant/);
   });
 
   it("survives a structured clone with its buffers transferred, and lists each buffer once", () => {
-    const scene = prepareScene(seedWithLake(), "olympic", "low");
+    const scene = prepareScene(seedWithLake(), "olympic", "low", trailheadStart);
     const copy = structuredClone(scene);
     const transfer = sceneTransfer(scene);
     expect(new Set(transfer).size).toBe(transfer.length);
