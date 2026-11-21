@@ -12,15 +12,15 @@
  * drawn only while the view's planes hold it.
  */
 import type { EngineContext, MaterialPlugin, PluginUniformBlock, SceneContext } from "@babylonjs/lite";
-import type { LakeSource } from "@csarkosh/engine/sim/terrain";
-import type { ViewPlane } from "@csarkosh/engine/game/lakeSeen";
-import type { QualityTier } from "@csarkosh/engine/game/quality";
+import type { LakeSource } from "../../sim/terrain.js";
+import type { ViewPlane } from "../lakeSeen.js";
+import type { QualityTier } from "../quality.js";
 import type { WaterLifeSound } from "../waterLifeAudio.js";
-import type { WaterLifeMade } from "@csarkosh/engine/game/waterLifeField";
+import type { WaterLifeMade } from "../waterLifeField.js";
 import { createWaterLifeScene, type WaterLifeDraws, type WaterLifeFrame } from "../waterLifeScene.js";
-import { createLiteDragonflies } from "@csarkosh/engine/game/lite/dragonflyMeshes";
-import type { FrameUploads } from "@csarkosh/engine/game/lite/frameUploads";
-import { createLiteMidges } from "@csarkosh/engine/game/lite/midgeMeshes";
+import { createLiteDragonflies } from "./dragonflyMeshes.js";
+import type { FrameUploads } from "./frameUploads.js";
+import { createLiteMidges } from "./midgeMeshes.js";
 
 export type LiteWaterLife = {
   /** A frame of the life, stepped and drawn; the midges toned by the frame's `exposure` and `contrast`. */

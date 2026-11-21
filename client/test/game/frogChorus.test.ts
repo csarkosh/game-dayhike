@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   createFrogChorus, FROG_HOLLOW_RESUME, FROG_HOLLOW_STOP, FROG_QUIET_RADIUS,
   type FrogChorus,
-} from "../../src/game/frogChorus.js";
+} from "@csarkosh/engine/game/frogChorus";
 import type { FrogVoice } from "@csarkosh/engine/game/waterLifeField";
 
 const SEED = 388817;

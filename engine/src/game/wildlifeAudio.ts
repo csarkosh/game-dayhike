@@ -26,10 +26,10 @@
  */
 
 import type { AmbientAudio, ListenerPose } from "./ambientAudio.js";
-import { audioUrl } from "@csarkosh/engine/game/assetUrls";
-import { pageTurns } from "@csarkosh/engine/game/downloadTurns";
-import { reportLayer } from "@csarkosh/engine/game/loadReport";
-import type { Presence, WildlifeEvent } from "@csarkosh/engine/game/wildlifeBehaviour";
+import { audioUrl } from "./assetUrls.js";
+import { pageTurns } from "./downloadTurns.js";
+import { reportLayer } from "./loadReport.js";
+import type { Presence, WildlifeEvent } from "./wildlifeBehaviour.js";
 
 /**
  * `CALL_*` (wildlifeBehaviour.ts) → the catalog's `audio` id that voices it.

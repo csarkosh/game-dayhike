@@ -6,7 +6,7 @@ import {
   coverWith,
   createSerial,
   type FailureDeps,
-} from "../../src/game/engineFailure.js";
+} from "@csarkosh/engine/game/engineFailure";
 import { LOSS_BOUND_WINDOW_MS, createLossRecord, type LossNote } from "@csarkosh/engine/game/lossBound";
 
 type Engine = { name: string };

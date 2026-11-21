@@ -7,7 +7,7 @@ import {
   WOODS_REST, birdsAt, callCue, revealCue, stepWoods,
   type WoodsInputs, type WoodsState,
 } from "../../src/game/woodsVoice.js";
-import { CALL_CLIP } from "../../src/game/wildlifeAudio.js";
+import { CALL_CLIP } from "@csarkosh/engine/game/wildlifeAudio";
 import { DUSK_AT } from "../../src/game/escalation.js";
 
 const DT = 1 / 60;

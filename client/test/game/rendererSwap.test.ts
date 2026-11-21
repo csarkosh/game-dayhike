@@ -10,7 +10,7 @@ import {
   switchOutcome,
   whenStandingSkyHeld,
   type SwapBindings,
-} from "../../src/game/rendererSwap.js";
+} from "@csarkosh/engine/game/rendererSwap";
 
 /**
  * The swap's order and its ladders, on stand-in renderers: no engine is made

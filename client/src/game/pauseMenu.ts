@@ -1,5 +1,5 @@
 import type { GameMode } from "./gameMode.js";
-import { APPLY_SWAP_READY_MAX_MS } from "./rendererSwap.js";
+import { APPLY_SWAP_READY_MAX_MS } from "@csarkosh/engine/game/rendererSwap";
 import { listOpen, openerOf, renderSettings, type Opener, type SettingsView } from "./settings.js";
 import type { TierChoice } from "@csarkosh/engine/game/tierChoice";
 

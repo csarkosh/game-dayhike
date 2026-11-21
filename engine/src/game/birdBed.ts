@@ -5,8 +5,8 @@
  * and the game runs without it.
  */
 import type { AmbientAudio } from "./ambientAudio.js";
-import { audioUrl } from "@csarkosh/engine/game/assetUrls";
-import { pageTurns } from "@csarkosh/engine/game/downloadTurns";
+import { audioUrl } from "./assetUrls.js";
+import { pageTurns } from "./downloadTurns.js";
 
 export const BIRD_BED_CLIP = "audio/ambience.forest_birds.mp3";
 

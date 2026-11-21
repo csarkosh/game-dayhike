@@ -1,7 +1,7 @@
 import { parseLevel } from "@csarkosh/engine/sim/level";
 import { createForest } from "@csarkosh/engine/sim/forest";
 import { createHikeRenderer } from "./game/hikeRenderer.js";
-import type { FreecamView } from "./game/rendererTypes.js";
+import type { FreecamView } from "@csarkosh/engine/game/rendererTypes";
 import type { Renderer } from "./game/hikeRendererTypes.js";
 import type { EndSceneSetup } from "./game/scenePlay.js";
 import { parseGpuTime } from "@csarkosh/engine/game/gpuTimeReport";
@@ -43,9 +43,9 @@ import { DEFAULT_HOUR, sunAltitudeDeg } from "@csarkosh/engine/game/skyWait";
 import { startSkySource } from "@csarkosh/engine/game/skyWorker";
 import { worldInputs } from "./game/worldInputs.js";
 import { createHikeAudio, HOLLOW_CALL_AFTER, HOLLOW_CALL_RATE } from "./game/hikeAudio.js";
-import { createWildlifeAudio, listenerToAudio } from "./game/wildlifeAudio.js";
-import { createWaterLifeAudio } from "./game/waterLifeAudio.js";
-import { createSurfAudio } from "./game/surfAudio.js";
+import { createWildlifeAudio, listenerToAudio } from "@csarkosh/engine/game/wildlifeAudio";
+import { createWaterLifeAudio } from "@csarkosh/engine/game/waterLifeAudio";
+import { createSurfAudio } from "@csarkosh/engine/game/surfAudio";
 import { wildlifePresenceUnder } from "@csarkosh/engine/game/wildlifeBehaviour";
 import { DEFAULT_BOB_SCALE } from "@csarkosh/engine/game/viewBob";
 import { DEFAULT_WEATHER, WEATHER_PRESETS, type WeatherParams, type WeatherPresetName } from "@csarkosh/engine/game/weather";
@@ -98,11 +98,11 @@ import {
   whenStandingSkyHeld,
   type EngineOnCanvas,
   type SwapBindings,
-} from "./game/rendererSwap.js";
-import { FALLBACK_NOTICE_MS, answerFailures, coverWith, createSerial } from "./game/engineFailure.js";
+} from "@csarkosh/engine/game/rendererSwap";
+import { FALLBACK_NOTICE_MS, answerFailures, coverWith, createSerial } from "@csarkosh/engine/game/engineFailure";
 import { createGpuFaults } from "@csarkosh/engine/game/gpuFaults";
 import { LOSS_ENDED_LINE, type LossNote } from "@csarkosh/engine/game/lossBound";
-import { GOVERNOR_IDLE_MAX_MS, actOnDrop, governHike, governorDecision, steadyFrame } from "./game/governor.js";
+import { GOVERNOR_IDLE_MAX_MS, actOnDrop, governHike, governorDecision, steadyFrame } from "@csarkosh/engine/game/governor";
 import { OVER_PLAY_Z, showProbeScreen, timeIdleCadence } from "@csarkosh/engine/game/probeScreen";
 import { createCoveredDraw } from "@csarkosh/engine/game/coveredDraw";
 import { FIRST_BUILD_SLICE_MS } from "@csarkosh/engine/game/syncJobs";
@@ -150,7 +150,7 @@ const CAP_LINE_DELAY_MS = 1100;
 /** Milliseconds between the lens's sight lines to a Hollow (`sightEvery`). */
 const LENS_SIGHT_MS = 100;
 import { HOLLOW_CALL_CLIP, stepWoods, WOODS_REST, type WoodsState } from "./game/woodsVoice.js";
-import { loadBirdBed } from "./game/birdBed.js";
+import { loadBirdBed } from "@csarkosh/engine/game/birdBed";
 import { stepWoodsSounds, WOODS_SOUNDS_REST, woodsSoundsFrom, type WoodsSoundsState } from "@csarkosh/engine/game/woodsSounds";
 import type { World } from "./sim/world.js";
 import type { Lobby } from "@csarkosh/engine/net/lobby";

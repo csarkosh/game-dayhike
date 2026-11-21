@@ -9,7 +9,7 @@
  */
 import {
   createAmbientAudio, type AmbientAudio, type SoundGame, type SoundHost,
-} from "./ambientAudio.js";
+} from "@csarkosh/engine/game/ambientAudio";
 import { clamp01 } from "@csarkosh/engine/game/colour";
 import type { StareLens } from "@csarkosh/engine/game/stareLens";
 import type { OddCue } from "@csarkosh/engine/game/woodsSounds";

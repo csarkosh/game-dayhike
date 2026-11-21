@@ -29,21 +29,21 @@
  * let go, and the presence starts again from the weather's own when the
  * camera comes back.
  */
-import { MAX_PLAYERS } from "@csarkosh/engine/sim/constants";
-import type { LakeSource } from "@csarkosh/engine/sim/terrain";
-import { nextRandom } from "@csarkosh/engine/sim/core";
-import type { QualityTier } from "@csarkosh/engine/game/quality";
-import type { SkyState } from "@csarkosh/engine/game/skyState";
-import type { WeatherParams } from "@csarkosh/engine/game/weather";
-import type { WindRecord } from "@csarkosh/engine/game/windParams";
+import { MAX_PLAYERS } from "../sim/constants.js";
+import type { LakeSource } from "../sim/terrain.js";
+import { nextRandom } from "../sim/core.js";
+import type { QualityTier } from "./quality.js";
+import type { SkyState } from "./skyState.js";
+import type { WeatherParams } from "./weather.js";
+import type { WindRecord } from "./windParams.js";
 import {
   midgeHumPitch,
   summerTemperature,
   waterLifePresenceUnder,
   type DragonflyShare,
   type WaterLifePresence,
-} from "@csarkosh/engine/game/waterLifeParams";
-import { inShoreBand, waterLifeBed, waterLifeLayout, type WaterLifeLayout, type WaterLifeMade } from "@csarkosh/engine/game/waterLifeField";
+} from "./waterLifeParams.js";
+import { inShoreBand, waterLifeBed, waterLifeLayout, type WaterLifeLayout, type WaterLifeMade } from "./waterLifeField.js";
 import {
   HEAD_MIDGES,
   HEAD_ROW0,
@@ -57,9 +57,9 @@ import {
   stepHeads,
   swarmFrame,
   type SwarmFrame,
-} from "@csarkosh/engine/game/midgeMotion";
-import type { MidgeFrame } from "@csarkosh/engine/game/midgeLook";
-import { DRAGONFLY_RANGE, createDragonflyBehaviour, type Dragonflies } from "@csarkosh/engine/game/dragonflyBehaviour";
+} from "./midgeMotion.js";
+import type { MidgeFrame } from "./midgeLook.js";
+import { DRAGONFLY_RANGE, createDragonflyBehaviour, type Dragonflies } from "./dragonflyBehaviour.js";
 import { FROG_QUIET_RADIUS, createFrogChorus, type FrogCall } from "./frogChorus.js";
 import { FROG_BED_REF, FROG_RANGE, type WaterLifeSound } from "./waterLifeAudio.js";
 

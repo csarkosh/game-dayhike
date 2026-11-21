@@ -5,7 +5,7 @@ import "../../src/game/dayhikeAssets.js";
 import "../../src/sim/passes/index.js";
 import {
   createWildlifeAudio, listenerToAudio, CALL_CLIP, CALL_RANGE,
-} from "../../src/game/wildlifeAudio.js";
+} from "@csarkosh/engine/game/wildlifeAudio";
 import {
   CALL_COUNT, CALL_GULL_CRY, CALL_SQUIRREL_CHATTER, CALL_ELK_BUGLE, wildlifePresenceUnder,
   type WildlifeEvent,

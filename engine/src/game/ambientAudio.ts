@@ -1,9 +1,9 @@
-import { clamp01 } from "@csarkosh/engine/game/colour";
-import { gustAt, type WindRecord } from "@csarkosh/engine/game/windParams";
-import type { EarFrame } from "@csarkosh/engine/game/listenerPose";
+import { clamp01 } from "./colour.js";
+import { gustAt, type WindRecord } from "./windParams.js";
+import type { EarFrame } from "./listenerPose.js";
 import {
   DEFAULT_WEATHER, WEATHER_PRESETS, rainHissCentreHz, rainWindCut, type WeatherParams,
-} from "@csarkosh/engine/game/weather";
+} from "./weather.js";
 
 /** Peak gain for the rain layer, applied on top of the weather's rain value
  * (`ambientGainsUnder`'s `rain`, computed inline here since `setWind`
@@ -136,7 +136,7 @@ export type LoopEmitter = {
  * `setTargetAtTime` whose time constant is a third of it is within 5 % by then. */
 export const LOOP_GAIN_RAMP_S = 0.1;
 
-export type { ListenerPose } from "@csarkosh/engine/game/listenerPose";
+export type { ListenerPose } from "./listenerPose.js";
 
 export type AmbientAudio = {
   /** Builds the graph. Call from a user gesture — browsers gate AudioContext on one. */

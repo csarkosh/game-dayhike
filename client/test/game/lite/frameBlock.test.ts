@@ -240,7 +240,7 @@ describe("the frame's uniform block on Babylon Lite", () => {
   it("packs the swash's table only on a frame whose view holds the sea, where alone the ground can read it", () => {
     // The table is 4 KB of the block, and a wetted column's age runs on every frame.
     expect(WET_SWASH_VECS * 16).toBe(4096);
-    const renderer = readFileSync(new URL("../../../src/game/lite/renderer.ts", import.meta.url), "utf8");
+    const renderer = readFileSync(new URL("../../../../engine/src/game/lite/renderer.ts", import.meta.url), "utf8");
     expect(renderer).toContain("          if (standing.sea.shown) setWetSwash(edge.table.data);");
     expect(renderer.split("setWetSwash(").length).toBe(2);
     // Under the sea's wet line the ground the swash wets is the cove's face up to the sheet's farthest reach, and the

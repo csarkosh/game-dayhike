@@ -87,9 +87,9 @@ A screen that joins a chase already under way has no reveal.
 ## 4. Where it lives
 
 - `client/src/game/woodsVoice.ts`: the level's step and the marks. Babylon-free.
-- `client/src/game/ambientAudio.ts`: the bed's bus and loop (`setBirdBed`, `setBirds`), and the
+- `engine/src/game/ambientAudio.ts`: the bed's bus and loop (`setBirdBed`, `setBirds`), and the
   call (`hollowCall`).
-- `client/src/game/birdBed.ts`: fetches the bed and hands it over once the audio is unlocked.
+- `engine/src/game/birdBed.ts`: fetches the bed and hands it over once the audio is unlocked.
 - `client/src/app.ts`: steps the woods beside the escalation on a forest world with a search,
   and nowhere else.
 

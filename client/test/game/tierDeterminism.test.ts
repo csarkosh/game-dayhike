@@ -15,7 +15,7 @@ import { GAME_FOV } from "@csarkosh/engine/game/gameLens";
 import { createHikeRenderer } from "../../src/game/hikeRenderer.js";
 import type { QualityTier } from "@csarkosh/engine/game/quality";
 import { bodiesInShot } from "../../src/game/shotBodies.js";
-import { createPlayerSlots } from "../../src/game/waterLifeInputs.js";
+import { createPlayerSlots } from "@csarkosh/engine/game/waterLifeInputs";
 import { createWildlifeInputs } from "../../src/game/wildlifeInputs.js";
 import { skyFixture } from "./helpers/skyFixture.js";
 import { timeLimit } from "../helpers/timeLimit.js";
@@ -102,7 +102,7 @@ describe("the tier is drawing only", () => {
    * nothing it took out of it.
    */
   it("reads the world's state in a frame and hands it only to the readers held above: no frame assigns to it", () => {
-    const text = readFileSync(fileURLToPath(new URL("../../src/game/lite/renderer.ts", import.meta.url)), "utf8");
+    const text = readFileSync(fileURLToPath(new URL("../../../engine/src/game/lite/renderer.ts", import.meta.url)), "utf8");
     const code = text.replace(/\/\*[\s\S]*?\*\//g, (m) => m.replace(/[^\n]/g, " ")).replace(/\/\/[^\n]*/g, "");
     const from = code.indexOf("    sync(state, localId, alpha, frame = { dt: 0, sprinting: false }) {");
     const to = code.indexOf("\n    cameraPosition() {", from);
