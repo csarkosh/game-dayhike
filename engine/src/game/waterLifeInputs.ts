@@ -4,9 +4,9 @@
  * players by slots they keep, and the sound of a world with no such life.
  * Whoever steps the life (`waterLifeScene.ts`) fills its frame from these.
  */
-import type { Vec3 } from "@csarkosh/engine/sim/core";
-import { luma } from "@csarkosh/engine/game/colour";
-import type { SkyState } from "@csarkosh/engine/game/skyState";
+import type { Vec3 } from "../sim/core.js";
+import { luma } from "./colour.js";
+import type { SkyState } from "./skyState.js";
 import type { WaterLifeSound } from "./waterLifeAudio.js";
 
 /** `value` and every object it holds, frozen. */

@@ -3,7 +3,7 @@ import "../../../src/game/dayhikeAssets.js";
 import "../../../src/sim/passes/index.js";
 import { PROBE_FRAMES, PROBE_HOUR, PROBE_QUIET_MS, PROBE_WARMUP_FRAMES, probePose } from "@csarkosh/engine/game/frameProbe";
 import { LET_GO_MAX_MS, buildLiteProbeScene, liteProbeDeps, liteProbeReady, runLiteProbeStep, type ProbeRendererMaker } from "../../../src/game/lite/probeScene.js";
-import type { FreecamView } from "../../../src/game/rendererTypes.js";
+import type { FreecamView } from "@csarkosh/engine/game/rendererTypes";
 import type { Renderer } from "../../../src/game/hikeRendererTypes.js";
 import { createSkyTable } from "@csarkosh/engine/game/skyTable";
 import type { SkySource } from "@csarkosh/engine/game/skyWorker";

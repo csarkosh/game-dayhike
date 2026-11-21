@@ -7,7 +7,7 @@ import { tight } from "./wgslText.js";
 
 const src = readFileSync(new URL("../../../src/game/lite/wayFieldMesh.ts", import.meta.url), "utf8");
 // The renderer, and Day Hike's side of it (`hikeParts.ts`), where what is this game's own in a frame is written.
-const renderer = readFileSync(new URL("../../../src/game/lite/renderer.ts", import.meta.url), "utf8") + readFileSync(new URL("../../../src/game/lite/hikeParts.ts", import.meta.url), "utf8");
+const renderer = readFileSync(new URL("../../../../engine/src/game/lite/renderer.ts", import.meta.url), "utf8") + readFileSync(new URL("../../../src/game/lite/hikeParts.ts", import.meta.url), "utf8");
 const VERTEX = tight(WAY_FIELD_WGSL.vertex);
 const FRAGMENT = tight(WAY_FIELD_WGSL.fragment);
 

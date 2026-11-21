@@ -8,7 +8,7 @@ import type { StareLens } from "@csarkosh/engine/game/stareLens";
 import type { WorldState } from "../sim/types.js";
 import type { WayDown } from "../sim/wayDown.js";
 import type { CrowdFigure } from "./crowdField.js";
-import type { WorldRenderer } from "./rendererTypes.js";
+import type { WorldRenderer } from "@csarkosh/engine/game/rendererTypes";
 import type { EndSceneNow, EndSceneSetup } from "./scenePlay.js";
 
 /** What is Day Hike's own on its renderer. */

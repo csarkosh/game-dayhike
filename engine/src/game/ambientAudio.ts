@@ -1,14 +1,9 @@
-import { clamp01 } from "@csarkosh/engine/game/colour";
-import { gustAt, type WindRecord } from "@csarkosh/engine/game/windParams";
-import { createStareAudio, MUFFLE_OPEN_HZ, muffleGain, muffleHz, type StareAudio } from "./stareAudio.js";
-import type { StareLens } from "@csarkosh/engine/game/stareLens";
-import { makeOddSound, ODD_LEVEL } from "./oddSounds.js";
-import { createChaseAudio, type ChaseAudio } from "./chaseAudio.js";
-import { createCarAudio, type CarAudio, type CarPlace, type EarFrame } from "./carAudio.js";
-import type { OddCue } from "@csarkosh/engine/game/woodsSounds";
+import { clamp01 } from "./colour.js";
+import { gustAt, type WindRecord } from "./windParams.js";
+import type { EarFrame } from "./listenerPose.js";
 import {
   DEFAULT_WEATHER, WEATHER_PRESETS, rainHissCentreHz, rainWindCut, type WeatherParams,
-} from "@csarkosh/engine/game/weather";
+} from "./weather.js";
 
 /** Peak gain for the rain layer, applied on top of the weather's rain value
  * (`ambientGainsUnder`'s `rain`, computed inline here since `setWind`
@@ -86,8 +81,12 @@ export function windBedGain(speed: number, mist: number, gust: number): number {
 export const WILDLIFE_LEVEL = 0.7;
 /** setTargetAtTime time constant — slow enough that weather fades are audible. */
 export const GAIN_RAMP_S = 2;
-/** The world bus's own ramp, for a stare's muffling and a hush: short, so silence lands within a breath. */
+/** The world bus's own ramp, for a game's muffle and a hush: short, so silence lands within a breath. */
 export const HUSH_RAMP_S = 0.08;
+/** The world's low-pass standing open: where it rests, and where a game's muffle returns it to. */
+export const WORLD_OPEN_HZ = 20000;
+/** The world's low-pass moves to a muffle's cutoff on this time constant, seconds. */
+export const MUFFLE_RAMP_S = 0.15;
 /** The brick-wall limiter between the world bus and the master, so the frogs, a hum
  * over the head and a rustle together cannot clip: from 3 dB under full scale, no
  * knee, 20 to 1, on within 3 ms and off within 100 ms. The compressor's automatic
@@ -103,42 +102,6 @@ export const BIRD_PAN = 0.6;
 export const BIRD_OVERLAP_S = 2;
 export const BIRD_LOOKAHEAD_S = 1;
 export const BIRD_GAIN_RAMP_S = 0.05;
-/** The Hollow's call: its bus level at a cue's full level, the metres from the ear it
- * is placed at, and its two voices: the recording an octave down, and a fourth under
- * that a moment later, so no animal the player knows made it. */
-export const HOLLOW_CALL_LEVEL = 3;
-export const HOLLOW_CALL_STANDOFF_M = 20;
-/** Seconds a fly takes to pass the ear (oddSounds.ts's buzz is as long). */
-export const FLY_PASS_S = 1.5;
-export const HOLLOW_CALL_VOICES: readonly { rate: number; share: number; after: number }[] = [
-  { rate: 0.5, share: 1, after: 0 },
-  { rate: 0.375, share: 0.6, after: 0.09 },
-];
-/** The call's first voice runs from this rate to this, by the variant; the second sits this far under it, and this long after. */
-export const HOLLOW_CALL_RATE: readonly [number, number] = [0.38, 0.62];
-export const HOLLOW_CALL_UNDER: readonly [number, number] = [0.66, 0.82];
-export const HOLLOW_CALL_AFTER: readonly [number, number] = [0.04, 0.22];
-
-/**
- * The two voices of one cry for a variant of 0 to 1: at 0, the voices as
- * `HOLLOW_CALL_VOICES` gives them. The variant is turned three ways by
- * taking it at different rates, so near variants are not near cries; past
- * 0.5 the second voice is the recording played backwards.
- */
-export function hollowCallVoices(variant: number): readonly { rate: number; share: number; after: number; reversed: boolean }[] {
-  const v = Math.max(0, Math.min(1, variant));
-  if (v === 0) return HOLLOW_CALL_VOICES.map((voice) => ({ ...voice, reversed: false }));
-  const a = (v * 7.31) % 1;
-  const b = (v * 3.17 + 0.5) % 1;
-  const c = (v * 11.7 + 0.25) % 1;
-  const rate = HOLLOW_CALL_RATE[0] + (HOLLOW_CALL_RATE[1] - HOLLOW_CALL_RATE[0]) * a;
-  const under = HOLLOW_CALL_UNDER[0] + (HOLLOW_CALL_UNDER[1] - HOLLOW_CALL_UNDER[0]) * b;
-  const after = HOLLOW_CALL_AFTER[0] + (HOLLOW_CALL_AFTER[1] - HOLLOW_CALL_AFTER[0]) * c;
-  return [
-    { rate, share: 1, after: 0, reversed: false },
-    { rate: rate * under, share: 0.55 + 0.2 * b, after, reversed: v > 0.5 },
-  ];
-}
 export const DEFAULT_VOLUME = 0.5;
 
 /** A playing one-shot: `move` follows the animal, `stop` cuts it short. */
@@ -173,7 +136,7 @@ export type LoopEmitter = {
  * `setTargetAtTime` whose time constant is a third of it is within 5 % by then. */
 export const LOOP_GAIN_RAMP_S = 0.1;
 
-export type { ListenerPose } from "@csarkosh/engine/game/listenerPose";
+export type { ListenerPose } from "./listenerPose.js";
 
 export type AmbientAudio = {
   /** Builds the graph. Call from a user gesture — browsers gate AudioContext on one. */
@@ -210,45 +173,17 @@ export type AmbientAudio = {
    */
   setBirdBed(buffer: AudioBuffer): void;
   /**
-   * The birdsong's level, 0 to 1 (woodsVoice.ts), every frame: the caller
+   * The birdsong's level, 0 to 1, every frame: the caller
    * has eased it, so the gain only follows. Also keeps the bed's loop
    * scheduled. Inert before `unlock()`.
    */
   setBirds(level: number): void;
   /**
-   * The Hollow's call (woodsVoice.ts): `buffer` an octave down and again a
-   * fourth under that, from the direction given (Web Audio's right-handed
-   * frame, any length), at `level` through a low-pass at `cutoffHz`. It is
-   * placed by direction alone: how far it sounds is the level's and the
-   * low-pass's to say. Inert before `unlock()`.
-   */
-  hollowCall(buffer: AudioBuffer, dx: number, dy: number, dz: number, level: number, cutoffHz: number, variant?: number): void;
-  /**
-   * One of the woods' other voices (woodsSounds.ts, oddSounds.ts): made at
-   * once from the cue's place relative to the listener (x right, y up, z
-   * ahead, in metres; a cue with no place plays on the bus itself). A fly
-   * passes from its place to the mirror of it. Inert before `unlock()`.
-   */
-  playOdd(cue: OddCue): void;
-  /**
-   * The chase's pulse (chaseAudio.ts), every frame: `cast` is how far the
-   * chase is in (escalation.ts), `near` the local lens, which quickens it.
-   * Plays beside the world, not in it, so nothing hushes it. Inert before
-   * `unlock()`.
-   */
-  setChase(cast: number, near: number): void;
-  /**
-   * Cuts the world's beds and calls by `share`, 0 to 1, within a breath
-   * (woodsVoice.ts: the reveal's silence), on top of what a stare takes.
-   * The stare's own sounds are left. Inert before `unlock()`.
+   * Cuts the world's beds and calls by `share`, 0 to 1, within a breath,
+   * on top of what a game's muffle takes (`SoundHost.muffle`). What a game
+   * plays beside the world is left. Inert before `unlock()`.
    */
   setHush(share: number): void;
-  /**
-   * The local player's stare (stareLens.ts), every frame: the world's beds
-   * and calls go muffled and quiet under it, and the heart and the whispers
-   * play (stareAudio.ts). Inert before `unlock()`.
-   */
-  setStare(lens: StareLens, haunt?: number): void;
   setVolume(v: number): void;
   /**
    * The page's mute (muteButton.ts): the master held at silence while on,
@@ -257,11 +192,12 @@ export type AmbientAudio = {
    */
   setMuted(on: boolean): void;
   /**
-   * The game's sound going (the end scene): the `scene` gain, which the
-   * world's beds and calls, the stare's sounds and the chase's pulse reach
+   * The game's sound going: the `scene` gain, which the world's beds and
+   * calls and what a game plays beside the world (`SoundHost.scene`) reach
    * the master through, ramped on the context's clock from where it is to
-   * silence over `seconds`. The inner voice's bus and the car's are not in
-   * it. Nothing brings it back. Inert before `unlock()`.
+   * silence over `seconds`. The voice's bus, and whatever a game hangs off
+   * the master itself, are not in it. Nothing brings it back. Inert before
+   * `unlock()`.
    */
   fadeWorld(seconds: number): void;
   /**
@@ -272,29 +208,13 @@ export type AmbientAudio = {
   fadeMaster(seconds: number): void;
   /**
    * The master back from `fadeMaster`'s silence, eased to the volume (to
-   * nothing while muted) over about `seconds`: a death in the chase undone
-   * (deathReturn.ts). Inert before `unlock()`.
+   * nothing while muted) over about `seconds`. Inert before `unlock()`.
    */
   restoreMaster(seconds: number): void;
   /**
-   * The car at the end (carAudio.ts) on the `car` bus: its schedule starts
-   * now (the door, the crank, the catch, the revs), placed at `at`, relative
-   * to the listener as `setCar`'s place is. A car already playing is
-   * stopped first. Inert before `unlock()`.
-   */
-  startCar(at: CarPlace): void;
-  /**
-   * The car, every frame: its speed (m/s) and its place relative to the
-   * listener in Web Audio's frame, as `playOdd`'s cues are (x right, y up,
-   * z ahead, metres). Inert before `unlock()` and with no car started.
-   */
-  setCar(speed: number, listenerRelative: CarPlace): void;
-  /** The car's sources stopped and its nodes disconnected. */
-  stopCar(): void;
-  /**
-   * The inner voice's clip (voiceClips.ts): one unpositioned one-shot on the
-   * voice bus, which hangs off the master, not the world, so the stare's
-   * muffle and the world's level never touch it. Inert before `unlock()`.
+   * A spoken line: one unpositioned one-shot on the voice bus, which hangs
+   * off the master, not the world, so a muffle and the world's level never
+   * touch it. Inert before `unlock()`.
    */
   speak(buffer: AudioBuffer, level: number): void;
   /** The line playing, cut: a scene's sound takes the frame. */
@@ -321,7 +241,7 @@ export type AmbientAudio = {
    * the voice's graph on the context; its output goes through the same
    * equal-power panner and inverse distance model as `emitter`'s, then a gain
    * of its own that `setGain` ramps, into the wildlife bus, and so through the
-   * world's bus: a stare muffles it and a hush cuts it, as they do the calls.
+   * world's bus: a muffle shuts it and a hush cuts it, as they do the calls.
    * Coordinates are in Web Audio's right-handed frame, as `emitter`'s are.
    * `dispose()` stops every one still playing.
    */
@@ -338,6 +258,54 @@ export type AmbientAudio = {
   ): void;
   dispose(): void;
 };
+
+/**
+ * What the bus hands a game at `unlock()`, once the world's graph stands: the
+ * context and the shared noise, and the three places a game's own voices may
+ * join the graph. Good until the bus is disposed.
+ */
+export type SoundHost = {
+  readonly ctx: AudioContext;
+  /** The shared noise (`NOISE_S` of it), for a game's synthesised voices to read. */
+  readonly noise: AudioBuffer;
+  /** The world's bus: what joins here is muffled, hushed, limited and faded as the beds and calls are. */
+  readonly world: AudioNode;
+  /** Beside the world: what joins here reaches the master through the scene's gain alone, so `fadeWorld` takes it and no muffle or hush does. */
+  readonly scene: AudioNode;
+  /** The master: what joins here is under the volume and the mute, and nothing else. */
+  readonly master: AudioNode;
+  /** The listener, in Web Audio's frame, as `setListener` last placed it: the one record, written in place. */
+  readonly ear: EarFrame;
+  /** The bus's own draw, the one its drips are drawn from. */
+  random(): number;
+  /**
+   * The world muffled: its low-pass moved to `cutoffHz` (`WORLD_OPEN_HZ` is
+   * open) and its level to `share`, 0 to 1, of which a hush then takes its
+   * own share. Held until the next call.
+   */
+  muffle(cutoffHz: number, share: number): void;
+};
+
+/** A game's side of the bus: told when the graph stands and when it goes. */
+export type SoundSide = {
+  /**
+   * The graph stands: the game makes its own nodes now, after every node of
+   * the world's and before the pending weather is applied and any listener
+   * of the unlock runs. Once an unlock; again after a disposal.
+   */
+  unlocked(host: SoundHost): void;
+  /** The bus is going: stop what plays. Before the context closes. */
+  disposed(): void;
+};
+
+/**
+ * A game's sound: its side of the bus, and the methods of its own that the
+ * bus wears beside the bus's (`createAmbientAudio`'s result).
+ */
+export type SoundGame<X> = () => { side: SoundSide; api: X };
+
+/** No game: the world's beds and calls alone. */
+export const noGameSound: SoundGame<object> = () => ({ side: { unlocked() {}, disposed() {} }, api: {} });
 
 /** The listener as Firefox has it: no AudioParams, the two setters alone. */
 type ListenerWithSetters = {
@@ -386,56 +354,41 @@ export function placeListener(
  * same noise `setDrip` schedules under a wet canopy. Everything is inert until
  * `unlock()`, and the latest weather/volume set before unlock applies then.
  *
+ * `game` adds a game's own voices (`SoundGame`): its side is handed the graph
+ * at `unlock()`, and its methods are worn by what this returns.
  * `createCtx` is injectable so tests can hand in a fake: node has no
  * AudioContext.
  * `random` draws the drips' intervals, centres and noise offsets, injectable
  * for the same reason.
  */
-export function createAmbientAudio(
+export function createAmbientAudio<X>(
+  game: SoundGame<X>,
   createCtx: () => AudioContext = () => new AudioContext(),
   random: () => number = Math.random,
-): AmbientAudio {
+): AmbientAudio & X {
+  const { side, api } = game();
   let ctx: AudioContext | null = null;
   let pending: WeatherParams = { ...WEATHER_PRESETS[DEFAULT_WEATHER] };
   let volume = DEFAULT_VOLUME;
   let muted = false;
   let master: GainNode | null = null;
-  /** The inner voice's bus, made on its first line (`speak`). */
+  /** The voice's bus, made on its first line (`speak`). */
   let voiceGain: GainNode | null = null;
   /** The line's source while it plays, for the cut. */
   let speaking: AudioBufferSourceNode | null = null;
-  /** What the rain, the wind, the drips and the wildlife are mixed through: the stare muffles it, and nothing else. */
+  /** What the rain, the wind, the drips and the wildlife are mixed through: a game's muffle shuts it, and nothing else. */
   let world: GainNode | null = null;
   let worldFilter: BiquadFilterNode | null = null;
-  let stare: StareAudio | null = null;
-  /** What the world's bus is cut by, and the stare's level: its gain is the product of what each leaves. */
+  /** What the world's bus is cut by, and the share a game's muffle leaves of it: its gain is the product of what each leaves. */
   let hush = 0;
-  let stareLevel = 0;
-  let chase: ChaseAudio | null = null;
-  /** What the world's limiter, the stare and the chase reach the master through: `fadeWorld` takes it to silence. */
+  let muffleShare = 1;
+  /** What the world's limiter and a game's voices beside the world reach the master through: `fadeWorld` takes it to silence. */
   let scene: GainNode | null = null;
-  /** The car's bus (carAudio.ts), off the master beside the voice's, so the world's fade leaves it. */
-  let carBus: GainNode | null = null;
-  let car: CarAudio | null = null;
-  /** Each call recording's reverse, made once. */
-  const reversed = new Map<AudioBuffer, AudioBuffer>();
-  function reversedOf(buffer: AudioBuffer): AudioBuffer {
-    let out = reversed.get(buffer);
-    if (out !== undefined || !ctx) return out ?? buffer;
-    out = ctx.createBuffer(buffer.numberOfChannels, buffer.length, buffer.sampleRate);
-    for (let c = 0; c < buffer.numberOfChannels; c++) {
-      const from = buffer.getChannelData(c);
-      const to = out.getChannelData(c);
-      for (let i = 0; i < from.length; i++) to[i] = from[from.length - 1 - i] as number;
-    }
-    reversed.set(buffer, out);
-    return out;
-  }
   let birdGain: GainNode | null = null;
   let birdBed: AudioBuffer | null = null;
   /** Each ear's pan node, and when its next pass of the bed starts on the context's clock. */
   let birdSides: { pan: StereoPannerNode; next: number }[] = [];
-  /** The listener, in Web Audio's frame, for the whispers' circles, and its forward and up for the odd sounds' places and the car's. */
+  /** The listener, in Web Audio's frame, where `setListener` last placed it: a game's side reads it for its own voices' places. */
   const ear: EarFrame = { x: 0, y: 0, z: 0, fx: 0, fy: 0, fz: -1, ux: 0, uy: 1, uz: 0 };
   let rainGain: GainNode | null = null;
   let rainFilter: BiquadFilterNode | null = null;
@@ -505,6 +458,14 @@ export function createAmbientAudio(
     p.linearRampToValueAtTime(0, now + Math.max(0, seconds));
   }
 
+  /** A game's muffle of the world (`SoundHost.muffle`). */
+  function muffle(cutoffHz: number, share: number): void {
+    if (!ctx || !world || !worldFilter) return;
+    worldFilter.frequency.setTargetAtTime(cutoffHz, ctx.currentTime, MUFFLE_RAMP_S);
+    muffleShare = share;
+    world.gain.setTargetAtTime(muffleShare * (1 - hush), ctx.currentTime, HUSH_RAMP_S);
+  }
+
   /**
    * The panner every positioned voice goes through. equalpower, not HRTF:
    * HRTF convolves per source and this can have a dozen calls alive at once.
@@ -525,7 +486,7 @@ export function createAmbientAudio(
     return panner;
   }
 
-  return {
+  const bus: AmbientAudio = {
     unlock() {
       if (ctx) return;
       ctx = createCtx();
@@ -534,8 +495,8 @@ export function createAmbientAudio(
       master.gain.value = muted ? 0 : volume;
       master.connect(ctx.destination);
       // The world's bus: every bed and call below is mixed into it, and it
-      // reaches the master through a low-pass the stare shuts, a limiter and
-      // the scene's gain (wired last).
+      // reaches the master through a low-pass a game's muffle shuts, a limiter
+      // and the scene's gain (wired last).
       world = ctx.createGain();
       world.gain.value = 1;
 
@@ -604,7 +565,7 @@ export function createAmbientAudio(
 
       worldFilter = ctx.createBiquadFilter();
       worldFilter.type = "lowpass";
-      worldFilter.frequency.value = MUFFLE_OPEN_HZ;
+      worldFilter.frequency.value = WORLD_OPEN_HZ;
       world.connect(worldFilter);
       const limiter = ctx.createDynamicsCompressor();
       limiter.threshold.value = WORLD_LIMIT.thresholdDb;
@@ -613,18 +574,15 @@ export function createAmbientAudio(
       limiter.attack.value = WORLD_LIMIT.attackS;
       limiter.release.value = WORLD_LIMIT.releaseS;
       worldFilter.connect(limiter);
-      // The world, the stare and the chase reach the master through one gain
-      // the end fades; the voice's bus and the car's do not.
+      // The world and a game's voices beside it reach the master through one
+      // gain `fadeWorld` fades; the voice's bus does not.
       scene = ctx.createGain();
       scene.gain.value = 1;
       scene.connect(master);
       limiter.connect(scene);
-      // The stare's own sounds sit beside the world, not in it: they are not muffled.
-      stare = createStareAudio(ctx, scene, noise, random);
-      chase = createChaseAudio(ctx, scene, noise);
-      carBus = ctx.createGain();
-      carBus.gain.value = 1;
-      carBus.connect(master);
+      // The game's own voices, made after every node of the world's: the
+      // graph's order is pinned by its tests.
+      side.unlocked({ ctx, noise, world, scene, master, ear, random, muffle });
 
       applyGains(pending);
 
@@ -711,84 +669,10 @@ export function createAmbientAudio(
         side.next += birdBed.duration - BIRD_OVERLAP_S;
       }
     },
-    hollowCall(buffer, dx, dy, dz, level, cutoffHz, variant = 0) {
-      if (!ctx || !world) return;
-      const length = Math.hypot(dx, dy, dz);
-      if (!(length > 0) || !(level > 0)) return;
-      const at = ctx.currentTime;
-      const filter = ctx.createBiquadFilter();
-      filter.type = "lowpass";
-      filter.frequency.value = cutoffHz;
-      const panner = ctx.createPanner();
-      panner.panningModel = "HRTF";
-      panner.distanceModel = "inverse";
-      panner.rolloffFactor = 0;
-      panner.positionX.value = ear.x + (dx / length) * HOLLOW_CALL_STANDOFF_M;
-      panner.positionY.value = ear.y + (dy / length) * HOLLOW_CALL_STANDOFF_M;
-      panner.positionZ.value = ear.z + (dz / length) * HOLLOW_CALL_STANDOFF_M;
-      filter.connect(panner);
-      panner.connect(world);
-      // No two cries alike: the variant picks the first voice's pitch, the
-      // second's interval and delay, and whether the second is the recording
-      // played backwards (a cry that ends where one begins).
-      for (const voice of hollowCallVoices(clamp01(variant))) {
-        const src = ctx.createBufferSource();
-        src.buffer = voice.reversed ? reversedOf(buffer) : buffer;
-        src.playbackRate.value = voice.rate;
-        const g = ctx.createGain();
-        g.gain.value = HOLLOW_CALL_LEVEL * clamp01(level) * voice.share;
-        src.connect(g);
-        g.connect(filter);
-        src.start(at + voice.after);
-      }
-    },
-    playOdd(cue) {
-      if (!ctx || !world || !noise) return;
-      const level = ODD_LEVEL[cue.kind] * clamp01(cue.level);
-      if (!(level > 0)) return;
-      const at = ctx.currentTime;
-      if (cue.kind === "swell") {
-        makeOddSound({ ctx, noise, into: world }, cue.kind, at, level);
-        return;
-      }
-      // The cue's frame to the world's: right is forward across up.
-      const rx = ear.fy * ear.uz - ear.fz * ear.uy;
-      const ry = ear.fz * ear.ux - ear.fx * ear.uz;
-      const rz = ear.fx * ear.uy - ear.fy * ear.ux;
-      const px = ear.x + rx * cue.x + ear.ux * cue.y + ear.fx * cue.z;
-      const py = ear.y + ry * cue.x + ear.uy * cue.y + ear.fy * cue.z;
-      const pz = ear.z + rz * cue.x + ear.uz * cue.y + ear.fz * cue.z;
-      const panner = ctx.createPanner();
-      panner.panningModel = "HRTF";
-      panner.distanceModel = "inverse";
-      panner.rolloffFactor = 0;
-      panner.positionX.value = px;
-      panner.positionY.value = py;
-      panner.positionZ.value = pz;
-      if (cue.kind === "fly") {
-        // Across the head and out the other side.
-        panner.positionX.setValueAtTime(px, at);
-        panner.positionX.linearRampToValueAtTime(ear.x - rx * cue.x - ear.fx * cue.z, at + FLY_PASS_S);
-        panner.positionZ.setValueAtTime(pz, at);
-        panner.positionZ.linearRampToValueAtTime(ear.z - rz * cue.x - ear.fz * cue.z, at + FLY_PASS_S);
-      }
-      panner.connect(world);
-      makeOddSound({ ctx, noise, into: panner }, cue.kind, at, level);
-    },
-    setChase(cast, near) {
-      chase?.set(cast, near);
-    },
     setHush(share) {
       hush = clamp01(share);
       if (!ctx || !world) return;
-      world.gain.setTargetAtTime(muffleGain(stareLevel) * (1 - hush), ctx.currentTime, HUSH_RAMP_S);
-    },
-    setStare(lens, haunt = 0) {
-      if (!ctx || !world || !worldFilter || !stare) return;
-      worldFilter.frequency.setTargetAtTime(muffleHz(lens.level), ctx.currentTime, 0.15);
-      stareLevel = lens.level;
-      world.gain.setTargetAtTime(muffleGain(stareLevel) * (1 - hush), ctx.currentTime, HUSH_RAMP_S);
-      stare.set(lens, ear.x, ear.y, ear.z, haunt);
+      world.gain.setTargetAtTime(muffleShare * (1 - hush), ctx.currentTime, HUSH_RAMP_S);
     },
     setVolume(v) {
       volume = clamp01(v);
@@ -814,20 +698,6 @@ export function createAmbientAudio(
       master.gain.cancelScheduledValues(ctx.currentTime);
       master.gain.setValueAtTime(from, ctx.currentTime);
       master.gain.setTargetAtTime(muted ? 0 : volume, ctx.currentTime, Math.max(0.01, seconds) / 3);
-    },
-    startCar(at) {
-      if (!ctx || !carBus || !noise) return;
-      car?.stop();
-      car = createCarAudio(ctx, carBus, noise, ear);
-      car.start();
-      car.set(0, at);
-    },
-    setCar(speed, listenerRelative) {
-      car?.set(speed, listenerRelative);
-    },
-    stopCar() {
-      car?.stop();
-      car = null;
     },
     speak(buffer, level) {
       if (!ctx || !master) return;
@@ -954,19 +824,17 @@ export function createAmbientAudio(
       // Before the context goes: a loop's sources would otherwise play on
       // until the close lands. `stop` takes each out of the set as it goes.
       for (const loop of loops) loop.stop();
-      car?.stop();
-      car = null;
+      side.disposed();
       void ctx?.close();
       ctx = null;
-      master = world = rainGain = windGain = wildlifeGain = dripGain = birdGain = scene = carBus = null;
+      master = world = rainGain = windGain = wildlifeGain = dripGain = birdGain = scene = null;
       birdBed = null;
       birdSides = [];
       rainFilter = windFilter = worldFilter = null;
-      stare = null;
-      chase = null;
       noise = null;
       dripping = false;
       unlockListeners.length = 0;
     },
   };
+  return Object.assign(bus, api);
 }

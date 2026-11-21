@@ -1040,7 +1040,7 @@ where its record stops matching (a new `DETECT_VERSION`, GPU, browser major or
 class, or an engine it was not held on). The module stays, pure and tested on
 its own; what follows is how it behaves where it is on.
 
-`createGovernor(now)` in `client/src/game/governor.ts`, pure, fed each frame's
+`createGovernor(now)` in `engine/src/game/governor.ts`, pure, fed each frame's
 interval from both loops' `dt` (`feedGovernor` in `app.ts`), with whether the
 frame was steady play:
 

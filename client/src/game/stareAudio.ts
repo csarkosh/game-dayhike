@@ -7,6 +7,7 @@
  * resonances, opened and shut a syllable at a time, with no consonant (the
  * hiss one made read as a snare). No voice says a word.
  */
+import { WORLD_OPEN_HZ } from "@csarkosh/engine/game/ambientAudio";
 import { HEART_DUB_AT, STARE_FLOOR, type StareLens } from "@csarkosh/engine/game/stareLens";
 
 const clamp01 = (v: number): number => Math.max(0, Math.min(1, v));
@@ -31,7 +32,7 @@ export const WHISPER_MAX_SPEAKING = 2;
 /** A syllable's gain at its loudest: the two resonances pass a sliver of the noise, and this is what brings a voice up to the heart's side. */
 export const WHISPER_SYLLABLE_GAIN = 3;
 /** The world's low-pass under a stare: open at none, shut down to this at a full one, and the share of its level left. */
-export const MUFFLE_OPEN_HZ = 20000;
+export const MUFFLE_OPEN_HZ = WORLD_OPEN_HZ;
 export const MUFFLE_SHUT_HZ = 650;
 export const MUFFLE_GAIN = 0.45;
 

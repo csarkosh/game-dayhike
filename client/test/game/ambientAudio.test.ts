@@ -1,12 +1,17 @@
 import { describe, it, expect, vi } from "vitest";
 import {
-  createAmbientAudio, DEFAULT_VOLUME, RAIN_LEVEL, WILDLIFE_LEVEL, WIND_LEVEL,
+  DEFAULT_VOLUME, RAIN_LEVEL, WILDLIFE_LEVEL, WIND_LEVEL,
   WIND_CUTOFF_BASE, WIND_CUTOFF_GUST, WIND_GAIN_FLOOR, WIND_MIST_DEEPEN, WIND_MIST_QUIET,
   WIND_GAIN_DEPTH, WIND_GAIN_RAMP_S, windBedGain, BIRD_LEVEL, BIRD_PAN, BIRD_OVERLAP_S, BIRD_GAIN_RAMP_S,
-  HOLLOW_CALL_LEVEL, HOLLOW_CALL_STANDOFF_M, HOLLOW_CALL_VOICES, HOLLOW_CALL_RATE, HOLLOW_CALL_AFTER, hollowCallVoices, HUSH_RAMP_S, FLY_PASS_S,
+  HUSH_RAMP_S,
   type VoiceSource,
-} from "../../src/game/ambientAudio.js";
-import { frogCallVoice, humVoice, rustleVoice } from "../../src/game/insectVoices.js";
+} from "@csarkosh/engine/game/ambientAudio";
+// The bus as the hike makes it: the world's graph with Day Hike's voices on it, which these pin together.
+import {
+  createHikeAudio as createAmbientAudio,
+  HOLLOW_CALL_LEVEL, HOLLOW_CALL_STANDOFF_M, HOLLOW_CALL_VOICES, HOLLOW_CALL_RATE, HOLLOW_CALL_AFTER, hollowCallVoices, FLY_PASS_S,
+} from "../../src/game/hikeAudio.js";
+import { frogCallVoice, humVoice, rustleVoice } from "@csarkosh/engine/game/insectVoices";
 import { ambientGainsUnder, WEATHER_PRESETS } from "@csarkosh/engine/game/weather";
 import { MUFFLE_OPEN_HZ, MUFFLE_SHUT_HZ, MUFFLE_GAIN, HEART_LEVEL, WHISPER_LEVEL, WHISPER_VOICES, WHISPER_MAX_SPEAKING } from "../../src/game/stareAudio.js";
 import { HEART_DUB_AT, STARE_LENS_REST } from "@csarkosh/engine/game/stareLens";

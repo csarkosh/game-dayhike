@@ -41,7 +41,7 @@ describe("the post chain's targets on Babylon Lite", () => {
   });
 
   it("keeps the frame's own target on the tier with no chain too: the hike makes that pass as Lite's own would be, into a target that stands", () => {
-    const renderer = readFileSync(new URL("../../../src/game/lite/renderer.ts", import.meta.url), "utf8");
+    const renderer = readFileSync(new URL("../../../../engine/src/game/lite/renderer.ts", import.meta.url), "utf8");
     // No pass of Lite's own on any tier: its target is made again at every recording of the frame's passes.
     expect(renderer).toContain("    const scene = createSceneContext(engine, { defaultRenderTask: false });");
     // Lite's own pass, by its own numbers: the canvas's format, a depth and stencil buffer, the engine's samples a

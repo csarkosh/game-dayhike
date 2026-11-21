@@ -3,7 +3,7 @@ import "../../../src/game/dayhikeAssets.js";
 import "../../../src/sim/passes/index.js";
 import { SETTLE_FRAMES, SETTLE_STRETCH, startLiteSceneRoute, type LiteSceneRouteDeps } from "../../../src/game/lite/sceneRoute.js";
 import type { LiteActor, LiteCar, SceneryHost } from "../../../src/game/lite/sceneryMeshes.js";
-import type { FreecamView } from "../../../src/game/rendererTypes.js";
+import type { FreecamView } from "@csarkosh/engine/game/rendererTypes";
 import type { Renderer } from "../../../src/game/hikeRendererTypes.js";
 import { JUMP_M, WARM_FRAMES } from "../../../src/game/scene/cameraJump.js";
 import { INTRO_HOUR, INTRO_SHOTS, INTRO_WEATHER } from "../../../src/game/scene/intro.js";

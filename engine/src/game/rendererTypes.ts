@@ -9,23 +9,23 @@
  * mode's report (`gpuTimeReport.ts`). No renderer is handed an engine here:
  * the hike's makes its own (`hikeRenderer.ts`).
  */
-import type { Vec3 } from "@csarkosh/engine/sim/core";
-import type { ListenerPose } from "@csarkosh/engine/game/listenerPose";
-import type { EngineHandle, EngineName } from "@csarkosh/engine/game/engineHandle";
-import type { WatchEngine } from "@csarkosh/engine/game/engineWatch";
-import type { EyePose } from "@csarkosh/engine/game/eyeBlend";
-import type { FirstBuilds } from "@csarkosh/engine/game/firstBuilds";
-import type { GpuTimeReport } from "@csarkosh/engine/game/gpuTimeReport";
-import type { PaintPaletteName } from "@csarkosh/engine/game/gradeParams";
-import type { ImpostorBake } from "@csarkosh/engine/game/impostorBake";
-import type { PreparedScene } from "@csarkosh/engine/game/preparedScene";
-import type { QualityTier } from "@csarkosh/engine/game/quality";
-import type { SkyTable } from "@csarkosh/engine/game/skyTable";
-import type { SurfSound } from "@csarkosh/engine/game/surfSound";
+import type { Vec3 } from "../sim/core.js";
+import type { ListenerPose } from "./listenerPose.js";
+import type { EngineHandle, EngineName } from "./engineHandle.js";
+import type { WatchEngine } from "./engineWatch.js";
+import type { EyePose } from "./eyeBlend.js";
+import type { FirstBuilds } from "./firstBuilds.js";
+import type { GpuTimeReport } from "./gpuTimeReport.js";
+import type { PaintPaletteName } from "./gradeParams.js";
+import type { ImpostorBake } from "./impostorBake.js";
+import type { PreparedScene } from "./preparedScene.js";
+import type { QualityTier } from "./quality.js";
+import type { SkyTable } from "./skyTable.js";
+import type { SurfSound } from "./surfSound.js";
 import type { WaterLifeSound } from "./waterLifeAudio.js";
-import type { WeatherParams, WeatherPresetName } from "@csarkosh/engine/game/weather";
-import type { WildlifeEvent } from "@csarkosh/engine/game/wildlifeBehaviour";
-import type { WindRecord } from "@csarkosh/engine/game/windParams";
+import type { WeatherParams, WeatherPresetName } from "./weather.js";
+import type { WildlifeEvent } from "./wildlifeBehaviour.js";
+import type { WindRecord } from "./windParams.js";
 
 /** The free camera's view; `fov` (rad, vertical) and `roll` (rad) are a film
  * shot's, absent for the game's own lens and no roll. */

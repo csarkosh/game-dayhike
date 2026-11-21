@@ -2,7 +2,7 @@ import { describe, expect, it, vi } from "vitest";
 import "../../src/game/dayhikeAssets.js";
 import { createLoadProgress } from "@csarkosh/engine/game/loadProgress";
 import { reportLayer, reportProgress, setLoadProgress } from "@csarkosh/engine/game/loadReport";
-import { reportCall } from "../../src/game/wildlifeAudio.js";
+import { reportCall } from "@csarkosh/engine/game/wildlifeAudio";
 import { stepSlices } from "@csarkosh/engine/game/syncJobs";
 
 /** A progress model no model has been asked of, so the line reads the next stage. */

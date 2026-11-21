@@ -3,7 +3,7 @@
  * shut, the engine cranked and caught, two revs, and from the pull-away the
  * engine and the tyres following the car down the road. Synthesized on the
  * ambient context, as the chase's pulse is, into the `car` bus off the master
- * (ambientAudio.ts), so the world's fade leaves it; placed at the car and
+ * (hikeAudio.ts), so the world's fade leaves it; placed at the car and
  * heard from the listener, its level and its brightness falling with the
  * distance. The engine is the intro's engine bed: six harmonics at 1/k each
  * over a fundamental that wanders, under band noise, so the two films' cars
@@ -112,8 +112,9 @@ export function carCutoffHz(d: number): number {
   return CAR_OPEN_HZ + (CAR_SHUT_HZ - CAR_OPEN_HZ) * t;
 }
 
-/** The listener in Web Audio's frame: where it is, and its forward and up. */
-export type EarFrame = { x: number; y: number; z: number; fx: number; fy: number; fz: number; ux: number; uy: number; uz: number };
+import type { EarFrame } from "@csarkosh/engine/game/listenerPose";
+
+export type { EarFrame };
 
 /** A place relative to the listener: x right, y up, z ahead, metres. */
 export type CarPlace = { x: number; y: number; z: number };

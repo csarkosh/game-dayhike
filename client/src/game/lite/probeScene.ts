@@ -42,13 +42,13 @@ import { PROBE_HOUR, PROBE_READY_MAX_MS, PROBE_SEED_TOKEN, createProbeMeter, pro
 import { pageProbe, type PageProbe } from "@csarkosh/engine/game/probePage";
 import { containerPixels, type ProbeReading, type QualityTier } from "@csarkosh/engine/game/quality";
 import type { Renderer } from "../hikeRendererTypes.js";
-import type { RendererOptions } from "../rendererTypes.js";
+import type { RendererOptions } from "@csarkosh/engine/game/rendererTypes";
 import { hikeParts } from "./hikeParts.js";
 import { seedFromToken } from "@csarkosh/engine/game/seed";
 import type { SkyTable } from "@csarkosh/engine/game/skyTable";
 import type { SkySource } from "@csarkosh/engine/game/skyWorker";
 import { WEATHER_PRESETS } from "@csarkosh/engine/game/weather";
-import { createLiteRenderer } from "./renderer.js";
+import { createLiteRenderer } from "@csarkosh/engine/game/lite/renderer";
 
 export type LiteProbeScene = { renderer: Renderer; frame(): void; dispose(): void };
 

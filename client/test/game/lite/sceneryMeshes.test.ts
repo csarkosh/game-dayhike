@@ -331,7 +331,7 @@ describe("the parts of a car a pose turns, on Babylon Lite", () => {
     expect(source).toContain("mesh.pluginVertexData = numbers;");
     expect(source).toContain("if (turns !== null && turns.numbers[n] !== null) part.material.plugins = [...(part.material.plugins ?? []), carTurnsPlugin(turns.block, readsTangents(part))];");
     expect(source).toContain("if (cover) options.cover?.add(mesh, numbers === null || turns === null ? undefined : carTurnsPlugin(turns.block, false));");
-    const renderer = readFileSync(new URL("../../../src/game/lite/renderer.ts", import.meta.url), "utf8");
+    const renderer = readFileSync(new URL("../../../../engine/src/game/lite/renderer.ts", import.meta.url), "utf8");
     expect(renderer).toContain('{ add: (mesh, place) => rainMap.register(mesh, "hard", place), remove: (mesh) => rainMap.unregister(mesh) }');
   });
 

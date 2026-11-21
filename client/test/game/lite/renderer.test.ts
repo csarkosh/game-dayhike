@@ -9,12 +9,12 @@ import { DIED_EYE_HEIGHT, DIED_FALL_S } from "../../../src/game/ending.js";
 import { GAME_FOV } from "@csarkosh/engine/game/gameLens";
 import type { CarPose } from "../../../src/game/scene/timeline.js";
 import { PLAYER_HALF } from "@csarkosh/engine/sim/constants";
-import { DEPTH_AHEAD_MAX_DEGREES, depthAheadPlugin } from "../../../src/game/lite/renderer.js";
+import { DEPTH_AHEAD_MAX_DEGREES, depthAheadPlugin } from "@csarkosh/engine/game/lite/renderer";
 import { createHikeRenderer } from "../../../src/game/hikeRenderer.js";
 import type { Renderer } from "../../../src/game/hikeRendererTypes.js";
 import { createSkyTable, type SkyTable } from "@csarkosh/engine/game/skyTable";
 import { SILENT_SURF_SOUND } from "@csarkosh/engine/game/surfSound";
-import { SILENT_WATER_LIFE } from "../../../src/game/waterLifeInputs.js";
+import { SILENT_WATER_LIFE } from "@csarkosh/engine/game/waterLifeInputs";
 import { WEATHER_PRESETS } from "@csarkosh/engine/game/weather";
 import { windRecordUnder } from "@csarkosh/engine/game/windParams";
 import { EMPTY_LEVEL, windTestState } from "../helpers/rendererWorld.js";
@@ -421,7 +421,7 @@ describe("the hike's renderer on Babylon Lite, before its engine stands", () => 
     r.sync(windTestState(), -1, 0);
     // Nothing stands to step the life under Node; a renderer whose engine stands is silent the same way until it has.
     expect(r.waterLifeSound()).toBe(SILENT_WATER_LIFE);
-    const text = readFileSync(fileURLToPath(new URL("../../../src/game/lite/renderer.ts", import.meta.url)), "utf8");
+    const text = readFileSync(fileURLToPath(new URL("../../../../engine/src/game/lite/renderer.ts", import.meta.url)), "utf8");
     expect(text).toContain("      return heardLife !== null && waterLifeStepped ? heardLife.sound() : SILENT_WATER_LIFE;");
     expect(text).toContain("  let waterLifeStepped = false;");
     // Stepped in one place, by a frame that drew a lake's life; a frame that did not takes the word back.
@@ -437,7 +437,7 @@ describe("the hike's renderer on Babylon Lite, before its engine stands", () => 
     r.setFreecam({ x: 0, y: 10, z: 0, yaw: 0, pitch: 0 });
     r.sync(windTestState(), -1, 0);
     expect(r.surfSound()).toBe(silent);
-    const text = readFileSync(fileURLToPath(new URL("../../../src/game/lite/renderer.ts", import.meta.url)), "utf8");
+    const text = readFileSync(fileURLToPath(new URL("../../../../engine/src/game/lite/renderer.ts", import.meta.url)), "utf8");
     expect(text).toContain("      return surfStepped ? surf : SILENT_SURF_SOUND;");
     // Stepped in one place, by a frame that stepped the sea's edge; every frame takes the word back first.
     expect([...text.matchAll(/\bsurfStepped = true;/g)].length).toBe(1);

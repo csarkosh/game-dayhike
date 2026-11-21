@@ -78,7 +78,7 @@ describe("the mist over the way", () => {
 
 describe("the renderer and the app", () => {
   // The renderer, and Day Hike's side of it (`lite/hikeParts.ts`), where what is this game's own in a frame is written.
-  const renderer = readFileSync(clientFile("src/game/lite/renderer.ts"), "utf8") + readFileSync(clientFile("src/game/lite/hikeParts.ts"), "utf8");
+  const renderer = readFileSync(clientFile("../engine/src/game/lite/renderer.ts"), "utf8") + readFileSync(clientFile("src/game/lite/hikeParts.ts"), "utf8");
   const chain = readFileSync(clientFile("../engine/src/game/lite/postChain.ts"), "utf8");
   const app = readFileSync(clientFile("src/app.ts"), "utf8");
 

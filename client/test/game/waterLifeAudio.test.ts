@@ -1,11 +1,11 @@
 import { describe, expect, it, vi } from "vitest";
 import "../../src/game/dayhikeAssets.js";
-import type { VoiceSource } from "../../src/game/ambientAudio.js";
-import { FROG_GAIN, FROG_QUIET_RADIUS, type FrogCall } from "../../src/game/frogChorus.js";
+import type { VoiceSource } from "@csarkosh/engine/game/ambientAudio";
+import { FROG_GAIN, FROG_QUIET_RADIUS, type FrogCall } from "@csarkosh/engine/game/frogChorus";
 import {
   createWaterLifeAudio, FROG_BED_GAIN, FROG_BED_REF, FROG_RANGE, FROG_REF, HUM_RANGE, HUM_REF, RUSTLE_RANGE, RUSTLE_REF,
   type WaterLifeSound,
-} from "../../src/game/waterLifeAudio.js";
+} from "@csarkosh/engine/game/waterLifeAudio";
 
 /** Enough of a context for the voices to build on: every node takes
  * connections, an oscillator's frequency records its glides, and a buffer

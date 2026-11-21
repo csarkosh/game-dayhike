@@ -109,7 +109,8 @@
     "game/hikeRenderer.ts",
     "game/world.worker.ts",
     "game/trace.ts",
-    "game/wildlifeInputs.ts"
+    "game/wildlifeInputs.ts",
+    "game/hikeAudio.ts"
   ],
   "hold": {
     "env.d.ts": "the client's own ambient types",

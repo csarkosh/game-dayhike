@@ -1,7 +1,7 @@
 import { describe, it, expect } from "vitest";
 import "../../src/game/dayhikeAssets.js";
 import { createVoiceClips, voiceClipId, VOICE_CLIP_LEVEL } from "../../src/game/voiceClips.js";
-import type { AmbientAudio } from "../../src/game/ambientAudio.js";
+import type { AmbientAudio } from "@csarkosh/engine/game/ambientAudio";
 
 function fakeAmbient() {
   const spoken: { buffer: AudioBuffer; level: number }[] = [];

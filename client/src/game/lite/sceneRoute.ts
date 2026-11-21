@@ -39,7 +39,7 @@ import type { WorldState } from "../../sim/types.js";
 import { resolveCharacterAssets } from "../characterAssets.js";
 import type { QualityTier } from "@csarkosh/engine/game/quality";
 import type { Renderer } from "../hikeRendererTypes.js";
-import type { FreecamView } from "../rendererTypes.js";
+import type { FreecamView } from "@csarkosh/engine/game/rendererTypes";
 import { hikeParts } from "./hikeParts.js";
 import { SETTLE_MAX_MS, WARM_FRAMES, cameraJumped } from "../scene/cameraJump.js";
 import { createCaptionPanel } from "../scene/captions.js";
@@ -52,7 +52,7 @@ import { sunAltitudeDeg } from "@csarkosh/engine/game/skyWait";
 import { startSkySource } from "@csarkosh/engine/game/skyWorker";
 import { READY_MAX_MS } from "@csarkosh/engine/game/startReady";
 import { SYNC_LATE_FRAMES_MAX } from "@csarkosh/engine/game/syncJobs";
-import { createLiteRenderer } from "./renderer.js";
+import { createLiteRenderer } from "@csarkosh/engine/game/lite/renderer";
 import { liteSceneryOf, type LiteActor, type LiteTrailhead } from "./sceneryMeshes.js";
 import { stageLiteFrame, type LiteStageDeps } from "./sceneStage.js";
 

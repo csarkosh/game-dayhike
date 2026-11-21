@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { NOT_DRAWN, notDrawnMembers } from "../../../src/game/lite/notDrawn.js";
+import { NOT_DRAWN, notDrawnMembers } from "@csarkosh/engine/game/lite/notDrawn";
 import { QUALITY } from "@csarkosh/engine/game/quality";
 
 describe("what the renderer on Babylon Lite does not draw yet", () => {

@@ -1148,7 +1148,7 @@ describe("layer boundaries", () => {
     // And the hike is handed that renderer by a module that loads it and nothing else that draws.
     // With Day Hike's side of it (`lite/hikeParts.ts`), which the renderer calls at its own points.
     expect(readFileSync(at("game/hikeRenderer.ts"), "utf8")).toContain("  return createLiteRenderer(canvas, level, forest, options, hikeParts);");
-    expect(loaded(at("game/hikeRenderer.ts"))).toEqual(["./lite/renderer.js", "./lite/hikeParts.js"]);
+    expect(loaded(at("game/hikeRenderer.ts"))).toEqual([`${ENGINE_PACKAGE}game/lite/renderer`, "./lite/hikeParts.js"]);
   });
 
   /**
@@ -1181,7 +1181,7 @@ describe("layer boundaries", () => {
     // Who holds a renderer takes the types from there.
     for (const holder of ["app.ts", "game/hikeRenderer.ts", "game/rendererSwap.ts", "game/lite/renderer.ts", "game/lite/notDrawn.ts", "game/lite/probeScene.ts", "game/lite/sceneRoute.ts", "game/lite/sceneStage.ts", "game/lite/sceneryMeshes.ts"]) {
       const specs = importsOf(at(holder));
-      expect(specs.some((spec) => spec.endsWith("/rendererTypes.js") || spec.endsWith("/hikeRendererTypes.js")), holder).toBe(true);
+      expect(specs.some((spec) => /\/(?:rendererTypes|hikeRendererTypes)(?:\.js)?$/.test(spec)), holder).toBe(true);
     }
   });
 

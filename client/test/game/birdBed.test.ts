@@ -1,6 +1,6 @@
 import { describe, it, expect, vi } from "vitest";
 import "../../src/game/dayhikeAssets.js";
-import { BIRD_BED_CLIP, loadBirdBed } from "../../src/game/birdBed.js";
+import { BIRD_BED_CLIP, loadBirdBed } from "@csarkosh/engine/game/birdBed";
 import { audioUrl } from "@csarkosh/engine/game/assetUrls";
 
 /** The three calls the loader makes of the ambient graph, with the unlock held until `unlock()`. */
