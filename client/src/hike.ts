@@ -17,10 +17,8 @@ import {
   endMistShare,
 } from "./game/endScene.js";
 import { navigateToLanding } from "@csarkosh/engine/game/router";
-import { type FreecamState } from "@csarkosh/engine/game/freecam";
 import { HOLLOW_CALL_AFTER, HOLLOW_CALL_RATE } from "./game/hikeAudio.js";
 import { wildlifePresenceUnder } from "@csarkosh/engine/game/wildlifeBehaviour";
-import { type WeatherParams, type WeatherPresetName } from "@csarkosh/engine/game/weather";
 import {
   actsUnder,
   ESCALATION_REST,
@@ -40,7 +38,6 @@ import { DEATH_LINE, DEATH_TITLE, DEATH_FADE_AFTER_MS, DEATH_SOUND_FADE_S, END_L
 import { InteractKind } from "./sim/search.js";
 import { createHikeBody, createHikeSigns, loadFilmCar, type HikeSigns } from "./game/hikeScenery.js";
 import { carDirection, doorSpot, trailEntrance, trailheadPlaces } from "./sim/trailhead.js";
-import type { QualityTier } from "@csarkosh/engine/game/quality";
 import { EXPLORE_HOUR_S, exploreHour, exploreNight, exploreWeather } from "./game/exploreDay.js";
 import { pressedEdges, resolveInteract } from "./sim/interact.js";
 import { Button, DeathCause, Outcome, Phase, type InputCommand, type PlayerState, type Vec3, type WorldState } from "./sim/types.js";
@@ -70,18 +67,13 @@ import { ENEMY_HALF } from "./sim/dayhikeConstants.js";
 import { HOLLOW_CALL_CLIP, stepWoods, WOODS_REST, type WoodsState } from "./game/woodsVoice.js";
 import { stepWoodsSounds, WOODS_SOUNDS_REST, woodsSoundsFrom, type WoodsSoundsState } from "@csarkosh/engine/game/woodsSounds";
 import type { World } from "./sim/world.js";
-import { type Telemetry } from "@csarkosh/engine/net/telemetry";
 import { DUSK_AT, MIST_AT, WET_AT } from "./sim/acts.js";
-import type { InputSampler } from "@csarkosh/engine/game/input";
-import type { WildlifeAudio } from "@csarkosh/engine/game/wildlifeAudio";
-import type { TouchModel } from "@csarkosh/engine/game/touchControls";
-import type { Presence } from "@csarkosh/engine/game/wildlifeBehaviour";
-import type { PlayGate } from "@csarkosh/engine/game/pauseMenu";
 import type { Hud } from "./game/hud.js";
 import type { HikeAudio } from "./game/hikeAudio.js";
 import { createTrace, type Trace } from "./game/trace.js";
 import { placeNames } from "./sim/placeNames.js";
 import { isGameMode, peaceful } from "./game/gameMode.js";
+import type { SessionHost } from "@csarkosh/engine/game/sessionGame";
 
 /** The way down's draw: milliseconds of it a frame through the climb, and once the scene or the chase is on; and the tick it starts at, ten seconds in, so nothing of it runs under the intro. */
 const WAY_DRAW_MS = 1.5;
@@ -113,39 +105,8 @@ function phaseName(phase: Phase): string {
   return phase === Phase.Climb ? "climb" : phase === Phase.Scene ? "scene" : phase === Phase.Chase ? "chase" : String(phase);
 }
 
-/**
- * What the hike reads of the page that runs it, and the few of its variables it writes: the page's
- * own, handed over as they stand each time they are read.
- */
-export type HikeHost = {
-  readonly made: (undo: () => void) => void;
-  readonly canvas: HTMLCanvasElement;
-  readonly seed: number;
-  /** The mode this world is played in, one of the hike's (`gameMode.ts`). */
-  readonly mode: string;
-  readonly telemetry: Telemetry | null;
-  readonly renderer: Renderer;
-  readonly tier: QualityTier;
-  readonly ambient: HikeAudio;
-  readonly wildlifeAudio: WildlifeAudio | null;
-  weatherName: WeatherPresetName;
-  readonly base: AtmosphereBase;
-  wildlifePresence: Presence;
-  readonly touchStart: boolean;
-  readonly touchModel: TouchModel;
-  readonly input: InputSampler;
-  readonly container: HTMLElement;
-  readonly hud: Hud;
-  readonly freecam: FreecamState | null;
-  appliedHour: number;
-  appliedWeather: WeatherParams;
-  readonly activeWorld: World | null;
-  extrasToCome: { cancel(): void } | null;
-  readonly gate: PlayGate;
-  readonly progressRounded: () => number;
-  landingTimer: ReturnType<typeof setTimeout> | null;
-  readonly sessionOver: () => void;
-};
+/** What the hike reads of the page that runs it (`SessionHost`), with the hike's own world, renderer, bus and HUD. */
+export type HikeHost = SessionHost<World, Renderer, HikeAudio, Hud>;
 
 /**
  * Day Hike's own half of a hike on this screen: its state, the steps a frame runs for it, and its
@@ -1102,6 +1063,36 @@ export function createHike(h: HikeHost) {
     return true;
   }
 
+  /**
+   * The world's interactables, registered identically on the host and on a
+   * client's predicted world so both can resolve what is in reach. Nothing
+   * crosses the wire: the registry is seeded like everything else. Today that
+   * is only the debug pad marker: a lone interactable 2 m out from the
+   * pad's centre at chest height, in reach from the pad's centre when facing
+   * it. A player arrives a little off the centre, facing the trail, and
+   * walks to it.
+   */
+  function worldIn(world: World): void {
+    if (!h.debugOn) return;
+    const th = activeTerrainVariant().trailGraph?.(h.seed).trailhead;
+    if (th === undefined) return;
+    const y = elevationAt(h.seed, th.x + 2, th.z) + 0.5;
+    world.interactables.set(1, {
+      id: 1,
+      pos: { x: th.x + 2, y, z: th.z },
+      radius: 0.5,
+      kind: 0,
+      onInteract: (id) => console.info("[debug] interact by", id),
+    });
+  }
+
+  /** A session's own events, heard: under `?cmd=debug` an interaction is logged, so Interact can be proven end to end in the browser. */
+  function hears(session: { onInteracted(handler: (e: unknown) => void): void }): void {
+    session.onInteracted((e) => {
+      if (h.debugOn) console.info("[debug] interacted", e);
+    });
+  }
+
   /** The trace of where this player goes (`game/trace.ts`), made at the match's start. */
   let trace: Trace | null = null;
 
@@ -1186,6 +1177,8 @@ export function createHike(h: HikeHost) {
     // A session's start and end.
     atRest: hikeAtRest,
     hostStarted: hikeHostLooks,
+    worldIn,
+    hears,
     matchStarted,
     dispose,
     // A frame, in the order the page calls them.
@@ -1197,6 +1190,8 @@ export function createHike(h: HikeHost) {
     afterSync,
     report,
     // What the page asks of the hike's state.
+    /** How many entities a state holds, for the netgraph's row: the players and the Hollows. */
+    entities: (state: WorldState): number => state.players.size + state.enemies.size,
     /** The match is decided on this screen. */
     decided: (): boolean => ended,
     /** Play is over for this player: the match is decided, or they are dead. */

@@ -16,7 +16,7 @@ table.
 (port 5175). Three never-committed hooks are applied to both for a gate and reverted after
 it:
 
-- a pose hook in `client/src/app.ts` and `client/src/game/renderer.ts` that exposes
+- a pose hook in `engine/src/app.ts` and `client/src/game/renderer.ts` that exposes
   `__fcSet(x, y, z, yaw, pitch)`, pinning the free camera at a pose every frame (positive
   pitch looks down), `__scene` and `__engine` for the frame timing, and `__lampOn`, which
   forces the local headlamp on in freecam;

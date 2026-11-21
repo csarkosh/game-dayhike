@@ -16,7 +16,7 @@ working tree, so a commit landing there cannot change a build mid-gate. Two
 measurement patches are applied to both and reverted after; they are never
 committed:
 
-- a pose patch to `client/src/app.ts` and `client/src/game/renderer.ts` that
+- a pose patch to `engine/src/app.ts` and `client/src/game/renderer.ts` that
   exposes `__fcSet(x, y, z, yaw, pitch)`, pinning the free camera at a pose
   every frame (positive pitch looks down), and `__scene` / `__engine`, the
   scene and the engine the renderer was given;

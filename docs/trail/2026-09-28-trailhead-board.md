@@ -279,7 +279,7 @@ Each is listed in `client/assets/catalog.json` and credited in `CREDITS.md`.
 | `client/src/game/boardImages.ts` | New. The two images' addresses, found by a glob, so a checkout without them builds. |
 | `client/src/game/trailheadMeshes.ts` | Places the board at its place and facing; draws the face's plane; falls back to the five boxes. `posterMaterial` and the painted poster go. |
 | `client/src/game/signMeshes.ts` | `paintedMaterial` goes with its one caller. |
-| `client/src/app.ts` | Gives the board its place, the graph, the names and the seed. |
+| `engine/src/app.ts` | Gives the board its place, the graph, the names and the seed. |
 | `ARCHITECTURE.md`, `README.md` | The trailhead's description; the model convention for the board's face. |
 
 The painter is handed in, as the fork signs' is, so every module but `boardPaint.ts` runs in

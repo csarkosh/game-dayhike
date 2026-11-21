@@ -1,7 +1,6 @@
 {
   "about": "Which files of client/src are Day Hike's own (never the engine's), and which are held back for now with the reason. Paths are relative to client/src; one ending in * matches by prefix. Everything else is a candidate for the engine, and moves once nothing it refers to is left behind (node tools/engine-split/move.mjs).",
   "dayhike": [
-    "app.ts",
     "main.ts",
     "game/hikeCommands.ts",
     "admin/*",

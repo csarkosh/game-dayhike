@@ -368,7 +368,7 @@ describe("app.ts wiring", () => {
   // precedent, because the wiring exists nowhere else. The failure it guards is
   // the silent one: a shell that is constructed and never fed plays nothing,
   // and the game looks exactly as it does with it fed.
-  const src = readFileSync(fileURLToPath(new URL("../../src/app.ts", import.meta.url)), "utf8");
+  const src = readFileSync(fileURLToPath(new URL("../../../engine/src/app.ts", import.meta.url)), "utf8");
   // `syncAtmosphere`, which feeds the presence from the eased weather, is the hike's own (`hike.ts`, where `app.ts`'s variable is written `h.wildlifePresence`).
   const hike = readFileSync(fileURLToPath(new URL("../../src/hike.ts", import.meta.url)), "utf8");
 

@@ -77,7 +77,7 @@ populated as players join and leave.
 - `client/src/sim/director.ts` — target population from player count, and
   spawn placement that refuses points too close to a player. Capped attempts
   per tick so a player camping every spawn cannot hang the tick.
-- `client/src/app.ts` — adds a `__probe` global exposing enemy counts and
+- `engine/src/app.ts` — adds a `__probe` global exposing enemy counts and
   per-state samples for debugging AI in the browser console.
 - `client/test/sim/ai.test.ts` — covers sightlines through real level brushes,
   target acquisition, every state transition, and director population scaling.

@@ -9,6 +9,14 @@ import type { Level } from "@csarkosh/engine/sim/level";
 import type { Forest } from "@csarkosh/engine/sim/forest";
 import type { Transport } from "@csarkosh/engine/net/transport";
 import { HIKE_MODES, isGameMode, peaceful } from "./game/gameMode.js";
+import type { SessionGame } from "@csarkosh/engine/game/sessionGame";
+import type { HikeAudio } from "./game/hikeAudio.js";
+import type { Renderer } from "./game/hikeRendererTypes.js";
+import type { Hud } from "./game/hud.js";
+import type { ClientSession } from "./net/clientSession.js";
+import type { HostSession } from "./net/hostSession.js";
+import type { PlayerState, WorldState } from "./sim/types.js";
+import type { World } from "./sim/world.js";
 import { createHikeAudio } from "./game/hikeAudio.js";
 import { createHikeRenderer } from "./game/hikeRenderer.js";
 import { createHud } from "./game/hud.js";
@@ -22,7 +30,7 @@ import sandbox01 from "../levels/sandbox01.json" with { type: "json" };
 /** Whether a mode's woods are empty and its sky never falls: the explore modes (`gameMode.ts`). */
 const calmIn = (mode: string): boolean => isGameMode(mode) && peaceful(mode);
 
-export const HIKE_GAME = {
+export const HIKE_GAME: SessionGame<World, WorldState, PlayerState, Renderer, HikeAudio, Hud, HostSession, ClientSession> = {
   /**
    * The level the renderer and both sessions are shaped by: the sandbox, kept
    * as the fallback. A forest world carries a stub level with no brushes, so
@@ -53,5 +61,3 @@ export const HIKE_GAME = {
     createClientSession(level, seed, transport, clock, { expectedLevelId: o.expectedLevelId, forest: o.forest, peaceful: calmIn(o.mode) }),
 };
 
-/** The game as the page takes it. */
-export type HikeGame = typeof HIKE_GAME;

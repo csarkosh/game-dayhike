@@ -9,7 +9,7 @@ import { fileURLToPath } from "node:url";
  * failure it guards is the silent one: a voice built and never fed hums
  * nothing, and the game looks the same.
  */
-const src = readFileSync(fileURLToPath(new URL("../../src/app.ts", import.meta.url)), "utf8");
+const src = readFileSync(fileURLToPath(new URL("../../../engine/src/app.ts", import.meta.url)), "utf8");
 
 describe("the lake's sound in app.ts", () => {
   it("voices the lake after renderer.sync and the drips, in the one frame the host and a follower run", () => {
@@ -26,7 +26,8 @@ describe("the lake's sound in app.ts", () => {
     expect(body).toContain("if (waterLifeAudio === null) return;");
     expect(body).toContain("waterLifeAudio.update(renderer.waterLifeSound(), renderer.listener());");
     // `renderer` is the one binding a switch replaces, read afresh each frame.
-    expect(src).toContain("  let renderer: Renderer = first.renderer;");
+    // `R` is the game's renderer, whichever game the page is handed.
+    expect(src).toContain("  let renderer: R = first.renderer;");
     expect(src.match(/\brenderer = got\.renderer;/g)).toHaveLength(1);
   });
 

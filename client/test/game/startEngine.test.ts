@@ -1,7 +1,7 @@
 import { describe, it, expect } from "vitest";
 import "../../src/game/dayhikeAssets.js";
 import "../../src/sim/passes/index.js";
-import { startGame, type GameOptions } from "../../src/app.js";
+import { startGame, type GameOptions } from "@csarkosh/engine/app";
 import { HIKE_GAME } from "../../src/hikeGame.js";
 
 describe("a hike whose start throws before its first renderer is built", () => {

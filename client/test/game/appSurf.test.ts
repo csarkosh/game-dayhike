@@ -9,7 +9,7 @@ import { fileURLToPath } from "node:url";
  * it guards is the silent one: a shell built and never fed sounds nothing,
  * and the game looks the same.
  */
-const src = readFileSync(fileURLToPath(new URL("../../src/app.ts", import.meta.url)), "utf8");
+const src = readFileSync(fileURLToPath(new URL("../../../engine/src/app.ts", import.meta.url)), "utf8");
 
 describe("the surf's sound in app.ts", () => {
   it("voices the surf after the lake's life, in the one frame the host and a follower run", () => {

@@ -239,7 +239,7 @@ to it was.
 | `engine/src/game/input.ts` | The sampler takes a starting yaw. |
 | `client/src/game/signMeshes.ts` | Draws the trail sign as a post with one arm. |
 | `client/src/game/posterPanel.ts` | The poster's line, from `TRAIL_NAME`. |
-| `client/src/app.ts` | Gives the input the spawn's facing; draws the trail sign; reads the poster's line from the panel's model; the renames. |
+| `engine/src/app.ts` | Gives the input the spawn's facing; draws the trail sign; reads the poster's line from the panel's model; the renames. |
 | `README.md`, `ARCHITECTURE.md` | The premise's line; the trailhead's description. |
 
 `sim/` imports nothing from `game/` or `net/`, as the lint rule requires.

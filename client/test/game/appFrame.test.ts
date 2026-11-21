@@ -64,7 +64,7 @@ describe("a session's frame", () => {
     for (const step of [...HIKE_BEFORE_SYNC, ...HIKE_AFTER_SYNC]) expect(calls(hikeSrc, step), step).toBe(1);
     expect(calls(app, "renderer.sync")).toBe(1);
     // The host draws its own state; a follower the one blended between snapshots at this frame's time.
-    expect(bodyOf("runAsHost")).toMatch(/const state: WorldState = host\.world\.state;\s+frame\(host, state, cmd, dt\);/);
+    expect(bodyOf("runAsHost")).toMatch(/const state: S = host\.world\.state;\s+frame\(host, state, cmd, dt\);/);
     expect(app).toMatch(/const state = client\.renderState\(performance\.now\(\)\);\s+frame\(client, state, cmd, dt\);/);
     expect(calls(app, "frame")).toBe(2);
   });
@@ -158,6 +158,25 @@ describe("the console's commands on a hike", () => {
     for (const name of OWN) expect(page, name).not.toContain(`name === "${name}"`);
     // The page's own are still its own.
     for (const name of ["aim", "freecam", "wireframe", "skin", "time", "palette", "weather", "bob", "unsettle", "wind", "volume"]) expect(page, name).toContain(`name === "${name}"`);
+  });
+});
+
+describe("the hike's own details of a session", () => {
+  it("registers what a world's players can interact with, hears the session's own events and counts its entities, where the page did", () => {
+    const page = app;
+    for (const gone of ["world.interactables.set(", ".onInteracted(", "state.enemies.size"]) expect(page, gone).not.toContain(gone);
+    // The page calls the hike at the points it did those itself: a session's world in, its events, the netgraph's row.
+    expect(page.split("hike.worldIn(").length - 1).toBe(2);
+    expect(page).toContain("    hike.worldIn(host.world);\n    activeWorld = host.world;");
+    expect(page).toContain("    hike.worldIn(client.world);\n    activeWorld = client.world;");
+    expect(page.split("hike.hears(").length - 1).toBe(2);
+    expect(page).toContain("    hike.hears(host);");
+    expect(page).toContain("    hike.hears(client);");
+    expect(page.split("entities: hike.entities(state),").length - 1).toBe(2);
+    expect(bodyOf("worldIn", hikeSrc)).toContain("world.interactables.set(1, {");
+    expect(bodyOf("worldIn", hikeSrc)).toContain("if (!h.debugOn) return;");
+    expect(bodyOf("hears", hikeSrc)).toContain('if (h.debugOn) console.info("[debug] interacted", e);');
+    expect(hikeSrc).toContain("entities: (state: WorldState): number => state.players.size + state.enemies.size,");
   });
 });
 

@@ -97,7 +97,7 @@ describe("the crowd's cost in the ground's admissions", () => {
 describe("the renderer and the app", () => {
   // The renderer, and Day Hike's side of it (`lite/hikeParts.ts`), where what is this game's own in a frame is written.
   const renderer = readFileSync(clientFile("../engine/src/game/lite/renderer.ts"), "utf8") + readFileSync(clientFile("src/game/lite/hikeParts.ts"), "utf8");
-  const app = readFileSync(clientFile("src/app.ts"), "utf8");
+  const app = readFileSync(clientFile("../engine/src/app.ts"), "utf8");
   // The crowd's own half of the frame is the hike's (`hike.ts`, where a variable of `app.ts` is written `h.<name>`); `app.ts` calls it as `hike.<name>`.
   const hike = readFileSync(clientFile("src/hike.ts"), "utf8");
   const commands = readFileSync(clientFile("src/game/hikeCommands.ts"), "utf8");

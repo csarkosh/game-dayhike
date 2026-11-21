@@ -148,7 +148,7 @@ Constants, exported: `OFF_TRAIL_START` 10, `OFF_TRAIL_FULL` 60, `SPIKE_RISE_S` 2
 8, `NEAR_FULL` 10, `NEAR_START` 80, `NEAR_BLIND` 0.5, `NIGHT_HOUR` 22, `WORLD_EASE_S` 20,
 `LENS_EASE_S` 1.5.
 
-### 4.3 `client/src/app.ts`
+### 4.3 `engine/src/app.ts`
 
 One `EscalationState` per match and one `base: AtmosphereBase` — the `weather` and `time` commands
 now write the base (and, on a world without a register, apply it directly as today). Both render
