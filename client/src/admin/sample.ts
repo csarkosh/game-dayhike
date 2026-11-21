@@ -12,9 +12,9 @@
 import type { Live, QueryName, Range, Row, Source } from "./source.js";
 import { calendarDate } from "./timeline.js";
 import { buildTrailFor, type DrawableTrail } from "./trail.js";
-import { LOSS_ENDED_LINE } from "../game/lossBound.js";
-import { GEN_VERSION } from "../sim/forest.js";
-import { DEFAULT_TERRAIN_VARIANT } from "../sim/terrain.js";
+import { LOSS_ENDED_LINE } from "@csarkosh/engine/game/lossBound";
+import { GEN_VERSION } from "@csarkosh/engine/sim/forest";
+import { DEFAULT_TERRAIN_VARIANT } from "@csarkosh/engine/sim/terrain";
 
 const DAY = 86_400_000;
 /** The sample's "now": the page's, to the minute, so the rows read as recent whenever it is looked at. */

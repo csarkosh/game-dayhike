@@ -2,7 +2,7 @@
 
 **Status:** built and measured on the owner's Pixel 9 (2026-11-05); `client/src/game/lighting.ts`
 (`writeExposureSilently`), `client/src/game/shadeVeil.ts`, `client/src/game/shadeVeilParams.ts`,
-`client/src/game/shaders/shadeVeil.fragment.fx`, `client/src/game/syncJobs.ts` (the counters),
+`client/src/game/shaders/shadeVeil.fragment.fx`, `engine/src/game/syncJobs.ts` (the counters),
 `tools/frame-budget/phone.mjs`.
 
 ## What a phone played

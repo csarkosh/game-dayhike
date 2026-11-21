@@ -24,13 +24,13 @@
  *   the derivative-uniformity diagnostic off for itself.
  */
 import type { MaterialPlugin, PluginUniformBlock, Texture2D, Texture2DArray } from "@babylonjs/lite";
-import { finish, sliceDue, type Slices } from "../syncJobs.js";
-import { emptyTerrainUniforms, layerMeanInverse, type TerrainUniforms } from "../terrainUniforms.js";
-import { TERRAIN_ATTRIBUTES, TERRAIN_VERTEX_SIZES, type TerrainVertices } from "../terrainVertices.js";
-import type { WetUniforms } from "../wetSurface.js";
+import { finish, sliceDue, type Slices } from "@csarkosh/engine/game/syncJobs";
+import { emptyTerrainUniforms, layerMeanInverse, type TerrainUniforms } from "@csarkosh/engine/game/terrainUniforms";
+import { TERRAIN_ATTRIBUTES, TERRAIN_VERTEX_SIZES, type TerrainVertices } from "@csarkosh/engine/game/terrainVertices";
+import type { WetUniforms } from "@csarkosh/engine/game/wetSurface";
 import { frameReads, ownFields } from "./frameBlock.js";
-import { uniformFields, writeUniforms, type UniformField } from "./pluginUniforms.js";
-import { WET_FIELDS, WET_WEATHER, WET_WGSL, writeWetUniforms } from "./wetWgsl.js";
+import { uniformFields, writeUniforms, type UniformField } from "@csarkosh/engine/game/lite/pluginUniforms";
+import { WET_FIELDS, WET_WEATHER, WET_WGSL, writeWetUniforms } from "@csarkosh/engine/game/lite/wetWgsl";
 import defsSource from "../shaders/terrain/defs.wgsl?raw";
 import mainBeginSource from "../shaders/terrain/mainBegin.wgsl?raw";
 import blendSource from "../shaders/terrain/blend.wgsl?raw";
@@ -41,7 +41,7 @@ import farLightSource from "../shaders/terrain/farLight.wgsl?raw";
 import sunSource from "../shaders/terrain/sun.wgsl?raw";
 import wetLightsSource from "../shaders/terrain/wetLights.wgsl?raw";
 import splitSource from "../shaders/terrain/split.wgsl?raw";
-import { fill, wgsl } from "../shaders/shaderText.js";
+import { fill, wgsl } from "@csarkosh/engine/game/shaders/shaderText";
 import derivativeUniformitySource from "../shaders/diagnostic/derivativeUniformity.wgsl?raw";
 
 /**

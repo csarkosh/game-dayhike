@@ -1,8 +1,9 @@
 import { describe, expect, it } from "vitest";
 import { cloneWorldState, createWorld, serializeWorldState, spawnPlayer, tickWorld } from "../../src/sim/world.js";
-import { parseLevel } from "../../src/sim/level.js";
+import { parseLevel } from "@csarkosh/engine/sim/level";
 import { AiState, Outcome } from "../../src/sim/types.js";
-import { ENEMY_HALF, TICK_DT } from "../../src/sim/constants.js";
+import { TICK_DT } from "@csarkosh/engine/sim/constants";
+import { ENEMY_HALF } from "../../src/sim/dayhikeConstants.js";
 import {
   STEP_OUT_REVEAL_S,
   HOLLOW_HUNT_SPEED,
@@ -17,7 +18,7 @@ import {
   spawnHollowStepping,
   spawnHollow,
 } from "../../src/sim/hollow.js";
-import { nearestTrailNode } from "../../src/sim/trail.js";
+import { nearestTrailNode } from "@csarkosh/engine/sim/trail";
 import { graph } from "./helpers/stemGraph.js";
 
 type Brush = { min: [number, number, number]; max: [number, number, number]; material: string };

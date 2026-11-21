@@ -1,7 +1,7 @@
 import { tickWorld, type World } from "../../../src/sim/world.js";
 import { AiState, Button, DeathCause, type PlayerState } from "../../../src/sim/types.js";
-import { STEP_HEIGHT, TICK_DT } from "../../../src/sim/constants.js";
-import { boxesNear } from "../../../src/sim/boxSource.js";
+import { STEP_HEIGHT, TICK_DT } from "@csarkosh/engine/sim/constants";
+import { boxesNear } from "@csarkosh/engine/sim/boxSource";
 import { WAY_RIM_M, wayDirection, wayDistance, wayPoint, wayProject, type WayDown } from "../../../src/sim/wayDown.js";
 
 /** Metres down the way from its own place the runner aims at, and the metres ahead on its heading it looks for something in the way. */

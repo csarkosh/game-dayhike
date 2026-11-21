@@ -12,14 +12,14 @@
 import { Phase, type WorldState, type Vec3 } from "../sim/types.js";
 import { isHollowState } from "../sim/hollow.js";
 import { isShadeState } from "../sim/haunt.js";
-import { trailDistance, type TrailGraph } from "../sim/trail.js";
-import { stemProgress } from "../sim/trailRoute.js";
-import type { BoxProvider } from "../sim/boxSource.js";
-import type { GroundField } from "../sim/ground.js";
+import { trailDistance, type TrailGraph } from "@csarkosh/engine/sim/trail";
+import { stemProgress } from "@csarkosh/engine/sim/trailRoute";
+import type { BoxProvider } from "@csarkosh/engine/sim/boxSource";
+import type { GroundField } from "@csarkosh/engine/sim/ground";
 import { hasLineOfSight } from "../sim/ai.js";
-import { PLAYER_EYE_OFFSET } from "../sim/constants.js";
-import { WEATHER_PRESETS, lerpWeather, type WeatherParams } from "./weather.js";
-import { clamp01 } from "./colour.js";
+import { PLAYER_EYE_OFFSET } from "@csarkosh/engine/sim/constants";
+import { WEATHER_PRESETS, lerpWeather, type WeatherParams } from "@csarkosh/engine/game/weather";
+import { clamp01 } from "@csarkosh/engine/game/colour";
 import { actsUnder } from "../sim/acts.js";
 export { actsUnder, DUSK_AT, NIGHT_SPAN, WET_AT, WET_SPAN } from "../sim/acts.js";
 

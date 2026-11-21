@@ -10,14 +10,14 @@
  * into sim/ or a tunables registry.
  */
 import type { AtmosphereRecord } from "./atmosphereParams.js";
-import { clamp01, type Rgb } from "./colour.js";
-import type { QualityTier } from "./quality.js";
+import { clamp01, type Rgb } from "@csarkosh/engine/game/colour";
+import type { QualityTier } from "@csarkosh/engine/game/quality";
 import {
   DRIP, DRIP_TIERS, RAIN_BOX, RAIN_CLASSES, RAIN_LAMP_GAIN, RAIN_MAP, RAIN_MILK, RAIN_SLANT, RAIN_TIERS, dripCountUnder, rainBoxMin, rainCountUnder,
   rainDrift, rainFold, rainSeeds, smoothedDt,
-} from "./rainParams.js";
-import { canopyWaterStep, type WeatherParams } from "./weather.js";
-import type { WindRecord } from "./windParams.js";
+} from "@csarkosh/engine/game/rainParams";
+import { canopyWaterStep, type WeatherParams } from "@csarkosh/engine/game/weather";
+import type { WindRecord } from "@csarkosh/engine/game/windParams";
 
 export const RAIN_TEX_W = 4;
 export const RAIN_TEX_H = 16;

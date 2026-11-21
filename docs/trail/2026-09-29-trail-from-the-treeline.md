@@ -137,13 +137,13 @@ collision, the snow line and the rules for high ground are as they were.
 
 | Rule | Where | Reads today |
 | --- | --- | --- |
-| The forest begins above the shore | `client/src/sim/vegetation.ts`, `SHORE_ALT` | the ground's height |
-| Grass, meadow and flower cover begin above the shore | `client/src/sim/clutter.ts`, `CLUTTER_GRASS_ALT_LO` | the ground's height |
-| Bushes begin above the shore | `client/src/sim/clutter.ts`, `CLUTTER_BUSH_ALT_LO` | the ground's height |
-| Rocks begin above the shore | `client/src/sim/clutter.ts`, `CLUTTER_ROCK_ALT_LO` | the ground's height |
-| Sand is painted below 4 m, fading out by 9 m | `client/src/game/terrainSurface.ts`, `SAND_TOP` | the ground's height |
-| Stumps and mushrooms grow above the shore | `client/src/sim/clutter.ts`, the fungus class, by `CLUTTER_GRASS_ALT_LO` | the ground's height |
-| An animal may stand on ground that is not sand | `client/src/game/wildlifeField.ts` | the ground's height |
+| The forest begins above the shore | `engine/src/sim/vegetation.ts`, `SHORE_ALT` | the ground's height |
+| Grass, meadow and flower cover begin above the shore | `engine/src/sim/clutter.ts`, `CLUTTER_GRASS_ALT_LO` | the ground's height |
+| Bushes begin above the shore | `engine/src/sim/clutter.ts`, `CLUTTER_BUSH_ALT_LO` | the ground's height |
+| Rocks begin above the shore | `engine/src/sim/clutter.ts`, `CLUTTER_ROCK_ALT_LO` | the ground's height |
+| Sand is painted below 4 m, fading out by 9 m | `engine/src/game/terrainSurface.ts`, `SAND_TOP` | the ground's height |
+| Stumps and mushrooms grow above the shore | `engine/src/sim/clutter.ts`, the fungus class, by `CLUTTER_GRASS_ALT_LO` | the ground's height |
+| An animal may stand on ground that is not sand | `engine/src/game/wildlifeField.ts` | the ground's height |
 
 The rules that keep things off the road are unchanged: trees 12 m from its centreline, grass
 7.5 m, bushes 8.5 m. So is the rule that keeps trees 8 m from a trail. The shoulder, the car
@@ -219,9 +219,9 @@ from the bed, so no tree can stand between a player and the board.
 | --- | --- | --- |
 | The strip's constants | `client/src/sim/shoreStrip.ts` (new), registered with pass 8's tunables | New |
 | The doorway's constants | `client/src/sim/trailGrid.ts`, in `TRAIL_GRID_TUNABLES` | New |
-| The clearing | `client/src/sim/clutter.ts`, in `CLUTTER_TUNABLES` | New |
-| The probe | `client/src/sim/forest.ts` | The chunks round the pad hold trees; the record says which |
-| `GEN_VERSION` | `client/src/sim/forest.ts` | 8 |
+| The clearing | `engine/src/sim/clutter.ts`, in `CLUTTER_TUNABLES` | New |
+| The probe | `engine/src/sim/forest.ts` | The chunks round the pad hold trees; the record says which |
+| `GEN_VERSION` | `engine/src/sim/forest.ts` | 8 |
 
 The pass hash is re-pinned in `client/test/sim/groundGradient.test.ts` and
 `client/test/game/tierDeterminism.test.ts`. A match made before this cannot be joined after it.
@@ -231,13 +231,13 @@ The pass hash is re-pinned in `client/test/sim/groundGradient.test.ts` and
 | File | Change |
 | --- | --- |
 | `client/src/sim/shoreStrip.ts` | New: `shoreStrip`, `shoreHeight`, the constants. |
-| `client/src/sim/vegetation.ts` | The shore rule reads `shoreHeight`; the floor of §3.3. |
-| `client/src/sim/clutter.ts` | The shore rules read `shoreHeight`; the clearing. |
+| `engine/src/sim/vegetation.ts` | The shore rule reads `shoreHeight`; the floor of §3.3. |
+| `engine/src/sim/clutter.ts` | The shore rules read `shoreHeight`; the clearing. |
 | `client/src/sim/trailGrid.ts`, `client/src/sim/trailBuild.ts` | The doorway. |
-| `client/src/sim/facing.ts`, `client/src/sim/trailhead.ts` | The way a yaw faces, as a direction; the board's place judged by its further end. |
-| `client/src/game/terrainSurface.ts` | The sand's paint reads `shoreHeight`. |
-| `client/src/game/wildlifeField.ts` | An animal's ground reads `shoreHeight`. |
-| `client/src/sim/forest.ts` | `GEN_VERSION`, the probe's record. |
+| `engine/src/sim/facing.ts`, `client/src/sim/trailhead.ts` | The way a yaw faces, as a direction; the board's place judged by its further end. |
+| `engine/src/game/terrainSurface.ts` | The sand's paint reads `shoreHeight`. |
+| `engine/src/game/wildlifeField.ts` | An animal's ground reads `shoreHeight`. |
+| `engine/src/sim/forest.ts` | `GEN_VERSION`, the probe's record. |
 | `client/test/sim/`, `client/test/game/` | §9.1. |
 | `ARCHITECTURE.md` | The strip and the doorway, where the trail's build is described. |
 

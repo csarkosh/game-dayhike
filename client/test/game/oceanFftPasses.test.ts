@@ -2,9 +2,9 @@ import { describe, it, expect } from "vitest";
 import {
   OCEAN_FFT_DISPATCH, OCEAN_FFT_EVOLVE_BINDINGS, OCEAN_FFT_H0_BYTES, OCEAN_FFT_PARAM_FLOATS, OCEAN_FFT_PASS_BINDINGS, OCEAN_FFT_RESOLVE_BINDINGS,
   OCEAN_FFT_SPECTRA_BYTES, fftFlatField, fftParams, fftSeconds, gpuWindSeaH0,
-} from "../../src/game/oceanFftPasses.js";
-import { WIND_SEA_CHOPPINESS } from "../../src/game/oceanFft.js";
-import { FFT_CASCADES, FFT_N, WIND_SEA_REPEAT, cascadeBands, windSeaCascadeSeed, windSeaH0 } from "../../src/game/oceanSpectrum.js";
+} from "@csarkosh/engine/game/oceanFftPasses";
+import { WIND_SEA_CHOPPINESS } from "@csarkosh/engine/game/oceanFft";
+import { FFT_CASCADES, FFT_N, WIND_SEA_REPEAT, cascadeBands, windSeaCascadeSeed, windSeaH0 } from "@csarkosh/engine/game/oceanSpectrum";
 
 describe("the wind sea's FFT as its passes are made and run", () => {
   it("names each shader's resources once, at a binding of its own", () => {

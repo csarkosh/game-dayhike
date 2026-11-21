@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { clamp01, desaturateRgb, luma, mixRgb } from "../../src/game/colour.js";
+import { clamp01, desaturateRgb, luma, mixRgb } from "@csarkosh/engine/game/colour";
 
 describe("clamp01", () => {
   it("passes values inside the range through", () => {

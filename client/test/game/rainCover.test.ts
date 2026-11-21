@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
-import { RAIN_MAP_CAMERA, RAIN_MAP_CLEAR, createRainMapPlace, rainMapTexel } from "../../src/game/rainCover.js";
-import { RAIN_MAP } from "../../src/game/rainParams.js";
+import { RAIN_MAP_CAMERA, RAIN_MAP_CLEAR, createRainMapPlace, rainMapTexel } from "@csarkosh/engine/game/rainCover";
+import { RAIN_MAP } from "@csarkosh/engine/game/rainParams";
 import { babylonText } from "../helpers/babylonFixture.js";
 
 /** The height shader's fragment stage on Babylon.js, recorded. */

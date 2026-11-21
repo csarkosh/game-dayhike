@@ -33,24 +33,24 @@ import {
   setThinInstances,
   type EngineContext, type Mesh, type PluginUniformBlock, type SceneContext, type ShaderMaterial,
 } from "@babylonjs/lite";
-import type { Rgb } from "../colour.js";
-import { MOTE_BOX, MOTE_SALT, emptyMoteUniforms, moteSlots, moteUniforms, motesShown, stepMoteTravel } from "../moteField.js";
-import { MOTE_TEX_SIZE, moteDiscMap, motesUnder } from "../motesParams.js";
-import type { QualityTier } from "../quality.js";
-import type { WeatherParams } from "../weather.js";
-import type { WindRecord } from "../windParams.js";
-import { DISPLAY_CURVE_WGSL, onColourPath } from "./displayCurve.js";
-import { SEE_THROUGH_ORDER } from "./drawOrder.js";
+import type { Rgb } from "@csarkosh/engine/game/colour";
+import { MOTE_BOX, MOTE_SALT, emptyMoteUniforms, moteSlots, moteUniforms, motesShown, stepMoteTravel } from "@csarkosh/engine/game/moteField";
+import { MOTE_TEX_SIZE, moteDiscMap, motesUnder } from "@csarkosh/engine/game/motesParams";
+import type { QualityTier } from "@csarkosh/engine/game/quality";
+import type { WeatherParams } from "@csarkosh/engine/game/weather";
+import type { WindRecord } from "@csarkosh/engine/game/windParams";
+import { DISPLAY_CURVE_WGSL, onColourPath } from "@csarkosh/engine/game/lite/displayCurve";
+import { SEE_THROUGH_ORDER } from "@csarkosh/engine/game/lite/drawOrder";
 import { wgslFloat } from "./forestPlugins.js";
 import {
   FRAME_BLOCK, FRAME_CONTRAST_NAME, FRAME_EXPOSURE_NAME, FRAME_PROJECTION_NAME, stageClocks, stageOwn, stageReads, type StageRecord,
 } from "./frameBlock.js";
-import type { FrameUploads } from "./frameUploads.js";
-import { shaderUniformDecls, shaderUniformWriter } from "./shaderUniforms.js";
+import type { FrameUploads } from "@csarkosh/engine/game/lite/frameUploads";
+import { shaderUniformDecls, shaderUniformWriter } from "@csarkosh/engine/game/lite/shaderUniforms";
 import varyingsSource from "../shaders/motes/varyings.wgsl?raw";
 import motesVertexSource from "../shaders/motes/motes.vertex.wgsl?raw";
 import motesFragmentSource from "../shaders/motes/motes.fragment.wgsl?raw";
-import { fill, wgsl } from "../shaders/shaderText.js";
+import { fill, wgsl } from "@csarkosh/engine/game/shaders/shaderText";
 
 const f = wgslFloat;
 

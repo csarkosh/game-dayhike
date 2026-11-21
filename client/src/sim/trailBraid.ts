@@ -22,11 +22,11 @@
  *
  * sim/ determinism rules: no trig, no Math.pow, no `**`, no hypot.
  */
-import { hash3 } from "./field.js";
+import { hash3 } from "@csarkosh/engine/sim/field";
 import { cellAt, TRAIL_GRID_CELL, type TrailGrid, type GroundFn } from "./trailGrid.js";
-import { segmentSegmentDistanceSq, trailCorridorD, TRAIL_EDGE_MIN_GAP, type TrailEdge, type TrailLoop, type TrailNode } from "./trail.js";
-import { LAKE_TRAIL_CLEAR, type Feature } from "./features.js";
-import { lakeShoreInto, newLakeShore } from "./lakeShape.js";
+import { segmentSegmentDistanceSq, trailCorridorD, TRAIL_EDGE_MIN_GAP, type TrailEdge, type TrailLoop, type TrailNode } from "@csarkosh/engine/sim/trail";
+import { LAKE_TRAIL_CLEAR, type Feature } from "@csarkosh/engine/sim/features";
+import { lakeShoreInto, newLakeShore } from "@csarkosh/engine/sim/lakeShape";
 import {
   planPath, splitAt, markPath, routeTo, forEachCellNear, featureReach, stemGeometry, sampleStem,
   type BuildFrame, type Heights, type GraphState, type StemSample,

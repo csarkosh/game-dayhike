@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import "../../../src/sim/passes/index.js";
 import { babylonText } from "../../helpers/babylonFixture.js";
 import { FRAME_BLOCK, stageOwn, stageReads } from "../../../src/game/lite/frameBlock.js";
 import { MIST_FRAME_READS, MIST_INSTANCE_BYTES, MIST_WGSL } from "../../../src/game/lite/mistMeshes.js";

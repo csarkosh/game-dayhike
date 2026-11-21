@@ -1,11 +1,12 @@
 import { describe, it, expect } from "vitest";
-import "../../src/sim/olympic.js";
-import { setActiveTerrainVariant } from "../../src/sim/terrain.js";
+import "../../src/sim/passes/index.js";
+import "@csarkosh/engine/sim/olympic";
+import { setActiveTerrainVariant } from "@csarkosh/engine/sim/terrain";
 import {
   collectMistBanks, MIST_ALT_MAX, MIST_ALT_MIN, MIST_CAP, MIST_RADIUS,
   MIST_SLOPE_MAX, MIST_TEX_SIZE, mistAlphaMap,
-} from "../../src/game/mistField.js";
-import { elevationSampleAt } from "../../src/sim/terrain.js";
+} from "@csarkosh/engine/game/mistField";
+import { elevationSampleAt } from "@csarkosh/engine/sim/terrain";
 
 const SEED = 1;
 setActiveTerrainVariant("olympic");

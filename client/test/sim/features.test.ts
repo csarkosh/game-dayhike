@@ -6,11 +6,11 @@ import {
   planFeatures, peakD, flatD, featureStageD, featureMaskAt, murkFor, MURK_LO, MURK_HI, type Feature,
   lakeDepthD, lakeMiddleDepth, LAKE_SHELF_DEPTH, LAKE_SHELF_WIDTH, LAKE_SLOPE_WIDTH, LAKE_DEPTH_MURKY, LAKE_DEPTH_CLEAR,
   chooseLobe, marshD, marshWeightAt, marshWidth, lobePoints, MARSH_AMP, MARSH_EDGE, MARSH_ONSET, MARSH_MURK_MIN, MARSH_WIDTH_MIN, MARSH_WIDTH_MAX,
-} from "../../src/sim/features.js";
+} from "@csarkosh/engine/sim/features";
 import { TRAIL_GRID_CAP } from "../../src/sim/trailGrid.js";
-import type { TerrainSample } from "../../src/sim/terrain.js";
+import type { TerrainSample } from "@csarkosh/engine/sim/terrain";
 import { stadiumShape } from "../helpers/lakeShapes.js";
-import { lakeShoreInto, newLakeShore } from "../../src/sim/lakeShape.js";
+import { lakeShoreInto, newLakeShore } from "@csarkosh/engine/sim/lakeShape";
 
 const flat: TerrainSample = { h: 100, dx: 0, dz: 0 };
 const tilted = (x: number, z: number): TerrainSample => ({ h: 50 + 0.1 * x - 0.05 * z, dx: 0.1, dz: -0.05 });

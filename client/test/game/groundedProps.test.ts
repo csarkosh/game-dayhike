@@ -1,8 +1,8 @@
 import { describe, expect, it } from "vitest";
 import "../../src/sim/passes/index.js";
-import { elevationAt } from "../../src/sim/terrain.js";
-import { treesInRect, COHORT_GIANT, COHORT_SAPLING } from "../../src/sim/vegetation.js";
-import { conformDisplacement, GROUND_CONFORM_RAMP } from "../../src/game/groundConform.js";
+import { elevationAt } from "@csarkosh/engine/sim/terrain";
+import { treesInRect, COHORT_GIANT, COHORT_SAPLING } from "@csarkosh/engine/sim/vegetation";
+import { conformDisplacement, GROUND_CONFORM_RAMP } from "@csarkosh/engine/game/groundConform";
 
 const SEED = 0x5eed1;
 

@@ -1,9 +1,9 @@
 import { describe, expect, it } from "vitest";
 import {
   LAKE_NEAR_SHORE_M, boxInPlanes, cornersPastBox, lakeDrawnFrom, lakeInViewFrom, lakeUnderEye, lakeViewPoints, shoreInPlanes, squareInPlanes, type ViewPlane,
-} from "../../src/game/lakeSeen.js";
-import { cameraAxes, restAxes, restPlanes, viewCorners, viewPlanes } from "../../src/game/lite/cameraPose.js";
-import type { LakeShape } from "../../src/sim/lakeShape.js";
+} from "@csarkosh/engine/game/lakeSeen";
+import { cameraAxes, restAxes, restPlanes, viewCorners, viewPlanes } from "@csarkosh/engine/game/lite/cameraPose";
+import type { LakeShape } from "@csarkosh/engine/sim/lakeShape";
 import { stadiumShape } from "../helpers/lakeShapes.js";
 
 /** A diagonal lake: its spine from (−30, −30) to (30, 30), 8 m to the shore either side, at level 0. */

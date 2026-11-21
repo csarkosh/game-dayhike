@@ -22,13 +22,13 @@ import {
   acquireTexture, addToScene, disposeMeshGpu, getContainerMeshes, getGpuDevice, loadGltf, releaseTexture, removeFromScene, setMeshVisible,
   type AssetContainer, type EngineContext, type Mesh, type PbrMaterialProps, type SceneContext, type SceneNode, type Texture2D,
 } from "@babylonjs/lite";
-import { quatFromEuler, type Quat } from "../instancePose.js";
+import { quatFromEuler, type Quat } from "@csarkosh/engine/game/instancePose";
 import {
   actorBones, actorNode, createActorPosed, poseActor, readActorRig, rootForJoint, type ActorPosed, type ActorRig,
 } from "../scene/actorPose.js";
 import type { ActorPose } from "../scene/timeline.js";
-import type { FrameUploads } from "./frameUploads.js";
-import { fetchRetried } from "../fetchRetry.js";
+import type { FrameUploads } from "@csarkosh/engine/game/lite/frameUploads";
+import { fetchRetried } from "@csarkosh/engine/game/fetchRetry";
 import { modelLoadTold } from "../loadReport.js";
 
 /** How far (the largest float of a bone's sixteen) the rig's bones at rest may stand from the ones the loader made, in the mesh's own units. */

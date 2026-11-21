@@ -295,7 +295,7 @@ time is the browser's local time, which is the viewer's zone already.
 ## 9. What the GPU did under a hike (amended 2026-11-17)
 
 *A hike's renderer now tells the page of every error its GPU device reports and of a device
-lost under it (`client/src/game/gpuFaults.ts`; the rows are listed in
+lost under it (`engine/src/game/gpuFaults.ts`; the rows are listed in
 `tools/telemetry/queries/README.md`, "A GPU failure, read back"). The page reads them so that
 a failure can be told from telemetry alone: one harmless bad draw or a broken picture, and
 why a device keeps being lost.*

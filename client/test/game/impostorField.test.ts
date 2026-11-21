@@ -7,7 +7,7 @@ import {
   IMPOSTOR_FIELD_SPREAD,
   impostorFields,
   nearestSeeds,
-} from "../../src/game/impostorField.js";
+} from "@csarkosh/engine/game/impostorField";
 
 /** A picture from rows of characters: `#` a tree texel (opaque, its colour
  * from its position), `.` clear. */

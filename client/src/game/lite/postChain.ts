@@ -60,21 +60,21 @@ import {
 import type { AtmosphereUniforms } from "../atmosphereParams.js";
 import { emptyCloudUniforms, type CloudUniforms } from "../cloudParams.js";
 import { gradeRecordUnder, type GradeRecord, type PaintPalette } from "../gradeParams.js";
-import { LENS, lensDropletMap } from "../lensParams.js";
+import { LENS, lensDropletMap } from "@csarkosh/engine/game/lensParams";
 import {
   HALATION_KERNEL, HALATION_RATIO, composeUniforms, createLensGate, createPaletteFade, createTaaFrame, emptyFarSoftUniforms, emptyGradeUniforms,
   emptyTaaUniforms, extractUniforms, farSoftUniforms, gradeUniforms, lensUniforms, paintUniforms, paintUniformsDrawn, sharpenUniforms, type PostView,
 } from "../postFrame.js";
-import { MSAA_SAMPLES, paintTargetSize, type PostFeatures } from "../postParams.js";
+import { MSAA_SAMPLES, paintTargetSize, type PostFeatures } from "@csarkosh/engine/game/postParams";
 import type { StareLens } from "../stareLens.js";
-import { WEATHER_PRESETS, type WeatherParams } from "../weather.js";
+import { WEATHER_PRESETS, type WeatherParams } from "@csarkosh/engine/game/weather";
 import { movedWords } from "./frameBlock.js";
-import type { FrameUploads } from "./frameUploads.js";
+import type { FrameUploads } from "@csarkosh/engine/game/lite/frameUploads";
 import {
   FAR_SOFT_WGSL, HALATION_EXTRACT_WGSL, LENS_WGSL, PAINT_WGSL, POST_VERTEX_WGSL, TAA_SHARPEN_WGSL, TAA_WGSL, blurWgsl, depthResolveWgsl, gradeWgsl, passLayout,
   writePass, type PassLayout,
-} from "./postWgsl.js";
-import { askRenderPipeline } from "./pipelineAsk.js";
+} from "@csarkosh/engine/game/lite/postWgsl";
+import { askRenderPipeline } from "@csarkosh/engine/game/lite/pipelineAsk";
 
 /** The format of every frame the chain's passes hand on, as the game's: half floats. */
 export const POST_FORMAT = "rgba16float";

@@ -1,14 +1,14 @@
 import { describe, expect, it } from "vitest";
 import "../../src/sim/passes/index.js";
-import { CLUTTER_GRASS, CLUTTER_LITTER, groundCover } from "../../src/sim/clutter.js";
-import { instanceMatrixFor, LITTER_VARIANT_SCALE } from "../../src/game/clutterInstances.js";
-import { bladeCellAt } from "../../src/game/bladeField.js";
-import { DUFF_CHARACTER_COUNT } from "../../src/game/duffClump.js";
+import { CLUTTER_GRASS, CLUTTER_LITTER, groundCover } from "@csarkosh/engine/sim/clutter";
+import { instanceMatrixFor, LITTER_VARIANT_SCALE } from "@csarkosh/engine/game/clutterInstances";
+import { bladeCellAt } from "@csarkosh/engine/game/bladeField";
+import { DUFF_CHARACTER_COUNT } from "@csarkosh/engine/game/duffClump";
 import {
   DUFF_CELL, DUFF_CHARACTER_WEIGHTS, DUFF_COLLAPSE_BAND, DUFF_JITTER, DUFF_PAD, DUFF_REACH, DUFF_REBUILD_CELL,
   DUFF_STRENGTH_FLOOR, DUFF_SWEEP_SIZE, DUFF_TIER_BAND, DUFF_TIER_EDGE,
   collectDuffCells, createDuffCollector, duffCellAt, duffCharacterFor, duffTierBands, type DuffCell,
-} from "../../src/game/duffField.js";
+} from "@csarkosh/engine/game/duffField";
 
 const SEED = 1;
 // A point deep under forest canopy, well off the trail: measured, the

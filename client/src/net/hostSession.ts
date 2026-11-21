@@ -1,6 +1,6 @@
-import type { InputCommand, Vec3 } from "../sim/types.js";
+import type { InputCommand, Vec3 } from "@csarkosh/engine/sim/core";
 import { Button } from "../sim/types.js";
-import type { Level } from "../sim/level.js";
+import type { Level } from "@csarkosh/engine/sim/level";
 import type { World } from "../sim/world.js";
 import {
   applyPlayerInput,
@@ -11,21 +11,21 @@ import {
   spawnPlayer,
   tickWorld,
 } from "../sim/world.js";
-import { PositionHistory } from "../sim/history.js";
-import type { Forest } from "../sim/forest.js";
+import { PositionHistory } from "@csarkosh/engine/sim/history";
+import type { Forest } from "@csarkosh/engine/sim/forest";
 import { pressedEdges, resolveInteract } from "../sim/interact.js";
 import {
   INPUT_BUFFER_TARGET,
   MAX_INPUTS_PER_TICK,
   MAX_UNACKED_INPUTS,
   TICKS_PER_SNAPSHOT,
-} from "../sim/constants.js";
+} from "@csarkosh/engine/sim/constants";
 
 const PING_INTERVAL_MS = 1000;
 
 /** Hard cap on a peer's queued inputs. Bounds memory against a flooding peer. */
 const MAX_PENDING_INPUTS = MAX_UNACKED_INPUTS * 2;
-import type { Transport } from "./transport.js";
+import type { Transport } from "@csarkosh/engine/net/transport";
 import {
   MessageType,
   PROTOCOL_VERSION,

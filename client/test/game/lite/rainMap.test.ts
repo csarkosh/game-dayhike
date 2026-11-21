@@ -1,10 +1,11 @@
 import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
+import "../../../src/sim/passes/index.js";
 import { RAIN_MAP_RINGS, RAIN_MAP_WGSL, rainMapPlugin } from "../../../src/game/lite/rainMap.js";
 import { TERRAIN_VERTEX_FLOATS, TERRAIN_VERTEX_LAYOUT } from "../../../src/game/lite/terrainPlugins.js";
-import { rainMapTexel } from "../../../src/game/rainCover.js";
-import { RAIN_MAP } from "../../../src/game/rainParams.js";
-import { TERRAIN_ATTRIBUTES } from "../../../src/game/terrainVertices.js";
+import { rainMapTexel } from "@csarkosh/engine/game/rainCover";
+import { RAIN_MAP } from "@csarkosh/engine/game/rainParams";
+import { TERRAIN_ATTRIBUTES } from "@csarkosh/engine/game/terrainVertices";
 import { babylonText } from "../../helpers/babylonFixture.js";
 import { tight } from "./wgslText.js";
 

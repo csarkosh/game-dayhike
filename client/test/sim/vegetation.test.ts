@@ -1,5 +1,6 @@
 import { describe, it, expect, afterEach } from "vitest";
-import "../../src/sim/olympic.js";
+import "../../src/sim/passes/index.js";
+import "@csarkosh/engine/sim/olympic";
 import {
   forestDensity,
   forestDensityUnmasked,
@@ -26,19 +27,19 @@ import {
   LOG_SCALE_MIN, LOG_HALF_LENGTH, LOG_SPAN_STATIONS, LOG_TRAIL_CLEAR, LOG_ROAD_CLEAR, logAxis,
   SPECIES_ALDER, SPECIES_COUNT, ALDER_SCALE_MIN, ALDER_SCALE_MAX, ALDER_ALT_HI, ALDER_ALT_HI_FADE, ALDER_ROAD_BAND, alderHabitat,
   TREE_VARIANTS,
-} from "../../src/sim/vegetation.js";
+} from "@csarkosh/engine/sim/vegetation";
 import {
   DEFAULT_TERRAIN_VARIANT,
   activeTerrainVariant,
   elevationAt,
   setActiveTerrainVariant,
   terrainVariant,
-} from "../../src/sim/terrain.js";
-import { TRAIL_CLEAR } from "../../src/sim/trail.js";
-import type { TerrainSample } from "../../src/sim/terrain.js";
-import { bowlFor } from "../../src/sim/olympic.js";
-import { MEADOW_RIM } from "../../src/sim/features.js";
-import { rayToShore } from "../../src/sim/lakeShape.js";
+} from "@csarkosh/engine/sim/terrain";
+import { TRAIL_CLEAR } from "@csarkosh/engine/sim/trail";
+import type { TerrainSample } from "@csarkosh/engine/sim/terrain";
+import { bowlFor } from "../../src/sim/mountain.js";
+import { MEADOW_RIM } from "@csarkosh/engine/sim/features";
+import { rayToShore } from "@csarkosh/engine/sim/lakeShape";
 
 const SEED = 0x5eed;
 const flat = (h: number, g = 0.1): TerrainSample => ({ h, dx: g, dz: 0 });

@@ -1,11 +1,12 @@
 import { describe, expect, it, vi } from "vitest";
+import "../../src/sim/passes/index.js";
 import type { VoiceSource } from "../../src/game/ambientAudio.js";
 import {
   SURF_BACKWASH_VOICES, SURF_BED_HOLD_S, SURF_BED_LOOP_S, SURF_CANOPY_LOWPASS, SURF_GAIN_STEP, SURF_LEVEL,
   SURF_LOWPASS_INLAND_HZ, SURF_LOWPASS_INLAND_M, SURF_LOWPASS_SHORE_HZ, SURF_PLUNGE_VOICES, SURF_RANGE_M, SURF_REF_M,
   createSurfAudio, surfBedGain, surfCutoffHz,
 } from "../../src/game/surfAudio.js";
-import { createSurfSound, type SurfSound } from "../../src/game/surfSound.js";
+import { createSurfSound, type SurfSound } from "@csarkosh/engine/game/surfSound";
 
 /** A node as the stub context makes it: it records what it is connected to, and its params their glides. */
 type StubNode = {

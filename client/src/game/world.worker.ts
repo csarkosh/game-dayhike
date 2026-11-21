@@ -24,13 +24,13 @@
  * The sim's passes register as they are imported, so that import comes first.
  */
 import "../sim/passes/index.js";
-import { generateChunk, type Chunk } from "../sim/chunk.js";
-import { PLAYER_HALF } from "../sim/constants.js";
-import { passHash, passHashKey } from "../sim/forest.js";
+import { generateChunk, type Chunk } from "@csarkosh/engine/sim/chunk";
+import { PLAYER_HALF } from "@csarkosh/engine/sim/constants";
+import { passHash, passHashKey } from "@csarkosh/engine/sim/forest";
 import { spawnChunkCells } from "../sim/spawn.js";
-import { activeTerrainVariant, setActiveTerrainVariant } from "../sim/terrain.js";
+import { activeTerrainVariant, setActiveTerrainVariant } from "@csarkosh/engine/sim/terrain";
 import { prepareScene, sceneTransfer, type PreparedScene } from "./preparedScene.js";
-import type { QualityTier } from "./quality.js";
+import type { QualityTier } from "@csarkosh/engine/game/quality";
 
 /** `skip`: what the page already holds and the worker leaves out. */
 export type WorldPrepRequest = { id: number; seed: number; variant: string; skip?: { prepared?: boolean; passHash?: boolean } };

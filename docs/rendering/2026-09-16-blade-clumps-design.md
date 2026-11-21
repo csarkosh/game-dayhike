@@ -50,12 +50,12 @@ pre-pass; any change to the wind field, the sim, or the level id.
 
 | File | Role |
 | --- | --- |
-| `client/src/game/bladeClump.ts` (new, Babylon-free) | The clump's constants and `bladeClumpGeometry()`: positions, normals, vertex colours, indices and the per-vertex `blade` attribute as plain arrays. The mirrored `bladeAlive(random, thin)`. On `BABYLON_FREE_FILES`. |
-| `client/src/game/clutterField.ts` | `BLADE_RADIUS`, `BLADE_PAD`, `bladeEdges()`; the meadow entry of `ClutterBands` gains a `blades` list, filled by the same walk and sorted nearest-first, empty when blades are off. |
+| `engine/src/game/bladeClump.ts` (new, Babylon-free) | The clump's constants and `bladeClumpGeometry()`: positions, normals, vertex colours, indices and the per-vertex `blade` attribute as plain arrays. The mirrored `bladeAlive(random, thin)`. On `BABYLON_FREE_FILES`. |
+| `engine/src/game/clutterField.ts` | `BLADE_RADIUS`, `BLADE_PAD`, `bladeEdges()`; the meadow entry of `ClutterBands` gains a `blades` list, filled by the same walk and sorted nearest-first, empty when blades are off. |
 | `client/src/game/clutterMeshes.ts` | The blade material and mesh built from the geometry; the meadow class's third bucket; the `blades` option; the card near bucket's in-band when blades are on. |
 | `client/src/game/foliagePlugin.ts` | The `BLADES` profile and its `blades` flag → `FOLIAGE_BLADES` define; the `blade` attribute; the collapse constants. |
 | `client/src/game/shaders/foliage.vertex.fx`, `foliageWorldPos.vertex.fx` | The attribute declaration and the collapse block; the blade motion weight without the edge term. |
-| `client/src/game/postParams.ts`, `post.ts` | `MSAA_SAMPLES`; set on the first pass of the chain. |
+| `engine/src/game/postParams.ts`, `post.ts` | `MSAA_SAMPLES`; set on the first pass of the chain. |
 | `client/src/game/renderer.ts` | `blades: tier !== "low"` into `createClutterMeshes`. |
 | `ARCHITECTURE.md` | One sentence on the blade bucket under the rendering section. |
 

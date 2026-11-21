@@ -34,7 +34,7 @@ fps-signaling (Cloud Run, 1 instance) ───────── room rows ─�
                                                                BigQuery dataset dayhike_telemetry
 ```
 
-**The page** (`client/src/net/telemetry.ts`) holds a bounded queue of events. Every 30 s
+**The page** (`engine/src/net/telemetry.ts`) holds a bounded queue of events. Every 30 s
 (`FLUSH_MS`), or at 50 queued (`FLUSH_AT_EVENTS`), a timer serialises the queue into one
 batch and sends it with a keepalive `fetch` as `text/plain`, which is a simple request
 with no preflight. On `pagehide` the page sends an `end` event with its counts and

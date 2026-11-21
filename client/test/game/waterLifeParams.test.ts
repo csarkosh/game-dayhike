@@ -2,8 +2,8 @@ import { describe, expect, it } from "vitest";
 import {
   DREAD_QUIET_FROM, DREAD_QUIET_SPAN, WATER_LIFE_WIND_MPS,
   dreadQuiet, midgeHumPitch, summerTemperature, waterLifePresenceUnder, type WaterLifePresence,
-} from "../../src/game/waterLifeParams.js";
-import { WEATHER_NAMES, WEATHER_PRESETS, type WeatherPresetName } from "../../src/game/weather.js";
+} from "@csarkosh/engine/game/waterLifeParams";
+import { WEATHER_NAMES, WEATHER_PRESETS, type WeatherPresetName } from "@csarkosh/engine/game/weather";
 
 const CLEAR = WEATHER_PRESETS.clear;
 

@@ -1,5 +1,6 @@
 import { describe, it, expect } from "vitest";
-import type { Rgb } from "../../src/game/colour.js";
+import "../../src/sim/passes/index.js";
+import type { Rgb } from "@csarkosh/engine/game/colour";
 import {
   classifySurface,
   DUFF_FLOOR_MAX,
@@ -13,9 +14,9 @@ import {
   snowLineAt,
   surfaceAlbedo,
   surfaceWeights,
-} from "../../src/game/terrainSurface.js";
-import { NO_WATER_GROUND } from "../../src/game/waterGround.js";
-import { SLOPE_HI, SLOPE_LO } from "../../src/sim/vegetation.js";
+} from "@csarkosh/engine/game/terrainSurface";
+import { NO_WATER_GROUND } from "@csarkosh/engine/game/waterGround";
+import { SLOPE_HI, SLOPE_LO } from "@csarkosh/engine/sim/vegetation";
 
 const SEED = 0x7e44a1;
 

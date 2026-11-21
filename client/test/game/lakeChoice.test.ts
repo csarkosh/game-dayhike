@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { LAKE_LIFE_REACH, LAKE_RETARGET_LEAD, createLakeChoice } from "../../src/game/lakeChoice.js";
+import { LAKE_LIFE_REACH, LAKE_RETARGET_LEAD, createLakeChoice } from "@csarkosh/engine/game/lakeChoice";
 import { timeLimit } from "../helpers/timeLimit.js";
 
 // Two lakes 300 m apart, each its ground 50 m about its centre: the camera

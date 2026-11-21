@@ -1,13 +1,14 @@
 import { describe, expect, it } from "vitest";
-import { WATER_ROWS, lakeWaterRow, roughnessFor } from "../../src/game/waterShading.js";
+import "../../src/sim/passes/index.js";
+import { WATER_ROWS, lakeWaterRow, roughnessFor } from "@csarkosh/engine/game/waterShading";
 import {
   LAKE_BUMP_DRIFT, WATER_ROUGHNESS_STEP, advanceWater, createBumpDrift, createWaterSurface, emptyLakeUniforms, emptyWaterFrameUniforms,
   lakeUniforms, setWaterCalm, setWaterCove, setWaterLakeBody, setWaterLakeTime, setWaterMirrorMotion, setWaterPawCover, setWaterShade, setWaterWind,
   waterFrameUniforms, waterRoughnessDue,
-} from "../../src/game/waterSurface.js";
-import { MIRROR_OFFSET_K } from "../../src/game/mirrorView.js";
-import { emptyLakeMirrorUniforms, lakeMirrorUniforms } from "../../src/game/waterSurface.js";
-import { WIND_TIME_WRAP } from "../../src/game/windParams.js";
+} from "@csarkosh/engine/game/waterSurface";
+import { MIRROR_OFFSET_K } from "@csarkosh/engine/game/mirrorView";
+import { emptyLakeMirrorUniforms, lakeMirrorUniforms } from "@csarkosh/engine/game/waterSurface";
+import { WIND_TIME_WRAP } from "@csarkosh/engine/game/windParams";
 
 describe("a water surface's numbers, kept with no engine", () => {
   it("starts at rest: no wind, no rain, a lake rough all over, an identity for its mirror", () => {

@@ -1,10 +1,10 @@
 import { describe, expect, it } from "vitest";
 import "../../../src/sim/passes/index.js";
-import { NO_STITCH, PATCH_FAR_SPACING, PATCH_NEAR_SPACING, PATCH_WIDE_SPACING, facePatchGeometry, type FacePatch } from "../../../src/game/facePatches.js";
+import { NO_STITCH, PATCH_FAR_SPACING, PATCH_NEAR_SPACING, PATCH_WIDE_SPACING, facePatchGeometry, type FacePatch } from "@csarkosh/engine/game/facePatches";
 import {
   PATCH_SPACINGS, createMarkedRun, createPatchPool, firstDifference, patchIndexCapacity, patchIndexCount, patchVertexCount, writePatchTriangles,
   type DrawnPatch,
-} from "../../../src/game/lite/patchPool.js";
+} from "@csarkosh/engine/game/lite/patchPool";
 import { PATCH_POOL_VERTICES, patchPlace } from "../../../src/game/lite/terrainMeshes.js";
 
 /** A band's triangles as a patch has them: a grid of `n` squares a side, two triangles a square, in the game's winding. */

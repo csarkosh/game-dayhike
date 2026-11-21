@@ -1,21 +1,24 @@
+// A world is Day Hike's: the coast with the mountain on it, and every pass. Registered here so
+// that whatever makes a world has them, in whichever thread it runs.
+import "./passes/index.js";
 import type { Interactable } from "./interact.js";
 import type { EnemyState, InputCommand, PlayerState, Vec3, WorldState } from "./types.js";
 import { DeathCause, Outcome, Phase, cloneVec3 } from "./types.js";
 import { stepReturns } from "./returns.js";
-import type { Level } from "./level.js";
-import type { BoxProvider } from "./boxSource.js";
-import type { Forest } from "./forest.js";
-import type { TrailGraph } from "./trail.js";
+import type { Level } from "@csarkosh/engine/sim/level";
+import type { BoxProvider } from "@csarkosh/engine/sim/boxSource";
+import type { Forest } from "@csarkosh/engine/sim/forest";
+import type { TrailGraph } from "@csarkosh/engine/sim/trail";
 import { createWatcherRecord, stepWatcher, type WatcherRecord } from "./watcher.js";
 import { createHauntRecord, stepHaunt, type HauntRecord } from "./haunt.js";
 import { spiralSpawn, trailheadStart } from "./spawn.js";
-import { collisionBoxes } from "./level.js";
-import { activeTerrainVariant, elevationAt } from "./terrain.js";
+import { collisionBoxes } from "@csarkosh/engine/sim/level";
+import { activeTerrainVariant, elevationAt } from "@csarkosh/engine/sim/terrain";
 import { buildSearch, installSearch, type Search } from "./search.js";
 import { trailheadPlaces } from "./trailhead.js";
 import { containAtRoad, containInLakes, waterLevelAt } from "./containment.js";
-import { createGroundField, type GroundField } from "./ground.js";
-import { stepMovement, type MoveState } from "./movement.js";
+import { createGroundField, type GroundField } from "@csarkosh/engine/sim/ground";
+import { stepMovement, type MoveState } from "@csarkosh/engine/sim/movement";
 import { isExpiredCorpse, stepEnemy } from "./ai.js";
 import { updateDirector } from "./director.js";
 import { stepHollows, updateHollows, updateLoss } from "./hollow.js";
@@ -23,7 +26,8 @@ import { stepSummit, updateSafety } from "./summit.js";
 import { stepTaken } from "./taken.js";
 import type { WayDown } from "./wayDown.js";
 import { drawWay } from "./wayDraw.js";
-import { ENEMY_POPULATION_CAP, PLAYER_HALF, PLAYER_MAX_HEALTH, TICK_DT } from "./constants.js";
+import { PLAYER_HALF, TICK_DT } from "@csarkosh/engine/sim/constants";
+import { ENEMY_POPULATION_CAP, PLAYER_MAX_HEALTH } from "./dayhikeConstants.js";
 
 export type World = {
   state: WorldState;

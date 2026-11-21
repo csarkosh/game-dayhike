@@ -1,5 +1,5 @@
-import { clamp01, type Rgb } from "./colour.js";
-import { sunPositionAt } from "./sky.js";
+import { clamp01, type Rgb } from "@csarkosh/engine/game/colour";
+import { sunPositionAt } from "@csarkosh/engine/game/sky";
 import { STARE_LENS_REST, stareShadeUnder, type StareLens, type StareShade } from "./stareLens.js";
 import {
   dreadLensUnder, dreadWorldUnder, exposureUnder, moodUnder, saturationUnder, vignetteWeightUnder,
@@ -7,7 +7,7 @@ import {
   GRADE_MIDTONE_HUE, GRADE_MIDTONE_DENSITY, GRADE_MIDTONE_SATURATION,
   GRADE_HIGHLIGHT_HUE, GRADE_HIGHLIGHT_DENSITY, GRADE_HIGHLIGHT_SATURATION,
   type WeatherParams,
-} from "./weather.js";
+} from "@csarkosh/engine/game/weather";
 
 /**
  * The pure arithmetic of the grade pass. Babylon-free and on the architecture

@@ -46,13 +46,13 @@ import {
   removeMeshFromTask, setMeshVisible, setTaskMeshVisible, setThinInstances, vec3,
   type BankedFreeCamera, type EngineContext, type Mesh, type PluginUniformBlock, type RenderTarget, type RenderTargetAttachments, type SceneContext, type Texture2D,
 } from "@babylonjs/lite";
-import type { LakeSource } from "../../sim/terrain.js";
-import { mirrorGroundColour, type MirrorGroundSky } from "../mirrorGround.js";
+import type { LakeSource } from "@csarkosh/engine/sim/terrain";
+import { mirrorGroundColour, type MirrorGroundSky } from "@csarkosh/engine/game/mirrorGround";
 import {
   MIRROR_LIFT, createMirrorCadence, mirrorArmed, mirrorProjection, mirrorRead, mirrorScale, mirroredPose, poseView, type MirrorPose,
-} from "../mirrorPass.js";
-import type { WeatherParams } from "../weather.js";
-import type { FrameUploads } from "./frameUploads.js";
+} from "@csarkosh/engine/game/mirrorPass";
+import type { WeatherParams } from "@csarkosh/engine/game/weather";
+import type { FrameUploads } from "@csarkosh/engine/game/lite/frameUploads";
 import { panoramaGroundPlugin, type PanoramaGroundUniforms, type ReflectionRegistry } from "./lakePanorama.js";
 
 /** The picture's format: half floats, as the game's, for lit colour ahead of the display's curve. */

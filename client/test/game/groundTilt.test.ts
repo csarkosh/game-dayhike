@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { groundNormalTilt, groundNormalY, seatOnGround, seatOnGroundCapped } from "../../src/game/groundTilt.js";
+import { groundNormalTilt, groundNormalY, seatOnGround, seatOnGroundCapped } from "@csarkosh/engine/game/groundTilt";
 import { babylonValues } from "../helpers/babylonFixture.js";
 import { dot, turned, type Quat, type Vec } from "../helpers/ruler.js";
 

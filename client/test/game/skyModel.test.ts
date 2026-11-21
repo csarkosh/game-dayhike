@@ -1,6 +1,6 @@
 import { beforeAll, describe, expect, it } from "vitest";
-import { luma, type Rgb } from "../../src/game/colour.js";
-import { sunPositionAt, type Vec3 } from "../../src/game/sky.js";
+import { luma, type Rgb } from "@csarkosh/engine/game/colour";
+import { sunPositionAt, type Vec3 } from "@csarkosh/engine/game/sky";
 import {
   MULTI_FLOOR,
   MULTI_SIZE,
@@ -25,7 +25,7 @@ import {
   transmittanceAt,
   type SkySlice,
   type SkyTables,
-} from "../../src/game/skyModel.js";
+} from "@csarkosh/engine/game/skyModel";
 import { timeLimit } from "../helpers/timeLimit.js";
 
 const DEG = Math.PI / 180;

@@ -34,19 +34,19 @@
  *   else, the sea's numbers, its pictures and its shading, is the sea's.
  */
 import type { MaterialPlugin, PluginUniformBlock, Texture2D, Texture2DArray } from "@babylonjs/lite";
-import { SEA_COMPONENT_VECS, type SeaUniforms } from "../seaUniforms.js";
+import { SEA_COMPONENT_VECS, type SeaUniforms } from "@csarkosh/engine/game/seaUniforms";
 import { frameReads } from "./frameBlock.js";
 import { WATER_PRIORITY } from "./lakePlugin.js";
-import { uniformFields, writeUniforms, type UniformField } from "./pluginUniforms.js";
+import { uniformFields, writeUniforms, type UniformField } from "@csarkosh/engine/game/lite/pluginUniforms";
 import {
   SEA_ALBEDO_WGSL, SEA_BUMP_WGSL, SEA_COMPOSE_WGSL, SEA_LIP_SHAPE_WGSL, SEA_LIP_VERTEX_WGSL, SEA_RAIN_WGSL, SEA_VERTEX_WGSL, seaLightsWgsl, seaRestVertexWgsl,
   seaShadeWgsl, seaSurfaceWgsl,
   type SeaLook,
-} from "./seaWgsl.js";
-import type { WaterBehind } from "./waterBehind.js";
-import { WATER_DEFS_WGSL, WATER_SPLIT_WGSL, WATER_THROUGH_DEFS_WGSL, WATER_THROUGH_FINAL_WGSL } from "./waterWgsl.js";
+} from "@csarkosh/engine/game/lite/seaWgsl";
+import type { WaterBehind } from "@csarkosh/engine/game/lite/waterBehind";
+import { WATER_DEFS_WGSL, WATER_SPLIT_WGSL, WATER_THROUGH_DEFS_WGSL, WATER_THROUGH_FINAL_WGSL } from "@csarkosh/engine/game/lite/waterWgsl";
 import derivativeUniformitySource from "../shaders/diagnostic/derivativeUniformity.wgsl?raw";
-import { wgsl } from "../shaders/shaderText.js";
+import { wgsl } from "@csarkosh/engine/game/shaders/shaderText";
 
 /** The pictures and tables the sea's material reads. */
 export type SeaTextures = {

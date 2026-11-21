@@ -1,10 +1,10 @@
 import { describe, expect, it } from "vitest";
-import { parseLevel } from "../../src/sim/level.js";
+import { parseLevel } from "@csarkosh/engine/sim/level";
 import { createWorld, spawnPlayer } from "../../src/sim/world.js";
 import {
   INTERACT_REACH, pressedEdges, resolveInteract, type Interactable,
 } from "../../src/sim/interact.js";
-import { PLAYER_EYE_OFFSET } from "../../src/sim/constants.js";
+import { PLAYER_EYE_OFFSET } from "@csarkosh/engine/sim/constants";
 import { Button } from "../../src/sim/types.js";
 
 const flat = parseLevel({

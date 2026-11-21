@@ -33,7 +33,7 @@ of a talk whose slides could not be read.
 **Grass** is ground clutter: two card-based tuft models, 0.32 and 0.40 m tall, alpha-masked and
 double-sided, 290 triangles at the near LOD and 130 at the far, scattered on a 3 m lattice out to
 110 m with a 4400-instance budget that is effectively "a tuft in every cell"
-(`client/src/sim/clutter.ts`, `client/src/game/clutterField.ts`). Under it a 20-triangle
+(`engine/src/sim/clutter.ts`, `engine/src/game/clutterField.ts`). Under it a 20-triangle
 alpha-masked meadow-carpet card sits on a 0.7 m lattice to 40 m, up to 10,600 instances, its
 near/far seam at 18 m. Flowers and bushes are further card models. Everything is thin instances,
 one draw per model per LOD, 28 draws for all clutter (`client/src/game/clutterMeshes.ts`), with a
@@ -57,7 +57,7 @@ the origin to drift the motes. **Trees do not sway** (`forestMeshes.ts` attaches
 understory only), mist banks have no drift term, rain falls with a fixed spread, and the ambient
 wind sound follows the weather preset, not the gusts.
 
-**The trail** is a fragment-shader paint on the terrain (`client/src/game/trailPaint.ts`). A
+**The trail** is a fragment-shader paint on the terrain (`engine/src/game/trailPaint.ts`). A
 bucketed segment table finds the nearest trail edge per fragment; inside a 1 m bed half-width plus
 a 0.5 m margin the ground blends to the tiled gravel layer under a wet-earth tint, over a 0.4 m
 smoothstep, and a bank band paints bare forest floor on the uphill side. Normals, roughness and F0

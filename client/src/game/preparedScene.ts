@@ -12,23 +12,23 @@
  * Babylon-free, as everything it imports is: it runs in a worker.
  */
 import { trailheadStart } from "../sim/spawn.js";
-import { activeTerrainVariant, activeTerrainVariantName, setActiveTerrainVariant, type LakeSource } from "../sim/terrain.js";
-import { BED_GRID, bakeBed, bedOriginFor, createBedGrid, type BedGrid } from "./bedHeight.js";
-import { BASE_SPACING_BY_TIER, RING_COUNT, createRingSamples, ringSpacing, snapOrigin, type RingSamples } from "./clipmap.js";
-import { FEATURE_TEX_ROWS, FEATURE_TEX_WIDTH, featureTableFor } from "./featureTable.js";
-import { skylineElevations, skylineTrees } from "./lakeSkyline.js";
-import { lakeSurfaceDepths, lakeSurfaceGrid } from "./lakeSurfaceGrid.js";
-import { SWELL_COMPONENTS, SWELL_COMPONENTS_LOW } from "./oceanSwell.js";
-import { oceanFieldFor, type OceanField } from "./oceanWaves.js";
-import type { QualityTier } from "./quality.js";
-import { SWASH_FACE_LIFT_M } from "./swashRunUp.js";
+import { activeTerrainVariant, activeTerrainVariantName, setActiveTerrainVariant, type LakeSource } from "@csarkosh/engine/sim/terrain";
+import { BED_GRID, bakeBed, bedOriginFor, createBedGrid, type BedGrid } from "@csarkosh/engine/game/bedHeight";
+import { BASE_SPACING_BY_TIER, RING_COUNT, createRingSamples, ringSpacing, snapOrigin, type RingSamples } from "@csarkosh/engine/game/clipmap";
+import { FEATURE_TEX_ROWS, FEATURE_TEX_WIDTH, featureTableFor } from "@csarkosh/engine/game/featureTable";
+import { skylineElevations, skylineTrees } from "@csarkosh/engine/game/lakeSkyline";
+import { lakeSurfaceDepths, lakeSurfaceGrid } from "@csarkosh/engine/game/lakeSurfaceGrid";
+import { SWELL_COMPONENTS, SWELL_COMPONENTS_LOW } from "@csarkosh/engine/game/oceanSwell";
+import { oceanFieldFor, type OceanField } from "@csarkosh/engine/game/oceanWaves";
+import type { QualityTier } from "@csarkosh/engine/game/quality";
+import { SWASH_FACE_LIFT_M } from "@csarkosh/engine/game/swashRunUp";
 import {
   WATER_RING_COUNT, createWaterRingSamples, seaFaceZ, waterHoleCellsFor, waterRingGeometry, waterRingSpacing, wetBounds,
   type WaterGeometry, type WaterRingSamples,
-} from "./water.js";
-import { WATER_BUMP_SIZE, waterBumpData } from "./waterBump.js";
-import { waterLifeBed, waterLifeLayout, type WaterLifeMade } from "./waterLifeField.js";
-import { waterPlantPlacements, type WaterPlantPlacements } from "./waterPlantField.js";
+} from "@csarkosh/engine/game/water";
+import { WATER_BUMP_SIZE, waterBumpData } from "@csarkosh/engine/game/waterBump";
+import { waterLifeBed, waterLifeLayout, type WaterLifeMade } from "@csarkosh/engine/game/waterLifeField";
+import { waterPlantPlacements, type WaterPlantPlacements } from "@csarkosh/engine/game/waterPlantField";
 
 /** A lake's surface as the renderer's mesh takes it: the grid (`lakeSurfaceGrid`) and the depth under each vertex. */
 export type PreparedLakeSurface = {

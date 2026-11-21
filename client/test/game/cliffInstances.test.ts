@@ -1,11 +1,11 @@
 import { describe, expect, it } from "vitest";
 import "../../src/sim/passes/index.js";
-import { CLIFF_MODELS, CLIFF_TILT_MAX, cliffFacing } from "../../src/sim/cliffField.js";
-import type { ClutterInstance } from "../../src/sim/clutter.js";
-import { CLIFF_FADE_BAND, CLIFF_RINGS, cliffBands, cliffOrigin, collectCliffs } from "../../src/game/cliffField.js";
-import { CLIFF_FAR_LOD, CLIFF_GROUND_TINT, CLIFF_LOD_NODES, cliffInstanceMatrix, cliffSeat, createCliffLists } from "../../src/game/cliffInstances.js";
-import { FADE_NONE_IN } from "../../src/game/distanceFade.js";
-import { seatOnGroundCapped } from "../../src/game/groundTilt.js";
+import { CLIFF_MODELS, CLIFF_TILT_MAX, cliffFacing } from "@csarkosh/engine/sim/cliffField";
+import type { ClutterInstance } from "@csarkosh/engine/sim/clutter";
+import { CLIFF_FADE_BAND, CLIFF_RINGS, cliffBands, cliffOrigin, collectCliffs } from "@csarkosh/engine/game/cliffField";
+import { CLIFF_FAR_LOD, CLIFF_GROUND_TINT, CLIFF_LOD_NODES, cliffInstanceMatrix, cliffSeat, createCliffLists } from "@csarkosh/engine/game/cliffInstances";
+import { FADE_NONE_IN } from "@csarkosh/engine/game/distanceFade";
+import { seatOnGroundCapped } from "@csarkosh/engine/game/groundTilt";
 import { CLIFF_LAID } from "../sim/helpers/cliffLaid.js";
 
 // The scarp fixture of the cliff shell's test: all three rings hold modules.

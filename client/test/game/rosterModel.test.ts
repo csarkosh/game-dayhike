@@ -6,7 +6,7 @@ import {
   OVERRUN_MS,
   type RosterAttempt,
 } from "../../src/game/rosterModel.js";
-import type { LobbyState } from "../../src/net/lobby.js";
+import type { LobbyState } from "@csarkosh/engine/net/lobby";
 
 const LOBBY = "3f2504e0-4f89-41d3-9a0c-0305e82c3301";
 const invite = (id: string) => `https://games.csarko.sh/dayhike/party/${id}`;

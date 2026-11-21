@@ -1,5 +1,5 @@
 import { endLines } from "./passages.js";
-import { lineIcon } from "./icons.js";
+import { lineIcon } from "@csarkosh/engine/game/icons";
 const STYLE = `
   .hud { position: absolute; inset: 0; pointer-events: none; font-family: system-ui, sans-serif; color: #fff; }
   .hud .status {

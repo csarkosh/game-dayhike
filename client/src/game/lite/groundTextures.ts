@@ -18,7 +18,7 @@ import {
 import { CLOUD_NOISE_SIZE, cloudNoiseMap, writeCloudGround, type CloudGround } from "../cloudParams.js";
 import { GROUND_ALBEDOS, GROUND_LAYER_URLS, GROUND_MAP_SIZE, decodeGroundLayer, interleaveLayers } from "../groundLayers.js";
 import { reportGroundImage } from "../loadReport.js";
-import type { FloatTable } from "../terrainTables.js";
+import type { FloatTable } from "@csarkosh/engine/game/terrainTables";
 import type { TerrainTextures } from "./terrainPlugins.js";
 
 /** The layer arrays: each layer's albedo, the normals and the RAH maps. */

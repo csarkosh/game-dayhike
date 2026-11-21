@@ -1,6 +1,7 @@
 import { describe, it, expect } from "vitest";
-import "../../src/sim/olympic.js";
-import { setActiveTerrainVariant } from "../../src/sim/terrain.js";
+import "../../src/sim/passes/index.js";
+import "@csarkosh/engine/sim/olympic";
+import { setActiveTerrainVariant } from "@csarkosh/engine/sim/terrain";
 import { runBySlices } from "../helpers/sliceRun.js";
 import { timeLimit } from "../helpers/timeLimit.js";
 import {
@@ -11,7 +12,7 @@ import {
   COHORT_SNAG,
   COHORT_LOG,
   type TreeInstance,
-} from "../../src/sim/vegetation.js";
+} from "@csarkosh/engine/sim/vegetation";
 import {
   collectBands,
   createBandCollector,
@@ -38,7 +39,7 @@ import {
   nearRadiusFor,
   seamNear,
   type ForestBands,
-} from "../../src/game/forestField.js";
+} from "@csarkosh/engine/game/forestField";
 
 const SEED = 0x5eed;
 setActiveTerrainVariant("olympic");

@@ -1,18 +1,19 @@
 import { describe, expect, it } from "vitest";
 import type { MaterialPlugin, PluginUniformBlock } from "@babylonjs/lite";
-import { BLADE_SOFT } from "../../../src/game/bladeClump.js";
-import { CLIFF_GROUND_TINT } from "../../../src/game/cliffInstances.js";
-import { bladeTierBands } from "../../../src/game/bladeField.js";
-import { COVER_GREEN, FOLIAGE_ALBEDO_FLOOR } from "../../../src/game/coverAlbedoParams.js";
-import { DEADWOOD_CONTACT, DEADWOOD_LOG_DRAW, deadwoodUniforms, emptyDeadwoodUniforms } from "../../../src/game/deadwoodParams.js";
-import { emptyFadeUniforms, fadeBands } from "../../../src/game/distanceFade.js";
+import "../../../src/sim/passes/index.js";
+import { BLADE_SOFT } from "@csarkosh/engine/game/bladeClump";
+import { CLIFF_GROUND_TINT } from "@csarkosh/engine/game/cliffInstances";
+import { bladeTierBands } from "@csarkosh/engine/game/bladeField";
+import { COVER_GREEN, FOLIAGE_ALBEDO_FLOOR } from "@csarkosh/engine/game/coverAlbedoParams";
+import { DEADWOOD_CONTACT, DEADWOOD_LOG_DRAW, deadwoodUniforms, emptyDeadwoodUniforms } from "@csarkosh/engine/game/deadwoodParams";
+import { emptyFadeUniforms, fadeBands } from "@csarkosh/engine/game/distanceFade";
 import {
   FOLIAGE_CANOPY_SKY, FOLIAGE_PLAYERS, FOLIAGE_PLAYER_PARKED, FOLIAGE_PROFILES, emptyFoliageUniforms, foliageLook, foliageUniforms,
   setFoliageWind,
-} from "../../../src/game/foliageUniforms.js";
-import { conformUniforms } from "../../../src/game/groundConform.js";
+} from "@csarkosh/engine/game/foliageUniforms";
+import { conformUniforms } from "@csarkosh/engine/game/groundConform";
 import { babylonText, babylonValues } from "../../helpers/babylonFixture.js";
-import type { ImpostorBakeMode } from "../../../src/game/impostorBake.js";
+import type { ImpostorBakeMode } from "@csarkosh/engine/game/impostorBake";
 import { ATMOSPHERE_PRIORITY } from "../../../src/game/lite/atmospherePlugin.js";
 import {
   BAKE_MODE_FIELD, CONFORM_FIELDS, DEADWOOD_FIELDS, FADE_FIELDS, FADE_ROWS_FIELD, FOLIAGE_FIELDS, PASS_EYE, PLAYERS_FIELD, baseColourPlugin,
@@ -21,10 +22,10 @@ import {
   type Vegetation,
 } from "../../../src/game/lite/forestPlugins.js";
 import { FRAME_BLOCK } from "../../../src/game/lite/frameBlock.js";
-import { WET_FIELDS } from "../../../src/game/lite/wetWgsl.js";
-import { MOSS_ROUGHNESS, MOSS_TILE } from "../../../src/game/mossParams.js";
-import { WET_CAP, WET_SWASH_VECS, emptyWetUniforms, wetUniforms } from "../../../src/game/wetSurface.js";
-import { WIND_K1, WIND_OMEGA_FLUTTER, type WindRecord } from "../../../src/game/windParams.js";
+import { WET_FIELDS } from "@csarkosh/engine/game/lite/wetWgsl";
+import { MOSS_ROUGHNESS, MOSS_TILE } from "@csarkosh/engine/game/mossParams";
+import { WET_CAP, WET_SWASH_VECS, emptyWetUniforms, wetUniforms } from "@csarkosh/engine/game/wetSurface";
+import { WIND_K1, WIND_OMEGA_FLUTTER, type WindRecord } from "@csarkosh/engine/game/windParams";
 import { laidOut, readUniform, standInTexture } from "./pluginFixture.js";
 
 /** The bake's fragment code and its one uniform's name on Babylon.js, recorded. */

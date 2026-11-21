@@ -1,8 +1,8 @@
 import { describe, expect, it } from "vitest";
 import "../../src/sim/passes/index.js";
-import { bowlFor } from "../../src/sim/olympic.js";
-import { activeTerrainVariant, setActiveTerrainVariant, DEFAULT_TERRAIN_VARIANT } from "../../src/sim/terrain.js";
-import { segmentDistance, TRAIL_EDGE_MIN_GAP, TRAIL_HARD_SLOPE_MAX } from "../../src/sim/trail.js";
+import { bowlFor } from "../../src/sim/mountain.js";
+import { activeTerrainVariant, setActiveTerrainVariant, DEFAULT_TERRAIN_VARIANT } from "@csarkosh/engine/sim/terrain";
+import { segmentDistance, TRAIL_EDGE_MIN_GAP, TRAIL_HARD_SLOPE_MAX } from "@csarkosh/engine/sim/trail";
 import { TRAILHEAD_U } from "../../src/sim/bowl.js";
 import { closeNonAdjacentEdgePairs } from "./helpers/edgeGap.js";
 import {
@@ -18,8 +18,8 @@ import {
   PEAK_INLAND_MAX,
   LAKE_TRAIL_CLEAR,
   planFeatures,
-} from "../../src/sim/features.js";
-import { lakeShoreInto, newLakeShore } from "../../src/sim/lakeShape.js";
+} from "@csarkosh/engine/sim/features";
+import { lakeShoreInto, newLakeShore } from "@csarkosh/engine/sim/lakeShape";
 import { SEEDS } from "./trailGateSeeds.js";
 import { timeLimit } from "../helpers/timeLimit.js";
 

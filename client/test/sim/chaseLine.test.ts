@@ -1,12 +1,12 @@
 import { describe, expect, it } from "vitest";
 import "../../src/sim/passes/index.js";
-import { createForest } from "../../src/sim/forest.js";
+import { createForest } from "@csarkosh/engine/sim/forest";
 import { createForestWorld, createWorld, spawnPlayer, type World } from "../../src/sim/world.js";
-import { parseLevel } from "../../src/sim/level.js";
-import { seedFromToken } from "../../src/game/seed.js";
-import { DEFAULT_TERRAIN_VARIANT, elevationAt, setActiveTerrainVariant } from "../../src/sim/terrain.js";
+import { parseLevel } from "@csarkosh/engine/sim/level";
+import { seedFromToken } from "@csarkosh/engine/game/seed";
+import { DEFAULT_TERRAIN_VARIANT, elevationAt, setActiveTerrainVariant } from "@csarkosh/engine/sim/terrain";
 import { AiState, DeathCause, Phase } from "../../src/sim/types.js";
-import { trailDistance } from "../../src/sim/trail.js";
+import { trailDistance } from "@csarkosh/engine/sim/trail";
 import { OFF_TRAIL_FROM_M, SHADE_TRAIL_OFF_M, offTrailOf, placeShadeOffTrail } from "../../src/sim/haunt.js";
 import { OFF_TRAIL_M, causeOfDeath } from "../../src/sim/deathCause.js";
 import { spawnHollow } from "../../src/sim/hollow.js";

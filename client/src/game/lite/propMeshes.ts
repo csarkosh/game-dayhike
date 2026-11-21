@@ -23,17 +23,17 @@ import {
   addToScene, createMeshFromData, createPbrMaterial, disposeMeshGpu, removeFromScene,
   type EngineContext, type MaterialPlugin, type PluginUniformBlock, type Mesh, type PbrMaterialProps, type SceneContext,
 } from "@babylonjs/lite";
-import type { ChunkGrid } from "../../sim/chunkGrid.js";
-import type { FirstBuilds } from "../firstBuilds.js";
-import { PROP_ROUGHNESS, chunkPropBoxes, propBoxGeometry, propChunk, propChunkKey, propColour, propWindow } from "../propBoxes.js";
-import type { Slices, SyncJobs } from "../syncJobs.js";
-import type { WetUniforms } from "../wetSurface.js";
-import { DRAW_ORDER } from "./drawOrder.js";
+import type { ChunkGrid } from "@csarkosh/engine/sim/chunkGrid";
+import type { FirstBuilds } from "@csarkosh/engine/game/firstBuilds";
+import { PROP_ROUGHNESS, chunkPropBoxes, propBoxGeometry, propChunk, propChunkKey, propColour, propWindow } from "@csarkosh/engine/game/propBoxes";
+import type { Slices, SyncJobs } from "@csarkosh/engine/game/syncJobs";
+import type { WetUniforms } from "@csarkosh/engine/game/wetSurface";
+import { DRAW_ORDER } from "@csarkosh/engine/game/lite/drawOrder";
 import { baseColourPlugin, surfaceWetPlugin } from "./forestPlugins.js";
-import type { FrameUploads } from "./frameUploads.js";
+import type { FrameUploads } from "@csarkosh/engine/game/lite/frameUploads";
 import type { CoverRegistry } from "./rainMap.js";
-import { cellOrigin, createRebuilds } from "./rebuildJobs.js";
-import { CHUNK_SIZE } from "../../sim/forestConstants.js";
+import { cellOrigin, createRebuilds } from "@csarkosh/engine/game/lite/rebuildJobs";
+import { CHUNK_SIZE } from "@csarkosh/engine/sim/forestConstants";
 
 export type PropMeshes = {
   /** Follows the camera: the chunks round it are made, and the ones left behind go, when it crosses into another chunk. */

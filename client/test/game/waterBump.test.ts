@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { WATER_BUMP_SIZE, waterBumpData } from "../../src/game/waterBump.js";
+import { WATER_BUMP_SIZE, waterBumpData } from "@csarkosh/engine/game/waterBump";
 
 describe("the water's ripple bump, as data", () => {
   it("is the 256² picture the water has always drawn, to the byte", () => {

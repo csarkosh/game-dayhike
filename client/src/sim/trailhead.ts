@@ -1,11 +1,11 @@
-import { ROAD_BED_HALF } from "./road.js";
+import { ROAD_BED_HALF } from "@csarkosh/engine/sim/road";
 import { TRAILHEAD_RADIUS } from "./bowl.js";
-import { PLAYER_HALF } from "./constants.js";
-import { segmentBoxGap, type Ground } from "./boxGap.js";
-import { TRAIL_BED_HALF } from "./trail.js";
-import type { TrailGraph, TrailNode } from "./trail.js";
+import { PLAYER_HALF } from "@csarkosh/engine/sim/constants";
+import { segmentBoxGap, type Ground } from "@csarkosh/engine/sim/boxGap";
+import { TRAIL_BED_HALF } from "@csarkosh/engine/sim/trail";
+import type { TrailGraph, TrailNode } from "@csarkosh/engine/sim/trail";
 import type { Vec3 } from "./types.js";
-import { facingDir, facingYaw } from "./facing.js";
+import { facingDir, facingYaw } from "@csarkosh/engine/sim/facing";
 
 /**
  * The trailhead's places: the ranger's car, where a player arrives, and the

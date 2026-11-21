@@ -56,7 +56,7 @@ bytes.
 The cedar and the alder plates are twice as tall as wide, squashed into a
 square file: on those two the repeat up the trunk covers twice the length the
 repeat round it does, which the footprints carry (`BARK_FOOTPRINT` in
-`client/src/game/barkParams.ts`) and the repeats follow.
+`engine/src/game/barkParams.ts`) and the repeats follow.
 
 ## 3. Which tree wears which
 

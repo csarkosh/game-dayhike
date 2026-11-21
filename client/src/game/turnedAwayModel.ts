@@ -6,10 +6,10 @@
  * decision is made here, where a test can reach it, and `turnedAway.ts`
  * only paints the result.
  */
-import type { DesktopRelease, Platform } from "../net/desktopRelease.js";
-import type { HostOs } from "./gpuSignals.js";
+import type { DesktopRelease, Platform } from "@csarkosh/engine/net/desktopRelease";
+import type { HostOs } from "@csarkosh/engine/game/gpuSignals";
 import { downloadCard, type DownloadCard } from "./landingModel.js";
-import type { TurnedAwayReason } from "./loadCheck.js";
+import type { TurnedAwayReason } from "@csarkosh/engine/game/loadCheck";
 import {
   TURNED_AWAY_ADVICE,
   TURNED_AWAY_ADVICE_APP,
@@ -23,7 +23,7 @@ import {
   TURNED_AWAY_HEADLINE,
   TURNED_AWAY_HEADLINE_APP,
   TURNED_AWAY_TITLE,
-} from "./turnedAwayWords.js";
+} from "@csarkosh/engine/game/turnedAwayWords";
 
 /** The kind of device the visitor is on, as far as the list of browsers differs by it. */
 export type VisitorDevice = keyof typeof TURNED_AWAY_BROWSERS;

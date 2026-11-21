@@ -26,7 +26,7 @@
  * kind, and the metres the mist stands to where it is (a veil's and a fin's
  * head is built WAY_HEAD times as high as that).
  */
-import type { Rgb } from "./colour.js";
+import type { Rgb } from "@csarkosh/engine/game/colour";
 import { CLOUD_NOISE_LARGE_M, CLOUD_NOISE_SMALL_M, CLOUD_WIND_MPS } from "./cloudParams.js";
 
 /**

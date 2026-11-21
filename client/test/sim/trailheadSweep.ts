@@ -1,13 +1,13 @@
 import { expect } from "vitest";
 import "../../src/sim/passes/index.js";
-import { generateChunk } from "../../src/sim/chunk.js";
-import { CHUNK_SIZE } from "../../src/sim/forestConstants.js";
-import { setActiveTerrainVariant, DEFAULT_TERRAIN_VARIANT, terrainVariant, activeTerrainVariant } from "../../src/sim/terrain.js";
+import { generateChunk } from "@csarkosh/engine/sim/chunk";
+import { CHUNK_SIZE } from "@csarkosh/engine/sim/forestConstants";
+import { setActiveTerrainVariant, DEFAULT_TERRAIN_VARIANT, terrainVariant, activeTerrainVariant } from "@csarkosh/engine/sim/terrain";
 import {
   BOARD_BOX_HALF, CAR_HALF, bedGap, boardBoxes, boardSite, carSite, trailEntrance, trailheadPlaces,
 } from "../../src/sim/trailhead.js";
 import { trailheadSpawn } from "../../src/sim/spawn.js";
-import { ROAD_BED_HALF } from "../../src/sim/road.js";
+import { ROAD_BED_HALF } from "@csarkosh/engine/sim/road";
 import { TRAILHEAD_U } from "../../src/sim/bowl.js";
 import { SEEDS } from "./trailGateSeeds.js";
 import { seedPart } from "../helpers/seedPart.js";

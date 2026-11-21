@@ -1,7 +1,8 @@
 import { describe, expect, it } from "vitest";
-import { MIRROR_CANOPY_SHADE, mirrorGroundColour } from "../../src/game/mirrorGround.js";
-import { NEEDLE_BED } from "../../src/game/terrainSurface.js";
-import { WEATHER_PRESETS, ambientCollapseUnder } from "../../src/game/weather.js";
+import "../../src/sim/passes/index.js";
+import { MIRROR_CANOPY_SHADE, mirrorGroundColour } from "@csarkosh/engine/game/mirrorGround";
+import { NEEDLE_BED } from "@csarkosh/engine/game/terrainSurface";
+import { WEATHER_PRESETS, ambientCollapseUnder } from "@csarkosh/engine/game/weather";
 import { babylonText } from "../helpers/babylonFixture.js";
 
 const sky = {

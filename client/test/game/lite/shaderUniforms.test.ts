@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { createShaderMaterial, getShaderUniform } from "@babylonjs/lite";
-import { shaderUniformDecls, shaderUniformWriter } from "../../../src/game/lite/shaderUniforms.js";
+import { shaderUniformDecls, shaderUniformWriter } from "@csarkosh/engine/game/lite/shaderUniforms";
 
 const record = (): { one: number[]; two: number[]; three: number[]; four: number[] } => ({ one: [1], two: [2, 3], three: [4, 5, 6], four: [7, 8, 9, 10] });
 const material = (r: Record<string, number[]>): ReturnType<typeof createShaderMaterial> =>

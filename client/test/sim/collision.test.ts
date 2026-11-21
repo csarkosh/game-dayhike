@@ -1,7 +1,7 @@
 import { describe, it, expect } from "vitest";
 import fc from "fast-check";
-import { sweepBox, raycast, raycastBox, expand, depenetrate } from "../../src/sim/collision.js";
-import type { Aabb } from "../../src/sim/level.js";
+import { sweepBox, raycast, raycastBox, expand, depenetrate } from "@csarkosh/engine/sim/collision";
+import type { Aabb } from "@csarkosh/engine/sim/level";
 
 const floor: Aabb = { min: { x: -10, y: -1, z: -10 }, max: { x: 10, y: 0, z: 10 } };
 const wall: Aabb = { min: { x: 2, y: 0, z: -10 }, max: { x: 3, y: 5, z: 10 } };

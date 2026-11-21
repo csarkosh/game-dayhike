@@ -2,7 +2,7 @@ import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
 import { createWorld, type World } from "../../src/sim/world.js";
-import { parseLevel } from "../../src/sim/level.js";
+import { parseLevel } from "@csarkosh/engine/sim/level";
 import { Outcome, Phase } from "../../src/sim/types.js";
 import { makeWay } from "../../src/sim/wayDown.js";
 import { THRESHOLD_AT_S } from "../../src/game/cutscene.js";

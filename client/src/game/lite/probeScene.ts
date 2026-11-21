@@ -34,18 +34,18 @@
  * hike starts at the class's tier (`runProbe`).
  */
 import sandbox01 from "../../../levels/sandbox01.json" with { type: "json" };
-import { createForest } from "../../sim/forest.js";
-import { parseLevel } from "../../sim/level.js";
-import { DEFAULT_TERRAIN_VARIANT, setActiveTerrainVariant } from "../../sim/terrain.js";
+import { createForest } from "@csarkosh/engine/sim/forest";
+import { parseLevel } from "@csarkosh/engine/sim/level";
+import { DEFAULT_TERRAIN_VARIANT, setActiveTerrainVariant } from "@csarkosh/engine/sim/terrain";
 import { createWorld } from "../../sim/world.js";
-import { PROBE_HOUR, PROBE_READY_MAX_MS, PROBE_SEED_TOKEN, createProbeMeter, probePose } from "../frameProbe.js";
-import { pageProbe, type PageProbe } from "../probePage.js";
-import { containerPixels, type ProbeReading, type QualityTier } from "../quality.js";
+import { PROBE_HOUR, PROBE_READY_MAX_MS, PROBE_SEED_TOKEN, createProbeMeter, probePose } from "@csarkosh/engine/game/frameProbe";
+import { pageProbe, type PageProbe } from "@csarkosh/engine/game/probePage";
+import { containerPixels, type ProbeReading, type QualityTier } from "@csarkosh/engine/game/quality";
 import type { Renderer, RendererOptions } from "../rendererTypes.js";
-import { seedFromToken } from "../seed.js";
-import type { SkyTable } from "../skyTable.js";
-import type { SkySource } from "../skyWorker.js";
-import { WEATHER_PRESETS } from "../weather.js";
+import { seedFromToken } from "@csarkosh/engine/game/seed";
+import type { SkyTable } from "@csarkosh/engine/game/skyTable";
+import type { SkySource } from "@csarkosh/engine/game/skyWorker";
+import { WEATHER_PRESETS } from "@csarkosh/engine/game/weather";
 import { createLiteRenderer } from "./renderer.js";
 
 export type LiteProbeScene = { renderer: Renderer; frame(): void; dispose(): void };

@@ -1,10 +1,11 @@
 import { describe, expect, it } from "vitest";
-import "../../src/sim/olympic.js";
+import "../../src/sim/passes/index.js";
+import "@csarkosh/engine/sim/olympic";
 import { firstPondWorld, lakeOf } from "../sim/helpers/lakes.js";
-import { waterPlantPlacements } from "../../src/game/waterPlantField.js";
+import { waterPlantPlacements } from "@csarkosh/engine/game/waterPlantField";
 import {
   LILY_LIFT, REED_CHARACTERS, lilyFlowers, lilyYaw, waterPlantLists,
-} from "../../src/game/waterPlantShapes.js";
+} from "@csarkosh/engine/game/waterPlantShapes";
 import { timeLimit } from "../helpers/timeLimit.js";
 
 describe("a lake's plants as lists, with no engine", { timeout: timeLimit(60_000) }, () => {

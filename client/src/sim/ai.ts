@@ -1,23 +1,17 @@
 import type { EnemyState, Vec3 } from "./types.js";
 import { AiState, distanceSquared, nextRandom } from "./types.js";
-import type { BoxProvider } from "./boxSource.js";
-import { raycastScene } from "./collision.js";
-import type { GroundField } from "./ground.js";
-import { stepMovement } from "./movement.js";
+import type { BoxProvider } from "@csarkosh/engine/sim/boxSource";
+import { raycastScene } from "@csarkosh/engine/sim/collision";
+import type { GroundField } from "@csarkosh/engine/sim/ground";
+import { stepMovement } from "@csarkosh/engine/sim/movement";
 import { containInLakes, waterLevelAt } from "./containment.js";
 import type { World } from "./world.js";
 import {
-  ENEMY_ATTACK_COOLDOWN,
-  ENEMY_ATTACK_RANGE,
-  ENEMY_CORPSE_SECONDS,
-  ENEMY_DAMAGE,
-  ENEMY_DETECT_RANGE,
-  ENEMY_HALF,
-  ENEMY_SPEED,
   EPSILON,
   WALK_SPEED,
   PLAYER_EYE_OFFSET,
-} from "./constants.js";
+} from "@csarkosh/engine/sim/constants";
+import { ENEMY_ATTACK_COOLDOWN, ENEMY_ATTACK_RANGE, ENEMY_CORPSE_SECONDS, ENEMY_DAMAGE, ENEMY_DETECT_RANGE, ENEMY_HALF, ENEMY_SPEED } from "./dayhikeConstants.js";
 
 /** Wish length that produces exactly ENEMY_SPEED inside stepMovement. */
 /** Enemies send no Sprint bit, so their wish is scaled against the walk. */

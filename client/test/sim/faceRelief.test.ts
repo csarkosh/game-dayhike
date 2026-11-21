@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
-import * as relief from "../../src/sim/faceRelief.js";
+import "../../src/sim/passes/index.js";
+import * as relief from "@csarkosh/engine/sim/faceRelief";
 import {
   cellularD, cellularSite, faceKindD, faceReliefD, groundReliefD, groundPatchD, FACE_RELIEF_TUNABLES,
   FACE_VALUE_SPAN, FACE_TILT,
@@ -13,7 +14,7 @@ import {
   FACE_BLOCK_FINE_CELL, FACE_BLOCK_FINE_JITTER, FACE_BLOCK_FINE_BORDER, FACE_BLOCK_FINE_SALT,
   FACE_FORM_CELL, FACE_FORM_JITTER, FACE_FORM_BORDER, FACE_FORM_SALT,
   type ReliefSample,
-} from "../../src/sim/faceRelief.js";
+} from "@csarkosh/engine/sim/faceRelief";
 import { DERIV_SEED as SEED, TOL_RATIO } from "./helpers/derivatives.js";
 
 /** Central-difference arm. The relief's joints are a few tenths of a metre

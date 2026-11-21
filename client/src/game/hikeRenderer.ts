@@ -3,8 +3,8 @@
  * start and for every swap after. It loads Babylon Lite, through the
  * renderer drawn with it, and nothing else that draws.
  */
-import type { Forest } from "../sim/forest.js";
-import type { Level } from "../sim/level.js";
+import type { Forest } from "@csarkosh/engine/sim/forest";
+import type { Level } from "@csarkosh/engine/sim/level";
 import { createLiteRenderer } from "./lite/renderer.js";
 import type { Renderer, RendererOptions } from "./rendererTypes.js";
 

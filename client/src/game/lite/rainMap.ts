@@ -42,16 +42,16 @@ import {
   disposeMeshGpu, enableOrthographicCamera, isRenderTaskHeld, removeFromScene, removeMeshFromTask, setMeshVisible, setTaskMeshVisible, setThinInstances, vec3,
   type EngineContext, type MaterialPlugin, type Mesh, type PbrMaterialProps, type SceneContext, type Texture2D,
 } from "@babylonjs/lite";
-import type { QualityTier } from "../quality.js";
-import { RAIN_MAP_CAMERA, RAIN_MAP_CLEAR, createRainMapPlace, type RainMapKind } from "../rainCover.js";
-import { RAIN_MAP, type Vec3 } from "../rainParams.js";
+import type { QualityTier } from "@csarkosh/engine/game/quality";
+import { RAIN_MAP_CAMERA, RAIN_MAP_CLEAR, createRainMapPlace, type RainMapKind } from "@csarkosh/engine/game/rainCover";
+import { RAIN_MAP, type Vec3 } from "@csarkosh/engine/game/rainParams";
 import { wgslFloat } from "./forestPlugins.js";
 import { TERRAIN_VERTEX_FLOATS, TERRAIN_VERTEX_LAYOUT } from "./terrainPlugins.js";
 import terrainSource from "../shaders/rainMap/terrain.wgsl?raw";
 import hardSource from "../shaders/rainMap/hard.wgsl?raw";
 import waterSource from "../shaders/rainMap/water.wgsl?raw";
 import canopyVaryingSource from "../shaders/rainMap/canopyVarying.wgsl?raw";
-import { fill, wgsl } from "../shaders/shaderText.js";
+import { fill, wgsl } from "@csarkosh/engine/game/shaders/shaderText";
 
 const f = wgslFloat;
 

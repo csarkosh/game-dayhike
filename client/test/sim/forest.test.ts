@@ -1,6 +1,6 @@
 import { afterEach, describe, it, expect } from "vitest";
 import "../../src/sim/passes/index.js";
-import { DEFAULT_TERRAIN_VARIANT, setActiveTerrainVariant } from "../../src/sim/terrain.js";
+import { DEFAULT_TERRAIN_VARIANT, setActiveTerrainVariant } from "@csarkosh/engine/sim/terrain";
 import {
   createForest,
   GEN_VERSION,
@@ -9,9 +9,9 @@ import {
   passHashKey,
   probeDigest,
   registryDigest,
-} from "../../src/sim/forest.js";
-import { registerPass, registeredPasses, type Pass } from "../../src/sim/chunk.js";
-import { CLIFF_DENSITY } from "../../src/sim/cliffField.js";
+} from "@csarkosh/engine/sim/forest";
+import { registerPass, registeredPasses, type Pass } from "@csarkosh/engine/sim/chunk";
+import { CLIFF_DENSITY } from "@csarkosh/engine/sim/cliffField";
 import { laidPasses } from "./helpers/cliffLaid.js";
 import { timeLimit } from "../helpers/timeLimit.js";
 

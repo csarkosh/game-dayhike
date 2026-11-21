@@ -1,6 +1,6 @@
 import { describe, it, expect } from "vitest";
 import { createTrace, FORK_RADIUS, forkAt, nearestEdge, placeAt, TRACE_EVERY_TICKS, type TraceFrame } from "../../src/game/trace.js";
-import type { TrailGraph } from "../../src/sim/trail.js";
+import type { TrailGraph } from "@csarkosh/engine/sim/trail";
 import type { PlayerState } from "../../src/sim/types.js";
 
 // A graph by hand: a stem of three nodes along -z with a fork at node 1,

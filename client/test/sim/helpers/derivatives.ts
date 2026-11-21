@@ -3,8 +3,8 @@
  * Moved out of montane.test.ts so coastal variants can reuse it with extra
  * sweep points.
  */
-import "../../../src/sim/montane.js";
-import { terrainVariant, type TerrainVariant } from "../../../src/sim/terrain.js";
+import "@csarkosh/engine/sim/montane";
+import { terrainVariant, type TerrainVariant } from "@csarkosh/engine/sim/terrain";
 
 export const DERIV_SEED = 0x5eed;
 /** Differencing arm: small enough that truncation error sits well under

@@ -1,7 +1,7 @@
 import { describe, it, expect } from "vitest";
 import { readFileSync } from "node:fs";
 import type { SignPost } from "../../src/sim/signs.js";
-import { glbParts } from "../../src/game/glbParts.js";
+import { glbParts } from "@csarkosh/engine/game/glbParts";
 import {
   ARM_THICKNESS, LABEL_LIFT, LABEL_SIZE, POST_HEIGHT, SIGN_ARM_OUTPUT, faceNormals, labelAlong, plankCount, postHeight, signPlaces, squareEnd,
 } from "../../src/game/signParts.js";

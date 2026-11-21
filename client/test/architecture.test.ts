@@ -10,16 +10,52 @@ import { limitOffenders, scanTestSource, wallClockOffenders, type ScannedFile } 
 // silently points at nothing and every check below passes vacuously forever.
 const SRC = fileURLToPath(new URL("../src", import.meta.url));
 const TESTS = fileURLToPath(new URL(".", import.meta.url));
+/**
+ * The engine's modules, in the package beside this one. A module keeps its path when it moves
+ * there (`game/quality.ts` here is `game/quality.ts` there), so the rules below name a file by
+ * that path and are held over both trees: `at` finds where a path is, `logical` gives a file's
+ * path back, and a folder is walked in both.
+ */
+const ENGINE = fileURLToPath(new URL("../../engine/src", import.meta.url));
+const ENGINE_PACKAGE = "@csarkosh/engine/";
 
-function sourceFiles(dir: string): string[] {
+function at(...parts: string[]): string {
+  const here = join(SRC, ...parts);
+  const there = join(ENGINE, ...parts);
+  return !existsSync(here) && existsSync(there) ? there : here;
+}
+
+function logical(file: string): string {
+  return relative(file.startsWith(ENGINE) ? ENGINE : SRC, file);
+}
+
+/** The file a module's import names, where it is one of the game's or the engine's own: null for a package's or a file that is not a module. */
+function followed(file: string, spec: string): string | null {
+  if (spec.startsWith(ENGINE_PACKAGE)) return join(ENGINE, `${spec.slice(ENGINE_PACKAGE.length)}.ts`);
+  if (spec.startsWith(".") && spec.endsWith(".js")) return join(file, "..", spec.replace(/\.js$/, ".ts"));
+  return null;
+}
+
+/** How the hike and the page, at the top of the game's source, name a module: by its path where it is the game's, by the package where it is the engine's. */
+function named(path: string): string {
+  return existsSync(join(SRC, `${path}.ts`)) ? `./${path}.js` : `${ENGINE_PACKAGE}${path}`;
+}
+
+function filesUnder(dir: string): string[] {
   if (!existsSync(dir)) return [];
   const out: string[] = [];
   for (const entry of readdirSync(dir, { withFileTypes: true })) {
     const full = join(dir, entry.name);
-    if (entry.isDirectory()) out.push(...sourceFiles(full));
+    if (entry.isDirectory()) out.push(...filesUnder(full));
     else if (entry.name.endsWith(".ts")) out.push(full);
   }
   return out;
+}
+
+/** Every module under a folder, and under the same folder of the engine where the folder is one of the game's source. */
+function sourceFiles(dir: string): string[] {
+  const mirrored = dir === SRC || dir.startsWith(`${SRC}/`) ? filesUnder(join(ENGINE, relative(SRC, dir))) : [];
+  return [...filesUnder(dir), ...mirrored];
 }
 
 function walkFiles(dir: string, ext: string): string[] {
@@ -85,7 +121,7 @@ describe("layer boundaries", () => {
   });
 
   it("keeps the scene player pure of Babylon but its stage, and out of the sim's writes", () => {
-    const dir = join(SRC, "game/scene");
+    const dir = at("game/scene");
     for (const pure of ["timeline.ts", "shots.ts", "roadPath.ts", "sceneClock.ts", "intro.ts", "scenePlayer.ts", "routeWorld.ts", "cord.ts", "cordTubeGeometry.ts", "actorPose.ts", "stageParts.ts"]) {
       expect(readFileSync(join(dir, pure), "utf8"), pure).not.toMatch(/from "@babylonjs/);
     }
@@ -93,33 +129,89 @@ describe("layer boundaries", () => {
     const world = readFileSync(join(dir, "routeWorld.ts"), "utf8");
     expect(world).toContain("createWorld(level, seed, false)");
     expect(world).not.toMatch(/world\.(step|apply|input)/);
-    const lite = readFileSync(join(SRC, "game/lite/sceneRoute.ts"), "utf8");
+    const lite = readFileSync(at("game/lite/sceneRoute.ts"), "utf8");
     expect(lite).toContain("const route = routeWorld(name);");
     expect(lite).toContain("renderer.sync(world.state, -1, 0)");
     expect(lite).not.toMatch(/world\.(step|apply|input)/);
   });
 
+  it("keeps the engine no game's: nothing in it refers to a file outside it, by an import, a worker's entry or a path, and it names itself by no package", () => {
+    const engine = filesUnder(ENGINE);
+    expect(engine.length).toBeGreaterThan(100);
+    const bad: string[] = [];
+    for (const file of engine) {
+      const text = readFileSync(file, "utf8");
+      const specs = [
+        ...importsOf(file),
+        ...[...text.matchAll(/\bimport\(\s*["']([^"']+)["']/g)].map((m) => m[1] as string),
+        ...[...text.matchAll(/new URL\(\s*["']([^"']+)["']\s*,\s*import\.meta\.url/g)].map((m) => m[1] as string),
+      ];
+      for (const spec of specs) {
+        if (spec.startsWith(ENGINE_PACKAGE)) bad.push(`${logical(file)} names the engine as a package: ${spec}`);
+        if (!spec.startsWith(".")) continue;
+        const target = join(file, "..", spec.replace(/[?#].*$/, ""));
+        if (!target.startsWith(`${ENGINE}/`)) bad.push(`${logical(file)} refers outside the engine: ${spec}`);
+      }
+    }
+    expect(bad).toEqual([]);
+  });
+
+  it("registers Day Hike's world in every thread that asks for one: the page, the admin page and each worker that reaches the terrain reach the registration", () => {
+    // The engine's terrain registers nothing of its own, so a thread that reaches it without the
+    // game's registration (`sim/passes/index.ts`: the coast with the mountain on it, and every
+    // pass) would throw at its first world, or worse, build one that is not Day Hike's.
+    const loads = (file: string): string[] => {
+      const text = stripComments(readFileSync(file, "utf8"));
+      return [
+        ...[...text.matchAll(/^\s*(?:import|export)\s+(?!type\s)(?:[^"'();]*?\s+from\s+)?["']([^"'?]+)["']/gm)].map((m) => m[1] as string),
+        ...[...text.matchAll(/\bimport\(\s*["']([^"'?]+)["']\s*\)/g)].map((m) => m[1] as string),
+      ];
+    };
+    const reach = (entry: string): Set<string> => {
+      const seen = new Set<string>();
+      const stack = [entry];
+      while (stack.length > 0) {
+        const file = stack.pop() as string;
+        if (seen.has(file) || !existsSync(file)) continue;
+        seen.add(file);
+        for (const spec of loads(file)) {
+          const next = followed(file, spec);
+          if (next !== null) stack.push(next);
+        }
+      }
+      return seen;
+    };
+    const entries = [at("main.ts"), at("admin", "main.ts"), ...sourceFiles(SRC).filter((file) => file.endsWith(".worker.ts"))];
+    expect(entries.length).toBeGreaterThan(5);
+    const terrain = at("sim", "terrain.ts");
+    const registration = at("sim", "passes", "index.ts");
+    const asking = entries.filter((entry) => reach(entry).has(terrain));
+    expect(asking.map(logical)).toEqual(expect.arrayContaining(["main.ts", "game/world.worker.ts"]));
+    expect(asking.filter((entry) => !reach(entry).has(registration)).map(logical)).toEqual([]);
+  });
+
   it("sim/ imports nothing but node builtins and itself", () => {
-    expect(violations(join(SRC, "sim"), [/^@babylonjs/, /net\//, /game\//])).toEqual([]);
+    expect(violations(at("sim"), [/^@babylonjs/, /net\//, /game\//])).toEqual([]);
   });
 
   it("sim/ has no external package dependencies at all", () => {
-    const external = sourceFiles(join(SRC, "sim"))
+    const external = sourceFiles(at("sim"))
       .flatMap((f) => importsOf(f).map((s) => `${f} imports ${s}`))
       .filter((line) => {
         const spec = line.split(" imports ")[1] ?? "";
-        return !spec.startsWith(".") && !spec.startsWith("node:");
+        // The engine's own sim is the one package the game's sim builds on.
+        return !spec.startsWith(".") && !spec.startsWith("node:") && !spec.startsWith(`${ENGINE_PACKAGE}sim/`);
       });
     expect(external).toEqual([]);
   });
 
   it("net/ does not import Babylon or game/", () => {
-    expect(violations(join(SRC, "net"), [/^@babylonjs/, /game\//])).toEqual([]);
+    expect(violations(at("net"), [/^@babylonjs/, /game\//])).toEqual([]);
   });
 
   it("keeps the hike and the page clear of Babylon: app.ts and main.ts import nothing of it, and reach what draws the world only through the game", () => {
     for (const top of ["app.ts", "main.ts"]) {
-      const file = join(SRC, top);
+      const file = at(top);
       // No import of it, static or dynamic, a type's included.
       expect(importsOf(file).filter((spec) => spec.startsWith("@babylonjs")), top).toEqual([]);
       const code = stripComments(readFileSync(file, "utf8"));
@@ -136,7 +228,7 @@ describe("layer boundaries", () => {
   it("defines each helper the tier and engine code share once: the tier override, the browser's version, the storage accessors", () => {
     const definitions = (name: string): string[] =>
       sourceFiles(SRC).flatMap((file) =>
-        [...stripComments(readFileSync(file, "utf8")).matchAll(new RegExp(`\\bfunction ${name}\\(`, "g"))].map(() => relative(SRC, file)),
+        [...stripComments(readFileSync(file, "utf8")).matchAll(new RegExp(`\\bfunction ${name}\\(`, "g"))].map(() => logical(file)),
       );
     expect(definitions("parseTierOverride")).toEqual(["game/tierChoice.ts"]);
     expect(definitions("browserMajor")).toEqual(["game/gpuSignals.ts"]);
@@ -152,7 +244,7 @@ describe("layer boundaries", () => {
   it("answers a WebGPU failure without reloading the page: the one reload left is the player's, on a build mismatch", () => {
     const calls = (pattern: RegExp): string[] =>
       sourceFiles(SRC).flatMap((file) =>
-        [...stripComments(readFileSync(file, "utf8")).matchAll(pattern)].map((m) => `${relative(SRC, file)}: ${m[0]}`),
+        [...stripComments(readFileSync(file, "utf8")).matchAll(pattern)].map((m) => `${logical(file)}: ${m[0]}`),
       );
     expect(calls(/location\.replace\(/g)).toEqual([]);
     expect(calls(/.*location\.reload\(.*/g)).toEqual(["app.ts:     onReload: () => location.reload(),"]);
@@ -161,14 +253,14 @@ describe("layer boundaries", () => {
   it("asks for a WebGPU adapter in one place, the GPU's signals, and never through Babylon's support check", () => {
     const naming = (pattern: RegExp): string[] =>
       sourceFiles(SRC).flatMap((file) =>
-        [...stripComments(readFileSync(file, "utf8")).matchAll(pattern)].map(() => relative(SRC, file)),
+        [...stripComments(readFileSync(file, "utf8")).matchAll(pattern)].map(() => logical(file)),
       );
     expect(naming(/\.requestAdapter\(/g)).toEqual(["game/gpuSignals.ts"]);
     expect(naming(/\bIsSupportedAsync\b/g)).toEqual([]);
   });
 
   it("starts a hike through one chain: one render token, the tier decided before the engine, one catch", () => {
-    const main = stripComments(readFileSync(join(SRC, "main.ts"), "utf8"));
+    const main = stripComments(readFileSync(at("main.ts"), "utf8"));
     expect([...main.matchAll(/\blet renderToken\b/g)].length).toBe(1);
     // The tier comes from the start's decision (`startupTier`), never from
     // the older rule, and the engine from the tier decided.
@@ -189,7 +281,7 @@ describe("layer boundaries", () => {
 
   it("wires the failure answer to the engine that failed and the renderer that runs, and the game to the start's recorder", () => {
     // What `engineFailure.test.ts` cannot see: the page's side of it.
-    const app = stripComments(readFileSync(join(SRC, "app.ts"), "utf8"));
+    const app = stripComments(readFileSync(at("app.ts"), "utf8"));
     // The watcher reports the engine it watches, captured when it is put on.
     expect(app).toContain("      const engine = r.engine;\n      stopWatching = detector(engine, (reason) => void answerFailure(engine, reason));");
     // The answer compares it with the engine the running renderer draws with.
@@ -197,7 +289,7 @@ describe("layer boundaries", () => {
     // The game records every failure of its engine through the page's one recorder, handed to its start as it
     // is: the start is given no engine that could fail apart from the hike's renderer, so there is no start's
     // fault to tell from the hike's, and no second start on another engine.
-    const main = stripComments(readFileSync(join(SRC, "main.ts"), "utf8"));
+    const main = stripComments(readFileSync(at("main.ts"), "utf8"));
     expect(main).toContain("  const handle = startGame(onCanvas.canvas, worldToken, {");
     expect([...main.matchAll(/^ {4}engineFailed,$/gm)].length).toBe(1);
     expect(main).not.toMatch(/\b(?:startOnEngine|starting)\b/);
@@ -207,13 +299,13 @@ describe("layer boundaries", () => {
     expect(main).not.toMatch(/\b(?:recordEngineFailure|parseEngineOverride|withEngine|engineEnv|replaceState)\b/);
     // The answer's own module holds the answer and no more: nothing remembers a failure against an engine or
     // starts a hike again on another.
-    expect(stripComments(readFileSync(join(SRC, "game/engineFailure.ts"), "utf8"))).not.toMatch(/\b(?:recordEngineFailure|recordStartFailure|startOnEngine|failureSwap|writeFallback)\b/);
+    expect(stripComments(readFileSync(at("game/engineFailure.ts"), "utf8"))).not.toMatch(/\b(?:recordEngineFailure|recordStartFailure|startOnEngine|failureSwap|writeFallback)\b/);
     expect(app).not.toMatch(/\b(?:recordEngineFailure|recordStartFailure|startOnEngine)\b/);
   });
 
   it("decides the tier at launch only: with the governor off the hike makes none, feeds none, times no idle frames and acts on no drop", () => {
     // What `governor.test.ts` cannot see: the page's side of the switch.
-    const app = stripComments(readFileSync(join(SRC, "app.ts"), "utf8"));
+    const app = stripComments(readFileSync(at("app.ts"), "utf8"));
     const body = (from: string): string => app.slice(app.indexOf(from), app.indexOf("\n  }\n", app.indexOf(from)));
     // The one governor a hike has comes from `governHike`, null while
     // `GOVERNOR_ENABLED` is off; none is made any other way.
@@ -235,7 +327,7 @@ describe("layer boundaries", () => {
   });
 
   it("shows one line after a failure rebuild: the swap itself shows none, a switch none, the answer its own", () => {
-    const app = stripComments(readFileSync(join(SRC, "app.ts"), "utf8"));
+    const app = stripComments(readFileSync(at("app.ts"), "utf8"));
     const body = (from: string, to: string): string => app.slice(app.indexOf(from), app.indexOf(to, app.indexOf(from)));
     // `switchNow` is the swap both paths run, and `switchTo` a switch (Apply, the governor): neither shows a line.
     expect(body("  async function switchNow(", "\n  }\n")).not.toContain("hud.flash");
@@ -246,13 +338,13 @@ describe("layer boundaries", () => {
   });
 
   it("measures every step of the tier check on the hike's own renderer: the page makes no engine, for a step or for anything", () => {
-    const main = stripComments(readFileSync(join(SRC, "main.ts"), "utf8"));
+    const main = stripComments(readFileSync(at("main.ts"), "utf8"));
     // The page's deps are the probe's on the hike's own renderer, which makes each step's renderer, canvas and engine
     // and lets them go with the step.
     expect(main).toContain("  const probe = liteProbeDeps(container);");
     expect([...main.matchAll(/\bliteProbeDeps\(/g)].length).toBe(1);
-    expect(importsOf(join(SRC, "main.ts"))).toContain("./game/lite/probeScene.js");
-    expect(importsOf(join(SRC, "main.ts"))).not.toContain("./game/probeScene.js");
+    expect(importsOf(at("main.ts"))).toContain("./game/lite/probeScene.js");
+    expect(importsOf(at("main.ts"))).not.toContain("./game/probeScene.js");
     // No step is handed an engine.
     expect(main).not.toMatch(/\b(?:probeDeps|probeStepEngine|probeStepCanSettle|measureOnRuleEngine)\b/);
     // Nor does the page make an engine any other way: no rule is asked which or handed anything to decide by, and
@@ -272,12 +364,12 @@ describe("layer boundaries", () => {
   });
 
   it("starts no engine, so the page has no failed start to record: a step of the tier check that fails is the step's own to end", () => {
-    const main = stripComments(readFileSync(join(SRC, "main.ts"), "utf8"));
+    const main = stripComments(readFileSync(at("main.ts"), "utf8"));
     // No page has a start of its own that could fail and be remembered: the hike's renderer makes its engine.
     expect(main).not.toMatch(/\b(?:rememberFailure|recordStartFailure)\b/);
     expect(main).not.toContain("webgpu_start_failed");
     // A step that fails ends with no reading (`lite/probeScene.ts`): nothing of it is recorded against the engine.
-    const step = stripComments(readFileSync(join(SRC, "game/lite/probeScene.ts"), "utf8"));
+    const step = stripComments(readFileSync(at("game/lite/probeScene.ts"), "utf8"));
     expect(step).not.toMatch(/\b(?:recordFailure|recordStartFailure|recordEngineFailure|writeFallback)\b/);
     expect(main).not.toMatch(/\b(recordFailure|writeFallback)\(/);
   });
@@ -291,12 +383,12 @@ describe("layer boundaries", () => {
       ...[...code(file).matchAll(/^\s*(?:import|export)\s+(?!type\s)(?:[^"'();]*?\s+from\s+)?["']([^"']+)["']/gm)].map((m) => m[1] as string),
       ...[...code(file).matchAll(/\bimport\(\s*["']([^"']+)["']\s*\)/g)].map((m) => m[1] as string),
     ];
-    const main = join(SRC, "main.ts");
+    const main = at("main.ts");
     const own = loads(main);
     expect(own).toContain("./app.js");
-    expect(own.filter((spec) => !spec.startsWith("."))).toEqual([]);
+    expect(own.filter((spec) => !spec.startsWith(".") && !spec.startsWith(ENGINE_PACKAGE))).toEqual([]);
     const seen = new Map<string, string | null>();
-    const stack: [string, string | null][] = own.filter((spec) => spec !== "./app.js").map((spec) => [join(main, "..", spec.replace(/\.js$/, ".ts")), null]);
+    const stack: [string, string | null][] = own.filter((spec) => spec !== "./app.js").map((spec) => [followed(main, spec) as string, null]);
     const bad: string[] = [];
     while (stack.length > 0) {
       const [file, from] = stack.pop() as [string, string | null];
@@ -306,16 +398,17 @@ describe("layer boundaries", () => {
       for (const spec of loads(file)) {
         if (spec.startsWith("@babylonjs/") && spec !== "@babylonjs/lite") {
           const chain: string[] = [];
-          for (let at: string | null = file; at !== null; at = seen.get(at) ?? null) chain.unshift(relative(SRC, at));
+          for (let at: string | null = file; at !== null; at = seen.get(at) ?? null) chain.unshift(logical(at));
           bad.push(`${chain.join(" > ")} imports ${spec}`);
         }
         const path = spec.replace(/\?.*$/, "");
-        if (path.startsWith(".") && path.endsWith(".js")) stack.push([join(file, "..", path.replace(/\.js$/, ".ts")), file]);
+        const next = followed(file, path);
+        if (next !== null) stack.push([next, file]);
       }
     }
     // The renderer on Babylon Lite and everything it is made with are among them: this is the page's whole graph but the hike's.
     expect(seen.size).toBeGreaterThan(300);
-    expect([...seen.keys()].map((file) => relative(SRC, file))).toContain("game/lite/renderer.ts");
+    expect([...seen.keys()].map((file) => logical(file))).toContain("game/lite/renderer.ts");
     expect(bad).toEqual([]);
     // The page keeps no engine between hikes, reads no library's version and hears no library's log.
     expect(code(main)).not.toMatch(/\b(?:releaseEngine|adoptEngine|dropEngine|keepEngine|engineVersion|hearEngineLog|tellEngineLog)\b/);
@@ -324,10 +417,10 @@ describe("layer boundaries", () => {
     expect(code(main)).not.toMatch(/engineFailure\.js|NOTICE_RESTARTED/);
     // How long the line shows is the answer's too, and the measurement mode's flag is the measurement's
     // (`gpuTimeReport.ts`).
-    const hike = importsOf(join(SRC, "app.ts"));
-    expect(hike).toContain("./game/engineFailure.js");
-    expect(hike).toContain("./game/gpuTimeReport.js");
-    expect(importsOf(join(SRC, "game/engineFailure.ts"))).toEqual(["./rendererSwap.js"]);
+    const hike = importsOf(at("app.ts"));
+    expect(hike).toContain(named("game/engineFailure"));
+    expect(hike).toContain(named("game/gpuTimeReport"));
+    expect(importsOf(at("game/engineFailure.ts"))).toEqual(["./rendererSwap.js"]);
   });
 
   it("decides once whether the browser can play, with no engine and no request of its own, and starts nothing of a hike where it cannot", () => {
@@ -336,7 +429,7 @@ describe("layer boundaries", () => {
       [...readFileSync(file, "utf8").matchAll(/^\s*(?:import|export)\s+(?!type\s)(?:[^"'();]*?\s+from\s+)?["']([^"']+)["']/gm)].map((m) => m[1] as string);
     const ENGINE_FREE = ["loadCheck.ts", "turnedAway.ts", "turnedAwayModel.ts", "turnedAwayWords.ts", "gpuSignals.ts"];
     const seen = new Set<string>();
-    const stack = ENGINE_FREE.map((name) => join(SRC, "game", name));
+    const stack = ENGINE_FREE.map((name) => at("game", name));
     for (const file of stack) expect(existsSync(file), file).toBe(true);
     const bad: string[] = [];
     while (stack.length > 0) {
@@ -344,19 +437,22 @@ describe("layer boundaries", () => {
       if (seen.has(file)) continue;
       seen.add(file);
       for (const spec of loaded(file)) {
-        if (spec.startsWith("@babylonjs")) bad.push(`${relative(SRC, file)} imports ${spec}`);
-        if (spec.startsWith(".") && spec.endsWith(".js")) stack.push(join(file, "..", spec.replace(/\.js$/, ".ts")));
+        if (spec.startsWith("@babylonjs")) bad.push(`${logical(file)} imports ${spec}`);
+        {
+          const next = followed(file, spec);
+          if (next !== null) stack.push(next);
+        }
       }
     }
     expect(seen.size).toBeGreaterThan(ENGINE_FREE.length);
     expect(bad).toEqual([]);
     // The verdict reads the answer to the page's one adapter request (the test above holds that there is one):
     // the check itself asks the browser nothing.
-    const check = stripComments(readFileSync(join(SRC, "game/loadCheck.ts"), "utf8"));
+    const check = stripComments(readFileSync(at("game/loadCheck.ts"), "utf8"));
     expect(check).not.toMatch(/\bnavigator\b|requestAdapter|requestDevice|document\b|window\b/);
-    expect(loaded(join(SRC, "game/loadCheck.ts"))).toEqual([]);
+    expect(loaded(at("game/loadCheck.ts"))).toEqual([]);
 
-    const main = stripComments(readFileSync(join(SRC, "main.ts"), "utf8"));
+    const main = stripComments(readFileSync(at("main.ts"), "utf8"));
     // One verdict a page: known at once where the browser offers no WebGPU, else settled from the signals, or
     // from the same request's later answer where the signals went on without it; set in that one place after.
     expect(main).toContain("const webgpuOffered = offersWebGpu(navigator as NavigatorLike);\nlet verdict: LoadVerdict | null = loadVerdict(webgpuOffered, null);");
@@ -395,7 +491,7 @@ describe("layer boundaries", () => {
     // the governor and a failure's rebuild `GOVERNOR_SWAP_READY_MAX_MS`
     // (`governor.ts`, `engineFailure.ts`); a fallback's rung and a switch
     // that crosses engines are inside `switchNow` and wait on its bound.
-    const app = stripComments(readFileSync(join(SRC, "app.ts"), "utf8"));
+    const app = stripComments(readFileSync(at("app.ts"), "utf8"));
     expect([...app.matchAll(/(?<!function )\bswitch(?:To|Now)\([^()]*\)/g)].map((m) => m[0])).toEqual([
       "switchTo(target, source, choice, readyMaxMs)",
       "switchNow(target, source, save, readyMaxMs)",
@@ -419,6 +515,7 @@ describe("layer boundaries", () => {
       // module of Babylon.js and registers nothing on Babylon.js's classes.
       if (spec === "@babylonjs/lite") return null;
       if (spec.startsWith("@babylonjs/")) return join(NODE_MODULES, spec);
+      if (spec.startsWith(ENGINE_PACKAGE)) return followed(from, spec);
       if (!spec.startsWith(".")) return null;
       const path = join(from, "..", spec);
       return from.includes("node_modules") ? path : path.replace(/\.js$/, ".ts");
@@ -438,13 +535,13 @@ describe("layer boundaries", () => {
       return seen;
     };
     // The page loads no module of Babylon.js, with the hike under it or without.
-    expect([...graph(join(SRC, "main.ts"))].filter((f) => f.includes("@babylonjs"))).toEqual([]);
+    expect([...graph(at("main.ts"))].filter((f) => f.includes("@babylonjs"))).toEqual([]);
   });
 
   it("keeps the quality modules out of sim/ and net/", () => {
     const quality = /game\/(quality|gpuSignals|gpuClass|tierChoice|frameProbe|governor|rendererSwap|settings)(\.js)?$/;
-    expect(violations(join(SRC, "sim"), [quality])).toEqual([]);
-    expect(violations(join(SRC, "net"), [quality])).toEqual([]);
+    expect(violations(at("sim"), [quality])).toEqual([]);
+    expect(violations(at("net"), [quality])).toEqual([]);
   });
 
   /**
@@ -460,175 +557,175 @@ describe("layer boundaries", () => {
    */
   it("the pure game/ arithmetic modules stay Babylon-free", () => {
     const BABYLON_FREE_FILES = [
-      join(SRC, "game", "colour.ts"),
-      join(SRC, "game", "sky.ts"),
-      join(SRC, "game", "quality.ts"),
-      join(SRC, "game", "terrainSurface.ts"),
-      join(SRC, "game", "waterGround.ts"),
-      join(SRC, "game", "panoramaTurn.ts"),
-      join(SRC, "game", "mirrorGround.ts"),
-      join(SRC, "game", "mirrorPass.ts"),
-      join(SRC, "game", "firstBuilds.ts"),
-      join(SRC, "game", "filmHead.ts"),
-      join(SRC, "game", "downloadTurns.ts"),
-      join(SRC, "game", "framePace.ts"),
-      join(SRC, "game", "atmosphereParams.ts"),
-      join(SRC, "game", "cloudParams.ts"),
-      join(SRC, "game", "wayLightGeometry.ts"),
-      join(SRC, "game", "wayLight.ts"),
-      join(SRC, "game", "wayMistFieldGeometry.ts"),
-      join(SRC, "game", "wayMistField.ts"),
-      join(SRC, "game", "crowdField.ts"),
-      join(SRC, "game", "crowdEyes.ts"),
-      join(SRC, "game", "crowdCards.ts"),
-      join(SRC, "game", "clipmap.ts"),
-      join(SRC, "game", "facePatches.ts"),
-      join(SRC, "game", "roadPaint.ts"),
-      join(SRC, "game", "trailPaint.ts"),
-      join(SRC, "game", "water.ts"),
-      join(SRC, "game", "forestField.ts"),
-      join(SRC, "game", "mistField.ts"),
-      join(SRC, "game", "mistBanks.ts"),
-      join(SRC, "game", "weather.ts"),
-      join(SRC, "game", "skinParams.ts"),
-      join(SRC, "game", "viewBob.ts"),
-      join(SRC, "game", "gradeParams.ts"),
-      join(SRC, "game", "groundHexParams.ts"),
-      join(SRC, "game", "trailBenchParams.ts"),
-      join(SRC, "game", "postParams.ts"),
-      join(SRC, "game", "windParams.ts"),
-      join(SRC, "game", "motesParams.ts"),
-      join(SRC, "game", "moteField.ts"),
-      join(SRC, "game", "rainField.ts"),
-      join(SRC, "game", "splashField.ts"),
-      join(SRC, "game", "rainCover.ts"),
-      join(SRC, "game", "lensCanopy.ts"),
-      join(SRC, "game", "lampParams.ts"),
-      join(SRC, "game", "forestLookParams.ts"),
-      join(SRC, "game", "barkParams.ts"),
-      join(SRC, "game", "coverAlbedoParams.ts"),
-      join(SRC, "game", "mossParams.ts"),
-      join(SRC, "game", "passages.ts"),
-      join(SRC, "game", "escalation.ts"),
-      join(SRC, "game", "stareLens.ts"),
-      join(SRC, "game", "woodsVoice.ts"),
-      join(SRC, "game", "woodsSounds.ts"),
-      join(SRC, "game", "oddSounds.ts"),
-      join(SRC, "game", "stareAudio.ts"),
-      join(SRC, "game", "bladeClump.ts"),
-      join(SRC, "game", "bladeField.ts"),
-      join(SRC, "game", "rockRelief.ts"),
-      join(SRC, "game", "gpuSignals.ts"),
-      join(SRC, "game", "gpuClass.ts"),
-      join(SRC, "game", "tierChoice.ts"),
-      join(SRC, "game", "frameProbe.ts"),
-      join(SRC, "game", "probePage.ts"),
-      join(SRC, "game", "probeScreen.ts"),
-      join(SRC, "game", "gpuTimeReport.ts"),
-      join(SRC, "game", "settings.ts"),
-      join(SRC, "game", "governor.ts"),
-      join(SRC, "game", "rainParams.ts"),
-      join(SRC, "game", "lensParams.ts"),
-      join(SRC, "game", "shadeVeilParams.ts"),
-      join(SRC, "game", "oceanLoopBake.ts"),
-      join(SRC, "game", "oceanLoop.worker.ts"),
-      join(SRC, "game", "oceanWindSea.ts"),
-      join(SRC, "game", "oceanWaves.ts"),
-      join(SRC, "game", "oceanTables.ts"),
-      join(SRC, "game", "oceanSwell.ts"),
-      join(SRC, "game", "oceanPhysics.ts"),
-      join(SRC, "game", "oceanSpectrum.ts"),
-      join(SRC, "game", "oceanFft.ts"),
-      join(SRC, "game", "skyModel.ts"),
-      join(SRC, "game", "skyTable.ts"),
-      join(SRC, "game", "sky.worker.ts"),
-      join(SRC, "game", "skyWorker.ts"),
-      join(SRC, "game", "world.worker.ts"),
-      join(SRC, "game", "worldPrep.ts"),
-      join(SRC, "game", "preparedScene.ts"),
-      join(SRC, "game", "lakeSurfaceGrid.ts"),
-      join(SRC, "game", "waterPlantField.ts"),
-      join(SRC, "game", "waterBump.ts"),
-      join(SRC, "game", "featureTable.ts"),
-      join(SRC, "game", "extrasLater.ts"),
-      join(SRC, "game", "impostorField.ts"),
-      join(SRC, "game", "impostorField.worker.ts"),
-      join(SRC, "game", "impostorFieldWorker.ts"),
-      join(SRC, "game", "skyState.ts"),
-      join(SRC, "game", "skyDomeParams.ts"),
-      join(SRC, "game", "skyProbeParams.ts"),
-      join(SRC, "game", "halfFloat.ts"),
-      join(SRC, "game", "waterLifeParams.ts"),
-      join(SRC, "game", "waterLifeField.ts"),
-      join(SRC, "game", "midgeMotion.ts"),
-      join(SRC, "game", "dragonflyBehaviour.ts"),
-      join(SRC, "game", "frogChorus.ts"),
-      join(SRC, "game", "lakeCalm.ts"),
-      join(SRC, "game", "mirrorView.ts"),
-      join(SRC, "game", "lakeSkyline.ts"),
-      join(SRC, "game", "lakeRipples.ts"),
-      join(SRC, "game", "swashRunUp.ts"),
-      join(SRC, "game", "swashTable.ts"),
-      join(SRC, "game", "oceanBreaker.ts"),
-      join(SRC, "game", "surfSound.ts"),
-      join(SRC, "game", "shoreAtlas.ts"),
-      join(SRC, "game", "lakeChoice.ts"),
-      join(SRC, "game", "carAudio.ts"),
-      join(SRC, "game", "terrainTables.ts"),
-      join(SRC, "game", "terrainUniforms.ts"),
-      join(SRC, "game", "groundLayers.ts"),
-      join(SRC, "game", "wetSurface.ts"),
-      join(SRC, "game", "terrainVertices.ts"),
-      join(SRC, "game", "sceneLights.ts"),
-      join(SRC, "game", "gameLens.ts"),
-      join(SRC, "game", "skyWait.ts"),
-      join(SRC, "game", "listenerPose.ts"),
-      join(SRC, "game", "characterAssets.ts"),
-      join(SRC, "game", "hollowLook.ts"),
-      join(SRC, "game", "entityPoses.ts"),
-      join(SRC, "game", "droppedCap.ts"),
-      join(SRC, "game", "creatureAssets.ts"),
-      join(SRC, "game", "wingParams.ts"),
-      join(SRC, "game", "wildlifeScene.ts"),
-      join(SRC, "game", "skinInstances.ts"),
-      join(SRC, "game", "wildlifeInputs.ts"),
-      join(SRC, "game", "waterSurface.ts"),
-      join(SRC, "game", "bedFollow.ts"),
-      join(SRC, "game", "lakeCalmFrame.ts"),
-      join(SRC, "game", "lakeSeen.ts"),
-      join(SRC, "game", "waterPlantShapes.ts"),
-      join(SRC, "game", "waterLifeScene.ts"),
-      join(SRC, "game", "waterLifeInputs.ts"),
-      join(SRC, "game", "midgeLook.ts"),
-      join(SRC, "game", "dragonflyShapes.ts"),
-      join(SRC, "game", "oceanFrame.ts"),
-      join(SRC, "game", "seaEdge.ts"),
-      join(SRC, "game", "oceanFftPasses.ts"),
-      join(SRC, "game", "windSeaField.ts"),
-      join(SRC, "game", "lipStrip.ts"),
-      join(SRC, "game", "sprayField.ts"),
-      join(SRC, "game", "seaLattice.ts"),
-      join(SRC, "game", "seaUniforms.ts"),
-      join(SRC, "game", "postFrame.ts"),
-      join(SRC, "game", "materialGrade.ts"),
-      join(SRC, "game", "shadeMaskParams.ts"),
-      join(SRC, "game", "signParts.ts"),
-      join(SRC, "game", "sceneryParts.ts"),
-      join(SRC, "game", "boardDraw.ts"),
-      join(SRC, "game", "scenePlay.ts"),
-      join(SRC, "game", "cutscene.ts"),
-      join(SRC, "game", "ending.ts"),
-      join(SRC, "game", "endScene.ts"),
-      join(SRC, "game", "carParts.ts"),
-      join(SRC, "game", "loadReport.ts"),
-      join(SRC, "game", "rendererTypes.ts"),
-      join(SRC, "game", "hikeRenderer.ts"),
-      join(SRC, "game", "scene", "routeWorld.ts"),
-      join(SRC, "game", "scene", "scenePlayer.ts"),
-      join(SRC, "game", "scene", "actorPose.ts"),
-      join(SRC, "game", "scene", "stageParts.ts"),
-      join(SRC, "game", "scene", "cordTubeGeometry.ts"),
-      join(SRC, "game", "scene", "cord.ts"),
+      at("game", "colour.ts"),
+      at("game", "sky.ts"),
+      at("game", "quality.ts"),
+      at("game", "terrainSurface.ts"),
+      at("game", "waterGround.ts"),
+      at("game", "panoramaTurn.ts"),
+      at("game", "mirrorGround.ts"),
+      at("game", "mirrorPass.ts"),
+      at("game", "firstBuilds.ts"),
+      at("game", "filmHead.ts"),
+      at("game", "downloadTurns.ts"),
+      at("game", "framePace.ts"),
+      at("game", "atmosphereParams.ts"),
+      at("game", "cloudParams.ts"),
+      at("game", "wayLightGeometry.ts"),
+      at("game", "wayLight.ts"),
+      at("game", "wayMistFieldGeometry.ts"),
+      at("game", "wayMistField.ts"),
+      at("game", "crowdField.ts"),
+      at("game", "crowdEyes.ts"),
+      at("game", "crowdCards.ts"),
+      at("game", "clipmap.ts"),
+      at("game", "facePatches.ts"),
+      at("game", "roadPaint.ts"),
+      at("game", "trailPaint.ts"),
+      at("game", "water.ts"),
+      at("game", "forestField.ts"),
+      at("game", "mistField.ts"),
+      at("game", "mistBanks.ts"),
+      at("game", "weather.ts"),
+      at("game", "skinParams.ts"),
+      at("game", "viewBob.ts"),
+      at("game", "gradeParams.ts"),
+      at("game", "groundHexParams.ts"),
+      at("game", "trailBenchParams.ts"),
+      at("game", "postParams.ts"),
+      at("game", "windParams.ts"),
+      at("game", "motesParams.ts"),
+      at("game", "moteField.ts"),
+      at("game", "rainField.ts"),
+      at("game", "splashField.ts"),
+      at("game", "rainCover.ts"),
+      at("game", "lensCanopy.ts"),
+      at("game", "lampParams.ts"),
+      at("game", "forestLookParams.ts"),
+      at("game", "barkParams.ts"),
+      at("game", "coverAlbedoParams.ts"),
+      at("game", "mossParams.ts"),
+      at("game", "passages.ts"),
+      at("game", "escalation.ts"),
+      at("game", "stareLens.ts"),
+      at("game", "woodsVoice.ts"),
+      at("game", "woodsSounds.ts"),
+      at("game", "oddSounds.ts"),
+      at("game", "stareAudio.ts"),
+      at("game", "bladeClump.ts"),
+      at("game", "bladeField.ts"),
+      at("game", "rockRelief.ts"),
+      at("game", "gpuSignals.ts"),
+      at("game", "gpuClass.ts"),
+      at("game", "tierChoice.ts"),
+      at("game", "frameProbe.ts"),
+      at("game", "probePage.ts"),
+      at("game", "probeScreen.ts"),
+      at("game", "gpuTimeReport.ts"),
+      at("game", "settings.ts"),
+      at("game", "governor.ts"),
+      at("game", "rainParams.ts"),
+      at("game", "lensParams.ts"),
+      at("game", "shadeVeilParams.ts"),
+      at("game", "oceanLoopBake.ts"),
+      at("game", "oceanLoop.worker.ts"),
+      at("game", "oceanWindSea.ts"),
+      at("game", "oceanWaves.ts"),
+      at("game", "oceanTables.ts"),
+      at("game", "oceanSwell.ts"),
+      at("game", "oceanPhysics.ts"),
+      at("game", "oceanSpectrum.ts"),
+      at("game", "oceanFft.ts"),
+      at("game", "skyModel.ts"),
+      at("game", "skyTable.ts"),
+      at("game", "sky.worker.ts"),
+      at("game", "skyWorker.ts"),
+      at("game", "world.worker.ts"),
+      at("game", "worldPrep.ts"),
+      at("game", "preparedScene.ts"),
+      at("game", "lakeSurfaceGrid.ts"),
+      at("game", "waterPlantField.ts"),
+      at("game", "waterBump.ts"),
+      at("game", "featureTable.ts"),
+      at("game", "extrasLater.ts"),
+      at("game", "impostorField.ts"),
+      at("game", "impostorField.worker.ts"),
+      at("game", "impostorFieldWorker.ts"),
+      at("game", "skyState.ts"),
+      at("game", "skyDomeParams.ts"),
+      at("game", "skyProbeParams.ts"),
+      at("game", "halfFloat.ts"),
+      at("game", "waterLifeParams.ts"),
+      at("game", "waterLifeField.ts"),
+      at("game", "midgeMotion.ts"),
+      at("game", "dragonflyBehaviour.ts"),
+      at("game", "frogChorus.ts"),
+      at("game", "lakeCalm.ts"),
+      at("game", "mirrorView.ts"),
+      at("game", "lakeSkyline.ts"),
+      at("game", "lakeRipples.ts"),
+      at("game", "swashRunUp.ts"),
+      at("game", "swashTable.ts"),
+      at("game", "oceanBreaker.ts"),
+      at("game", "surfSound.ts"),
+      at("game", "shoreAtlas.ts"),
+      at("game", "lakeChoice.ts"),
+      at("game", "carAudio.ts"),
+      at("game", "terrainTables.ts"),
+      at("game", "terrainUniforms.ts"),
+      at("game", "groundLayers.ts"),
+      at("game", "wetSurface.ts"),
+      at("game", "terrainVertices.ts"),
+      at("game", "sceneLights.ts"),
+      at("game", "gameLens.ts"),
+      at("game", "skyWait.ts"),
+      at("game", "listenerPose.ts"),
+      at("game", "characterAssets.ts"),
+      at("game", "hollowLook.ts"),
+      at("game", "entityPoses.ts"),
+      at("game", "droppedCap.ts"),
+      at("game", "creatureAssets.ts"),
+      at("game", "wingParams.ts"),
+      at("game", "wildlifeScene.ts"),
+      at("game", "skinInstances.ts"),
+      at("game", "wildlifeInputs.ts"),
+      at("game", "waterSurface.ts"),
+      at("game", "bedFollow.ts"),
+      at("game", "lakeCalmFrame.ts"),
+      at("game", "lakeSeen.ts"),
+      at("game", "waterPlantShapes.ts"),
+      at("game", "waterLifeScene.ts"),
+      at("game", "waterLifeInputs.ts"),
+      at("game", "midgeLook.ts"),
+      at("game", "dragonflyShapes.ts"),
+      at("game", "oceanFrame.ts"),
+      at("game", "seaEdge.ts"),
+      at("game", "oceanFftPasses.ts"),
+      at("game", "windSeaField.ts"),
+      at("game", "lipStrip.ts"),
+      at("game", "sprayField.ts"),
+      at("game", "seaLattice.ts"),
+      at("game", "seaUniforms.ts"),
+      at("game", "postFrame.ts"),
+      at("game", "materialGrade.ts"),
+      at("game", "shadeMaskParams.ts"),
+      at("game", "signParts.ts"),
+      at("game", "sceneryParts.ts"),
+      at("game", "boardDraw.ts"),
+      at("game", "scenePlay.ts"),
+      at("game", "cutscene.ts"),
+      at("game", "ending.ts"),
+      at("game", "endScene.ts"),
+      at("game", "carParts.ts"),
+      at("game", "loadReport.ts"),
+      at("game", "rendererTypes.ts"),
+      at("game", "hikeRenderer.ts"),
+      at("game", "scene", "routeWorld.ts"),
+      at("game", "scene", "scenePlayer.ts"),
+      at("game", "scene", "actorPose.ts"),
+      at("game", "scene", "stageParts.ts"),
+      at("game", "scene", "cordTubeGeometry.ts"),
+      at("game", "scene", "cord.ts"),
     ];
 
     // Guards against the guard: a rename or deletion of one of these files
@@ -667,7 +764,7 @@ describe("layer boundaries", () => {
     const loaded = (file: string): string[] =>
       [...readFileSync(file, "utf8").matchAll(/^\s*(?:import|export)\s+(?!type\s)(?:[^"'();]*?\s+from\s+)?["']([^"']+)["']/gm)].map((m) => m[1] as string);
     const seen = new Set<string>();
-    const stack = ENGINE_FREE.map((name) => join(SRC, "game", name));
+    const stack = ENGINE_FREE.map((name) => at("game", name));
     for (const file of stack) expect(existsSync(file), file).toBe(true);
     const bad: string[] = [];
     while (stack.length > 0) {
@@ -675,8 +772,11 @@ describe("layer boundaries", () => {
       if (seen.has(file)) continue;
       seen.add(file);
       for (const spec of loaded(file)) {
-        if (spec.startsWith("@babylonjs")) bad.push(`${relative(SRC, file)} imports ${spec}`);
-        if (spec.startsWith(".") && spec.endsWith(".js")) stack.push(join(file, "..", spec.replace(/\.js$/, ".ts")));
+        if (spec.startsWith("@babylonjs")) bad.push(`${logical(file)} imports ${spec}`);
+        {
+          const next = followed(file, spec);
+          if (next !== null) stack.push(next);
+        }
       }
     }
     expect(seen.size).toBeGreaterThan(ENGINE_FREE.length);
@@ -701,7 +801,7 @@ describe("layer boundaries", () => {
     const loaded = (file: string): string[] =>
       [...readFileSync(file, "utf8").matchAll(/^\s*(?:import|export)\s+(?!type\s)(?:[^"'();]*?\s+from\s+)?["']([^"']+)["']/gm)].map((m) => m[1] as string);
     const seen = new Set<string>();
-    const stack = ENGINE_FREE.map((name) => join(SRC, "game", name));
+    const stack = ENGINE_FREE.map((name) => at("game", name));
     for (const file of stack) expect(existsSync(file), file).toBe(true);
     const bad: string[] = [];
     while (stack.length > 0) {
@@ -709,8 +809,11 @@ describe("layer boundaries", () => {
       if (seen.has(file)) continue;
       seen.add(file);
       for (const spec of loaded(file)) {
-        if (spec.startsWith("@babylonjs")) bad.push(`${relative(SRC, file)} imports ${spec}`);
-        if (spec.startsWith(".") && spec.endsWith(".js")) stack.push(join(file, "..", spec.replace(/\.js$/, ".ts")));
+        if (spec.startsWith("@babylonjs")) bad.push(`${logical(file)} imports ${spec}`);
+        {
+          const next = followed(file, spec);
+          if (next !== null) stack.push(next);
+        }
       }
     }
     expect(seen.size).toBeGreaterThan(ENGINE_FREE.length);
@@ -733,7 +836,7 @@ describe("layer boundaries", () => {
     const loaded = (file: string): string[] =>
       [...readFileSync(file, "utf8").matchAll(/^\s*(?:import|export)\s+(?!type\s)(?:[^"'();]*?\s+from\s+)?["']([^"']+)["']/gm)].map((m) => m[1] as string);
     const seen = new Set<string>();
-    const stack = ENGINE_FREE.map((name) => join(SRC, "game", name));
+    const stack = ENGINE_FREE.map((name) => at("game", name));
     for (const file of stack) expect(existsSync(file), file).toBe(true);
     const bad: string[] = [];
     while (stack.length > 0) {
@@ -741,8 +844,11 @@ describe("layer boundaries", () => {
       if (seen.has(file)) continue;
       seen.add(file);
       for (const spec of loaded(file)) {
-        if (spec.startsWith("@babylonjs")) bad.push(`${relative(SRC, file)} imports ${spec}`);
-        if (spec.startsWith(".") && spec.endsWith(".js")) stack.push(join(file, "..", spec.replace(/\.js$/, ".ts")));
+        if (spec.startsWith("@babylonjs")) bad.push(`${logical(file)} imports ${spec}`);
+        {
+          const next = followed(file, spec);
+          if (next !== null) stack.push(next);
+        }
       }
     }
     expect(seen.size).toBeGreaterThan(ENGINE_FREE.length);
@@ -765,7 +871,7 @@ describe("layer boundaries", () => {
     const loaded = (file: string): string[] =>
       [...readFileSync(file, "utf8").matchAll(/^\s*(?:import|export)\s+(?!type\s)(?:[^"'();]*?\s+from\s+)?["']([^"']+)["']/gm)].map((m) => m[1] as string);
     const seen = new Set<string>();
-    const stack = ENGINE_FREE.map((name) => join(SRC, "game", name));
+    const stack = ENGINE_FREE.map((name) => at("game", name));
     for (const file of stack) expect(existsSync(file), file).toBe(true);
     const bad: string[] = [];
     while (stack.length > 0) {
@@ -773,8 +879,11 @@ describe("layer boundaries", () => {
       if (seen.has(file)) continue;
       seen.add(file);
       for (const spec of loaded(file)) {
-        if (spec.startsWith("@babylonjs")) bad.push(`${relative(SRC, file)} imports ${spec}`);
-        if (spec.startsWith(".") && spec.endsWith(".js")) stack.push(join(file, "..", spec.replace(/\.js$/, ".ts")));
+        if (spec.startsWith("@babylonjs")) bad.push(`${logical(file)} imports ${spec}`);
+        {
+          const next = followed(file, spec);
+          if (next !== null) stack.push(next);
+        }
       }
     }
     expect(seen.size).toBeGreaterThan(ENGINE_FREE.length);
@@ -800,7 +909,7 @@ describe("layer boundaries", () => {
     const loaded = (file: string): string[] =>
       [...readFileSync(file, "utf8").matchAll(/^\s*(?:import|export)\s+(?!type\s)(?:[^"'();]*?\s+from\s+)?["']([^"']+)["']/gm)].map((m) => m[1] as string);
     const seen = new Set<string>();
-    const stack = ENGINE_FREE.map((name) => join(SRC, "game", name));
+    const stack = ENGINE_FREE.map((name) => at("game", name));
     for (const file of stack) expect(existsSync(file), file).toBe(true);
     const bad: string[] = [];
     while (stack.length > 0) {
@@ -808,8 +917,11 @@ describe("layer boundaries", () => {
       if (seen.has(file)) continue;
       seen.add(file);
       for (const spec of loaded(file)) {
-        if (spec.startsWith("@babylonjs")) bad.push(`${relative(SRC, file)} imports ${spec}`);
-        if (spec.startsWith(".") && spec.endsWith(".js")) stack.push(join(file, "..", spec.replace(/\.js$/, ".ts")));
+        if (spec.startsWith("@babylonjs")) bad.push(`${logical(file)} imports ${spec}`);
+        {
+          const next = followed(file, spec);
+          if (next !== null) stack.push(next);
+        }
       }
     }
     expect(seen.size).toBeGreaterThan(ENGINE_FREE.length);
@@ -833,7 +945,7 @@ describe("layer boundaries", () => {
     const loaded = (file: string): string[] =>
       [...readFileSync(file, "utf8").matchAll(/^\s*(?:import|export)\s+(?!type\s)(?:[^"'();]*?\s+from\s+)?["']([^"']+)["']/gm)].map((m) => m[1] as string);
     const seen = new Set<string>();
-    const stack = ENGINE_FREE.map((name) => join(SRC, "game", name));
+    const stack = ENGINE_FREE.map((name) => at("game", name));
     for (const file of stack) expect(existsSync(file), file).toBe(true);
     const bad: string[] = [];
     while (stack.length > 0) {
@@ -841,14 +953,17 @@ describe("layer boundaries", () => {
       if (seen.has(file)) continue;
       seen.add(file);
       for (const spec of loaded(file)) {
-        if (spec.startsWith("@babylonjs")) bad.push(`${relative(SRC, file)} imports ${spec}`);
-        if (spec.startsWith(".") && spec.endsWith(".js")) stack.push(join(file, "..", spec.replace(/\.js$/, ".ts")));
+        if (spec.startsWith("@babylonjs")) bad.push(`${logical(file)} imports ${spec}`);
+        {
+          const next = followed(file, spec);
+          if (next !== null) stack.push(next);
+        }
       }
     }
     expect(seen.size).toBeGreaterThan(ENGINE_FREE.length);
     expect(bad).toEqual([]);
     // The wind's lag is made in one place.
-    expect(readFileSync(join(SRC, "game/windSeaField.ts"), "utf8")).toContain("createSeaWindLag()");
+    expect(readFileSync(at("game/windSeaField.ts"), "utf8")).toContain("createSeaWindLag()");
   });
 
   /**
@@ -866,7 +981,7 @@ describe("layer boundaries", () => {
     const loaded = (file: string): string[] =>
       [...readFileSync(file, "utf8").matchAll(/^\s*(?:import|export)\s+(?!type\s)(?:[^"'();]*?\s+from\s+)?["']([^"']+)["']/gm)].map((m) => m[1] as string);
     const seen = new Set<string>();
-    const stack = ENGINE_FREE.map((name) => join(SRC, "game", name));
+    const stack = ENGINE_FREE.map((name) => at("game", name));
     for (const file of stack) expect(existsSync(file), file).toBe(true);
     const bad: string[] = [];
     while (stack.length > 0) {
@@ -874,14 +989,17 @@ describe("layer boundaries", () => {
       if (seen.has(file)) continue;
       seen.add(file);
       for (const spec of loaded(file)) {
-        if (spec.startsWith("@babylonjs")) bad.push(`${relative(SRC, file)} imports ${spec}`);
-        if (spec.startsWith(".") && spec.endsWith(".js")) stack.push(join(file, "..", spec.replace(/\.js$/, ".ts")));
+        if (spec.startsWith("@babylonjs")) bad.push(`${logical(file)} imports ${spec}`);
+        {
+          const next = followed(file, spec);
+          if (next !== null) stack.push(next);
+        }
       }
     }
     expect(seen.size).toBeGreaterThan(ENGINE_FREE.length);
     expect(bad).toEqual([]);
     // On Lite the frame's bodies take up who the scene shows in the frame that says so.
-    expect(readFileSync(join(SRC, "game/lite/renderer.ts"), "utf8")).toContain("bodies = bodiesInShot(poses, bodies, now, state, localId, alpha, standing?.entities?.models ?? null);");
+    expect(readFileSync(at("game/lite/renderer.ts"), "utf8")).toContain("bodies = bodiesInShot(poses, bodies, now, state, localId, alpha, standing?.entities?.models ?? null);");
   });
 
   /**
@@ -901,7 +1019,7 @@ describe("layer boundaries", () => {
     const loaded = (file: string): string[] =>
       [...readFileSync(file, "utf8").matchAll(/^\s*(?:import|export)\s+(?!type\s)(?:[^"'();]*?\s+from\s+)?["']([^"']+)["']/gm)].map((m) => m[1] as string);
     const seen = new Set<string>();
-    const stack = ENGINE_FREE.map((name) => join(SRC, "game", name));
+    const stack = ENGINE_FREE.map((name) => at("game", name));
     for (const file of stack) expect(existsSync(file), file).toBe(true);
     const bad: string[] = [];
     while (stack.length > 0) {
@@ -909,13 +1027,16 @@ describe("layer boundaries", () => {
       if (seen.has(file)) continue;
       seen.add(file);
       for (const spec of loaded(file)) {
-        if (spec.startsWith("@babylonjs")) bad.push(`${relative(SRC, file)} imports ${spec}`);
-        if (spec.startsWith(".") && spec.endsWith(".js")) stack.push(join(file, "..", spec.replace(/\.js$/, ".ts")));
+        if (spec.startsWith("@babylonjs")) bad.push(`${logical(file)} imports ${spec}`);
+        {
+          const next = followed(file, spec);
+          if (next !== null) stack.push(next);
+        }
       }
     }
     expect(seen.size).toBeGreaterThan(ENGINE_FREE.length);
     expect(bad).toEqual([]);
-    const lite = readFileSync(join(SRC, "game/lite/renderer.ts"), "utf8");
+    const lite = readFileSync(at("game/lite/renderer.ts"), "utf8");
     expect(lite).toContain("createFrameFit(tier, renderScaleRuns(postFeatures.paint, options.gpuTime === true), {");
     // The surface is sized by the game's rule alone: Lite's own fit to the display's ratio is not called.
     expect(lite).not.toContain("resizeEngine");
@@ -927,8 +1048,8 @@ describe("layer boundaries", () => {
     expect(lite).toContain("onShaderCompiled: (fn) => makes.onMade(fn),");
     // Its world is waited for by the bound of whoever asks: the swap's module walks no scene.
     expect(lite).toContain("    whenReady(maxMs) {\n      return whenWorldIn(sceneryReady, maxMs).then(() => {");
-    expect(readFileSync(join(SRC, "game/rendererSwap.ts"), "utf8")).not.toMatch(/whenSceneReady|walkSceneReady|@babylonjs/);
-    expect(readFileSync(join(SRC, "game/lite/gpuTimeReadout.ts"), "utf8")).toContain("taskTimeReport({");
+    expect(readFileSync(at("game/rendererSwap.ts"), "utf8")).not.toMatch(/whenSceneReady|walkSceneReady|@babylonjs/);
+    expect(readFileSync(at("game/lite/gpuTimeReadout.ts"), "utf8")).toContain("taskTimeReport({");
   });
 
   /**
@@ -941,7 +1062,7 @@ describe("layer boundaries", () => {
    * hike already ends when its graphics cannot be restarted.
    */
   it("tells the hike's record of the device's errors and losses, and ends a hike by the page's count of losses, through its one line", () => {
-    const lite = readFileSync(join(SRC, "game/lite/renderer.ts"), "utf8");
+    const lite = readFileSync(at("game/lite/renderer.ts"), "utf8");
     // Every error nobody caught, and every one a scope handed back.
     expect(lite).toContain('      heard?.error(gpuFaults, error, "uncaptured");');
     expect(lite).toContain('    stopScopes = hearErrorScopes(getGpuDevice(engine), (error) => heard?.error(gpuFaults, error, "scope"));');
@@ -957,7 +1078,7 @@ describe("layer boundaries", () => {
     expect(lite).toContain("    if (heard?.counting === true) {\n      holds = true;\n      held.count(getGpuDevice(engine) as unknown as HeldDevice);\n    }");
     expect(lite).toContain("    gpuFaults,\n    gpuTime,");
     // The hike gives its record each renderer that stands, as it puts the watch on it.
-    const app = stripComments(readFileSync(join(SRC, "app.ts"), "utf8"));
+    const app = stripComments(readFileSync(at("app.ts"), "utf8"));
     expect([...app.matchAll(/\bcreateGpuFaults\(/g)].length).toBe(1);
     expect(app).toContain("      faults.attach(r);\n      const engine = r.engine;");
     expect(app).toContain("    loss: () => options.losses.note(),");
@@ -965,14 +1086,14 @@ describe("layer boundaries", () => {
     expect(app).toContain('    ends: (reason) => reason === "lost" && faults.lastLoss?.end === true,');
     expect(app).toContain('      options.losses.ended();\n      endSession(LOSS_ENDED_LINE, { why: "device_lost", losses: loss?.losses ?? 0, recent: loss?.recent ?? 0 });');
     // The page's count is one record for every hike of the page, and the landing's line is the same constant.
-    const main = stripComments(readFileSync(join(SRC, "main.ts"), "utf8"));
+    const main = stripComments(readFileSync(at("main.ts"), "utf8"));
     expect([...main.matchAll(/\bcreateLossRecord\(/g)].length).toBe(1);
     expect(main).toContain("  note: () => lostDevices.note(performance.now()),");
     expect(main).toContain("  ended: () => void leaveNotice(pageSessionStorage(), LOSS_ENDED_LINE, Date.now()),");
     expect(main).toContain("    engineFailed,\n    losses,");
     // The line's words stand in one constant, and the bound's numbers in one module.
     const naming = (pattern: RegExp): string[] =>
-      sourceFiles(SRC).flatMap((file) => [...stripComments(readFileSync(file, "utf8")).matchAll(pattern)].map(() => relative(SRC, file)));
+      sourceFiles(SRC).flatMap((file) => [...stripComments(readFileSync(file, "utf8")).matchAll(pattern)].map(() => logical(file)));
     expect(naming(/\bLOSS_ENDED_LINE = /g)).toEqual(["game/lossBound.ts"]);
     expect(naming(/\bLOSS_BOUND_(?:COUNT|WINDOW_MS) = /g)).toEqual(["game/lossBound.ts", "game/lossBound.ts"]);
   });
@@ -986,7 +1107,7 @@ describe("layer boundaries", () => {
   it("draws the hike with Babylon Lite alone: nothing under game/lite/ loads Babylon.js, whatever it imports", () => {
     const loaded = (file: string): string[] =>
       [...readFileSync(file, "utf8").matchAll(/^\s*(?:import|export)\s+(?!type\s)(?:[^"'();]*?\s+from\s+)?["']([^"']+)["']/gm)].map((m) => m[1] as string);
-    const own = sourceFiles(join(SRC, "game", "lite"));
+    const own = sourceFiles(at("game", "lite"));
     expect(own.length).toBeGreaterThan(5);
     const seen = new Set<string>();
     const stack = [...own];
@@ -997,9 +1118,12 @@ describe("layer boundaries", () => {
       if (seen.has(file)) continue;
       seen.add(file);
       for (const spec of loaded(file)) {
-        if (spec === "@babylonjs/lite") lite.push(relative(SRC, file));
-        else if (spec.startsWith("@babylonjs")) bad.push(`${relative(SRC, file)} imports ${spec}`);
-        if (spec.startsWith(".") && spec.endsWith(".js")) stack.push(join(file, "..", spec.replace(/\.js$/, ".ts")));
+        if (spec === "@babylonjs/lite") lite.push(logical(file));
+        else if (spec.startsWith("@babylonjs")) bad.push(`${logical(file)} imports ${spec}`);
+        {
+          const next = followed(file, spec);
+          if (next !== null) stack.push(next);
+        }
       }
     }
     expect(seen.size).toBeGreaterThan(own.length);
@@ -1011,8 +1135,8 @@ describe("layer boundaries", () => {
       "game/lite/skinnedModels.ts", "game/lite/skyCapture.ts", "game/lite/skyDome.ts", "game/lite/surfSpray.ts", "game/lite/terrainMeshes.ts", "game/lite/waterBed.ts", "game/lite/waterBehind.ts", "game/lite/waterPlantMeshes.ts", "game/lite/wayFieldMesh.ts", "game/lite/wayLightMeshes.ts", "game/lite/wildlifeMeshes.ts", "game/lite/wornLamps.ts",
     ]);
     // And the hike is handed that renderer by a module that loads it and nothing else that draws.
-    expect(readFileSync(join(SRC, "game/hikeRenderer.ts"), "utf8")).toContain("  return createLiteRenderer(canvas, level, forest, options);");
-    expect(loaded(join(SRC, "game/hikeRenderer.ts"))).toEqual(["./lite/renderer.js"]);
+    expect(readFileSync(at("game/hikeRenderer.ts"), "utf8")).toContain("  return createLiteRenderer(canvas, level, forest, options);");
+    expect(loaded(at("game/hikeRenderer.ts"))).toEqual(["./lite/renderer.js"]);
   });
 
   /**
@@ -1023,7 +1147,7 @@ describe("layer boundaries", () => {
   it("holds a renderer by types that load nothing: the hike's, the swap's, the staged scenes' and the renderer's name them in one module", () => {
     const loaded = (file: string): string[] =>
       [...readFileSync(file, "utf8").matchAll(/^\s*(?:import|export)\s+(?!type\s)(?:[^"'();]*?\s+from\s+)?["']([^"']+)["']/gm)].map((m) => m[1] as string);
-    const types = join(SRC, "game/rendererTypes.ts");
+    const types = at("game/rendererTypes.ts");
     // Every import of it is a type's, and it names nothing of an engine's own package.
     expect(loaded(types)).toEqual([]);
     expect(importsOf(types).length).toBeGreaterThan(10);
@@ -1032,12 +1156,12 @@ describe("layer boundaries", () => {
     for (const name of ["FreecamView", "FrameView", "Renderer", "RendererOptions"]) expect(text, name).toContain(`export type ${name} = {`);
     // Each of them is defined once in src/.
     const defined = sourceFiles(SRC).flatMap((file) =>
-      [...stripComments(readFileSync(file, "utf8")).matchAll(/\bexport type (?:FreecamView|FrameView|Renderer|RendererOptions) =/g)].map(() => relative(SRC, file)),
+      [...stripComments(readFileSync(file, "utf8")).matchAll(/\bexport type (?:FreecamView|FrameView|Renderer|RendererOptions) =/g)].map(() => logical(file)),
     );
     expect(defined).toEqual(["game/rendererTypes.ts", "game/rendererTypes.ts", "game/rendererTypes.ts", "game/rendererTypes.ts"]);
     // Who holds a renderer takes the types from there.
     for (const holder of ["app.ts", "game/hikeRenderer.ts", "game/rendererSwap.ts", "game/lite/renderer.ts", "game/lite/notDrawn.ts", "game/lite/probeScene.ts", "game/lite/sceneRoute.ts", "game/lite/sceneStage.ts", "game/lite/sceneryMeshes.ts"]) {
-      const specs = importsOf(join(SRC, holder));
+      const specs = importsOf(at(holder));
       expect(specs.some((spec) => spec.endsWith("/rendererTypes.js")), holder).toBe(true);
     }
   });
@@ -1068,14 +1192,14 @@ describe("layer boundaries", () => {
         const file = queue[at] as string;
         if (!existsSync(file)) continue;
         for (const spec of loads(file)) {
-          if (spec === "@babylonjs/lite") lite.push(relative(SRC, file));
+          if (spec === "@babylonjs/lite") lite.push(logical(file));
           else if (spec.startsWith("@babylonjs")) {
             const chain: string[] = [];
-            for (let f: string | null = file; f !== null; f = from.get(f) ?? null) chain.unshift(relative(SRC, f));
+            for (let f: string | null = file; f !== null; f = from.get(f) ?? null) chain.unshift(logical(f));
             babylon.push(`${chain.join(" > ")} loads ${spec}`);
           }
-          if (!spec.startsWith(".") || !spec.endsWith(".js")) continue;
-          const next = join(file, "..", spec.replace(/\.js$/, ".ts"));
+          const next = followed(file, spec);
+          if (next === null) continue;
           if (!from.has(next)) {
             from.set(next, file);
             queue.push(next);
@@ -1084,15 +1208,15 @@ describe("layer boundaries", () => {
       }
       return { seen: from.size, babylon, lite: [...new Set(lite)] };
     };
-    const hike = reach(join(SRC, "app.ts"));
+    const hike = reach(at("app.ts"));
     // Guards against the guard: the walk goes through the whole hike and finds the engine it does load.
     expect(hike.seen).toBeGreaterThan(300);
     expect(hike.lite).toContain("game/lite/renderer.ts");
     expect(hike.babylon).toEqual([]);
     // What the hike is told by is taken where it is computed, and its scenery is asked of its renderer alone.
-    const app = importsOf(join(SRC, "app.ts"));
-    for (const home of ["./game/skyWait.js", "./game/droppedCap.js", "./game/loadReport.js", "./game/hikeRenderer.js", "./game/hikeScenery.js"]) expect(app, home).toContain(home);
-    expect(loads(join(SRC, "game/hikeScenery.ts")).filter((spec) => spec.startsWith("./"))).toEqual(["./boardImages.js", "./boardDraw.js", "./posterPanel.js", "./lite/sceneryMeshes.js"]);
+    const app = importsOf(at("app.ts"));
+    for (const home of ["game/skyWait", "game/droppedCap", "game/loadReport", "game/hikeRenderer", "game/hikeScenery"].map(named)) expect(app, home).toContain(home);
+    expect(loads(at("game/hikeScenery.ts")).filter((spec) => spec.startsWith("./"))).toEqual(["./boardImages.js", "./boardDraw.js", "./posterPanel.js", "./lite/sceneryMeshes.js"]);
   });
 
   /**
@@ -1119,7 +1243,7 @@ describe("layer boundaries", () => {
     for (const file of files) {
       const specs = everyImport(file);
       if (specs.includes("@babylonjs/lite")) lite++;
-      for (const spec of specs) if (ofBabylon(spec)) named.push(`${relative(join(SRC, ".."), file)} names ${spec}`);
+      for (const spec of specs) if (ofBabylon(spec)) named.push(`${relative(at(".."), file)} names ${spec}`);
     }
     // Guards against the guard: the walk reads the whole of src/ and test/ and finds the library where it is named.
     expect(sourceFiles(SRC).length).toBeGreaterThan(400);
@@ -1129,15 +1253,15 @@ describe("layer boundaries", () => {
     // Nor is such a package spelt in src/ outside an import: a path into it, a `require`, a URL.
     const spelt = sourceFiles(SRC)
       .filter((file) => /@babylonjs\/(?!lite\b)/.test(stripComments(readFileSync(file, "utf8"))))
-      .map((file) => relative(SRC, file));
+      .map((file) => logical(file));
     expect(spelt).toEqual([]);
     // The record's reader loads the file system and nothing else.
     expect(importsOf(join(TESTS, "helpers/babylonFixture.ts"))).toEqual(["node:fs"]);
     // And the swap and the renderer's types load nothing at all.
     const loaded = (file: string): string[] =>
       [...readFileSync(file, "utf8").matchAll(/^\s*(?:import|export)\s+(?!type\s)(?:[^"'();]*?\s+from\s+)?["']([^"']+)["']/gm)].map((m) => m[1] as string);
-    expect(loaded(join(SRC, "game/rendererSwap.ts"))).toEqual([]);
-    expect(loaded(join(SRC, "game/rendererTypes.ts"))).toEqual([]);
+    expect(loaded(at("game/rendererSwap.ts"))).toEqual([]);
+    expect(loaded(at("game/rendererTypes.ts"))).toEqual([]);
   });
 
   /**
@@ -1151,7 +1275,7 @@ describe("layer boundaries", () => {
    * address.
    */
   it("hands a hike no engine, keeps none after it and waits on none: its renderer makes its own and lets it go with itself", () => {
-    const code = (name: string): string => stripComments(readFileSync(join(SRC, name), "utf8"));
+    const code = (name: string): string => stripComments(readFileSync(at(name), "utf8"));
     const app = code("app.ts");
     expect(app).not.toMatch(/\b(?:unowned|keepEngine|KeptEngine|watchers|EngineWatchers|pipelinesFor|AsyncPipelines|asyncPipelines|pinCompiles|keepShaders|retire)\b/);
     expect(app).not.toMatch(/\b(?:holdReveal|whenFrameWhole|endRevealHold|firstWholeFrame|revealWhenWhole|revealHold|reveal:)/);
@@ -1199,9 +1323,9 @@ describe("layer boundaries", () => {
    */
   it("reads none of Babylon Lite's private fields under game/lite/: the device, the frame's encoder, a target's attachments, a task's passes", () => {
     const PRIVATE = /\b_(?:device|currentEncoder|colorView|colorTexture|depthView|depthTexture|passes|width|height)\b/;
-    const own = sourceFiles(join(SRC, "game", "lite"));
+    const own = sourceFiles(at("game", "lite"));
     expect(own.length).toBeGreaterThan(5);
-    expect(own.filter((file) => PRIVATE.test(readFileSync(file, "utf8"))).map((file) => relative(SRC, file))).toEqual([]);
+    expect(own.filter((file) => PRIVATE.test(readFileSync(file, "utf8"))).map((file) => logical(file))).toEqual([]);
   });
 
   /**
@@ -1250,7 +1374,7 @@ describe("layer boundaries", () => {
     ];
 
     const found: string[] = [];
-    for (const file of sourceFiles(join(SRC, "sim"))) {
+    for (const file of sourceFiles(at("sim"))) {
       const name = file.split("/").pop() ?? file;
       const code = stripComments(readFileSync(file, "utf8"));
       for (const match of code.matchAll(FORBIDDEN)) found.push(`${name} ${match[0].trim()}`);
@@ -1268,7 +1392,7 @@ describe("layer boundaries", () => {
    */
   it("sim/ uses no exponentiation operator", () => {
     const found: string[] = [];
-    for (const file of sourceFiles(join(SRC, "sim"))) {
+    for (const file of sourceFiles(at("sim"))) {
       const name = file.split("/").pop() ?? file;
       const code = stripComments(readFileSync(file, "utf8"));
       for (const line of code.split("\n")) {
@@ -1286,7 +1410,7 @@ describe("layer boundaries", () => {
       if (/sim\/combat\.js/.test(src)) offenders.push(`${file} imports sim/combat.js`);
     }
     expect(offenders).toEqual([]);
-    expect(existsSync(join(SRC, "sim", "combat.ts"))).toBe(false);
+    expect(existsSync(at("sim", "combat.ts"))).toBe(false);
   });
 
   it("holds or frees the controls only through the play gate", () => {
@@ -1300,10 +1424,10 @@ describe("layer boundaries", () => {
     const mentions: Record<string, number> = {};
     for (const file of sourceFiles(SRC)) {
       const count = [...stripComments(readFileSync(file, "utf8")).matchAll(/\bsetSuppressed\b/g)].length;
-      if (count > 0) mentions[file.slice(SRC.length + 1).split("\\").join("/")] = count;
+      if (count > 0) mentions[logical(file).split("\\").join("/")] = count;
     }
     expect(mentions).toEqual({ "app.ts": 2, "game/input.ts": 2, "game/pauseMenu.ts": 2 });
-    expect(readFileSync(join(SRC, "app.ts"), "utf8")).toContain("setSuppressed: (on) => input.setSuppressed(on),");
+    expect(readFileSync(at("app.ts"), "utf8")).toContain("setSuppressed: (on) => input.setSuppressed(on),");
   });
 });
 
@@ -1323,7 +1447,7 @@ describe("the game's WGSL is kept in files", () => {
     { file: "game/lite/postWgsl.ts", text: "const taps = offsets.map(", why: "one blur tap for each of the kernel's taps, with its two numbers formatted in: lines made by a loop" },
     { file: "game/lite/postWgsl.ts", text: "halation ? \"@group(0)@binding(5)var halationSampler", why: "one declaration under 120 characters that the grade's halation switches on" },
   ];
-  const wgslFiles = walkFiles(SRC, ".wgsl");
+  const wgslFiles = [...walkFiles(SRC, ".wgsl"), ...walkFiles(ENGINE, ".wgsl")];
   const modules = sourceFiles(SRC);
 
   it("can actually see the files and the modules", () => {
@@ -1335,7 +1459,7 @@ describe("the game's WGSL is kept in files", () => {
     const found: string[] = [];
     const used = new Set<number>();
     for (const file of modules) {
-      const name = relative(SRC, file).split("\\").join("/");
+      const name = logical(file).split("\\").join("/");
       stripComments(readFileSync(file, "utf8")).split("\n").forEach((line, i) => {
         if (!TOKENS.some((token) => token.test(line))) return;
         const at = ALLOWED.findIndex((a) => a.file === name && line.includes(a.text));
@@ -1378,7 +1502,7 @@ describe("the game's WGSL is kept in files", () => {
     const imported = new Set<string>();
     for (const file of modules) for (const path of readImports(file).imported.values()) imported.add(path);
     for (const path of imported) expect(existsSync(path), `${path} is imported and is not there`).toBe(true);
-    expect(wgslFiles.filter((file) => !imported.has(file)).map((file) => relative(SRC, file))).toEqual([]);
+    expect(wgslFiles.filter((file) => !imported.has(file)).map((file) => logical(file))).toEqual([]);
   });
 
   it("has every slot of a file filled by the module that imports it, and no value for a slot the file does not have", () => {
@@ -1387,9 +1511,9 @@ describe("the game's WGSL is kept in files", () => {
       const { imported, fills } = readImports(file);
       for (const [name, path] of imported) {
         const slots = slotsOf(path);
-        for (const slot of slots) if (!/^[A-Za-z_][A-Za-z0-9_]*$/.test(slot)) wrong.push(`${relative(SRC, path)}: \${${slot}} is not a slot name`);
+        for (const slot of slots) if (!/^[A-Za-z_][A-Za-z0-9_]*$/.test(slot)) wrong.push(`${logical(path)}: \${${slot}} is not a slot name`);
         const given = fills.get(name);
-        const where = `${relative(SRC, file)} imports ${relative(SRC, path)}`;
+        const where = `${logical(file)} imports ${logical(path)}`;
         if (given === undefined) {
           if (slots.length > 0) wrong.push(`${where} and does not fill ${slots.join(", ")}`);
         } else {
@@ -1402,7 +1526,7 @@ describe("the game's WGSL is kept in files", () => {
   });
 
   it("is told by the one helper, which imports nothing", () => {
-    expect(importsOf(join(SRC, "game/shaders/shaderText.ts"))).toEqual([]);
+    expect(importsOf(at("game/shaders/shaderText.ts"))).toEqual([]);
   });
 });
 

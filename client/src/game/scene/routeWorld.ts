@@ -10,21 +10,21 @@
  * renderer to `world.state` as it stands.
  */
 import sandbox01 from "../../../levels/sandbox01.json" with { type: "json" };
-import { parseLevel, type Level } from "../../sim/level.js";
-import { createForest, type Forest } from "../../sim/forest.js";
+import { parseLevel, type Level } from "@csarkosh/engine/sim/level";
+import { createForest, type Forest } from "@csarkosh/engine/sim/forest";
 import { createWorld, type World } from "../../sim/world.js";
-import { DEFAULT_TERRAIN_VARIANT, activeTerrainVariant, elevationAt, setActiveTerrainVariant, type LakeSource } from "../../sim/terrain.js";
-import { coveFor } from "../../sim/olympic.js";
+import { DEFAULT_TERRAIN_VARIANT, activeTerrainVariant, elevationAt, setActiveTerrainVariant, type LakeSource } from "@csarkosh/engine/sim/terrain";
+import { coveFor } from "@csarkosh/engine/sim/olympic";
 import { trailheadPlaces } from "../../sim/trailhead.js";
 import { SUMMIT_LABEL, TRAIL_NAME, signPosts, type SignPost } from "../../sim/signs.js";
 import { signSites } from "../../sim/placeNames.js";
 import { boardDrawingOf, type BoardDrawing } from "../boardDraw.js";
 import { BOARD_IMAGE_URLS } from "../boardImages.js";
-import { lakeRimRadii, rimAt } from "../lakeSkyline.js";
+import { lakeRimRadii, rimAt } from "@csarkosh/engine/game/lakeSkyline";
 import { POSTER_LAST_SEEN } from "../posterPanel.js";
 import { carYaw, type TrailheadSites } from "../sceneryParts.js";
-import { seedFromToken } from "../seed.js";
-import type { WeatherParams } from "../weather.js";
+import { seedFromToken } from "@csarkosh/engine/game/seed";
+import type { WeatherParams } from "@csarkosh/engine/game/weather";
 import { INTRO_HOUR, INTRO_SEED_TOKEN, INTRO_WEATHER, introScene } from "./intro.js";
 import type { Scene } from "./timeline.js";
 import { TITLE_HOUR, TITLE_SEED_TOKEN, TITLE_WEATHER, titleScene, type TitleWorld } from "./title.js";

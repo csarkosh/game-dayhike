@@ -18,7 +18,7 @@
  *
  * Loads no engine.
  */
-import { composeInto, matrixMultiply, quatAboutAxis, quatFromEuler, type Quat } from "./instancePose.js";
+import { composeInto, matrixMultiply, quatAboutAxis, quatFromEuler, type Quat } from "@csarkosh/engine/game/instancePose";
 import type { CarPose } from "./scene/timeline.js";
 
 /** The four wheels' nodes: the front pair first. */

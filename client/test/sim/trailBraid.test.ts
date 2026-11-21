@@ -5,9 +5,9 @@
  */
 import { describe, it, expect } from "vitest";
 import { buildTrail } from "../../src/sim/trailBuild.js";
-import { featureStageD } from "../../src/sim/features.js";
-import { segmentSegmentDistanceSq, segmentDistance, TRAIL_EDGE_MIN_GAP, type TrailGraph } from "../../src/sim/trail.js";
-import { stemProgress } from "../../src/sim/trailRoute.js";
+import { featureStageD } from "@csarkosh/engine/sim/features";
+import { segmentSegmentDistanceSq, segmentDistance, TRAIL_EDGE_MIN_GAP, type TrailGraph } from "@csarkosh/engine/sim/trail";
+import { stemProgress } from "@csarkosh/engine/sim/trailRoute";
 import {
   maxFlushOff,
   BRAID_TOP_MAX, BRAID_TOP_FLOOR, BRAID_BOTTOM_MIN, BRAID_BOTTOM_MAX, BRAID_LATERAL_MIN,

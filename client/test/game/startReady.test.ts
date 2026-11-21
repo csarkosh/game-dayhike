@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
-import { READY_MAX_MS, startReady } from "../../src/game/startReady.js";
-import { createLoadProgress } from "../../src/game/loadProgress.js";
-import { whenWorldIn } from "../../src/game/worldWait.js";
+import { READY_MAX_MS, startReady } from "@csarkosh/engine/game/startReady";
+import { createLoadProgress } from "@csarkosh/engine/game/loadProgress";
+import { whenWorldIn } from "@csarkosh/engine/game/worldWait";
 import { timeLimit } from "../helpers/timeLimit.js";
 
 /** A renderer whose world is in when `worldIn` resolves, as the hike's renderer answers `Renderer.whenReady`. */

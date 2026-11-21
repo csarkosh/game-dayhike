@@ -20,8 +20,8 @@ import {
   sameRoute,
   followsTo,
   hostRoute,
-} from "../../src/game/router.js";
-import { parseTierOverride, resolveTier } from "../../src/game/tierChoice.js";
+} from "@csarkosh/engine/game/router";
+import { parseTierOverride, resolveTier } from "@csarkosh/engine/game/tierChoice";
 
 const UUID = "3f2504e0-4f89-41d3-9a0c-0305e82c3301";
 const BASE = "/dayhike/";

@@ -15,11 +15,11 @@
  */
 import { BOARD_TEXTURE, DISTANCE, ROUTED_PAINT, ROUTED_SHADOW, SHEETS, TITLE, boardText, type BoardText, type Sheet, type SheetName } from "./boardFace.js";
 import { boardMap, type BoardMap, type MapInput } from "./boardMap.js";
-import { lakeOutline, type LakeShape } from "../sim/lakeShape.js";
+import { lakeOutline, type LakeShape } from "@csarkosh/engine/sim/lakeShape";
 import { sheetWear, type SheetWear } from "./boardWear.js";
 import { labelWear, nameHash } from "./labelWear.js";
 import { scrape } from "./signParts.js";
-import { pageTurns } from "./downloadTurns.js";
+import { pageTurns } from "@csarkosh/engine/game/downloadTurns";
 
 export type BoardDrawing = {
   seed: number;

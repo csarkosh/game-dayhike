@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { aimAt, stepFreecam, FREECAM_SPEED, FREECAM_BOOST } from "../../src/game/freecam.js";
+import { aimAt, stepFreecam, FREECAM_SPEED, FREECAM_BOOST } from "@csarkosh/engine/game/freecam";
 
 const at = (x = 0, y = 0, z = 0) => ({ x, y, z });
 const keys = (...k: string[]) => new Set(k);

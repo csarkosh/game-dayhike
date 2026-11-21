@@ -10,7 +10,7 @@
  * +x, so "from the sea side" is a camera at a smaller x than the road.
  */
 import { CAR_HALF } from "../../sim/trailhead.js";
-import { WEATHER_PRESETS, type WeatherParams } from "../weather.js";
+import { WEATHER_PRESETS, type WeatherParams } from "@csarkosh/engine/game/weather";
 import { carAlong, stopAt, type Road } from "./roadPath.js";
 import { cutList, ease, fade, follow, followLookingAt, holdLookingAt, push, type Cut } from "./shots.js";
 import type { ActorPose, CarPose, Caption, Scene } from "./timeline.js";

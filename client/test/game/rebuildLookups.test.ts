@@ -4,11 +4,11 @@
 // rebuild is made of.
 import { describe, expect, it } from "vitest";
 import "../../src/sim/passes/index.js";
-import { collectBladeCells, createBladeCollector } from "../../src/game/bladeField.js";
-import { createRingSamples, updateRingSamples } from "../../src/game/clipmap.js";
-import { collectClutter, createClutterCollector } from "../../src/game/clutterField.js";
-import { DUFF_REACH, collectDuffCells, createDuffCollector } from "../../src/game/duffField.js";
-import { finish as finishSlices } from "../../src/game/syncJobs.js";
+import { collectBladeCells, createBladeCollector } from "@csarkosh/engine/game/bladeField";
+import { createRingSamples, updateRingSamples } from "@csarkosh/engine/game/clipmap";
+import { collectClutter, createClutterCollector } from "@csarkosh/engine/game/clutterField";
+import { DUFF_REACH, collectDuffCells, createDuffCollector } from "@csarkosh/engine/game/duffField";
+import { finish as finishSlices } from "@csarkosh/engine/game/syncJobs";
 import { timeLimit } from "../helpers/timeLimit.js";
 
 const SEED = 1;

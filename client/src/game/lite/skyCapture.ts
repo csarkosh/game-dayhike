@@ -38,15 +38,15 @@ import { createCustomEnvironment, getGpuDevice, type CustomEnvironment, type Eng
 // reflectance over the view's angle and the roughness, 256 by 256, a PNG. Lite reads it from a URL: its bytes are
 // carried in the page's chunk as a data URL.
 import environmentBrdf from "./environmentBrdf.png?inline";
-import { SKY_DOME_SIZE } from "../skyDomeParams.js";
-import { SKY_PROBE_FACES, SKY_PROBE_SIZE } from "../skyProbeParams.js";
-import type { Vec3 } from "../sky.js";
-import type { SkyState } from "../skyState.js";
+import { SKY_DOME_SIZE } from "@csarkosh/engine/game/skyDomeParams";
+import { SKY_PROBE_FACES, SKY_PROBE_SIZE } from "@csarkosh/engine/game/skyProbeParams";
+import type { Vec3 } from "@csarkosh/engine/game/sky";
+import type { SkyState } from "@csarkosh/engine/game/skyState";
 import { SKY_RADIANCE_WGSL } from "./skyDome.js";
 import { wgslFloat } from "./forestPlugins.js";
-import { askRenderPipeline } from "./pipelineAsk.js";
+import { askRenderPipeline } from "@csarkosh/engine/game/lite/pipelineAsk";
 import captureSource from "../shaders/skyCapture/capture.wgsl?raw";
-import { fill, wgsl } from "../shaders/shaderText.js";
+import { fill, wgsl } from "@csarkosh/engine/game/shaders/shaderText";
 
 /** WebGPU's buffer usages the capture's buffers take (`GPUBufferUsage`), by their values. */
 const COPY_DST = 0x0008;

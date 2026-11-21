@@ -1,13 +1,13 @@
 import { describe, expect, it } from "vitest";
 import "../../src/sim/passes/index.js";
-import { bowlFor } from "../../src/sim/olympic.js";
-import { setActiveTerrainVariant, DEFAULT_TERRAIN_VARIANT } from "../../src/sim/terrain.js";
-import { nearestTrailNode, trailDistance, TRAIL_BED_HALF, type TrailGraph } from "../../src/sim/trail.js";
+import { bowlFor } from "../../src/sim/mountain.js";
+import { setActiveTerrainVariant, DEFAULT_TERRAIN_VARIANT } from "@csarkosh/engine/sim/terrain";
+import { nearestTrailNode, trailDistance, TRAIL_BED_HALF, type TrailGraph } from "@csarkosh/engine/sim/trail";
 import { signPostSites, signPosts, SIGN_POST_HALF, SUMMIT_LABEL, TRAILHEAD_LABEL } from "../../src/sim/signs.js";
 import { signSites } from "../../src/sim/placeNames.js";
 import { hikerNames } from "../../src/sim/hikerNames.js";
-import { createChunkGrid } from "../../src/sim/chunkGrid.js";
-import { CHUNK_SIZE } from "../../src/sim/forestConstants.js";
+import { createChunkGrid } from "@csarkosh/engine/sim/chunkGrid";
+import { CHUNK_SIZE } from "@csarkosh/engine/sim/forestConstants";
 import { PROBE_SEEDS } from "./trailGateSeeds.js";
 import { timeLimit } from "../helpers/timeLimit.js";
 

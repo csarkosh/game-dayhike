@@ -1,15 +1,16 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
+import "../../src/sim/passes/index.js";
 import {
   createWildlifeAudio, listenerToAudio, CALL_CLIP, CALL_RANGE,
 } from "../../src/game/wildlifeAudio.js";
 import {
   CALL_COUNT, CALL_GULL_CRY, CALL_SQUIRREL_CHATTER, CALL_ELK_BUGLE, wildlifePresenceUnder,
   type WildlifeEvent,
-} from "../../src/game/wildlifeBehaviour.js";
-import { SPECIES_ELK, SPECIES_GULL, SPECIES_SQUIRREL } from "../../src/game/wildlifeField.js";
-import { WEATHER_PRESETS } from "../../src/game/weather.js";
+} from "@csarkosh/engine/game/wildlifeBehaviour";
+import { SPECIES_ELK, SPECIES_GULL, SPECIES_SQUIRREL } from "@csarkosh/engine/game/wildlifeField";
+import { WEATHER_PRESETS } from "@csarkosh/engine/game/weather";
 
 /**
  * `unlocked: false` models the real startup order: the shell is built at

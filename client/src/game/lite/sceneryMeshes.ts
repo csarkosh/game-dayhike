@@ -94,8 +94,8 @@ import { BOARD_FACE_BIAS, BOARD_FACE_ROUGHNESS, drawBoard, loadBoardImage, type 
 import { TURNED_PART_NAMES, TURN_ROW_FLOATS, partNumbers, poseVertices, restTurns, turnPoint, turnSlots, writeTurns, type PartsPose, type TurnSlot, type VertexRun } from "../carParts.js";
 import { CAR_SHADOW_BIAS, CAR_SHADOW_HALF, carShadowGrid } from "../carShadow.js";
 import { TAIL_LAMP_COLOUR } from "../endScene.js";
-import { quatFromEuler, type Quat } from "../instancePose.js";
-import { PROP_ROUGHNESS, propBoxGeometry, propColour, type PropBox } from "../propBoxes.js";
+import { quatFromEuler, type Quat } from "@csarkosh/engine/game/instancePose";
+import { PROP_ROUGHNESS, propBoxGeometry, propColour, type PropBox } from "@csarkosh/engine/game/propBoxes";
 import type { Renderer } from "../rendererTypes.js";
 import type { CarHandle } from "../scenePlay.js";
 import { invertAffine } from "../scene/actorPose.js";
@@ -110,12 +110,12 @@ import {
 import {
   ARM_LENGTH, LABEL_ROUGHNESS, SIGN_ARM_OUTPUT, SIGN_POST_OUTPUT, signPlaces, squareEnd, type SignPlaces,
 } from "../signParts.js";
-import { emptyWetUniforms, type WetUniforms } from "../wetSurface.js";
+import { emptyWetUniforms, type WetUniforms } from "@csarkosh/engine/game/wetSurface";
 import { sphereInView } from "./capMesh.js";
-import type { ViewFrustumPlane } from "./cameraPose.js";
-import { DRAW_ORDER, SEE_THROUGH_ORDER, createDrawOrders } from "./drawOrder.js";
+import type { ViewFrustumPlane } from "@csarkosh/engine/game/lite/cameraPose";
+import { DRAW_ORDER, SEE_THROUGH_ORDER, createDrawOrders } from "@csarkosh/engine/game/lite/drawOrder";
 import { baseColourPlugin, surfaceWetPlugin } from "./forestPlugins.js";
-import type { FrameUploads } from "./frameUploads.js";
+import type { FrameUploads } from "@csarkosh/engine/game/lite/frameUploads";
 import { loadSceneActor, type SceneActor } from "./sceneActor.js";
 import {
   CAR_TURNS_BLOCK, CAR_TURNS_ROWS, carTurnsFields, carTurnsPlugin, dress, farthestFirst, listPanes, loadSceneryModel, partBytes, partMesh, placeMatrix, readsTangents,

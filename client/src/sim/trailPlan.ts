@@ -10,7 +10,7 @@
  *
  * sim/ determinism rules: no trig, no Math.pow, no `**`, no hypot.
  */
-import type { TerrainSample } from "./terrain.js";
+import type { TerrainSample } from "@csarkosh/engine/sim/terrain";
 import { TRAIL_Z_ANCHOR, BOWL_Z_HALF } from "./bowl.js";
 import {
   cellAt, searchFrom, pathCells, TRAIL_GRID_CELL,
@@ -20,8 +20,8 @@ import {
   buildProfile, segmentDistance, segmentSegmentDistanceSq, trailCorridorD,
   TRAIL_HARD_SLOPE_MAX, TRAIL_SIMPLIFY_TOL, TRAIL_REROUTE_MAX, TRAIL_EDGE_MIN_GAP, TRAIL_CORRIDOR_HALF,
   type TrailNode, type TrailEdge,
-} from "./trail.js";
-import { MEADOW_RIM } from "./features.js";
+} from "@csarkosh/engine/sim/trail";
+import { MEADOW_RIM } from "@csarkosh/engine/sim/features";
 
 export type BuildFrame = {
   roadCenterX(z: number): number;

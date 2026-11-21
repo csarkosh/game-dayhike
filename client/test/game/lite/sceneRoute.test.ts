@@ -7,7 +7,7 @@ import { JUMP_M, WARM_FRAMES } from "../../../src/game/scene/cameraJump.js";
 import { INTRO_HOUR, INTRO_SHOTS, INTRO_WEATHER } from "../../../src/game/scene/intro.js";
 import { FILM_PATCH_DARKNESS } from "../../../src/game/scene/routeWorld.js";
 import { TITLE_HOUR } from "../../../src/game/scene/title.js";
-import { SYNC_LATE_FRAMES_MAX } from "../../../src/game/syncJobs.js";
+import { SYNC_LATE_FRAMES_MAX } from "@csarkosh/engine/game/syncJobs";
 import { skyFixture } from "../helpers/skyFixture.js";
 import { asHtml, installStandInDom } from "../helpers/standInDom.js";
 import { timeLimit } from "../../helpers/timeLimit.js";

@@ -114,7 +114,7 @@ without a trail, and the landing scene keep the console's weather and hour untou
 
 ## 4. Where it lives
 
-### 4.1 `client/src/sim/trailRoute.ts`
+### 4.1 `engine/src/sim/trailRoute.ts`
 
 `stemProgress(graph, x, z): number` — the nearest point on the stem chain to (x, z), as progress from
 the crest (0) to the pad (1) by arc length along the chain; a point past either end clamps. Pure,

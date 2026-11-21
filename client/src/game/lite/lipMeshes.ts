@@ -30,16 +30,16 @@ import {
   updateTextureRegion,
   type EngineContext, type MaterialPlugin, type Mesh, type PluginUniformBlock, type SceneContext,
 } from "@babylonjs/lite";
-import { boxInPlanes, cornersPastBox, type ViewPlane } from "../lakeSeen.js";
-import { LIP_COARSE_M, LIP_FINE_M, closeFreeSlots, lipNear, lipReach, lipStripGeometry } from "../lipStrip.js";
-import { LIP_COLUMNS, LIP_KEYFRAMES, LIP_PROFILE_VERTS, LIP_SLOTS, lipProfile, type LipTracker } from "../oceanBreaker.js";
-import type { SeaUniforms } from "../seaUniforms.js";
-import type { SwashCove } from "../swashTable.js";
-import { WATER_ROWS, roughnessFor } from "../waterShading.js";
-import { SEE_THROUGH_ORDER } from "./drawOrder.js";
-import type { FrameUploads } from "./frameUploads.js";
+import { boxInPlanes, cornersPastBox, type ViewPlane } from "@csarkosh/engine/game/lakeSeen";
+import { LIP_COARSE_M, LIP_FINE_M, closeFreeSlots, lipNear, lipReach, lipStripGeometry } from "@csarkosh/engine/game/lipStrip";
+import { LIP_COLUMNS, LIP_KEYFRAMES, LIP_PROFILE_VERTS, LIP_SLOTS, lipProfile, type LipTracker } from "@csarkosh/engine/game/oceanBreaker";
+import type { SeaUniforms } from "@csarkosh/engine/game/seaUniforms";
+import type { SwashCove } from "@csarkosh/engine/game/swashTable";
+import { WATER_ROWS, roughnessFor } from "@csarkosh/engine/game/waterShading";
+import { SEE_THROUGH_ORDER } from "@csarkosh/engine/game/lite/drawOrder";
+import type { FrameUploads } from "@csarkosh/engine/game/lite/frameUploads";
 import { seaPlugin, type SeaTextures } from "./seaPlugin.js";
-import type { SeaLook } from "./seaWgsl.js";
+import type { SeaLook } from "@csarkosh/engine/game/lite/seaWgsl";
 
 /** What the strip is made with: the sea's own. */
 export type LipOptions = {

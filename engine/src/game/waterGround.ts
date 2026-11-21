@@ -1,4 +1,4 @@
-// client/src/game/waterGround.ts
+// engine/src/game/waterGround.ts
 /**
  * What the ground paint needs from the water at a point: how far under a lake
  * it lies (`bed`), that lake's murk, the marsh's weight and the cove's. Pure

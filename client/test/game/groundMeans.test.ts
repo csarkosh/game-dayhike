@@ -2,7 +2,8 @@ import { describe, expect, it } from "vitest";
 import { fileURLToPath } from "node:url";
 import sharp from "sharp";
 
-import { LAYER_MEAN_RGB, layerMeanInverse } from "../../src/game/terrainUniforms.js";
+import "../../src/sim/passes/index.js";
+import { LAYER_MEAN_RGB, layerMeanInverse } from "@csarkosh/engine/game/terrainUniforms";
 
 /**
  * The terrain's fragment stage divides each ground layer's texel by that layer's own

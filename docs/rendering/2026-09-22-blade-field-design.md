@@ -53,8 +53,8 @@ any sim or level-id change; GPU-driven placement; trampling memory; flowers as a
 
 | File | Role |
 | --- | --- |
-| `client/src/game/bladeField.ts` (new, Babylon-free) | The near-field lattice walk: cells within the reach, each with its gate strength, terrain sample, trail distance, character and hash; tier membership with hand-off duplication; a memoising collector on its own 1 m rebuild cadence. |
-| `client/src/game/bladeClump.ts` | Grows from one clump to a table of characters × tiers: `bladeClumpGeometry(character, tier)`, the tip features (seed head, flower head, leaf), the per-tier blade counts by quality tier, `bladeAlive` with the grow-in. |
+| `engine/src/game/bladeField.ts` (new, Babylon-free) | The near-field lattice walk: cells within the reach, each with its gate strength, terrain sample, trail distance, character and hash; tier membership with hand-off duplication; a memoising collector on its own 1 m rebuild cadence. |
+| `engine/src/game/bladeClump.ts` | Grows from one clump to a table of characters × tiers: `bladeClumpGeometry(character, tier)`, the tip features (seed head, flower head, leaf), the per-tier blade counts by quality tier, `bladeAlive` with the grow-in. |
 | `client/src/game/bladeMeshes.ts` (new) | The Babylon shell: three tier meshes per character set, one material per tier, the buckets, the fill from the field, dispose. Split out of `clutterMeshes.ts`, which loses its blade bucket and keeps the cards. |
 | `client/src/game/clutterMeshes.ts`, `clutterField.ts` | Remove the blade bucket, `createBladeMesh`, the `blades` list, `bladeReach`, `BLADE_RADIUS` and `BLADE_PAD` (the field owns placement now); the meadow near card bucket is not filled on tiers that draw blades; the grass class's near cards take an in-band at the outer hand-off. |
 | `client/src/game/foliagePlugin.ts`, `shaders/foliage.vertex.fx`, `foliageWorldPos.vertex.fx` | `foliageEdges` becomes four edges for the blades profile (grow-in start/end, collapse start/end); the collapse multiplies a grow-in term; the strength-driven per-blade hiding. |

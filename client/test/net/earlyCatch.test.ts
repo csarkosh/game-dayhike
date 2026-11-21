@@ -1,6 +1,6 @@
 import { describe, it, expect } from "vitest";
-import { createTelemetry, installErrorCapture, type EarlyCatch, type TelemetryDeps } from "../../src/net/telemetry.js";
-import { markedProgress, type Stage } from "../../src/game/loadProgress.js";
+import { createTelemetry, installErrorCapture, type EarlyCatch, type TelemetryDeps } from "@csarkosh/engine/net/telemetry";
+import { markedProgress, type Stage } from "@csarkosh/engine/game/loadProgress";
 
 function deps() {
   const sent: { events: Record<string, unknown>[] }[] = [];

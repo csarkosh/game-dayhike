@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import "../../../src/sim/passes/index.js";
 import { WING_AMP_AT, WING_COLOURWAY_AT, WING_PHASE_AT, WING_WGSL, wingPlugin } from "../../../src/game/lite/wingPlugin.js";
 import { FRAME_BLOCK, inFrameBlock } from "../../../src/game/lite/frameBlock.js";
 import { babylonText } from "../../helpers/babylonFixture.js";

@@ -1,7 +1,7 @@
 import { describe, it, expect, vi } from "vitest";
 import { sampleSource } from "../../src/admin/sample.js";
 import { trailOf } from "../../src/admin/timeline.js";
-import { LOSS_ENDED_LINE } from "../../src/game/lossBound.js";
+import { LOSS_ENDED_LINE } from "@csarkosh/engine/game/lossBound";
 import type { DrawableTrail } from "../../src/admin/trail.js";
 
 // A trail of three nodes up a straight stem: enough for the sample to walk sessions on.

@@ -3,13 +3,13 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import "../../src/sim/passes/index.js";
 import { WORLD_PREP_TIMEOUT_MS, sceneLine, startWorldPrep, worldPrepLine, type WorldPrepOutcome } from "../../src/game/worldPrep.js";
 import type { PreparedScene } from "../../src/game/preparedScene.js";
-import type { QualityTier } from "../../src/game/quality.js";
+import type { QualityTier } from "@csarkosh/engine/game/quality";
 import type { WorldPrepReply } from "../../src/game/world.worker.js";
-import { installPassHash, passHash, passHashCachedFor, passHashKey } from "../../src/sim/forest.js";
-import { bowlFor, type Bowl } from "../../src/sim/olympic.js";
-import { generateChunk } from "../../src/sim/chunk.js";
-import { createChunkGrid } from "../../src/sim/chunkGrid.js";
-import { DEFAULT_TERRAIN_VARIANT, setActiveTerrainVariant, terrainVariant } from "../../src/sim/terrain.js";
+import { installPassHash, passHash, passHashCachedFor, passHashKey } from "@csarkosh/engine/sim/forest";
+import { bowlFor, type Bowl } from "../../src/sim/mountain.js";
+import { generateChunk } from "@csarkosh/engine/sim/chunk";
+import { createChunkGrid } from "@csarkosh/engine/sim/chunkGrid";
+import { DEFAULT_TERRAIN_VARIANT, setActiveTerrainVariant, terrainVariant } from "@csarkosh/engine/sim/terrain";
 import { timeLimit } from "../helpers/timeLimit.js";
 
 /** A Worker that records what it is sent and whether it was ended; the test answers for it. */
@@ -44,7 +44,7 @@ class FakeWorker {
 async function bowlFromAnotherSim(seed: number): Promise<Bowl> {
   vi.resetModules();
   await import("../../src/sim/passes/index.js");
-  const other = await import("../../src/sim/olympic.js");
+  const other = await import("../../src/sim/mountain.js");
   expect(other.bowlFor).not.toBe(bowlFor);
   return structuredClone(other.bowlFor(seed));
 }

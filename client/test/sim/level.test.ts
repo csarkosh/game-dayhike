@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { parseLevel, collisionBoxes } from "../../src/sim/level.js";
+import { parseLevel, collisionBoxes } from "@csarkosh/engine/sim/level";
 import sandbox01 from "../../levels/sandbox01.json" with { type: "json" };
 
 const valid = {

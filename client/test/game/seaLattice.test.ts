@@ -1,17 +1,18 @@
 import { describe, expect, it } from "vitest";
-import "../../src/sim/olympic.js";
-import { setActiveTerrainVariant } from "../../src/sim/terrain.js";
-import { HOLE_CELLS } from "../../src/game/clipmap.js";
-import { coastProfilesFor } from "../../src/game/oceanTables.js";
+import "../../src/sim/passes/index.js";
+import "@csarkosh/engine/sim/olympic";
+import { setActiveTerrainVariant } from "@csarkosh/engine/sim/terrain";
+import { HOLE_CELLS } from "@csarkosh/engine/game/clipmap";
+import { coastProfilesFor } from "@csarkosh/engine/game/oceanTables";
 import {
   SEA_HOLE_LOW, SEA_RING_FLOATS, SEA_SIDE, seaBedDepths, seaLattice, seaRingRecords, seaVertexAt, seaWetBounds, seaWetRun, type SeaVertex,
-} from "../../src/game/seaLattice.js";
-import { seedFromToken } from "../../src/game/seed.js";
-import { SWASH_FACE_LIFT_M } from "../../src/game/swashRunUp.js";
+} from "@csarkosh/engine/game/seaLattice";
+import { seedFromToken } from "@csarkosh/engine/game/seed";
+import { SWASH_FACE_LIFT_M } from "@csarkosh/engine/game/swashRunUp";
 import {
   WATER_RING_CELLS, WATER_RING_COUNT, createWaterRingSamples, seaFaceZ, updateWaterRingSamples, waterHoleCellsFor, waterRingGeometry, wetBounds,
   type WaterRingSamples,
-} from "../../src/game/water.js";
+} from "@csarkosh/engine/game/water";
 import { timeLimit } from "../helpers/timeLimit.js";
 
 setActiveTerrainVariant("olympic");

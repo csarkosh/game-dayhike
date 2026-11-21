@@ -17,28 +17,27 @@
 import type { EnemyState, PlayerState, Vec3 } from "./types.js";
 import { AiState, Button, Outcome, Phase, cloneVec3 } from "./types.js";
 import type { World } from "./world.js";
-import type { TrailGraph, TrailNode } from "./trail.js";
-import { nearestTrailNode } from "./trail.js";
-import { route } from "./trailRoute.js";
+import type { TrailGraph, TrailNode } from "@csarkosh/engine/sim/trail";
+import { nearestTrailNode } from "@csarkosh/engine/sim/trail";
+import { route } from "@csarkosh/engine/sim/trailRoute";
 import { onWay } from "./chaseLine.js";
 import { wayPoint, wayProject } from "./wayDown.js";
 import { causeOfDeath } from "./deathCause.js";
 import { decided, returnsOn } from "./checkpoint.js";
-import { stepMovement } from "./movement.js";
-import { aimDirection } from "./view.js";
+import { stepMovement } from "@csarkosh/engine/sim/movement";
+import { aimDirection } from "@csarkosh/engine/sim/view";
 import { STUCK_EPSILON, STUCK_SECONDS, UNSTICK_SECONDS, hasLineOfSight } from "./ai.js";
 import { containInLakes, isOnCorridor, roadOffset, waterLevelAt } from "./containment.js";
-import { ROAD_CORRIDOR_HALF } from "./road.js";
+import { ROAD_CORRIDOR_HALF } from "@csarkosh/engine/sim/road";
 import {
-  ENEMY_HALF,
-  ENEMY_MAX_HEALTH,
   EPSILON,
   PLAYER_EYE_OFFSET,
   PLAYER_HALF,
   SIM_TICK_HZ,
   SPRINT_SPEED,
   WALK_SPEED,
-} from "./constants.js";
+} from "@csarkosh/engine/sim/constants";
+import { ENEMY_HALF, ENEMY_MAX_HEALTH } from "./dayhikeConstants.js";
 
 /** Hunting, m/s: a touch under SPRINT_SPEED 7, so walking, stopping or turning back is what closes the gap. */
 export const HOLLOW_HUNT_SPEED = 6.3;

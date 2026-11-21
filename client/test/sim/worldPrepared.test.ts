@@ -2,30 +2,30 @@ import { describe, expect, it, vi } from "vitest";
 import { timeLimit } from "../helpers/timeLimit.js";
 
 type Sim = {
-  terrain: typeof import("../../src/sim/terrain.js");
-  forest: typeof import("../../src/sim/forest.js");
-  olympic: typeof import("../../src/sim/olympic.js");
+  terrain: typeof import("@csarkosh/engine/sim/terrain");
+  forest: typeof import("@csarkosh/engine/sim/forest");
+  olympic: typeof import("../../src/sim/mountain.js");
   spawn: typeof import("../../src/sim/spawn.js");
   world: typeof import("../../src/sim/world.js");
-  chunk: typeof import("../../src/sim/chunk.js");
-  chunkGrid: typeof import("../../src/sim/chunkGrid.js");
-  constants: typeof import("../../src/sim/constants.js");
-  trailRoute: typeof import("../../src/sim/trailRoute.js");
+  chunk: typeof import("@csarkosh/engine/sim/chunk");
+  chunkGrid: typeof import("@csarkosh/engine/sim/chunkGrid");
+  constants: typeof import("@csarkosh/engine/sim/constants");
+  trailRoute: typeof import("@csarkosh/engine/sim/trailRoute");
 };
 /** A sim of its own, as another thread's is: its module caches are empty. */
 async function freshSim(): Promise<Sim> {
   vi.resetModules();
   await import("../../src/sim/passes/index.js");
   return {
-    terrain: await import("../../src/sim/terrain.js"),
-    forest: await import("../../src/sim/forest.js"),
-    olympic: await import("../../src/sim/olympic.js"),
+    terrain: await import("@csarkosh/engine/sim/terrain"),
+    forest: await import("@csarkosh/engine/sim/forest"),
+    olympic: await import("../../src/sim/mountain.js"),
     spawn: await import("../../src/sim/spawn.js"),
     world: await import("../../src/sim/world.js"),
-    chunk: await import("../../src/sim/chunk.js"),
-    chunkGrid: await import("../../src/sim/chunkGrid.js"),
-    constants: await import("../../src/sim/constants.js"),
-    trailRoute: await import("../../src/sim/trailRoute.js"),
+    chunk: await import("@csarkosh/engine/sim/chunk"),
+    chunkGrid: await import("@csarkosh/engine/sim/chunkGrid"),
+    constants: await import("@csarkosh/engine/sim/constants"),
+    trailRoute: await import("@csarkosh/engine/sim/trailRoute"),
   };
 }
 const SEED = 627994160;

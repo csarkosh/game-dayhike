@@ -1,8 +1,8 @@
 import { describe, expect, it } from "vitest";
 import { createWorld, spawnPlayer, tickWorld } from "../../src/sim/world.js";
-import { parseLevel } from "../../src/sim/level.js";
+import { parseLevel } from "@csarkosh/engine/sim/level";
 import { AiState, DeathCause } from "../../src/sim/types.js";
-import { ENEMY_HALF } from "../../src/sim/constants.js";
+import { ENEMY_HALF } from "../../src/sim/dayhikeConstants.js";
 import { spawnHollow } from "../../src/sim/hollow.js";
 import { INTO_COS, LOOKED_STARE, OFF_TRAIL_M, STILL_SPEED, causeOfDeath } from "../../src/sim/deathCause.js";
 import { OFF_TRAIL_FROM_M } from "../../src/sim/haunt.js";

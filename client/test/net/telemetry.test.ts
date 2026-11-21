@@ -19,7 +19,7 @@ import {
   worldVersionOf,
   type Fields,
   type TelemetryDeps,
-} from "../../src/net/telemetry.js";
+} from "@csarkosh/engine/net/telemetry";
 
 type Batch = { v: number; st: number; events: ({ n: string; t: number } & Fields)[] } & Fields;
 

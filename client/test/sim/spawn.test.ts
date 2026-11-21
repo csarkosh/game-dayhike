@@ -1,24 +1,25 @@
 import { afterEach, beforeEach, describe, it, expect } from "vitest";
 import "../../src/sim/passes/index.js";
-import { createChunkGrid } from "../../src/sim/chunkGrid.js";
+import { createChunkGrid } from "@csarkosh/engine/sim/chunkGrid";
 import { groundSpawn, ringSample, spiralSpawn, trailheadSpawn, trailheadStart } from "../../src/sim/spawn.js";
 import {
   DEFAULT_TERRAIN_VARIANT,
   elevationSampleAt,
   setActiveTerrainVariant,
   terrainVariant,
-} from "../../src/sim/terrain.js";
-import "../../src/sim/olympic.js";
-import { depenetrate } from "../../src/sim/collision.js";
-import { ENEMY_HALF, ENEMY_MIN_SPAWN_DISTANCE, PLAYER_HALF } from "../../src/sim/constants.js";
+} from "@csarkosh/engine/sim/terrain";
+import "@csarkosh/engine/sim/olympic";
+import { depenetrate } from "@csarkosh/engine/sim/collision";
+import { PLAYER_HALF } from "@csarkosh/engine/sim/constants";
+import { ENEMY_HALF, ENEMY_MIN_SPAWN_DISTANCE } from "../../src/sim/dayhikeConstants.js";
 import { firstPondWorld } from "./helpers/lakes.js";
-import { rayToShore } from "../../src/sim/lakeShape.js";
-import type { BoxProvider } from "../../src/sim/boxSource.js";
+import { rayToShore } from "@csarkosh/engine/sim/lakeShape";
+import type { BoxProvider } from "@csarkosh/engine/sim/boxSource";
 import type { Vec3 } from "../../src/sim/types.js";
 import { timeLimit } from "../helpers/timeLimit.js";
 import { graph } from "./helpers/stemGraph.js";
-import { seedFromToken } from "../../src/game/seed.js";
-import { createForest } from "../../src/sim/forest.js";
+import { seedFromToken } from "@csarkosh/engine/game/seed";
+import { createForest } from "@csarkosh/engine/sim/forest";
 import { createForestWorld, spawnPlayer } from "../../src/sim/world.js";
 
 const SEED = 0x5a4a7;

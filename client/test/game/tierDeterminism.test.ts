@@ -5,14 +5,14 @@ import { fileURLToPath } from "node:url";
 // The terrain field lives behind the variant registry; a test that builds a
 // forest without `app.ts` has to register the passes itself.
 import "../../src/sim/passes/index.js";
-import { PLAYER_EYE_OFFSET } from "../../src/sim/constants.js";
-import { createForest } from "../../src/sim/forest.js";
+import { PLAYER_EYE_OFFSET } from "@csarkosh/engine/sim/constants";
+import { createForest } from "@csarkosh/engine/sim/forest";
 import { createForestWorld, serializeWorldState, spawnPlayer, tickWorld } from "../../src/sim/world.js";
-import type { Level } from "../../src/sim/level.js";
+import type { Level } from "@csarkosh/engine/sim/level";
 import { createEntityPoses, type EntityModels } from "../../src/game/entityPoses.js";
-import { GAME_FOV } from "../../src/game/gameLens.js";
+import { GAME_FOV } from "@csarkosh/engine/game/gameLens";
 import { createHikeRenderer } from "../../src/game/hikeRenderer.js";
-import type { QualityTier } from "../../src/game/quality.js";
+import type { QualityTier } from "@csarkosh/engine/game/quality";
 import { bodiesInShot } from "../../src/game/shotBodies.js";
 import { createPlayerSlots } from "../../src/game/waterLifeInputs.js";
 import { createWildlifeInputs } from "../../src/game/wildlifeInputs.js";

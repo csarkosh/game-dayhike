@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
-import { SKY_DOME_SIZE } from "../../src/game/skyDomeParams.js";
-import { SKY_PROBE_FACES, SKY_PROBE_SIZE, probeDomeDirection, probeTexelDirection } from "../../src/game/skyProbeParams.js";
+import { SKY_DOME_SIZE } from "@csarkosh/engine/game/skyDomeParams";
+import { SKY_PROBE_FACES, SKY_PROBE_SIZE, probeDomeDirection, probeTexelDirection } from "@csarkosh/engine/game/skyProbeParams";
 
 /**
  * Where a cube map is read for direction `d`, by the rule every GPU reads

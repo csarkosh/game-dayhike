@@ -1,10 +1,11 @@
 import { describe, expect, it } from "vitest";
-import { MAX_PLAYERS } from "../../src/sim/constants.js";
+import "../../src/sim/passes/index.js";
+import { MAX_PLAYERS } from "@csarkosh/engine/sim/constants";
 import {
   HEAD_ROW0, MIDGE_AMPS, MIDGE_BLOCK_MAX, MIDGE_SWARMS_MAX, MIDGE_TIER_MAX, SWARM_ROW_FLOATS,
   countAt, createHeads, midgeHash, midgeOffset, packSwarm, shareBudget, stepHeads, swarmFrame,
   type HeadSwarm, type SwarmFrame,
-} from "../../src/game/midgeMotion.js";
+} from "@csarkosh/engine/game/midgeMotion";
 
 const TAU = 2 * Math.PI;
 const frame = (): SwarmFrame => ({ cx: 0, cy: 0, cz: 0, swirl: 0, flatten: 0 });

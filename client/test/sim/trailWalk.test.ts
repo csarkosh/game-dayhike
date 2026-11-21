@@ -1,11 +1,11 @@
 import { describe, it, expect } from "vitest";
 import "../../src/sim/passes/index.js";
-import { createForest } from "../../src/sim/forest.js";
+import { createForest } from "@csarkosh/engine/sim/forest";
 import { createForestWorld, spawnPlayer, tickWorld } from "../../src/sim/world.js";
-import { bowlFor } from "../../src/sim/olympic.js";
-import { elevationSampleAt, setActiveTerrainVariant, DEFAULT_TERRAIN_VARIANT } from "../../src/sim/terrain.js";
-import { PLAYER_HALF } from "../../src/sim/constants.js";
-import { MAX_WALKABLE_GRADIENT } from "../../src/sim/ground.js";
+import { bowlFor } from "../../src/sim/mountain.js";
+import { elevationSampleAt, setActiveTerrainVariant, DEFAULT_TERRAIN_VARIANT } from "@csarkosh/engine/sim/terrain";
+import { PLAYER_HALF } from "@csarkosh/engine/sim/constants";
+import { MAX_WALKABLE_GRADIENT } from "@csarkosh/engine/sim/ground";
 import { Phase, type InputCommand } from "../../src/sim/types.js";
 import { timeLimit } from "../helpers/timeLimit.js";
 

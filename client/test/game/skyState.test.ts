@@ -1,19 +1,19 @@
 import { describe, it, expect, beforeAll, vi } from "vitest";
-import { desaturateRgb, luma, type Rgb } from "../../src/game/colour.js";
-import { MOONLIGHT, NIGHT_SKY, sunPositionAt, type Vec3 } from "../../src/game/sky.js";
-import { AMBIENT_DESAT, WEATHER_PRESETS, airColourUnder, type WeatherParams } from "../../src/game/weather.js";
+import { desaturateRgb, luma, type Rgb } from "@csarkosh/engine/game/colour";
+import { MOONLIGHT, NIGHT_SKY, sunPositionAt, type Vec3 } from "@csarkosh/engine/game/sky";
+import { AMBIENT_DESAT, WEATHER_PRESETS, airColourUnder, type WeatherParams } from "@csarkosh/engine/game/weather";
 import {
   RING_ELEVATION_DEG, SKY_EYE_KM, SKY_GROUND_KM, SLICE_ALTITUDES_DEG, SLICE_AZIMUTHS, SLICE_ELEVATIONS, rowOfElevation,
   type SkySlice,
-} from "../../src/game/skyModel.js";
-import { buildSkyTableSync, createSkyTable, NOON_ALTITUDE_DEG, sliceBracket, type SkyTable } from "../../src/game/skyTable.js";
+} from "@csarkosh/engine/game/skyModel";
+import { buildSkyTableSync, createSkyTable, NOON_ALTITUDE_DEG, sliceBracket, type SkyTable } from "@csarkosh/engine/game/skyTable";
 import {
   DECK_TAU, FILL_DAY_LUMA, GLOW_FALLOFF_FLOOR, GLOW_FIT_FROM_DEG, GLOW_FIT_TO_DEG, GLOW_FULL_CONTRAST, GLOW_MIN_CONTRAST,
   GLOW_POWER_MAX, GLOW_POWER_MIN, MIST_HORIZON,
   NIGHT_YA_DAY, NIGHT_YA_NIGHT, SKY_GAMMA, SKY_IBL_SCALE, SKY_NOON_ZENITH_LUMINANCE, SKY_Y_FLOOR, SUN_DISC_CAPTURE_MAX, SUN_DISC_COS,
   SUN_DISC_RADIANCE, SUN_DISC_VIEW_MAX, adaptationFor, captureEncode, deckRadiance, domeRadiance, fitGlow, levelLight,
   nightFactor, skyScale, skyStateFor, skyTableUv, sunUpFor, type SkyState,
-} from "../../src/game/skyState.js";
+} from "@csarkosh/engine/game/skyState";
 import { skyFixture, SKY_FIXTURE_HOURS } from "./helpers/skyFixture.js";
 import { timeLimit } from "../helpers/timeLimit.js";
 

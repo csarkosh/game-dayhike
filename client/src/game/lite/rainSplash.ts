@@ -33,22 +33,22 @@ import {
   type EngineContext, type Mesh, type PluginUniformBlock, type SceneContext, type ShaderMaterial,
 } from "@babylonjs/lite";
 import type { AtmosphereRecord } from "../atmosphereParams.js";
-import type { QualityTier } from "../quality.js";
+import type { QualityTier } from "@csarkosh/engine/game/quality";
 import type { RainLamp } from "../rainField.js";
-import { RAIN_MAP, SPLASH, SPLASH_CYCLES } from "../rainParams.js";
+import { RAIN_MAP, SPLASH, SPLASH_CYCLES } from "@csarkosh/engine/game/rainParams";
 import { emptySplashStageUniforms, splashInstances, splashStageUniforms, splashUniforms, splashesDrawn } from "../splashField.js";
-import type { WeatherParams } from "../weather.js";
-import { DISPLAY_CURVE_WGSL, onColourPath } from "./displayCurve.js";
-import { SEE_THROUGH_ORDER } from "./drawOrder.js";
+import type { WeatherParams } from "@csarkosh/engine/game/weather";
+import { DISPLAY_CURVE_WGSL, onColourPath } from "@csarkosh/engine/game/lite/displayCurve";
+import { SEE_THROUGH_ORDER } from "@csarkosh/engine/game/lite/drawOrder";
 import { wgslFloat } from "./forestPlugins.js";
 import { FRAME_CONTRAST_NAME, FRAME_EXPOSURE_NAME, stageClocks, stageOwn, stageReads, type StageRecord } from "./frameBlock.js";
-import type { FrameUploads } from "./frameUploads.js";
+import type { FrameUploads } from "@csarkosh/engine/game/lite/frameUploads";
 import type { RainCover } from "./rain.js";
-import { shaderUniformDecls, shaderUniformWriter } from "./shaderUniforms.js";
+import { shaderUniformDecls, shaderUniformWriter } from "@csarkosh/engine/game/lite/shaderUniforms";
 import varyingsSource from "../shaders/rainSplash/varyings.wgsl?raw";
 import rainSplashVertexSource from "../shaders/rainSplash/rainSplash.vertex.wgsl?raw";
 import rainSplashFragmentSource from "../shaders/rainSplash/rainSplash.fragment.wgsl?raw";
-import { fill, wgsl } from "../shaders/shaderText.js";
+import { fill, wgsl } from "@csarkosh/engine/game/shaders/shaderText";
 
 const f = wgslFloat;
 

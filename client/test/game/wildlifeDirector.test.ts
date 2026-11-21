@@ -1,17 +1,18 @@
 import { describe, expect, it, vi } from "vitest";
-import { hash3 } from "../../src/sim/field.js";
-import { BUTTERFLY_CUE_SPEED, PHASE_CUE, PHASE_REST } from "../../src/game/wildlifeBehaviour.js";
+import "../../src/sim/passes/index.js";
+import { hash3 } from "@csarkosh/engine/sim/field";
+import { BUTTERFLY_CUE_SPEED, PHASE_CUE, PHASE_REST } from "@csarkosh/engine/game/wildlifeBehaviour";
 import {
   SPECIES_BUTTERFLY, SPECIES_COUNT, SPECIES_DEER, SPECIES_EAGLE, SPECIES_ELK, SPECIES_GULL, SPECIES_RABBIT,
   SPECIES_RAVEN_PAIR, SPECIES_RAVEN_ROOST, SPECIES_SQUIRREL, unitId, WILDLIFE_RADIUS, WILDLIFE_SPREAD,
-} from "../../src/game/wildlifeField.js";
+} from "@csarkosh/engine/game/wildlifeField";
 import {
   CUE_PATIENCE, DIRECTOR_ID_BASE, GAP, GAP_CEILING, HIDE_RANGE, HOLLOW_QUIET, LEAD, NIGHT_RELAX, NOTICE, PLACE_BODY_H, RECYCLE,
   REMOVE_FACTOR, REMOVE_SECONDS, SIGHTING_DWELL, SMALL_TO_LARGE, STAGING_COVER, STAGING_CROSS, STAGING_TREELINE, STILL_RELAX, STILL_SECONDS, VIEW_MARGIN,
   createDirectorState, hideRange, inCone, lineOfSight, observe, onScreen, pickSpecies, placementValid, relaxFor,
   stageCue, stagingFor, step, type Candidate, type CueEvent, type DirectorState, type MatchState,
   type SpeciesPresence, type View,
-} from "../../src/game/wildlifeDirector.js";
+} from "@csarkosh/engine/game/wildlifeDirector";
 
 const flat = (): number => 0;
 // A wall across x in (20, 24]: the closed upper bound puts the 30 m ray's

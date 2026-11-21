@@ -1,6 +1,6 @@
-import { sunPositionAt } from "../../../src/game/sky.js";
-import { SLICE_ALTITUDES_DEG } from "../../../src/game/skyModel.js";
-import { buildSkyTableSync, NOON_ALTITUDE_DEG, sliceBracket, type SkyTable } from "../../../src/game/skyTable.js";
+import { sunPositionAt } from "@csarkosh/engine/game/sky";
+import { SLICE_ALTITUDES_DEG } from "@csarkosh/engine/game/skyModel";
+import { buildSkyTableSync, NOON_ALTITUDE_DEG, sliceBracket, type SkyTable } from "@csarkosh/engine/game/skyTable";
 
 /** The hours the suite's sky tests read: night, sunrise, the morning, noon,
  * the afternoon, the run through sunset and twilight, and night again. */

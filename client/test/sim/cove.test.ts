@@ -1,11 +1,12 @@
 import { describe, expect, it } from "vitest";
-import "../../src/sim/olympic.js";
+import "../../src/sim/passes/index.js";
+import "@csarkosh/engine/sim/olympic";
 import {
   coveFor, coveProfileD, COVE_WIDTH_MIN, COVE_WIDTH_MAX, COVE_FACE_GRADE, COVE_BED_GRADE, COVE_CREST,
   COVE_BACK_FADE, COVE_END_BLEND, HEAD_HEIGHT_MIN, HEAD_HEIGHT_MAX, HEAD_REACH_MIN, HEAD_REACH_MAX, HEAD_HALF_WIDTH,
   roadFrameAt,
-} from "../../src/sim/olympic.js";
-import { ROAD_CORRIDOR_HALF } from "../../src/sim/road.js";
+} from "@csarkosh/engine/sim/olympic";
+import { ROAD_CORRIDOR_HALF } from "@csarkosh/engine/sim/road";
 import { TRAIL_Z_ANCHOR } from "../../src/sim/bowl.js";
 import { checkDerivatives, TOL_RATIO, variantOrThrow } from "./helpers/derivatives.js";
 import { timeLimit } from "../helpers/timeLimit.js";

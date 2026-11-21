@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
-import { DRAW_ORDER } from "../../../src/game/lite/drawOrder.js";
+import "../../../src/sim/passes/index.js";
+import { DRAW_ORDER } from "@csarkosh/engine/game/lite/drawOrder";
 import { patchPlace } from "../../../src/game/lite/terrainMeshes.js";
 
 describe("the terrain's meshes on Babylon Lite", () => {

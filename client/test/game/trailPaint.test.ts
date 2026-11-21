@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import "../../src/sim/passes/index.js";
 import {
   TRAIL_PAINT_BUCKET, TRAIL_PAINT_BUCKET_MAX, TRAIL_PAINT_MAX_SEGMENTS, TRAIL_PAINT_GRID,
   TRAIL_PAINT_INDEX_ROW, TRAIL_PAINT_TABLE_ROWS,
@@ -6,9 +7,9 @@ import {
   trailSegments, buildTrailTable, bucketOf, bucketTexel, trailNearest, trailBand, bankRise, trailBankBand,
   nodeWidths, trailPaintAt,
   type Segment,
-} from "../../src/game/trailPaint.js";
-import { TRAIL_BED_HALF, TRAIL_CORRIDOR_HALF, type TrailGraph } from "../../src/sim/trail.js";
-import { homeDistances, forksOf } from "../../src/sim/trailRoute.js";
+} from "@csarkosh/engine/game/trailPaint";
+import { TRAIL_BED_HALF, TRAIL_CORRIDOR_HALF, type TrailGraph } from "@csarkosh/engine/sim/trail";
+import { homeDistances, forksOf } from "@csarkosh/engine/sim/trailRoute";
 import {
   TRAIL_JUNCTION_W, TRAIL_CORE_HALF,
   TRAIL_CORE_GAIN, TRAIL_MARGIN_GAIN, TRAIL_BENCH_SHADE,
@@ -16,7 +17,7 @@ import {
   TRAIL_BED_EARTH,
   TRAIL_WASH_DARK_OPEN, TRAIL_WASH_DARK_LITTER, TRAIL_BED_FLOOR,
   trailWear, trailEdgeNoise, trailPatches,
-} from "../../src/game/trailBenchParams.js";
+} from "@csarkosh/engine/game/trailBenchParams";
 
 const BED = TRAIL_BED_HALF;
 /** Two segments: one along x, one along z, meeting at (100, 0). */

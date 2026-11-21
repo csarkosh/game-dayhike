@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   HIGH_PLANT_BEARGRASS, HIGH_PLANT_COUNT, HIGH_PLANT_HEATHER, HIGH_PLANT_LUPINE, HIGH_PLANT_TUSSOCK, highPlantGeometry,
-} from "../../src/game/highPlantClump.js";
+} from "@csarkosh/engine/game/highPlantClump";
 
 function top(variant: number, lod: number): number {
   const g = highPlantGeometry(variant, lod);

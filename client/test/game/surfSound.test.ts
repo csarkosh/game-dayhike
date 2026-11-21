@@ -1,12 +1,13 @@
 import { describe, expect, it } from "vitest";
+import "../../src/sim/passes/index.js";
 import {
   SILENT_SURF_SOUND, SURF_ENVELOPE_S, SURF_EVENTS, SURF_RANGE_M, createSurfSound, fillSurfSound, type SurfSound,
-} from "../../src/game/surfSound.js";
-import { LIP_COLUMNS, LIP_SLOTS } from "../../src/game/oceanBreaker.js";
-import { SwashTable, type SwashCove } from "../../src/game/swashTable.js";
-import { COVE_FACE_GRADE, COVE_TOE_DEPTH, coveFor } from "../../src/sim/olympic.js";
-import { coastRead, oceanFieldFor, swellPhases } from "../../src/game/oceanWaves.js";
-import { seedFromToken } from "../../src/game/seed.js";
+} from "@csarkosh/engine/game/surfSound";
+import { LIP_COLUMNS, LIP_SLOTS } from "@csarkosh/engine/game/oceanBreaker";
+import { SwashTable, type SwashCove } from "@csarkosh/engine/game/swashTable";
+import { COVE_FACE_GRADE, COVE_TOE_DEPTH, coveFor } from "@csarkosh/engine/sim/olympic";
+import { coastRead, oceanFieldFor, swellPhases } from "@csarkosh/engine/game/oceanWaves";
+import { seedFromToken } from "@csarkosh/engine/game/seed";
 import { timeLimit } from "../helpers/timeLimit.js";
 
 /** A cove 300 m wide about z = 100, its waterline on x = 500 + 0.1·z, the toe 24 m seaward on a 1:12 face. */

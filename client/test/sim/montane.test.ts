@@ -1,7 +1,8 @@
 import { describe, it, expect } from "vitest";
-import "../../src/sim/montane.js";
-import { PEAK_HEIGHT, MONTANE_TUNABLES } from "../../src/sim/montane.js";
-import { terrainVariant } from "../../src/sim/terrain.js";
+import "../../src/sim/passes/index.js";
+import "@csarkosh/engine/sim/montane";
+import { PEAK_HEIGHT, MONTANE_TUNABLES } from "@csarkosh/engine/sim/montane";
+import { terrainVariant } from "@csarkosh/engine/sim/terrain";
 import {
   checkDerivatives,
   DERIV_SEED as SEED,
@@ -104,7 +105,7 @@ describe("variant montane", () => {
   });
 });
 
-import { montaneSample, MONTANE_VARIANT_TUNABLES } from "../../src/sim/montane.js";
+import { montaneSample, MONTANE_VARIANT_TUNABLES } from "@csarkosh/engine/sim/montane";
 
 describe("montaneSample export", () => {
   it("is bit-identical to the registered montane variant", () => {
@@ -123,7 +124,7 @@ describe("montaneSample export", () => {
   });
 });
 
-import { denseSample, DENSE_TUNABLES, DENSE_VARIANT_TUNABLES } from "../../src/sim/montane.js";
+import { denseSample, DENSE_TUNABLES, DENSE_VARIANT_TUNABLES } from "@csarkosh/engine/sim/montane";
 
 describe("variant dense", () => {
   it("declares the amended config: 1792 wavelength, PEAK_HEIGHT 1100, floor 0, crisper ridge/erosion/talus, rest montane", () => {

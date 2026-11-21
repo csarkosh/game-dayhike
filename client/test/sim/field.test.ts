@@ -1,6 +1,6 @@
 import { describe, it, expect } from "vitest";
-import { fbm2, hash2, hash3, passSeed, valueNoise2 } from "../../src/sim/field.js";
-import { fbm2d, gradientNoise2 } from "../../src/sim/field.js";
+import { fbm2, hash2, hash3, passSeed, valueNoise2 } from "@csarkosh/engine/sim/field";
+import { fbm2d, gradientNoise2 } from "@csarkosh/engine/sim/field";
 
 describe("passSeed", () => {
   it("is stable for the same inputs", () => {

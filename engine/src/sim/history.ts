@@ -1,5 +1,5 @@
-import type { Vec3 } from "./types.js";
-import { cloneVec3 } from "./types.js";
+import type { Vec3 } from "./core.js";
+import { cloneVec3 } from "./core.js";
 import { LAG_COMP_HISTORY_TICKS } from "./constants.js";
 
 type Frame = { tick: number; positions: Map<number, Vec3> };

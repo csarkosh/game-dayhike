@@ -1,6 +1,6 @@
 import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
-import { seedFromToken } from "../../src/game/seed.js";
+import { seedFromToken } from "@csarkosh/engine/game/seed";
 import { worldInputs } from "../../src/game/worldInputs.js";
 
 describe("the seed and the terrain a hike's world is made from", () => {

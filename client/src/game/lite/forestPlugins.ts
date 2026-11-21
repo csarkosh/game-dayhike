@@ -46,22 +46,22 @@
  * (`impostorBakePlugin`).
  */
 import type { MaterialPlugin, PluginUniformBlock, Texture2D } from "@babylonjs/lite";
-import { BLADE_SOFT } from "../bladeClump.js";
-import { COVER_GREEN, FOLIAGE_ALBEDO_FLOOR } from "../coverAlbedoParams.js";
-import { DEADWOOD_CONTACT, DEADWOOD_CONTACT_BAND, DEADWOOD_LOG_DRAW, DEADWOOD_UP, deadwoodUniforms, emptyDeadwoodUniforms } from "../deadwoodParams.js";
-import { WIDEN_NONE, emptyFadeUniforms, fadeUniforms, type DistanceWiden } from "../distanceFade.js";
+import { BLADE_SOFT } from "@csarkosh/engine/game/bladeClump";
+import { COVER_GREEN, FOLIAGE_ALBEDO_FLOOR } from "@csarkosh/engine/game/coverAlbedoParams";
+import { DEADWOOD_CONTACT, DEADWOOD_CONTACT_BAND, DEADWOOD_LOG_DRAW, DEADWOOD_UP, deadwoodUniforms, emptyDeadwoodUniforms } from "@csarkosh/engine/game/deadwoodParams";
+import { WIDEN_NONE, emptyFadeUniforms, fadeUniforms, type DistanceWiden } from "@csarkosh/engine/game/distanceFade";
 import {
   FOLIAGE_BEND, FOLIAGE_BEND_R, FOLIAGE_CANOPY_SKY, FOLIAGE_CLUMP_CELL, FOLIAGE_CLUMP_LUMA, FOLIAGE_PLAYERS, FOLIAGE_SINK, FOLIAGE_TILT,
   emptyFoliageUniforms, foliageUniforms, type FoliageLook, type FoliageUniforms,
-} from "../foliageUniforms.js";
-import { conformUniforms } from "../groundConform.js";
-import { MOSS_AMOUNT, MOSS_BAND, MOSS_EDGE, MOSS_LUMA, MOSS_ROUGHNESS, MOSS_SIDE, MOSS_SIDE_EDGE, MOSS_TILE, MOSS_TINT } from "../mossParams.js";
-import type { ImpostorBakeMode } from "../impostorBake.js";
-import type { WetUniforms } from "../wetSurface.js";
-import { WIND_K1, WIND_K2, WIND_OMEGA_FLUTTER, WIND_OMEGA_GUST, WIND_OMEGA_GUST2, WIND_RAGGED, WIND_RAGGED_CELL } from "../windParams.js";
+} from "@csarkosh/engine/game/foliageUniforms";
+import { conformUniforms } from "@csarkosh/engine/game/groundConform";
+import { MOSS_AMOUNT, MOSS_BAND, MOSS_EDGE, MOSS_LUMA, MOSS_ROUGHNESS, MOSS_SIDE, MOSS_SIDE_EDGE, MOSS_TILE, MOSS_TINT } from "@csarkosh/engine/game/mossParams";
+import type { ImpostorBakeMode } from "@csarkosh/engine/game/impostorBake";
+import type { WetUniforms } from "@csarkosh/engine/game/wetSurface";
+import { WIND_K1, WIND_K2, WIND_OMEGA_FLUTTER, WIND_OMEGA_GUST, WIND_OMEGA_GUST2, WIND_RAGGED, WIND_RAGGED_CELL } from "@csarkosh/engine/game/windParams";
 import { FADE_ROWS_NAME, frameReads, ownFields, ownValues } from "./frameBlock.js";
-import { uniformFields, writeUniforms, type UniformField, type UniformRecord } from "./pluginUniforms.js";
-import { WET_FIELDS, WET_LIGHTS, WET_WGSL, writeWetUniforms } from "./wetWgsl.js";
+import { uniformFields, writeUniforms, type UniformField, type UniformRecord } from "@csarkosh/engine/game/lite/pluginUniforms";
+import { WET_FIELDS, WET_LIGHTS, WET_WGSL, writeWetUniforms } from "@csarkosh/engine/game/lite/wetWgsl";
 import gustSource from "../shaders/forest/gust.wgsl?raw";
 import mossHashSource from "../shaders/forest/mossHash.wgsl?raw";
 import collapseSource from "../shaders/forest/collapse.wgsl?raw";
@@ -90,7 +90,7 @@ import splitSource from "../shaders/forest/split.wgsl?raw";
 import splitDrySource from "../shaders/forest/splitDry.wgsl?raw";
 import baseColourSource from "../shaders/forest/baseColour.wgsl?raw";
 import bakePicturesSource from "../shaders/forest/bakePictures.wgsl?raw";
-import { fill, wgsl } from "../shaders/shaderText.js";
+import { fill, wgsl } from "@csarkosh/engine/game/shaders/shaderText";
 import directOcclusionSource from "../shaders/forest/directOcclusion.wgsl?raw";
 
 /**

@@ -1,5 +1,5 @@
 import { describe, it, expect, vi } from "vitest";
-import { createDataChannelTransport, parseNetConditions } from "../../src/net/channels.js";
+import { createDataChannelTransport, parseNetConditions } from "@csarkosh/engine/net/channels";
 
 /** Minimal fake standing in for the one RTCDataChannel surface this module touches. */
 function fakeChannel(): RTCDataChannel {

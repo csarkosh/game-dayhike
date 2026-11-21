@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { PHONE_FRAME_MS, createFramePace, type FramePace } from "../../src/game/framePace.js";
+import { PHONE_FRAME_MS, createFramePace, type FramePace } from "@csarkosh/engine/game/framePace";
 
 /** A Pixel 9's jitter in the times its display gives: about a fiftieth of a refresh either way. */
 const jitter = (i: number): number => (((i * 7) % 5) - 2) * 0.065;

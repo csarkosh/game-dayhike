@@ -10,11 +10,11 @@
  * Loads no engine.
  */
 import { CHASE_LIFT, CHASE_TINT, mixPalette, PAINT_FADE_SECONDS, PAINT_OILS, type GradeRecord, type PaintPalette } from "./gradeParams.js";
-import { LENS } from "./lensParams.js";
+import { LENS } from "@csarkosh/engine/game/lensParams";
 import {
   PAINT_SCALE, PAINT_STRENGTH, TAA_BLEND, TAA_CLIP, TAA_SHARPEN, paintTargetSize, paintTexelRadius, taaBlendFor, taaCameraPixels, taaJitter,
   type PostFeatures,
-} from "./postParams.js";
+} from "@csarkosh/engine/game/postParams";
 
 /** How long the lens's strength sits under its floor before the pass is detached. */
 export const LENS_IDLE_S = 1;

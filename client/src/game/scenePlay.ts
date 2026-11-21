@@ -17,7 +17,7 @@
  *
  * Loads no engine.
  */
-import { PLAYER_EYE_OFFSET, PLAYER_HALF } from "../sim/constants.js";
+import { PLAYER_EYE_OFFSET, PLAYER_HALF } from "@csarkosh/engine/sim/constants";
 import { CAR_HALF } from "../sim/trailhead.js";
 import { CATCH_AT_S } from "./carAudio.js";
 import { CAP_SCENE_S, SHOTS, SUMMIT_SCENE_S, capPose, summitShot, type SceneBase, type SceneContext } from "./cutscene.js";

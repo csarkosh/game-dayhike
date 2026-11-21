@@ -1,9 +1,9 @@
 import { describe, expect, it } from "vitest";
-import { FILL_GROUND, FILL_SPECULAR, SHADOW_FLOOR, sceneLightsUnder, sunShadowDarkness, sunTravel } from "../../src/game/sceneLights.js";
-import { sunPositionAt } from "../../src/game/sky.js";
-import { SKY_IBL_SCALE, skyStateFor } from "../../src/game/skyState.js";
-import { AMBIENT_COLLAPSE, WEATHER_PRESETS, ambientCollapseUnder } from "../../src/game/weather.js";
-import { luma } from "../../src/game/colour.js";
+import { FILL_GROUND, FILL_SPECULAR, SHADOW_FLOOR, sceneLightsUnder, sunShadowDarkness, sunTravel } from "@csarkosh/engine/game/sceneLights";
+import { sunPositionAt } from "@csarkosh/engine/game/sky";
+import { SKY_IBL_SCALE, skyStateFor } from "@csarkosh/engine/game/skyState";
+import { AMBIENT_COLLAPSE, WEATHER_PRESETS, ambientCollapseUnder } from "@csarkosh/engine/game/weather";
+import { luma } from "@csarkosh/engine/game/colour";
 import { skyFixture } from "./helpers/skyFixture.js";
 
 const CLEAR = WEATHER_PRESETS.clear;

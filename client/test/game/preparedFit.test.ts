@@ -1,16 +1,16 @@
 import { afterEach, describe, expect, it } from "vitest";
 import "../../src/sim/passes/index.js";
-import { activeTerrainVariantName, setActiveTerrainVariant } from "../../src/sim/terrain.js";
-import { BASE_SPACING_BY_TIER, RING_COUNT, createRingSamples } from "../../src/game/clipmap.js";
-import { WATER_RING_COUNT, createWaterRingSamples, type WaterGeometry } from "../../src/game/water.js";
-import { BED_GRID, bakeBed, createBedGrid } from "../../src/game/bedHeight.js";
-import { oceanFieldFor } from "../../src/game/oceanWaves.js";
-import { SWELL_COMPONENTS, SWELL_COMPONENTS_LOW } from "../../src/game/oceanSwell.js";
+import { activeTerrainVariantName, setActiveTerrainVariant } from "@csarkosh/engine/sim/terrain";
+import { BASE_SPACING_BY_TIER, RING_COUNT, createRingSamples } from "@csarkosh/engine/game/clipmap";
+import { WATER_RING_COUNT, createWaterRingSamples, type WaterGeometry } from "@csarkosh/engine/game/water";
+import { BED_GRID, bakeBed, createBedGrid } from "@csarkosh/engine/game/bedHeight";
+import { oceanFieldFor } from "@csarkosh/engine/game/oceanWaves";
+import { SWELL_COMPONENTS, SWELL_COMPONENTS_LOW } from "@csarkosh/engine/game/oceanSwell";
 import {
   fittingBed, fittingFeatureTable, fittingLake, fittingOcean, fittingRings, fittingWaterBump, fittingWaterFirst, fittingWaterRings, type PreparedLake, type PreparedScene,
 } from "../../src/game/preparedScene.js";
-import type { QualityTier } from "../../src/game/quality.js";
-import { FEATURE_TEX_ROWS, FEATURE_TEX_WIDTH } from "../../src/game/featureTable.js";
+import type { QualityTier } from "@csarkosh/engine/game/quality";
+import { FEATURE_TEX_ROWS, FEATURE_TEX_WIDTH } from "@csarkosh/engine/game/featureTable";
 import { stadiumLake } from "../helpers/lakeShapes.js";
 import { timeLimit } from "../helpers/timeLimit.js";
 

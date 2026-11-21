@@ -1,11 +1,12 @@
 import { beforeAll, describe, expect, it } from "vitest";
+import "../../src/sim/passes/index.js";
 import {
   ROCK_CAP_SHARE, ROCK_CUTS, ROCK_DEPTH, ROCK_PLANES,
   rockPlaneCandidates, rockPlanes, rockRelief, type RockArrays, type RockPlane,
-} from "../../src/game/rockRelief.js";
-import { CLUTTER_SINK } from "../../src/game/clutterInstances.js";
-import { CLUTTER_BOULDER_SCALE_MAX, CLUTTER_ROCK_SCALE_MAX } from "../../src/sim/clutter.js";
-import { BOULDER_A_BASE_H, BOULDER_B_BASE_H, BOULDER_SINK } from "../../src/sim/passes/clutter.js";
+} from "@csarkosh/engine/game/rockRelief";
+import { CLUTTER_SINK } from "@csarkosh/engine/game/clutterInstances";
+import { CLUTTER_BOULDER_SCALE_MAX, CLUTTER_ROCK_SCALE_MAX } from "@csarkosh/engine/sim/clutter";
+import { BOULDER_A_BASE_H, BOULDER_B_BASE_H, BOULDER_SINK } from "@csarkosh/engine/sim/passes/clutter";
 import { babylonValues } from "../helpers/babylonFixture.js";
 import { timeLimit } from "../helpers/timeLimit.js";
 

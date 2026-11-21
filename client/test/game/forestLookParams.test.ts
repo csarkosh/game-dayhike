@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { BARK_SKY, CROWN_SKY, TREE_SPECULAR_WEIGHT, treeSkyLook } from "../../src/game/forestLookParams.js";
+import { BARK_SKY, CROWN_SKY, TREE_SPECULAR_WEIGHT, treeSkyLook } from "@csarkosh/engine/game/forestLookParams";
 
 describe("a tree material's share of the sky", () => {
   it("is the trunk's for a bark, with the trees' specular weight whatever its file carries", () => {

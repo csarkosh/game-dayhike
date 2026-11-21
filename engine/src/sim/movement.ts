@@ -1,5 +1,4 @@
-import type { Vec3, InputCommand } from "./types.js";
-import { Button } from "./types.js";
+import { MoveButton, type Vec3, type InputCommand } from "./core.js";
 import { boxesNear, type BoxProvider } from "./boxSource.js";
 import { MAX_WALKABLE_GRADIENT, walkableGradientFor, type GroundField } from "./ground.js";
 import { depenetrate, sweepBox } from "./collision.js";
@@ -268,7 +267,7 @@ export function stepMovement(
   // air as well as on the ground so a sprint carried into a jump can be
   // maintained rather than bled off — AIR_ACCEL is small enough that this
   // cannot be used to gain speed you did not already have.
-  const topSpeed = (input.buttons & Button.Sprint) !== 0 ? SPRINT_SPEED : WALK_SPEED;
+  const topSpeed = (input.buttons & MoveButton.Sprint) !== 0 ? SPRINT_SPEED : WALK_SPEED;
 
   if (state.grounded) {
     applyFriction(vel, dt);
@@ -287,7 +286,7 @@ export function stepMovement(
   }
 
   let jumped = false;
-  if (state.grounded && (input.buttons & Button.Jump) !== 0) {
+  if (state.grounded && (input.buttons & MoveButton.Jump) !== 0) {
     vel.y = JUMP_SPEED;
     jumped = true;
   }

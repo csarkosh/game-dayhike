@@ -26,15 +26,16 @@
 import type { EnemyState, PlayerState, Vec3 } from "./types.js";
 import { AiState, cloneVec3, nextRandom } from "./types.js";
 import type { World } from "./world.js";
-import type { TrailGraph, TrailNode } from "./trail.js";
-import { trailDistance } from "./trail.js";
-import { stemAhead, stemProgress } from "./trailRoute.js";
+import type { TrailGraph, TrailNode } from "@csarkosh/engine/sim/trail";
+import { trailDistance } from "@csarkosh/engine/sim/trail";
+import { stemAhead, stemProgress } from "@csarkosh/engine/sim/trailRoute";
 import { groundSpawn } from "./spawn.js";
 import { hasLineOfSight } from "./ai.js";
-import { aimDirection } from "./view.js";
+import { aimDirection } from "@csarkosh/engine/sim/view";
 import { isOnCorridor } from "./containment.js";
 import { horizontalDistSq, playerHasInView } from "./hollow.js";
-import { ENEMY_HALF, ENEMY_MAX_HEALTH, PLAYER_EYE_OFFSET } from "./constants.js";
+import { PLAYER_EYE_OFFSET } from "@csarkosh/engine/sim/constants";
+import { ENEMY_HALF, ENEMY_MAX_HEALTH } from "./dayhikeConstants.js";
 
 /** Metres it keeps from every trail centreline: 6 stands just inside the 7 m cleared strip. */
 export const WATCH_TRAIL_CLEAR = 6;

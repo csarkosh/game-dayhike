@@ -281,13 +281,13 @@ not every lake brown.
 
 | Piece | Where | Level id |
 | --- | --- | --- |
-| Murk, the basin, the marsh | `client/src/sim/features.ts` | yes |
+| Murk, the basin, the marsh | `engine/src/sim/features.ts` | yes |
 | The wall at the shelf, wading by a lake's level | `client/src/sim/containment.ts`, `world.ts` | yes (behaviour) |
-| The cove and the headlands | `client/src/sim/olympic.ts` | yes |
-| Reeds, lilies (placement), drift logs in the cove | `client/src/sim/clutter.ts` | yes |
+| The cove and the headlands | `engine/src/sim/olympic.ts` | yes |
+| Reeds, lilies (placement), drift logs in the cove | `engine/src/sim/clutter.ts` | yes |
 | `waterBodies` | the variant (`terrain.ts`, `olympic.ts`) | no (derived) |
 | Reed and lily meshes | `client/src/game/`, beside `bladeClump.ts` and `duffClump.ts` | no |
-| Murk to water row, the skin layer | `client/src/game/waterShading.ts`, the water plugin | no |
+| Murk to water row, the skin layer | `engine/src/game/waterShading.ts`, the water plugin | no |
 | Bed and shore paint | `client/src/game/featurePaint.ts`, `terrainSurface.ts` | no |
 
 Every new sim number folds into the level id through the tunables the files

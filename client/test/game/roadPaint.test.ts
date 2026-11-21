@@ -5,7 +5,7 @@ import {
   ROAD_PAINT_END, ROAD_TABLE_HALF_SPAN, ROAD_TABLE_N, ROAD_TABLE_RECENTRE,
   ROAD_TABLE_STEP,
   buildRoadTable, dashKeeps, roadAlbedo, roadBands, roadTableStale, roadTableZ0,
-} from "../../src/game/roadPaint.js";
+} from "@csarkosh/engine/game/roadPaint";
 
 describe("road bands — the mirror of the fragment shader", () => {
   const off = { verge: 0, gravel: 0, asphalt: 0, line: 0 };

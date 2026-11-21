@@ -6,7 +6,7 @@ import { DIED_CLOSE_FROM_S, DIED_CLOSE_S, DIED_FALL_S, DIED_ROLL, endingPose } f
 import { DOOR_IN_M, END_ROAD_AT_S, HEADLAMP_UP, PULL_AWAY_AT_S, endCar } from "../../src/game/endScene.js";
 import { createScenePlay, stareWithDark, type CarHandle, type PlayCamera, type PlayLocal, type ScenePlay } from "../../src/game/scenePlay.js";
 import type { CarPose } from "../../src/game/scene/timeline.js";
-import { PLAYER_EYE_OFFSET, PLAYER_HALF } from "../../src/sim/constants.js";
+import { PLAYER_EYE_OFFSET, PLAYER_HALF } from "@csarkosh/engine/sim/constants";
 import { CAR_HALF } from "../../src/sim/trailhead.js";
 
 type Place = { x: number; y: number; z: number };

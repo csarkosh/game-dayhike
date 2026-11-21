@@ -1,6 +1,6 @@
 import { describe, it, expect } from "vitest";
 import { EXPLORE_HOUR_S, EXPLORE_SCHEDULE, exploreHour, exploreNight, exploreWeather } from "../../src/game/exploreDay.js";
-import { WEATHER_PRESETS, lerpWeather } from "../../src/game/weather.js";
+import { WEATHER_PRESETS, lerpWeather } from "@csarkosh/engine/game/weather";
 
 describe("the explore day's clock", () => {
   it("runs round the clock at forty seconds an hour, a day in sixteen minutes", () => {

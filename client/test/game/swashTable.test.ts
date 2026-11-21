@@ -1,16 +1,17 @@
 import { describe, it, expect } from "vitest";
-import { COVE_FACE_GRADE, COVE_TOE_DEPTH, coveFor } from "../../src/sim/olympic.js";
+import "../../src/sim/passes/index.js";
+import { COVE_FACE_GRADE, COVE_TOE_DEPTH, coveFor } from "@csarkosh/engine/sim/olympic";
 import {
   boreArrivals, coastRead, oceanFieldFor, oceanFieldFromState, swellAt, swellPhases, type OceanField,
-} from "../../src/game/oceanWaves.js";
-import { seedFromToken } from "../../src/game/seed.js";
+} from "@csarkosh/engine/game/oceanWaves";
+import { seedFromToken } from "@csarkosh/engine/game/seed";
 import {
   SWASH_DOWN_RATIO, SWASH_REACH_MAX_M, frontAt, reachCapAt, runUpAlongFace, thicknessAt, tUpOf,
-} from "../../src/game/swashRunUp.js";
+} from "@csarkosh/engine/game/swashRunUp";
 import {
   SWASH_AGE_MAX, SWASH_BACKWASH_MIN_M, SWASH_BORES_PER_COLUMN, SWASH_COLUMNS, SWASH_DRY_S, SWASH_REWET_M,
   SWASH_SPECKLE_S, SWASH_STEP_MAX_S, SWASH_STRIDE, SwashTable, type SwashCove,
-} from "../../src/game/swashTable.js";
+} from "@csarkosh/engine/game/swashTable";
 import { timeLimit } from "../helpers/timeLimit.js";
 
 const SEED = seedFromToken("room-3");

@@ -1,6 +1,6 @@
 import { describe, it, expect } from "vitest";
 import "../../src/sim/passes/index.js";
-import { elevationSampleAt } from "../../src/sim/terrain.js";
+import { elevationSampleAt } from "@csarkosh/engine/sim/terrain";
 import {
   faceMask,
   rockOfSlope,
@@ -30,7 +30,7 @@ import {
   GROUND_LOUD_FLOOR,
   GROUND_LOUD_LO,
   GROUND_LOUD_HI,
-} from "../../src/game/facePatches.js";
+} from "@csarkosh/engine/game/facePatches";
 import { runBySlices } from "../helpers/sliceRun.js";
 import { timeLimit } from "../helpers/timeLimit.js";
 

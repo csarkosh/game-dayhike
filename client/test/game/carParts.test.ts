@@ -3,7 +3,7 @@ import {
   DOOR_NAME, DOOR_SWING, STEERING_COLUMN, STEERING_NAME, WHEEL_NAMES, affineInverse, carPartTurn, doorTurn, frontWheel, partMatrix, poseVertices,
   wheelSpinTurn, wheelSteerTurn,
 } from "../../src/game/carParts.js";
-import { matrixMultiply } from "../../src/game/instancePose.js";
+import { matrixMultiply } from "@csarkosh/engine/game/instancePose";
 import { babylonValues } from "../helpers/babylonFixture.js";
 import type { CarPose } from "../../src/game/scene/timeline.js";
 
@@ -91,7 +91,7 @@ describe("the film's car's parts, as a pose turns them", () => {
 });
 
 import { TURNED_PART_NAMES, TURN_ROW_FLOATS, partMoved, partNumbers, restTurns, turnPoint, turnSlots, writeTurnRows, writeTurns } from "../../src/game/carParts.js";
-import { composeInto, quatFromEuler } from "../../src/game/instancePose.js";
+import { composeInto, quatFromEuler } from "@csarkosh/engine/game/instancePose";
 
 describe("the film's car's parts, as a vertex stage turns them", () => {
   /** A part's own frame in the model's: under a root that mirrors the file and a model turned a quarter, moved to where the file has the part. */

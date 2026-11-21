@@ -12,7 +12,7 @@
  * out over the next, twice a day; the name the lake's calm reads is the
  * nearer preset's. The night's dark is the sky's own, not the dread's.
  */
-import { lerpWeather, WEATHER_PRESETS, type WeatherParams, type WeatherPresetName } from "./weather.js";
+import { lerpWeather, WEATHER_PRESETS, type WeatherParams, type WeatherPresetName } from "@csarkosh/engine/game/weather";
 
 /** Real seconds an hour of the explore day takes: forty, a day in sixteen minutes. */
 export const EXPLORE_HOUR_S = 40;

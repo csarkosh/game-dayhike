@@ -1,15 +1,15 @@
 import { describe, it, expect } from "vitest";
 import "../../src/sim/passes/index.js";
-import { createChunkGrid } from "../../src/sim/chunkGrid.js";
-import { CHUNK_SIZE } from "../../src/sim/forestConstants.js";
-import { setActiveTerrainVariant, DEFAULT_TERRAIN_VARIANT, terrainVariant } from "../../src/sim/terrain.js";
-import type { Brush } from "../../src/sim/level.js";
+import { createChunkGrid } from "@csarkosh/engine/sim/chunkGrid";
+import { CHUNK_SIZE } from "@csarkosh/engine/sim/forestConstants";
+import { setActiveTerrainVariant, DEFAULT_TERRAIN_VARIANT, terrainVariant } from "@csarkosh/engine/sim/terrain";
+import type { Brush } from "@csarkosh/engine/sim/level";
 import {
   BOARD_BOX_HALF, CAR_HALF, bedGap, boardBoxes, boardSite, carDirection, carSite, doorSpot, trailEntrance, trailheadPlaces,
 } from "../../src/sim/trailhead.js";
 import { trailheadSpawn, type Start } from "../../src/sim/spawn.js";
-import { facingYaw } from "../../src/sim/facing.js";
-import type { TrailGraph, TrailEdge } from "../../src/sim/trail.js";
+import { facingYaw } from "@csarkosh/engine/sim/facing";
+import type { TrailGraph, TrailEdge } from "@csarkosh/engine/sim/trail";
 import { timeLimit } from "../helpers/timeLimit.js";
 
 /**

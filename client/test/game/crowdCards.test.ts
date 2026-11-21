@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import "../../src/sim/passes/index.js";
 import {
   CROWD_CARDS_TO_M, CROWD_CARD_FLOATS, CROWD_CARD_FOLD_S, CROWD_CARD_VERTICES, CROWD_CARD_WIDE, crowdCardIndices, crowdCardTime, crowdCardVertices, writeCrowdCards, CROWD_CARD_KILLS,
 } from "../../src/game/crowdCards.js";

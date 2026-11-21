@@ -15,10 +15,10 @@ import {
   type EngineContext, type MaterialPlugin, type Mesh, type SceneContext,
 } from "@babylonjs/lite";
 import { CAP_COLOUR, CAP_RADIUS, CAP_ROUGHNESS, capGeometry, capSeat, type DroppedCap } from "../droppedCap.js";
-import type { ViewFrustumPlane } from "./cameraPose.js";
-import { quatFromEuler } from "../instancePose.js";
-import { DRAW_ORDER } from "./drawOrder.js";
-import type { FrameUploads } from "./frameUploads.js";
+import type { ViewFrustumPlane } from "@csarkosh/engine/game/lite/cameraPose";
+import { quatFromEuler } from "@csarkosh/engine/game/instancePose";
+import { DRAW_ORDER } from "@csarkosh/engine/game/lite/drawOrder";
+import type { FrameUploads } from "@csarkosh/engine/game/lite/frameUploads";
 
 /** The sphere (m) about its seat the cap is taken to fill for the view's planes: its brim reaches a radius and a half. */
 export const CAP_SPHERE_M = CAP_RADIUS * 3;

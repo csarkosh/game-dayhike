@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { createHostSession } from "../../src/net/hostSession.js";
-import { parseLevel } from "../../src/sim/level.js";
+import { parseLevel } from "@csarkosh/engine/sim/level";
 import { Button, type InputCommand } from "../../src/sim/types.js";
 import { spawnPlayer, createWorld } from "../../src/sim/world.js";
 

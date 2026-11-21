@@ -11,12 +11,12 @@
  * air are to be written again. Loads no engine.
  */
 import { atmosphereUnder, type AtmosphereRecord } from "../atmosphereParams.js";
-import { sunPositionAt } from "../sky.js";
-import { sceneLightsUnder, sunTravel, type SceneLights } from "../sceneLights.js";
-import { skyStateFor, type SkyState } from "../skyState.js";
-import type { SkyTable } from "../skyTable.js";
-import { DEFAULT_HOUR, skyHeld } from "../skyWait.js";
-import { DEFAULT_WEATHER, WEATHER_PRESETS, exposureUnder, weatherFadeAt, type WeatherParams } from "../weather.js";
+import { sunPositionAt } from "@csarkosh/engine/game/sky";
+import { sceneLightsUnder, sunTravel, type SceneLights } from "@csarkosh/engine/game/sceneLights";
+import { skyStateFor, type SkyState } from "@csarkosh/engine/game/skyState";
+import type { SkyTable } from "@csarkosh/engine/game/skyTable";
+import { DEFAULT_HOUR, skyHeld } from "@csarkosh/engine/game/skyWait";
+import { DEFAULT_WEATHER, WEATHER_PRESETS, exposureUnder, weatherFadeAt, type WeatherParams } from "@csarkosh/engine/game/weather";
 
 export type WorldLight = {
   readonly hour: number;

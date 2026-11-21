@@ -1,6 +1,6 @@
 import { describe, it, expect } from "vitest";
 import fc from "fast-check";
-import { parseJoinLink, inviteLink } from "../../src/game/joinLink.js";
+import { parseJoinLink, inviteLink } from "@csarkosh/engine/game/joinLink";
 
 const BASE = "https://games.csarko.sh/dayhike";
 const ID = "3f2504e0-4f89-41d3-9a0c-0305e82c3301";

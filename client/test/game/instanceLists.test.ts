@@ -1,9 +1,9 @@
 import { describe, expect, it } from "vitest";
-import { CULL_MOVE, CULL_TURN, type CullPose } from "../../src/game/grassCull.js";
+import { CULL_MOVE, CULL_TURN, type CullPose } from "@csarkosh/engine/game/grassCull";
 import {
   KEPT_FOLIAGE, KEPT_STRIDE, LIST_MIN_INSTANCES, commitStaged, createInstanceList, createViewCut, cutList, ensureCapacity, ensureStaging,
   stageKept, writeKept,
-} from "../../src/game/instanceLists.js";
+} from "@csarkosh/engine/game/instanceLists";
 
 /** A kept slab of `n` instances standing along x, a metre apart from `x0`, each tinted by its index. */
 function slab(n: number, x0 = 0): Float32Array {

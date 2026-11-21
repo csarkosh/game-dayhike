@@ -1,12 +1,12 @@
 import { describe, it, expect } from "vitest";
 import { createHostSession } from "../../src/net/hostSession.js";
 import { createClientSession, type SessionEnd } from "../../src/net/clientSession.js";
-import { FakeNetwork } from "../../src/net/fakeNetwork.js";
-import { PERFECT_NETWORK, type NetworkConditions } from "../../src/net/transport.js";
-import { parseLevel } from "../../src/sim/level.js";
-import { TICK_DT } from "../../src/sim/constants.js";
+import { FakeNetwork } from "@csarkosh/engine/net/fakeNetwork";
+import { PERFECT_NETWORK, type NetworkConditions } from "@csarkosh/engine/net/transport";
+import { parseLevel } from "@csarkosh/engine/sim/level";
+import { TICK_DT } from "@csarkosh/engine/sim/constants";
 import type { InputCommand } from "../../src/sim/types.js";
-import { FixedStepAccumulator } from "../../src/game/loop.js";
+import { FixedStepAccumulator } from "@csarkosh/engine/game/loop";
 import sandbox01 from "../../levels/sandbox01.json" with { type: "json" };
 
 // The helpers of clientSession.test.ts: a host and a follower over a faked

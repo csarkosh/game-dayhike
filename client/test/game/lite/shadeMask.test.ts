@@ -1,6 +1,7 @@
 import { readFileSync } from "node:fs";
 import { acquireTexture, releaseTexture } from "@babylonjs/lite";
 import { describe, expect, it } from "vitest";
+import "../../../src/sim/passes/index.js";
 import { HOLLOW_FIGURE_M } from "../../../src/game/hollowLook.js";
 import { SHADE_SMOKE_FEET, SHADE_SMOKE_FRAY, SHADE_SMOKE_RISE, SHADE_SMOKE_SCALE, SHADE_SMOKE_SOFT, SHADE_SMOKE_SWELL_M } from "../../../src/game/shadeMaskParams.js";
 import { FRAME_BLOCK, SHADE_SMOKE_TIME_NAME, inFrameBlock } from "../../../src/game/lite/frameBlock.js";

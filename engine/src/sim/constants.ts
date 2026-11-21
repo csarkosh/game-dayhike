@@ -1,4 +1,4 @@
-import type { Vec3 } from "./types.js";
+import type { Vec3 } from "./core.js";
 
 export const SIM_TICK_HZ = 60;
 export const TICK_DT = 1 / SIM_TICK_HZ;
@@ -25,7 +25,6 @@ export const MAX_SLIDE_ITERATIONS = 4;
 
 export const PLAYER_HALF: Vec3 = { x: 0.4, y: 0.9, z: 0.4 };
 export const PLAYER_EYE_OFFSET = 0.7;
-export const ENEMY_HALF: Vec3 = { x: 0.4, y: 0.9, z: 0.4 };
 
 export const GRAVITY = -24;
 export const JUMP_SPEED = 8;
@@ -85,7 +84,6 @@ export const WADE_CHEST_DEPTH = 1.3;
 /** Horizontal speed multiplier at full submergence. */
 export const WADE_FLOOR = 0.45;
 
-export const PLAYER_MAX_HEALTH = 100;
 /**
  * Metres between two readings of one entity past which it did not walk
  * there: it was put there (a return to the crest, a Hollow moved to meet it,
@@ -94,16 +92,4 @@ export const PLAYER_MAX_HEALTH = 100;
  * lands, never as a slide across the mountain.
  */
 export const TELEPORT_M = 10;
-export const ENEMY_MAX_HEALTH = 40;
 
-export const ENEMY_DETECT_RANGE = 30;
-export const ENEMY_ATTACK_RANGE = 2.0;
-export const ENEMY_SPEED = 3.2;
-export const ENEMY_DAMAGE = 8;
-export const ENEMY_ATTACK_COOLDOWN = 1.2;
-export const ENEMY_CORPSE_SECONDS = 4;
-
-export const ENEMY_BASE_POPULATION = 12;
-export const ENEMY_PER_EXTRA_PLAYER = 6;
-export const ENEMY_POPULATION_CAP = 30;
-export const ENEMY_MIN_SPAWN_DISTANCE = 25;

@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it } from "vitest";
 import { modelBytes, modelUrl } from "../../src/game/assetUrls.js";
-import { createLoadProgress, markedProgress, type LoadProgress, type Stage } from "../../src/game/loadProgress.js";
+import { createLoadProgress, markedProgress, type LoadProgress, type Stage } from "@csarkosh/engine/game/loadProgress";
 import {
   GROUND_STAGE_TOTAL, expectModels, modelLoadTold, reportGroundImage, reportLayer, reportModel, reportProgress, setLoadProgress,
 } from "../../src/game/loadReport.js";

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { DRAW_ORDER, DRAW_PLACES, SEE_THROUGH_ORDER, createDrawOrders } from "../../../src/game/lite/drawOrder.js";
+import { DRAW_ORDER, DRAW_PLACES, SEE_THROUGH_ORDER, createDrawOrders } from "@csarkosh/engine/game/lite/drawOrder";
 
 describe("the places of the hike's meshes among the opaque draws on Babylon Lite", () => {
   it("draws the terrain first, the rings before the patches, then each shell in turn, ahead of nothing Lite places itself", () => {

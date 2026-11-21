@@ -1,13 +1,13 @@
 import { describe, expect, it } from "vitest";
 import "../../src/sim/passes/index.js";
-import { bowlFor } from "../../src/sim/olympic.js";
-import { DEFAULT_TERRAIN_VARIANT, setActiveTerrainVariant } from "../../src/sim/terrain.js";
+import { bowlFor } from "../../src/sim/mountain.js";
+import { DEFAULT_TERRAIN_VARIANT, setActiveTerrainVariant } from "@csarkosh/engine/sim/terrain";
 import { MEADOW_NAMES, NAMES_SALT, POND_NAMES, placeNames, signSites } from "../../src/sim/placeNames.js";
 import { FIRST_NAMES, hikerNames } from "../../src/sim/hikerNames.js";
-import type { Feature } from "../../src/sim/features.js";
+import type { Feature } from "@csarkosh/engine/sim/features";
 import { createWorld } from "../../src/sim/world.js";
-import { parseLevel } from "../../src/sim/level.js";
-import { seedFromToken } from "../../src/game/seed.js";
+import { parseLevel } from "@csarkosh/engine/sim/level";
+import { seedFromToken } from "@csarkosh/engine/game/seed";
 import { timeLimit } from "../helpers/timeLimit.js";
 
 setActiveTerrainVariant(DEFAULT_TERRAIN_VARIANT);

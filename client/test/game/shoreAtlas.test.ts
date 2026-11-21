@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   SHORE_ATLAS_FAR, SHORE_ATLAS_LAKES, SHORE_ATLAS_SIZE, SHORE_ATLAS_TILE, bakeShoreAtlas, shoreAtlasRead,
-} from "../../src/game/shoreAtlas.js";
+} from "@csarkosh/engine/game/shoreAtlas";
 import { stadiumShape } from "../helpers/lakeShapes.js";
 import { timeLimit } from "../helpers/timeLimit.js";
 

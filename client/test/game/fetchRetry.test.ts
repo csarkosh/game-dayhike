@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
-import { FETCH_PAUSES_MS, FETCH_TRIES, fetchRetried, statusMayPass, type FetchRetryDeps } from "../../src/game/fetchRetry.js";
-import type { DownloadTurns } from "../../src/game/downloadTurns.js";
+import { FETCH_PAUSES_MS, FETCH_TRIES, fetchRetried, statusMayPass, type FetchRetryDeps } from "@csarkosh/engine/game/fetchRetry";
+import type { DownloadTurns } from "@csarkosh/engine/game/downloadTurns";
 
 type Answer = { ok: boolean; status: number; body?: string; bodyFails?: boolean } | Error;
 

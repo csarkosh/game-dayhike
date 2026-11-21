@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
-import { createEngineWatch } from "../../src/game/engineWatch.js";
-import type { EngineHandle } from "../../src/game/engineHandle.js";
+import { createEngineWatch } from "@csarkosh/engine/game/engineWatch";
+import type { EngineHandle } from "@csarkosh/engine/game/engineHandle";
 
 const handle: EngineHandle = { isDisposed: false, dispose: () => undefined };
 /** One turn of the microtask queue. */

@@ -47,10 +47,10 @@ next sub-project).
 
 | File | Role |
 | --- | --- |
-| `client/src/sim/trail.ts` | `TRAIL_BED_HALF` 1 → 0.75; the sink (`TRAIL_SINK`, `TRAIL_SINK_RAMP`) applied after the corridor blend as a saturating union across edges, with analytic derivatives. Both in `TRAIL_TUNABLES`. |
-| `client/src/sim/clutter.ts` | `CLUTTER_GRASS_TRAIL_NEAR/FAR` retuned; the ninth class `CLUTTER_LITTER` with its cell, density, band, salt, scales and `variants: 3`; every constant in `CLUTTER_TUNABLES`. |
-| `client/src/game/trailPaint.ts` | The table's second row (`uA, uB, wA, wB` per segment); the band function and its TypeScript mirror; wear, ragged edge, height-aware boundaries, the lip, wetness and puddles in the GLSL. |
-| `client/src/game/trailBenchParams.ts` (new, Babylon-free) | The paint's constants and the pure mirrors the tests and the clutter rebuild share: `trailBands(d, u, w, noise, h)`, `trailWear(u)`, `trampleAt(rt)`. On `BABYLON_FREE_FILES`. |
+| `engine/src/sim/trail.ts` | `TRAIL_BED_HALF` 1 → 0.75; the sink (`TRAIL_SINK`, `TRAIL_SINK_RAMP`) applied after the corridor blend as a saturating union across edges, with analytic derivatives. Both in `TRAIL_TUNABLES`. |
+| `engine/src/sim/clutter.ts` | `CLUTTER_GRASS_TRAIL_NEAR/FAR` retuned; the ninth class `CLUTTER_LITTER` with its cell, density, band, salt, scales and `variants: 3`; every constant in `CLUTTER_TUNABLES`. |
+| `engine/src/game/trailPaint.ts` | The table's second row (`uA, uB, wA, wB` per segment); the band function and its TypeScript mirror; wear, ragged edge, height-aware boundaries, the lip, wetness and puddles in the GLSL. |
+| `engine/src/game/trailBenchParams.ts` (new, Babylon-free) | The paint's constants and the pure mirrors the tests and the clutter rebuild share: `trailBands(d, u, w, noise, h)`, `trailWear(u)`, `trampleAt(rt)`. On `BABYLON_FREE_FILES`. |
 | `client/src/game/terrainTexture.ts` | Uploads the two-row table; binds `terrainWet` from the weather; no new sampler. |
 | `client/src/game/renderer.ts` | Feeds the weather's wetness to the terrain plugin each frame, beside the existing wet-surface material scaling. |
 | `client/src/game/clutterMeshes.ts` | The trampled band at rebuild for the grass, meadow and flower classes (height scale, lean, stained tint); the litter class's model table and per-variant base scales; litter draws rigid, near band only. |

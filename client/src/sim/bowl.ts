@@ -19,8 +19,8 @@
  * of h, and outside the window the base sample is returned AS THE SAME OBJECT.
  * sim/ determinism rules: no trig, no Math.pow, no `**`, no hypot.
  */
-import type { TerrainSample } from "./terrain.js";
-import { UNIT_KEEP } from "./cliffs.js";
+import type { TerrainSample } from "@csarkosh/engine/sim/terrain";
+import { UNIT_KEEP } from "@csarkosh/engine/sim/cliffs";
 
 // ---- Tunables -------------------------------------------
 export const TRAIL_Z_ANCHOR = 0;

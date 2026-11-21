@@ -1,8 +1,8 @@
 import { readFileSync } from "node:fs";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { SLICE_ALTITUDES_DEG, SLICE_AZIMUTHS, SLICE_ELEVATIONS, type SkySlice } from "../../src/game/skyModel.js";
-import { makeSlices, type SkyWorkerReply } from "../../src/game/sky.worker.js";
-import { startSkySource } from "../../src/game/skyWorker.js";
+import { SLICE_ALTITUDES_DEG, SLICE_AZIMUTHS, SLICE_ELEVATIONS, type SkySlice } from "@csarkosh/engine/game/skyModel";
+import { makeSlices, type SkyWorkerReply } from "@csarkosh/engine/game/sky.worker";
+import { startSkySource } from "@csarkosh/engine/game/skyWorker";
 import { timeLimit } from "../helpers/timeLimit.js";
 
 /** A slice whose every value is `v`: what a worker's message would carry, without the model's cost. */
@@ -101,7 +101,7 @@ describe("the sky's worker", () => {
 
 describe("the sky's source", () => {
   it("starts a module worker in the form Vite bundles", () => {
-    const text = readFileSync(new URL("../../src/game/skyWorker.ts", import.meta.url), "utf8");
+    const text = readFileSync(new URL("../../../engine/src/game/skyWorker.ts", import.meta.url), "utf8");
     // The code alone: the form is also written in the doc comment, which would pass whatever the call said.
     const code = text.replace(/\/\*[\s\S]*?\*\//g, "").replace(/\/\/.*$/gm, "");
     expect(code).toContain('new Worker(new URL("./sky.worker.ts", import.meta.url), { type: "module" })');

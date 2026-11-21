@@ -23,12 +23,12 @@ import {
 } from "@babylonjs/lite";
 import { crowdEyeIndices, crowdEyeVertices, writeCrowdEyes } from "../crowdEyes.js";
 import type { CrowdFigure } from "../crowdField.js";
-import { SEE_THROUGH_ORDER } from "./drawOrder.js";
-import type { FrameUploads } from "./frameUploads.js";
+import { SEE_THROUGH_ORDER } from "@csarkosh/engine/game/lite/drawOrder";
+import type { FrameUploads } from "@csarkosh/engine/game/lite/frameUploads";
 import varyingsSource from "../shaders/crowdEyes/varyings.wgsl?raw";
 import crowdEyesVertexSource from "../shaders/crowdEyes/crowdEyes.vertex.wgsl?raw";
 import crowdEyesFragmentSource from "../shaders/crowdEyes/crowdEyes.fragment.wgsl?raw";
-import { fill, wgsl } from "../shaders/shaderText.js";
+import { fill, wgsl } from "@csarkosh/engine/game/shaders/shaderText";
 
 /** What the two stages hand each other: the eye's corner of its quad, and its colour and level. */
 const VARYINGS = wgsl(varyingsSource);

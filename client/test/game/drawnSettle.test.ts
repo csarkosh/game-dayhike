@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { createDrawnFrames, whenDrawnSettled } from "../../src/game/drawnSettle.js";
+import { createDrawnFrames, whenDrawnSettled } from "@csarkosh/engine/game/drawnSettle";
 
 const turn = (): Promise<void> => new Promise((resolve) => setTimeout(resolve, 0));
 

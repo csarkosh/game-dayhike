@@ -1,8 +1,9 @@
 import { describe, expect, it } from "vitest";
-import { lakeGroundD, LAKE_SILL } from "../../src/sim/features.js";
-import { valleyLakeShape, type LakeShape } from "../../src/sim/lakeShape.js";
+import "../../src/sim/passes/index.js";
+import { lakeGroundD, LAKE_SILL } from "@csarkosh/engine/sim/features";
+import { valleyLakeShape, type LakeShape } from "@csarkosh/engine/sim/lakeShape";
 import { LOBBY_SEEDS } from "./trailGateSeeds.js";
-import type { TerrainSample } from "../../src/sim/terrain.js";
+import type { TerrainSample } from "@csarkosh/engine/sim/terrain";
 import { stadiumShape } from "../helpers/lakeShapes.js";
 import { H, TOL_RATIO } from "./helpers/derivatives.js";
 import { timeLimit } from "../helpers/timeLimit.js";

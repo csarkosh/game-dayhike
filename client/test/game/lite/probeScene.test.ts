@@ -1,11 +1,11 @@
 import { describe, expect, it, vi } from "vitest";
 import "../../../src/sim/passes/index.js";
-import { PROBE_FRAMES, PROBE_HOUR, PROBE_QUIET_MS, PROBE_WARMUP_FRAMES, probePose } from "../../../src/game/frameProbe.js";
+import { PROBE_FRAMES, PROBE_HOUR, PROBE_QUIET_MS, PROBE_WARMUP_FRAMES, probePose } from "@csarkosh/engine/game/frameProbe";
 import { LET_GO_MAX_MS, buildLiteProbeScene, liteProbeDeps, liteProbeReady, runLiteProbeStep, type ProbeRendererMaker } from "../../../src/game/lite/probeScene.js";
 import type { FreecamView, Renderer } from "../../../src/game/rendererTypes.js";
-import { createSkyTable } from "../../../src/game/skyTable.js";
-import type { SkySource } from "../../../src/game/skyWorker.js";
-import { WEATHER_PRESETS } from "../../../src/game/weather.js";
+import { createSkyTable } from "@csarkosh/engine/game/skyTable";
+import type { SkySource } from "@csarkosh/engine/game/skyWorker";
+import { WEATHER_PRESETS } from "@csarkosh/engine/game/weather";
 import { skyFixture } from "../helpers/skyFixture.js";
 import { asHtml, installStandInDom } from "../helpers/standInDom.js";
 import { timeLimit } from "../../helpers/timeLimit.js";

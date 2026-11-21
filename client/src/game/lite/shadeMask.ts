@@ -70,14 +70,14 @@ import { HOLLOW_FIGURE_M } from "../hollowLook.js";
 import {
   SHADE_SMOKE_FEET, SHADE_SMOKE_FRAY, SHADE_SMOKE_RISE, SHADE_SMOKE_SCALE, SHADE_SMOKE_SOFT, SHADE_SMOKE_SWELL_M, shadeMaskColour, shadeMaskSize,
 } from "../shadeMaskParams.js";
-import type { CameraAxes, CameraPose } from "./cameraPose.js";
-import { DISPLAY_CURVE_WGSL, MATERIAL_GRADE_WGSL } from "./displayCurve.js";
+import type { CameraAxes, CameraPose } from "@csarkosh/engine/game/lite/cameraPose";
+import { DISPLAY_CURVE_WGSL, MATERIAL_GRADE_WGSL } from "@csarkosh/engine/game/lite/displayCurve";
 import { wgslFloat } from "./forestPlugins.js";
 import { FRAME_BLOCK, FRAME_CONTRAST_NAME, FRAME_EXPOSURE_NAME, SHADE_SMOKE_TIME_NAME } from "./frameBlock.js";
 import smokeNoiseSource from "../shaders/shadeMask/smokeNoise.wgsl?raw";
 import smokeVertexSource from "../shaders/shadeMask/smokeVertex.wgsl?raw";
 import smokeFragmentSource from "../shaders/shadeMask/smokeFragment.wgsl?raw";
-import { fill, wgsl } from "../shaders/shaderText.js";
+import { fill, wgsl } from "@csarkosh/engine/game/shaders/shaderText";
 import colourCurveSource from "../shaders/shadeMask/colourCurve.wgsl?raw";
 
 const f = wgslFloat;

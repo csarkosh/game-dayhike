@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { desktopVersion, hostPlatform, isDesktop, isTouchDevice } from "../../src/game/platform.js";
+import { desktopVersion, hostPlatform, isDesktop, isTouchDevice } from "@csarkosh/engine/game/platform";
 
 const ELECTRON_UA =
   "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) " +

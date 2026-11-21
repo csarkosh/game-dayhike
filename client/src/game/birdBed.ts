@@ -6,7 +6,7 @@
  */
 import type { AmbientAudio } from "./ambientAudio.js";
 import { audioUrl } from "./assetUrls.js";
-import { pageTurns } from "./downloadTurns.js";
+import { pageTurns } from "@csarkosh/engine/game/downloadTurns";
 
 export const BIRD_BED_CLIP = "audio/ambience.forest_birds.mp3";
 

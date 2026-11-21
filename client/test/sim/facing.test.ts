@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { readFileSync } from "node:fs";
-import { facingDir, facingYaw } from "../../src/sim/facing.js";
+import { facingDir, facingYaw } from "@csarkosh/engine/sim/facing";
 
 describe("facingYaw", () => {
   it("is exact on the eight compass points", () => {
@@ -61,7 +61,7 @@ describe("facingDir", () => {
 
   it("uses none of the host's trigonometry", () => {
     // The code, without its comments: they name what it does not use.
-    const source = readFileSync(new URL("../../src/sim/facing.ts", import.meta.url), "utf8")
+    const source = readFileSync(new URL("../../../engine/src/sim/facing.ts", import.meta.url), "utf8")
       .replace(/\/\*[\s\S]*?\*\//g, "")
       .replace(/\/\/.*$/gm, "");
     expect(source).not.toMatch(/Math\.(sin|cos|tan|atan|atan2|acos|asin|hypot|pow)\b/);

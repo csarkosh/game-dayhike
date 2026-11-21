@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { createDeviceHeld, texelBytes, textureBytes, type HeldDevice } from "../../src/game/deviceHeld.js";
+import { createDeviceHeld, texelBytes, textureBytes, type HeldDevice } from "@csarkosh/engine/game/deviceHeld";
 
 /** A device as the count meets one: its calls on a prototype, as a browser's are, and what it makes with a `destroy` on a prototype of its own. */
 function fakeDevice(): { device: HeldDevice & { createBuffer(d: { size: number }): { size: number; destroy(): void } ; createTexture(d: object): { destroy(): void } }; destroyed: unknown[] } {

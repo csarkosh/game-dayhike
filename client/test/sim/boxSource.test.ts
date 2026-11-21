@@ -1,6 +1,6 @@
 import { describe, it, expect } from "vitest";
-import { boxesNear, type BoxSource } from "../../src/sim/boxSource.js";
-import type { Aabb } from "../../src/sim/level.js";
+import { boxesNear, type BoxSource } from "@csarkosh/engine/sim/boxSource";
+import type { Aabb } from "@csarkosh/engine/sim/level";
 
 const box = (x: number): Aabb => ({ min: { x, y: 0, z: 0 }, max: { x: x + 1, y: 1, z: 1 } });
 

@@ -11,7 +11,7 @@ import {
   readRenderer,
   type NavigatorLike,
   type WebGLLike,
-} from "../../src/game/gpuSignals.js";
+} from "@csarkosh/engine/game/gpuSignals";
 
 /** A WebGL2 context answering RENDERER (0x1F01), if given the debug extension's
  * 0x9246, and `KHR_parallel_shader_compile` when `parallel` is set. */

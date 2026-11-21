@@ -1,12 +1,12 @@
 import { describe, expect, it } from "vitest";
 import type { AtmosphereRecord } from "../../src/game/atmosphereParams.js";
 import type { RainLamp } from "../../src/game/rainField.js";
-import { RAIN_MAP, SPLASH_FOLD_S, SPLASH_TIERS, rainSeeds } from "../../src/game/rainParams.js";
+import { RAIN_MAP, SPLASH_FOLD_S, SPLASH_TIERS, rainSeeds } from "@csarkosh/engine/game/rainParams";
 import {
   SPLASH_INSTANCE_FLOATS, SPLASH_SEED, SUN_UP, emptySplashStageUniforms, emptySplashUniforms, splashInstances, splashStageUniforms, splashUniforms,
   splashesDrawn,
 } from "../../src/game/splashField.js";
-import { WEATHER_PRESETS } from "../../src/game/weather.js";
+import { WEATHER_PRESETS } from "@csarkosh/engine/game/weather";
 import { babylonValues } from "../helpers/babylonFixture.js";
 
 const CAM = { x: 10, y: 5, z: -20 };

@@ -2,8 +2,8 @@ import { describe, expect, it } from "vitest";
 import {
   NURSE_FERN, NURSE_FERN_SCALE, NURSE_FERNS_MAX, NURSE_SEEDLING, NURSE_SEEDLING_SCALE, NURSE_SEEDLINGS_MAX,
   NURSE_SHARE, nursePlants, seedlingGeometry,
-} from "../../src/game/nurseLog.js";
-import { trunkTop } from "../../src/game/logSeat.js";
+} from "@csarkosh/engine/game/nurseLog";
+import { trunkTop } from "@csarkosh/engine/game/logSeat";
 
 describe("nursePlants", () => {
   it("is a pure function of the log's hash", () => {

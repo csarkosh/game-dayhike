@@ -1,8 +1,8 @@
 import { readFileSync } from "node:fs";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { impostorFields, type ImpostorFields } from "../../src/game/impostorField.js";
-import { fieldReply, type FieldReply, type FieldRequest } from "../../src/game/impostorField.worker.js";
-import { FIELD_TIMEOUT_MS, createFieldMaker } from "../../src/game/impostorFieldWorker.js";
+import { impostorFields, type ImpostorFields } from "@csarkosh/engine/game/impostorField";
+import { fieldReply, type FieldReply, type FieldRequest } from "@csarkosh/engine/game/impostorField.worker";
+import { FIELD_TIMEOUT_MS, createFieldMaker } from "@csarkosh/engine/game/impostorFieldWorker";
 
 /** A 16 by 16 picture with a disc drawn in it: enough for the field to have an inside and an outside. */
 function picture(shade = 200): Uint8Array {
@@ -93,7 +93,7 @@ describe("a forest's bakes' fields, made off the page", () => {
   });
 
   it("starts a module worker in the form Vite bundles, at the first bake and not before", () => {
-    const text = readFileSync(new URL("../../src/game/impostorFieldWorker.ts", import.meta.url), "utf8");
+    const text = readFileSync(new URL("../../../engine/src/game/impostorFieldWorker.ts", import.meta.url), "utf8");
     const code = text.replace(/\/\*[\s\S]*?\*\//g, "").replace(/\/\/.*$/gm, "");
     expect(code).toContain('new Worker(new URL("./impostorField.worker.ts", import.meta.url), { type: "module" })');
     const maker = createFieldMaker();

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { createLoadProgress } from "../../src/game/loadProgress.js";
+import { createLoadProgress } from "@csarkosh/engine/game/loadProgress";
 
 describe("the loading bar's model", () => {
   it("starts empty and reads nothing", () => {

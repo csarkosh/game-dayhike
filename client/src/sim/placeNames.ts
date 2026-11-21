@@ -7,7 +7,7 @@
  *
  * sim/ determinism rules: no trig, no Math.pow, no `**`, no hypot.
  */
-import type { Feature } from "./features.js";
+import type { Feature } from "@csarkosh/engine/sim/features";
 import { FIRST_NAMES } from "./hikerNames.js";
 import { SUMMIT_LABEL } from "./signs.js";
 import { nextRandom } from "./types.js";

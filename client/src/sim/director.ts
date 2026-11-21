@@ -2,11 +2,7 @@ import type { EnemyState, Vec3 } from "./types.js";
 import { AiState, cloneVec3, distanceSquared, nextRandom } from "./types.js";
 import type { World } from "./world.js";
 import { groundSpawn, ringSample } from "./spawn.js";
-import {
-  ENEMY_HALF,
-  ENEMY_MAX_HEALTH,
-  ENEMY_MIN_SPAWN_DISTANCE,
-} from "./constants.js";
+import { ENEMY_HALF, ENEMY_MAX_HEALTH, ENEMY_MIN_SPAWN_DISTANCE } from "./dayhikeConstants.js";
 
 /**
  * Outer radius of the spawn ring. ENEMY_MIN_SPAWN_DISTANCE is 25 and

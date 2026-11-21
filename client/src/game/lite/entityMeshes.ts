@@ -77,21 +77,21 @@ import {
   type EngineContext, type MaterialPlugin, type Mesh, type PbrMaterialProps, type PluginUniformBlock, type SceneContext,
 } from "@babylonjs/lite";
 import catalog from "../../../assets/catalog.json" with { type: "json" };
-import { PLAYER_HALF } from "../../sim/constants.js";
+import { PLAYER_HALF } from "@csarkosh/engine/sim/constants";
 import { clipNameFor, resolveCharacterAssets, type CharacterAsset, type ClipKind } from "../characterAssets.js";
 import { HOLLOW_MODEL, stepClip, type ClipClock, type EntityFrame, type EntityModels, type ShadeLook } from "../entityPoses.js";
 import { HOLLOW_EYE_COLOR, HOLLOW_EYE_INTENSITY, HOLLOW_SCALE } from "../hollowLook.js";
-import { writeBodyMatrix, writeClipParams, type BakedClip } from "../skinInstances.js";
-import type { WetUniforms } from "../wetSurface.js";
-import { DRAW_ORDER, createDrawOrders } from "./drawOrder.js";
+import { writeBodyMatrix, writeClipParams, type BakedClip } from "@csarkosh/engine/game/skinInstances";
+import type { WetUniforms } from "@csarkosh/engine/game/wetSurface";
+import { DRAW_ORDER, createDrawOrders } from "@csarkosh/engine/game/lite/drawOrder";
 import { baseColourPlugin, surfaceWetPlugin } from "./forestPlugins.js";
-import type { FrameUploads } from "./frameUploads.js";
+import type { FrameUploads } from "@csarkosh/engine/game/lite/frameUploads";
 import { MATRIX_BYTES } from "./listMeshes.js";
 import { writeShadeLook, type LiteShadeMask } from "./shadeMask.js";
 import { loadSkinnedModel, type SkinClock, type SkinnedModel, type SkinnedPart } from "./skinnedModels.js";
 import eyeLevelVertexSource from "../shaders/entity/eyeLevelVertex.wgsl?raw";
 import eyeLevelColourSource from "../shaders/entity/eyeLevelColour.wgsl?raw";
-import { wgsl } from "../shaders/shaderText.js";
+import { wgsl } from "@csarkosh/engine/game/shaders/shaderText";
 
 /** The bodies' places among the draws, from the shell's first: a ranger's primitives, a place each by their order in the model, then the capsule, then the Hollow's body, which the mask draws and the frame's own pass does not, then the Hollows' eyes. */
 export const BODY_PLACES = { rangers: 0, capsule: 4, figure: 5, eyes: 6 } as const;

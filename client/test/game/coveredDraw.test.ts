@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { COVERED_DRAW_MS, createCoveredDraw } from "../../src/game/coveredDraw.js";
+import { COVERED_DRAW_MS, createCoveredDraw } from "@csarkosh/engine/game/coveredDraw";
 
 describe("the hike's draws under the intro's film", () => {
   it("draws every frame with no film over the hike", () => {

@@ -7,13 +7,13 @@
 // from which Play reaches a hike: a game route with a canvas. Or the page for
 // a visitor who cannot play (client/src/game/turnedAway.ts), which the site
 // shows in place of everything else where its load check
-// (client/src/game/loadCheck.ts) finds no graphics card a hike can be drawn
+// (engine/src/game/loadCheck.ts) finds no graphics card a hike can be drawn
 // with: a runner with no GPU is such a visitor, and the page it is shown is
 // the site working as built. Anything else fails: a blank page, the app's own
 // offline page, a page of another origin (Chromium's error page among them),
 // or a page of the site's that is neither.
 
-/** Why the site turns a visitor away: `TURNED_AWAY_REASONS` in client/src/game/loadCheck.ts. */
+/** Why the site turns a visitor away: `TURNED_AWAY_REASONS` in engine/src/game/loadCheck.ts. */
 const TURNED_AWAY_REASONS = ['no-webgpu', 'no-adapter', 'software', 'short'];
 
 /**

@@ -29,10 +29,10 @@
 import type { EnemyState, PlayerState, Vec3 } from "./types.js";
 import { AiState, Outcome, Phase, cloneVec3, nextRandom } from "./types.js";
 import type { World } from "./world.js";
-import type { TrailGraph, TrailNode } from "./trail.js";
+import type { TrailGraph, TrailNode } from "@csarkosh/engine/sim/trail";
 import { groundSpawn } from "./spawn.js";
 import { hasLineOfSight } from "./ai.js";
-import { aimDirection } from "./view.js";
+import { aimDirection } from "@csarkosh/engine/sim/view";
 import { isOnCorridor } from "./containment.js";
 import { faceToward, horizontalDistSq, playerSees, revealing, walkToward } from "./hollow.js";
 import { climbOf, WATCH_SLOPE_NY } from "./watcher.js";
@@ -41,7 +41,8 @@ import { chaseLineDistance, onWay } from "./chaseLine.js";
 import { wayDirection, wayPoint, wayProject } from "./wayDown.js";
 import { causeOfDeath } from "./deathCause.js";
 import { decided } from "./checkpoint.js";
-import { ENEMY_HALF, ENEMY_MAX_HEALTH, PLAYER_EYE_OFFSET } from "./constants.js";
+import { PLAYER_EYE_OFFSET } from "@csarkosh/engine/sim/constants";
+import { ENEMY_HALF, ENEMY_MAX_HEALTH } from "./dayhikeConstants.js";
 
 /** The mist below which the climb is not haunted: the mist whole on the ground, so the shades have it to come out of. */
 export const HAUNT_MIST_MIN = 0.95;

@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { CAP_RADIUS } from "../../../src/game/droppedCap.js";
-import { cameraAxes, restAxes, restPlanes, viewPlanes, type CameraPose } from "../../../src/game/lite/cameraPose.js";
+import { cameraAxes, restAxes, restPlanes, viewPlanes, type CameraPose } from "@csarkosh/engine/game/lite/cameraPose";
 import { CAP_SPHERE_M, sphereInView } from "../../../src/game/lite/capMesh.js";
 
 describe("the dropped cap on Babylon Lite", () => {

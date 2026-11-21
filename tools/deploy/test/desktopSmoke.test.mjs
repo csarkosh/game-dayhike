@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { readFileSync } from 'node:fs';
+import { existsSync, readFileSync } from 'node:fs';
 import { createRequire } from 'node:module';
 import vm from 'node:vm';
 
@@ -175,7 +175,11 @@ describe('what the smoke reads of the page', () => {
 
 describe('the smoke and the site agree', () => {
   const read = (file) => readFileSync(new URL(file, DESKTOP), 'utf8');
-  const client = (file) => readFileSync(new URL(`../../../client/src/game/${file}`, import.meta.url), 'utf8');
+  // A module of the page is the game's or the engine's: it keeps its path under either's src/.
+  const client = (file) => {
+    const homes = ['client', 'engine'].map((home) => new URL(`../../../${home}/src/game/${file}`, import.meta.url));
+    return readFileSync(homes.find((home) => existsSync(home)) ?? homes[0], 'utf8');
+  };
 
   it('on the reasons the site turns a visitor away for', () => {
     const listed = /export const TURNED_AWAY_REASONS: readonly TurnedAwayReason\[\] = \[([^\]]*)\];/.exec(client('loadCheck.ts'));

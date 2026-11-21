@@ -1,11 +1,12 @@
 import { describe, expect, it } from "vitest";
+import "../../src/sim/passes/index.js";
 import {
   DUFF_ALBEDO, DUFF_BRANCH, DUFF_CHARACTERS, DUFF_CHARACTER_COUNT, DUFF_CLUMP_RADIUS, DUFF_HEIGHT_MAX, DUFF_LEAF, DUFF_TIER_COUNTS, DUFF_TWIG,
   DUFF_VERTEX_BUDGET,
   duffClumpGeometry, duffClumpMaxHeight, duffClumpReach, duffVertexCount,
-} from "../../src/game/duffClump.js";
-import { DUFF_PAD, DUFF_REACH, DUFF_TIER_BAND, DUFF_TIER_EDGE } from "../../src/game/duffField.js";
-import { BLADE_TIP_TINT, BLADE_VERTS } from "../../src/game/bladeClump.js";
+} from "@csarkosh/engine/game/duffClump";
+import { DUFF_PAD, DUFF_REACH, DUFF_TIER_BAND, DUFF_TIER_EDGE } from "@csarkosh/engine/game/duffField";
+import { BLADE_TIP_TINT, BLADE_VERTS } from "@csarkosh/engine/game/bladeClump";
 
 describe("the duff characters", () => {
   it("tints the leaf tan, not red: the litter's own hue in linear terms", () => {

@@ -22,11 +22,11 @@
  * the hike is left, or when it fails. The same rule holds there: no scene to
  * be had is a null, never a rejection, and the build samples as it always did.
  */
-import { installChunks } from "../sim/chunkGrid.js";
-import { installPassHash, passHashCachedFor } from "../sim/forest.js";
-import { terrainVariant } from "../sim/terrain.js";
+import { installChunks } from "@csarkosh/engine/sim/chunkGrid";
+import { installPassHash, passHashCachedFor } from "@csarkosh/engine/sim/forest";
+import { terrainVariant } from "@csarkosh/engine/sim/terrain";
 import type { PreparedScene } from "./preparedScene.js";
-import type { QualityTier } from "./quality.js";
+import type { QualityTier } from "@csarkosh/engine/game/quality";
 import type { WorldPrepReply, WorldPrepRequest, WorldSceneRequest } from "./world.worker.js";
 
 /** How long the start waits for the worker before the page makes the world

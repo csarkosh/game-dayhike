@@ -4,7 +4,7 @@ import {
   CALLAGHAN_ONSET, CALLAGHAN_TOP, CALLAGHAN_COEFF, WHITECAP_MAX,
   waveNumber, waveNumberNewton, groupSpeed, shoalingFactor, refraction,
   weggelCoefficients, breakerIndex, whitecapCoverage,
-} from "../../src/game/oceanPhysics.js";
+} from "@csarkosh/engine/game/oceanPhysics";
 
 const omega = (period: number): number => (2 * Math.PI) / period;
 const length = (period: number, depth: number): number => (2 * Math.PI) / waveNumber(omega(period), depth);

@@ -726,7 +726,7 @@ canopy and meadow poses and the corpus's usual poses, then
 page can ask for them again; `tiers.json` is rewritten by the merge. A uniform
 would have changed all 20.
 
-## 9. The CPU twin: `client/src/game/groundHexParams.ts`
+## 9. The CPU twin: `engine/src/game/groundHexParams.ts`
 
 Beside `swardWeight`, Babylon-free, every constant exported with the include's
 value:

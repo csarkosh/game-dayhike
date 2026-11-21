@@ -1,7 +1,7 @@
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
-import { glbEmissive, glbOcclusion, glbOutline, glbParts } from "../../src/game/glbParts.js";
+import { glbEmissive, glbOcclusion, glbOutline, glbParts } from "@csarkosh/engine/game/glbParts";
 
 const MODELS = join(import.meta.dirname, "../../assets/models");
 

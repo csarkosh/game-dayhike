@@ -1,11 +1,12 @@
 import { describe, expect, it } from "vitest";
+import "../../src/sim/passes/index.js";
 import {
   CULL_MARGIN, CULL_MOVE, CULL_PUSHBACK, CULL_RADIUS, CULL_ROLL, CULL_TURN,
   cullInvalidate, cullPlanes, cullPrefix, cullSet, needsCull, viewPlanes, type CullPose,
-} from "../../src/game/grassCull.js";
-import { BOB_ROLL, MAX_BOB_SCALE } from "../../src/game/viewBob.js";
-import { inCone } from "../../src/game/wildlifeDirector.js";
-import { CLUTTER_CULLED } from "../../src/game/clutterInstances.js";
+} from "@csarkosh/engine/game/grassCull";
+import { BOB_ROLL, MAX_BOB_SCALE } from "@csarkosh/engine/game/viewBob";
+import { inCone } from "@csarkosh/engine/game/wildlifeDirector";
+import { CLUTTER_CULLED } from "@csarkosh/engine/game/clutterInstances";
 import { bladeReach, cardReach, CULLED_MODELS, seen, WIND_FRACTION } from "./helpers/cullReach.js";
 import { babylonValues } from "../helpers/babylonFixture.js";
 import { timeLimit } from "../helpers/timeLimit.js";

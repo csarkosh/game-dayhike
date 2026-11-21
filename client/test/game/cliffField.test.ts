@@ -1,19 +1,19 @@
 import { describe, it, expect } from "vitest";
 import "../../src/sim/passes/index.js";
-import { GROUND_NORMAL_Y } from "../../src/sim/constants.js";
-import { groundCover, rockSlopeBand, type ClutterInstance } from "../../src/sim/clutter.js";
-import { hash3 } from "../../src/sim/field.js";
-import { elevationSampleAt } from "../../src/sim/terrain.js";
-import { forestDensity } from "../../src/sim/vegetation.js";
+import { GROUND_NORMAL_Y } from "@csarkosh/engine/sim/constants";
+import { groundCover, rockSlopeBand, type ClutterInstance } from "@csarkosh/engine/sim/clutter";
+import { hash3 } from "@csarkosh/engine/sim/field";
+import { elevationSampleAt } from "@csarkosh/engine/sim/terrain";
+import { forestDensity } from "@csarkosh/engine/sim/vegetation";
 import {
   CLIFF_CELL, CLIFF_MODEL_WIDTH, CLIFF_RUN_REACH, CLIFF_TILT_MAX,
   cliffCellPoint, cliffCellRuns, cliffFacing, leanPoint, type CliffPoint,
-} from "../../src/sim/cliffField.js";
+} from "@csarkosh/engine/sim/cliffField";
 import {
   CLIFF_BUDGET, CLIFF_PAD, CLIFF_RINGS, cliffBands, cliffOrigin, collectCliffs, createCliffCollector,
-} from "../../src/game/cliffField.js";
-import { seatOnGroundCapped } from "../../src/game/groundTilt.js";
-import { classifySurface } from "../../src/game/terrainSurface.js";
+} from "@csarkosh/engine/game/cliffField";
+import { seatOnGroundCapped } from "@csarkosh/engine/game/groundTilt";
+import { classifySurface } from "@csarkosh/engine/game/terrainSurface";
 import { CLIFF_LAID } from "../sim/helpers/cliffLaid.js";
 import { babylonValues } from "../helpers/babylonFixture.js";
 import { timeLimit } from "../helpers/timeLimit.js";

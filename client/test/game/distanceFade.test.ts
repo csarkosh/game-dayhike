@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { WIDEN_NONE, emptyFadeUniforms, fadeUniforms } from "../../src/game/distanceFade.js";
+import { WIDEN_NONE, emptyFadeUniforms, fadeUniforms } from "@csarkosh/engine/game/distanceFade";
 
 describe("the distance fade's uniforms", () => {
   it("are the eye and the widening's band with its growth past one", () => {

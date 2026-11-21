@@ -212,11 +212,11 @@ The car moves and a box is added, so the generated world changes.
 
 | Value | Where | What happens |
 | --- | --- | --- |
-| `GEN_VERSION` | `client/src/sim/forest.ts` | 6 → 7 |
+| `GEN_VERSION` | `engine/src/sim/forest.ts` | 6 → 7 |
 | The pass hash, −311867473 | `client/test/sim/groundGradient.test.ts` | Re-pinned to the value the new tunables give |
 | The trailhead pass's tunables | `client/src/sim/passes/trailhead.ts` | `CAR_ROAD_Z` changes; `CAR_BED_CLEAR`, `CAR_SLIDE_STEP`, `CAR_SLIDE_MAX` and `SPAWN_GAP` join |
 | The signs pass's tunables | `client/src/sim/passes/signs.ts` | `TRAIL_SIGNS` (1) joins, so the level id moves with the sign whether or not a probed chunk holds its post |
-| The level id's probe | `client/src/sim/forest.ts` | Chunk [-9, -1] joins: it holds the sign's post for the probe's seed |
+| The level id's probe | `engine/src/sim/forest.ts` | Chunk [-9, -1] joins: it holds the sign's post for the probe's seed |
 | The watcher's sweep, 875 of 936 stands | `client/test/sim/watcherSweep.test.ts` | Re-measured. The pad's stands change, because the player there stands and faces differently and the car is in a new place |
 | The trailhead sweep's bounds | `client/test/sim/trailhead.test.ts` | The car's clauses are rewritten for §3.1; the board's stand |
 
@@ -228,8 +228,8 @@ to it was.
 
 | File | Change |
 | --- | --- |
-| `client/src/sim/facing.ts` | New. The trig-free facing, moved out of the search module. |
-| `client/src/sim/boxGap.ts` | New. Distances in the ground plane between a point, a segment and a box, for the car's slide. |
+| `engine/src/sim/facing.ts` | New. The trig-free facing, moved out of the search module. |
+| `engine/src/sim/boxGap.ts` | New. Distances in the ground plane between a point, a segment and a box, for the car's slide. |
 | `client/src/sim/passes/trailhead.ts` | The car's place along the road and its slide (§3.1); `carSite`. |
 | `client/src/sim/spawn.ts` | `trailheadSpawn(graph, car)`: S and the facing (§3.2). |
 | `client/src/sim/world.ts` | `pickSpawn` centres on S; `spawnPlayer` sets the yaw. |

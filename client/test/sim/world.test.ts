@@ -7,9 +7,9 @@ import {
   cloneWorldState,
   serializeWorldState,
 } from "../../src/sim/world.js";
-import { collisionBoxes, parseLevel } from "../../src/sim/level.js";
+import { collisionBoxes, parseLevel } from "@csarkosh/engine/sim/level";
 import { AiState, Outcome, Phase, type InputCommand } from "../../src/sim/types.js";
-import { PLAYER_MAX_HEALTH } from "../../src/sim/constants.js";
+import { PLAYER_MAX_HEALTH } from "../../src/sim/dayhikeConstants.js";
 import sandbox01 from "../../levels/sandbox01.json" with { type: "json" };
 
 const level = parseLevel(sandbox01);

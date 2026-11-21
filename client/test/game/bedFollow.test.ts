@@ -1,8 +1,9 @@
 import { beforeAll, describe, expect, it } from "vitest";
-import "../../src/sim/olympic.js";
-import { setActiveTerrainVariant } from "../../src/sim/terrain.js";
-import { BED_ROWS_PER_FRAME, createBedFollow } from "../../src/game/bedFollow.js";
-import { BED_GRID, bakeBed, bedOriginFor, createBedGrid } from "../../src/game/bedHeight.js";
+import "../../src/sim/passes/index.js";
+import "@csarkosh/engine/sim/olympic";
+import { setActiveTerrainVariant } from "@csarkosh/engine/sim/terrain";
+import { BED_ROWS_PER_FRAME, createBedFollow } from "@csarkosh/engine/game/bedFollow";
+import { BED_GRID, bakeBed, bedOriginFor, createBedGrid } from "@csarkosh/engine/game/bedHeight";
 import { timeLimit } from "../helpers/timeLimit.js";
 
 const SEED = 0x5eed;

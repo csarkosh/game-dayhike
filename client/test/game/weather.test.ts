@@ -37,10 +37,10 @@ import {
   canopyWaterStep,
   rainHissCentreHz,
   rainWindCut,
-} from "../../src/game/weather.js";
-import { windRecordUnder } from "../../src/game/windParams.js";
-import { exposureFor, fogDensityFor, sunPositionAt } from "../../src/game/sky.js";
-import { desaturateRgb, luma, type Rgb } from "../../src/game/colour.js";
+} from "@csarkosh/engine/game/weather";
+import { windRecordUnder } from "@csarkosh/engine/game/windParams";
+import { exposureFor, fogDensityFor, sunPositionAt } from "@csarkosh/engine/game/sky";
+import { desaturateRgb, luma, type Rgb } from "@csarkosh/engine/game/colour";
 
 describe("weather model", () => {
   it("clear is exactly all zeros — the regression anchor", () => {

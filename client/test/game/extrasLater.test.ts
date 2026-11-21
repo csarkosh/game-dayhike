@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { extrasLater } from "../../src/game/extrasLater.js";
+import { extrasLater } from "@csarkosh/engine/game/extrasLater";
 
 describe("a hike's extras, built in a task after the one that asked", () => {
   /** The tasks asked for, run when the test says. */

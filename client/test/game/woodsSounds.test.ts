@@ -2,7 +2,7 @@ import { describe, it, expect } from "vitest";
 import {
   FLY_DAY_MIN, FLY_GAP_S, ODD_BEHIND_SHARE, ODD_GAP_FIRST_S, ODD_GAP_FULL_S, ODD_KINDS, ODD_NIGHT_MIN, ODD_RANGE,
   WOODS_SOUNDS_REST, draw, stepWoodsSounds, woodsSoundsFrom, type OddCue, type WoodsSoundsInputs,
-} from "../../src/game/woodsSounds.js";
+} from "@csarkosh/engine/game/woodsSounds";
 
 const DT = 1 / 60;
 function run(seed: number, input: WoodsSoundsInputs, seconds: number): OddCue[] {

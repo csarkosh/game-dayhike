@@ -9,6 +9,7 @@
     "preview": "vite preview"
   },
   "dependencies": {
+    "@csarkosh/engine": "0.1.0",
     "@babylonjs/lite": "github:csarkosh/babylon-lite#v1.39.3-dayhike.9"
   },
   "devDependencies": {

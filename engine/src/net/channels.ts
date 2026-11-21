@@ -1,5 +1,5 @@
 import type { NetworkConditions, StateHandler, Transport } from "./transport.js";
-import { nextRandom } from "../sim/types.js";
+import { nextRandom } from "../sim/core.js";
 
 export const STATE_CHANNEL = "state";
 export const EVENT_CHANNEL = "event";

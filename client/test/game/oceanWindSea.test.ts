@@ -3,11 +3,11 @@ import {
   WIND_SEA_AFTERNOON, WIND_SEA_DAWN, WIND_SEA_FETCH_COEFF, WIND_SEA_GAMMA, WIND_SEA_HS_COEFF, WIND_SEA_SPREAD,
   WIND_SEA_U_PER_WIND, WIND_SEA_U_REF, createSeaWindLag, fetchShare, hourFactor, lagSeaWind, loopTimeAfter, sharedSeconds, windSeaAtSpeed, windSeaShare,
   windSeaStateFor,
-} from "../../src/game/oceanWindSea.js";
-import { LOOP_SECONDS } from "../../src/game/oceanSpectrum.js";
-import { whitecapCoverage } from "../../src/game/oceanPhysics.js";
-import { FixedStepAccumulator } from "../../src/game/loop.js";
-import { TICK_DT } from "../../src/sim/constants.js";
+} from "@csarkosh/engine/game/oceanWindSea";
+import { LOOP_SECONDS } from "@csarkosh/engine/game/oceanSpectrum";
+import { whitecapCoverage } from "@csarkosh/engine/game/oceanPhysics";
+import { FixedStepAccumulator } from "@csarkosh/engine/game/loop";
+import { TICK_DT } from "@csarkosh/engine/sim/constants";
 
 describe("hourFactor", () => {
   it("calms the dawn, raises the afternoon's sea breeze and leaves the rest of the day alone", () => {

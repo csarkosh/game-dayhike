@@ -1,4 +1,5 @@
 import { describe, it, expect } from "vitest";
+import "../../src/sim/passes/index.js";
 import {
   WATER_ROWS, lakeWaterRow, lakeSkin, waterSkinOffset, CLEAR_LAKE_KD, WATER_F0, WATER_HORIZON, WATER_WIND_MAX, WATER_SKIN_DRIFT,
   fresnelSchlick, fresnelExact, transmission, meanKd, alphaFor,
@@ -6,7 +7,7 @@ import {
   OCEAN_CAP_CYCLES, OCEAN_CAP_PERIOD, OCEAN_FOAM_FADE, OCEAN_INNER_COVER,
   capCycle, capCycleHash, capFires, foamCover, foamLookAge, foamShare, foamWhite, laceCover, laceLevel, oceanCapCells,
   oceanLace, swellPixelKeep, waterSkinHash, waterSkinNoise,
-} from "../../src/game/waterShading.js";
+} from "@csarkosh/engine/game/waterShading";
 import { timeLimit } from "../helpers/timeLimit.js";
 
 describe("Fresnel for water", () => {

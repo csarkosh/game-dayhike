@@ -1,10 +1,11 @@
 import { afterEach, describe, expect, it } from "vitest";
+import "../../src/sim/passes/index.js";
 import {
   WET_BAND, WET_COVE_END, WET_DRY_S, WET_LINE_ABOVE, WET_NO_COVE, WET_RADIUS_MAX, WET_SPECKLE, WET_SPECKLE_S, WET_SWASH_VECS,
   emptyWetUniforms, setWetCove, setWetSwash, setWetWeather, wetBelowLine, wetBodyIsSea, wetLineFor, wetLookAt, wetUniforms,
   type WetBody, type WetLook, type WetSurface,
-} from "../../src/game/wetSurface.js";
-import { SWASH_COLUMNS, SWASH_STRIDE } from "../../src/game/swashTable.js";
+} from "@csarkosh/engine/game/wetSurface";
+import { SWASH_COLUMNS, SWASH_STRIDE } from "@csarkosh/engine/game/swashTable";
 
 /** A surface under no body, as a material starts: the terrain's, whose cap is 0. */
 const NO_BODY: WetSurface = { line: -1e6, level: -1e6, centre: [0, 0], radius: 0, kd: [0, 0, 0], attenuate: true, cap: 0 };

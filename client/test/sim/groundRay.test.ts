@@ -1,12 +1,12 @@
 import { describe, expect, it } from "vitest";
 import "../../src/sim/passes/index.js";
-import { createForest } from "../../src/sim/forest.js";
+import { createForest } from "@csarkosh/engine/sim/forest";
 import { createForestWorld } from "../../src/sim/world.js";
-import { seedFromToken } from "../../src/game/seed.js";
-import { setActiveTerrainVariant, DEFAULT_TERRAIN_VARIANT } from "../../src/sim/terrain.js";
-import { raycastGround } from "../../src/sim/collision.js";
-import { GROUND_RAY_REFINEMENTS, GROUND_RAY_STEP } from "../../src/sim/constants.js";
-import type { GroundField } from "../../src/sim/ground.js";
+import { seedFromToken } from "@csarkosh/engine/game/seed";
+import { setActiveTerrainVariant, DEFAULT_TERRAIN_VARIANT } from "@csarkosh/engine/sim/terrain";
+import { raycastGround } from "@csarkosh/engine/sim/collision";
+import { GROUND_RAY_REFINEMENTS, GROUND_RAY_STEP } from "@csarkosh/engine/sim/constants";
+import type { GroundField } from "@csarkosh/engine/sim/ground";
 import { timeLimit } from "../helpers/timeLimit.js";
 
 setActiveTerrainVariant(DEFAULT_TERRAIN_VARIANT);

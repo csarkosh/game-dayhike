@@ -4,7 +4,7 @@ import {
   exposureFor,
   fogDensityFor,
   sunPositionAt,
-} from "../../src/game/sky.js";
+} from "@csarkosh/engine/game/sky";
 
 describe("sunPositionAt", () => {
   it("returns a unit vector at every hour", () => {

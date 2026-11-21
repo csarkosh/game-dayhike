@@ -21,19 +21,19 @@ import {
   addToScene, createMeshFromData, createPbrMaterial, disposeMeshGpu, removeFromScene, setMeshVisible, setThinInstanceCount, setThinInstances,
   type EngineContext, type MaterialPlugin, type Mesh, type PluginUniformBlock, type SceneContext,
 } from "@babylonjs/lite";
-import type { Dragonflies } from "../dragonflyBehaviour.js";
-import { sphereInPlanes, type ViewPlane } from "../lakeSeen.js";
+import type { Dragonflies } from "@csarkosh/engine/game/dragonflyBehaviour";
+import { sphereInPlanes, type ViewPlane } from "@csarkosh/engine/game/lakeSeen";
 import {
   DRAGONFLY_COLOURS, DRAGONFLY_KINDS, DRAGONFLY_OMEGA, DRAGONFLY_ROUGHNESS, dragonflyGeometry, dragonflyHalfSpan, emptyDragonflyList, fillDragonflyList,
   type DragonflyList,
-} from "../dragonflyShapes.js";
-import { SEE_THROUGH_ORDER } from "./drawOrder.js";
+} from "@csarkosh/engine/game/dragonflyShapes";
+import { SEE_THROUGH_ORDER } from "@csarkosh/engine/game/lite/drawOrder";
 import { oneSidedLightPlugin } from "./forestPlugins.js";
-import type { FrameUploads } from "./frameUploads.js";
+import type { FrameUploads } from "@csarkosh/engine/game/lite/frameUploads";
 import { MATRIX_BYTES } from "./listMeshes.js";
 import { WING_AMP_AT, WING_COLOURWAY_AT, WING_PHASE_AT, wingPlugin } from "./wingPlugin.js";
 import vertexAlphaSource from "../shaders/dragonfly/vertexAlpha.wgsl?raw";
-import { wgsl } from "../shaders/shaderText.js";
+import { wgsl } from "@csarkosh/engine/game/shaders/shaderText";
 
 /** The card's alpha, a vertex's second texture coordinate, onto the surface's: the wings' membrane, the body whole. */
 export function vertexAlphaPlugin(): MaterialPlugin {

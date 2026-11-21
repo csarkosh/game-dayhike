@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { MIRROR_DEPTH_FULL, MIRROR_OFFSET_K, mirrorUv } from "../../src/game/mirrorView.js";
+import { MIRROR_DEPTH_FULL, MIRROR_OFFSET_K, mirrorUv } from "@csarkosh/engine/game/mirrorView";
 
 /** A surface point the mirrored camera sees at clip (0.2, −0.4, ·, 2): the texel (0.55, 0.4) before any ripple. */
 const CLIP: [number, number, number] = [0.2, -0.4, 2];

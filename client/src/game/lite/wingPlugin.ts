@@ -18,13 +18,13 @@
  * The clock is the frame's (`frameBlock.ts`): every wing reads one.
  */
 import type { MaterialPlugin, PluginUniformBlock } from "@babylonjs/lite";
-import { wingHalfSpan } from "../wingParams.js";
+import { wingHalfSpan } from "@csarkosh/engine/game/wingParams";
 import { frameReads } from "./frameBlock.js";
 import { wgslFloat } from "./forestPlugins.js";
-import type { UniformOffsets } from "./pluginUniforms.js";
+import type { UniformOffsets } from "@csarkosh/engine/game/lite/pluginUniforms";
 import wingSource from "../shaders/wing/wing.wgsl?raw";
 import tintSource from "../shaders/wing/tint.wgsl?raw";
-import { fill, wgsl } from "../shaders/shaderText.js";
+import { fill, wgsl } from "@csarkosh/engine/game/shaders/shaderText";
 
 /** Where a bird's numbers ride in its instance's matrix: the last float of each of its first three columns. */
 export const WING_PHASE_AT = 3;

@@ -1,27 +1,29 @@
 import { describe, it, expect } from "vitest";
 import { readFileSync } from "node:fs";
-import "../../src/sim/olympic.js";
-import { denseSample } from "../../src/sim/montane.js";
-import { fbm2d } from "../../src/sim/field.js";
-import { roadOffsetD, gradeSplineD, ROAD_CORRIDOR_HALF, ROAD_BED_HALF, ROAD_LATTICE } from "../../src/sim/road.js";
+import "../../src/sim/passes/index.js";
+import "@csarkosh/engine/sim/olympic";
+import { denseSample } from "@csarkosh/engine/sim/montane";
+import { fbm2d } from "@csarkosh/engine/sim/field";
+import { roadOffsetD, gradeSplineD, ROAD_CORRIDOR_HALF, ROAD_BED_HALF, ROAD_LATTICE } from "@csarkosh/engine/sim/road";
 import {
   olympicBaseSample, roadGradeAt, duneD, DUNE_AMPLITUDE, DUNE_ROAD_NEAR, DUNE_ROAD_FAR, SEA_LEVEL,
   DUNE_ALT_IN_LO, DUNE_ALT_OUT_HI,
-} from "../../src/sim/olympic.js";
+} from "@csarkosh/engine/sim/olympic";
 import {
   checkDerivatives, DERIV_SEED as SEED, sweepPoints, TOL_RATIO, variantOrThrow, H,
 } from "./helpers/derivatives.js";
 import { centerlineX } from "./helpers/roadLine.js";
 import {
   CLIFF_ALT_LO, CLIFF_ROAD_FAR, CLIFF_OUT_ALT_LO, cliffD, cliffMaskD,
-} from "../../src/sim/cliffs.js";
+} from "@csarkosh/engine/sim/cliffs";
 import { SPAWN_FREEBOARD } from "../../src/sim/spawn.js";
 import { featureReach } from "../../src/sim/trailPlan.js";
 import {
   inBowl, TRAILHEAD_U, TRAILHEAD_RADIUS, TRAILHEAD_FADE, TRAIL_Z_ANCHOR, apronKeepD,
 } from "../../src/sim/bowl.js";
-import { roadFrameAt, olympicPreTrailSample, bowlFor, coveFor, COVE_END_BLEND } from "../../src/sim/olympic.js";
-import { TRAIL_CORRIDOR_HALF } from "../../src/sim/trail.js";
+import { roadFrameAt, coveFor, COVE_END_BLEND } from "@csarkosh/engine/sim/olympic";
+import { olympicPreTrailSample, bowlFor } from "../../src/sim/mountain.js";
+import { TRAIL_CORRIDOR_HALF } from "@csarkosh/engine/sim/trail";
 
 // Floors set to roughly half the measured counts (generous margin), per
 // SEED = 0x5eed against the sweeps below.
@@ -519,7 +521,7 @@ describe("the endless highway", () => {
     // olympicSample may call duneD, gated by the true road-offset u/uDz, not
     // olympicBaseFrom gated by d/dDz. Verified to go RED under that precise
     // mutation.
-    const src = readFileSync(new URL("../../src/sim/olympic.ts", import.meta.url), "utf8");
+    const src = readFileSync(new URL("../../../engine/src/sim/olympic.ts", import.meta.url), "utf8");
     const start = src.indexOf("function olympicBaseFrom(");
     const end = src.indexOf("function coastFrame(", start);
     expect(start).toBeGreaterThan(-1);

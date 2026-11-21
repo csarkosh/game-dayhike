@@ -1,4 +1,4 @@
-import type { Rgb } from "./colour.js";
+import type { Rgb } from "@csarkosh/engine/game/colour";
 
 /**
  * How the Hollow is drawn. Babylon-free so the numbers can be read and tested

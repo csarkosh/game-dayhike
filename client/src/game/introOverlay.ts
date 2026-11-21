@@ -9,8 +9,8 @@
  * written to the page is `textContent`, never markup.
  */
 import { createIntroPlayback, type IntroPlayback } from "./introPlayback.js";
-import { createLoadProgress, type LoadProgress } from "./loadProgress.js";
-import type { FilmState } from "./downloadTurns.js";
+import { createLoadProgress, type LoadProgress } from "@csarkosh/engine/game/loadProgress";
+import type { FilmState } from "@csarkosh/engine/game/downloadTurns";
 
 import type { Caption } from "./scene/timeline.js";
 export type { Caption } from "./scene/timeline.js";

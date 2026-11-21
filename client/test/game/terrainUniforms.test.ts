@@ -1,15 +1,16 @@
 import { describe, expect, it } from "vitest";
+import "../../src/sim/passes/index.js";
 import {
   FADE_END, FADE_START, LAYER_F0, LAYER_ROUGHNESS, TEXTURE_MEAN, TILING_METRES,
   TERRAIN_SURFACE, emptyTerrainUniforms, terrainCoverFor, terrainSurfaceUnder, terrainUniforms, type TerrainUniformInputs,
-} from "../../src/game/terrainUniforms.js";
-import { WEATHER_PRESETS, WET_ALBEDO_LOSS, WET_ROUGHNESS_LOSS } from "../../src/game/weather.js";
-import { featurePaintTable, followRoadCentre, roadCentreTable, trailPaintTable } from "../../src/game/terrainTables.js";
-import { FEATURE_TEX_ROWS, FEATURE_TEX_WIDTH } from "../../src/game/featureTable.js";
-import { ROAD_TABLE_HALF_SPAN, ROAD_TABLE_N, ROAD_TABLE_RECENTRE, ROAD_TABLE_STEP } from "../../src/game/roadPaint.js";
-import { TRAIL_PAINT_BUCKET, TRAIL_PAINT_GRID } from "../../src/game/trailPaint.js";
-import type { Feature } from "../../src/sim/features.js";
-import type { TrailGraph } from "../../src/sim/trail.js";
+} from "@csarkosh/engine/game/terrainUniforms";
+import { WEATHER_PRESETS, WET_ALBEDO_LOSS, WET_ROUGHNESS_LOSS } from "@csarkosh/engine/game/weather";
+import { featurePaintTable, followRoadCentre, roadCentreTable, trailPaintTable } from "@csarkosh/engine/game/terrainTables";
+import { FEATURE_TEX_ROWS, FEATURE_TEX_WIDTH } from "@csarkosh/engine/game/featureTable";
+import { ROAD_TABLE_HALF_SPAN, ROAD_TABLE_N, ROAD_TABLE_RECENTRE, ROAD_TABLE_STEP } from "@csarkosh/engine/game/roadPaint";
+import { TRAIL_PAINT_BUCKET, TRAIL_PAINT_GRID } from "@csarkosh/engine/game/trailPaint";
+import type { Feature } from "@csarkosh/engine/sim/features";
+import type { TrailGraph } from "@csarkosh/engine/sim/trail";
 
 /** A world with no road, trail or features, in dry weather, nothing drawn yet. */
 const BARE: TerrainUniformInputs = {

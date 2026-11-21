@@ -37,7 +37,7 @@ data, its origin its top-left corner, sRGB as photographed. Its normal map
 it, listed in `client/assets/catalog.json`'s `textures` and credited, and
 are not read: the moss sits in the bark's fissures, so the bark's own relief
 and roughness map stay under it, and the moss's roughness is a constant
-(§4.2). `MOSS_OUTPUT` in `client/src/game/mossParams.ts` names the colour
+(§4.2). `MOSS_OUTPUT` in `engine/src/game/mossParams.ts` names the colour
 map; `textureUrl` (`assetUrls.ts`) resolves it through the bark's glob,
 widened to `moss.*.ktx2`, so the file is content-hashed and cached as the
 bark's are.

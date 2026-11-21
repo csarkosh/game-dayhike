@@ -1,5 +1,6 @@
 import { describe, it, expect, afterEach } from "vitest";
-import "../../src/sim/montane.js";
+import "../../src/sim/passes/index.js";
+import "@csarkosh/engine/sim/montane";
 import {
   activeTerrainVariantName,
   DEFAULT_TERRAIN_VARIANT,
@@ -7,7 +8,7 @@ import {
   setActiveTerrainVariant,
   terrainVariant,
   terrainVariantNames,
-} from "../../src/sim/terrain.js";
+} from "@csarkosh/engine/sim/terrain";
 
 afterEach(() => {
   // Registry state is module-global; leave it how other test files expect it.

@@ -4,7 +4,7 @@ import { CHASE_SHADOW_DENSITY, CHASE_SHADOW_HUE, VIGNETTE_COLOUR } from "../../s
 import {
   DITHER_INTENSITY, VIGNETTE_CAMERA_FOV, curveSettingsUnder, curveVectors, emptyCurveVectors, materialGradeUniforms, vignetteVectors, type CurveSettings,
 } from "../../src/game/materialGrade.js";
-import { WEATHER_PRESETS, gradeUnder, saturationUnder } from "../../src/game/weather.js";
+import { WEATHER_PRESETS, gradeUnder, saturationUnder } from "@csarkosh/engine/game/weather";
 import { babylonValues } from "../helpers/babylonFixture.js";
 
 const src = (name: string): string => readFileSync(new URL(`../../src/game/${name}`, import.meta.url), "utf8");

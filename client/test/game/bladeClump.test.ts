@@ -1,14 +1,15 @@
 import { describe, expect, it } from "vitest";
+import "../../src/sim/passes/index.js";
 import {
   BLADE_ALBEDO, BLADE_CHARACTERS, BLADE_CLUMP_RADIUS, BLADE_LUMA, BLADE_RINGS, BLADE_SIZE_FACTOR, BLADE_SOFT,
   BLADE_TIER_COUNTS, BLADE_TIP_TINT, BLADE_TRIS, BLADE_VERTEX_BUDGET, BLADE_VERTS, FLOWER_PALETTE,
   bladeAlive, bladeClumpGeometry, bladeCountFor, bladeSecondRandom, bladeVertexCount, createStripWriter,
-} from "../../src/game/bladeClump.js";
+} from "@csarkosh/engine/game/bladeClump";
 import {
   BLADE_CELL, BLADE_CHARACTER_COUNT, BLADE_FINE, BLADE_FLOWER, BLADE_PAD, BLADE_REACH, BLADE_SIZE_FULL,
   BLADE_TIER_BAND, BLADE_TIER_EDGE, BLADE_TUSSOCK, BLADE_WEED,
-} from "../../src/game/bladeField.js";
-import { latticeHash } from "../../src/game/groundHexParams.js";
+} from "@csarkosh/engine/game/bladeField";
+import { latticeHash } from "@csarkosh/engine/game/groundHexParams";
 
 describe("the character and tier tables", () => {
   it("match the spec", () => {

@@ -4,7 +4,7 @@
 
 - Day Hike is drawn by Babylon Lite (`@babylonjs/lite`, version 1.39.3 with 52 patches, tag `v1.39.3-dayhike.9` of `csarkosh/babylon-lite`), on WebGPU, with every shader in WGSL. Babylon.js 9.18, which drew the game on WebGL2 and WebGPU, is out of the tree as of this note, 2026-11-18.
 - The older build (Babylon.js 9.18) was measured against this one on 2026-11-17 and 2026-11-18; the counts below were taken in headless Chrome on a MacBook Air.
-- A browser must offer WebGPU and an adapter that is not the browser's software one and reaches WebGPU's default limits. No optional feature is required (`client/src/game/loadCheck.ts`). Anyone else sees a page that says why (section 6).
+- A browser must offer WebGPU and an adapter that is not the browser's software one and reaches WebGPU's default limits. No optional feature is required (`engine/src/game/loadCheck.ts`). Anyone else sees a page that says why (section 6).
 
 This note answers `2026-11-13-babylon-lite-spike.md`, which measured what Lite would take and buy before anything was built. This one records what was built and what was measured. Where a number was taken, its conditions stand beside it.
 
@@ -85,7 +85,7 @@ The intro is a film played over the hike while the hike loads. On a first visit 
 
 The one left on every tier is a mip chain's blit, made by a synchronous caller; high's second is Lite's depth grab for transmission. In a traced cold run as built the GPU thread spent 0.07 s in synchronous pipeline makes.
 
-**Downloads.** A browser fetches a film element's file at a low priority and every `fetch` at a high one. A hike asked for about fifty files at once, so the film got little of the link while they were in flight, and stood once its buffer was played. While the film plays, a hike's downloads now take turns behind it (`client/src/game/downloadTurns.ts`): a download starts only while the film has enough buffered ahead (hungry below 5 s, fed again at 9 s) and a few at a time, the number doubling while the film stays fed and halving when it goes hungry. A film that holding does not feed holds a hike for about a minute at most, and a hike with no film is not bounded. Counted in headless Chrome on a MacBook Air with the link throttled, Play clicked at once on a cold profile:
+**Downloads.** A browser fetches a film element's file at a low priority and every `fetch` at a high one. A hike asked for about fifty files at once, so the film got little of the link while they were in flight, and stood once its buffer was played. While the film plays, a hike's downloads now take turns behind it (`engine/src/game/downloadTurns.ts`): a download starts only while the film has enough buffered ahead (hungry below 5 s, fed again at 9 s) and a few at a time, the number doubling while the film stays fed and halving when it goes hungry. A film that holding does not feed holds a hike for about a minute at most, and a hike with no film is not bounded. Counted in headless Chrome on a MacBook Air with the link throttled, Play clicked at once on a cold profile:
 
 | link | downloads all at once | as built |
 |---|---|---|
@@ -222,11 +222,11 @@ Lite lacks these, and the fork's reports list them as owed. The game carries eac
 - One still a build a tier; no floor was shot at the beach on medium or low.
 - The sea is drawn at the simulation's tick (`sharedSeconds`, `oceanWindSea.ts`). The stills held `performance.now` and `Date.now`, not the tick, so the two pages may stand at different places in the swash's cycle. How much of the difference is the sea's phase and how much is the drawing has not been separated.
 
-**Seen once.** One page of this build drew a hike with no trees: its console said the forest's trees could not be made after a failed fetch (picture against the older build 50.3). It was one of about a hundred pages of this build on the rig. The view loaded again agrees (0.093). What the older build does in the same case was not checked. That page was of a build that asked for each file once; a fetch that fails the way a network fails is asked for three times in all (`client/src/game/fetchRetry.ts`).
+**Seen once.** One page of this build drew a hike with no trees: its console said the forest's trees could not be made after a failed fetch (picture against the older build 50.3). It was one of about a hundred pages of this build on the rig. The view loaded again agrees (0.093). What the older build does in the same case was not checked. That page was of a build that asked for each file once; a fetch that fails the way a network fails is asked for three times in all (`engine/src/game/fetchRetry.ts`).
 
 ## 6. Who cannot play, and what they see
 
-The page decides once as it loads (`client/src/game/loadCheck.ts`) whether this browser and graphics card can play, from what the page already reads about the GPU. If not, nothing of a hike is fetched or built, and one page (`turnedAway.ts`, with its model in `turnedAwayModel.ts` and its words in `turnedAwayWords.ts`) stands in place of every route, the landing page and an invitation among them. Cyrus decided on 2026-11-13 that such a browser is told at load. Four reasons are told apart:
+The page decides once as it loads (`engine/src/game/loadCheck.ts`) whether this browser and graphics card can play, from what the page already reads about the GPU. If not, nothing of a hike is fetched or built, and one page (`turnedAway.ts`, with its model in `turnedAwayModel.ts` and its words in `turnedAwayWords.ts`) stands in place of every route, the landing page and an invitation among them. Cyrus decided on 2026-11-13 that such a browser is told at load. Four reasons are told apart:
 
 | reason | what it means | headline in a browser |
 |---|---|---|

@@ -8,8 +8,8 @@
  * sim/ determinism rules: no trig, no Math.pow, no `**`, no hypot. Arms carry
  * unit directions, never angles.
  */
-import type { TrailGraph, TrailNode } from "./trail.js";
-import { TRAIL_BED_HALF, nearestTrailNode, trailDistance } from "./trail.js";
+import type { TrailGraph, TrailNode } from "@csarkosh/engine/sim/trail";
+import { TRAIL_BED_HALF, nearestTrailNode, trailDistance } from "@csarkosh/engine/sim/trail";
 import type { Vec3 } from "./types.js";
 
 export type SignArm = {

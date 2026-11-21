@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { gpuTimeLine, gpuTimeReport, parseGpuTime } from "../../src/game/gpuTimeReport.js";
+import { gpuTimeLine, gpuTimeReport, parseGpuTime } from "@csarkosh/engine/game/gpuTimeReport";
 
 const raw = {
   supported: true, build: "abc1234", frameId: 100, renderWidth: 1470, renderHeight: 956,

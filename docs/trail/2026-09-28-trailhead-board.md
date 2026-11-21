@@ -256,11 +256,11 @@ Each is listed in `client/assets/catalog.json` and credited in `CREDITS.md`.
 | --- | --- | --- |
 | The trailhead pass's tunables | `client/src/sim/passes/trailhead.ts` | `SIGN_ROAD_U`, `SIGN_ROAD_Z` and `KIOSK_HALF_*` go; `BOARD_ALONG`, `BOARD_OFFSET`, `BOARD_BED_CLEAR`, `BOARD_ROAD_CLEAR`, `BOARD_BOX_HALF_*`, `BOARD_BOX_STEP` and `BOARD_BOXES` join |
 | The signs pass's tunables | `client/src/sim/passes/signs.ts` | `TRAIL_SIGNS` goes |
-| The level id's probe | `client/src/sim/forest.ts` | The chunks that hold the car and the board's boxes for the probe's seed are measured again and recorded |
+| The level id's probe | `engine/src/sim/forest.ts` | The chunks that hold the car and the board's boxes for the probe's seed are measured again and recorded |
 | The pass hash, 178231578 | `client/test/sim/groundGradient.test.ts` | Re-pinned |
 | The watcher's sweep, 875 of 936 stands | `client/test/sim/watcherSweep.test.ts` | Measured again: the board's boxes now stand beside the trail, about 10.5 m from the pad's centre, and the old board's no longer stand on the pad |
 | `hikerNames` | `client/test/sim/hikerNames.test.ts`, `placeNames.test.ts` | The names the tests expect, where a world's hiker changes |
-| `GEN_VERSION` | `client/src/sim/forest.ts` | Stays 7: what is generated changes, which the pass hash already reads |
+| `GEN_VERSION` | `engine/src/sim/forest.ts` | Stays 7: what is generated changes, which the pass hash already reads |
 
 ## 8. Where the code changes
 

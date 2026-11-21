@@ -1,8 +1,9 @@
 import { describe, expect, it } from "vitest";
+import "../../../src/sim/passes/index.js";
 import { babylonText } from "../../helpers/babylonFixture.js";
 import { FRAME_BLOCK, stageClocks, stageOwn, stageReads } from "../../../src/game/lite/frameBlock.js";
 import { MOTES_FRAME_READS, MOTES_WGSL } from "../../../src/game/lite/motes.js";
-import { MOTE_BOX, MOTE_SALT, emptyMoteUniforms } from "../../../src/game/moteField.js";
+import { MOTE_BOX, MOTE_SALT, emptyMoteUniforms } from "@csarkosh/engine/game/moteField";
 import { inOrder, tight } from "./wgslText.js";
 
 /** Babylon.js's particle stages, as it installs them (recorded). */
@@ -11,7 +12,7 @@ const PARTICLE_VERTEX = tight(babylonText("shaders/particlesVertexShader.glsl"))
 const VERTEX = tight(MOTES_WGSL.vertex);
 const FRAGMENT = tight(MOTES_WGSL.fragment);
 /** `moteField.ts`'s own text: the stage's steps in plain code. */
-const FIELD = tight((await import("node:fs")).readFileSync(new URL("../../../src/game/moteField.ts", import.meta.url), "utf8"));
+const FIELD = tight((await import("node:fs")).readFileSync(new URL("../../../../engine/src/game/moteField.ts", import.meta.url), "utf8"));
 
 describe("the motes' stages on Babylon Lite", () => {
   it("colours a mote as Babylon's particle stage does on the material colour path: the sprite by the colour, to linear, the display curve", () => {

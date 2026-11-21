@@ -1,4 +1,5 @@
 import { describe, it, expect } from "vitest";
+import "../../src/sim/passes/index.js";
 import { createHud } from "../../src/game/hud.js";
 import { StandInElement, asHtml, installStandInDom } from "./helpers/standInDom.js";
 

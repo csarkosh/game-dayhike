@@ -1,4 +1,4 @@
-import { nextRandom } from "../sim/types.js";
+import { nextRandom } from "../sim/core.js";
 import type { NetworkConditions, StateHandler, Transport } from "./transport.js";
 
 type Delivery = { at: number; order: number; deliver: () => void };

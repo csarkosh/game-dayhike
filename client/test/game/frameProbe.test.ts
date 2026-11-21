@@ -28,11 +28,11 @@ import {
   launchLine,
   LOADING_LINE,
   type StartupDeps,
-} from "../../src/game/frameProbe.js";
-import type { GpuSignals } from "../../src/game/gpuSignals.js";
+} from "@csarkosh/engine/game/frameProbe";
+import type { GpuSignals } from "@csarkosh/engine/game/gpuSignals";
 import { landingModel } from "../../src/game/landingModel.js";
-import { DETECT_VERSION, autoTier, withGovernorDrop, type ProbeReading, type QualityTier, type VerdictEngine } from "../../src/game/quality.js";
-import { readAutoRecord, writeAutoRecord } from "../../src/game/tierChoice.js";
+import { DETECT_VERSION, autoTier, withGovernorDrop, type ProbeReading, type QualityTier, type VerdictEngine } from "@csarkosh/engine/game/quality";
+import { readAutoRecord, writeAutoRecord } from "@csarkosh/engine/game/tierChoice";
 
 const f = (n: number, ms: number): number[] => Array.from({ length: n }, () => ms);
 const reading = (tier: QualityTier, meanMs: number): ProbeReading =>
@@ -959,7 +959,7 @@ describe("autoPick's recommendation", () => {
   const SAFARI_SIGNALS: GpuSignals = {
     renderer: "Apple GPU", adapter: null, limits: null, features: null, adapterStatus: "none", parallelCompile: true, cores: 8, memoryGb: null, mobile: false, browser: 26,
   };
-  const at = (record: import("../../src/game/quality.js").AutoRecord | null) =>
+  const at = (record: import("@csarkosh/engine/game/quality").AutoRecord | null) =>
     autoPick(SAFARI_SIGNALS, { record, pixels: 2_073_600, now: 1_790_000_000_000, stepSettles: true });
 
   it("is what the frame measured once a verdict holds, else the class's ceiling", () => {

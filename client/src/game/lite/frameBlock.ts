@@ -74,18 +74,18 @@
  * inland it stands as it was last packed, and the run is the clocks'.
  */
 import { emptyAtmosphereUniforms, type AtmosphereUniforms } from "../atmosphereParams.js";
-import { emptyFadeUniforms } from "../distanceFade.js";
+import { emptyFadeUniforms } from "@csarkosh/engine/game/distanceFade";
 import { emptyMaterialGradeUniforms, type MaterialGradeUniforms } from "../materialGrade.js";
-import { emptyMoteUniforms } from "../moteField.js";
+import { emptyMoteUniforms } from "@csarkosh/engine/game/moteField";
 import { emptyRainUniforms } from "../rainField.js";
 import { emptySplashUniforms } from "../splashField.js";
-import { emptySeaFrameUniforms, type SeaFrameUniforms } from "../seaUniforms.js";
-import { WATER_RING_COUNT } from "../water.js";
-import { FOLIAGE_PLAYERS, FOLIAGE_PROFILES, emptyFoliageUniforms, foliageLook, foliageUniforms } from "../foliageUniforms.js";
-import { emptyTerrainUniforms, type TerrainUniforms } from "../terrainUniforms.js";
-import { emptyWaterFrameUniforms, type WaterFrameUniforms } from "../waterSurface.js";
-import { WET_SWASH_VECS, emptyWetUniforms, type WetUniforms } from "../wetSurface.js";
-import { uniformFields, writeUniforms, type UniformField, type UniformOffsets, type UniformRecord } from "./pluginUniforms.js";
+import { emptySeaFrameUniforms, type SeaFrameUniforms } from "@csarkosh/engine/game/seaUniforms";
+import { WATER_RING_COUNT } from "@csarkosh/engine/game/water";
+import { FOLIAGE_PLAYERS, FOLIAGE_PROFILES, emptyFoliageUniforms, foliageLook, foliageUniforms } from "@csarkosh/engine/game/foliageUniforms";
+import { emptyTerrainUniforms, type TerrainUniforms } from "@csarkosh/engine/game/terrainUniforms";
+import { emptyWaterFrameUniforms, type WaterFrameUniforms } from "@csarkosh/engine/game/waterSurface";
+import { WET_SWASH_VECS, emptyWetUniforms, type WetUniforms } from "@csarkosh/engine/game/wetSurface";
+import { uniformFields, writeUniforms, type UniformField, type UniformOffsets, type UniformRecord } from "@csarkosh/engine/game/lite/pluginUniforms";
 
 /** The block's name in WGSL: a field is read as `hikeFrame.<name>`. */
 export const FRAME_BLOCK = "hikeFrame";

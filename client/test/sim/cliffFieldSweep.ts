@@ -1,6 +1,6 @@
 import { expect } from "vitest";
 import "../../src/sim/passes/index.js";
-import { CLIFF_CELL, CLIFF_RUN_REACH, cliffCellPoint, cliffCellRuns } from "../../src/sim/cliffField.js";
+import { CLIFF_CELL, CLIFF_RUN_REACH, cliffCellPoint, cliffCellRuns } from "@csarkosh/engine/sim/cliffField";
 import { CLIFF_LAID } from "./helpers/cliffLaid.js";
 import { seedPart } from "../helpers/seedPart.js";
 

@@ -1,8 +1,8 @@
 import { describe, expect, it } from "vitest";
-import { calmShare } from "../../src/game/lakeCalm.js";
-import { PAW_COVER_SHELTER, createCalmFade, fadedCalmShare, lakeCalmUnder, type LakeCalmFrame } from "../../src/game/lakeCalmFrame.js";
-import { DEFAULT_WEATHER, WEATHER_PRESETS } from "../../src/game/weather.js";
-import { GAME_FOV } from "../../src/game/gameLens.js";
+import { calmShare } from "@csarkosh/engine/game/lakeCalm";
+import { PAW_COVER_SHELTER, createCalmFade, fadedCalmShare, lakeCalmUnder, type LakeCalmFrame } from "@csarkosh/engine/game/lakeCalmFrame";
+import { DEFAULT_WEATHER, WEATHER_PRESETS } from "@csarkosh/engine/game/weather";
+import { GAME_FOV } from "@csarkosh/engine/game/gameLens";
 
 describe("the lakes' calm through a weather fade", () => {
   it("stands at the default weather with no fade running", () => {

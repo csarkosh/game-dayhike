@@ -1,9 +1,10 @@
 import { describe, expect, it } from "vitest";
-import "../../src/sim/olympic.js";
+import "../../src/sim/passes/index.js";
+import "@csarkosh/engine/sim/olympic";
 import {
   COHORT_GIANT, COHORT_LOG, COHORT_SAPLING, COHORT_SNAG, treesInRect,
-} from "../../src/sim/vegetation.js";
-import { DEFAULT_TERRAIN_VARIANT, setActiveTerrainVariant } from "../../src/sim/terrain.js";
+} from "@csarkosh/engine/sim/vegetation";
+import { DEFAULT_TERRAIN_VARIANT, setActiveTerrainVariant } from "@csarkosh/engine/sim/terrain";
 
 /**
  * The old-growth stand census: the promises cohort tuning must

@@ -1,4 +1,4 @@
-import { createSyncJobs, type Slices } from "../../src/game/syncJobs.js";
+import { createSyncJobs, type Slices } from "@csarkosh/engine/game/syncJobs";
 
 /**
  * Runs `slices` to its end the way the renderer's scheduler runs a job, on a clock that has passed a slice's whole

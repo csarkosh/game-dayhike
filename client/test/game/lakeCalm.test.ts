@@ -4,8 +4,8 @@ import {
   ROUGH_RAIN, ROUGH_RAIN_FROM, ROUGH_RAIN_TO, ROUGH_SHELTER, ROUGH_WIND01, ROUGH_WIND_FROM, ROUGH_WIND_TO,
   SLOPE_CRISP_DEG, SLOPE_GLASS_DEG, SLOPE_PAW_DEG,
   calmShare, isRough, roughShare, smearPx,
-} from "../../src/game/lakeCalm.js";
-import { WEATHER_PRESETS, type WeatherPresetName } from "../../src/game/weather.js";
+} from "@csarkosh/engine/game/lakeCalm";
+import { WEATHER_PRESETS, type WeatherPresetName } from "@csarkosh/engine/game/weather";
 
 /** The hours every row is read at: the table's edges, both ramps' midpoints, dawn and night. */
 const HOURS = [0, 4.5, 6.25, 8, 8.5, 9, 12, 17, 17.5, 18, 22] as const;

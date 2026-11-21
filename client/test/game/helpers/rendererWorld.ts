@@ -4,7 +4,7 @@
  * the wind test in `lite/renderer.test.ts`; the files beside it that build
  * renderers by the lake and the sea read the same.
  */
-import type { Level } from "../../../src/sim/level.js";
+import type { Level } from "@csarkosh/engine/sim/level";
 import { Outcome, Phase, type PlayerState, type WorldState } from "../../../src/sim/types.js";
 
 /** A hand-authored level with nothing in it: `forest: null` keeps the forest,

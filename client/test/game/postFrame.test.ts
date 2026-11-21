@@ -1,7 +1,7 @@
 import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 import { CHASE_LIFT, CHASE_TINT, PAINT_AMBER, PAINT_ASH, PAINT_OILS, gradeRecordUnder } from "../../src/game/gradeParams.js";
-import { LENS } from "../../src/game/lensParams.js";
+import { LENS } from "@csarkosh/engine/game/lensParams";
 import {
   FAR_CLOUD_UNIFORMS, FAR_SOFT_BAND, FAR_SOFT_RADIUS, HALATION_RATIO, LENS_FOLD_S, LENS_IDLE_S, SHADE_BLUR, SHADE_DARK, SHADE_MONSTER_DARK,
   composeUniforms, createLensGate, createPaletteFade, createTaaFrame, endBlurKernel, extractUniforms, farSoftUniforms, gradeUniforms, lensUniforms,
@@ -9,9 +9,9 @@ import {
 } from "../../src/game/postFrame.js";
 import {
   PAINT_RADIUS_MEDIUM, PAINT_SCALE, PAINT_STRENGTH, TAA_BLEND, TAA_BLEND_STILL, TAA_CLIP, TAA_SHARPEN, paintTexelRadius, postFeaturesFor, taaJitter,
-} from "../../src/game/postParams.js";
+} from "@csarkosh/engine/game/postParams";
 import { STARE_LENS_REST } from "../../src/game/stareLens.js";
-import { WEATHER_PRESETS } from "../../src/game/weather.js";
+import { WEATHER_PRESETS } from "@csarkosh/engine/game/weather";
 
 const src = (name: string): string => readFileSync(new URL(`../../src/game/${name}`, import.meta.url), "utf8");
 

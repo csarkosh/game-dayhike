@@ -7,9 +7,9 @@
  *
  * Registers the olympic variant as a side effect so callers don't have to.
  */
-import "../../../src/sim/olympic.js";
-import { fbm2d } from "../../../src/sim/field.js";
-import { roadOffsetD } from "../../../src/sim/road.js";
+import "@csarkosh/engine/sim/olympic";
+import { fbm2d } from "@csarkosh/engine/sim/field";
+import { roadOffsetD } from "@csarkosh/engine/sim/road";
 import { DERIV_SEED as SEED, variantOrThrow } from "./derivatives.js";
 
 /** Same off-lattice first coordinate and salt the coastline warp uses. */

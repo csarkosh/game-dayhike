@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
-import { createFrameFit, frameSizeFor, type FrameFitDeps } from "../../src/game/frameSize.js";
-import { QUALITY } from "../../src/game/quality.js";
-import { RENDER_SCALE_DROP_WINDOWS, RENDER_SCALE_SLOW_HZ, RENDER_SCALE_STEPS, RENDER_SCALE_WINDOW_S, renderScaleRuns } from "../../src/game/renderScale.js";
+import { createFrameFit, frameSizeFor, type FrameFitDeps } from "@csarkosh/engine/game/frameSize";
+import { QUALITY } from "@csarkosh/engine/game/quality";
+import { RENDER_SCALE_DROP_WINDOWS, RENDER_SCALE_SLOW_HZ, RENDER_SCALE_STEPS, RENDER_SCALE_WINDOW_S, renderScaleRuns } from "@csarkosh/engine/game/renderScale";
 
 /** A canvas and a surface as the fit reads and sizes them. */
 function page(width: number, height: number, ratio = 1): FrameFitDeps & { box: { width: number; height: number }; display: { ratio: number }; sets: [number, number][] } {

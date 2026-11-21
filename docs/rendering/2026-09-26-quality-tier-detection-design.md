@@ -238,7 +238,7 @@ the tier, and it shares the adapter request (§5.1).
 
 ### 5.1 One function
 
-`gatherSignals(env): Promise<GpuSignals>` in `client/src/game/gpuSignals.ts`,
+`gatherSignals(env): Promise<GpuSignals>` in `engine/src/game/gpuSignals.ts`,
 Babylon-free, with the browser behind `env` so every branch is tested with plain
 objects:
 
@@ -297,7 +297,7 @@ awaits it before the game is built.
 
 ### 5.2 The class table
 
-`classifyGpu(signals): GpuClass` in `client/src/game/gpuClass.ts`, pure. First
+`classifyGpu(signals): GpuClass` in `engine/src/game/gpuClass.ts`, pure. First
 match wins, top to bottom:
 
 | # | when | class |

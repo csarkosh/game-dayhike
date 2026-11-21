@@ -1,10 +1,11 @@
 import { describe, it, expect, vi } from "vitest";
+import "../../src/sim/passes/index.js";
 import {
   GOVERNOR_IDLE_MAX_MS, GOVERNOR_LIMIT_MS, GOVERNOR_LINE_MS, GOVERNOR_START_MS, GOVERNOR_STALL_MS, GOVERNOR_WINDOW_MS, GOVERNOR_WINDOWS,
   GOVERNOR_ENABLED, actOnDrop, createGovernor, governHike, governorDecision, governorLine, steadyFrame, type DropDeps, type Governor,
 } from "../../src/game/governor.js";
-import type { QualityTier } from "../../src/game/quality.js";
-import { whenWorldIn } from "../../src/game/worldWait.js";
+import type { QualityTier } from "@csarkosh/engine/game/quality";
+import { whenWorldIn } from "@csarkosh/engine/game/worldWait";
 
 /** Frames of `ms` each, from `from` until the clock reaches `until`; returns the clock. */
 function feed(g: Governor, from: number, until: number, ms: number, steady = true): number {

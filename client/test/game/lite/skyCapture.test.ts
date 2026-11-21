@@ -1,13 +1,14 @@
 import { describe, expect, it } from "vitest";
 import { createHash } from "node:crypto";
 import { readFileSync } from "node:fs";
+import "../../../src/sim/passes/index.js";
 import environmentBrdf from "../../../src/game/lite/environmentBrdf.png?inline";
 import { SKY_CAPTURE_BYTES, SKY_CAPTURE_WGSL, faceValues, skyCaptureValues } from "../../../src/game/lite/skyCapture.js";
 import { SKY_RADIANCE_WGSL } from "../../../src/game/lite/skyDome.js";
-import { SKY_DOME_SIZE } from "../../../src/game/skyDomeParams.js";
-import { SKY_PROBE_FACES, SKY_PROBE_SIZE } from "../../../src/game/skyProbeParams.js";
-import { skyStateFor } from "../../../src/game/skyState.js";
-import { WEATHER_PRESETS } from "../../../src/game/weather.js";
+import { SKY_DOME_SIZE } from "@csarkosh/engine/game/skyDomeParams";
+import { SKY_PROBE_FACES, SKY_PROBE_SIZE } from "@csarkosh/engine/game/skyProbeParams";
+import { skyStateFor } from "@csarkosh/engine/game/skyState";
+import { WEATHER_PRESETS } from "@csarkosh/engine/game/weather";
 import { skyFixture } from "../helpers/skyFixture.js";
 
 const tight = (text: string): string => text.replace(/\s+/g, "");

@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
-import { createFirstBuilds } from "../../src/game/firstBuilds.js";
-import type { Slices } from "../../src/game/syncJobs.js";
+import { createFirstBuilds } from "@csarkosh/engine/game/firstBuilds";
+import type { Slices } from "@csarkosh/engine/game/syncJobs";
 
 /** A loader whose turns the test runs by hand, on a clock the slices advance. */
 function rig(sliceMs = 8) {

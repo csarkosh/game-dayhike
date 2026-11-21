@@ -31,18 +31,18 @@ import {
   addToScene, createBox, createRenderTexture2D, createShaderMaterial, setShaderTexture, setShaderUniform, updateTextureRegion,
   type EngineContext, type Mesh, type PluginUniformBlock, type SceneContext, type ShaderMaterial, type Texture2D,
 } from "@babylonjs/lite";
-import { MATERIAL_GRADE_WGSL } from "./displayCurve.js";
-import { rgbToHalfRgba } from "../halfFloat.js";
-import { SKY_DOME_SIZE, createSkyTableUploads, emptySkyDomeUniforms, skyDomeUniforms } from "../skyDomeParams.js";
-import { SLICE_AZIMUTHS, SLICE_ELEVATIONS } from "../skyModel.js";
-import { MIST_HORIZON, SUN_DISC_CAPTURE_MAX, SUN_DISC_COS, type SkyState } from "../skyState.js";
-import { DRAW_ORDER } from "./drawOrder.js";
+import { MATERIAL_GRADE_WGSL } from "@csarkosh/engine/game/lite/displayCurve";
+import { rgbToHalfRgba } from "@csarkosh/engine/game/halfFloat";
+import { SKY_DOME_SIZE, createSkyTableUploads, emptySkyDomeUniforms, skyDomeUniforms } from "@csarkosh/engine/game/skyDomeParams";
+import { SLICE_AZIMUTHS, SLICE_ELEVATIONS } from "@csarkosh/engine/game/skyModel";
+import { MIST_HORIZON, SUN_DISC_CAPTURE_MAX, SUN_DISC_COS, type SkyState } from "@csarkosh/engine/game/skyState";
+import { DRAW_ORDER } from "@csarkosh/engine/game/lite/drawOrder";
 import { wgslFloat } from "./forestPlugins.js";
 import { FRAME_CONTRAST_NAME, FRAME_EXPOSURE_NAME, stageOwn, stageReads } from "./frameBlock.js";
 import radianceSource from "../shaders/skyDome/radiance.wgsl?raw";
 import domeVertexSource from "../shaders/skyDome/dome.vertex.wgsl?raw";
 import domeFragmentSource from "../shaders/skyDome/dome.fragment.wgsl?raw";
-import { fill, wgsl } from "../shaders/shaderText.js";
+import { fill, wgsl } from "@csarkosh/engine/game/shaders/shaderText";
 
 const f = wgslFloat;
 

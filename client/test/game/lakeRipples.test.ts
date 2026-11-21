@@ -1,5 +1,6 @@
 // client/test/game/lakeRipples.test.ts
 import { describe, it, expect } from "vitest";
+import "../../src/sim/passes/index.js";
 import {
   PAW_FEATURE_M, PAW_SPEED, PAW_EDGE_M, PAW_LIFE_S, PAW_GUST_FLOOR, PAW_COVER_TABLE, OCTAVE_FLOOR,
   LAKE_RING_REACH, LAKE_RING_FADE_M, LAKE_RING_CELL, LAKE_RING_SPEED, LAKE_RING_LAMBDA, LAKE_RING_TAU, LAKE_RING_AMP,
@@ -7,13 +8,13 @@ import {
   LAKE_BREEZE_GAIN, LAKE_BREEZE_FLOOR, LAKE_WARP_M, lakeBreeze,
   lakeGust, lakePawDrift, lakePaw, lakePawThreshold, octaveAmplitude, lakeLiveRings, lakeRingHeight, lakeRingDh, lakeRingHash, lakeRainSlope,
   lakeSunShare,
-} from "../../src/game/lakeRipples.js";
+} from "@csarkosh/engine/game/lakeRipples";
 import {
   WIND_TIME_WRAP, WIND_K1, WIND_K2, WIND_OMEGA_GUST, WIND_OMEGA_GUST2, WIND_RAGGED, WIND_RAGGED_CELL,
   directionAt, gustAt, windRecordUnder,
-} from "../../src/game/windParams.js";
-import { WEATHER_PRESETS } from "../../src/game/weather.js";
-import { midgeHash } from "../../src/game/midgeMotion.js";
+} from "@csarkosh/engine/game/windParams";
+import { WEATHER_PRESETS } from "@csarkosh/engine/game/weather";
+import { midgeHash } from "@csarkosh/engine/game/midgeMotion";
 import { babylonText } from "../helpers/babylonFixture.js";
 import { timeLimit } from "../helpers/timeLimit.js";
 

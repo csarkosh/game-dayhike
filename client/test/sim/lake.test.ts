@@ -1,11 +1,12 @@
 import { describe, expect, it } from "vitest";
-import "../../src/sim/olympic.js";
-import { bowlFor } from "../../src/sim/olympic.js";
-import { featureStageD, marshWeightAt, lobePoints, MARSH_AMP, MARSH_MURK_MIN } from "../../src/sim/features.js";
-import { lakeShoreInto, newLakeShore, rayToShore } from "../../src/sim/lakeShape.js";
+import "../../src/sim/passes/index.js";
+import "@csarkosh/engine/sim/olympic";
+import { bowlFor } from "../../src/sim/mountain.js";
+import { featureStageD, marshWeightAt, lobePoints, MARSH_AMP, MARSH_MURK_MIN } from "@csarkosh/engine/sim/features";
+import { lakeShoreInto, newLakeShore, rayToShore } from "@csarkosh/engine/sim/lakeShape";
 import { checkDerivatives, TOL_RATIO, variantOrThrow } from "./helpers/derivatives.js";
 import { firstPondWorld } from "./helpers/lakes.js";
-import { activeTerrainVariant, type LakeSource } from "../../src/sim/terrain.js";
+import { activeTerrainVariant, type LakeSource } from "@csarkosh/engine/sim/terrain";
 import { LOBBY_SEEDS } from "./trailGateSeeds.js";
 import { timeLimit } from "../helpers/timeLimit.js";
 

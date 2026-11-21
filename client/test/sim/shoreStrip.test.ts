@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, it } from "vitest";
 import "../../src/sim/passes/index.js";
-import { DEFAULT_TERRAIN_VARIANT, setActiveTerrainVariant } from "../../src/sim/terrain.js";
-import { registeredPasses } from "../../src/sim/chunk.js";
+import { DEFAULT_TERRAIN_VARIANT, setActiveTerrainVariant } from "@csarkosh/engine/sim/terrain";
+import { registeredPasses } from "@csarkosh/engine/sim/chunk";
 import {
   SHORE_STRIP_TUNABLES, STRIP_EDGE, STRIP_FADE, STRIP_FOREST_FLOOR, STRIP_HALF, STRIP_LIFT, STRIP_REACH,
   shoreHeight, shoreStrip, shoreStripAt,

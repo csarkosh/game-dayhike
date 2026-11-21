@@ -7,8 +7,8 @@
  */
 import { isHollow } from "../sim/hollow.js";
 import { AiState, type WorldState } from "../sim/types.js";
-import type { PlayerPoint, WildlifeEvent } from "./wildlifeBehaviour.js";
-import type { MatchState, View } from "./wildlifeDirector.js";
+import type { PlayerPoint, WildlifeEvent } from "@csarkosh/engine/game/wildlifeBehaviour";
+import type { MatchState, View } from "@csarkosh/engine/game/wildlifeDirector";
 
 export type WildlifeInputs = {
   /**

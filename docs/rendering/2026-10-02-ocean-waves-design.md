@@ -38,7 +38,7 @@ What shapes it:
 ## 1. The sea today
 
 - **Geometry.** Four flat clipmap rings follow the camera, 128 cells a side, a
-  vertex every 8, 16, 32 and 64 m (`client/src/game/water.ts`), out to about
+  vertex every 8, 16, 32 and 64 m (`engine/src/game/water.ts`), out to about
   4 km; their borders are not stitched, since a flat plane cannot crack. No
   vertex is displaced; the plugin uses the vertex hooks
   `CUSTOM_VERTEX_DEFINITIONS` and `CUSTOM_VERTEX_UPDATE_WORLDPOS` only.
@@ -338,7 +338,7 @@ swash sub-project's.
 - **The sea state.** The swell from the world seed; the wind sea from the
   weather and the hour, which every client already computes from shared state.
   Nothing new crosses the network.
-- **Where the maths lives.** `client/src/game/oceanWaves.ts`, Babylon-free: the
+- **Where the maths lives.** `engine/src/game/oceanWaves.ts`, Babylon-free: the
   sea state from a seed, the components, the tables, and the swell's height,
   slopes, phase and break at a point and a time. The shaders mirror it; tests
   hold the two in lockstep. The simulation does not read it in this

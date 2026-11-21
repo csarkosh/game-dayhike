@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { createDeviceMakes, type MakesDevice } from "../../src/game/deviceMakes.js";
+import { createDeviceMakes, type MakesDevice } from "@csarkosh/engine/game/deviceMakes";
 
 /** A device as the count meets one: its calls on a prototype, as a browser's are, each saying it ran. */
 function fakeDevice(): { device: MakesDevice; ran: string[]; settle: (() => void)[] } {

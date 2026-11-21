@@ -5,7 +5,8 @@
   "type": "module",
   "workspaces": [
     "client",
-    "server"
+    "server",
+    "engine"
   ],
   "engines": {
     "node": "^22.23.4 || ^24.22.1 || >=26.12.1"
@@ -23,7 +24,7 @@
     "test:watch": "vitest --root client",
     "gate": "node tools/gate.mjs",
     "bench": "vitest bench --root client",
-    "typecheck": "tsc -p client --noEmit && tsc -p server --noEmit",
+    "typecheck": "tsc -p engine --noEmit && tsc -p client --noEmit && tsc -p server --noEmit",
     "lint": "eslint .",
     "vendor:ktx2": "node tools/vendor-ktx2.mjs",
     "vendor:visits": "node tools/vendor-visits.mjs",

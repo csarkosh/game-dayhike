@@ -1,5 +1,6 @@
 import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
+import "../../../src/sim/passes/index.js";
 import { chainTargetsStand } from "../../../src/game/lite/postChain.js";
 
 const src = readFileSync(new URL("../../../src/game/lite/postChain.ts", import.meta.url), "utf8");

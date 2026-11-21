@@ -9,9 +9,7 @@
  * sim/ determinism rules apply: no trig, no Math.pow, no `**`, no hypot.
  */
 import { fbm2, hash3, valueNoise2 } from "./field.js";
-import { activeTerrainVariant, elevationSampleAt, type TerrainSample, type WaterBodySource } from "./terrain.js";
-import { shoreHeight } from "./shoreStrip.js";
-import { TRAIL_Z_ANCHOR, TRAILHEAD_U } from "./bowl.js";
+import { activeTerrainVariant, elevationSampleAt, shoreHeight, type TerrainSample, type WaterBodySource } from "./terrain.js";
 import { forestDensity, SLOPE_HI, SLOPE_LO } from "./vegetation.js";
 import { NO_FEATURE_MASK, marshWeightAt, POND_SHORE, type FeatureMask } from "./features.js";
 import { SEEP_OCTAVES, SEEP_SALT, SEEP_WAVELENGTH, seepOffset } from "./seep.js";
@@ -703,11 +701,11 @@ const CLASSES: readonly ClassConfig[] = [
 /** Nothing that stands tall grows within this of the pad's centre (m): where a player arrives, the entrance and the board. */
 export const TRAILHEAD_CLEARING = 24;
 function inTrailheadClearing(seed: number, x: number, z: number): boolean {
-  const dz = z - TRAIL_Z_ANCHOR;
+  const clearing = activeTerrainVariant().clearing;
+  if (clearing === undefined) return false;
+  const dz = z - clearing.z;
   if (dz >= TRAILHEAD_CLEARING || dz <= -TRAILHEAD_CLEARING) return false;
-  const centre = activeTerrainVariant().roadCenterX?.(seed, TRAIL_Z_ANCHOR);
-  if (centre === undefined) return false;
-  const dx = x - (centre + TRAILHEAD_U);
+  const dx = x - clearing.x(seed);
   return dx * dx + dz * dz < TRAILHEAD_CLEARING * TRAILHEAD_CLEARING;
 }
 

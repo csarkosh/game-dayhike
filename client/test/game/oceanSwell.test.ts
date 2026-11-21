@@ -4,8 +4,8 @@ import {
   SWELL_HS_MAX, SWELL_HS_MEDIAN, SWELL_HS_MIN, SWELL_PAIR_DF_MAX, SWELL_PAIR_DF_MIN, SWELL_Q0, SWELL_Q_SUM_MAX,
   SWELL_SPREAD_MAX, SWELL_SPREAD_MIN, SWELL_TP_MAX, SWELL_TP_MIN, SWELL_TRAVEL_MAX_DEG,
   swellComponents, swellStateFor, swellTravelDirection, type SwellComponent,
-} from "../../src/game/oceanSwell.js";
-import { OCEAN_G } from "../../src/game/oceanPhysics.js";
+} from "@csarkosh/engine/game/oceanSwell";
+import { OCEAN_G } from "@csarkosh/engine/game/oceanPhysics";
 import { LOBBY_SEEDS } from "../sim/trailGateSeeds.js";
 
 // Every world's swell, drawn once. The swell reads only the seed's hashes

@@ -1,15 +1,17 @@
 import { describe, it, expect } from "vitest";
-import "../../src/sim/olympic.js";
-import { setActiveTerrainVariant, DEFAULT_TERRAIN_VARIANT, terrainVariant } from "../../src/sim/terrain.js";
-import { bowlFor, roadFrameAt } from "../../src/sim/olympic.js";
+import "../../src/sim/passes/index.js";
+import "@csarkosh/engine/sim/olympic";
+import { setActiveTerrainVariant, DEFAULT_TERRAIN_VARIANT, terrainVariant } from "@csarkosh/engine/sim/terrain";
+import { roadFrameAt } from "@csarkosh/engine/sim/olympic";
+import { bowlFor } from "../../src/sim/mountain.js";
 import {
   landmarkMaskAt, LANDMARK_TUNABLES, LANDMARK_DISC_RADIUS, LANDMARK_DISC_FADE,
   LANDMARK_BOWL_MARGIN, LANDMARK_ORDER, LANDMARK_SPACING,
   type Landmark,
-} from "../../src/sim/landmarks.js";
-import { forestDensity } from "../../src/sim/vegetation.js";
-import { clutterDensity, CLUTTER_BOULDER } from "../../src/sim/clutter.js";
-import { segmentDistance, TRAIL_CORRIDOR_HALF } from "../../src/sim/trail.js";
+} from "@csarkosh/engine/sim/landmarks";
+import { forestDensity } from "@csarkosh/engine/sim/vegetation";
+import { clutterDensity, CLUTTER_BOULDER } from "@csarkosh/engine/sim/clutter";
+import { segmentDistance, TRAIL_CORRIDOR_HALF } from "@csarkosh/engine/sim/trail";
 import { BOWL_U_MIN, BOWL_U_MAX, BOWL_Z_HALF, TRAIL_Z_ANCHOR } from "../../src/sim/bowl.js";
 import { timeLimit } from "../helpers/timeLimit.js";
 

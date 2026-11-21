@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { NOT_DRAWN, notDrawnMembers } from "../../../src/game/lite/notDrawn.js";
-import { QUALITY } from "../../../src/game/quality.js";
+import { QUALITY } from "@csarkosh/engine/game/quality";
 
 describe("what the renderer on Babylon Lite does not draw yet", () => {
   it("answers as nothing exactly the members its list names, each named once", () => {

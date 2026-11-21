@@ -12,8 +12,8 @@
  * `sim/` is read here and never written; nothing feeds back.
  */
 
-import type { Feature } from "../sim/features.js";
-import type { TrailGraph } from "../sim/trail.js";
+import type { Feature } from "@csarkosh/engine/sim/features";
+import type { TrailGraph } from "@csarkosh/engine/sim/trail";
 import type { PlayerState } from "../sim/types.js";
 
 /** Sim ticks between samples: two seconds at 60 Hz. */

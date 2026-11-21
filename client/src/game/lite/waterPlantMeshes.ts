@@ -23,18 +23,18 @@ import {
   addToScene, createMeshFromData, createPbrMaterial, disposeMeshGpu, removeFromScene, setMeshVisible, setPbrMetallicReflectance, setThinInstances,
   type EngineContext, type MaterialPlugin, type Mesh, type PbrMaterialProps, type PluginUniformBlock, type SceneContext,
 } from "@babylonjs/lite";
-import type { LakeSource } from "../../sim/terrain.js";
-import type { Rgb } from "../colour.js";
-import { FOLIAGE_PROFILES, foliageLook } from "../foliageUniforms.js";
-import { boxInPlanes, type ViewPlane } from "../lakeSeen.js";
-import type { WaterPlantPlacements } from "../waterPlantField.js";
+import type { LakeSource } from "@csarkosh/engine/sim/terrain";
+import type { Rgb } from "@csarkosh/engine/game/colour";
+import { FOLIAGE_PROFILES, foliageLook } from "@csarkosh/engine/game/foliageUniforms";
+import { boxInPlanes, type ViewPlane } from "@csarkosh/engine/game/lakeSeen";
+import type { WaterPlantPlacements } from "@csarkosh/engine/game/waterPlantField";
 import {
   LILY_DEPTH_BIAS, LILY_FLOWER_COLOUR, LILY_FLOWER_ROUGHNESS, LILY_PAD_COLOUR, LILY_PAD_ROUGHNESS, REED_CHARACTERS, REED_ROUGHNESS, REED_WIND_EDGES,
   lilyFlowerGeometry, lilyPadGeometry, plantBoxes, reedGeometry, waterPlantLists, type WaterPlantGeometry, type WaterPlantList,
-} from "../waterPlantShapes.js";
-import { DRAW_ORDER, createDrawOrders } from "./drawOrder.js";
+} from "@csarkosh/engine/game/waterPlantShapes";
+import { DRAW_ORDER, createDrawOrders } from "@csarkosh/engine/game/lite/drawOrder";
 import { baseColourPlugin, oneSidedLightPlugin, surfaceSplitPlugin, vegetationPlugin, type Vegetation } from "./forestPlugins.js";
-import type { FrameUploads } from "./frameUploads.js";
+import type { FrameUploads } from "@csarkosh/engine/game/lite/frameUploads";
 import { MATRIX_BYTES } from "./listMeshes.js";
 
 /** How far a reed clump reaches about its root and over it, metres: its tallest blade at the class's largest scale, drooped. */

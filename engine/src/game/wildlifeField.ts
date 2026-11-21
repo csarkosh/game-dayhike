@@ -13,13 +13,12 @@
  * wrong for the same reason an elk herd there is.
  */
 import { hash3 } from "../sim/field.js";
-import { activeTerrainVariant, elevationSampleAt, type TerrainSample } from "../sim/terrain.js";
+import { activeTerrainVariant, elevationSampleAt, shoreHeight, type TerrainSample } from "../sim/terrain.js";
 import { COHORT_GIANT, COHORT_SNAG, forestDensity, TREE_CELL, treeInCell } from "../sim/vegetation.js";
 import {
   CLUTTER_BUSH, CLUTTER_FLOWER, CLUTTER_GRASS, CLUTTER_GRASS_CANOPY_LO, CLUTTER_MEADOW, clutterDensity, clutterInRect,
 } from "../sim/clutter.js";
 import { MAX_WALKABLE_GRADIENT } from "../sim/ground.js";
-import { shoreHeight } from "../sim/shoreStrip.js";
 
 export const SPECIES_ELK = 0;
 export const SPECIES_DEER = 1;

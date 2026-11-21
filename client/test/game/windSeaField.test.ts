@@ -1,9 +1,9 @@
 import { describe, it, expect, vi } from "vitest";
-import { windSeaStateFor } from "../../src/game/oceanWindSea.js";
+import { windSeaStateFor } from "@csarkosh/engine/game/oceanWindSea";
 import {
   OCEAN_GPU_DEADLINE, OCEAN_GPU_FRAME_MAX, WIND_SEA_RESPECTRUM_U, cascadeStats, createWindSeaField, needsRespectrum,
   type WindSeaFftField, type WindSeaFieldMakers, type WindSeaLoopField,
-} from "../../src/game/windSeaField.js";
+} from "@csarkosh/engine/game/windSeaField";
 
 const SEED = 0x5eed;
 const settle = async (): Promise<void> => {

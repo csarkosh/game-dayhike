@@ -7,7 +7,7 @@ import {
   createSerial,
   type FailureDeps,
 } from "../../src/game/engineFailure.js";
-import { LOSS_BOUND_WINDOW_MS, createLossRecord, type LossNote } from "../../src/game/lossBound.js";
+import { LOSS_BOUND_WINDOW_MS, createLossRecord, type LossNote } from "@csarkosh/engine/game/lossBound";
 
 type Engine = { name: string };
 

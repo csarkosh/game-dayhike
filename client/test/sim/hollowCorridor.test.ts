@@ -1,15 +1,15 @@
 import { describe, expect, it } from "vitest";
 import "../../src/sim/passes/index.js";
-import { createForest } from "../../src/sim/forest.js";
+import { createForest } from "@csarkosh/engine/sim/forest";
 import { createForestWorld, spawnPlayer, tickWorld } from "../../src/sim/world.js";
-import { seedFromToken } from "../../src/game/seed.js";
-import { setActiveTerrainVariant, DEFAULT_TERRAIN_VARIANT, elevationAt, activeTerrainVariant } from "../../src/sim/terrain.js";
+import { seedFromToken } from "@csarkosh/engine/game/seed";
+import { setActiveTerrainVariant, DEFAULT_TERRAIN_VARIANT, elevationAt, activeTerrainVariant } from "@csarkosh/engine/sim/terrain";
 import { AiState, Phase } from "../../src/sim/types.js";
-import { ENEMY_HALF } from "../../src/sim/constants.js";
+import { ENEMY_HALF } from "../../src/sim/dayhikeConstants.js";
 import { spawnHollow } from "../../src/sim/hollow.js";
-import { stemNodes } from "../../src/sim/trailRoute.js";
+import { stemNodes } from "@csarkosh/engine/sim/trailRoute";
 import { isOnCorridor, roadOffset } from "../../src/sim/containment.js";
-import { ROAD_CORRIDOR_HALF } from "../../src/sim/road.js";
+import { ROAD_CORRIDOR_HALF } from "@csarkosh/engine/sim/road";
 import { timeLimit } from "../helpers/timeLimit.js";
 
 setActiveTerrainVariant(DEFAULT_TERRAIN_VARIANT);

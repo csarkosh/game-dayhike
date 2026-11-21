@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { RateCounter } from "../../src/game/netgraph.js";
+import { RateCounter } from "@csarkosh/engine/game/netgraph";
 
 describe("RateCounter", () => {
   it("reports zero before anything is added", () => {

@@ -28,14 +28,14 @@ import {
 } from "@babylonjs/lite";
 import { crowdCardIndices, crowdCardTime, crowdCardVertices, writeCrowdCards } from "../crowdCards.js";
 import type { CrowdFigure } from "../crowdField.js";
-import { SEE_THROUGH_ORDER } from "./drawOrder.js";
-import type { FrameUploads } from "./frameUploads.js";
-import { shaderUniformDecls, shaderUniformWriter } from "./shaderUniforms.js";
+import { SEE_THROUGH_ORDER } from "@csarkosh/engine/game/lite/drawOrder";
+import type { FrameUploads } from "@csarkosh/engine/game/lite/frameUploads";
+import { shaderUniformDecls, shaderUniformWriter } from "@csarkosh/engine/game/lite/shaderUniforms";
 import { PREMULTIPLIED_BLEND } from "./wayLightMeshes.js";
 import varyingsSource from "../shaders/crowdCard/varyings.wgsl?raw";
 import crowdCardVertexSource from "../shaders/crowdCard/crowdCard.vertex.wgsl?raw";
 import crowdCardFragmentSource from "../shaders/crowdCard/crowdCard.fragment.wgsl?raw";
-import { fill, wgsl } from "../shaders/shaderText.js";
+import { fill, wgsl } from "@csarkosh/engine/game/shaders/shaderText";
 
 /** What the two stages hand each other: the card's corner, height and level, and its stir. */
 const VARYINGS = wgsl(varyingsSource);

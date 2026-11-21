@@ -1,11 +1,11 @@
 import { expect } from "vitest";
 import "../../src/sim/passes/index.js";
-import { bowlFor, olympicPreTrailSample } from "../../src/sim/olympic.js";
-import { elevationSampleAt, setActiveTerrainVariant, DEFAULT_TERRAIN_VARIANT } from "../../src/sim/terrain.js";
-import { MAX_WALKABLE_GRADIENT } from "../../src/sim/ground.js";
-import { TRAIL_PAINT_MAX_SEGMENTS, TRAIL_PAINT_BUCKET_MAX, buildTrailTable, trailSegments } from "../../src/game/trailPaint.js";
-import { featureStageD } from "../../src/sim/features.js";
-import type { EdgeKind } from "../../src/sim/trail.js";
+import { bowlFor, olympicPreTrailSample } from "../../src/sim/mountain.js";
+import { elevationSampleAt, setActiveTerrainVariant, DEFAULT_TERRAIN_VARIANT } from "@csarkosh/engine/sim/terrain";
+import { MAX_WALKABLE_GRADIENT } from "@csarkosh/engine/sim/ground";
+import { TRAIL_PAINT_MAX_SEGMENTS, TRAIL_PAINT_BUCKET_MAX, buildTrailTable, trailSegments } from "@csarkosh/engine/game/trailPaint";
+import { featureStageD } from "@csarkosh/engine/sim/features";
+import type { EdgeKind } from "@csarkosh/engine/sim/trail";
 import { SEEDS } from "./trailGateSeeds.js";
 import { seedPart } from "../helpers/seedPart.js";
 

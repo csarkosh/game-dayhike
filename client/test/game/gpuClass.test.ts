@@ -1,7 +1,7 @@
 import { describe, it, expect } from "vitest";
-import { CLASS_TIERS, classifyGpu, gpuIdentity, type GpuClass } from "../../src/game/gpuClass.js";
-import type { AdapterInfo } from "../../src/game/gpuSignals.js";
-import { autoTier, type QualityTier } from "../../src/game/quality.js";
+import { CLASS_TIERS, classifyGpu, gpuIdentity, type GpuClass } from "@csarkosh/engine/game/gpuClass";
+import type { AdapterInfo } from "@csarkosh/engine/game/gpuSignals";
+import { autoTier, type QualityTier } from "@csarkosh/engine/game/quality";
 import * as F from "./gpuFixtures.js";
 
 type Row = [label: string, renderer: string | null, adapter: AdapterInfo | null, mobile: boolean, want: GpuClass];
