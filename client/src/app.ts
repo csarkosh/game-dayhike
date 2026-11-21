@@ -42,7 +42,7 @@ import { aimAt, stepFreecam, type FreecamState } from "@csarkosh/engine/game/fre
 import { DEFAULT_HOUR, sunAltitudeDeg } from "@csarkosh/engine/game/skyWait";
 import { startSkySource } from "@csarkosh/engine/game/skyWorker";
 import { worldInputs } from "./game/worldInputs.js";
-import { createAmbientAudio } from "./game/ambientAudio.js";
+import { createHikeAudio, HOLLOW_CALL_AFTER, HOLLOW_CALL_RATE } from "./game/hikeAudio.js";
 import { createWildlifeAudio, listenerToAudio } from "./game/wildlifeAudio.js";
 import { createWaterLifeAudio } from "./game/waterLifeAudio.js";
 import { createSurfAudio } from "./game/surfAudio.js";
@@ -134,7 +134,6 @@ import { RETURN_LIFT_MS, causeName, createDeathReturn } from "./game/deathReturn
 import { returnHollowAt } from "./sim/returns.js";
 import { PLAYER_EYE_OFFSET, PLAYER_HALF } from "@csarkosh/engine/sim/constants";
 import { ENEMY_HALF } from "./sim/dayhikeConstants.js";
-import { HOLLOW_CALL_AFTER, HOLLOW_CALL_RATE } from "./game/ambientAudio.js";
 
 /** The way down's draw: milliseconds of it a frame through the climb, and once the scene or the chase is on; and the tick it starts at, ten seconds in, so nothing of it runs under the intro. */
 const WAY_DRAW_MS = 1.5;
@@ -528,7 +527,7 @@ function buildGame(
   let swapError: string | null = null;
   /** Both builds of a switch failed: there is no renderer left to dispose. */
   let broken = false;
-  const ambient = createAmbientAudio();
+  const ambient = createHikeAudio();
   made(() => ambient.dispose());
   // Shares the ambient context — one AudioContext for the whole game, gated on
   // the same unlock gesture. Constructed here rather than inside the renderer

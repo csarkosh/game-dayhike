@@ -10,6 +10,9 @@ export type ListenerPose = {
   ux: number; uy: number; uz: number;
 };
 
+/** The listener in Web Audio's right-handed frame, as the sound's bus placed it: where it is, and its forward and up. */
+export type EarFrame = { x: number; y: number; z: number; fx: number; fy: number; fz: number; ux: number; uy: number; uz: number };
+
 /**
  * Fills `out` with a camera pose for the audio listener, in the game's left-handed world.
  *
