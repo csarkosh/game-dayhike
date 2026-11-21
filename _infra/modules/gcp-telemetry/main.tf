@@ -153,6 +153,30 @@ resource "google_cloud_run_v2_service" "telemetry" {
         }
       }
 
+      # Where a new session is, by city (`server/src/place.ts`): the analytics
+      # collector's place route, and its token from the collector's project.
+      # Both or neither: the service places nothing without both.
+      dynamic "env" {
+        for_each = var.place_url != "" && var.place_token_secret != "" ? ["PLACE_URL"] : []
+        content {
+          name  = env.value
+          value = var.place_url
+        }
+      }
+
+      dynamic "env" {
+        for_each = var.place_url != "" && var.place_token_secret != "" ? ["PLACE_TOKEN"] : []
+        content {
+          name = env.value
+          value_source {
+            secret_key_ref {
+              secret  = var.place_token_secret
+              version = "latest"
+            }
+          }
+        }
+      }
+
       resources {
         limits = {
           cpu    = "1"

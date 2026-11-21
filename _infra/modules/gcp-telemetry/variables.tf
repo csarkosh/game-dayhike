@@ -49,6 +49,28 @@ variable "ignore_ips" {
   sensitive   = true
 }
 
+variable "place_url" {
+  description = <<-EOT
+    The place route of csarko.sh's analytics collector (lib-visits v0.6.0
+    `POST /place`), which the service asks where a new session's address is,
+    from the city database bundled there, writing only the place
+    (`server/src/place.ts`). Empty, nothing is placed.
+  EOT
+  type        = string
+  default     = ""
+}
+
+variable "place_token_secret" {
+  description = <<-EOT
+    The place route's bearer token, by its Secret Manager full name in the
+    collector's project (`projects/<number>/secrets/<id>`): csarko.sh's
+    Terraform makes it and grants this service's account read access to it
+    alone. Empty, nothing is placed.
+  EOT
+  type        = string
+  default     = ""
+}
+
 variable "registry" {
   description = "Where the signaling rooms live, for the admin page's live view: `firestore` or `memory` (then the view is empty)."
   type        = string

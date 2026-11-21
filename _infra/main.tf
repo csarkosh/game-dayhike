@@ -90,6 +90,10 @@ module "gcp_telemetry" {
   admin_auth_project = var.admin_auth_project
   registry           = var.signaling_registry
   ignore_ips         = var.telemetry_ignore_ips
+  # csarko.sh's analytics collector places each new session by city (2026-11-21);
+  # its Terraform owns the token and grants this service's account read access.
+  place_url          = "https://csarko-visits-lwkslxdnnq-uw.a.run.app/place"
+  place_token_secret = "projects/168978781874/secrets/visits-place-token"
 
   providers = {
     google         = google
