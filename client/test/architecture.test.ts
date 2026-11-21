@@ -190,6 +190,17 @@ describe("layer boundaries", () => {
     expect(asking.filter((entry) => !reach(entry).has(registration)).map(logical)).toEqual([]);
   });
 
+  it("registers Day Hike's shipped files as the page starts, and nowhere else", () => {
+    // The engine's modules ask for a model, a texture or a clip by name (`game/assetUrls.ts`) and
+    // answer from what a game registered; nothing is registered until Day Hike's own file runs.
+    expect(importsOf(at("main.ts"))).toContain("./game/dayhikeAssets.js");
+    const callers = sourceFiles(SRC)
+      .filter((file) => /\bregisterAssets\(/.test(stripComments(readFileSync(file, "utf8"))))
+      .map(logical)
+      .sort();
+    expect(callers).toEqual(["game/assetUrls.ts", "game/dayhikeAssets.ts"]);
+  });
+
   it("sim/ imports nothing but node builtins and itself", () => {
     expect(violations(at("sim"), [/^@babylonjs/, /net\//, /game\//])).toEqual([]);
   });

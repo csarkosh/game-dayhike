@@ -32,7 +32,7 @@
  * Nothing happens before the context is unlocked, and nothing is queued.
  */
 import { LOOP_GAIN_RAMP_S, type AmbientAudio, type LoopEmitter, type VoiceSource } from "./ambientAudio.js";
-import { audioUrl } from "./assetUrls.js";
+import { audioUrl } from "@csarkosh/engine/game/assetUrls";
 import { pageTurns } from "@csarkosh/engine/game/downloadTurns";
 import { SURF_EVENTS, SURF_RANGE_M, type SurfSound } from "@csarkosh/engine/game/surfSound";
 

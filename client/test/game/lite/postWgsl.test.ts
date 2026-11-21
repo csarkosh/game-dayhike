@@ -1,13 +1,13 @@
 import { describe, expect, it } from "vitest";
-import { emptyCloudUniforms } from "../../../src/game/cloudParams.js";
+import { emptyCloudUniforms } from "@csarkosh/engine/game/cloudParams";
 import {
   composeUniforms, emptyFarSoftUniforms, emptyGradeUniforms, emptyTaaUniforms, lensUniforms, paintUniforms, sharpenUniforms,
-} from "../../../src/game/postFrame.js";
+} from "@csarkosh/engine/game/postFrame";
 import { DITHER_LSB, HALATION_CAP, HALATION_THRESHOLD, PAINT_JOINT_SHARPNESS, PAINT_REACH } from "@csarkosh/engine/game/postParams";
 import {
   FAR_SOFT_WGSL, HALATION_EXTRACT_WGSL, LENS_WGSL, PAINT_WGSL, POST_VERTEX_WGSL, TAA_SHARPEN_WGSL, TAA_WGSL, blurKernel, blurTaps, blurWgsl, depthResolveWgsl, gradeWgsl, passLayout, writePass,
 } from "@csarkosh/engine/game/lite/postWgsl";
-import { HALATION_KERNEL, HALATION_RATIO } from "../../../src/game/postFrame.js";
+import { HALATION_KERNEL, HALATION_RATIO } from "@csarkosh/engine/game/postFrame";
 import { babylonText, babylonValues } from "../../helpers/babylonFixture.js";
 import { inOrder, tight } from "./wgslText.js";
 

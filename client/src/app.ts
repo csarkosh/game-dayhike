@@ -10,7 +10,7 @@ import { FixedStepAccumulator } from "@csarkosh/engine/game/loop";
 import { capturedEye, type EyePose } from "./game/eyeBlend.js";
 import { createHud } from "./game/hud.js";
 import { RING_COUNT } from "@csarkosh/engine/game/clipmap";
-import { reportProgress } from "./game/loadReport.js";
+import { reportProgress } from "@csarkosh/engine/game/loadReport";
 import {
   endSceneRunner,
   END_FADE_AT_S, END_LANDING_AT_S, END_ROAD_AT_S, ESCAPE_FROM_M, ESCAPE_SETTLE_S, ESCAPE_WAIT_S, MASTER_FADE_S, PULL_AWAY_AT_S, RUN_MAX_S, TITLE_AT_S, WORLD_FADE_S, carHeard,
@@ -48,7 +48,7 @@ import { createSurfAudio } from "./game/surfAudio.js";
 import { wildlifePresenceUnder } from "@csarkosh/engine/game/wildlifeBehaviour";
 import { DEFAULT_BOB_SCALE } from "@csarkosh/engine/game/viewBob";
 import { DEFAULT_WEATHER, WEATHER_PRESETS, type WeatherParams, type WeatherPresetName } from "@csarkosh/engine/game/weather";
-import { DEFAULT_PAINT_PALETTE, PAINT_PALETTES, type PaintPaletteName } from "./game/gradeParams.js";
+import { DEFAULT_PAINT_PALETTE, PAINT_PALETTES, type PaintPaletteName } from "@csarkosh/engine/game/gradeParams";
 import { actsUnder,
   ESCALATION_REST,
   escalationAt,

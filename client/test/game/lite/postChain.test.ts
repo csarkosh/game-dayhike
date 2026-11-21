@@ -1,9 +1,9 @@
 import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 import "../../../src/sim/passes/index.js";
-import { chainTargetsStand } from "../../../src/game/lite/postChain.js";
+import { chainTargetsStand } from "@csarkosh/engine/game/lite/postChain";
 
-const src = readFileSync(new URL("../../../src/game/lite/postChain.ts", import.meta.url), "utf8");
+const src = readFileSync(new URL("../../../../engine/src/game/lite/postChain.ts", import.meta.url), "utf8");
 
 describe("the post chain's targets on Babylon Lite", () => {
   /** A scene's depth and resolve as Lite hands them: an object each, made again only with the target. */

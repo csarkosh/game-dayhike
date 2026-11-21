@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import "../../src/game/dayhikeAssets.js";
 import "../../src/sim/passes/index.js";
 import "@csarkosh/engine/sim/olympic";
 import { lakeOf } from "../sim/helpers/lakes.js";

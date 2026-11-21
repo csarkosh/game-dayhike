@@ -3,7 +3,7 @@ import { createWayFieldFollow, emptyWayFieldUniforms } from "../../src/game/wayM
 import { FIELD_FILL_A_FRAME, FIELD_FIN_STRENGTH, FIELD_FLOATS, FIELD_FROM_M, FIELD_RIM_M, FIELD_SHEET_STRENGTH, FIELD_TOP_M, FIELD_VERTICES, FIELD_WHOLE_M } from "../../src/game/wayMistFieldGeometry.js";
 import { WAY_CURL, WAY_HEAD, WAY_HEAVE, WAY_HIDE_SHARE, wayTint } from "../../src/game/wayLightGeometry.js";
 import { wayMistFrame } from "../../src/game/wayLight.js";
-import { CHASE_TINT } from "../../src/game/gradeParams.js";
+import { CHASE_TINT } from "@csarkosh/engine/game/gradeParams";
 import { makeWay } from "../../src/sim/wayDown.js";
 
 const EYE = { x: 30, y: 12, z: 0 };

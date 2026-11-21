@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import "../../../src/sim/passes/index.js";
-import { WING_AMP_AT, WING_COLOURWAY_AT, WING_PHASE_AT, WING_WGSL, wingPlugin } from "../../../src/game/lite/wingPlugin.js";
-import { FRAME_BLOCK, inFrameBlock } from "../../../src/game/lite/frameBlock.js";
+import { WING_AMP_AT, WING_COLOURWAY_AT, WING_PHASE_AT, WING_WGSL, wingPlugin } from "@csarkosh/engine/game/lite/wingPlugin";
+import { FRAME_BLOCK, inFrameBlock } from "@csarkosh/engine/game/lite/frameBlock";
 import { babylonText } from "../../helpers/babylonFixture.js";
 import { inOrder, tight } from "./wgslText.js";
 import type { PluginUniformBlock } from "@babylonjs/lite";

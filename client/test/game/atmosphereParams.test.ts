@@ -1,8 +1,8 @@
 import { describe, it, expect } from "vitest";
 import {
   atmosphereUnder, atmosphereUniforms, emptyAtmosphereUniforms, fogGradientAt, fogGradientUnder, heightFogAmount, GRADIENT_MID_STEP, GRADIENT_STEPS,
-} from "../../src/game/atmosphereParams.js";
-import { cloudFor, cloudUniforms, noCloud } from "../../src/game/cloudParams.js";
+} from "@csarkosh/engine/game/atmosphereParams";
+import { cloudFor, cloudUniforms, noCloud } from "@csarkosh/engine/game/cloudParams";
 import { WEATHER_PRESETS, airColourUnder, fogDensityUnder } from "@csarkosh/engine/game/weather";
 import { skyStateFor } from "@csarkosh/engine/game/skyState";
 import { skyFixture } from "./helpers/skyFixture.js";

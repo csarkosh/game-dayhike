@@ -7,7 +7,7 @@ import { fogDensityFor } from "@csarkosh/engine/game/sky";
 import { skyStateFor } from "@csarkosh/engine/game/skyState";
 import {
   gradeRecordUnder, LIFT_DREAD, VIGNETTE_PULSE, VIGNETTE_PULSE_PERIOD, PURKINJE_MAX,
-} from "../../src/game/gradeParams.js";
+} from "@csarkosh/engine/game/gradeParams";
 import { babylonText } from "../helpers/babylonFixture.js";
 import { skyFixture } from "./helpers/skyFixture.js";
 

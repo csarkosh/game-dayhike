@@ -9,7 +9,7 @@
  * way's mist is up: how thick it is, and the colour it shows. Computed with
  * no engine; the renderer applies it to the air's record a frame.
  */
-import type { AtmosphereUniforms } from "./atmosphereParams.js";
+import type { AtmosphereUniforms } from "@csarkosh/engine/game/atmosphereParams";
 
 /**
  * The air's density when the way's mist is whole (by the fog's factor a

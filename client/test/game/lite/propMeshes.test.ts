@@ -5,7 +5,7 @@ import type { ChunkGrid } from "@csarkosh/engine/sim/chunkGrid";
 import { createFirstBuilds } from "@csarkosh/engine/game/firstBuilds";
 import { emptyWetUniforms } from "@csarkosh/engine/game/wetSurface";
 import { createSyncJobs } from "@csarkosh/engine/game/syncJobs";
-import { createPropMeshes, type PropMeshes } from "../../../src/game/lite/propMeshes.js";
+import { createPropMeshes, type PropMeshes } from "@csarkosh/engine/game/lite/propMeshes";
 
 /** What the shell asked of the engine, in order: a mesh made (its name and arrays) and a mesh let go. */
 const made: { name: string; positions: Float32Array; normals: Float32Array; indices: Uint32Array }[] = [];

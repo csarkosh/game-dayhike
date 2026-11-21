@@ -4,10 +4,10 @@ import { emptyDragonflyList, fillDragonflyList } from "@csarkosh/engine/game/dra
 import type { Dragonflies } from "@csarkosh/engine/game/dragonflyBehaviour";
 import { sphereInPlanes } from "@csarkosh/engine/game/lakeSeen";
 import { cameraAxes, restAxes, restPlanes, viewPlanes } from "@csarkosh/engine/game/lite/cameraPose";
-import { DRAGONFLY_SPHERE_M, dragonflyMatrices, unitInPlanes, vertexAlphaPlugin } from "../../../src/game/lite/dragonflyMeshes.js";
+import { DRAGONFLY_SPHERE_M, dragonflyMatrices, unitInPlanes, vertexAlphaPlugin } from "@csarkosh/engine/game/lite/dragonflyMeshes";
 import { SEE_THROUGH_ORDER } from "@csarkosh/engine/game/lite/drawOrder";
 import { MIDGE_WGSL } from "@csarkosh/engine/game/lite/midgeMeshes";
-import { WING_AMP_AT, WING_COLOURWAY_AT, WING_PHASE_AT } from "../../../src/game/lite/wingPlugin.js";
+import { WING_AMP_AT, WING_COLOURWAY_AT, WING_PHASE_AT } from "@csarkosh/engine/game/lite/wingPlugin";
 import { MIDGE_HEAD_FLOATS, swarmSphere } from "@csarkosh/engine/game/midgeLook";
 import { MIDGE_SWARMS_MAX, SWARM_ROW_FLOATS, packSwarm } from "@csarkosh/engine/game/midgeMotion";
 import { babylonText } from "../../helpers/babylonFixture.js";

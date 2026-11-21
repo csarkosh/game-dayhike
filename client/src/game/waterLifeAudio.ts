@@ -42,7 +42,7 @@
  */
 import { hash3 } from "@csarkosh/engine/sim/field";
 import { LOOP_GAIN_RAMP_S, type AmbientAudio, type LoopEmitter, type VoiceSource } from "./ambientAudio.js";
-import { audioUrl } from "./assetUrls.js";
+import { audioUrl } from "@csarkosh/engine/game/assetUrls";
 import { pageTurns } from "@csarkosh/engine/game/downloadTurns";
 import type { FrogCall } from "./frogChorus.js";
 import {

@@ -1,10 +1,10 @@
 import { describe, expect, it } from "vitest";
 import "../../src/sim/passes/index.js";
-import { GRADIENT_MID_STEP, atmosphereUnder, fogGradientAt } from "../../src/game/atmosphereParams.js";
+import { GRADIENT_MID_STEP, atmosphereUnder, fogGradientAt } from "@csarkosh/engine/game/atmosphereParams";
 import {
   MIST_CAP_BY_TIER, MIST_DRIFT, MIST_EDGE_FADE_SPAN, MIST_INSTANCE_FLOATS, MIST_NEAR_FADE_SPAN, MIST_NEAR_FADE_START, MIST_SHOWN_FLOOR, MIST_WRAP_FADE,
   createMistBanks, emptyMistUniforms, mistBankShown, mistUniforms, writeMistInstances, type DrawnMistBank, type MistOrder,
-} from "../../src/game/mistBanks.js";
+} from "@csarkosh/engine/game/mistBanks";
 import { skyStateFor } from "@csarkosh/engine/game/skyState";
 import { skyFixture } from "./helpers/skyFixture.js";
 import { MIST_CELL, MIST_RADIUS, collectMistBanks } from "@csarkosh/engine/game/mistField";

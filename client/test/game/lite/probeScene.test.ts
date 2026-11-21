@@ -1,4 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
+import "../../../src/game/dayhikeAssets.js";
 import "../../../src/sim/passes/index.js";
 import { PROBE_FRAMES, PROBE_HOUR, PROBE_QUIET_MS, PROBE_WARMUP_FRAMES, probePose } from "@csarkosh/engine/game/frameProbe";
 import { LET_GO_MAX_MS, buildLiteProbeScene, liteProbeDeps, liteProbeReady, runLiteProbeStep, type ProbeRendererMaker } from "../../../src/game/lite/probeScene.js";

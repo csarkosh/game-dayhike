@@ -1,11 +1,11 @@
 import { describe, expect, it } from "vitest";
-import type { AtmosphereRecord } from "../../src/game/atmosphereParams.js";
-import type { RainLamp } from "../../src/game/rainField.js";
+import type { AtmosphereRecord } from "@csarkosh/engine/game/atmosphereParams";
+import type { RainLamp } from "@csarkosh/engine/game/rainField";
 import { RAIN_MAP, SPLASH_FOLD_S, SPLASH_TIERS, rainSeeds } from "@csarkosh/engine/game/rainParams";
 import {
   SPLASH_INSTANCE_FLOATS, SPLASH_SEED, SUN_UP, emptySplashStageUniforms, emptySplashUniforms, splashInstances, splashStageUniforms, splashUniforms,
   splashesDrawn,
-} from "../../src/game/splashField.js";
+} from "@csarkosh/engine/game/splashField";
 import { WEATHER_PRESETS } from "@csarkosh/engine/game/weather";
 import { babylonValues } from "../helpers/babylonFixture.js";
 

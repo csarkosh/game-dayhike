@@ -1,11 +1,12 @@
 import { describe, expect, it } from "vitest";
+import "../../src/game/dayhikeAssets.js";
 import "../../src/sim/passes/index.js";
 import {
   CROWD_CARDS_TO_M, CROWD_CARD_FLOATS, CROWD_CARD_FOLD_S, CROWD_CARD_VERTICES, CROWD_CARD_WIDE, crowdCardIndices, crowdCardTime, crowdCardVertices, writeCrowdCards, CROWD_CARD_KILLS,
 } from "../../src/game/crowdCards.js";
 import { CROWD_MIST_M, CROWD_RISE_S, figureOf, type CrowdFigure } from "../../src/game/crowdField.js";
 import { SHADE_FAR_M, SHADE_FAR_SHARE, SHADE_NEAR_M } from "../../src/game/entityPoses.js";
-import { HOLLOW_FIGURE_M } from "../../src/game/hollowLook.js";
+import { HOLLOW_FIGURE_M } from "@csarkosh/engine/game/hollowLook";
 
 const EYE = { x: 0, y: 11.7, z: 0 };
 const figure = (id: number, x: number, z: number, over: Partial<CrowdFigure> = {}): CrowdFigure => ({ id, x, z, born: 0, gone: -1, rise: 0, ...figureOf(id, 1), ...over });

@@ -1,8 +1,8 @@
 import { describe, expect, it } from "vitest";
 import "../../../src/sim/passes/index.js";
-import { atmosphereUniforms, emptyAtmosphereUniforms, type AtmosphereRecord } from "../../../src/game/atmosphereParams.js";
-import { noCloud } from "../../../src/game/cloudParams.js";
-import { ATMOSPHERE_PRIORITY, atmospherePlugin } from "../../../src/game/lite/atmospherePlugin.js";
+import { atmosphereUniforms, emptyAtmosphereUniforms, type AtmosphereRecord } from "@csarkosh/engine/game/atmosphereParams";
+import { noCloud } from "@csarkosh/engine/game/cloudParams";
+import { ATMOSPHERE_PRIORITY, atmospherePlugin } from "@csarkosh/engine/game/lite/atmospherePlugin";
 import { laidOut, readUniform, standInTexture } from "./pluginFixture.js";
 
 const RECORD: AtmosphereRecord = {

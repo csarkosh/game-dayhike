@@ -1,9 +1,9 @@
 import { describe, expect, it } from "vitest";
-import type { AtmosphereRecord } from "../../src/game/atmosphereParams.js";
+import type { AtmosphereRecord } from "@csarkosh/engine/game/atmosphereParams";
 import {
   DRIP_SEED, RAIN_INSTANCE_FLOATS, RAIN_SEED, RAIN_TEX_H, RAIN_TEX_W, createRainField, emptyRainStageUniforms, emptyRainUniforms, rainInstances,
   rainInstancesDrawn, rainMilk, rainStageUniforms, rainStreakMap, type RainLamp,
-} from "../../src/game/rainField.js";
+} from "@csarkosh/engine/game/rainField";
 import { DRIP, DRIP_TIERS, RAIN_BOX, RAIN_CLASSES, RAIN_FOLD_S, RAIN_MAP, RAIN_TIERS, rainSeeds } from "@csarkosh/engine/game/rainParams";
 import { WEATHER_PRESETS } from "@csarkosh/engine/game/weather";
 import { windRecordUnder } from "@csarkosh/engine/game/windParams";

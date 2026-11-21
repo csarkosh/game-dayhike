@@ -1,4 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
+import "../../src/game/dayhikeAssets.js";
 import "../../src/sim/passes/index.js";
 import type { VoiceSource } from "../../src/game/ambientAudio.js";
 import {

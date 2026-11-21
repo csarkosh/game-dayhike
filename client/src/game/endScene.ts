@@ -10,7 +10,7 @@
  * road, as the summit's shots are (cutscene.ts). Babylon-free.
  */
 import { CAR_HALF, CAR_ROAD_U } from "../sim/trailhead.js";
-import { LAMP_INTENSITY } from "./lampParams.js";
+import { LAMP_INTENSITY } from "@csarkosh/engine/game/lampParams";
 import { LENS_24, LENS_32, easeInOut, type ShotPose } from "./cutscene.js";
 import { carAlong, type Road } from "./scene/roadPath.js";
 import type { CarPose } from "./scene/timeline.js";

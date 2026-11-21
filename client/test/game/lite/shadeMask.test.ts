@@ -2,18 +2,19 @@ import { readFileSync } from "node:fs";
 import { acquireTexture, releaseTexture } from "@babylonjs/lite";
 import { describe, expect, it } from "vitest";
 import "../../../src/sim/passes/index.js";
-import { HOLLOW_FIGURE_M } from "../../../src/game/hollowLook.js";
-import { SHADE_SMOKE_FEET, SHADE_SMOKE_FRAY, SHADE_SMOKE_RISE, SHADE_SMOKE_SCALE, SHADE_SMOKE_SOFT, SHADE_SMOKE_SWELL_M } from "../../../src/game/shadeMaskParams.js";
-import { FRAME_BLOCK, SHADE_SMOKE_TIME_NAME, inFrameBlock } from "../../../src/game/lite/frameBlock.js";
+import { HOLLOW_FIGURE_M } from "@csarkosh/engine/game/hollowLook";
+import { SHADE_SMOKE_FEET, SHADE_SMOKE_FRAY, SHADE_SMOKE_RISE, SHADE_SMOKE_SCALE, SHADE_SMOKE_SOFT, SHADE_SMOKE_SWELL_M } from "@csarkosh/engine/game/shadeMaskParams";
+import { FRAME_BLOCK, SHADE_SMOKE_TIME_NAME, inFrameBlock } from "@csarkosh/engine/game/lite/frameBlock";
 import {
   SHADE_LOOK_FLOATS, SHADE_SMOKE_NOISE_WGSL, SHADE_SMOKE_VERTEX_WGSL, createMaskTargets, shadeMaskFragmentWgsl, shadeMaskPlugin, writeShadeLook,
   type MaskTargets,
-} from "../../../src/game/lite/shadeMask.js";
+} from "@csarkosh/engine/game/lite/shadeMask";
 import { binder, picture, type FakePicture } from "./textureClaims.js";
 import { babylonText } from "../../helpers/babylonFixture.js";
 import { tight } from "./wgslText.js";
+import { sourceText } from "../../helpers/source.js";
 
-const src = readFileSync(new URL("../../../src/game/lite/shadeMask.ts", import.meta.url), "utf8");
+const src = readFileSync(new URL("../../../../engine/src/game/lite/shadeMask.ts", import.meta.url), "utf8");
 /** One of the smoke's stages on Babylon.js (named `<name>.fx`, kept as `stages/<name>.glsl`), its text recorded, with no white space. */
 const fx = (name: string): string => tight(babylonText(`stages/${name.replace(/\.fx$/, ".glsl")}`));
 const SHARED = { name: FRAME_BLOCK } as never;
@@ -94,7 +95,7 @@ describe("the haunt's figures in their mask on Babylon Lite", () => {
   });
 
   it("draws a body in the mask's pass alone: the body stands hidden, and the mask shows it by its own word", () => {
-    const read = (name: string): string => readFileSync(new URL(`../../../src/game/lite/${name}`, import.meta.url), "utf8");
+    const read = (name: string): string => sourceText(`game/lite/${name}`);
     // The mask's pass draws what it is handed whatever the mesh's own word.
     expect(src).toContain("      addMeshToTask(task, mesh, { material });\n      setTaskMeshVisible(task, mesh, true);");
     // A Hollow's body is the mask's alone, and a model never shows such a primitive: no pass of the frame draws it,

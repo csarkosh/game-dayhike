@@ -3,7 +3,7 @@ import {
   HEART_ATTACK, HEART_BPM_FULL, HEART_BPM_REST, HEART_DUB_AT, HEART_DUB_SHARE, STARE_LENS_REST, STARE_PULSE,
   STARE_SIDE_SHIFT, heartbeat, stareReach, stareShadeUnder, stareSide, stepStareLens, type StareLens,
   CHASE_BPM_CALM, CHASE_LENS_EASE_S, CHASE_PULSE, CHASE_QUICK_IN_S, CHASE_QUICK_OUT_S, CHASE_REACH,
-} from "../../src/game/stareLens.js";
+} from "@csarkosh/engine/game/stareLens";
 import { stareWithDark } from "../../src/game/scenePlay.js";
 
 const DT = 1 / 60;

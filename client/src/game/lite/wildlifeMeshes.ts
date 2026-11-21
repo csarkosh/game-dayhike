@@ -34,11 +34,10 @@ import {
   setThinInstanceCount, setThinInstances,
   type EngineContext, type MaterialPlugin, type Mesh, type PbrMaterialProps, type PluginUniformBlock, type SceneContext, type Texture2D,
 } from "@babylonjs/lite";
-import catalog from "../../../assets/catalog.json" with { type: "json" };
-import { modelUrl } from "../assetUrls.js";
-import { creatureRoleGroups, resolveCreatureAssets, type CreatureAsset } from "../creatureAssets.js";
+import { assetCatalog, modelUrl } from "@csarkosh/engine/game/assetUrls";
+import { creatureRoleGroups, resolveCreatureAssets, type CreatureAsset } from "@csarkosh/engine/game/creatureAssets";
 import { stepClip, type ClipClock } from "../entityPoses.js";
-import { expectModels } from "../loadReport.js";
+import { expectModels } from "@csarkosh/engine/game/loadReport";
 import type { FirstBuilds } from "@csarkosh/engine/game/firstBuilds";
 import { composeInto, type Quat } from "@csarkosh/engine/game/instancePose";
 import { writeClipParams, type BakedClip } from "@csarkosh/engine/game/skinInstances";
@@ -51,12 +50,12 @@ import {
 } from "@csarkosh/engine/game/wildlifeScene";
 import type { WeatherParams } from "@csarkosh/engine/game/weather";
 import { DRAW_ORDER, createDrawOrders } from "@csarkosh/engine/game/lite/drawOrder";
-import { loadModel } from "./forestModels.js";
-import { oneSidedLightPlugin } from "./forestPlugins.js";
+import { loadModel } from "@csarkosh/engine/game/lite/forestModels";
+import { oneSidedLightPlugin } from "@csarkosh/engine/game/lite/forestPlugins";
 import type { FrameUploads } from "@csarkosh/engine/game/lite/frameUploads";
-import { MATRIX_BYTES } from "./listMeshes.js";
-import { loadSkinnedModel, type SkinClock, type SkinnedModel } from "./skinnedModels.js";
-import { WING_AMP_AT, WING_COLOURWAY_AT, WING_PHASE_AT, wingPlugin } from "./wingPlugin.js";
+import { MATRIX_BYTES } from "@csarkosh/engine/game/lite/listMeshes";
+import { loadSkinnedModel, type SkinClock, type SkinnedModel } from "@csarkosh/engine/game/lite/skinnedModels";
+import { WING_AMP_AT, WING_COLOURWAY_AT, WING_PHASE_AT, wingPlugin } from "@csarkosh/engine/game/lite/wingPlugin";
 
 /** The most members of one ground species drawn at once. */
 export const SPECIES_CAPACITY = 64;
@@ -127,7 +126,7 @@ export function createLiteWildlifeMeshes(engine: EngineContext, scene: SceneCont
   );
 
   // The ground species: every creature the catalog ships, each landing on its own.
-  for (const asset of resolveCreatureAssets(catalog)) {
+  for (const asset of resolveCreatureAssets(assetCatalog())) {
     const entry: Species = { asset, model: null, roles: null, count: 0, moved: false, reclipped: false };
     species.set(asset.id, entry);
     waiting++;
@@ -175,7 +174,7 @@ export function createLiteWildlifeMeshes(engine: EngineContext, scene: SceneCont
 
   /** The catalog `output` for an asset id, or null where the catalog has no such entry. */
   function outputFor(assetId: string): string | null {
-    const entries = (catalog as { assets?: { id?: unknown; output?: unknown }[] }).assets ?? [];
+    const entries = assetCatalog().assets ?? [];
     const found = entries.find((entry) => entry.id === assetId);
     return found !== undefined && typeof found.output === "string" ? found.output : null;
   }

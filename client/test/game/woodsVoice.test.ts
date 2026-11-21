@@ -1,4 +1,5 @@
 import { describe, it, expect } from "vitest";
+import "../../src/game/dayhikeAssets.js";
 import "../../src/sim/passes/index.js";
 import {
   BIRDS_HOLD_S, BIRDS_RAIN_SHARE, BIRDS_WET_CUT, CALL_CLIMBS, CALL_FAR_HZ, CALL_FAR_LEVEL, CALL_FAR_M,

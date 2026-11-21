@@ -1,8 +1,9 @@
 import { describe, expect, it, vi } from "vitest";
+import "../../src/game/dayhikeAssets.js";
 import {
   GROUND_ALBEDOS, GROUND_LAYERS, GROUND_LAYER_URLS, GROUND_MAP_SIZE, NEUTRAL_NORMAL, NEUTRAL_RAH,
   decodeGroundLayer, flipRowsY, interleaveLayers,
-} from "../../src/game/groundLayers.js";
+} from "@csarkosh/engine/game/groundLayers";
 
 describe("the ground's layers", () => {
   it("are six, each with an albedo read under its own sampler, in layer order", () => {

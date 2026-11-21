@@ -7,7 +7,7 @@ import { Outcome, Phase } from "../../src/sim/types.js";
 import { makeWay } from "../../src/sim/wayDown.js";
 import { THRESHOLD_AT_S } from "../../src/game/cutscene.js";
 import { WAY_DIM, WAY_FADE_S, wayDimAt, wayLevelFor } from "../../src/game/wayLevel.js";
-import { CLOUD_TRAIL_EDGE_M, CLOUD_TRAIL_FADE_M, WAY_MIST_EDGE_M, WAY_MIST_FADE_M, cloudGroundMap } from "../../src/game/cloudParams.js";
+import { CLOUD_TRAIL_EDGE_M, CLOUD_TRAIL_FADE_M, WAY_MIST_EDGE_M, WAY_MIST_FADE_M, cloudGroundMap } from "@csarkosh/engine/game/cloudParams";
 
 /** A file of the client, wherever the suite is run from (the gate runs it from the repository's root). */
 const clientFile = (path: string): string => fileURLToPath(new URL(`../../${path}`, import.meta.url));
@@ -78,7 +78,7 @@ describe("the mist over the way", () => {
 
 describe("the renderer and the app", () => {
   const renderer = readFileSync(clientFile("src/game/lite/renderer.ts"), "utf8");
-  const chain = readFileSync(clientFile("src/game/lite/postChain.ts"), "utf8");
+  const chain = readFileSync(clientFile("../engine/src/game/lite/postChain.ts"), "utf8");
   const app = readFileSync(clientFile("src/app.ts"), "utf8");
 
   it("the renderer makes the way's mist once, for a forest, toned for the tier's colour path, and disposes it", () => {

@@ -4,7 +4,7 @@
  * list an entity wears. Plain data and arithmetic, so whichever renderer
  * draws a character asks the same file for the same clip.
  */
-import { modelUrl } from "./assetUrls.js";
+import { modelUrl } from "@csarkosh/engine/game/assetUrls";
 
 export type ClipKind = "idle" | "walk" | "attack" | "death";
 

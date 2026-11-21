@@ -18,7 +18,7 @@
  */
 import type { Rgb } from "@csarkosh/engine/game/colour";
 import { presenceOf, type CrowdFigure } from "./crowdField.js";
-import { HOLLOW_EYE_COLOR, HOLLOW_FIGURE_M } from "./hollowLook.js";
+import { HOLLOW_EYE_COLOR, HOLLOW_FIGURE_M } from "@csarkosh/engine/game/hollowLook";
 
 /** The crowd's eyes run from pale to a dull ember by a figure's `warm`: never the Hollow's red, which is what tells a figure that kills from the crowd. */
 export const CROWD_EYE_PALE: Rgb = { r: 0.78, g: 0.82, b: 0.74 };

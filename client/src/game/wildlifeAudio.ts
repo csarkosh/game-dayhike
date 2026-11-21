@@ -26,9 +26,9 @@
  */
 
 import type { AmbientAudio, ListenerPose } from "./ambientAudio.js";
-import { audioUrl } from "./assetUrls.js";
+import { audioUrl } from "@csarkosh/engine/game/assetUrls";
 import { pageTurns } from "@csarkosh/engine/game/downloadTurns";
-import { reportLayer } from "./loadReport.js";
+import { reportLayer } from "@csarkosh/engine/game/loadReport";
 import type { Presence, WildlifeEvent } from "@csarkosh/engine/game/wildlifeBehaviour";
 
 /**

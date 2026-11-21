@@ -4,7 +4,7 @@ import "@csarkosh/engine/sim/olympic";
 import { firstPondWorld, lakeOf } from "../../sim/helpers/lakes.js";
 import { boxInPlanes } from "@csarkosh/engine/game/lakeSeen";
 import { cameraAxes, restAxes, restPlanes, viewPlanes } from "@csarkosh/engine/game/lite/cameraPose";
-import { LILY_AROUND_M, PLANT_SLACK_M, REED_AROUND_M, REED_TOP_M } from "../../../src/game/lite/waterPlantMeshes.js";
+import { LILY_AROUND_M, PLANT_SLACK_M, REED_AROUND_M, REED_TOP_M } from "@csarkosh/engine/game/lite/waterPlantMeshes";
 import { waterPlantPlacements } from "@csarkosh/engine/game/waterPlantField";
 import { PLANT_CELL_M, REED_CHARACTERS, plantBoxes, waterPlantLists } from "@csarkosh/engine/game/waterPlantShapes";
 import { timeLimit } from "../../helpers/timeLimit.js";

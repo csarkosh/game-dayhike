@@ -4,7 +4,7 @@ import { fileURLToPath } from "node:url";
 import {
   AGX_INSET, AGX_OUTSET, SRGB_TO_REC2020, REC2020_TO_SRGB, AGX_MIN_EV, AGX_MAX_EV,
   SPLIT_TONE_DENSITY_SCALE, SPLIT_TONE_SATURATION_SCALE, AGX_CONTRAST, type Mat3,
-} from "../../src/game/gradeParams.js";
+} from "@csarkosh/engine/game/gradeParams";
 import { DITHER_LSB, HALATION_THRESHOLD, HALATION_CAP } from "@csarkosh/engine/game/postParams";
 import { HALATION_EXTRACT_WGSL, gradeWgsl } from "@csarkosh/engine/game/lite/postWgsl";
 
@@ -36,7 +36,7 @@ describe("the grade's stage stays in lockstep with gradeParams.ts", () => {
     }
   });
   it("keeps the MIT notice for the borrowed tone map, beside the constants copied from it", () => {
-    const params = readFileSync(fileURLToPath(new URL("../../src/game/gradeParams.ts", import.meta.url)), "utf8");
+    const params = readFileSync(fileURLToPath(new URL("../../../engine/src/game/gradeParams.ts", import.meta.url)), "utf8");
     expect(params).toContain("three.js, MIT License, Copyright 2010-2024 three.js authors");
   });
   it("carries the AgX contrast polynomial's coefficients from AGX_CONTRAST, not a second copy", () => {

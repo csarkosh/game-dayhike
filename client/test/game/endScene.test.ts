@@ -6,7 +6,7 @@ import {
   arrived, carDistance, carHeard, carSpeed, endBeats, endCar, endShot, endShotIndex, endMistShare, headlampAt, laneAt, releaseAt, roadRelease,
   type EndShotContext, type LampAim,
 } from "../../src/game/endScene.js";
-import { LAMP_INTENSITY } from "../../src/game/lampParams.js";
+import { LAMP_INTENSITY } from "@csarkosh/engine/game/lampParams";
 import { doorSpot } from "../../src/sim/trailhead.js";
 
 /** A straight road along z, its centreline at x 0, on flat ground at 0; the car on its shoulder at the pad, nose to +z. */

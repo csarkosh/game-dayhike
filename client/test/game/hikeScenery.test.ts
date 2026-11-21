@@ -1,4 +1,5 @@
 import { beforeAll, describe, expect, it } from "vitest";
+import "../../src/game/dayhikeAssets.js";
 import "../../src/sim/passes/index.js";
 import type { BoardDrawing } from "../../src/game/boardDraw.js";
 import { createHikeBody, createHikeSigns, loadFilmCar } from "../../src/game/hikeScenery.js";

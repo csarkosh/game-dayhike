@@ -2,7 +2,7 @@ import { describe, it, expect } from "vitest";
 import { WEATHER_PRESETS } from "@csarkosh/engine/game/weather";
 import {
   lampUnder, lampFlicker, lampPlace, DARK_LAMP_PLACE, LAMP_DREAD_DIM, LAMP_DREAD_TINT, LAMP_FLICKER_DEPTH, LAMP_COLOUR, LAMP_INTENSITY, LAMP_ANGLE, LAMP_EXPONENT, LAMP_RANGE,
-} from "../../src/game/lampParams.js";
+} from "@csarkosh/engine/game/lampParams";
 import { babylonValues } from "../helpers/babylonFixture.js";
 
 const CLEAR = WEATHER_PRESETS.clear;

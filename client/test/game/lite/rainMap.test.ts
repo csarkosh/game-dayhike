@@ -1,13 +1,13 @@
-import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 import "../../../src/sim/passes/index.js";
-import { RAIN_MAP_RINGS, RAIN_MAP_WGSL, rainMapPlugin } from "../../../src/game/lite/rainMap.js";
-import { TERRAIN_VERTEX_FLOATS, TERRAIN_VERTEX_LAYOUT } from "../../../src/game/lite/terrainPlugins.js";
+import { RAIN_MAP_RINGS, RAIN_MAP_WGSL, rainMapPlugin } from "@csarkosh/engine/game/lite/rainMap";
+import { TERRAIN_VERTEX_FLOATS, TERRAIN_VERTEX_LAYOUT } from "@csarkosh/engine/game/lite/terrainPlugins";
 import { rainMapTexel } from "@csarkosh/engine/game/rainCover";
 import { RAIN_MAP } from "@csarkosh/engine/game/rainParams";
 import { TERRAIN_ATTRIBUTES } from "@csarkosh/engine/game/terrainVertices";
 import { babylonText } from "../../helpers/babylonFixture.js";
 import { tight } from "./wgslText.js";
+import { sourceText } from "../../helpers/source.js";
 
 /** The height shader's two stages on Babylon.js, recorded. */
 const RAIN_HEIGHT_FRAGMENT = babylonText("stages/rainHeight.fragment.glsl");
@@ -73,7 +73,7 @@ describe("the cover map's texel on Babylon Lite", () => {
   });
 
   it("has its own word on the water: a lake or the sea is drawn in the map while its square reaches it, and shown to the frame by the view alone", () => {
-    const read = (name: string): string => readFileSync(new URL(`../../../src/game/lite/${name}`, import.meta.url), "utf8");
+    const read = (name: string): string => sourceText(`game/lite/${name}`);
     expect(read("rainMap.ts")).toContain("      if (!disposed && registered.has(mesh)) setTaskMeshVisible(task, mesh, shown);");
     // Each says the map's word on a frame that draws the map, and shows its mesh to the frame's own pass by the view.
     const lakes = read("lakeMeshes.ts");

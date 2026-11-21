@@ -7,7 +7,7 @@
  * resonances, opened and shut a syllable at a time, with no consonant (the
  * hiss one made read as a snare). No voice says a word.
  */
-import { HEART_DUB_AT, STARE_FLOOR, type StareLens } from "./stareLens.js";
+import { HEART_DUB_AT, STARE_FLOOR, type StareLens } from "@csarkosh/engine/game/stareLens";
 
 const clamp01 = (v: number): number => Math.max(0, Math.min(1, v));
 

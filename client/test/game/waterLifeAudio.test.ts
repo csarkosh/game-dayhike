@@ -1,4 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
+import "../../src/game/dayhikeAssets.js";
 import type { VoiceSource } from "../../src/game/ambientAudio.js";
 import { FROG_GAIN, FROG_QUIET_RADIUS, type FrogCall } from "../../src/game/frogChorus.js";
 import {

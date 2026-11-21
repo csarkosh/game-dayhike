@@ -18,7 +18,7 @@ import type { QualityTier } from "@csarkosh/engine/game/quality";
 import type { WaterLifeSound } from "../waterLifeAudio.js";
 import type { WaterLifeMade } from "@csarkosh/engine/game/waterLifeField";
 import { createWaterLifeScene, type WaterLifeDraws, type WaterLifeFrame } from "../waterLifeScene.js";
-import { createLiteDragonflies } from "./dragonflyMeshes.js";
+import { createLiteDragonflies } from "@csarkosh/engine/game/lite/dragonflyMeshes";
 import type { FrameUploads } from "@csarkosh/engine/game/lite/frameUploads";
 import { createLiteMidges } from "@csarkosh/engine/game/lite/midgeMeshes";
 

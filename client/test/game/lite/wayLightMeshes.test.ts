@@ -1,6 +1,6 @@
 import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
-import { CLOUD_NOISE_LARGE_M, CLOUD_NOISE_SMALL_M } from "../../../src/game/cloudParams.js";
+import { CLOUD_NOISE_LARGE_M, CLOUD_NOISE_SMALL_M } from "@csarkosh/engine/game/cloudParams";
 import { SEE_THROUGH_ORDER } from "@csarkosh/engine/game/lite/drawOrder";
 import { PREMULTIPLIED_BLEND, WAY_LIGHT_WGSL } from "../../../src/game/lite/wayLightMeshes.js";
 import { emptyWayLightUniforms } from "../../../src/game/wayLight.js";

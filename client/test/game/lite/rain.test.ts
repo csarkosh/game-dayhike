@@ -1,9 +1,9 @@
 import { describe, expect, it } from "vitest";
 import "../../../src/sim/passes/index.js";
 import { babylonText } from "../../helpers/babylonFixture.js";
-import { FRAME_BLOCK, stageClocks, stageOwn, stageReads } from "../../../src/game/lite/frameBlock.js";
-import { RAIN_FRAME_READS, RAIN_WGSL } from "../../../src/game/lite/rain.js";
-import { emptyRainStageUniforms } from "../../../src/game/rainField.js";
+import { FRAME_BLOCK, stageClocks, stageOwn, stageReads } from "@csarkosh/engine/game/lite/frameBlock";
+import { RAIN_FRAME_READS, RAIN_WGSL } from "@csarkosh/engine/game/lite/rain";
+import { emptyRainStageUniforms } from "@csarkosh/engine/game/rainField";
 import { inOrder, tight } from "./wgslText.js";
 
 /**

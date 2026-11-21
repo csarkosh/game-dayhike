@@ -5,6 +5,7 @@ import { TURNED_AWAY_REASONS } from "@csarkosh/engine/game/loadCheck";
 import { FIRST_OPEN_NOTE, FIRST_RUN_NOTE_WINDOWS } from "../../src/game/landingModel.js";
 import { appWouldRun, turnedAwayModel, visitorDevice, type TurnedAwayInput } from "../../src/game/turnedAwayModel.js";
 import * as words from "@csarkosh/engine/game/turnedAwayWords";
+import { sourceText } from "../helpers/source.js";
 
 const CHROME_WIN = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/109.0.0.0 Safari/537.36";
 const CHROME_WIN7 = "Mozilla/5.0 (Windows NT 6.1; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/109.0.0.0 Safari/537.36";
@@ -161,7 +162,7 @@ describe("the words a visitor turned away reads", () => {
   it("stand in one module, a constant a sentence: the page and its model write none of their own", () => {
     expect(sentences.length).toBeGreaterThan(20);
     for (const file of ["turnedAway.ts", "turnedAwayModel.ts"]) {
-      const code = readFileSync(fileURLToPath(new URL(`../../src/game/${file}`, import.meta.url)), "utf8").replace(/\/\*[\s\S]*?\*\/|\/\/.*$/gm, "");
+      const code = sourceText(`game/${file}`).replace(/\/\*[\s\S]*?\*\/|\/\/.*$/gm, "");
       // A string of the code with a space in it would be words: the DOM's class names and the checks' patterns have none but these.
       const worded = [...code.matchAll(/"((?:[^"\\\n]|\\.)*)"/g)].map((m) => m[1] as string).filter((text) => /[A-Za-z] [A-Za-z]/.test(text));
       expect(worded, file).toEqual(file === "turnedAway.ts" ? ["caption note"] : []);

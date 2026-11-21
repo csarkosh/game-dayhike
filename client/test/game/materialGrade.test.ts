@@ -1,13 +1,13 @@
-import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
-import { CHASE_SHADOW_DENSITY, CHASE_SHADOW_HUE, VIGNETTE_COLOUR } from "../../src/game/gradeParams.js";
+import { CHASE_SHADOW_DENSITY, CHASE_SHADOW_HUE, VIGNETTE_COLOUR } from "@csarkosh/engine/game/gradeParams";
 import {
   DITHER_INTENSITY, VIGNETTE_CAMERA_FOV, curveSettingsUnder, curveVectors, emptyCurveVectors, materialGradeUniforms, vignetteVectors, type CurveSettings,
-} from "../../src/game/materialGrade.js";
+} from "@csarkosh/engine/game/materialGrade";
 import { WEATHER_PRESETS, gradeUnder, saturationUnder } from "@csarkosh/engine/game/weather";
 import { babylonValues } from "../helpers/babylonFixture.js";
+import { sourceText } from "../helpers/source.js";
 
-const src = (name: string): string => readFileSync(new URL(`../../src/game/${name}`, import.meta.url), "utf8");
+const src = (name: string): string => sourceText(`game/${name}`);
 
 /**
  * What Babylon.js gave, recorded. `curves`: what it binds for each case's settings, its own `ColorCurves` set as

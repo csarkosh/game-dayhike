@@ -1,8 +1,8 @@
 import { describe, expect, it } from "vitest";
 import "../../../src/sim/passes/index.js";
-import { FRAME_BLOCK, stageOwn, stageReads } from "../../../src/game/lite/frameBlock.js";
-import { SPLASH_WGSL } from "../../../src/game/lite/rainSplash.js";
-import { SPRAY_FRAME_READS, SPRAY_WGSL } from "../../../src/game/lite/surfSpray.js";
+import { FRAME_BLOCK, stageOwn, stageReads } from "@csarkosh/engine/game/lite/frameBlock";
+import { SPLASH_WGSL } from "@csarkosh/engine/game/lite/rainSplash";
+import { SPRAY_FRAME_READS, SPRAY_WGSL } from "@csarkosh/engine/game/lite/surfSpray";
 import { SURF_SPRAY_BURSTS, emptySprayUniforms, sprayBurstName } from "@csarkosh/engine/game/sprayField";
 import { babylonText } from "../../helpers/babylonFixture.js";
 import { inOrder, tight } from "./wgslText.js";

@@ -54,14 +54,12 @@
     "game/escalation.ts",
     "game/exploreDay.ts",
     "game/filmHead.ts",
-    "game/hollowLook.ts",
     "game/innerLines.ts",
     "game/innerVoice.ts",
     "game/interactPrompt.ts",
     "game/introOverlay.ts",
     "game/introPlayback.ts",
     "game/labelWear.ts",
-    "game/lampParams.ts",
     "game/landing*",
     "game/oddSounds.ts",
     "game/passages.ts",
@@ -70,11 +68,8 @@
     "game/scenePlay.ts",
     "game/sceneryParts.ts",
     "game/script.ts",
-    "game/shadeMaskParams.ts",
-    "game/shadeVeilParams.ts",
     "game/shotBodies.ts",
     "game/signParts.ts",
-    "game/stare*",
     "game/titleLoop*",
     "game/voiceClips.ts",
     "game/way*",
@@ -92,8 +87,6 @@
     "game/lite/sceneRoute.ts",
     "game/lite/sceneStage.ts",
     "game/lite/scenery*",
-    "game/lite/shadeMask.ts",
-    "game/lite/shadeVeil.ts",
     "game/lite/way*",
     "game/lite/wornLamps.ts",
     "game/shaders/crowdCard/*",
@@ -101,8 +94,6 @@
     "game/shaders/entity/*",
     "game/shaders/sceneryModels/*",
     "game/shaders/sceneryPaint/*",
-    "game/shaders/shadeMask/*",
-    "game/shaders/shadeVeil/*",
     "game/shaders/wayField/*",
     "game/shaders/wayLight/*",
     "sim/types.ts",
@@ -110,11 +101,12 @@
     "net/protocol.ts",
     "net/hostSession.ts",
     "net/clientSession.ts",
-    "net/dayhikeGame.ts"
+    "net/dayhikeGame.ts",
+    "game/stareAudio.ts",
+    "game/dayhikeAssets.ts"
   ],
   "hold": {
     "env.d.ts": "the client's own ambient types",
-    "sim/kernel/fieldWasm.ts": "written by tools/rust/build.mjs at this path; moves with the kernel's build",
-    "game/assetUrls.ts": "globs client/assets by a relative path; moves when the assets are split"
+    "sim/kernel/fieldWasm.ts": "written by tools/rust/build.mjs at this path; moves with the kernel's build"
   }
 }

@@ -114,7 +114,7 @@ import { emptyWetUniforms, type WetUniforms } from "@csarkosh/engine/game/wetSur
 import { sphereInView } from "./capMesh.js";
 import type { ViewFrustumPlane } from "@csarkosh/engine/game/lite/cameraPose";
 import { DRAW_ORDER, SEE_THROUGH_ORDER, createDrawOrders } from "@csarkosh/engine/game/lite/drawOrder";
-import { baseColourPlugin, surfaceWetPlugin } from "./forestPlugins.js";
+import { baseColourPlugin, surfaceWetPlugin } from "@csarkosh/engine/game/lite/forestPlugins";
 import type { FrameUploads } from "@csarkosh/engine/game/lite/frameUploads";
 import { loadSceneActor, type SceneActor } from "./sceneActor.js";
 import {

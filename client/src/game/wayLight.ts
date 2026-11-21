@@ -43,7 +43,7 @@
  *   settles at its own colour and never whitens.
  */
 import type { Rgb } from "@csarkosh/engine/game/colour";
-import { CHASE_TINT } from "./gradeParams.js";
+import { CHASE_TINT } from "@csarkosh/engine/game/gradeParams";
 import { sliceDue, type Slices } from "@csarkosh/engine/game/syncJobs";
 import {
   WAY_CURL, WAY_DENSITY_FLOOR, WAY_EDGE_M, WAY_FIN_SHARE, WAY_GROUND_BAND, WAY_GROUND_CORE, WAY_GROUND_REACH, WAY_HEAD, WAY_HEAVE, WAY_HIDE_SHARE, WAY_MIST_REACH,

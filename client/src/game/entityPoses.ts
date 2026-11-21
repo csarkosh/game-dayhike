@@ -19,7 +19,7 @@ import { HOLLOW_HEIGHT } from "../sim/hollow.js";
 import { AiState, Phase, type WorldState } from "../sim/types.js";
 import { aimDirection } from "@csarkosh/engine/sim/view";
 import { variantForId } from "./characterAssets.js";
-import { HOLLOW_EYE_INTENSITY, HOLLOW_SCALE, HOLLOW_WALK_CLIP_SPEED, RANGER_WALK_CLIP_SPEED } from "./hollowLook.js";
+import { HOLLOW_EYE_INTENSITY, HOLLOW_SCALE, HOLLOW_WALK_CLIP_SPEED, RANGER_WALK_CLIP_SPEED } from "@csarkosh/engine/game/hollowLook";
 
 /**
  * The rangers other hikers are drawn as, in a fixed order indexed by player

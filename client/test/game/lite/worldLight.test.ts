@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
-import { createWorldLight } from "../../../src/game/lite/worldLight.js";
-import { atmosphereUnder } from "../../../src/game/atmosphereParams.js";
+import { createWorldLight } from "@csarkosh/engine/game/lite/worldLight";
+import { atmosphereUnder } from "@csarkosh/engine/game/atmosphereParams";
 import { sunPositionAt } from "@csarkosh/engine/game/sky";
 import { sceneLightsUnder } from "@csarkosh/engine/game/sceneLights";
 import { skyStateFor } from "@csarkosh/engine/game/skyState";

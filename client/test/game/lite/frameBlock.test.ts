@@ -4,23 +4,23 @@ import { describe, expect, it } from "vitest";
 import { COVE_END_BLEND, COVE_FACE_GRADE } from "@csarkosh/engine/sim/olympic";
 import { SWASH_FACE_LIFT_M, SWASH_REACH_MAX_M } from "@csarkosh/engine/game/swashRunUp";
 import { SWASH_COLUMNS, SWASH_STRIDE } from "@csarkosh/engine/game/swashTable";
-import { emptyMaterialGradeUniforms } from "../../../src/game/materialGrade.js";
+import { emptyMaterialGradeUniforms } from "@csarkosh/engine/game/materialGrade";
 import "../../../src/sim/passes/index.js";
-import { atmosphereUniforms, emptyAtmosphereUniforms, type AtmosphereRecord } from "../../../src/game/atmosphereParams.js";
-import { noCloud } from "../../../src/game/cloudParams.js";
+import { atmosphereUniforms, emptyAtmosphereUniforms, type AtmosphereRecord } from "@csarkosh/engine/game/atmosphereParams";
+import { noCloud } from "@csarkosh/engine/game/cloudParams";
 import { emptyFadeUniforms, fadeUniforms } from "@csarkosh/engine/game/distanceFade";
 import { FOLIAGE_PLAYERS, FOLIAGE_PROFILES, emptyFoliageUniforms, foliageLook, foliageUniforms, setFoliageWind } from "@csarkosh/engine/game/foliageUniforms";
-import { atmospherePlugin } from "../../../src/game/lite/atmospherePlugin.js";
-import { FADE_FIELDS, FOLIAGE_FIELDS, surfaceWetPlugin, vegetationPlugin, type Vegetation } from "../../../src/game/lite/forestPlugins.js";
+import { atmospherePlugin } from "@csarkosh/engine/game/lite/atmospherePlugin";
+import { FADE_FIELDS, FOLIAGE_FIELDS, surfaceWetPlugin, vegetationPlugin, type Vegetation } from "@csarkosh/engine/game/lite/forestPlugins";
 import {
   FRAME_BLOCK, FRAME_CLOCK_NAMES, FRAME_FIELDS, FRAME_MOVING_NAMES, FRAME_PARTS, FRAME_WIND_NAMES, frameReads, inFrameBlock, movedWords, ownFields, ownValues,
   stageClocks, stageOwn, stageReads, writeFrameBlock, type FrameValues,
-} from "../../../src/game/lite/frameBlock.js";
-import { TERRAIN_FIELDS, emptyTerrainMaterialUniforms, terrainPlugin, terrainWetPlugin } from "../../../src/game/lite/terrainPlugins.js";
+} from "@csarkosh/engine/game/lite/frameBlock";
+import { TERRAIN_FIELDS, emptyTerrainMaterialUniforms, terrainPlugin, terrainWetPlugin } from "@csarkosh/engine/game/lite/terrainPlugins";
 import { WET_FIELDS } from "@csarkosh/engine/game/lite/wetWgsl";
 import { emptyMoteUniforms } from "@csarkosh/engine/game/moteField";
-import { emptyRainUniforms } from "../../../src/game/rainField.js";
-import { emptySplashUniforms } from "../../../src/game/splashField.js";
+import { emptyRainUniforms } from "@csarkosh/engine/game/rainField";
+import { emptySplashUniforms } from "@csarkosh/engine/game/splashField";
 import { emptyTerrainUniforms, terrainUniforms } from "@csarkosh/engine/game/terrainUniforms";
 import { emptySeaFrameUniforms } from "@csarkosh/engine/game/seaUniforms";
 import { emptyWaterFrameUniforms } from "@csarkosh/engine/game/waterSurface";
@@ -249,7 +249,7 @@ describe("the frame's uniform block on Babylon Lite", () => {
     expect(SWASH_REACH_MAX_M * COVE_FACE_GRADE + WET_BAND / 2).toBeLessThanOrEqual(SWASH_FACE_LIFT_M);
     expect(WET_COVE_END).toBeLessThanOrEqual(COVE_END_BLEND);
     // The sea is shown to the frame by the view alone: the cover map's word is its own.
-    expect(readFileSync(new URL("../../../src/game/lite/seaMeshes.ts", import.meta.url), "utf8")).toContain("      if (held !== shown) {\n        shown = held;\n        setMeshVisible(mesh, shown);");
+    expect(readFileSync(new URL("../../../../engine/src/game/lite/seaMeshes.ts", import.meta.url), "utf8")).toContain("      if (held !== shown) {\n        shown = held;\n        setMeshVisible(mesh, shown);");
     // Under a lake's wet line there is no cove, so no fragment there reads the table whatever the view holds.
     setWetCove(0, 180, -24, COVE_FACE_GRADE);
     expect(wetUniforms({ line: 80.3, level: 80, centre: [250, 70], radius: 60, kd: [0.3, 0.1, 0.05], attenuate: true, cap: 0 }).wetCove).toEqual([0, WET_NO_COVE, 0, 0]);

@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
+import "../../src/game/dayhikeAssets.js";
 import { createLoadProgress } from "@csarkosh/engine/game/loadProgress";
-import { reportLayer, reportProgress, setLoadProgress } from "../../src/game/loadReport.js";
+import { reportLayer, reportProgress, setLoadProgress } from "@csarkosh/engine/game/loadReport";
 import { reportCall } from "../../src/game/wildlifeAudio.js";
 import { stepSlices } from "@csarkosh/engine/game/syncJobs";
 

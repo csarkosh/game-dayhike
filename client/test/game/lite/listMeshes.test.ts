@@ -3,8 +3,8 @@ import { describe, expect, it } from "vitest";
 import "../../../src/sim/passes/index.js";
 import type { ListBuffers } from "@csarkosh/engine/game/instanceLists";
 import { createFrameUploads } from "@csarkosh/engine/game/lite/frameUploads";
-import { KEPT_INSTANCES, MATRIX_BYTES, listBytes, sameFloats, showList, writeListData, type ListMesh } from "../../../src/game/lite/listMeshes.js";
-import type { VegetationInstanceLayout } from "../../../src/game/lite/forestPlugins.js";
+import { KEPT_INSTANCES, MATRIX_BYTES, listBytes, sameFloats, showList, writeListData, type ListMesh } from "@csarkosh/engine/game/lite/listMeshes";
+import type { VegetationInstanceLayout } from "@csarkosh/engine/game/lite/forestPlugins";
 
 /** A layout whose instances read their fade bands alone: four floats. */
 const BANDS: VegetationInstanceLayout = { fadeBands: 0, groundGrad: -1, foliage: -1, deadwoodRole: -1, bladeStrength: -1, floats: 4 };
