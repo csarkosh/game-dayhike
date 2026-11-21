@@ -1,6 +1,6 @@
 import { lineIcon } from "@csarkosh/engine/game/icons";
 import { bindCanvas } from "@csarkosh/engine/game/canvasBinding";
-import { Button } from "../sim/types.js";
+import { MoveButton, NO_ACTIONS, type ActionBits } from "@csarkosh/engine/sim/core";
 
 /** Thumb travel from the base centre that reads as full deflection, CSS px. */
 export const STICK_RADIUS = 60;
@@ -109,7 +109,9 @@ type Role =
  * bits and paint state out. No DOM, no clock of its own — every call carries
  * `nowMs` so the double-tap windows and the idle fade are testable.
  */
-export function createTouchModel(viewport: Viewport, hooks: { onPause(): void }): TouchModel {
+export function createTouchModel(viewport: Viewport, hooks: { onPause(): void; actions?: ActionBits }): TouchModel {
+  /** The game's bits for the lamp's button and a touch on the prompt; none where a game names none. */
+  const actions = hooks.actions ?? NO_ACTIONS;
   const defaultBase = (v: Viewport): StickBase => ({
     x: STICK_MARGIN + STICK_RADIUS,
     y: v.height - STICK_MARGIN - STICK_RADIUS,
@@ -189,7 +191,7 @@ export function createTouchModel(viewport: Viewport, hooks: { onPause(): void })
     if (role.kind === "stick") endStick();
     else if (role.kind === "lamp") {
       state.lampPressed = false;
-      if (!cancelled) latched |= Button.Lamp;
+      if (!cancelled) latched |= actions.lamp;
     } else if (role.kind === "pause") {
       state.pausePressed = false;
       if (!cancelled) hooks.onPause();
@@ -225,8 +227,8 @@ export function createTouchModel(viewport: Viewport, hooks: { onPause(): void })
     takeButtons() {
       let bits = latched;
       latched = 0;
-      if (sprinting) bits |= Button.Sprint;
-      if (interactHeld) bits |= Button.Interact;
+      if (sprinting) bits |= MoveButton.Sprint;
+      if (interactHeld) bits |= actions.interact;
       return bits;
     },
     down(p, nowMs) {
@@ -256,7 +258,7 @@ export function createTouchModel(viewport: Viewport, hooks: { onPause(): void })
       }
       const jumped = nowMs - lastTapDownAt <= DOUBLE_TAP_MS;
       if (jumped) {
-        latched |= Button.Jump;
+        latched |= MoveButton.Jump;
         // Consumed: a third tap starts a new pair rather than jumping again.
         lastTapDownAt = -Infinity;
       }
@@ -297,7 +299,7 @@ export function createTouchModel(viewport: Viewport, hooks: { onPause(): void })
       release(id, nowMs, true);
     },
     interactDown() {
-      latched |= Button.Interact;
+      latched |= actions.interact;
       interactHeld = true;
     },
     interactUp() {

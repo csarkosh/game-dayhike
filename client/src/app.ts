@@ -62,7 +62,7 @@ import { FIRST_BUILD_SLICE_MS } from "@csarkosh/engine/game/syncJobs";
 import { createFirstBuilds } from "@csarkosh/engine/game/firstBuilds";
 import { extrasLater } from "@csarkosh/engine/game/extrasLater";
 import { connectFailure, createConnectPanel, sessionEndOutcome } from "@csarkosh/engine/game/connectPanel";
-import { type InputCommand, type PlayerState, type WorldState } from "./sim/types.js";
+import { HIKE_ACTIONS, type InputCommand, type PlayerState, type WorldState } from "./sim/types.js";
 import { CROWD_MOST } from "./game/crowdField.js";
 import { PLAYER_EYE_OFFSET, PLAYER_HALF } from "@csarkosh/engine/sim/constants";
 import { loadBirdBed } from "@csarkosh/engine/game/birdBed";
@@ -487,12 +487,12 @@ function buildGame(
   // on that first touch and flips the sampler into touch mode.
   const touchModel = createTouchModel(
     { width: canvas.clientWidth, height: canvas.clientHeight },
-    { onPause: () => input.disengage() },
+    { onPause: () => input.disengage(), actions: HIKE_ACTIONS },
   );
   // A player's yaw is whatever their input says, so the look starts where
   // the spawn faces: the trail's entrance (`start`, above). Every peer derives
   // it from the seed, as the sim does, so a follower starts facing the trail too.
-  const input = createInputSampler(canvas, { touch: touchModel, touchMode: touchStart, startYaw: start?.yaw ?? 0 });
+  const input = createInputSampler(canvas, { touch: touchModel, touchMode: touchStart, startYaw: start?.yaw ?? 0, actions: HIKE_ACTIONS });
   made(() => input.dispose());
   const accumulator = new FixedStepAccumulator();
   /** The local player's pose as the frame's last tick began, for the eye's blend (`eyeBlend.ts`); null until a tick has run. */

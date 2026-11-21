@@ -20,6 +20,16 @@ export type InputCommand = {
  * The buttons movement reads from a command's one byte. The byte's other bits are the game's to
  * name; a game that names all of them keeps these three where they are.
  */
+/**
+ * The bits of a game's command that the page's controls raise beyond
+ * movement: an interaction, held, and a hand lamp's switch. A game says
+ * which of its own bits they are; 0 raises nothing for that press.
+ */
+export type ActionBits = { readonly interact: number; readonly lamp: number };
+
+/** No action of a game's: the controls raise movement alone. */
+export const NO_ACTIONS: ActionBits = { interact: 0, lamp: 0 };
+
 export const enum MoveButton {
   Jump = 2,
   Crouch = 4,

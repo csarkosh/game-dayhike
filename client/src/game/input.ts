@@ -1,6 +1,6 @@
 import { bindCanvas } from "@csarkosh/engine/game/canvasBinding";
 import type { InputCommand } from "@csarkosh/engine/sim/core";
-import { Button } from "../sim/types.js";
+import { MoveButton, NO_ACTIONS, type ActionBits } from "@csarkosh/engine/sim/core";
 import type { TouchSource } from "./touchControls.js";
 
 const MOUSE_SENSITIVITY = 0.0022;
@@ -61,6 +61,12 @@ export type InputOptions = {
    * starts there too. 0 when absent.
    */
   startYaw?: number;
+  /**
+   * The game's bits for an interaction (the mouse's button, or a touch on
+   * the prompt) and for the lamp's key, F. None when absent: the sampler
+   * raises the jump and the sprint, which are the engine's own, and no more.
+   */
+  actions?: ActionBits;
 };
 
 /**
@@ -83,6 +89,7 @@ export function aimedAtFormControl(target: EventTarget | null): boolean {
 
 export function createInputSampler(canvas: HTMLCanvasElement, opts: InputOptions = {}): InputSampler {
   const touch = opts.touch ?? null;
+  const actions = opts.actions ?? NO_ACTIONS;
   const keys = new Set<string>();
   let yaw = opts.startYaw ?? 0;
   let pitch = 0;
@@ -307,10 +314,10 @@ export function createInputSampler(canvas: HTMLCanvasElement, opts: InputOptions
       moveZ = Math.max(-1, Math.min(1, moveZ));
 
       let buttons = touchButtons;
-      if (interactHeld) buttons |= Button.Interact;
-      if (keys.has("Space")) buttons |= Button.Jump;
-      if (sprintHeld()) buttons |= Button.Sprint;
-      if (keys.has("KeyF")) buttons |= Button.Lamp;
+      if (interactHeld) buttons |= actions.interact;
+      if (keys.has("Space")) buttons |= MoveButton.Jump;
+      if (sprintHeld()) buttons |= MoveButton.Sprint;
+      if (keys.has("KeyF")) buttons |= actions.lamp;
 
       return { seq, moveX, moveZ, yaw, pitch, buttons };
     },
