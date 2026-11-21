@@ -2,6 +2,7 @@ import { describe, it, expect } from "vitest";
 import fc from "fast-check";
 import {
   MessageType,
+  GameMessage,
   encodeInput,
   decodeInput,
   encodeSnapshot,
@@ -345,8 +346,8 @@ describe("event codec", () => {
   });
 
   it("round-trips an interacted event", () => {
-    const back = decodeEvent(encodeEvent({ t: MessageType.Interacted, entityId: 3, targetId: 42 }));
-    expect(back).toEqual({ t: MessageType.Interacted, entityId: 3, targetId: 42 });
+    const back = decodeEvent(encodeEvent({ t: GameMessage.Interacted, entityId: 3, targetId: 42 }));
+    expect(back).toEqual({ t: GameMessage.Interacted, entityId: 3, targetId: 42 });
   });
 
   it("round-trips Named with a peer id up to 255 bytes", () => {

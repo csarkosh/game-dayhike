@@ -2,6 +2,7 @@ import { createHash } from "node:crypto";
 import { describe, expect, it } from "vitest";
 import {
   MessageType,
+  GameMessage,
   PROTOCOL_VERSION,
   encodeEvent,
   encodeInput,
@@ -56,7 +57,7 @@ const EVENTS: readonly NetEvent[] = [
   { t: MessageType.Welcome, entityId: 7, tick: 98765, protocolVersion: PROTOCOL_VERSION, levelId: "forest/8/olympic/-838591574/1879659486/64181734" },
   { t: MessageType.PlayerJoined, entityId: 3 },
   { t: MessageType.PlayerLeft, entityId: 3 },
-  { t: MessageType.Interacted, entityId: 2, targetId: 1001 },
+  { t: GameMessage.Interacted, entityId: 2, targetId: 1001 },
   { t: MessageType.Ping, stamp: 123456.5 },
   { t: MessageType.Pong, stamp: 123456.5, hostTick: 4242 },
   { t: MessageType.SessionEnded, reason: "host left" },
@@ -90,7 +91,7 @@ describe("the wire's identity", () => {
       [MessageType.Welcome]: "3c173f96b05aaaf8",
       [MessageType.PlayerJoined]: "10e7e401ea88b932",
       [MessageType.PlayerLeft]: "ca99b62e263a85a8",
-      [MessageType.Interacted]: "9a7ee20595b80f32",
+      [GameMessage.Interacted]: "9a7ee20595b80f32",
       [MessageType.Ping]: "7225a27cde77ff9f",
       [MessageType.Pong]: "a15ab95d41f396da",
       [MessageType.SessionEnded]: "faaa2528edd174dc",

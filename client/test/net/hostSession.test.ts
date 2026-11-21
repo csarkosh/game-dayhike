@@ -9,6 +9,7 @@ import {
   decodeSnapshot,
   messageTypeOf,
   MessageType,
+  GameMessage,
 } from "../../src/net/protocol.js";
 import { TICKS_PER_SNAPSHOT } from "@csarkosh/engine/sim/constants";
 import { Button, type InputCommand } from "../../src/sim/types.js";
@@ -61,12 +62,12 @@ describe("interact", () => {
     const acted = facing(host, a);
     const got: { entityId: number; targetId: number }[] = [];
     let others = 0;
-    aClient.onEvent((d) => { const e = decodeEvent(d); if (e.t === MessageType.Interacted) got.push(e); });
-    bClient.onEvent((d) => { if (decodeEvent(d).t === MessageType.Interacted) others++; });
+    aClient.onEvent((d) => { const e = decodeEvent(d); if (e.t === GameMessage.Interacted) got.push(e); });
+    bClient.onEvent((d) => { if (decodeEvent(d).t === GameMessage.Interacted) others++; });
     aClient.sendState(encodeInput([input({ seq: 1, buttons: Button.Interact })]));
     net.advance(1); host.tick(input()); net.advance(1);
     expect(acted).toEqual([a]);
-    expect(got).toEqual([{ t: MessageType.Interacted, entityId: a, targetId: 9 }]);
+    expect(got).toEqual([{ t: GameMessage.Interacted, entityId: a, targetId: 9 }]);
     expect(others).toBe(0);
   });
 

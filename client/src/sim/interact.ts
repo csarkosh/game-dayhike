@@ -30,10 +30,7 @@ export const INTERACT_REACH = 2.5;
 /** cos 35°: the target's centre must lie inside a 35° cone around the eye ray. */
 export const INTERACT_HALF_ANGLE_COS = 0.8192;
 
-/** The bits of `current` that are not set in `previous`: a press, not a hold. */
-export function pressedEdges(previous: number, current: number): number {
-  return current & ~previous;
-}
+export { pressedEdges } from "@csarkosh/engine/sim/core";
 
 /**
  * The nearest interactable within reach and inside the facing cone, or null.
