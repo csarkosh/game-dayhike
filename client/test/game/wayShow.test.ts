@@ -80,7 +80,9 @@ describe("the renderer and the app", () => {
   // The renderer, and Day Hike's side of it (`lite/hikeParts.ts`), where what is this game's own in a frame is written.
   const renderer = readFileSync(clientFile("../engine/src/game/lite/renderer.ts"), "utf8") + readFileSync(clientFile("src/game/lite/hikeParts.ts"), "utf8");
   const chain = readFileSync(clientFile("../engine/src/game/lite/postChain.ts"), "utf8");
+  // The way's half of the frame is the hike's own (`hike.ts`, where a variable of `app.ts` is written `h.<name>`).
   const app = readFileSync(clientFile("src/app.ts"), "utf8");
+  const hike = readFileSync(clientFile("src/hike.ts"), "utf8");
 
   it("the renderer makes the way's mist once, for a forest, toned for the tier's colour path, and disposes it", () => {
     expect(renderer.match(/createLiteWayLight\(/g)).toHaveLength(1);
@@ -108,17 +110,19 @@ describe("the renderer and the app", () => {
   });
 
   it("the app gives every renderer the world's way, and the level every frame; a renderer still being made takes the way when it stands", () => {
-    expect(app).toContain("if (wayGivenTo !== renderer || wayGiven !== world.way) {");
+    expect(hike).toContain("if (wayGivenTo !== h.renderer || wayGiven !== world.way) {");
     // With the ground the players stand on (the sim's field, the walkable rock in it), not the bare elevation.
-    expect(app).toContain("renderer.setWay(world.way, (x, z) => ground.heightAt(x, z));");
-    expect(app).toContain("renderer.setWayLevel(wayShown);");
-    expect(app).toContain("wayShown = wayHeld ?? wayLevelFor(world, sceneInto, wayShown, dt);");
+    expect(hike).toContain("h.renderer.setWay(world.way, (x, z) => ground.heightAt(x, z));");
+    expect(hike).toContain("h.renderer.setWayLevel(wayShown);");
+    expect(hike).toContain("wayShown = wayHeld ?? wayLevelFor(world, sceneInto, wayShown, dt);");
     expect(renderer).toContain("if (host.stands()) wayLight?.setWay(next, heightAt);");
     expect(renderer).toContain("if (way !== null && wayHeightAt !== null) wayLight?.setWay(way, wayHeightAt);");
   });
 
   it("the app reports the way once it is settled: its length, its straight line and whether it is the fallback", () => {
-    expect(app).toContain('telemetry.event("way", { length: Math.round(way.length), straight: Math.round(way.straight), fallback: way.fallback, tick: world.state.tick });');
-    expect(app.match(/telemetry\.event\("way"/g)).toHaveLength(1);
+    expect(hike).toContain('h.telemetry.event("way", { length: Math.round(way.length), straight: Math.round(way.straight), fallback: way.fallback, tick: world.state.tick });');
+    // Once in all: in `hike.ts`, and not again in `app.ts`.
+    expect(hike.match(/telemetry\.event\("way"/g)).toHaveLength(1);
+    expect(app).not.toContain('telemetry.event("way"');
   });
 });

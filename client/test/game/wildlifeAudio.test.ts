@@ -369,6 +369,8 @@ describe("app.ts wiring", () => {
   // the silent one: a shell that is constructed and never fed plays nothing,
   // and the game looks exactly as it does with it fed.
   const src = readFileSync(fileURLToPath(new URL("../../src/app.ts", import.meta.url)), "utf8");
+  // `syncAtmosphere`, which feeds the presence from the eased weather, is the hike's own (`hike.ts`, where `app.ts`'s variable is written `h.wildlifePresence`).
+  const hike = readFileSync(fileURLToPath(new URL("../../src/hike.ts", import.meta.url)), "utf8");
 
   it("feeds the shell after renderer.sync, in the one frame the host and a follower run", () => {
     // The host and a follower run one frame (`frame`, appFrame.test.ts), so each step is written once.
@@ -390,7 +392,7 @@ describe("app.ts wiring", () => {
     // Two call sites feed it now: the `weather` command's own base, and
     // `syncAtmosphere`'s eased weather on a forest world's escalation.
     expect(src).toContain("wildlifePresence = wildlifePresenceUnder(base.weather);");
-    expect(src).toContain("wildlifePresence = wildlifePresenceUnder(a.weather, a.hour);");
+    expect(hike).toContain("h.wildlifePresence = wildlifePresenceUnder(a.weather, a.hour);");
     expect(src).toContain("wildlifeAudio?.dispose();");
   });
 

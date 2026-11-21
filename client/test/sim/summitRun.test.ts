@@ -131,9 +131,9 @@ describe("one run on the seed `hollow`", SUITE, () => {
     expect(h.ai).toBe(AiState.Emerge);
     // Through the scene: its last seconds are the threshold (the summit scene), the Hollow walking
     // at the player, who by then has turned and sprints down the stem before the controls are
-    // theirs (app.ts drives it); the same here, or the stand ends on top of a player standing still.
-    // The way down is long drawn by the find in a match (app.ts steps its draw from ten seconds in): the same here,
-    // and the threshold's run is down it, as app.ts's `wayDownFrom` turns the eye.
+    // theirs (`hike.ts` drives it); the same here, or the stand ends on top of a player standing still.
+    // The way down is long drawn by the find in a match (`hike.ts` steps its draw from ten seconds in): the same here,
+    // and the threshold's run is down it, as `hike.ts`'s `wayDownFrom` turns the eye.
     wayOf(w);
     const down = chaseLinePoint(w, p.pos.x, p.pos.z, 8, { x: 0, z: 0 })!;
     const runYaw = Math.atan2(down.x - p.pos.x, down.z - p.pos.z);

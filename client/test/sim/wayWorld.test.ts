@@ -95,25 +95,33 @@ describe("the world's way down", SUITE, () => {
   });
 
   it("the app steps the draw every frame on the host and on a client, from ten seconds in", () => {
+    // The frame's call is in `app.ts` (which calls the hike's own half as `hike.<name>`), the draw's step and its constants in `hike.ts`.
     const app = readFileSync(clientFile("src/app.ts"), "utf8");
-    expect(app).toContain("      syncWayDraw(host.world, state);\n      syncAtmosphere(host.world, state, host.localEntityId, dt);");
-    expect(app).toContain("      syncWayDraw(client.world, state);\n      syncAtmosphere(client.world, state, client.localEntityId, dt);");
+    const hike = readFileSync(clientFile("src/hike.ts"), "utf8");
+    // One frame, which the host and a client both run (`appFrame.test.ts`).
+    expect(app).toContain("    hike.syncWayDraw(live.world, state);\n    hike.syncAtmosphere(live.world, state, live.localEntityId, dt);");
+    expect(app).toContain("frame(host, state, cmd, dt);");
+    expect(app).toContain("frame(client, state, cmd, dt);");
     // Never under the intro: the climb's first ten seconds. A find before then (a console's `summit`) starts it at once.
-    expect(app).toContain("if (world.wayDraw === null || (state.phase === Phase.Climb && state.tick < WAY_DRAW_FROM_TICK)) return;");
-    expect(app).toContain("const WAY_DRAW_FROM_TICK = 600;");
+    expect(hike).toContain("if (world.wayDraw === null || (state.phase === Phase.Climb && state.tick < WAY_DRAW_FROM_TICK)) return;");
+    expect(hike).toContain("const WAY_DRAW_FROM_TICK = 600;");
   });
 
   it("the app has the way drawn by the threshold, and turns the player to it and runs them down it, wherever it then lies", () => {
+    // The threshold is the hike's own (`hike.ts`); the sessions' ticks that step it are in `app.ts`.
     const app = readFileSync(clientFile("src/app.ts"), "utf8");
+    const hike = readFileSync(clientFile("src/hike.ts"), "utf8");
     // A draw the find came too soon for takes most of a frame while the scene's shots play, and is finished at the threshold's cut.
-    expect(app).toContain("const WAY_DRAW_SCENE_MS = 10;");
-    expect(app).toContain("state.phase === Phase.Climb ? WAY_DRAW_MS : state.phase === Phase.Scene ? WAY_DRAW_SCENE_MS : WAY_DRAW_LATE_MS");
-    expect(app).toContain("    if (thresholdOn()) {\n      wayOf(world);\n      return;\n    }");
+    expect(hike).toContain("const WAY_DRAW_SCENE_MS = 10;");
+    expect(hike).toContain("state.phase === Phase.Climb ? WAY_DRAW_MS : state.phase === Phase.Scene ? WAY_DRAW_SCENE_MS : WAY_DRAW_LATE_MS");
+    expect(hike).toContain("    if (thresholdOn()) {\n      wayOf(world);\n      return;\n    }");
     // The look is asked for again every tick of the threshold, from where the player is: a way that was not drawn at the find is turned to once it is, and the run follows it.
-    expect(app).toContain("      const fresh = wayDownFrom(me, sim);\n      if (fresh !== null) downLook = fresh;");
-    expect(app).toContain("cmd = taken(ranToCar(stilled(input.sample(++seq), me, host.world), me));");
-    expect(app).toContain("cmd = taken(ranToCar(stilled(input.sample(++seq), me, client.world), me));");
-    expect(app).toContain("const look = thresholdLook(stage, lastLook, downLook);");
+    expect(hike).toContain("      const fresh = wayDownFrom(me, sim);\n      if (fresh !== null) downLook = fresh;");
+    // One tick step, which the host and a client both run (`appFrame.test.ts`).
+    expect(app).toContain("cmd = hike.taken(hike.ranToCar(hike.stilled(input.sample(++seq), me, live.world), me));");
+    expect(app).toContain("const cmd = stepTicks(host, ticks);");
+    expect(app).toContain("const cmd = stepTicks(client, ticks);");
+    expect(hike).toContain("const look = thresholdLook(stage, lastLook, downLook);");
   });
 
   it("a level with no forest has no way and no draw", () => {
