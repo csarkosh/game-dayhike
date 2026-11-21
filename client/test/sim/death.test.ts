@@ -3,7 +3,8 @@ import { createForestWorld, createWorld, spawnPlayer, tickWorld, isDead } from "
 import { createForest } from "../../src/sim/forest.js";
 import { depenetrate } from "../../src/sim/collision.js";
 import { parseLevel } from "../../src/sim/level.js";
-import { ENEMY_POPULATION_CAP, PLAYER_HALF } from "../../src/sim/constants.js";
+import { PLAYER_HALF } from "../../src/sim/constants.js";
+import { ENEMY_POPULATION_CAP } from "../../src/sim/dayhikeConstants.js";
 import { AiState, type InputCommand } from "../../src/sim/types.js";
 import sandbox01 from "../../levels/sandbox01.json" with { type: "json" };
 

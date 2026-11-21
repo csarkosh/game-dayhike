@@ -1,4 +1,5 @@
-import type { DeathCause, InputCommand, Vec3 } from "../sim/types.js";
+import type { InputCommand, Vec3 } from "../sim/core.js";
+import type { DeathCause } from "../sim/types.js";
 
 /**
  * Bumped whenever the wire format changes, or what the two ends must agree

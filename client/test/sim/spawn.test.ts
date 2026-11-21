@@ -10,7 +10,8 @@ import {
 } from "@csarkosh/engine/sim/terrain";
 import "@csarkosh/engine/sim/olympic";
 import { depenetrate } from "../../src/sim/collision.js";
-import { ENEMY_HALF, ENEMY_MIN_SPAWN_DISTANCE, PLAYER_HALF } from "../../src/sim/constants.js";
+import { PLAYER_HALF } from "../../src/sim/constants.js";
+import { ENEMY_HALF, ENEMY_MIN_SPAWN_DISTANCE } from "../../src/sim/dayhikeConstants.js";
 import { firstPondWorld } from "./helpers/lakes.js";
 import { rayToShore } from "@csarkosh/engine/sim/lakeShape";
 import type { BoxProvider } from "../../src/sim/boxSource.js";

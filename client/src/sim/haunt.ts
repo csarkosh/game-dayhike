@@ -41,7 +41,8 @@ import { chaseLineDistance, onWay } from "./chaseLine.js";
 import { wayDirection, wayPoint, wayProject } from "./wayDown.js";
 import { causeOfDeath } from "./deathCause.js";
 import { decided } from "./checkpoint.js";
-import { ENEMY_HALF, ENEMY_MAX_HEALTH, PLAYER_EYE_OFFSET } from "./constants.js";
+import { PLAYER_EYE_OFFSET } from "./constants.js";
+import { ENEMY_HALF, ENEMY_MAX_HEALTH } from "./dayhikeConstants.js";
 
 /** The mist below which the climb is not haunted: the mist whole on the ground, so the shades have it to come out of. */
 export const HAUNT_MIST_MIN = 0.95;

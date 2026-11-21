@@ -19,7 +19,8 @@
 import type { EnemyState, PlayerState, Vec3 } from "./types.js";
 import { AiState } from "./types.js";
 import type { World } from "./world.js";
-import { ENEMY_HALF, PLAYER_HALF, PLAYER_MAX_HEALTH, SIM_TICK_HZ } from "./constants.js";
+import { PLAYER_HALF, SIM_TICK_HZ } from "./constants.js";
+import { ENEMY_HALF, PLAYER_MAX_HEALTH } from "./dayhikeConstants.js";
 import { HOLLOW_PACK_MAX, RETURN_AFTER_S, RETURN_HEAD_START_M, RETURN_HOLD_S, returnsOn } from "./checkpoint.js";
 import { clearRoute, horizontalDistSq, playerHasInView, spawnHollow } from "./hollow.js";
 import { WATCH_VIEW_COS } from "./watcher.js";

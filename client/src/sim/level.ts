@@ -1,4 +1,4 @@
-import type { Vec3 } from "./types.js";
+import type { Vec3 } from "./core.js";
 
 export type Aabb = { min: Vec3; max: Vec3 };
 export type Brush = { box: Aabb; material: string };

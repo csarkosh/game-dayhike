@@ -7,17 +7,11 @@ import { stepMovement } from "./movement.js";
 import { containInLakes, waterLevelAt } from "./containment.js";
 import type { World } from "./world.js";
 import {
-  ENEMY_ATTACK_COOLDOWN,
-  ENEMY_ATTACK_RANGE,
-  ENEMY_CORPSE_SECONDS,
-  ENEMY_DAMAGE,
-  ENEMY_DETECT_RANGE,
-  ENEMY_HALF,
-  ENEMY_SPEED,
   EPSILON,
   WALK_SPEED,
   PLAYER_EYE_OFFSET,
 } from "./constants.js";
+import { ENEMY_ATTACK_COOLDOWN, ENEMY_ATTACK_RANGE, ENEMY_CORPSE_SECONDS, ENEMY_DAMAGE, ENEMY_DETECT_RANGE, ENEMY_HALF, ENEMY_SPEED } from "./dayhikeConstants.js";
 
 /** Wish length that produces exactly ENEMY_SPEED inside stepMovement. */
 /** Enemies send no Sprint bit, so their wish is scaled against the walk. */

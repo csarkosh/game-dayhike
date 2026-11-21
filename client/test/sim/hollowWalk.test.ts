@@ -6,7 +6,8 @@ import { elevationAt, activeTerrainVariant } from "@csarkosh/engine/sim/terrain"
 import { createForestWorld, spawnPlayer, tickWorld } from "../../src/sim/world.js";
 import { isOnCorridor, roadOffset } from "../../src/sim/containment.js";
 import { ROAD_CORRIDOR_HALF } from "@csarkosh/engine/sim/road";
-import { ENEMY_HALF, PLAYER_HALF, TICK_DT } from "../../src/sim/constants.js";
+import { PLAYER_HALF, TICK_DT } from "../../src/sim/constants.js";
+import { ENEMY_HALF } from "../../src/sim/dayhikeConstants.js";
 import { spawnHollow } from "../../src/sim/hollow.js";
 import { Phase } from "../../src/sim/types.js";
 import { timeLimit } from "../helpers/timeLimit.js";

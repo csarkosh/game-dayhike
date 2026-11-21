@@ -1,4 +1,4 @@
-import type { Vec3 } from "./types.js";
+import type { Vec3 } from "./core.js";
 import type { Aabb } from "./level.js";
 import { boxesNear, type BoxProvider } from "./boxSource.js";
 import type { GroundField } from "./ground.js";

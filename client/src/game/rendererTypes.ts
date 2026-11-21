@@ -9,7 +9,8 @@
  * mode's report (`gpuTimeReport.ts`). No renderer is handed an engine here:
  * the hike's makes its own (`hikeRenderer.ts`).
  */
-import type { Vec3, WorldState } from "../sim/types.js";
+import type { Vec3 } from "../sim/core.js";
+import type { WorldState } from "../sim/types.js";
 import type { WayDown } from "../sim/wayDown.js";
 import type { ListenerPose } from "./ambientAudio.js";
 import type { CrowdFigure } from "./crowdField.js";

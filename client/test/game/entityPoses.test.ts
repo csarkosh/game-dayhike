@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
-import { ENEMY_HALF, PLAYER_EYE_OFFSET, PLAYER_HALF, TELEPORT_M } from "../../src/sim/constants.js";
+import { PLAYER_EYE_OFFSET, PLAYER_HALF, TELEPORT_M } from "../../src/sim/constants.js";
+import { ENEMY_HALF } from "../../src/sim/dayhikeConstants.js";
 import { HOLLOW_HEIGHT } from "../../src/sim/hollow.js";
 import { AiState, Outcome, Phase, type EnemyState, type PlayerState, type WorldState } from "../../src/sim/types.js";
 import {

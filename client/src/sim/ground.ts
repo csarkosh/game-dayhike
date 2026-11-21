@@ -1,4 +1,4 @@
-import type { Vec3 } from "./types.js";
+import type { Vec3 } from "./core.js";
 import { elevationSampleAt } from "@csarkosh/engine/sim/terrain";
 import { GROUND_NORMAL_Y, ROCK_STAND_NORMAL_Y } from "./constants.js";
 import { GROUND_DEPTH, rockLayerAt, rockPaintAt, rockRiseAt, trailClearAt } from "@csarkosh/engine/sim/rockSurface";

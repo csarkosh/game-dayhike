@@ -1,4 +1,4 @@
-import type { Vec3 } from "./types.js";
+import type { Vec3 } from "./core.js";
 
 /**
  * The eye ray. yaw 0 faces +Z; negative pitch looks up, matching the camera.

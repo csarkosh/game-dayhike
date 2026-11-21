@@ -31,7 +31,7 @@
  */
 import { MAX_PLAYERS } from "../sim/constants.js";
 import type { LakeSource } from "@csarkosh/engine/sim/terrain";
-import { nextRandom } from "../sim/types.js";
+import { nextRandom } from "../sim/core.js";
 import type { QualityTier } from "@csarkosh/engine/game/quality";
 import type { SkyState } from "@csarkosh/engine/game/skyState";
 import type { WeatherParams } from "@csarkosh/engine/game/weather";

@@ -18,7 +18,8 @@ import { SUMMIT_REVEAL_S, spawnHollow } from "./hollow.js";
 import { wayOf } from "./wayDraw.js";
 import { hideWatcher } from "./watcher.js";
 import { HAUNT_REST_CHASE, isShadeState } from "./haunt.js";
-import { ENEMY_HALF, PLAYER_HALF } from "./constants.js";
+import { PLAYER_HALF } from "./constants.js";
+import { ENEMY_HALF } from "./dayhikeConstants.js";
 import { stemAhead } from "@csarkosh/engine/sim/trailRoute";
 
 /** Metres from the body within which a living player has found it: inside the 25 m crest disc. */

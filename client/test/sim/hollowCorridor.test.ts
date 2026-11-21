@@ -5,7 +5,7 @@ import { createForestWorld, spawnPlayer, tickWorld } from "../../src/sim/world.j
 import { seedFromToken } from "@csarkosh/engine/game/seed";
 import { setActiveTerrainVariant, DEFAULT_TERRAIN_VARIANT, elevationAt, activeTerrainVariant } from "@csarkosh/engine/sim/terrain";
 import { AiState, Phase } from "../../src/sim/types.js";
-import { ENEMY_HALF } from "../../src/sim/constants.js";
+import { ENEMY_HALF } from "../../src/sim/dayhikeConstants.js";
 import { spawnHollow } from "../../src/sim/hollow.js";
 import { stemNodes } from "@csarkosh/engine/sim/trailRoute";
 import { isOnCorridor, roadOffset } from "../../src/sim/containment.js";

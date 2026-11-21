@@ -1,4 +1,4 @@
-import type { Vec3 } from "./types.js";
+import type { Vec3 } from "./core.js";
 import type { Aabb } from "./level.js";
 import type { BoxSource } from "./boxSource.js";
 import { CELLS_PER_CHUNK, generateChunk, type Chunk } from "./chunk.js";

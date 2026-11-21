@@ -1,5 +1,7 @@
-import type { EnemyState, InputCommand, PlayerState, Vec3, WorldState } from "../sim/types.js";
-import { AiState, Outcome, Phase, cloneVec3 } from "../sim/types.js";
+import type { InputCommand, Vec3 } from "../sim/core.js";
+import type { EnemyState, PlayerState, WorldState } from "../sim/types.js";
+import { cloneVec3 } from "../sim/core.js";
+import { AiState, Outcome, Phase } from "../sim/types.js";
 import type { Level } from "../sim/level.js";
 import {
   createForestWorld,

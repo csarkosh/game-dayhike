@@ -1,4 +1,4 @@
-export type Vec3 = { x: number; y: number; z: number };
+import type { Vec3 } from "./core.js";
 
 export const enum EntityKind {
   Player = 0,
@@ -70,14 +70,6 @@ export const enum Phase {
   Scene = 2,
 }
 
-export type InputCommand = {
-  seq: number;
-  moveX: number;
-  moveZ: number;
-  yaw: number;
-  pitch: number;
-  buttons: number;
-};
 
 export type PlayerState = {
   id: number;
@@ -207,33 +199,6 @@ export type WorldState = {
   rngSeed: number;
 };
 
-/**
- * mulberry32. Integer-only, so it is bit-identical on every JS engine.
- * The seed lives in world state, which is what makes AI and spawning replayable.
- */
-export function nextRandom(state: { rngSeed: number }): number {
-  state.rngSeed = (state.rngSeed + 0x6d2b79f5) | 0;
-  let t = state.rngSeed;
-  t = Math.imul(t ^ (t >>> 15), t | 1);
-  t ^= t + Math.imul(t ^ (t >>> 7), t | 61);
-  return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
-}
-
-export function randomRange(state: { rngSeed: number }, lo: number, hi: number): number {
-  return lo + nextRandom(state) * (hi - lo);
-}
-
-export function vec3(x = 0, y = 0, z = 0): Vec3 {
-  return { x, y, z };
-}
-
-export function cloneVec3(v: Vec3): Vec3 {
-  return { x: v.x, y: v.y, z: v.z };
-}
-
-export function distanceSquared(a: Vec3, b: Vec3): number {
-  const dx = a.x - b.x;
-  const dy = a.y - b.y;
-  const dz = a.z - b.z;
-  return dx * dx + dy * dy + dz * dz;
-}
+// What is no game's own is the engine's (`core.ts`), and is named from here as it always was.
+export { cloneVec3, distanceSquared, nextRandom, randomRange, vec3 } from "./core.js";
+export type { InputCommand, Vec3 } from "./core.js";

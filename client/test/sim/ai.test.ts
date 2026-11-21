@@ -8,10 +8,8 @@ import { parseLevel } from "../../src/sim/level.js";
 import { AiState } from "../../src/sim/types.js";
 import {
   TICK_DT,
-  ENEMY_CORPSE_SECONDS,
-  ENEMY_MAX_HEALTH,
-  PLAYER_MAX_HEALTH,
 } from "../../src/sim/constants.js";
+import { ENEMY_CORPSE_SECONDS, ENEMY_MAX_HEALTH, PLAYER_MAX_HEALTH } from "../../src/sim/dayhikeConstants.js";
 import sandbox01 from "../../levels/sandbox01.json" with { type: "json" };
 
 const level = parseLevel(sandbox01);

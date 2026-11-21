@@ -26,7 +26,8 @@ import { stepSummit, updateSafety } from "./summit.js";
 import { stepTaken } from "./taken.js";
 import type { WayDown } from "./wayDown.js";
 import { drawWay } from "./wayDraw.js";
-import { ENEMY_POPULATION_CAP, PLAYER_HALF, PLAYER_MAX_HEALTH, TICK_DT } from "./constants.js";
+import { PLAYER_HALF, TICK_DT } from "./constants.js";
+import { ENEMY_POPULATION_CAP, PLAYER_MAX_HEALTH } from "./dayhikeConstants.js";
 
 export type World = {
   state: WorldState;

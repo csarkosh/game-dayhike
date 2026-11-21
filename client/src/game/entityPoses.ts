@@ -13,7 +13,8 @@
  * drawn until the model lands and for good where it never does, on its
  * middle, so the two are placed apart and each keeps its own track.
  */
-import { ENEMY_HALF, PLAYER_EYE_OFFSET, PLAYER_HALF, TELEPORT_M } from "../sim/constants.js";
+import { PLAYER_EYE_OFFSET, PLAYER_HALF, TELEPORT_M } from "../sim/constants.js";
+import { ENEMY_HALF } from "../sim/dayhikeConstants.js";
 import { HOLLOW_HEIGHT } from "../sim/hollow.js";
 import { AiState, Phase, type WorldState } from "../sim/types.js";
 import { aimDirection } from "../sim/view.js";

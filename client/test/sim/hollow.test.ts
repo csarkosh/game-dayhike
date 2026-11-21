@@ -2,7 +2,8 @@ import { describe, expect, it } from "vitest";
 import { cloneWorldState, createWorld, serializeWorldState, spawnPlayer, tickWorld } from "../../src/sim/world.js";
 import { parseLevel } from "../../src/sim/level.js";
 import { AiState, Outcome } from "../../src/sim/types.js";
-import { ENEMY_HALF, TICK_DT } from "../../src/sim/constants.js";
+import { TICK_DT } from "../../src/sim/constants.js";
+import { ENEMY_HALF } from "../../src/sim/dayhikeConstants.js";
 import {
   STEP_OUT_REVEAL_S,
   HOLLOW_HUNT_SPEED,

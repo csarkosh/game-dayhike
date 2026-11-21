@@ -30,8 +30,6 @@ import { STUCK_EPSILON, STUCK_SECONDS, UNSTICK_SECONDS, hasLineOfSight } from ".
 import { containInLakes, isOnCorridor, roadOffset, waterLevelAt } from "./containment.js";
 import { ROAD_CORRIDOR_HALF } from "@csarkosh/engine/sim/road";
 import {
-  ENEMY_HALF,
-  ENEMY_MAX_HEALTH,
   EPSILON,
   PLAYER_EYE_OFFSET,
   PLAYER_HALF,
@@ -39,6 +37,7 @@ import {
   SPRINT_SPEED,
   WALK_SPEED,
 } from "./constants.js";
+import { ENEMY_HALF, ENEMY_MAX_HEALTH } from "./dayhikeConstants.js";
 
 /** Hunting, m/s: a touch under SPRINT_SPEED 7, so walking, stopping or turning back is what closes the gap. */
 export const HOLLOW_HUNT_SPEED = 6.3;

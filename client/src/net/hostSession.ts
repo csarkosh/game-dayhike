@@ -1,4 +1,4 @@
-import type { InputCommand, Vec3 } from "../sim/types.js";
+import type { InputCommand, Vec3 } from "../sim/core.js";
 import { Button } from "../sim/types.js";
 import type { Level } from "../sim/level.js";
 import type { World } from "../sim/world.js";

@@ -34,7 +34,8 @@ import { hasLineOfSight } from "./ai.js";
 import { aimDirection } from "./view.js";
 import { isOnCorridor } from "./containment.js";
 import { horizontalDistSq, playerHasInView } from "./hollow.js";
-import { ENEMY_HALF, ENEMY_MAX_HEALTH, PLAYER_EYE_OFFSET } from "./constants.js";
+import { PLAYER_EYE_OFFSET } from "./constants.js";
+import { ENEMY_HALF, ENEMY_MAX_HEALTH } from "./dayhikeConstants.js";
 
 /** Metres it keeps from every trail centreline: 6 stands just inside the 7 m cleared strip. */
 export const WATCH_TRAIL_CLEAR = 6;
