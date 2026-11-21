@@ -56,3 +56,8 @@ export function distanceSquared(a: Vec3, b: Vec3): number {
   const dz = a.z - b.z;
   return dx * dx + dy * dy + dz * dz;
 }
+
+/** The bits of `current` that are not set in `previous`: a press, not a hold. */
+export function pressedEdges(previous: number, current: number): number {
+  return current & ~previous;
+}

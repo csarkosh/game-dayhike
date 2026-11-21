@@ -240,7 +240,7 @@ export function spawnPlayer(world: World): PlayerState {
  * arrives, what a hiker's record starts as, that the dead are held still, the wall at the road,
  * and the host's own step.
  */
-const RULES: Rules<World, PlayerState> = {
+export const RULES: Rules<World, PlayerState> = {
   spawn: pickSpawn,
   newPlayer: (id, spawn) => ({
     id,
