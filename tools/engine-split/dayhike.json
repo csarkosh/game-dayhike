@@ -103,7 +103,13 @@
     "net/clientSession.ts",
     "net/dayhikeGame.ts",
     "game/stareAudio.ts",
-    "game/dayhikeAssets.ts"
+    "game/dayhikeAssets.ts",
+    "game/lite/hikeParts.ts",
+    "game/hikeRendererTypes.ts",
+    "game/hikeRenderer.ts",
+    "game/world.worker.ts",
+    "game/trace.ts",
+    "game/wildlifeInputs.ts"
   ],
   "hold": {
     "env.d.ts": "the client's own ambient types",

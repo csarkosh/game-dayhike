@@ -2,7 +2,7 @@ import { readFileSync } from "node:fs";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import "../../src/sim/passes/index.js";
 import { WORLD_PREP_TIMEOUT_MS, sceneLine, startWorldPrep, worldPrepLine, type WorldPrepOutcome } from "../../src/game/worldPrep.js";
-import type { PreparedScene } from "../../src/game/preparedScene.js";
+import type { PreparedScene } from "@csarkosh/engine/game/preparedScene";
 import type { QualityTier } from "@csarkosh/engine/game/quality";
 import type { WorldPrepReply } from "../../src/game/world.worker.js";
 import { installPassHash, passHash, passHashCachedFor, passHashKey } from "@csarkosh/engine/sim/forest";

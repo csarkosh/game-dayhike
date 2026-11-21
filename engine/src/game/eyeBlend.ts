@@ -15,7 +15,7 @@
  * camera (`lite/renderer.ts`), and the loops capture the pose before their last
  * tick (`app.ts`).
  */
-import type { PlayerState } from "../sim/types.js";
+import type { PlayerCore } from "../sim/tick.js";
 
 /** A pose of the eye: the hull's centre and the look, as the sim holds them. */
 export type EyePose = { x: number; y: number; z: number; yaw: number; pitch: number };
@@ -27,7 +27,7 @@ export type EyePose = { x: number; y: number; z: number; yaw: number; pitch: num
  */
 export const EYE_SNAP_M = 3;
 
-export function capturedEye(player: Pick<PlayerState, "pos" | "yaw" | "pitch">, out: EyePose = { x: 0, y: 0, z: 0, yaw: 0, pitch: 0 }): EyePose {
+export function capturedEye(player: Pick<PlayerCore, "pos" | "yaw" | "pitch">, out: EyePose = { x: 0, y: 0, z: 0, yaw: 0, pitch: 0 }): EyePose {
   out.x = player.pos.x;
   out.y = player.pos.y;
   out.z = player.pos.z;
@@ -52,7 +52,7 @@ function turn(a: number, b: number): number {
  */
 export function blendedEye(
   before: EyePose | null,
-  player: Pick<PlayerState, "pos" | "yaw" | "pitch">,
+  player: Pick<PlayerCore, "pos" | "yaw" | "pitch">,
   alpha: number,
   out: EyePose,
 ): EyePose {

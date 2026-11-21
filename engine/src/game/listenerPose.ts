@@ -1,4 +1,14 @@
-import type { ListenerPose } from "./ambientAudio.js";
+
+/**
+ * Where the listener is and which way it faces, in BABYLON's left-handed world
+ * — the frame `renderer.listener()` reads the camera in. `wildlifeAudio.ts`
+ * mirrors it into Web Audio's right-handed one; nothing else may.
+ */
+export type ListenerPose = {
+  x: number; y: number; z: number;
+  fx: number; fy: number; fz: number;
+  ux: number; uy: number; uz: number;
+};
 
 /**
  * Fills `out` with a camera pose for the audio listener, in the game's left-handed world.

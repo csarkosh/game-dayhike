@@ -27,9 +27,9 @@ import "../sim/passes/index.js";
 import { generateChunk, type Chunk } from "@csarkosh/engine/sim/chunk";
 import { PLAYER_HALF } from "@csarkosh/engine/sim/constants";
 import { passHash, passHashKey } from "@csarkosh/engine/sim/forest";
-import { spawnChunkCells } from "../sim/spawn.js";
+import { spawnChunkCells, trailheadStart } from "../sim/spawn.js";
 import { activeTerrainVariant, setActiveTerrainVariant } from "@csarkosh/engine/sim/terrain";
-import { prepareScene, sceneTransfer, type PreparedScene } from "./preparedScene.js";
+import { prepareScene, sceneTransfer, type PreparedScene } from "@csarkosh/engine/game/preparedScene";
 import type { QualityTier } from "@csarkosh/engine/game/quality";
 
 /** `skip`: what the page already holds and the worker leaves out. */
@@ -80,7 +80,7 @@ export function prepareSceneReply(
 ): void {
   const { id } = request;
   try {
-    const scene = prepareScene(request.seed, request.variant, request.tier);
+    const scene = prepareScene(request.seed, request.variant, request.tier, trailheadStart);
     post({ id, kind: "scene", scene }, sceneTransfer(scene));
     post({ id, kind: "done" }, []);
   } catch (error) {

@@ -10,22 +10,17 @@
  * the hike's makes its own (`hikeRenderer.ts`).
  */
 import type { Vec3 } from "@csarkosh/engine/sim/core";
-import type { WorldState } from "../sim/types.js";
-import type { WayDown } from "../sim/wayDown.js";
-import type { ListenerPose } from "./ambientAudio.js";
-import type { CrowdFigure } from "./crowdField.js";
+import type { ListenerPose } from "@csarkosh/engine/game/listenerPose";
 import type { EngineHandle, EngineName } from "@csarkosh/engine/game/engineHandle";
 import type { WatchEngine } from "@csarkosh/engine/game/engineWatch";
-import type { EyePose } from "./eyeBlend.js";
+import type { EyePose } from "@csarkosh/engine/game/eyeBlend";
 import type { FirstBuilds } from "@csarkosh/engine/game/firstBuilds";
 import type { GpuTimeReport } from "@csarkosh/engine/game/gpuTimeReport";
 import type { PaintPaletteName } from "@csarkosh/engine/game/gradeParams";
 import type { ImpostorBake } from "@csarkosh/engine/game/impostorBake";
-import type { PreparedScene } from "./preparedScene.js";
+import type { PreparedScene } from "@csarkosh/engine/game/preparedScene";
 import type { QualityTier } from "@csarkosh/engine/game/quality";
-import type { EndSceneNow, EndSceneSetup } from "./scenePlay.js";
 import type { SkyTable } from "@csarkosh/engine/game/skyTable";
-import type { StareLens } from "@csarkosh/engine/game/stareLens";
 import type { SurfSound } from "@csarkosh/engine/game/surfSound";
 import type { WaterLifeSound } from "./waterLifeAudio.js";
 import type { WeatherParams, WeatherPresetName } from "@csarkosh/engine/game/weather";
@@ -48,7 +43,7 @@ export type FrameView = { dt: number; sprinting: boolean; before?: EyePose | nul
  * the world: the renderer on Babylon Lite the hike is given answers it
  * (`lite/renderer.ts`).
  */
-export type Renderer = {
+export type WorldRenderer<S> = {
   /** The engine the renderer draws with, as the page holds one
    * (`engineHandle.ts`): what a failure is reported against. */
   readonly engine: EngineHandle;
@@ -99,7 +94,7 @@ export type Renderer = {
    * them: its ease and landing dip are the one genuinely time-based part of the
    * render path, and sprint is input state the world snapshot does not carry.
    */
-  sync(state: WorldState, localId: number, alpha: number, frame?: FrameView): void;
+  sync(state: S, localId: number, alpha: number, frame?: FrameView): void;
   /**
    * This frame's wildlife events, DRAINED: the shell's own list is emptied and
    * its contents handed over in a reused array, so calling this twice in a frame
@@ -162,50 +157,8 @@ export type Renderer = {
    * under one, and where the camera was made, (0, 2, 0), before any `sync`.
    * A copy, the caller's to keep. */
   cameraPosition(): Vec3;
-  /** The local player's stare as `sync` last stepped it, for the audio (stareAudio.ts). */
-  stare(): StareLens;
-  /** The chase's cast, 0 to 1 (escalation.ts): the grade pulls the frame toward burgundy by it. */
-  setChase(cast: number): void;
-  /** The haunt, 0 to 1 (escalation.ts): the pale mist at the player's sides comes in by it. */
-  setHaunt(level: number): void;
   /** Hold the ground cloud's density at a level (0 to 1) whatever the night, or null to let the night set it; returns the density now drawn. */
   setMist(density: number | null): number;
-  /** How far the mist has come in, 0 to 1 (acts.ts): the ground cloud rises by it, after the night. */
-  setMistIn(level: number): void;
-  /** The way down to draw in mist in the chase (wayLight.ts), or none, and the ground its mist stands on (the sim's field, as the players stand on it): the app gives every renderer the world's, when it has it. */
-  setWay(way: WayDown | null, heightAt: (x: number, z: number) => number): void;
-  /**
-   * The way's mist, 0 to 1 (wayLevel.ts): the way's mist is drawn at it, the
-   * rest of the frame is dimmed by it (`wayDimAt`), and where the ground
-   * mist has a ground map it thins over the way in place of the trail.
-   */
-  setWayLevel(level: number): void;
-  /**
-   * This screen's crowd for the frame (crowdField.ts), told before `sync`: its figures are drawn as cards, in the
-   * frame and in the shade mask, and as eyes. While `shadows`, the chase's killers are drawn among them, as
-   * shadows with the Hollow's red eyes, and not as the model (crowdKillers.ts).
-   */
-  setCrowd(figures: readonly CrowdFigure[], seconds: number, shadows: boolean): void;
-  /**
-   * What stands at the centre of the local player's view in the chase (chaseThreat.ts, 0 to 1), told before
-   * `sync`; null where the chase does not have them. While it is given the frame's dark is the chase's own
-   * (stareLens.ts): there the whole way down, never closed far, beating faster by this.
-   */
-  setChaseThreat(threat: number | null): void;
-  /**
-   * The end for this player, once; a second call changes nothing. Died: the
-   * camera is the death's from now (ending.ts). Won: the end scene plays
-   * over the player's camera from now (endScene.ts): the run, the car, the
-   * road, the arrival judged each frame from the local body.
-   */
-  setEnding(kind: "died"): void;
-  setEnding(kind: "won", scene: EndSceneSetup): void;
-  /** The end scene as the last `sync` stepped it; null when none plays. One reused object. */
-  endScene(): EndSceneNow | null;
-  /** A scene (cutscene.ts): the camera is the scene's from now; the summit's five shots for SUMMIT_SCENE_S (`at` the body, with the Hollow's feet and the party's eye); the cap's for CAP_SCENE_S, turned to it. */
-  setScene(kind: "summit" | "cap", at: { x: number; y: number; z: number }, more?: { hollow: { x: number; y: number; z: number }; party: { x: number; y: number; z: number } }, fromS?: number): void;
-  /** A death's ending undone (a return in the chase, deathReturn.ts): the camera is the player's again and a scene's may run; its dark and blur lift over `liftS` seconds (at once by default). The won scene is left as it is. */
-  clearEnding(liftS?: number): void;
   /**
    * A world point as CSS pixels on the canvas, with its distance from the
    * camera, or null when it is behind the camera. Drives the interact prompt.
@@ -256,8 +209,6 @@ export type Renderer = {
   setPalette(name: PaintPaletteName, fadeSeconds?: number): void;
   /** 0 switches the walking cue off; 1 is the tuned default. */
   setBobScale(scale: number): void;
-  /** 0 silences the lens-side dread effects; 1 is full. */
-  setUnsettle(level: number): void;
   /** The wind record computed by the last `sync` (weather-driven, or the
    * `/wind` override) — what the foliage sways in (`lite/forestPlugins.ts`) and what
    * `ambientAudio.ts`'s wind bed hears. */

@@ -1,4 +1,4 @@
-import type { SessionEnd } from "../net/clientSession.js";
+import type { SessionEnd } from "../net/client.js";
 
 const STYLE = `
   .connectfail {

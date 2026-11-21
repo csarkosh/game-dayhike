@@ -11,7 +11,7 @@ import type { CarPose } from "../../../src/game/scene/timeline.js";
 import { PLAYER_HALF } from "@csarkosh/engine/sim/constants";
 import { DEPTH_AHEAD_MAX_DEGREES, depthAheadPlugin } from "../../../src/game/lite/renderer.js";
 import { createHikeRenderer } from "../../../src/game/hikeRenderer.js";
-import type { Renderer } from "../../../src/game/rendererTypes.js";
+import type { Renderer } from "../../../src/game/hikeRendererTypes.js";
 import { createSkyTable, type SkyTable } from "@csarkosh/engine/game/skyTable";
 import { SILENT_SURF_SOUND } from "@csarkosh/engine/game/surfSound";
 import { SILENT_WATER_LIFE } from "../../../src/game/waterLifeInputs.js";

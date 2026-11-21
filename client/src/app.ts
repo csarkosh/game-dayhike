@@ -1,13 +1,14 @@
 import { parseLevel } from "@csarkosh/engine/sim/level";
 import { createForest } from "@csarkosh/engine/sim/forest";
 import { createHikeRenderer } from "./game/hikeRenderer.js";
-import type { FreecamView, Renderer } from "./game/rendererTypes.js";
+import type { FreecamView } from "./game/rendererTypes.js";
+import type { Renderer } from "./game/hikeRendererTypes.js";
 import type { EndSceneSetup } from "./game/scenePlay.js";
 import { parseGpuTime } from "@csarkosh/engine/game/gpuTimeReport";
 import { createInputSampler } from "./game/input.js";
 import { createTouchModel, createTouchLayer } from "./game/touchControls.js";
 import { FixedStepAccumulator } from "@csarkosh/engine/game/loop";
-import { capturedEye, type EyePose } from "./game/eyeBlend.js";
+import { capturedEye, type EyePose } from "@csarkosh/engine/game/eyeBlend";
 import { createHud } from "./game/hud.js";
 import { RING_COUNT } from "@csarkosh/engine/game/clipmap";
 import { reportProgress } from "@csarkosh/engine/game/loadReport";
@@ -78,7 +79,7 @@ import { createPosterPanel, posterModel } from "./game/posterPanel.js";
 import { DEATH_LINE, DEATH_TITLE, DEATH_FADE_AFTER_MS, DEATH_SOUND_FADE_S, END_LANDING_MS, WON_LINE, WON_TITLE, atRoadWall } from "./game/passages.js";
 import { InteractKind } from "./sim/search.js";
 import { trailheadStart } from "./sim/spawn.js";
-import type { PreparedScene } from "./game/preparedScene.js";
+import type { PreparedScene } from "@csarkosh/engine/game/preparedScene";
 import { createHikeBody, createHikeSigns, loadFilmCar, type HikeSigns } from "./game/hikeScenery.js";
 import { carDirection, doorSpot, trailEntrance, trailheadPlaces } from "./sim/trailhead.js";
 import { placeNames } from "./sim/placeNames.js";
@@ -107,7 +108,7 @@ import { createCoveredDraw } from "@csarkosh/engine/game/coveredDraw";
 import { FIRST_BUILD_SLICE_MS } from "@csarkosh/engine/game/syncJobs";
 import { createFirstBuilds } from "@csarkosh/engine/game/firstBuilds";
 import { extrasLater } from "@csarkosh/engine/game/extrasLater";
-import { connectFailure, createConnectPanel, sessionEndOutcome } from "./game/connectPanel.js";
+import { connectFailure, createConnectPanel, sessionEndOutcome } from "@csarkosh/engine/game/connectPanel";
 import { pressedEdges, resolveInteract } from "./sim/interact.js";
 import { Button, DeathCause, Outcome, Phase, type InputCommand, type PlayerState, type Vec3, type WorldState } from "./sim/types.js";
 import { stepWay, wayOf } from "./sim/wayDraw.js";
@@ -443,7 +444,7 @@ function buildGame(
   made(() => faults.dispose());
   /** The ladders' hooks for the engine: listen to one that stands, and take
    * the old one's listener off before it goes. */
-  const engineBindings: Pick<SwapBindings, "watch" | "unwatch"> = {
+  const engineBindings: Pick<SwapBindings<Renderer>, "watch" | "unwatch"> = {
     watch: (r, detector) => {
       stopWatching();
       // The renderer that stands is the one the hike's record of GPU faults hears.
@@ -2580,7 +2581,7 @@ function buildGame(
     watchCompiles(r);
   }
 
-  const swapBindings: SwapBindings = {
+  const swapBindings: SwapBindings<Renderer> = {
     // The renderer makes its own engine from the canvas it is built on: the
     // one made for the switch (`options.engineFor`), which `freshCanvas`
     // hands out first.
@@ -2646,7 +2647,7 @@ function buildGame(
       if (broken) return tier;
       // The canvas made for the switch is the first the swap takes.
       let engineCanvas: HTMLCanvasElement | null = next.canvas;
-      const bindings: SwapBindings = {
+      const bindings: SwapBindings<Renderer> = {
         ...swapBindings,
         freshCanvas: () => {
           const fresh = engineCanvas ?? document.createElement("canvas");
@@ -2654,7 +2655,7 @@ function buildGame(
           return fresh;
         },
       };
-      let got: ReturnType<typeof swapRenderer>;
+      let got: ReturnType<typeof swapRenderer<Renderer>>;
       try {
         got = swapRenderer(
           { renderer, canvas },

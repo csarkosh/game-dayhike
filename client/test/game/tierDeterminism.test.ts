@@ -112,24 +112,41 @@ describe("the tier is drawing only", () => {
     const frame = code.slice(code.indexOf("\n", from), to);
     // The one function of the renderer that is given the state: it is named nowhere else but on that line.
     expect([...code.matchAll(/(?<![.\w])state(?![\w:])/g)].length).toBe([...frame.matchAll(/(?<![.\w])state(?![\w:])/g)].length + 1);
-    // What it reads of it.
+    // What it reads of it: the tick and the players. What is Day Hike's own of the state (its enemies, a hiker's lamp
+    // and stare) is read by Day Hike's side of the frame (`lite/hikeParts.ts`), held below.
     const members = [...new Set([...frame.matchAll(/(?<![.\w])state\.(\w+)/g)].map((m) => m[1]))].sort();
-    expect(members).toEqual(["enemies", "players", "tick"]);
+    expect(members).toEqual(["players", "tick"]);
     const asked = [...new Set([...frame.matchAll(/(?<![.\w])state\.(?:players|enemies)\.(\w+)/g)].map((m) => m[1]))].sort();
-    expect(asked).toEqual(["get", "has", "size", "values"]);
+    expect(asked).toEqual(["get", "values"]);
     // Who is handed it whole, and who its players.
     const whole = [...new Set([...frame.matchAll(/([\w.]+)\((?:[^()]*,\s*)?state(?=[,)])/g)].map((m) => m[1]))].sort();
-    expect(whole).toEqual(["bodiesInShot", "poses.step", "wildlifeInputs.look", "wildlifeInputs.players"]);
+    expect(whole).toEqual(["side.begin", "side.shot", "side.stare", "side.wildlife.look", "side.wildlife.players"]);
     const players = [...new Set([...frame.matchAll(/([\w.]+)\((?:[^()]*,\s*)?state\.players(?=[,)])/g)].map((m) => m[1]))].sort();
-    expect(players).toEqual(["play.step", "playerSlots.fill"]);
-    // Nothing taken out of it is assigned to: a player, an enemy, or a place or a lamp of one (`centre` is a player's place).
+    expect(players).toEqual(["playerSlots.fill"]);
+    // Nothing taken out of it is assigned to: a player, or a place of one (`centre` is a player's place).
     const taken = [...new Set([...frame.matchAll(/\b(?:const|let) (\w+) = [^;\n]*(?<![.\w])state\.(?:players|enemies)\.get\(|for \(const (\w+) of state\.(?:players|enemies)\.values\(\)\)/g)].map((m) => m[1] ?? m[2]))].sort();
-    expect(taken).toEqual(["enemy", "local", "player", "starer"]);
-    expect(frame).toContain("centre = (shownId === undefined ? undefined : state.players.get(shownId))?.pos ?? local.pos;");
+    expect(taken).toEqual(["local", "player"]);
+    expect(frame).toContain("centre = shot.centre ?? local.pos;");
     for (const name of [...taken, "centre"]) {
       expect(frame, name).not.toMatch(new RegExp(`\\b${name}(?:\\.\\w+)+\\s*(?:[-+*/]?=(?!=)|\\+\\+|--)`));
     }
     expect(frame).not.toMatch(/(?<![.\w])state(?:\.\w+)+\s*(?:[-+*/]?=(?!=)|\+\+|--)/);
     expect(frame).not.toMatch(/(?<![.\w])state\.(?:players|enemies)\.(?:set|delete|clear)\(/);
+
+    // Day Hike's side of the frame, held the same way: what it reads of the state, who it hands it to, and that it
+    // assigns to nothing it took out of it.
+    const sideText = readFileSync(fileURLToPath(new URL("../../src/game/lite/hikeParts.ts", import.meta.url)), "utf8");
+    const side = sideText.replace(/\/\*[\s\S]*?\*\//g, (m) => m.replace(/[^\n]/g, " ")).replace(/\/\/[^\n]*/g, "");
+    expect([...new Set([...side.matchAll(/(?<![.\w])state\.(\w+)/g)].map((m) => m[1]))].sort()).toEqual(["enemies", "players"]);
+    expect([...new Set([...side.matchAll(/(?<![.\w])state\.(?:players|enemies)\.(\w+)/g)].map((m) => m[1]))].sort()).toEqual(["get", "has", "size", "values"]);
+    expect([...new Set([...side.matchAll(/([\w.]+)\((?:[^()]*,\s*)?state(?=[,)])/g)].map((m) => m[1]))].sort()).toEqual(["begin", "bodiesInShot", "poses.step", "shot", "stare"]); // the three points it is given the state at, and whom they hand it on to
+    expect([...new Set([...side.matchAll(/([\w.]+)\((?:[^()]*,\s*)?state\.players(?=[,)])/g)].map((m) => m[1]))].sort()).toEqual(["play.step"]);
+    const sideTaken = [...new Set([...side.matchAll(/\b(?:const|let) (\w+) = [^;\n]*(?<![.\w])state\.(?:players|enemies)\.get\(|for \(const (\w+) of state\.(?:players|enemies)\.values\(\)\)/g)].map((m) => m[1] ?? m[2]))].sort();
+    expect(sideTaken).toEqual(["enemy", "shown", "starer"]);
+    for (const name of sideTaken) {
+      expect(side, name).not.toMatch(new RegExp(`\\b${name}(?:\\.\\w+)+\\s*(?:[-+*/]?=(?!=)|\\+\\+|--)`));
+    }
+    expect(side).not.toMatch(/(?<![.\w])state(?:\.\w+)+\s*(?:[-+*/]?=(?!=)|\+\+|--)/);
+    expect(side).not.toMatch(/(?<![.\w])state\.(?:players|enemies)\.(?:set|delete|clear)\(/);
   });
 });

@@ -38,7 +38,9 @@ import catalog from "../../../assets/catalog.json" with { type: "json" };
 import type { WorldState } from "../../sim/types.js";
 import { resolveCharacterAssets } from "../characterAssets.js";
 import type { QualityTier } from "@csarkosh/engine/game/quality";
-import type { FreecamView, Renderer } from "../rendererTypes.js";
+import type { Renderer } from "../hikeRendererTypes.js";
+import type { FreecamView } from "../rendererTypes.js";
+import { hikeParts } from "./hikeParts.js";
 import { SETTLE_MAX_MS, WARM_FRAMES, cameraJumped } from "../scene/cameraJump.js";
 import { createCaptionPanel } from "../scene/captions.js";
 import { INTRO_RANGER } from "../scene/intro.js";
@@ -86,7 +88,7 @@ export function startLiteSceneRoute(deps: LiteSceneRouteDeps, search: { t: numbe
   const ownSky = deps.skyTable === undefined ? startSkySource(sunAltitudeDeg(hour)) : null;
   const skyTable = deps.skyTable ?? (ownSky as NonNullable<typeof ownSky>).table;
   const options = { tier: deps.tier, clock: () => clock.time() * 1000, wildlife: false as const, skyTable };
-  const renderer = deps.renderer?.(deps.canvas, route, options) ?? createLiteRenderer(deps.canvas, route.level, route.forest, options);
+  const renderer = deps.renderer?.(deps.canvas, route, options) ?? createLiteRenderer(deps.canvas, route.level, route.forest, options, hikeParts);
   renderer.setWeather(weather, 0);
   renderer.setHour(hour);
 

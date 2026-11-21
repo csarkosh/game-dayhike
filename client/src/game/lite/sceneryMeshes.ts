@@ -96,7 +96,7 @@ import { CAR_SHADOW_BIAS, CAR_SHADOW_HALF, carShadowGrid } from "../carShadow.js
 import { TAIL_LAMP_COLOUR } from "../endScene.js";
 import { quatFromEuler, type Quat } from "@csarkosh/engine/game/instancePose";
 import { PROP_ROUGHNESS, propBoxGeometry, propColour, type PropBox } from "@csarkosh/engine/game/propBoxes";
-import type { Renderer } from "../rendererTypes.js";
+import type { Renderer } from "../hikeRendererTypes.js";
 import type { CarHandle } from "../scenePlay.js";
 import { invertAffine } from "../scene/actorPose.js";
 import { coiledCord } from "../scene/cord.js";

@@ -8,7 +8,7 @@ import { oceanFieldFor } from "@csarkosh/engine/game/oceanWaves";
 import { SWELL_COMPONENTS, SWELL_COMPONENTS_LOW } from "@csarkosh/engine/game/oceanSwell";
 import {
   fittingBed, fittingFeatureTable, fittingLake, fittingOcean, fittingRings, fittingWaterBump, fittingWaterFirst, fittingWaterRings, type PreparedLake, type PreparedScene,
-} from "../../src/game/preparedScene.js";
+} from "@csarkosh/engine/game/preparedScene";
 import type { QualityTier } from "@csarkosh/engine/game/quality";
 import { FEATURE_TEX_ROWS, FEATURE_TEX_WIDTH } from "@csarkosh/engine/game/featureTable";
 import { stadiumLake } from "../helpers/lakeShapes.js";

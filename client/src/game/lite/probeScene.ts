@@ -41,7 +41,9 @@ import { createWorld } from "../../sim/world.js";
 import { PROBE_HOUR, PROBE_READY_MAX_MS, PROBE_SEED_TOKEN, createProbeMeter, probePose } from "@csarkosh/engine/game/frameProbe";
 import { pageProbe, type PageProbe } from "@csarkosh/engine/game/probePage";
 import { containerPixels, type ProbeReading, type QualityTier } from "@csarkosh/engine/game/quality";
-import type { Renderer, RendererOptions } from "../rendererTypes.js";
+import type { Renderer } from "../hikeRendererTypes.js";
+import type { RendererOptions } from "../rendererTypes.js";
+import { hikeParts } from "./hikeParts.js";
 import { seedFromToken } from "@csarkosh/engine/game/seed";
 import type { SkyTable } from "@csarkosh/engine/game/skyTable";
 import type { SkySource } from "@csarkosh/engine/game/skyWorker";
@@ -66,7 +68,7 @@ export type ProbeRendererMaker = (canvas: HTMLCanvasElement, level: ReturnType<t
  * renderer's own: `frame()` puts the free camera on the pose, syncs and
  * draws once; `dispose()` lets go of the renderer and its engine.
  */
-export function buildLiteProbeScene(canvas: HTMLCanvasElement, tier: QualityTier, sky?: SkyTable, make: ProbeRendererMaker = createLiteRenderer): LiteProbeScene {
+export function buildLiteProbeScene(canvas: HTMLCanvasElement, tier: QualityTier, sky?: SkyTable, make: ProbeRendererMaker = (at, level, forest, options) => createLiteRenderer(at, level, forest, options ?? {}, hikeParts)): LiteProbeScene {
   // Module state survives a game's `/terrain` command; the pose is the default variant's.
   setActiveTerrainVariant(DEFAULT_TERRAIN_VARIANT);
   const seed = seedFromToken(PROBE_SEED_TOKEN);

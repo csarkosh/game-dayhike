@@ -1,6 +1,6 @@
 import { describe, it, expect, vi } from "vitest";
 import type { QualityTier } from "@csarkosh/engine/game/quality";
-import type { Renderer } from "../../src/game/rendererTypes.js";
+import type { Renderer } from "../../src/game/hikeRendererTypes.js";
 import {
   APPLY_SWAP_READY_MAX_MS,
   GOVERNOR_SWAP_READY_MAX_MS,

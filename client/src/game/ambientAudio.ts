@@ -173,16 +173,7 @@ export type LoopEmitter = {
  * `setTargetAtTime` whose time constant is a third of it is within 5 % by then. */
 export const LOOP_GAIN_RAMP_S = 0.1;
 
-/**
- * Where the listener is and which way it faces, in BABYLON's left-handed world
- * — the frame `renderer.listener()` reads the camera in. `wildlifeAudio.ts`
- * mirrors it into Web Audio's right-handed one; nothing else may.
- */
-export type ListenerPose = {
-  x: number; y: number; z: number;
-  fx: number; fy: number; fz: number;
-  ux: number; uy: number; uz: number;
-};
+export type { ListenerPose } from "@csarkosh/engine/game/listenerPose";
 
 export type AmbientAudio = {
   /** Builds the graph. Call from a user gesture — browsers gate AudioContext on one. */
