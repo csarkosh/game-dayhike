@@ -49,6 +49,7 @@ import { createLobby, joinLobby, lobbyErrorMessage, type Lobby } from "@csarkosh
 import { browserDeps, createTelemetry, installErrorCapture, referrerOf, telemetryUrl, testerMark, visitorId, type EarlyCatch, type Telemetry } from "@csarkosh/engine/net/telemetry";
 import { PROTOCOL_VERSION } from "./net/protocol.js";
 import { GEN_VERSION } from "@csarkosh/engine/sim/forest";
+import { HIKE_GAME } from "./hikeGame.js";
 import { startGame, type GameHandle } from "./app.js";
 import type { EngineOnCanvas } from "@csarkosh/engine/game/rendererSwap";
 import { LOSS_ENDED_LINE, createLossRecord } from "@csarkosh/engine/game/lossBound";
@@ -1421,7 +1422,7 @@ function launch(
         };
       },
     },
-  });
+  }, HIKE_GAME);
   game = handle;
   console.info(launchLine(decided, handle.graphics()));
   running = handle;

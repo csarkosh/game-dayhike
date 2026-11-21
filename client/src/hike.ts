@@ -81,6 +81,7 @@ import type { Hud } from "./game/hud.js";
 import type { HikeAudio } from "./game/hikeAudio.js";
 import { createTrace, type Trace } from "./game/trace.js";
 import { placeNames } from "./sim/placeNames.js";
+import { isGameMode, peaceful } from "./game/gameMode.js";
 
 /** The way down's draw: milliseconds of it a frame through the climb, and once the scene or the chase is on; and the tick it starts at, ten seconds in, so nothing of it runs under the intro. */
 const WAY_DRAW_MS = 1.5;
@@ -120,7 +121,8 @@ export type HikeHost = {
   readonly made: (undo: () => void) => void;
   readonly canvas: HTMLCanvasElement;
   readonly seed: number;
-  readonly calm: boolean;
+  /** The mode this world is played in, one of the hike's (`gameMode.ts`). */
+  readonly mode: string;
   readonly telemetry: Telemetry | null;
   readonly renderer: Renderer;
   readonly tier: QualityTier;
@@ -150,6 +152,8 @@ export type HikeHost = {
  * hands on a session. The page (`app.ts`) makes it once and calls it at its own points.
  */
 export function createHike(h: HikeHost) {
+  /** The explore modes' world: no one in the woods, nothing to dread, a day of its own. */
+  const calm = isGameMode(h.mode) && peaceful(h.mode);
   /** The escalation's eased state, reset when a match starts. */
   let escalation: EscalationState = ESCALATION_REST;
   /** The `escalation` command's hold on the world's escalation for a look, or null for the climb's own. */
@@ -444,14 +448,14 @@ export function createHike(h: HikeHost) {
     // The `escalation` command's hold, for a look: the atmosphere and the acts
     // read it; the lens, the chase and the telemetry keep the climb's truth.
     // A calm world holds the sky's fall, the lens, the chase and the haunt at nothing.
-    const shown = h.calm
+    const shown = calm
       ? { ...escalation, world: 0, lens: 0, chase: 0, haunt: 0 }
       : escalationHold === null ? escalation : { ...escalation, world: escalationHold };
     // The end scene's road shot draws the mist back, so the car can be followed down the highway.
     // A calm world's weather and hour are the explore day's (exploreDay.ts), turning with its
     // clock from the hour the console set; the lake's calm follows the preset the day is nearest.
     let settled: AtmosphereBase;
-    if (h.calm) {
+    if (calm) {
       exploreClockS += dt;
       const hour = exploreHour(h.base.hour, exploreClockS);
       const day = exploreWeather(hour);
@@ -482,10 +486,10 @@ export function createHike(h: HikeHost) {
     const crest = world.search.body.pos;
     // A calm world's acts: its rain as the wet, and never the night's dread or its mist; the
     // birds alone hush under the sky's own night (the calls need the climb, held at zero).
-    const acts = h.calm ? { wet: settled.weather.rain, night: 0, mist: 0 } : actsUnder(shown.world);
+    const acts = calm ? { wet: settled.weather.rain, night: 0, mist: 0 } : actsUnder(shown.world);
     h.renderer.setMistIn(acts.mist * mist);
     const voiced = stepWoods(woods, {
-      climb: h.calm ? 0 : escalation.progressMax, wet: acts.wet, night: h.calm ? exploreNight(settled.hour) : acts.night, chase: state.phase !== Phase.Climb, hollow, rain: a.weather.rain,
+      climb: calm ? 0 : escalation.progressMax, wet: acts.wet, night: calm ? exploreNight(settled.hour) : acts.night, chase: state.phase !== Phase.Climb, hollow, rain: a.weather.rain,
       crest: Math.hypot(crest.x - ear.x, crest.y - ear.y, crest.z - ear.z),
     }, dt);
     woods = voiced.state;
@@ -532,7 +536,7 @@ export function createHike(h: HikeHost) {
       const returnedNow = returned;
       returned = DeathCause.None;
       const spoke = stepInnerVoice(voice, {
-        climb: h.calm ? 0 : escalation.progressMax, wet: acts.wet, night: acts.night, mist: h.calm ? settled.weather.mist : acts.mist,
+        climb: calm ? 0 : escalation.progressMax, wet: acts.wet, night: acts.night, mist: calm ? settled.weather.mist : acts.mist,
         chase: state.phase === Phase.Chase, ended: ended || dead, covered: h.gate.covered, scene: sceneOn() ? sceneKind : "none",
         offTrail: chaseLineDistance(world, self.pos.x, self.pos.z),
         lamp: self.lamp.on, stare: self.stare, moving: Math.hypot(self.vel.x, self.vel.z) > 0.2,
@@ -543,7 +547,7 @@ export function createHike(h: HikeHost) {
         // The scene is the find on every screen (the flip comes at DISCOVERY_RADIUS, further than a step): the body's line in its second shot.
         nearBody: sceneOn() ? sceneUntil - performance.now() <= (SUMMIT_SCENE_S - (SHOTS[0] as number)) * 1000 : Math.hypot(self.pos.x - body.x, self.pos.z - body.z) < 4,
         safe: self.safe,
-        calm: h.calm,
+        calm: calm,
         atRoad,
         returned: returnedNow,
       }, dt);
@@ -699,7 +703,7 @@ export function createHike(h: HikeHost) {
       atRoad = false;
       return;
     }
-    atRoad = atRoadWall(self.pos.x - roadCenterX(h.seed, self.pos.z), state.phase, h.calm);
+    atRoad = atRoadWall(self.pos.x - roadCenterX(h.seed, self.pos.z), state.phase, calm);
   }
 
   let dead = false;

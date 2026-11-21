@@ -114,7 +114,7 @@ describe("the hike's own hands on a session", () => {
       expect(bodyOf("runAsHost"), hand).not.toContain(hand);
     }
     expect(hikeSrc).toContain("    hostStarted: hikeHostLooks,");
-    expect(bodyOf("runAsHost")).toMatch(/peaceful: calm,\n    \}\);\n    hike\.hostStarted\(host\);\n    session = host;/);
+    expect(bodyOf("runAsHost")).toMatch(/mode,\n    \}\);\n    hike\.hostStarted\(host\);\n    session = host;/);
   });
 
   it("puts what the hike reports of a match back at rest in a function of the hike's, when a match starts", () => {

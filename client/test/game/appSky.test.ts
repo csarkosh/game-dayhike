@@ -27,17 +27,19 @@ describe("the hike's sky", () => {
   });
 
   it("hands its table to every renderer it builds: the first, and a swap's", () => {
-    // Through the one way the hike has to a renderer (`createHikeRenderer`), which hands it over as the hike holds it.
-    expect(src.match(/\bcreateHikeRenderer\(/g)).toHaveLength(2);
+    // Through the one way the page has to a renderer, the game's maker (`game.renderer`, Day Hike's `createHikeRenderer`:
+    // `hikeGame.test.ts`), which hands it over as the hike holds it.
+    expect(src.match(/\bgame\.renderer\(/g)).toHaveLength(2);
+    expect(src).not.toMatch(/\bcreateHikeRenderer\(/);
     expect(src).not.toMatch(/\bcreateRenderer\(/);
     expect(src).toContain(
       // The first renderer is also told where the hike starts (`start`), so its first terrain and water are built
       // there, handed what the world's worker sampled there (`prepared`, taken once), and given the loader of first
       // builds a start under a film has (`firstBuilds`).
-      "createHikeRenderer(next, level, forest, { tier: at, deferClipmap: options.deferClipmap, start, prepared: options.takePrepared?.() ?? null, firstBuilds, skyTable: skySource.table, gpuTime: parseGpuTime(location.search), paced: isMobile(navigator) }),",
+      "game.renderer(next, level, forest, { tier: at, deferClipmap: options.deferClipmap, start, prepared: options.takePrepared?.() ?? null, firstBuilds, skyTable: skySource.table, gpuTime: parseGpuTime(location.search), paced: isMobile(navigator) }),",
     );
     expect(src).toContain(
-      "build: (next, target) => createHikeRenderer(next, level, forest, { tier: target, skyTable: skySource.table, gpuTime: parseGpuTime(location.search), paced: isMobile(navigator) }),",
+      "build: (next, target) => game.renderer(next, level, forest, { tier: target, skyTable: skySource.table, gpuTime: parseGpuTime(location.search), paced: isMobile(navigator) }),",
     );
   });
 

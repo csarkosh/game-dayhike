@@ -127,6 +127,8 @@ describe("whose voices are whose", () => {
 
   it("the hike's bus is the bus made with the hike's side, and the hike makes that one", () => {
     expect(sourceText("game/hikeAudio.ts")).toContain("  return createAmbientAudio(hikeSound, createCtx, random);");
-    expect(sourceText("app.ts")).toContain("const ambient = createHikeAudio();");
+    // The page makes the bus of the game it is handed, which for Day Hike is the hike's (`hikeGame.ts`).
+    expect(sourceText("app.ts")).toContain("const ambient = game.audio();");
+    expect(sourceText("hikeGame.ts")).toContain("  audio: createHikeAudio,");
   });
 });

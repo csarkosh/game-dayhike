@@ -1227,14 +1227,20 @@ describe("layer boundaries", () => {
       }
       return { seen: from.size, babylon, lite: [...new Set(lite)] };
     };
-    const hike = reach(at("app.ts"));
+    // A hike is the page's half (`app.ts`) and the game it is handed (`hikeGame.ts`), which the page names by type alone:
+    // the walk starts from both.
+    const page = reach(at("app.ts"));
+    const hike = reach(at("hikeGame.ts"));
     // Guards against the guard: the walk goes through the whole hike and finds the engine it does load.
     expect(hike.seen).toBeGreaterThan(300);
+    expect(page.seen).toBeGreaterThan(50);
     expect(hike.lite).toContain("game/lite/renderer.ts");
     expect(hike.babylon).toEqual([]);
+    expect(page.babylon).toEqual([]);
     // What the hike is told by is taken where it is computed, and its scenery is asked of its renderer alone.
-    // `app.ts` and `hike.ts` (the hike's own half, which `app.ts` creates) are told by them between them.
-    const app = [...importsOf(at("app.ts")), ...importsOf(at("hike.ts"))];
+    // `app.ts`, `hike.ts` (the hike's own half) and `hikeGame.ts` (the game as the page is handed it) are told by them
+    // between them.
+    const app = [...importsOf(at("app.ts")), ...importsOf(at("hike.ts")), ...importsOf(at("hikeGame.ts"))];
     for (const home of ["game/skyWait", "game/droppedCap", "game/loadReport", "game/hikeRenderer", "game/hikeScenery"].map(named)) expect(app, home).toContain(home);
     expect(loads(at("game/hikeScenery.ts")).filter((spec) => spec.startsWith("./"))).toEqual(["./boardImages.js", "./boardDraw.js", "./posterPanel.js", "./lite/sceneryMeshes.js"]);
   });
@@ -1301,7 +1307,7 @@ describe("layer boundaries", () => {
     expect(app).not.toMatch(/\b(?:holdReveal|whenFrameWhole|endRevealHold|firstWholeFrame|revealWhenWhole|revealHold|reveal:)/);
     expect(app).not.toMatch(/options\.engine\b(?!F)/);
     // A renderer is made from its canvas, its tier and the world, at the start and for every swap: no engine among them.
-    expect([...app.matchAll(/\bcreateHikeRenderer\(next, level, forest, \{ tier: (?:at|target), /g)].length).toBe(2);
+    expect([...app.matchAll(/\bgame\.renderer\(next, level, forest, \{ tier: (?:at|target), /g)].length).toBe(2);
     expect(app).not.toMatch(/engine: engine|pipelines:/);
     // A switch's ladder is handed a tier and no engine, and its cover waits for the new renderer's world alone.
     expect(app).toContain("          { tier: target, fallbackTier: tier },");
