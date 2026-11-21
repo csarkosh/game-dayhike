@@ -1,7 +1,6 @@
 import { parseLevel } from "@csarkosh/engine/sim/level";
 import { createForest } from "@csarkosh/engine/sim/forest";
 import type { FreecamView } from "@csarkosh/engine/game/rendererTypes";
-import type { Renderer } from "./game/hikeRendererTypes.js";
 import { parseGpuTime } from "@csarkosh/engine/game/gpuTimeReport";
 import { createInputSampler } from "@csarkosh/engine/game/input";
 import { createTouchModel, createTouchLayer } from "@csarkosh/engine/game/touchControls";
@@ -28,7 +27,6 @@ import { wildlifePresenceUnder } from "@csarkosh/engine/game/wildlifeBehaviour";
 import { DEFAULT_BOB_SCALE } from "@csarkosh/engine/game/viewBob";
 import { DEFAULT_WEATHER, WEATHER_PRESETS, type WeatherParams, type WeatherPresetName } from "@csarkosh/engine/game/weather";
 import { DEFAULT_PAINT_PALETTE, PAINT_PALETTES, type PaintPaletteName } from "@csarkosh/engine/game/gradeParams";
-import type { AtmosphereBase } from "./game/escalation.js";
 import { elevationAt, setActiveTerrainVariant, terrainVariantNames } from "@csarkosh/engine/sim/terrain";
 import { connectAsClient } from "@csarkosh/engine/net/peer";
 import { createHostAdmission, type HostAdmission } from "@csarkosh/engine/net/hostAdmission";
@@ -52,12 +50,16 @@ import { FIRST_BUILD_SLICE_MS } from "@csarkosh/engine/game/syncJobs";
 import { createFirstBuilds } from "@csarkosh/engine/game/firstBuilds";
 import { extrasLater } from "@csarkosh/engine/game/extrasLater";
 import { connectFailure, createConnectPanel, sessionEndOutcome } from "@csarkosh/engine/game/connectPanel";
-import type { InputCommand, WorldState } from "./sim/types.js";
-import type { HikeGame } from "./hikeGame.js";
+import type { InputCommand } from "@csarkosh/engine/sim/core";
+import type { AtmosphereBase, PageHud, PageRenderer, PageWorld, SessionGame } from "./game/sessionGame.js";
+import type { AmbientAudio } from "@csarkosh/engine/game/ambientAudio";
+import type { RenderPlayer, RenderState } from "@csarkosh/engine/game/lite/renderGame";
+import type { WorldRenderer } from "@csarkosh/engine/game/rendererTypes";
+import type { ClientSession } from "@csarkosh/engine/net/client";
+import type { HostSession } from "@csarkosh/engine/net/host";
 import { isMode } from "@csarkosh/engine/game/modeList";
 import { PLAYER_EYE_OFFSET, PLAYER_HALF } from "@csarkosh/engine/sim/constants";
 import { loadBirdBed } from "@csarkosh/engine/game/birdBed";
-import type { World } from "./sim/world.js";
 import type { Lobby } from "@csarkosh/engine/net/lobby";
 import { worldVersionOf, type Fields, type Telemetry } from "@csarkosh/engine/net/telemetry";
 /** A frame longer than this counts as a stall in the heartbeat. */
@@ -73,7 +75,7 @@ export type GameHandle = {
    */
   attachLobby(lobby: Lobby): void;
   /** The tier the running renderer was built at, and the engine it draws with. */
-  graphics(): { tier: QualityTier; engine: Renderer["engineName"] };
+  graphics(): { tier: QualityTier; engine: WorldRenderer<never>["engineName"] };
   /** Shows a line on the HUD for a few seconds. */
   notify(line: string): void;
   /** The world ready to be looked at (`startReady`): the sky's first slices
@@ -200,15 +202,33 @@ function worldStageTotal(deferred: boolean): number {
  * made behind (`buildOrUndo`): above all no engine, and no global plugin
  * registration for the next renderer to meet.
  */
-export function startGame(canvas: HTMLCanvasElement, token: string, options: GameOptions, game: HikeGame): GameHandle {
+export function startGame<
+  W extends PageWorld<S>,
+  S extends RenderState<P>,
+  P extends RenderPlayer,
+  R extends PageRenderer<S>,
+  A extends AmbientAudio,
+  H extends PageHud,
+  HostS extends HostSession<W, unknown>,
+  ClientS extends ClientSession<W, P, S, unknown>,
+>(canvas: HTMLCanvasElement, token: string, options: GameOptions, game: SessionGame<W, S, P, R, A, H, HostS, ClientS>): GameHandle {
   return buildOrUndo((made) => buildGame(canvas, token, options, game, made));
 }
 
-function buildGame(
+function buildGame<
+  W extends PageWorld<S>,
+  S extends RenderState<P>,
+  P extends RenderPlayer,
+  R extends PageRenderer<S>,
+  A extends AmbientAudio,
+  H extends PageHud,
+  HostS extends HostSession<W, unknown>,
+  ClientS extends ClientSession<W, P, S, unknown>,
+>(
   firstCanvas: HTMLCanvasElement,
   token: string,
   options: GameOptions,
-  game: HikeGame,
+  game: SessionGame<W, S, P, R, A, H, HostS, ClientS>,
   made: (undo: () => void) => void,
 ): GameHandle {
   // The renderer and its canvas are replaced when the tier changes mid-hike
@@ -328,7 +348,7 @@ function buildGame(
   made(() => faults.dispose());
   /** The ladders' hooks for the engine: listen to one that stands, and take
    * the old one's listener off before it goes. */
-  const engineBindings: Pick<SwapBindings<Renderer>, "watch" | "unwatch"> = {
+  const engineBindings: Pick<SwapBindings<R>, "watch" | "unwatch"> = {
     watch: (r, detector) => {
       stopWatching();
       // The renderer that stands is the one the hike's record of GPU faults hears.
@@ -364,7 +384,7 @@ function buildGame(
       ...engineBindings,
     },
   );
-  let renderer: Renderer = first.renderer;
+  let renderer: R = first.renderer;
   /** Told once at the next swap of the renderer (`switchTo`), then let go. */
   const swapListeners = new Set<() => void>();
   /** Resolves at the next swap of the renderer. */
@@ -397,7 +417,7 @@ function buildGame(
   /** Marks the frames a shader compiled in, on the renderer now running
    * (`onShaderCompiled`: on the hike's renderer, each frame that asked its
    * device for a shader module or a pipeline). */
-  function watchCompiles(r: Renderer): void {
+  function watchCompiles(r: R): void {
     unwatchCompiles?.();
     // Only the governor reads the marks.
     if (governor === null) return;
@@ -794,7 +814,7 @@ function buildGame(
   });
 
   /** The session's world, once there is one: what the scene extras are built from. */
-  let activeWorld: World | null = null;
+  let activeWorld: W | null = null;
   /** The host's extras still to be built, in the task after the build (`extrasLater.ts`); null once built, cancelled or never put off. */
   let extrasToCome: { cancel(): void } | null = null;
 
@@ -1095,7 +1115,7 @@ function buildGame(
    * counters the loop already keeps and clears the two it owns; it runs once
    * a flush, never a frame.
    */
-  function matchStarted(role: "host" | "client", world: World, stats: () => { rtt: number; pe: number }): void {
+  function matchStarted(role: "host" | "client", world: W, stats: () => { rtt: number; pe: number }): void {
     if (telemetry === null) return;
     hike.matchStarted(world);
     worstFrameMs = 0;
@@ -1162,7 +1182,7 @@ function buildGame(
   }
 
   /** A session a frame is stepped and drawn for: the host's or a follower's. */
-  type Live = { readonly world: World; readonly localEntityId: number; tick(cmd: InputCommand): void };
+  type Live = { readonly world: W; readonly localEntityId: number; tick(cmd: InputCommand): void };
 
   /**
    * A frame's ticks, the host's and a follower's alike: each tick's command
@@ -1187,7 +1207,7 @@ function buildGame(
    * hike's: what the renderer's sync reads is stepped before it, the world's
    * sound after it, then the hike's own reading of the frame, then the draw.
    */
-  function frame(live: Live, state: WorldState, cmd: InputCommand | null, dt: number): void {
+  function frame(live: Live, state: S, cmd: InputCommand | null, dt: number): void {
     const self = state.players.get(live.localEntityId);
     hike.beforeSync(live.world, state, live.localEntityId, dt);
     renderer.sync(state, live.localEntityId, accumulator.alpha, { dt, sprinting: input.sprinting, before: eyeBefore });
@@ -1258,7 +1278,7 @@ function buildGame(
       const cmd = stepTicks(host, ticks);
       stepFreecamView(dt);
 
-      const state: WorldState = host.world.state;
+      const state: S = host.world.state;
       frame(host, state, cmd, dt);
 
       const now = performance.now();
@@ -1524,7 +1544,7 @@ function buildGame(
   }
 
   /** Puts back on a new renderer what the old one was told. */
-  function restoreView(r: Renderer): void {
+  function restoreView(r: R): void {
     r.setView(appliedHour, appliedWeather);
     r.setWeatherName(weatherName, 0);
     r.setWireframe(wireframe);
@@ -1538,7 +1558,7 @@ function buildGame(
     watchCompiles(r);
   }
 
-  const swapBindings: SwapBindings<Renderer> = {
+  const swapBindings: SwapBindings<R> = {
     // The renderer makes its own engine from the canvas it is built on: the
     // one made for the switch (`options.engineFor`), which `freshCanvas`
     // hands out first.
@@ -1604,7 +1624,7 @@ function buildGame(
       if (broken) return tier;
       // The canvas made for the switch is the first the swap takes.
       let engineCanvas: HTMLCanvasElement | null = next.canvas;
-      const bindings: SwapBindings<Renderer> = {
+      const bindings: SwapBindings<R> = {
         ...swapBindings,
         freshCanvas: () => {
           const fresh = engineCanvas ?? document.createElement("canvas");
@@ -1612,7 +1632,7 @@ function buildGame(
           return fresh;
         },
       };
-      let got: ReturnType<typeof swapRenderer<Renderer>>;
+      let got: ReturnType<typeof swapRenderer<R>>;
       try {
         got = swapRenderer(
           { renderer, canvas },

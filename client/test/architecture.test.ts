@@ -326,7 +326,7 @@ describe("layer boundaries", () => {
     // Without one, a frame feeds nothing, no compile is marked for it, and no
     // drop is decided, covered, timed, recorded or switched to.
     expect(body("  function feedGovernor(")).toMatch(/^ {2}function feedGovernor\(dt: number\): void \{\n {4}if \(governor === null\) return;\n/);
-    expect(body("  function watchCompiles(")).toMatch(/^ {2}function watchCompiles\(r: Renderer\): void \{\n {4}unwatchCompiles\?\.\(\);\s+if \(governor === null\) return;\n/);
+    expect(body("  function watchCompiles(")).toMatch(/^ {2}function watchCompiles\(r: R\): void \{\n {4}unwatchCompiles\?\.\(\);\s+if \(governor === null\) return;\n/);
     expect(body("  async function lowerTier(")).toMatch(/^ {2}async function lowerTier\(\): Promise<void> \{\n {4}if \(governor === null\) return;\n/);
     // The idle frames are timed, and a drop recorded, only inside `lowerTier`.
     expect([...app.matchAll(/\btimeIdleCadence\(/g)].length).toBe(1);

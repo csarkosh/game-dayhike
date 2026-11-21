@@ -9,6 +9,7 @@
  * dread the grade and the wildlife read. Nothing here is authoritative;
  * nothing crosses the wire.
  */
+import type { AtmosphereBase } from "./sessionGame.js";
 import { Phase, type WorldState, type Vec3 } from "../sim/types.js";
 import { isHollowState } from "../sim/hollow.js";
 import { isShadeState } from "../sim/haunt.js";
@@ -107,7 +108,7 @@ export function escalationAt(progress: number, chase: boolean): EscalationState 
   return { ...ESCALATION_REST, progressMax: p, world: p, chase: chase ? 1 : 0 };
 }
 
-export type AtmosphereBase = { weather: WeatherParams; hour: number };
+export type { AtmosphereBase };
 
 /** The raw inputs from state. Pure. */
 export function escalationTargets(

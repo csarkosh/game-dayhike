@@ -65,7 +65,7 @@ describe("the seed and the terrain a hike's world is made from", () => {
     const app = readFileSync(new URL("../../src/app.ts", import.meta.url), "utf8").replace(/\/\*[\s\S]*?\*\//g, "").replace(/\/\/.*$/gm, "");
     // The one renderer made with it: the ladder's first attempt, which takes it as it is built.
     expect(app.match(/prepared: /g)).toEqual(["prepared: "]);
-    const first = app.slice(app.indexOf("const first = buildFirstRenderer("), app.indexOf("let renderer: Renderer = first.renderer;"));
+    const first = app.slice(app.indexOf("const first = buildFirstRenderer("), app.indexOf("let renderer: R = first.renderer;"));
     expect(first).toContain("prepared: options.takePrepared?.() ?? null,");
     // The game's options, which it keeps for the hike, never hold the scene itself: a renderer made later
     // would otherwise stand beside the first one's dead arrays.

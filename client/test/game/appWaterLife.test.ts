@@ -26,7 +26,8 @@ describe("the lake's sound in app.ts", () => {
     expect(body).toContain("if (waterLifeAudio === null) return;");
     expect(body).toContain("waterLifeAudio.update(renderer.waterLifeSound(), renderer.listener());");
     // `renderer` is the one binding a switch replaces, read afresh each frame.
-    expect(src).toContain("  let renderer: Renderer = first.renderer;");
+    // `R` is the game's renderer, whichever game the page is handed.
+    expect(src).toContain("  let renderer: R = first.renderer;");
     expect(src.match(/\brenderer = got\.renderer;/g)).toHaveLength(1);
   });
 

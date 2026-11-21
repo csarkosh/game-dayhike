@@ -51,7 +51,7 @@ describe("the hike's sky", () => {
     // The sun's light alone, on every frame, ahead of the gate (2026-10-18).
     expect(sync.indexOf("    h.renderer.followHour(a.hour);\n")).toBeGreaterThan(sync.indexOf("    const a = mist === 1"));
     expect(sync.indexOf("    h.renderer.followHour(a.hour);\n")).toBeLessThan(sync.indexOf("    const hourMoved ="));
-    const restore = src.slice(src.indexOf("  function restoreView(r: Renderer): void {"), src.indexOf("  const swapBindings: SwapBindings = {"));
+    const restore = src.slice(src.indexOf("  function restoreView(r: R): void {"), src.indexOf("  const swapBindings: SwapBindings<R> = {"));
     expect(restore).toContain("    r.setView(appliedHour, appliedWeather);");
     expect(restore).not.toMatch(/r\.set(?:Hour|Weather)\(/);
   });

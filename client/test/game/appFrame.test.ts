@@ -64,7 +64,7 @@ describe("a session's frame", () => {
     for (const step of [...HIKE_BEFORE_SYNC, ...HIKE_AFTER_SYNC]) expect(calls(hikeSrc, step), step).toBe(1);
     expect(calls(app, "renderer.sync")).toBe(1);
     // The host draws its own state; a follower the one blended between snapshots at this frame's time.
-    expect(bodyOf("runAsHost")).toMatch(/const state: WorldState = host\.world\.state;\s+frame\(host, state, cmd, dt\);/);
+    expect(bodyOf("runAsHost")).toMatch(/const state: S = host\.world\.state;\s+frame\(host, state, cmd, dt\);/);
     expect(app).toMatch(/const state = client\.renderState\(performance\.now\(\)\);\s+frame\(client, state, cmd, dt\);/);
     expect(calls(app, "frame")).toBe(2);
   });
