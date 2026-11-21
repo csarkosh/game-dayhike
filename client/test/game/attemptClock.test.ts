@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
-import { startAttemptClock, ATTEMPT_TICK_MS } from "../../src/game/attemptClock.js";
-import { PENDING_AFTER_MS, OVERRUN_MS } from "../../src/game/rosterModel.js";
+import { startAttemptClock, ATTEMPT_TICK_MS } from "@csarkosh/engine/game/attemptClock";
+import { PENDING_AFTER_MS, OVERRUN_MS } from "@csarkosh/engine/game/rosterModel";
 
 beforeEach(() => vi.useFakeTimers());
 afterEach(() => vi.useRealTimers());
