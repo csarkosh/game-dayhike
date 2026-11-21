@@ -47,7 +47,7 @@ const SCENE_RUN_S = 1.8;
  * fallback; its length by its aim; its shape (soft bends, never
  * heading back, never doubling on itself); and the chase as a first-timer
  * meets it. A player comes up the stem to the find, the scene plays and its
- * threshold runs them down the way as app.ts does, and then a runner who
+ * threshold runs them down the way as `hike.ts` does, and then a runner who
  * stays in the channel and sprints takes them to the road, the crest's
  * Hollow hunting behind: without stalling, without leaving the channel, and
  * never caught up with.
@@ -55,7 +55,7 @@ const SCENE_RUN_S = 1.8;
 function checkWay(token: string): { withinTenth: boolean } {
   const w = createForestWorld(createForest(seedFromToken(token)));
   w.haunt!.active = false;
-  // Long drawn by the find in a match (app.ts steps the draw from ten seconds in).
+  // Long drawn by the find in a match (`hike.ts` steps the draw from ten seconds in).
   const way = wayOf(w)!;
   expect(way.fallback, token).toBe(false);
   const r = wayRules(way, w.trail!.trailhead);

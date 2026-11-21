@@ -98,33 +98,35 @@ describe("the renderer and the app", () => {
   // The renderer, and Day Hike's side of it (`lite/hikeParts.ts`), where what is this game's own in a frame is written.
   const renderer = readFileSync(clientFile("../engine/src/game/lite/renderer.ts"), "utf8") + readFileSync(clientFile("src/game/lite/hikeParts.ts"), "utf8");
   const app = readFileSync(clientFile("src/app.ts"), "utf8");
+  // The crowd's own half of the frame is the hike's (`hike.ts`, where a variable of `app.ts` is written `h.<name>`); `app.ts` calls it as `hike.<name>`.
+  const hike = readFileSync(clientFile("src/hike.ts"), "utf8");
   const commands = readFileSync(clientFile("src/game/commands.ts"), "utf8");
 
   it("the app steps this screen's crowd every frame on the host and on a client, before the renderer's own sync", () => {
-    expect(app).toContain("      syncCrowd(host.world, state, host.localEntityId, dt);\n      syncWayDraw(host.world, state);");
-    expect(app).toContain("      syncCrowd(client.world, state, client.localEntityId, dt);\n      syncWayDraw(client.world, state);");
+    expect(app).toContain("    hike.syncCrowd(live.world, state, live.localEntityId, dt);\n    hike.syncWayDraw(live.world, state);");
+    expect(app.match(/\bframe\((?:host|client), state, cmd, dt\);/g)).toHaveLength(2);
     // And says whether the crowd is up: while it is, the chase's killers are drawn among it, as shadows.
-    expect(app).toContain("renderer.setCrowd(crowd.figures, seconds, up);");
+    expect(hike).toContain("h.renderer.setCrowd(crowd.figures, seconds, up);");
     // Whether a figure may have this player now: alive, in the chase, the match undecided, off the road.
     // Nor while a scene has their legs, nor in the hold after a return (the host would refuse it, and a touch then would land as the hold ended).
-    expect(app).toContain("const prey = up && me !== undefined && me.health > 0 && state.phase === Phase.Chase && state.outcome === Outcome.Playing && !me.safe && !sceneOn() && seconds >= crowdQuietUntil;");
+    expect(hike).toContain("const prey = up && me !== undefined && me.health > 0 && state.phase === Phase.Chase && state.outcome === Outcome.Playing && !me.safe && !sceneOn() && seconds >= crowdQuietUntil;");
     // A living player who cannot be had is let go of at once: no stale word is left to send.
-    expect(app).toContain("if (!prey && me !== undefined && me.health > 0) crowdLetGo(crowd, seconds);");
+    expect(hike).toContain("if (!prey && me !== undefined && me.health > 0) crowdLetGo(crowd, seconds);");
     // And a return scatters the crowd: what gathered round the body, or stands down the way, is not run back through.
-    expect(app).toContain("crowdScatter(crowd, now);\n      crowdQuietUntil = now + RETURN_HOLD_S;");
-    expect(app).toContain("{ x: me.pos.x, z: me.pos.z, yaw: me.yaw, prey }");
+    expect(hike).toContain("crowdScatter(crowd, now);\n      crowdQuietUntil = now + RETURN_HOLD_S;");
+    expect(hike).toContain("{ x: me.pos.x, z: me.pos.z, yaw: me.yaw, prey }");
     // A player their crowd has says so to the host in every command until their death is seen, on the host and on a client alike.
-    expect(app).toContain("crowd !== null && crowd.has !== 0 && !crowdTook ? { ...cmd, buttons: cmd.buttons | Button.Taken } : cmd");
-    expect(app).toContain("cmd = taken(ranToCar(stilled(input.sample(++seq), me, host.world), me));");
-    expect(app).toContain("cmd = taken(ranToCar(stilled(input.sample(++seq), me, client.world), me));");
+    expect(hike).toContain("crowd !== null && crowd.has !== 0 && !crowdTook ? { ...cmd, buttons: cmd.buttons | Button.Taken } : cmd");
+    expect(app).toContain("cmd = hike.taken(hike.ranToCar(hike.stilled(input.sample(++seq), me, live.world), me));");
+    expect(app.match(/const cmd = stepTicks\((?:host|client), ticks\);/g)).toHaveLength(2);
     // And what is at the centre of their view, for the chase's dark: the crowd's figures and the state's enemies; null where the chase does not have them.
-    expect(app).toContain("renderer.setChaseThreat(threat);");
-    expect(app).toContain("threat = Math.max(threat, threatOf(eyeAt, f.x, f.z, presenceOf(f, seconds)));");
-    expect(app).toContain("for (const e of state.enemies.values()) threat = Math.max(threat, threatOf(eyeAt, e.pos.x, e.pos.z));");
+    expect(hike).toContain("h.renderer.setChaseThreat(threat);");
+    expect(hike).toContain("threat = Math.max(threat, threatOf(eyeAt, f.x, f.z, presenceOf(f, seconds)));");
+    expect(hike).toContain("for (const e of state.enemies.values()) threat = Math.max(threat, threatOf(eyeAt, e.pos.x, e.pos.z));");
     expect(renderer).toContain("stareLens = stepStareLens(stareLens, stare, towards, dt, chaseThreat);");
-    expect(app).toContain("crowdHeld !== null ? crowdHeld > 0 : crowdOn(state.phase, state.outcome, wayShown)");
+    expect(hike).toContain("crowdHeld !== null ? crowdHeld > 0 : crowdOn(state.phase, state.outcome, wayShown)");
     // Each screen's own: its stream is seeded from the world's seed and whose screen it is, never the sim's.
-    expect(app).toContain("newCrowd((seed ^ Math.imul(localId + 1, 0x9e3779b1)) >>> 0)");
+    expect(hike).toContain("newCrowd((h.seed ^ Math.imul(localId + 1, 0x9e3779b1)) >>> 0)");
   });
 
   it("the renderer draws the crowd as cards, in the frame and in the shade mask, and as eyes, where there is a mask, and disposes both", () => {

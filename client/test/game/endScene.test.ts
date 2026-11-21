@@ -286,14 +286,16 @@ describe("the end scene on another player's run", () => {
   });
 
   it("lets the `escape` look win as a match does: its player, stood at the car by hand, counts as one who was out", () => {
-    const app = readFileSync(new URL("../../src/app.ts", import.meta.url), "utf8");
-    const at = app.indexOf("escapeStep = () => {");
-    expect(app.slice(at, app.indexOf("wasChase = true;", at))).toContain("me.out = true;");
+    // The `escape` look is the hike's own (`hike.ts`).
+    const hike = readFileSync(new URL("../../src/hike.ts", import.meta.url), "utf8");
+    const at = hike.indexOf("escapeStep = () => {");
+    expect(hike.slice(at, hike.indexOf("wasChase = true;", at))).toContain("me.out = true;");
   });
 
   it("stills this screen's own ranger, who is not the one running", () => {
-    const app = readFileSync(new URL("../../src/app.ts", import.meta.url), "utf8");
-    expect(app).toContain("if (!endRunOwn) return { ...cmd, moveX: 0, moveZ: 0, buttons: 0 };");
-    expect(app).toContain("const won = state.outcome === Outcome.Won;");
+    // The hike's own commands and outcome are in `hike.ts`.
+    const hike = readFileSync(new URL("../../src/hike.ts", import.meta.url), "utf8");
+    expect(hike).toContain("if (!endRunOwn) return { ...cmd, moveX: 0, moveZ: 0, buttons: 0 };");
+    expect(hike).toContain("const won = state.outcome === Outcome.Won;");
   });
 });

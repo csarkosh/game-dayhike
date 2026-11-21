@@ -8,6 +8,8 @@ import { fileURLToPath } from "node:url";
  * `wildlifeAudio.test.ts` reads the audio's.
  */
 const src = readFileSync(fileURLToPath(new URL("../../src/app.ts", import.meta.url)), "utf8");
+// The escalation's sync is the hike's own (`hike.ts`, where a variable of `app.ts` is written `h.<name>`); the swap's restore stays in `app.ts`.
+const hikeSrc = readFileSync(fileURLToPath(new URL("../../src/hike.ts", import.meta.url)), "utf8");
 
 describe("the hike's sky", () => {
   it("makes one source for the hike's life, from the hour the script starts it at", () => {
@@ -40,13 +42,13 @@ describe("the hike's sky", () => {
   });
 
   it("moves the hour and the weather in one apply, in the escalation's sync and in a swap's restore", () => {
-    const sync = src.slice(src.indexOf("  function syncAtmosphere("), src.indexOf("  let signs: {"));
+    const sync = hikeSrc.slice(hikeSrc.indexOf("  function syncAtmosphere("), hikeSrc.indexOf("  let signs: HikeSigns | null = null;"));
     // The audio hears the settled weather; the view, the mist the end scene's road shot draws back.
-    expect(sync).toContain("    renderer.setView(a.hour, a.weather);\n    ambient.setWeather(settled.weather);");
-    expect(sync).not.toMatch(/renderer\.set(?:Hour|Weather)\(/);
+    expect(sync).toContain("    h.renderer.setView(a.hour, a.weather);\n    h.ambient.setWeather(settled.weather);");
+    expect(sync).not.toMatch(/h\.renderer\.set(?:Hour|Weather)\(/);
     // The sun's light alone, on every frame, ahead of the gate (2026-10-18).
-    expect(sync.indexOf("    renderer.followHour(a.hour);\n")).toBeGreaterThan(sync.indexOf("    const a = mist === 1"));
-    expect(sync.indexOf("    renderer.followHour(a.hour);\n")).toBeLessThan(sync.indexOf("    const hourMoved ="));
+    expect(sync.indexOf("    h.renderer.followHour(a.hour);\n")).toBeGreaterThan(sync.indexOf("    const a = mist === 1"));
+    expect(sync.indexOf("    h.renderer.followHour(a.hour);\n")).toBeLessThan(sync.indexOf("    const hourMoved ="));
     const restore = src.slice(src.indexOf("  function restoreView(r: Renderer): void {"), src.indexOf("  const swapBindings: SwapBindings = {"));
     expect(restore).toContain("    r.setView(appliedHour, appliedWeather);");
     expect(restore).not.toMatch(/r\.set(?:Hour|Weather)\(/);

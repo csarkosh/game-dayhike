@@ -1233,7 +1233,8 @@ describe("layer boundaries", () => {
     expect(hike.lite).toContain("game/lite/renderer.ts");
     expect(hike.babylon).toEqual([]);
     // What the hike is told by is taken where it is computed, and its scenery is asked of its renderer alone.
-    const app = importsOf(at("app.ts"));
+    // `app.ts` and `hike.ts` (the hike's own half, which `app.ts` creates) are told by them between them.
+    const app = [...importsOf(at("app.ts")), ...importsOf(at("hike.ts"))];
     for (const home of ["game/skyWait", "game/droppedCap", "game/loadReport", "game/hikeRenderer", "game/hikeScenery"].map(named)) expect(app, home).toContain(home);
     expect(loads(at("game/hikeScenery.ts")).filter((spec) => spec.startsWith("./"))).toEqual(["./boardImages.js", "./boardDraw.js", "./posterPanel.js", "./lite/sceneryMeshes.js"]);
   });
