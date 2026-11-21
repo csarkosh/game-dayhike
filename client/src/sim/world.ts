@@ -16,9 +16,9 @@ import { collisionBoxes } from "@csarkosh/engine/sim/level";
 import { activeTerrainVariant, elevationAt } from "@csarkosh/engine/sim/terrain";
 import { buildSearch, installSearch, type Search } from "./search.js";
 import { trailheadPlaces } from "./trailhead.js";
-import { containAtRoad, containInLakes, waterLevelAt } from "./containment.js";
+import { containAtRoad } from "./containment.js";
 import { createGroundField, type GroundField } from "@csarkosh/engine/sim/ground";
-import { stepMovement, type MoveState } from "@csarkosh/engine/sim/movement";
+import { addPlayer, applyInput, tickPlayers, type Rules } from "@csarkosh/engine/sim/tick";
 import { isExpiredCorpse, stepEnemy } from "./ai.js";
 import { updateDirector } from "./director.js";
 import { stepHollows, updateHollows, updateLoss } from "./hollow.js";
@@ -232,9 +232,17 @@ function pickSpawn(world: World): { pos: Vec3; yaw: number } {
 }
 
 export function spawnPlayer(world: World): PlayerState {
-  const id = world.state.nextEntityId++;
-  const spawn = pickSpawn(world);
-  const player: PlayerState = {
+  return addPlayer(world, RULES);
+}
+
+/**
+ * Day Hike's rules, as the engine's tick takes them (`@csarkosh/engine/sim/tick`): where a hiker
+ * arrives, what a hiker's record starts as, that the dead are held still, the wall at the road,
+ * and the host's own step.
+ */
+const RULES: Rules<World, PlayerState> = {
+  spawn: pickSpawn,
+  newPlayer: (id, spawn) => ({
     id,
     pos: cloneVec3(spawn.pos),
     vel: { x: 0, y: 0, z: 0 },
@@ -252,57 +260,22 @@ export function spawnPlayer(world: World): PlayerState {
     returnIn: 0,
     heldFor: 0,
     out: false,
-  };
-  world.state.players.set(id, player);
-  return player;
-}
+  }),
+  held: isDead,
+  constrain: wallAtRoad,
+  hostStep,
+};
 
 export function removePlayer(world: World, id: number): void {
   world.state.players.delete(id);
 }
 
 export function tickWorld(world: World, inputs: Map<number, InputCommand>): void {
-  world.state.tick++;
+  tickPlayers(world, inputs, RULES);
+}
 
-  for (const player of world.state.players.values()) {
-    const cmd = inputs.get(player.id);
-
-    if (isDead(player)) {
-      // Dead players do not move. This runs on both sides, unlike marking the
-      // death itself, so a client predicting its own corpse agrees with the
-      // host about where it is lying. Yaw and pitch still track the mouse:
-      // freezing the camera reads as a hang, and view angles carry no
-      // authority anyway.
-      player.vel = { x: 0, y: 0, z: 0 };
-      if (cmd !== undefined) {
-        player.yaw = cmd.yaw;
-        player.pitch = cmd.pitch;
-        player.lastProcessedInput = cmd.seq;
-      }
-      continue;
-    }
-
-    if (cmd === undefined) {
-      // No input this tick: still integrate gravity so the player does not
-      // hang in mid-air while their packets are late.
-      applyMove(world, player, {
-        seq: player.lastProcessedInput,
-        moveX: 0,
-        moveZ: 0,
-        yaw: player.yaw,
-        pitch: player.pitch,
-        buttons: 0,
-      });
-      continue;
-    }
-    player.yaw = cmd.yaw;
-    player.pitch = cmd.pitch;
-    applyMove(world, player, cmd);
-    player.lastProcessedInput = cmd.seq;
-  }
-
-  if (!world.authoritative) return;
-
+/** The host's own step, once every hiker has moved: Day Hike's rules, in the order they have always run. */
+function hostStep(world: World, inputs: Map<number, InputCommand>): void {
   // Safety first, from the positions this tick just settled: the Hollows read
   // it as they move and as they pick their prey, so a player who crossed onto
   // the corridor this tick is out of reach on the same tick (summit.ts).
@@ -372,42 +345,24 @@ function updateDeaths(world: World): void {
  * one-per-tick and still agree.
  */
 export function applyPlayerInput(world: World, playerId: number, cmd: InputCommand): void {
-  const player = world.state.players.get(playerId);
-  if (player === undefined) return;
-  player.yaw = cmd.yaw;
-  player.pitch = cmd.pitch;
-  if (!isDead(player)) applyMove(world, player, cmd);
-  player.lastProcessedInput = cmd.seq;
+  applyInput(world, playerId, cmd, RULES);
 }
 
-function applyMove(world: World, player: PlayerState, cmd: InputCommand): void {
-  const before: MoveState = { pos: player.pos, vel: player.vel, grounded: player.grounded };
-  const after = stepMovement(
-    before,
-    cmd,
-    TICK_DT,
-    world.boxes,
-    PLAYER_HALF,
-    waterLevelAt(world, player.pos.x, player.pos.z),
-    world.ground,
-  );
-  // The wall at the road (containment.ts): a forest world with a road keeps
-  // every hull off the pavement. After the step, on the settled position, so
-  // the box sweep and the ground have already had their say. A peaceful world
-  // (`game/gameMode.ts`) has no wall: the road and the beach beyond it are
-  // the explorer's too; the car keeps its own box.
+/**
+ * The wall at the road (containment.ts): a forest world with a road keeps
+ * every hull off the pavement. After the step, on the settled position, so
+ * the box sweep and the ground have already had their say. A peaceful world
+ * (`game/gameMode.ts`) has no wall: the road and the beach beyond it are
+ * the explorer's too; the car keeps its own box.
+ */
+function wallAtRoad(world: World, pos: Vec3, vel: Vec3): void {
   if (world.forest !== null && !world.peaceful) {
     const variant = activeTerrainVariant();
     const roadCenterX = variant.roadCenterX;
     if (roadCenterX !== undefined) {
-      containAtRoad(after.pos, after.vel, roadCenterX(world.forest.seed, after.pos.z));
+      containAtRoad(pos, vel, roadCenterX(world.forest.seed, pos.z));
     }
   }
-  // The wall in each lake, at the shelf's inner edge.
-  containInLakes(world, after.pos, after.vel, PLAYER_HALF);
-  player.pos = after.pos;
-  player.vel = after.vel;
-  player.grounded = after.grounded;
 }
 
 export function cloneWorldState(state: WorldState): WorldState {
