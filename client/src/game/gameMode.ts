@@ -1,3 +1,6 @@
+import * as modes from "@csarkosh/engine/game/modeList";
+import type { ModeList } from "@csarkosh/engine/game/modeList";
+
 /**
  * The mode a hike runs in: `game`, the hike as it is, the climb's three acts
  * and what walks out of the woods; `explore`, the same mountain with no one
@@ -32,7 +35,7 @@ export const MODE_LINES: Readonly<Record<GameMode, string>> = {
 };
 
 export function isGameMode(value: unknown): value is GameMode {
-  return value === "game" || value === "explore" || value === "freecam";
+  return modes.isMode(HIKE_MODES, value);
 }
 
 /** Whether the mode's woods are empty and its sky never falls: explore and freecam. */
@@ -40,26 +43,22 @@ export function peaceful(mode: GameMode): boolean {
   return mode !== "game";
 }
 
+/** The hike's modes as the settings and the menus take them (`modeList.ts`). */
+export const HIKE_MODES: ModeList = {
+  modes: GAME_MODES.map((id) => ({ id, label: MODE_LABELS[id], line: MODE_LINES[id] })),
+  initial: DEFAULT_MODE,
+  key: MODE_KEY,
+  restarts: "Picking another mode restarts the hike at its trailhead.",
+};
+
 /** The saved choice, or the default where nothing (or nothing recognisable) is saved or the storage refuses. */
 export function readMode(storage: Storage | null): GameMode {
-  if (storage === null) return DEFAULT_MODE;
-  try {
-    const value = storage.getItem(MODE_KEY);
-    return isGameMode(value) ? value : DEFAULT_MODE;
-  } catch {
-    return DEFAULT_MODE;
-  }
+  return modes.readMode(HIKE_MODES, storage) as GameMode;
 }
 
 /** Keeps the choice; false where there is no storage or it refuses. */
 export function writeMode(storage: Storage | null, mode: GameMode): boolean {
-  if (storage === null) return false;
-  try {
-    storage.setItem(MODE_KEY, mode);
-    return true;
-  } catch {
-    return false;
-  }
+  return modes.writeMode(HIKE_MODES, storage, mode);
 }
 
 /**
@@ -68,11 +67,6 @@ export function writeMode(storage: Storage | null, mode: GameMode): boolean {
  * choice is kept (`tierChoice.ts`).
  */
 export function createModeKeeper(storage: () => Storage | null): { mode(): GameMode; save(mode: GameMode): void } {
-  let held: GameMode | null = null;
-  return {
-    mode: () => held ?? readMode(storage()),
-    save(mode) {
-      held = writeMode(storage(), mode) ? null : mode;
-    },
-  };
+  const keeper = modes.createModeKeeper(HIKE_MODES, storage);
+  return { mode: () => keeper.mode() as GameMode, save: (mode) => keeper.save(mode) };
 }

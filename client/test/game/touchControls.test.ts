@@ -12,15 +12,16 @@ import {
   FLICK_MIN_SPEED,
   FLICK_FULL_SPEED,
   type TouchModel,
-} from "../../src/game/touchControls.js";
-import { Button } from "../../src/sim/types.js";
+} from "@csarkosh/engine/game/touchControls";
+import { Button, HIKE_ACTIONS } from "../../src/sim/types.js";
 
 const VIEW = { width: 800, height: 400 };
 /** The fixed stick's base, pinned where the tests below put their fingers. */
 const BASE = { x: 100, y: 300, r: STICK_HIT_RADIUS };
 
 function model(onPause: () => void = () => undefined): TouchModel {
-  const m = createTouchModel(VIEW, { onPause });
+  // The hike's own bits for the two presses the layer raises beyond movement (`HIKE_ACTIONS`).
+  const m = createTouchModel(VIEW, { onPause, actions: HIKE_ACTIONS });
   m.setStickBase(BASE);
   return m;
 }
@@ -284,6 +285,19 @@ describe("buttons", () => {
     const m = model();
     m.down({ id: 1, x: 40, y: 200, hit: "lamp" }, 0);
     expect(m.state.stick).toBeNull();
+  });
+
+  it("raises the bits the game names for the lamp and an interaction, and nothing where a game names none", () => {
+    const named = createTouchModel(VIEW, { onPause: () => undefined, actions: { interact: 64, lamp: 128 } });
+    named.down({ id: 1, x: 40, y: 200, hit: "lamp" }, 0);
+    named.up(1, 60);
+    named.interactDown();
+    expect(named.takeButtons()).toBe(64 | 128);
+    const none = createTouchModel(VIEW, { onPause: () => undefined });
+    none.down({ id: 1, x: 40, y: 200, hit: "lamp" }, 0);
+    none.up(1, 60);
+    none.interactDown();
+    expect(none.takeButtons()).toBe(0);
   });
 
   it("interact from the prompt: an edge on down and the bit while held", () => {

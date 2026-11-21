@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { MUTE_HOTKEY, MUTE_KEY, createMuteButton, isMuteKey, muteLabel, readMuted, writeMuted, type KeyPress } from "../../src/game/muteButton.js";
+import { MUTE_HOTKEY, MUTE_KEY, createMuteButton, isMuteKey, muteLabel, readMuted, writeMuted, type KeyPress } from "@csarkosh/engine/game/muteButton";
 import { StandInElement, asHtml, installStandInDom } from "./helpers/standInDom.js";
 
 function memoryStorage(): Storage {

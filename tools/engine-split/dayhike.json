@@ -3,6 +3,7 @@
   "dayhike": [
     "app.ts",
     "main.ts",
+    "game/hikeCommands.ts",
     "admin/*",
     "sim/acts.ts",
     "sim/ai.ts",
@@ -67,7 +68,6 @@
     "game/roster*",
     "game/scenePlay.ts",
     "game/sceneryParts.ts",
-    "game/script.ts",
     "game/shotBodies.ts",
     "game/signParts.ts",
     "game/titleLoop*",
@@ -108,10 +108,12 @@
     "game/hikeRendererTypes.ts",
     "game/hikeRenderer.ts",
     "game/world.worker.ts",
+    "game/hikeWorldWorker.ts",
     "game/trace.ts",
     "game/wildlifeInputs.ts",
     "game/hikeAudio.ts",
-    "hike.ts"
+    "hike.ts",
+    "hikeGame.ts"
   ],
   "hold": {
     "env.d.ts": "the client's own ambient types",

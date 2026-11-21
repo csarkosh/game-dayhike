@@ -68,7 +68,7 @@ Files:
 | `client/src/game/clutterMeshes.ts` | Writes the `foliage` attribute in the rebuild; attaches both plugins. |
 | `client/src/game/forestMeshes.ts` | Attaches the foliage plugin to LOD0/LOD1 tree meshes and the understory. |
 | `engine/src/game/motesParams.ts`, `mistMeshes.ts`, `rain.ts`, `ambientAudio.ts`, `weather.ts` | Read the record; the air bed and its gain go. |
-| `client/src/game/commands.ts`, `renderer.ts` | `/wind`, the per-frame record, `setWind`. |
+| `engine/src/game/commands.ts`, `renderer.ts` | `/wind`, the per-frame record, `setWind`. |
 | `ARCHITECTURE.md` | The Rendering paragraph gains one sentence on the wind field. |
 
 ## 4. The wind record

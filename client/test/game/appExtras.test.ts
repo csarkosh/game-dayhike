@@ -24,7 +24,9 @@ describe("the signs and the body of a hike the film covers", () => {
 
   it("are built only for the hike and the renderer that asked, and only where nothing built them meanwhile", () => {
     const host = slice("  function runAsHost(): void {", "  async function runAsClient(");
-    expect(host).toContain("still: () => !disposed && !broken && renderer === asked && hike.signs === null && hike.body === null,");
+    // The hike says whether any are built: the signs or the body.
+    expect(hikeSrc).toContain("extrasStand: (): boolean => signs !== null || body !== null,");
+    expect(host).toContain("still: () => !disposed && !broken && renderer === asked && !hike.extrasStand(),");
   });
 
   it("are built in the scene of the renderer they are asked for, which under a swap is not yet the one running", () => {
@@ -40,8 +42,8 @@ describe("the signs and the body of a hike the film covers", () => {
     expect(dispose).toContain("    h.extrasToCome?.cancel();\n    h.extrasToCome = null;");
     // The swap's bindings and the handle's dispose both go through it.
     expect(src).toContain("    extras: { dispose: hike.disposeExtras, build: hike.buildExtras },");
-    // The handle's dispose lets go of the hike's own through one function of the hike's (`disposeHike`), which goes through it.
-    expect(src.slice(src.lastIndexOf("    dispose() {\n      disposed = true;"))).toContain("hike.disposeHike();");
+    // The handle's dispose lets go of the hike's own through one function of the hike's (`disposeHike`, which the hike's `dispose` calls), which goes through it.
+    expect(src.slice(src.lastIndexOf("    dispose() {\n      disposed = true;"))).toContain("hike.dispose();");
     expect(slice("  function disposeHike(): void {", "  /**\n   * The hike as a session starts it", hikeSrc)).toContain("    disposeExtras();");
   });
 

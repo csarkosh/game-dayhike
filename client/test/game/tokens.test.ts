@@ -1,3 +1,4 @@
+import { HIKE_MODES } from "../../src/game/gameMode.js";
 import { describe, it, expect, afterEach, vi } from "vitest";
 import "../../src/sim/passes/index.js";
 import { createHud } from "../../src/game/hud.js";
@@ -19,7 +20,7 @@ describe("the title screen's Buy me tokens line", () => {
     const container = doc.createElement("div");
     doc.body.append(container);
     const noop = () => {};
-    const view = landingModel({ desktop: false, host: "darwin-arm64", latest: null, quality: { choice: "auto", auto: null, override: null, stored: true } });
+    const view = landingModel({ desktop: false, host: "darwin-arm64", latest: null, quality: { choice: "auto", auto: null, override: null, stored: true, modes: HIKE_MODES } });
     const page = renderLanding(asHtml(container), view, {
       onCreate: noop, onJoin: noop, onDownloads: noop, onSettings: noop, onChooseTier: noop,
       onChooseMode: noop, onCredits: noop, onBack: noop,
@@ -44,7 +45,7 @@ describe("the title screen's Buy me tokens line", () => {
     // stays put while they slide, and a repaint does not add another.
     expect(link.parent?.classList.contains("landing")).toBe(true);
     page.setPanel("credits");
-    page.setView(landingModel({ desktop: false, host: "darwin-arm64", latest: null, quality: { choice: "auto", auto: null, override: null, stored: true } }));
+    page.setView(landingModel({ desktop: false, host: "darwin-arm64", latest: null, quality: { choice: "auto", auto: null, override: null, stored: true, modes: HIKE_MODES } }));
     expect(doors(doc.body)).toHaveLength(1);
   });
 

@@ -1,5 +1,6 @@
 import { formatSize, isNewer, PLATFORMS, type DesktopRelease, type Platform } from "@csarkosh/engine/net/desktopRelease";
-import { settingsModel, type SettingsInput, type SettingsView } from "./settings.js";
+import { HIKE_MODES } from "./gameMode.js";
+import { settingsModel, type SettingsInput, type SettingsView } from "@csarkosh/engine/game/settings";
 
 // Ad-hoc signed until a Developer ID exists: macOS blocks the first open with
 // "Apple could not verify", and Open Anyway only appears in Settings after that
@@ -117,7 +118,7 @@ export type LandingView = {
  * vitest can reach it, and `renderLanding` only paints the result.
  */
 export function landingModel(input: LandingInput): LandingView {
-  const quality = input.quality ?? { choice: "auto", auto: null, override: null, stored: true };
+  const quality = input.quality ?? { choice: "auto", auto: null, override: null, stored: true, modes: HIKE_MODES };
   const view: LandingView = {
     credits: { label: "Credits" },
     settings: { label: "Settings" },

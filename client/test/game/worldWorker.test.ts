@@ -1,5 +1,7 @@
 import { afterEach, describe, expect, it } from "vitest";
-import { prepareSceneReply, prepareWorld, type WorldPrepReply } from "../../src/game/world.worker.js";
+import { prepareSceneReply, prepareWorld, type WorldPrepReply, type WorldWorkGame } from "@csarkosh/engine/game/worldWork";
+import { HIKE_WORLD_WORK } from "../../src/game/world.worker.js";
+import { sourceText } from "../helpers/source.js";
 import { RING_COUNT } from "@csarkosh/engine/game/clipmap";
 import { sceneTransfer } from "@csarkosh/engine/game/preparedScene";
 import { DEFAULT_TERRAIN_VARIANT, setActiveTerrainVariant } from "@csarkosh/engine/sim/terrain";
@@ -14,7 +16,7 @@ describe("a hike's world, prepared as the worker prepares it", () => {
 
   it("posts the bowl, then the pass hash, then done, each as data that survives a clone", () => {
     const replies: WorldPrepReply[] = [];
-    prepareWorld({ id: 7, seed: 627994160, variant: "olympic" }, (r) => replies.push(structuredClone(r)));
+    prepareWorld({ id: 7, seed: 627994160, variant: "olympic" }, (r) => replies.push(structuredClone(r)), HIKE_WORLD_WORK);
     expect(replies.map((r) => r.kind)).toEqual(["prepared", "passHash", "chunks", "done"]);
     // The chunks the first spawn reads, as `generateChunk` makes them, their columns still typed after the clone.
     const sent = replies[2] as Extract<WorldPrepReply, { kind: "chunks" }>;
@@ -35,7 +37,7 @@ describe("a hike's world, prepared as the worker prepares it", () => {
 
   it("posts no bowl on a terrain that prepares nothing, and that terrain's pass hash", () => {
     const replies: WorldPrepReply[] = [];
-    prepareWorld({ id: 1, seed: 5, variant: "montane" }, (r) => replies.push(r));
+    prepareWorld({ id: 1, seed: 5, variant: "montane" }, (r) => replies.push(r), HIKE_WORLD_WORK);
     expect(replies.map((r) => r.kind)).toEqual(["passHash", "done"]);
     const hash = replies[0] as Extract<WorldPrepReply, { kind: "passHash" }>;
     expect(hash.variant).toBe("montane");
@@ -44,9 +46,9 @@ describe("a hike's world, prepared as the worker prepares it", () => {
 
   it("leaves out what the page says it holds", () => {
     const replies: WorldPrepReply[] = [];
-    prepareWorld({ id: 4, seed: 627994160, variant: "olympic", skip: { prepared: true, passHash: false } }, (r) => replies.push(r));
-    prepareWorld({ id: 5, seed: 627994160, variant: "olympic", skip: { prepared: false, passHash: true } }, (r) => replies.push(r));
-    prepareWorld({ id: 6, seed: 627994160, variant: "olympic", skip: { prepared: true, passHash: true } }, (r) => replies.push(r));
+    prepareWorld({ id: 4, seed: 627994160, variant: "olympic", skip: { prepared: true, passHash: false } }, (r) => replies.push(r), HIKE_WORLD_WORK);
+    prepareWorld({ id: 5, seed: 627994160, variant: "olympic", skip: { prepared: false, passHash: true } }, (r) => replies.push(r), HIKE_WORLD_WORK);
+    prepareWorld({ id: 6, seed: 627994160, variant: "olympic", skip: { prepared: true, passHash: true } }, (r) => replies.push(r), HIKE_WORLD_WORK);
     // The spawn's chunks are sent whatever the page holds: a grid is made anew for every hike.
     expect(replies.map((r) => [r.id, r.kind])).toEqual([
       [4, "passHash"], [4, "chunks"], [4, "done"], [5, "prepared"], [5, "chunks"], [5, "done"], [6, "chunks"], [6, "done"],
@@ -55,7 +57,7 @@ describe("a hike's world, prepared as the worker prepares it", () => {
 
   it("answers an unknown terrain with one failure", () => {
     const replies: WorldPrepReply[] = [];
-    prepareWorld({ id: 2, seed: 5, variant: "nowhere" }, (r) => replies.push(r));
+    prepareWorld({ id: 2, seed: 5, variant: "nowhere" }, (r) => replies.push(r), HIKE_WORLD_WORK);
     expect(replies).toEqual([{ id: 2, kind: "failed", message: expect.stringContaining("nowhere") }]);
   });
 
@@ -68,7 +70,7 @@ describe("a hike's world, prepared as the worker prepares it", () => {
         throw new Error("could not be cloned");
       }
       replies.push(r);
-    });
+    }, HIKE_WORLD_WORK);
     expect(replies).toEqual([{ id: 3, kind: "failed", message: expect.stringContaining("could not be cloned") }]);
   }, timeLimit(120_000));
 });
@@ -78,7 +80,7 @@ describe("a hike's first scene, sampled as the worker samples it", () => {
 
   it("posts the scene with every one of its buffers in the transfer list, then done", () => {
     const posts: { reply: WorldPrepReply; transfer: ArrayBuffer[] }[] = [];
-    prepareSceneReply({ id: 4, kind: "scene", seed: 7, variant: "montane", tier: "low" }, (reply, transfer) => posts.push({ reply, transfer }));
+    prepareSceneReply({ id: 4, kind: "scene", seed: 7, variant: "montane", tier: "low" }, (reply, transfer) => posts.push({ reply, transfer }), HIKE_WORLD_WORK);
     expect(posts.map((p) => [p.reply.id, p.reply.kind])).toEqual([[4, "scene"], [4, "done"]]);
     const first = posts[0]!;
     if (first.reply.kind !== "scene") throw new Error("not a scene");
@@ -95,7 +97,7 @@ describe("a hike's first scene, sampled as the worker samples it", () => {
 
   it("answers an unknown terrain with one failure", () => {
     const replies: WorldPrepReply[] = [];
-    prepareSceneReply({ id: 2, kind: "scene", seed: 5, variant: "nowhere", tier: "low" }, (r) => replies.push(r));
+    prepareSceneReply({ id: 2, kind: "scene", seed: 5, variant: "nowhere", tier: "low" }, (r) => replies.push(r), HIKE_WORLD_WORK);
     expect(replies).toEqual([{ id: 2, kind: "failed", message: expect.stringContaining("nowhere") }]);
   });
 
@@ -104,7 +106,36 @@ describe("a hike's first scene, sampled as the worker samples it", () => {
     prepareSceneReply({ id: 3, kind: "scene", seed: 5, variant: "montane", tier: "low" }, (r) => {
       if (r.kind === "scene") throw new Error("could not be cloned");
       replies.push(r);
-    });
+    }, HIKE_WORLD_WORK);
     expect(replies).toEqual([{ id: 3, kind: "failed", message: expect.stringContaining("could not be cloned") }]);
   }, timeLimit(120_000));
+
+  it("asks the game for the chunk cells the first spawn reads", () => {
+    const none: WorldWorkGame = { startOf: () => null, spawnCells: () => [] };
+    const replies: WorldPrepReply[] = [];
+    prepareWorld({ id: 8, seed: 5, variant: "montane" }, (r) => replies.push(r), none);
+    expect(replies.map((r) => r.kind)).toEqual(["passHash", "done"]);
+    const one: WorldWorkGame = { startOf: () => null, spawnCells: () => [{ cx: 0, cz: 0 }] };
+    const more: WorldPrepReply[] = [];
+    prepareWorld({ id: 9, seed: 5, variant: "montane" }, (r) => more.push(r), one);
+    expect(more.map((r) => r.kind)).toEqual(["passHash", "chunks", "done"]);
+    expect((more[1] as Extract<WorldPrepReply, { kind: "chunks" }>).chunks).toHaveLength(1);
+  }, timeLimit(120_000));
+});
+
+describe("the world's work and its two sides, by their source", () => {
+  const code = (path: string): string => sourceText(path).replace(/\/\*[\s\S]*?\*\//g, "").replace(/\/\/.*$/gm, "");
+
+  it("names no game and no worker by path in the page's side or the work", () => {
+    for (const file of ["game/worldPrep.ts", "game/worldWork.ts"]) {
+      expect(sourceText(file), file).not.toContain("new URL(");
+      expect(code(file), file).not.toContain("world.worker");
+      expect(sourceText(file), file).not.toContain("sim/spawn");
+      expect(sourceText(file), file).not.toContain("passes/index");
+    }
+  });
+
+  it("starts the worker in the form Vite bundles, from the game's own file", () => {
+    expect(code("game/hikeWorldWorker.ts")).toContain('new Worker(new URL("./world.worker.ts", import.meta.url), { type: "module" })');
+  });
 });

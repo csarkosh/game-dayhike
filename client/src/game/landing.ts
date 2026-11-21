@@ -305,11 +305,10 @@ const STYLE = `
   }
 `;
 
-import type { GameMode } from "./gameMode.js";
 import type { Platform } from "@csarkosh/engine/net/desktopRelease";
 import { creditsEntries, renderCredits } from "./credits.js";
 import { landingPanelFocus, type LandingPanel, type LandingView } from "./landingModel.js";
-import { openerOf, renderSettings, type Opener } from "./settings.js";
+import { openerOf, renderSettings, type Opener } from "@csarkosh/engine/game/settings";
 import { tokensLink } from "@csarkosh/engine/game/tokens";
 import type { TierChoice } from "@csarkosh/engine/game/tierChoice";
 
@@ -370,7 +369,7 @@ export function renderLanding(
     onSettings(): void;
     /** A choice picked on the Settings panel: kept at once, for the hike Play starts. */
     onChooseTier(choice: TierChoice): void;
-    onChooseMode(mode: GameMode): void;
+    onChooseMode(mode: string): void;
     onCredits(): void;
     onBack(): void;
     /** A download link followed: the browser carries the file off, the page stays. */

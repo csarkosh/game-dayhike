@@ -1,6 +1,8 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
-import { createInputSampler } from "../../src/game/input.js";
-import { createTouchModel } from "../../src/game/touchControls.js";
+import { createInputSampler } from "@csarkosh/engine/game/input";
+import { createTouchModel } from "@csarkosh/engine/game/touchControls";
+import { HIKE_ACTIONS } from "../../src/sim/types.js";
+import { sourceText } from "../helpers/source.js";
 import { installStandInDom } from "./helpers/standInDom.js";
 
 type Listener = (e: unknown) => void;
@@ -30,9 +32,10 @@ afterEach(() => {
   delete (globalThis as Record<string, unknown>).document;
 });
 
-function sampler(opts: { touch?: import("../../src/game/touchControls.js").TouchSource; touchMode?: boolean; startYaw?: number } = {}) {
+function sampler(opts: { touch?: import("@csarkosh/engine/game/touchControls").TouchSource; touchMode?: boolean; startYaw?: number; actions?: { interact: number; lamp: number } } = {}) {
   const canvas = { ...fakeTarget(), requestPointerLock: () => undefined };
-  return { input: createInputSampler(canvas as unknown as HTMLCanvasElement, opts), canvas };
+  // The hike's own bits for the two presses the sampler raises beyond movement, unless a test names others.
+  return { input: createInputSampler(canvas as unknown as HTMLCanvasElement, { actions: HIKE_ACTIONS, ...opts }), canvas };
 }
 
 /**
@@ -50,6 +53,29 @@ describe("input suppression", () => {
     const { input } = sampler();
     fire("keydown", { code: "KeyW", preventDefault() {} });
     expect(input.sample(1).moveZ).toBe(1);
+  });
+
+  it("raises the bits the game names for an interaction and the lamp's key, and nothing where a game names none", () => {
+    const named = sampler({ actions: { interact: 64, lamp: 128 } }).input;
+    fire("mousedown", { button: 0 });
+    fire("keydown", { code: "KeyF", preventDefault() {} });
+    fire("keydown", { code: "Space", preventDefault() {} });
+    // The jump is the engine's own bit, whatever the game names.
+    expect(named.sample(1).buttons).toBe(64 | 128 | 2);
+    named.dispose();
+    const none = sampler({ actions: { interact: 0, lamp: 0 } }).input;
+    fire("mousedown", { button: 0 });
+    fire("keydown", { code: "KeyF", preventDefault() {} });
+    expect(none.sample(1).buttons).toBe(0);
+  });
+
+  it("is handed the hike's own bits by the hike's page, as the touch layer is", () => {
+    const app = sourceText("app.ts");
+    // The page hands both the bits of the game it is handed, which for Day Hike are the hike's own (`hikeGame.ts`).
+    expect(app).toContain("{ onPause: () => input.disengage(), actions: game.actions },");
+    expect(app).toContain("startYaw: start?.yaw ?? 0, actions: game.actions });");
+    expect(sourceText("hikeGame.ts")).toContain("  actions: HIKE_ACTIONS,");
+    expect(HIKE_ACTIONS).toEqual({ interact: 1, lamp: 16 });
   });
 
   it("reports neutral movement while suppressed", () => {
@@ -723,7 +749,7 @@ describe("the starting yaw", () => {
       moveX: 0, moveZ: 0, sprinting: false,
       takeLook: () => ({ yaw: 0.5, pitch: 0 }),
       takeButtons: () => 0,
-    } as unknown as import("../../src/game/touchControls.js").TouchSource;
+    } as unknown as import("@csarkosh/engine/game/touchControls").TouchSource;
     const { input } = sampler({ touch, touchMode: true, startYaw: 1.25 });
     expect(input.sample(1).yaw).toBe(1.75);
   });

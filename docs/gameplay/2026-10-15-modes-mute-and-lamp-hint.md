@@ -110,9 +110,9 @@ the corner (section 2).
 |---|---|
 | `client/src/game/gameMode.ts` | The modes, their labels and lines, the stored choice, `peaceful()`. |
 | `client/src/game/exploreDay.ts` | The clock and the weather schedule. |
-| `client/src/game/commands.ts` | `/mode`, a world entry. |
-| `client/src/game/settings.ts` | The Mode group. |
-| `client/src/game/muteButton.ts`, `icons.ts` | The button and the line icons the HUD and the touch layer share. |
+| `engine/src/game/commands.ts` | `/mode`, a world entry. |
+| `engine/src/game/settings.ts` | The Mode group. |
+| `engine/src/game/muteButton.ts`, `icons.ts` | The button and the line icons the HUD and the touch layer share. |
 | `client/src/game/hud.ts` | The lamp hint and the Pause button for a keyboard. |
 | `client/src/sim/world.ts`, `summit.ts`, `client/src/net/*Session.ts` | `World.peaceful`. |
 | `client/src/app.ts`, `main.ts` | The mode resolved and written to the address; the calm atmosphere; the mute bound to the ambient; the hint synced with the lamp, the Pause button with the lamp's hint. |

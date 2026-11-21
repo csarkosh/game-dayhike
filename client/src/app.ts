@@ -1,14 +1,12 @@
 import { parseLevel } from "@csarkosh/engine/sim/level";
 import { createForest } from "@csarkosh/engine/sim/forest";
-import { createHikeRenderer } from "./game/hikeRenderer.js";
 import type { FreecamView } from "@csarkosh/engine/game/rendererTypes";
 import type { Renderer } from "./game/hikeRendererTypes.js";
 import { parseGpuTime } from "@csarkosh/engine/game/gpuTimeReport";
-import { createInputSampler } from "./game/input.js";
-import { createTouchModel, createTouchLayer } from "./game/touchControls.js";
+import { createInputSampler } from "@csarkosh/engine/game/input";
+import { createTouchModel, createTouchLayer } from "@csarkosh/engine/game/touchControls";
 import { FixedStepAccumulator } from "@csarkosh/engine/game/loop";
 import { capturedEye, type EyePose } from "@csarkosh/engine/game/eyeBlend";
-import { createHud } from "./game/hud.js";
 import { RING_COUNT } from "@csarkosh/engine/game/clipmap";
 import { reportProgress } from "@csarkosh/engine/game/loadReport";
 import { READY_MAX_MS, startReady } from "@csarkosh/engine/game/startReady";
@@ -16,14 +14,13 @@ import { ENGAGE_MAX_MS, whenEngaged } from "@csarkosh/engine/game/engageWait";
 import { createNetgraph, RateCounter } from "@csarkosh/engine/game/netgraph";
 import { navigateToLanding } from "@csarkosh/engine/game/router";
 import { createCommandBar } from "@csarkosh/engine/game/commandBar";
-import { createPauseMenu, createPlayGate } from "./game/pauseMenu.js";
-import { findCommand, parseCommandLine, registerTerrainVariants, resolveTypedArgs, validateCommand } from "./game/commands.js";
-import { lastEntry, parseScript, serialiseScript, setEntry, splitEntries, type ScriptEntry } from "./game/script.js";
+import { createPauseMenu, createPlayGate } from "@csarkosh/engine/game/pauseMenu";
+import { findCommand, parseCommandLine, registerTerrainVariants, resolveTypedArgs, validateCommand } from "@csarkosh/engine/game/commands";
+import { lastEntry, parseScript, serialiseScript, setEntry, splitEntries, type ScriptEntry } from "@csarkosh/engine/game/script";
 import { aimAt, stepFreecam, type FreecamState } from "@csarkosh/engine/game/freecam";
 import { DEFAULT_HOUR, sunAltitudeDeg } from "@csarkosh/engine/game/skyWait";
 import { startSkySource } from "@csarkosh/engine/game/skyWorker";
-import { worldInputs } from "./game/worldInputs.js";
-import { createHikeAudio } from "./game/hikeAudio.js";
+import { worldInputs } from "@csarkosh/engine/game/worldInputs";
 import { createWildlifeAudio, listenerToAudio } from "@csarkosh/engine/game/wildlifeAudio";
 import { createWaterLifeAudio } from "@csarkosh/engine/game/waterLifeAudio";
 import { createSurfAudio } from "@csarkosh/engine/game/surfAudio";
@@ -31,25 +28,18 @@ import { wildlifePresenceUnder } from "@csarkosh/engine/game/wildlifeBehaviour";
 import { DEFAULT_BOB_SCALE } from "@csarkosh/engine/game/viewBob";
 import { DEFAULT_WEATHER, WEATHER_PRESETS, type WeatherParams, type WeatherPresetName } from "@csarkosh/engine/game/weather";
 import { DEFAULT_PAINT_PALETTE, PAINT_PALETTES, type PaintPaletteName } from "@csarkosh/engine/game/gradeParams";
-import { type AtmosphereBase } from "./game/escalation.js";
+import type { AtmosphereBase } from "./game/escalation.js";
 import { activeTerrainVariant, elevationAt, setActiveTerrainVariant, terrainVariantNames } from "@csarkosh/engine/sim/terrain";
 import { connectAsClient } from "@csarkosh/engine/net/peer";
-import { createHostSession } from "./net/hostSession.js";
 import { createHostAdmission, type HostAdmission } from "@csarkosh/engine/net/hostAdmission";
-import { createClientSession } from "./net/clientSession.js";
 import { degradeTransport, parseNetConditions } from "@csarkosh/engine/net/channels";
 import type { Transport } from "@csarkosh/engine/net/transport";
 import { isTouchDevice } from "@csarkosh/engine/game/platform";
 import { isMobile } from "@csarkosh/engine/game/gpuSignals";
-import { DEATH_LINE, DEATH_TITLE } from "./game/passages.js";
-import { trailheadStart } from "./sim/spawn.js";
 import type { PreparedScene } from "@csarkosh/engine/game/preparedScene";
-import { placeNames } from "./sim/placeNames.js";
-import { createTrace, type Trace } from "./game/trace.js";
 import { afterNextPaint } from "@csarkosh/engine/game/paint";
 import type { QualityTier } from "@csarkosh/engine/game/quality";
-import { settingsModel, type AutoSummary } from "./game/settings.js";
-import { DEFAULT_MODE, isGameMode, peaceful, type GameMode } from "./game/gameMode.js";
+import { settingsModel, type AutoSummary } from "@csarkosh/engine/game/settings";
 import { resolveTier, type TierChoice, type TierSource } from "@csarkosh/engine/game/tierChoice";
 import { buildFirstRenderer, buildOrUndo, swapRenderer, switchOutcome, whenStandingSkyHeld, type EngineOnCanvas, type SwapBindings } from "@csarkosh/engine/game/rendererSwap";
 import { FALLBACK_NOTICE_MS, answerFailures, coverWith, createSerial } from "@csarkosh/engine/game/engineFailure";
@@ -62,15 +52,14 @@ import { FIRST_BUILD_SLICE_MS } from "@csarkosh/engine/game/syncJobs";
 import { createFirstBuilds } from "@csarkosh/engine/game/firstBuilds";
 import { extrasLater } from "@csarkosh/engine/game/extrasLater";
 import { connectFailure, createConnectPanel, sessionEndOutcome } from "@csarkosh/engine/game/connectPanel";
-import { type InputCommand, type PlayerState, type WorldState } from "./sim/types.js";
-import { CROWD_MOST } from "./game/crowdField.js";
+import type { InputCommand, WorldState } from "./sim/types.js";
+import type { HikeGame } from "./hikeGame.js";
+import { isMode } from "@csarkosh/engine/game/modeList";
 import { PLAYER_EYE_OFFSET, PLAYER_HALF } from "@csarkosh/engine/sim/constants";
 import { loadBirdBed } from "@csarkosh/engine/game/birdBed";
 import type { World } from "./sim/world.js";
 import type { Lobby } from "@csarkosh/engine/net/lobby";
 import { worldVersionOf, type Fields, type Telemetry } from "@csarkosh/engine/net/telemetry";
-import sandbox01 from "../levels/sandbox01.json" with { type: "json" };
-import { createHike } from "./hike.js";
 /** A frame longer than this counts as a stall in the heartbeat. */
 const STALL_MS = 250;
 
@@ -185,8 +174,8 @@ export type GameOptions = {
   /** The mode setting (`gameMode.ts`): the saved choice, read where the
    * address's script names none, and how to keep a new one. */
   mode: {
-    choice(): GameMode;
-    save(mode: GameMode): void;
+    choice(): string;
+    save(mode: string): void;
   };
   /** The page's mute (`muteButton.ts`): `bind` hands the hike's ambient a
    * setter, calls it with the state now and on every change, and returns the
@@ -211,14 +200,15 @@ function worldStageTotal(deferred: boolean): number {
  * made behind (`buildOrUndo`): above all no engine, and no global plugin
  * registration for the next renderer to meet.
  */
-export function startGame(canvas: HTMLCanvasElement, token: string, options: GameOptions): GameHandle {
-  return buildOrUndo((made) => buildGame(canvas, token, options, made));
+export function startGame(canvas: HTMLCanvasElement, token: string, options: GameOptions, game: HikeGame): GameHandle {
+  return buildOrUndo((made) => buildGame(canvas, token, options, game, made));
 }
 
 function buildGame(
   firstCanvas: HTMLCanvasElement,
   token: string,
   options: GameOptions,
+  game: HikeGame,
   made: (undo: () => void) => void,
 ): GameHandle {
   // The renderer and its canvas are replaced when the tier changes mid-hike
@@ -235,10 +225,8 @@ function buildGame(
   // re-initialisation validates against the same list it will resolve from.
   registerTerrainVariants(terrainVariantNames());
 
-  // sandbox01 stays imported as the fallback and as the shape `lite/renderer.ts` and
-  // both sessions expect. A forest world carries a stub level with no brushes, so
-  // the brush-mesh path is simply a no-op rather than a second code path.
-  const level = parseLevel(sandbox01);
+  // The game's level: the shape the renderer and both sessions expect.
+  const level = parseLevel(game.level);
 
   const params = new URLSearchParams(location.search);
   const { entries, errors } = parseScript(params.get("cmd") ?? "");
@@ -256,15 +244,13 @@ function buildGame(
   // on both sessions, so Interact can be proven end to end in the browser.
   const debugOn = lastEntry(world, "debug") !== undefined;
 
-  // The mode (gameMode.ts), resolved as `seed` is: the address's entry, else
-  // the saved choice, which is then written into the address, so an invite
-  // carries it and every peer runs the same world. `calm` is the explore
-  // modes' world: no one in the woods, nothing to dread, a day of its own.
+  // The game's mode (`modeList.ts`), resolved as `seed` is: the address's
+  // entry, else the saved choice, which is then written into the address, so
+  // an invite carries it and every peer runs the same world.
   const modeEntry = lastEntry(world, "mode");
   const modeArg = modeEntry?.args[0];
-  const mode: GameMode = isGameMode(modeArg) ? modeArg : options.mode.choice();
-  const calm = peaceful(mode);
-  if (modeEntry === undefined && mode !== DEFAULT_MODE) persist("mode", [mode]);
+  const mode: string = isMode(game.modes, modeArg) ? modeArg : options.mode.choice();
+  if (modeEntry === undefined && mode !== game.modes.initial) persist("mode", [mode]);
 
   // Resolved like `seed`, never dispatched — a dispatched world entry would
   // rewrite ?cmd= and re-initialise forever. The active variant is module
@@ -285,7 +271,7 @@ function buildGame(
   // Where this hike's players start, from the seed alone, as the sim places them (`pickSpawn`):
   // the first renderer builds its terrain and its water around it, and the look starts facing
   // the way it faces. Null for a world with no trail.
-  const start = trailheadStart(seed);
+  const start = game.startOf(seed);
   // The match's world goes on every telemetry row from here to dispose(): the
   // version of the generator that built it, by its level id without the seed,
   // and the seed and the game token on their own (`worldVersionOf`).
@@ -373,7 +359,7 @@ function buildGame(
     [options.tier, ...options.fallbackTiers],
     {
       build: (next, at) =>
-        createHikeRenderer(next, level, forest, { tier: at, deferClipmap: options.deferClipmap, start, prepared: options.takePrepared?.() ?? null, firstBuilds, skyTable: skySource.table, gpuTime: parseGpuTime(location.search), paced: isMobile(navigator) }),
+        game.renderer(next, level, forest, { tier: at, deferClipmap: options.deferClipmap, start, prepared: options.takePrepared?.() ?? null, firstBuilds, skyTable: skySource.table, gpuTime: parseGpuTime(location.search), paced: isMobile(navigator) }),
       freshCanvas: () => document.createElement("canvas"),
       ...engineBindings,
     },
@@ -426,7 +412,7 @@ function buildGame(
   let swapError: string | null = null;
   /** Both builds of a switch failed: there is no renderer left to dispose. */
   let broken = false;
-  const ambient = createHikeAudio();
+  const ambient = game.audio();
   made(() => ambient.dispose());
   // Shares the ambient context — one AudioContext for the whole game, gated on
   // the same unlock gesture. Constructed here rather than inside the renderer
@@ -458,8 +444,6 @@ function buildGame(
   let base: AtmosphereBase = { weather: WEATHER_PRESETS[DEFAULT_WEATHER], hour: DEFAULT_HOUR };
   let worstFrameMs = 0;
   let stalls = 0;
-  /** The trace of where this player goes (`game/trace.ts`), made at the match's start. */
-  let trace: Trace | null = null;
   // The page's mute: the ambient master follows it from now to the hike's end.
   made(options.mute.bind((on) => ambient.setMuted(on)));
   // Recomputed when the weather does: on a `weather` command directly below,
@@ -487,12 +471,12 @@ function buildGame(
   // on that first touch and flips the sampler into touch mode.
   const touchModel = createTouchModel(
     { width: canvas.clientWidth, height: canvas.clientHeight },
-    { onPause: () => input.disengage() },
+    { onPause: () => input.disengage(), actions: game.actions },
   );
   // A player's yaw is whatever their input says, so the look starts where
   // the spawn faces: the trail's entrance (`start`, above). Every peer derives
   // it from the seed, as the sim does, so a follower starts facing the trail too.
-  const input = createInputSampler(canvas, { touch: touchModel, touchMode: touchStart, startYaw: start?.yaw ?? 0 });
+  const input = createInputSampler(canvas, { touch: touchModel, touchMode: touchStart, startYaw: start?.yaw ?? 0, actions: game.actions });
   made(() => input.dispose());
   const accumulator = new FixedStepAccumulator();
   /** The local player's pose as the frame's last tick began, for the eye's blend (`eyeBlend.ts`); null until a tick has run. */
@@ -500,7 +484,7 @@ function buildGame(
   const eyeBeforeScratch: EyePose = { x: 0, y: 0, z: 0, yaw: 0, pitch: 0 };
   const container = canvas.parentElement ?? document.body;
   // The HUD's Pause button, for a keyboard, pauses as the key does: the controls let go.
-  const hud = createHud(container, { onPause: () => input.disengage() });
+  const hud = game.hud(container, { onPause: () => input.disengage() });
   made(() => hud.dispose());
   const touchLayer = createTouchLayer(container, canvas, touchModel, {
     engaged: () => input.engaged,
@@ -612,6 +596,7 @@ function buildGame(
    */
   function applyView(name: string, args: readonly string[], options: { instant?: boolean } = {}): void {
     const value = findCommand(name)?.scriptValue?.(args);
+    if (hike.applyOwnView(name, args)) return;
     if (name === "aim") {
       if (typeof value === "string" && value !== "") {
         const [x, y, z] = value.split(" ").map(Number) as [number, number, number];
@@ -644,50 +629,6 @@ function buildGame(
     } else if (name === "skin") {
       skin = value !== false;
       renderer.setSkinShading(skin);
-    } else if (name === "escalation") {
-      // The world's escalation, held at a value or let go (escalation.ts).
-      hike.escalationHold = args.length === 0 ? null : Number(args[0]);
-      hud.setStatus(hike.escalationHold === null ? "escalation: the climb's" : `escalation held at ${hike.escalationHold.toFixed(2)}`);
-    } else if (name === "mist") {
-      // The ground cloud's density, held or let go (cloudParams.ts); the status says what is drawn.
-      const held = args.length === 0 ? null : Number(args[0]);
-      const drawn = renderer.setMist(held);
-      hud.setStatus(held === null ? `mist: the night's, now ${drawn.toFixed(2)}` : `mist held at ${held.toFixed(2)}`);
-    } else if (name === "way") {
-      // The way down's light, held whole or out, or let go to the chase (wayLevel.ts).
-      hike.wayHeld = args.length === 0 ? null : args[0] === "on" ? 1 : 0;
-      hud.setStatus(hike.wayHeld === null ? "way: the chase's" : `way held ${hike.wayHeld === 1 ? "on" : "off"}`);
-    } else if (name === "crowd") {
-      // This screen's crowd, held at a count or let go to the chase (crowdField.ts).
-      hike.crowdHeld = args.length === 0 ? null : args[0] === "on" ? CROWD_MOST[tier] : args[0] === "off" ? 0 : Number(args[0]);
-      hud.setStatus(hike.crowdHeld === null ? "crowd: the chase's" : `crowd held at ${hike.crowdHeld}`);
-    } else if (name === "summit") {
-      // The summit scene for a look (cutscene.ts): the host's own player stands at the body, and the next tick is the find.
-      if (hike.summitPreview === null) hud.setStatus("summit: the host's to call");
-      else hike.summitPreview();
-    } else if (name === "escape") {
-      // The end scene for a look (endScene.ts): the host's own player stands on the pad short of the car, and the next tick is the win.
-      if (hike.escapeLook === null) hud.setStatus("escape: the host's to call");
-      else hike.escapeLook();
-    } else if (name === "stand") {
-      // The host's own player at a place, to play from there.
-      const [x, z, yaw = 0] = args.map(Number) as [number, number, number?];
-      if (hike.standAt === null) hud.setStatus("stand: the host's to call");
-      else hike.standAt(x, z, yaw);
-    } else if (name === "lamp") {
-      // The host's own player's lamp, on unless asked off.
-      if (hike.setLamp === null) hud.setStatus("lamp: the host's to call");
-      else hike.setLamp(args[0] !== "off");
-    } else if (name === "end") {
-      // The ending, on the spot, nothing of the match: won, the end scene from where the player
-      // stands, with the trailhead's car, and no landing after it (endScene.ts);
-      // died, the death's camera and line (ending.ts).
-      if (args[0] === "won") {
-        if (!hike.startEndScene(false)) hud.setStatus("end won: this world has no road to leave by");
-      } else {
-        renderer.setEnding("died");
-        hud.setEnding({ title: DEATH_TITLE, line: DEATH_LINE });
-      }
     } else if (name === "time") {
       // Instant, like every other view command: the sun moves, the world is not
       // rebuilt. Validation has already bounded this to [0, 24), so the fallback
@@ -784,7 +725,7 @@ function buildGame(
     ambient.setDrip(renderer.canopyWater(), renderer.canopyOver());
     // The stare rides the same call: `sync` stepped its lens, and the
     // listener `syncWind` placed is where its whispers circle.
-    ambient.setStare(renderer.stare(), hike.escalation.haunt);
+    hike.sound();
   }
 
   /**
@@ -838,12 +779,12 @@ function buildGame(
     });
   }
 
-  /** Day Hike's own half of the hike (`hike.ts`): made here, where its prompt and its poster join the page. */
-  const hike = createHike({
+  /** The game's own half of the hike: made here, where what it adds to the page joins it. */
+  const hike = game.side({
     get made() { return made; },
     get canvas() { return canvas; },
     get seed() { return seed; },
-    get calm() { return calm; },
+    get mode() { return mode; },
     get telemetry() { return telemetry; },
     get renderer() { return renderer; },
     get tier() { return tier; },
@@ -897,8 +838,8 @@ function buildGame(
     touchModel.tick(performance.now());
     touchModel.setLampOn(lampOn);
     touchLayer.sync();
-    hud.setLamp(touchStart || hike.ended || hike.dead ? null : { key: "F", on: lampOn });
-    hud.setPause(touchStart || hike.ended || hike.dead ? null : { key: "Esc" });
+    hud.setLamp(touchStart || hike.over() ? null : { key: "F", on: lampOn });
+    hud.setPause(touchStart || hike.over() ? null : { key: "Esc" });
   }
 
   /**
@@ -947,7 +888,7 @@ function buildGame(
     engaged: () => input.engaged,
     barOpen: () => bar.isOpen,
     menuOpen: () => menu.isOpen,
-    ended: () => hike.ended,
+    ended: () => hike.decided(),
     showMenu: () => menu.show(),
     hideMenu: () => menu.hide(),
     setSuppressed: (on) => input.setSuppressed(on),
@@ -981,8 +922,8 @@ function buildGame(
       if (parsed.name === "weather" && parsed.args.length === 0) {
         return `weather: ${weatherName}`;
       }
-      // A calm world's weather is the explore day's own: a preset asked for is answered, not set.
-      if (calm && parsed.name === "weather") {
+      // Where the weather is the mode's own to turn, a preset asked for is answered, not set.
+      if (game.weatherIsOwn(mode) && parsed.name === "weather") {
         return `weather: ${weatherName}, turning with the hour in ${mode} mode`;
       }
 
@@ -1038,6 +979,7 @@ function buildGame(
           error: swapError ?? undefined,
           notice: options.quality.notice() ?? undefined,
           mode,
+          modes: game.modes,
         }),
       onApply: (choice, readyMaxMs) => applyTier(choice, readyMaxMs),
       onChoose: () => {
@@ -1045,7 +987,10 @@ function buildGame(
       },
       // A new mode is kept, and the hike started over on it: a world entry,
       // re-initialised through the path `main.ts` listens on, as `/mode` is.
-      onChooseMode: (chosen) => {
+      onChooseMode: (picked) => {
+        // A value that is not one of the game's modes is ignored.
+        if (!isMode(game.modes, picked)) return;
+        const chosen = picked;
         options.mode.save(chosen);
         if (chosen === mode) return;
         persist("mode", [chosen]);
@@ -1163,7 +1108,7 @@ function buildGame(
 
   /** The party's climb so far, to three places: what every match row carries. */
   function progressRounded(): number {
-    return Math.round(hike.escalation.progressMax * 1000) / 1000;
+    return Math.round(hike.progress() * 1000) / 1000;
   }
 
   /**
@@ -1174,14 +1119,9 @@ function buildGame(
    */
   function matchStarted(role: "host" | "client", world: World, stats: () => { rtt: number; pe: number }): void {
     if (telemetry === null) return;
-    hike.hikeReportAtRest();
+    hike.matchStarted(world);
     worstFrameMs = 0;
     stalls = 0;
-    // The trace names places as the sign posts do, never under the missing
-    // hiker's own first name (`placeNames`).
-    const graph = world.trail;
-    const hikerFirst = world.search?.hiker.name.split(" ")[0] ?? "";
-    trace = createTrace(graph, graph === null ? new Map() : placeNames(seed, graph.features, hikerFirst));
     telemetry.event("match_start", { role, party: lobby?.state.members.length ?? 1, lobby: lobby?.state.id ?? "" });
     telemetry.sample(() => {
       const s = stats();
@@ -1197,25 +1137,6 @@ function buildGame(
       stalls = 0;
       return sample;
     });
-  }
-
-  /**
-   * The trace of where this player goes (`game/trace.ts`): a sample every
-   * two seconds of sim time when they have moved, and a row at each
-   * transition of the route. Both loops, after the outcome; one integer
-   * compare a frame until a sample is due.
-   */
-  function syncTelemetry(world: World, state: WorldState, self: PlayerState | undefined, sprinting: boolean): void {
-    if (telemetry === null || trace === null) return;
-    const frame = {
-      tick: state.tick,
-      offTrail: hike.lastTargets?.offTrail ?? 0,
-      lens: hike.escalation.lens,
-      near: hike.lastTargets?.near ?? 0,
-      sprinting,
-      progress: hike.escalation.progressMax,
-    };
-    for (const e of trace.step(self, frame)) telemetry.event(e.n, e.fields);
   }
 
   // Kept so dispose() can cancel it. Without that, a session ending seconds
@@ -1275,7 +1196,7 @@ function buildGame(
     let cmd: InputCommand | null = null;
     for (let i = 0; i < ticks; i++) {
       const me = live.world.state.players.get(live.localEntityId);
-      cmd = hike.taken(hike.ranToCar(hike.stilled(input.sample(++seq), me, live.world), me));
+      cmd = hike.command(input.sample(++seq), me, live.world);
       if (i === ticks - 1) eyeBefore = me === undefined ? null : capturedEye(me, eyeBeforeScratch);
       live.tick(cmd);
     }
@@ -1290,24 +1211,16 @@ function buildGame(
    */
   function frame(live: Live, state: WorldState, cmd: InputCommand | null, dt: number): void {
     const self = state.players.get(live.localEntityId);
-    hike.syncWayLight(live.world, dt);
-    hike.syncCrowd(live.world, state, live.localEntityId, dt);
-    hike.syncWayDraw(live.world, state);
-    hike.syncAtmosphere(live.world, state, live.localEntityId, dt);
+    hike.beforeSync(live.world, state, live.localEntityId, dt);
     renderer.sync(state, live.localEntityId, accumulator.alpha, { dt, sprinting: input.sprinting, before: eyeBefore });
     playWildlifeAudio();
     syncWind();
     syncDrip();
     syncWaterLife();
     syncSurf();
-    syncTouch(self?.lamp.on ?? false);
-    hike.syncPrompt(live.world, self);
-    if (cmd !== null) hike.syncPoster(live.world, self, cmd);
-    hike.syncRoadLine(self, state);
-    hike.syncDeath(self, state, live.world);
-    hike.syncOutcome(state, live.localEntityId);
-    hike.syncEndScene();
-    syncTelemetry(live.world, state, self, input.sprinting);
+    syncTouch(hike.lampOn(self));
+    hike.afterSync(live.world, state, live.localEntityId, self, cmd);
+    hike.report(state, self, input.sprinting);
     // True exactly when `sync` took its player-following branch, which is
     // the only case in which `renderer.cameraPosition()` is an eye position
     // a pending freecam can adopt.
@@ -1323,16 +1236,16 @@ function buildGame(
   function runAsHost(): void {
     // `hostPeerId` stamps the host's own Named pairing, so a follower can
     // match it against the lobby.
-    const host = createHostSession(level, seed, () => performance.now(), {
+    const host = game.host(level, seed, () => performance.now(), {
       forest,
       hostPeerId: selfPeerId,
-      peaceful: calm,
+      mode,
     });
-    hike.hikeHostLooks(host);
+    hike.hostStarted(host);
     session = host;
     matchStarted("host", host.world, () => ({ rtt: 0, pe: 0 }));
     governor?.restart(performance.now());
-    hike.hikeAtRest();
+    hike.atRest();
     hud.setStatus(null);
     // The host names itself: its own Named pairing only goes out to followers.
     names.set(host.localEntityId, selfPeerId);
@@ -1346,7 +1259,7 @@ function buildGame(
     if (firstBuilds === undefined) hike.buildExtras(renderer);
     else extrasToCome = extrasLater({
       build: () => hike.buildExtras(asked),
-      still: () => !disposed && !broken && renderer === asked && hike.signs === null && hike.body === null,
+      still: () => !disposed && !broken && renderer === asked && !hike.extrasStand(),
       // The task is outside the start's catch: the hike goes on without its signs, and the console
       // (which telemetry reads) says so.
       failed: (error) => console.error("The trailhead's signs could not be built.", error),
@@ -1365,7 +1278,7 @@ function buildGame(
       const dt = frameSeconds();
       feedGovernor(dt);
       const ticks = accumulator.advance(dt);
-      hike.escapeStep?.();
+      hike.beforeTicks();
       const cmd = stepTicks(host, ticks);
       stepFreecamView(dt);
 
@@ -1424,15 +1337,15 @@ function buildGame(
       transport.close();
       return;
     }
-    const client = createClientSession(level, seed, transport, () => performance.now(), {
+    const client = game.join(level, seed, transport, () => performance.now(), {
       expectedLevelId: forest.levelId,
       forest,
-      peaceful: calm,
+      mode,
     });
     session = client;
     matchStarted("client", client.world, () => ({ rtt: client.stats.rttMs, pe: client.stats.lastPredictionError }));
     governor?.restart(performance.now());
-    hike.hikeAtRest();
+    hike.atRest();
     registerInteractables(client.world);
     activeWorld = client.world;
     hike.buildExtras(renderer);
@@ -1655,7 +1568,7 @@ function buildGame(
     // The renderer makes its own engine from the canvas it is built on: the
     // one made for the switch (`options.engineFor`), which `freshCanvas`
     // hands out first.
-    build: (next, target) => createHikeRenderer(next, level, forest, { tier: target, skyTable: skySource.table, gpuTime: parseGpuTime(location.search), paced: isMobile(navigator) }),
+    build: (next, target) => game.renderer(next, level, forest, { tier: target, skyTable: skySource.table, gpuTime: parseGpuTime(location.search), paced: isMobile(navigator) }),
     freshCanvas: () => document.createElement("canvas"),
     extras: { dispose: hike.disposeExtras, build: hike.buildExtras },
     rebind: (next) => {
@@ -1680,7 +1593,7 @@ function buildGame(
     // be under way.
     if (disposed || broken || !serial.idle) return;
     // Not under the end: a renderer built anew would have no scene to play.
-    if (hike.ended || hike.endRunDoor !== null) return;
+    if (hike.decided() || hike.holdsFrame()) return;
     if (target === tier) {
       options.quality.save(choice);
       return;
@@ -1873,7 +1786,7 @@ function buildGame(
     if (governor === null) return;
     const decision = governorDecision(governor.verdict, tier, tierSource);
     // Nor under the end scene, the console's look at it too: a renderer built anew would have no scene.
-    if (decision === null || disposed || broken || !serial.idle || lowering || landingTimer !== null || hike.endRunDoor !== null) return;
+    if (decision === null || disposed || broken || !serial.idle || lowering || landingTimer !== null || hike.holdsFrame()) return;
     lowering = true;
     let done: () => void = () => undefined;
     void serial.track(new Promise<void>((resolve) => (done = resolve)));
@@ -1952,11 +1865,10 @@ function buildGame(
       firstBuilds?.dispose();
       if (telemetry !== null) {
         telemetry.sample(null);
-        telemetry.event("match_end", { p: progressRounded(), ended: hike.ended, dead: hike.dead });
+        telemetry.event("match_end", { p: progressRounded(), ...hike.matchEnd() });
         // The match is over: the rows after this one name no game.
         telemetry.context({ game: null, world: null, seed: null });
       }
-      trace = null;
       options.onPauseChange(false);
       window.removeEventListener("resize", onResize);
       window.removeEventListener("keydown", onDebugKey);
@@ -1975,7 +1887,7 @@ function buildGame(
       bar.dispose();
       menu.dispose();
       connectPanel.dispose();
-      hike.disposeHike();
+      hike.dispose();
       touchLayer.dispose();
       input.dispose();
       if (!broken) {

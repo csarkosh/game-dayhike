@@ -1,4 +1,4 @@
-import type { Vec3 } from "@csarkosh/engine/sim/core";
+import type { ActionBits, Vec3 } from "@csarkosh/engine/sim/core";
 
 export const enum EntityKind {
   Player = 0,
@@ -37,6 +37,9 @@ export const enum Button {
   /** Not a key: this player's own screen says a shade of its crowd has them (taken.ts). Movement reads nothing of it. */
   Taken = 32,
 }
+
+/** The hike's bits for the two presses the page's controls raise beyond movement (`ActionBits`). */
+export const HIKE_ACTIONS: ActionBits = { interact: Button.Interact, lamp: Button.Lamp };
 
 export const enum Outcome {
   Playing = 0,

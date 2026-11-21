@@ -24,11 +24,14 @@ import { INTRO_CAPTIONS } from "./game/scene/intro.js";
 import { setLoadProgress } from "@csarkosh/engine/game/loadReport";
 import { markedProgress } from "@csarkosh/engine/game/loadProgress";
 import { titleStillUrl, titleVideoUrl, videoUrl } from "./game/dayhikeAssets.js";
+// Day Hike's terrain registers as this is imported, before the world is read or prepared.
+import "./sim/passes/index.js";
 import { createRouteAnnouncer } from "@csarkosh/engine/game/routeAnnounce";
 import { createTitleLoop, titleLoopEnv, type TitleLoop } from "./game/titleLoop.js";
 import { createFilmHead, fetchFilmHead, filmHeadWanted, onCellular, warmWhenLoaded } from "./game/filmHead.js";
-import { worldInputs } from "./game/worldInputs.js";
-import { sceneLine, startWorldPrep, worldPrepLine, type WorldPrepOutcome } from "./game/worldPrep.js";
+import { startHikeWorldWorker } from "./game/hikeWorldWorker.js";
+import { worldInputs } from "@csarkosh/engine/game/worldInputs";
+import { sceneLine, startWorldPrep, worldPrepLine, type WorldPrepOutcome } from "@csarkosh/engine/game/worldPrep";
 import type { PreparedScene } from "@csarkosh/engine/game/preparedScene";
 import { runLiteSceneRoute } from "./game/lite/sceneRoute.js";
 import { liteProbeDeps } from "./game/lite/probeScene.js";
@@ -46,6 +49,7 @@ import { createLobby, joinLobby, lobbyErrorMessage, type Lobby } from "@csarkosh
 import { browserDeps, createTelemetry, installErrorCapture, referrerOf, telemetryUrl, testerMark, visitorId, type EarlyCatch, type Telemetry } from "@csarkosh/engine/net/telemetry";
 import { PROTOCOL_VERSION } from "./net/protocol.js";
 import { GEN_VERSION } from "@csarkosh/engine/sim/forest";
+import { HIKE_GAME } from "./hikeGame.js";
 import { startGame, type GameHandle } from "./app.js";
 import type { EngineOnCanvas } from "@csarkosh/engine/game/rendererSwap";
 import { LOSS_ENDED_LINE, createLossRecord } from "@csarkosh/engine/game/lossBound";
@@ -67,10 +71,10 @@ import {
   type StartupTier,
 } from "@csarkosh/engine/game/frameProbe";
 import { createHud } from "./game/hud.js";
-import { createModeKeeper, type GameMode } from "./game/gameMode.js";
-import { createMuteButton, readMuted, writeMuted } from "./game/muteButton.js";
+import { HIKE_MODES, createModeKeeper, isGameMode, type GameMode } from "./game/gameMode.js";
+import { createMuteButton, readMuted, writeMuted } from "@csarkosh/engine/game/muteButton";
 import { containerPixels, withGovernorDrop, type QualityTier, type VerdictEngine } from "@csarkosh/engine/game/quality";
-import type { AutoSummary } from "./game/settings.js";
+import type { AutoSummary } from "@csarkosh/engine/game/settings";
 import {
   createChoiceKeeper,
   leaveNotice,
@@ -839,6 +843,7 @@ function landingInput(over: Partial<LandingInput> = {}): LandingInput {
       stored: choiceStored(),
       notice: choiceNotice ?? undefined,
       mode: currentMode(),
+      modes: HIKE_MODES,
     },
     notice: landingNotice ?? undefined,
     ...over,
@@ -1166,6 +1171,8 @@ function render(container: HTMLDivElement): void {
           repaintLanding();
         },
         onChooseMode: (mode) => {
+          // A value that is not one of the hike's modes is ignored.
+          if (!isGameMode(mode)) return;
           saveMode(mode);
           repaintLanding();
         },
@@ -1231,7 +1238,7 @@ function render(container: HTMLDivElement): void {
   // the tier is decided, the film buffers and the engine starts: the build
   // waits for them (`beforeBuild`) and finds them made. With no worker, or
   // one that fails, the build makes them as it always did (`worldPrep.ts`).
-  const prep = startWorldPrep(worldInputs(route.token, location.search));
+  const prep = startWorldPrep(worldInputs(route.token, location.search), startHikeWorldWorker);
   let prepOutcome: WorldPrepOutcome | null = null;
   // The hike's first scene (`preparedScene.ts`): asked of the same worker
   // once the tier is decided, waited for before the build, and taken by the
@@ -1415,7 +1422,7 @@ function launch(
         };
       },
     },
-  });
+  }, HIKE_GAME);
   game = handle;
   console.info(launchLine(decided, handle.graphics()));
   running = handle;

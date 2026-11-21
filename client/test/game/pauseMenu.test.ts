@@ -1,8 +1,9 @@
 import { describe, it, expect, afterEach, vi } from "vitest";
 import {
   PAUSE_START, createPauseMenu, createPlayGate, pauseMenuModel, pauseStep, type PauseSettings, type PauseState,
-} from "../../src/game/pauseMenu.js";
-import { settingsModel } from "../../src/game/settings.js";
+} from "@csarkosh/engine/game/pauseMenu";
+import { HIKE_MODES } from "../../src/game/gameMode.js";
+import { settingsModel } from "@csarkosh/engine/game/settings";
 import type { TierChoice } from "@csarkosh/engine/game/tierChoice";
 import { whenWorldIn } from "@csarkosh/engine/game/worldWait";
 import { StandInSelect, asHtml, installStandInDom } from "./helpers/standInDom.js";
@@ -208,7 +209,7 @@ describe("the pause screen's Settings page", () => {
         view: (selection, applying) =>
           settingsModel({
             context: "pause", choice: selection, selectionTier: selection === "auto" ? "medium" : selection,
-            auto: { tier: "medium", probePending: false }, running: "medium", override: null, stored: true, applying,
+            auto: { tier: "medium", probePending: false }, running: "medium", override: null, stored: true, applying, modes: HIKE_MODES,
           }),
         onApply:
           apply ??

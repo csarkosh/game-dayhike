@@ -5,7 +5,7 @@
  * `textContent` only, into whichever panel hosts it.
  *
  * The graphics choice is one native `<select>`, drawn in the look the game's
- * text inputs share (the landing's join field), and the mode (`gameMode.ts`)
+ * text inputs share (the landing's join field), and the game's mode (`modeList.ts`)
  * a second under it, kept as it is picked on both screens: on the pause
  * screen a new mode restarts the hike at its trailhead, and the line under
  * it says so. Apply and Back are plain
@@ -14,9 +14,9 @@
  * for what is the component's own: the label, the select and its list, and
  * the caption lines.
  */
-import type { QualityTier } from "@csarkosh/engine/game/quality";
-import type { TierChoice } from "@csarkosh/engine/game/tierChoice";
-import { DEFAULT_MODE, GAME_MODES, MODE_LABELS, MODE_LINES, type GameMode } from "./gameMode.js";
+import type { QualityTier } from "./quality.js";
+import type { TierChoice } from "./tierChoice.js";
+import type { ModeList } from "./modeList.js";
 
 /** The choices, in the order the screen offers them: Auto first, and the default. */
 export const TIER_CHOICES: readonly TierChoice[] = ["auto", "high", "medium", "low"];
@@ -59,8 +59,10 @@ export type SettingsInput = {
   override: QualityTier | null;
   /** Whether the browser keeps the choice across pages. */
   stored: boolean;
-  /** The mode chosen (`gameMode.ts`); the hike as it is when absent. */
-  mode?: GameMode;
+  /** The game's modes (`modeList.ts`). */
+  modes: ModeList;
+  /** The mode chosen, one of the list's ids; the list's initial mode when absent. */
+  mode?: string;
 };
 
 export type SettingsView = {
@@ -73,14 +75,11 @@ export type SettingsView = {
   lines: string[];
   /** The mode's group under the graphics': its choices, and the line for the
    * one chosen, with what a change does on the pause screen. */
-  mode: { group: string; choices: { mode: GameMode; label: string; selected: boolean; disabled: boolean }[]; lines: string[] };
+  mode: { group: string; choices: { mode: string; label: string; selected: boolean; disabled: boolean }[]; lines: string[] };
   /** Pause only: the title screen keeps a choice as it is picked. */
   apply?: { label: string; disabled: boolean };
   back: { label: string; disabled: boolean };
 };
-
-/** The pause screen's line under the mode: a pick there starts the hike over. */
-export const MODE_RESTARTS = "Picking another mode restarts the hike at its trailhead.";
 
 /**
  * The screen as data. The lines, each only when it applies and in this order:
@@ -108,6 +107,7 @@ export function settingsModel(input: SettingsInput): SettingsView {
   if (!input.stored) lines.push("This browser is not keeping settings, so this choice lasts until the page closes.");
   if (input.context === "pause" && input.error !== undefined) lines.push(input.error);
 
+  const chosenLine = input.modes.modes.find((m) => m.id === (input.mode ?? input.modes.initial))?.line ?? "";
   const view: SettingsView = {
     heading: "Settings",
     group: "Graphics",
@@ -120,8 +120,8 @@ export function settingsModel(input: SettingsInput): SettingsView {
     lines,
     mode: {
       group: "Mode",
-      choices: GAME_MODES.map((mode) => ({ mode, label: MODE_LABELS[mode], selected: mode === (input.mode ?? DEFAULT_MODE), disabled: applying })),
-      lines: input.context === "pause" ? [MODE_LINES[input.mode ?? DEFAULT_MODE], MODE_RESTARTS] : [MODE_LINES[input.mode ?? DEFAULT_MODE]],
+      choices: input.modes.modes.map((m) => ({ mode: m.id, label: m.label, selected: m.id === (input.mode ?? input.modes.initial), disabled: applying })),
+      lines: input.context === "pause" ? [chosenLine, input.modes.restarts] : [chosenLine],
     },
     back: { label: "Back", disabled: applying },
   };
@@ -234,7 +234,7 @@ const STYLE = `
 export function renderSettings(
   root: HTMLElement,
   view: SettingsView,
-  handlers: { onChoose(choice: TierChoice): void; onChooseMode?(mode: GameMode): void; onBack(): void; onApply?(opener: Opener): void },
+  handlers: { onChoose(choice: TierChoice): void; onChooseMode?(mode: string): void; onBack(): void; onApply?(opener: Opener): void },
 ): { setView(view: SettingsView): void; entry(opener: Opener): HTMLElement; dispose(): void } {
   const style = document.createElement("style");
   style.textContent = STYLE;
@@ -281,7 +281,7 @@ export function renderSettings(
   modeSelect.className = "choice mode";
   modeSelect.id = `settings-mode-${n}`;
   modeSelect.name = "mode";
-  const modeOptions = new Map<GameMode, HTMLOptionElement>();
+  const modeOptions = new Map<string, HTMLOptionElement>();
   for (const c of view.mode.choices) {
     const option = document.createElement("option");
     option.value = c.mode;
@@ -289,8 +289,8 @@ export function renderSettings(
     modeSelect.append(option);
   }
   modeSelect.addEventListener("change", () => {
-    const mode = GAME_MODES.find((m) => m === modeSelect.value);
-    if (mode !== undefined) handlers.onChooseMode?.(mode);
+    const mode = view.mode.choices.find((c) => c.mode === modeSelect.value);
+    if (mode !== undefined) handlers.onChooseMode?.(mode.mode);
   });
   const modeGroup = document.createElement("label");
   modeGroup.className = "group mode";
