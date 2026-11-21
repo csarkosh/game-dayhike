@@ -1,6 +1,6 @@
 /**
  * The page's side of a hike's world made off its thread: starts the module
- * worker (`world.worker.ts`) for the hike that is about to start, and takes
+ * worker the game gives it for the hike that is about to start, and takes
  * what it sends into the sim's own caches as it arrives: what the terrain
  * prepares for the seed (the bowl, with the trail), the pass hash, and the
  * chunks the first spawn reads, which wait for the hike's chunk grid
@@ -27,7 +27,7 @@ import { installPassHash, passHashCachedFor } from "@csarkosh/engine/sim/forest"
 import { terrainVariant } from "@csarkosh/engine/sim/terrain";
 import type { PreparedScene } from "@csarkosh/engine/game/preparedScene";
 import type { QualityTier } from "@csarkosh/engine/game/quality";
-import type { WorldPrepReply, WorldPrepRequest, WorldSceneRequest } from "./world.worker.js";
+import type { WorldPrepReply, WorldPrepRequest, WorldSceneRequest } from "./worldWork.js";
 
 /** How long the start waits for the worker before the page makes the world
  * itself. A phone makes both in about two seconds; this is for a worker that
@@ -81,8 +81,7 @@ export function sceneLine(tier: QualityTier, scene: PreparedScene | null, ms: nu
 let lastId = 0;
 
 /**
- * Starts the worker (new Worker(new URL("./world.worker.ts", import.meta.url), { type: "module" }))
- * with one request, for `input.seed` on the terrain `input.variant`. A reply
+ * Starts the worker (`start`, the game's way to make it) with one request, for `input.seed` on the terrain `input.variant`. A reply
  * is taken only when it is this request's, for this seed and terrain; a pass
  * hash made over another count of passes than this thread's is refused
  * (`installPassHash`). `ready` never rejects, and nothing is installed after
@@ -96,6 +95,7 @@ let lastId = 0;
  */
 export function startWorldPrep(
   input: { seed: number; variant: string },
+  start: () => Worker,
   deps: { now?: () => number; timeoutMs?: number } = {},
 ): WorldPrep {
   const now = deps.now ?? ((): number => performance.now());
@@ -181,7 +181,7 @@ export function startWorldPrep(
     if (typeof Worker === "undefined") return null;
     let made: Worker;
     try {
-      made = new Worker(new URL("./world.worker.ts", import.meta.url), { type: "module" });
+      made = start();
     } catch {
       return null;
     }

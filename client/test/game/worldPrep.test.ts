@@ -4,7 +4,8 @@ import "../../src/sim/passes/index.js";
 import { WORLD_PREP_TIMEOUT_MS, sceneLine, startWorldPrep, worldPrepLine, type WorldPrepOutcome } from "../../src/game/worldPrep.js";
 import type { PreparedScene } from "@csarkosh/engine/game/preparedScene";
 import type { QualityTier } from "@csarkosh/engine/game/quality";
-import type { WorldPrepReply } from "../../src/game/world.worker.js";
+import { startHikeWorldWorker } from "../../src/game/hikeWorldWorker.js";
+import type { WorldPrepReply } from "../../src/game/worldWork.js";
 import { installPassHash, passHash, passHashCachedFor, passHashKey } from "@csarkosh/engine/sim/forest";
 import { bowlFor, type Bowl } from "../../src/sim/mountain.js";
 import { generateChunk } from "@csarkosh/engine/sim/chunk";
@@ -100,14 +101,14 @@ describe("a hike's world, prepared for the page by its worker", () => {
   });
 
   it("starts a module worker in the form Vite bundles", () => {
-    const text = readFileSync(new URL("../../src/game/worldPrep.ts", import.meta.url), "utf8");
+    const text = readFileSync(new URL("../../src/game/hikeWorldWorker.ts", import.meta.url), "utf8");
     // The code alone: the form is also written in a comment, which would pass whatever the call said.
     const code = text.replace(/\/\*[\s\S]*?\*\//g, "").replace(/\/\/.*$/gm, "");
     expect(code).toContain('new Worker(new URL("./world.worker.ts", import.meta.url), { type: "module" })');
   });
 
   it("starts the worker as a module and asks it for the hike's seed and terrain, all of it", () => {
-    const prep = startWorldPrep({ seed: 9, variant: "olympic" }, deps);
+    const prep = startWorldPrep({ seed: 9, variant: "olympic" }, startHikeWorldWorker, deps);
     expect(FakeWorker.made).toHaveLength(1);
     const worker = FakeWorker.made[0] as FakeWorker;
     expect(String(worker.url)).toMatch(/world\.worker\.ts$/);
@@ -118,7 +119,7 @@ describe("a hike's world, prepared for the page by its worker", () => {
 
   it("installs the bowl and the pass hash as they arrive, and is ready when the worker is done", async () => {
     const bowl = await bowlFromAnotherSim(9);
-    const prep = startWorldPrep({ seed: 9, variant: "olympic" }, deps);
+    const prep = startWorldPrep({ seed: 9, variant: "olympic" }, startHikeWorldWorker, deps);
     const worker = FakeWorker.made[0] as FakeWorker;
     worker.send({ id: worker.id, kind: "prepared", seed: 9, variant: "olympic", prepared: bowl });
     expect(bowlFor(9)).toBe(bowl);
@@ -138,7 +139,7 @@ describe("a hike's world, prepared for the page by its worker", () => {
 
   it("installs the spawn's chunks for the hike's grid as they arrive, and counts them", async () => {
     const chunks = structuredClone([generateChunk(21, 3, -2), generateChunk(21, 4, -2)]);
-    const prep = startWorldPrep({ seed: 21, variant: "olympic" }, deps);
+    const prep = startWorldPrep({ seed: 21, variant: "olympic" }, startHikeWorldWorker, deps);
     const worker = FakeWorker.made[0] as FakeWorker;
     // Not this request's, this seed's or this terrain's: dropped.
     worker.send({ id: worker.id + 1, kind: "chunks", seed: 21, variant: "olympic", chunks });
@@ -153,7 +154,7 @@ describe("a hike's world, prepared for the page by its worker", () => {
     expect(grid.chunkAt(3, -2)).toBe(chunks[0]);
     prep.dispose();
     // A list that is not chunks is refused, and counts for nothing.
-    const bad = startWorldPrep({ seed: 21, variant: "olympic" }, deps);
+    const bad = startWorldPrep({ seed: 21, variant: "olympic" }, startHikeWorldWorker, deps);
     const second = FakeWorker.made[1] as FakeWorker;
     second.send({ id: second.id, kind: "chunks", seed: 21, variant: "olympic", chunks: [{ cx: 1 }] as unknown as typeof chunks });
     second.send({ id: second.id, kind: "done" });
@@ -164,7 +165,7 @@ describe("a hike's world, prepared for the page by its worker", () => {
 
   it("drops a reply that is not this request's: another id, another seed, another terrain", async () => {
     const bowl = { graph: {}, landmarks: [], features: [] } as unknown as Bowl;
-    const prep = startWorldPrep({ seed: 10, variant: "olympic" }, deps);
+    const prep = startWorldPrep({ seed: 10, variant: "olympic" }, startHikeWorldWorker, deps);
     const worker = FakeWorker.made[0] as FakeWorker;
     worker.send({ id: worker.id + 1, kind: "prepared", seed: 10, variant: "olympic", prepared: bowl });
     worker.send({ id: worker.id, kind: "prepared", seed: 11, variant: "olympic", prepared: bowl });
@@ -181,7 +182,7 @@ describe("a hike's world, prepared for the page by its worker", () => {
   });
 
   it("refuses a pass hash made over another count of passes", async () => {
-    const prep = startWorldPrep({ seed: 12, variant: "olympic" }, deps);
+    const prep = startWorldPrep({ seed: 12, variant: "olympic" }, startHikeWorldWorker, deps);
     const worker = FakeWorker.made[0] as FakeWorker;
     worker.send({ id: worker.id, kind: "passHash", hash: 5, passCount: passHashKey().passCount + 1, variant: "olympic" });
     worker.send({ id: worker.id, kind: "done" });
@@ -191,16 +192,16 @@ describe("a hike's world, prepared for the page by its worker", () => {
 
   it("is ready at once, with nothing installed, where there is no Worker or it cannot be made", async () => {
     FakeWorker.refuse = true;
-    expect(await startWorldPrep({ seed: 13, variant: "olympic" }, deps).ready).toEqual({ why: "no-worker", prepared: false, passHash: false, chunks: 0, ms: 0 });
+    expect(await startWorldPrep({ seed: 13, variant: "olympic" }, startHikeWorldWorker, deps).ready).toEqual({ why: "no-worker", prepared: false, passHash: false, chunks: 0, ms: 0 });
     vi.stubGlobal("Worker", undefined);
-    expect(await startWorldPrep({ seed: 13, variant: "olympic" }, deps).ready).toEqual({ why: "no-worker", prepared: false, passHash: false, chunks: 0, ms: 0 });
+    expect(await startWorldPrep({ seed: 13, variant: "olympic" }, startHikeWorldWorker, deps).ready).toEqual({ why: "no-worker", prepared: false, passHash: false, chunks: 0, ms: 0 });
     expect(FakeWorker.made).toHaveLength(0);
   });
 
   it("gives up on a worker that fails, and installs nothing it sends after", async () => {
     for (const fail of ["onerror", "onmessageerror", "failed"] as const) {
       FakeWorker.made = [];
-      const prep = startWorldPrep({ seed: 14, variant: "olympic" }, deps);
+      const prep = startWorldPrep({ seed: 14, variant: "olympic" }, startHikeWorldWorker, deps);
       const worker = FakeWorker.made[0] as FakeWorker;
       const late = worker.onmessage;
       if (fail === "failed") worker.send({ id: worker.id, kind: "failed", message: "it threw" });
@@ -215,7 +216,7 @@ describe("a hike's world, prepared for the page by its worker", () => {
 
   it("gives up after WORLD_PREP_TIMEOUT_MS, keeping what was installed by then", async () => {
     expect(WORLD_PREP_TIMEOUT_MS).toBe(30_000);
-    const prep = startWorldPrep({ seed: 15, variant: "olympic" }, deps);
+    const prep = startWorldPrep({ seed: 15, variant: "olympic" }, startHikeWorldWorker, deps);
     const worker = FakeWorker.made[0] as FakeWorker;
     worker.send({ id: worker.id, kind: "passHash", hash: 64181734, passCount: passHashKey().passCount, variant: "olympic" });
     vi.advanceTimersByTime(WORLD_PREP_TIMEOUT_MS - 1);
@@ -227,7 +228,7 @@ describe("a hike's world, prepared for the page by its worker", () => {
   });
 
   it("ends the worker and installs nothing when it is disposed, once", async () => {
-    const prep = startWorldPrep({ seed: 16, variant: "olympic" }, deps);
+    const prep = startWorldPrep({ seed: 16, variant: "olympic" }, startHikeWorldWorker, deps);
     const worker = FakeWorker.made[0] as FakeWorker;
     const late = worker.onmessage;
     prep.dispose();
@@ -242,7 +243,7 @@ describe("a hike's world, prepared for the page by its worker", () => {
     vi.spyOn(terrainVariant("olympic") as { install(seed: number, prepared: unknown): boolean }, "install").mockImplementation(() => {
       throw new Error("not a bowl");
     });
-    const prep = startWorldPrep({ seed: 17, variant: "olympic" }, deps);
+    const prep = startWorldPrep({ seed: 17, variant: "olympic" }, startHikeWorldWorker, deps);
     const worker = FakeWorker.made[0] as FakeWorker;
     worker.send({ id: worker.id, kind: "prepared", seed: 17, variant: "olympic", prepared: 3 });
     expect(await prep.ready).toEqual({ why: "failed", prepared: false, passHash: false, chunks: 0, ms: 0 });
@@ -251,21 +252,21 @@ describe("a hike's world, prepared for the page by its worker", () => {
     vi.spyOn(FakeWorker.prototype, "postMessage").mockImplementation(() => {
       throw new Error("cannot post");
     });
-    expect((await startWorldPrep({ seed: 17, variant: "olympic" }, deps).ready).why).toBe("failed");
+    expect((await startWorldPrep({ seed: 17, variant: "olympic" }, startHikeWorldWorker, deps).ready).why).toBe("failed");
   });
 
   it("asks the worker only for what this thread does not hold, and starts none where it holds both", async () => {
     // The pass hash is held: a second hike on the page, another seed.
     installPassHash(64181734, passHashKey());
-    const first = startWorldPrep({ seed: 18, variant: "olympic" }, deps);
+    const first = startWorldPrep({ seed: 18, variant: "olympic" }, startHikeWorldWorker, deps);
     expect((FakeWorker.made[0] as FakeWorker).posted).toEqual([{ id: (FakeWorker.made[0] as FakeWorker).id, seed: 18, variant: "olympic", skip: { prepared: false, passHash: true } }]);
     first.dispose();
     // The bowl is held too: the same hike again.
     terrainVariant("olympic")?.install?.(18, await bowlFromAnotherSim(18));
-    expect(await startWorldPrep({ seed: 18, variant: "olympic" }, deps).ready).toEqual({ why: "cached", prepared: false, passHash: false, chunks: 0, ms: 0 });
+    expect(await startWorldPrep({ seed: 18, variant: "olympic" }, startHikeWorldWorker, deps).ready).toEqual({ why: "cached", prepared: false, passHash: false, chunks: 0, ms: 0 });
     expect(FakeWorker.made).toHaveLength(1);
     // A terrain with nothing to prepare asks for its pass hash alone.
-    startWorldPrep({ seed: 18, variant: "montane" }, deps).dispose();
+    startWorldPrep({ seed: 18, variant: "montane" }, startHikeWorldWorker, deps).dispose();
     expect((FakeWorker.made[1] as FakeWorker).posted[0]).toMatchObject({ variant: "montane", skip: { prepared: true, passHash: false } });
   }, timeLimit(120_000));
 });
@@ -282,7 +283,7 @@ describe("a hike's first scene, asked of the world's worker", () => {
   };
   /** A wrapper whose world is done, its worker, and the id of a scene request once one is posted. */
   async function doneWorld(seed: number): Promise<{ prep: ReturnType<typeof startWorldPrep>; worker: FakeWorker }> {
-    const prep = startWorldPrep({ seed, variant: "montane" }, deps);
+    const prep = startWorldPrep({ seed, variant: "montane" }, startHikeWorldWorker, deps);
     const worker = FakeWorker.made.at(-1) as FakeWorker;
     worker.send({ id: worker.id, kind: "done" });
     expect((await prep.ready).why).toBe("done");
@@ -306,7 +307,7 @@ describe("a hike's first scene, asked of the world's worker", () => {
   });
 
   it("asks the worker it kept, once the world is ready, and resolves with the scene it sends, ending the worker", async () => {
-    const prep = startWorldPrep({ seed: 9, variant: "montane" }, deps);
+    const prep = startWorldPrep({ seed: 9, variant: "montane" }, startHikeWorldWorker, deps);
     const worker = FakeWorker.made[0] as FakeWorker;
     const asked = prep.scene("low");
     // A second call is the first's promise: one request, whatever it is asked.
@@ -385,7 +386,7 @@ describe("a hike's first scene, asked of the world's worker", () => {
 
   it("starts a worker for the scene alone where the page held the world already", async () => {
     installPassHash(5, { passCount: passHashKey().passCount, variant: "montane" });
-    const prep = startWorldPrep({ seed: 14, variant: "montane" }, deps);
+    const prep = startWorldPrep({ seed: 14, variant: "montane" }, startHikeWorldWorker, deps);
     expect((await prep.ready).why).toBe("cached");
     expect(FakeWorker.made).toHaveLength(0);
     const asked = prep.scene("low");
@@ -402,19 +403,19 @@ describe("a hike's first scene, asked of the world's worker", () => {
 
   it("has no scene where the world had no worker, where it failed or ran out of time, and starts none for it", async () => {
     FakeWorker.refuse = true;
-    const none = startWorldPrep({ seed: 15, variant: "montane" }, deps);
+    const none = startWorldPrep({ seed: 15, variant: "montane" }, startHikeWorldWorker, deps);
     expect(await none.scene("low")).toBeNull();
     expect(FakeWorker.made).toHaveLength(0);
     // Held already, and no worker to be had for the scene alone.
     installPassHash(5, { passCount: passHashKey().passCount, variant: "montane" });
-    expect(await startWorldPrep({ seed: 15, variant: "montane" }, deps).scene("low")).toBeNull();
+    expect(await startWorldPrep({ seed: 15, variant: "montane" }, startHikeWorldWorker, deps).scene("low")).toBeNull();
     forgetPassHash();
     FakeWorker.refuse = false;
-    const failed = startWorldPrep({ seed: 15, variant: "montane" }, deps);
+    const failed = startWorldPrep({ seed: 15, variant: "montane" }, startHikeWorldWorker, deps);
     const worker = FakeWorker.made[0] as FakeWorker;
     worker.send({ id: worker.id, kind: "failed", message: "it threw" });
     expect(await failed.scene("low")).toBeNull();
-    const slow = startWorldPrep({ seed: 15, variant: "montane" }, deps);
+    const slow = startWorldPrep({ seed: 15, variant: "montane" }, startHikeWorldWorker, deps);
     vi.advanceTimersByTime(WORLD_PREP_TIMEOUT_MS);
     expect(await slow.scene("low")).toBeNull();
     expect(FakeWorker.made).toHaveLength(2);
@@ -432,7 +433,7 @@ describe("a hike's first scene, asked of the world's worker", () => {
     expect(worker.posted).toHaveLength(1);
     // Where the page held the world: no worker is started for a hike that was left.
     installPassHash(5, { passCount: passHashKey().passCount, variant: "montane" });
-    const held = startWorldPrep({ seed: 16, variant: "montane" }, deps);
+    const held = startWorldPrep({ seed: 16, variant: "montane" }, startHikeWorldWorker, deps);
     held.dispose();
     expect(await held.scene("low")).toBeNull();
     expect(FakeWorker.made).toHaveLength(1);

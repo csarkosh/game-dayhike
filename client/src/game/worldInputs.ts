@@ -3,7 +3,6 @@
  * and the terrain. One rule, so the world's worker (`worldPrep.ts`), started
  * before the game is, prepares the world the build then makes.
  */
-import "../sim/passes/index.js";
 import { DEFAULT_TERRAIN_VARIANT, terrainVariantNames } from "@csarkosh/engine/sim/terrain";
 import { registerTerrainVariants } from "@csarkosh/engine/game/commands";
 import { lastEntry, parseScript, splitEntries } from "./script.js";
@@ -16,7 +15,8 @@ import { seedFromToken } from "@csarkosh/engine/game/seed";
  * entry a write-back would leave in the address. The terrain is its last
  * `terrain` entry where the sim has a variant of that name, else the default:
  * a name it does not have (an address edited by hand) is the default, not a
- * failure. The command layer is told the sim's variants first, since the
+ * failure. The game registers its terrain before this is called, and the command layer is
+ * told the sim's variants first, since the
  * script drops an entry it cannot validate and a page that has parsed nothing
  * yet knows no terrain.
  */

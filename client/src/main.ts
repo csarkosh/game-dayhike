@@ -24,9 +24,12 @@ import { INTRO_CAPTIONS } from "./game/scene/intro.js";
 import { setLoadProgress } from "@csarkosh/engine/game/loadReport";
 import { markedProgress } from "@csarkosh/engine/game/loadProgress";
 import { titleStillUrl, titleVideoUrl, videoUrl } from "./game/dayhikeAssets.js";
+// Day Hike's terrain registers as this is imported, before the world is read or prepared.
+import "./sim/passes/index.js";
 import { createRouteAnnouncer } from "@csarkosh/engine/game/routeAnnounce";
 import { createTitleLoop, titleLoopEnv, type TitleLoop } from "./game/titleLoop.js";
 import { createFilmHead, fetchFilmHead, filmHeadWanted, onCellular, warmWhenLoaded } from "./game/filmHead.js";
+import { startHikeWorldWorker } from "./game/hikeWorldWorker.js";
 import { worldInputs } from "./game/worldInputs.js";
 import { sceneLine, startWorldPrep, worldPrepLine, type WorldPrepOutcome } from "./game/worldPrep.js";
 import type { PreparedScene } from "@csarkosh/engine/game/preparedScene";
@@ -1234,7 +1237,7 @@ function render(container: HTMLDivElement): void {
   // the tier is decided, the film buffers and the engine starts: the build
   // waits for them (`beforeBuild`) and finds them made. With no worker, or
   // one that fails, the build makes them as it always did (`worldPrep.ts`).
-  const prep = startWorldPrep(worldInputs(route.token, location.search));
+  const prep = startWorldPrep(worldInputs(route.token, location.search), startHikeWorldWorker);
   let prepOutcome: WorldPrepOutcome | null = null;
   // The hike's first scene (`preparedScene.ts`): asked of the same worker
   // once the tier is decided, waited for before the build, and taken by the

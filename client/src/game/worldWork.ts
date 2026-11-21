@@ -1,0 +1,108 @@
+/**
+ * The work of a hike's world, done off the page's thread: what the world's
+ * worker runs for the game that serves it (`serveWorldWork`). For the hike
+ * that is about to start it posts back the two longest computations a world's
+ * build opens with, each as it is made: what the terrain variant prepares for
+ * the seed (on the default terrain the bowl: the trail graph, the landmarks,
+ * the features), and the pass hash, which probes ten chunks at a seed of its
+ * own and builds a second trail to do it; and after them the collision chunks
+ * the hike's first spawn reads. The page installs them into the sim's caches
+ * (`worldPrep.ts`), and its build then finds them made.
+ *
+ * The pass hash stays what it is on the page: computed at run time, by this
+ * build's passes, in the browser that will play the hike. A worker of the
+ * page is that browser's engine.
+ *
+ * A second request, once the page knows the tier it will draw at, asks for
+ * the hike's first scene (`preparedScene.ts`): everything the first renderer
+ * samples from the ground around the start, the terrain's rings and the
+ * water's among it. It is posted with its typed arrays transferred, never
+ * copied, and this thread does not touch them again. It finds the bowl the
+ * first request made in this thread's own cache.
+ */
+import { generateChunk, type Chunk } from "@csarkosh/engine/sim/chunk";
+import { PLAYER_HALF } from "@csarkosh/engine/sim/constants";
+import { passHash, passHashKey } from "@csarkosh/engine/sim/forest";
+import type { Vec3 } from "@csarkosh/engine/sim/core";
+import { activeTerrainVariant, setActiveTerrainVariant } from "@csarkosh/engine/sim/terrain";
+import { prepareScene, sceneTransfer, type PreparedScene } from "@csarkosh/engine/game/preparedScene";
+import type { QualityTier } from "@csarkosh/engine/game/quality";
+
+/** `skip`: what the page already holds and the worker leaves out. */
+export type WorldPrepRequest = { id: number; seed: number; variant: string; skip?: { prepared?: boolean; passHash?: boolean } };
+/** The hike's first scene at `tier`: told from the world's request by its `kind`. */
+export type WorldSceneRequest = { id: number; kind: "scene"; seed: number; variant: string; tier: QualityTier };
+export type WorldPrepReply =
+  | { id: number; kind: "prepared"; seed: number; variant: string; prepared: unknown }
+  | { id: number; kind: "passHash"; hash: number; passCount: number; variant: string }
+  | { id: number; kind: "chunks"; seed: number; variant: string; chunks: Chunk[] }
+  | { id: number; kind: "scene"; scene: PreparedScene }
+  | { id: number; kind: "done" }
+  | { id: number; kind: "failed"; message: string };
+
+/** What a game tells the world's work: where a player first stands, and the chunk cells that first spawn reads. */
+export type WorldWorkGame = {
+  /** Where the first scene is centred for a seed (the active terrain already set), or null where the game says nowhere. */
+  startOf(seed: number): { x: number; z: number } | null;
+  /** The chunk cells the first spawn reads for a hull of `half`; none where there is no such place. */
+  spawnCells(seed: number, half: Vec3): { cx: number; cz: number }[];
+};
+
+/**
+ * The request's results, posted in order: what the variant prepares for the
+ * seed (where it prepares anything), the pass hash, the chunks the first
+ * spawn reads, then `done`; either of the first two left out where the
+ * request says the page holds it. A terrain
+ * the sim does not know, a computation that throws or a result that cannot be
+ * posted ends the run with one `failed`, and nothing after it.
+ */
+export function prepareWorld(request: WorldPrepRequest, post: (reply: WorldPrepReply) => void, game: WorldWorkGame): void {
+  const { id, seed, variant } = request;
+  try {
+    setActiveTerrainVariant(variant);
+    const prepared = request.skip?.prepared === true ? undefined : activeTerrainVariant().prepare?.(seed);
+    if (prepared !== undefined) post({ id, kind: "prepared", seed, variant, prepared });
+    if (request.skip?.passHash !== true) post({ id, kind: "passHash", hash: passHash(), ...passHashKey() });
+    // The chunks the hike's first spawn reads, for the grid the page is about to make (`installChunks`):
+    // sent whatever the page holds, since every hike makes its grid anew. None on a terrain with no trailhead.
+    const chunks = game.spawnCells(seed, PLAYER_HALF).map(({ cx, cz }) => generateChunk(seed, cx, cz));
+    if (chunks.length > 0) post({ id, kind: "chunks", seed, variant, chunks });
+    post({ id, kind: "done" });
+  } catch (error) {
+    post({ id, kind: "failed", message: error instanceof Error ? error.message : String(error) });
+  }
+}
+
+/**
+ * The scene request's results: the scene, posted with every one of its typed
+ * arrays' buffers in the transfer list, then `done`. An unknown terrain, a
+ * sampling that throws or a scene that cannot be posted is one `failed`, and
+ * nothing after it.
+ */
+export function prepareSceneReply(
+  request: WorldSceneRequest, post: (reply: WorldPrepReply, transfer: ArrayBuffer[]) => void, game: WorldWorkGame,
+): void {
+  const { id } = request;
+  try {
+    const scene = prepareScene(request.seed, request.variant, request.tier, game.startOf);
+    post({ id, kind: "scene", scene }, sceneTransfer(scene));
+    post({ id, kind: "done" }, []);
+  } catch (error) {
+    post({ id, kind: "failed", message: error instanceof Error ? error.message : String(error) }, []);
+  }
+}
+
+/**
+ * Serves the world's requests in a worker, for `game`. Only inside a worker:
+ * under Node, where a test imports `prepareWorld`, and on a page, there is no
+ * WorkerGlobalScope, and this does nothing.
+ */
+export function serveWorldWork(game: WorldWorkGame): void {
+  if (typeof (globalThis as { WorkerGlobalScope?: unknown }).WorkerGlobalScope === "function") {
+    self.onmessage = (event: MessageEvent<WorldPrepRequest | WorldSceneRequest>): void => {
+      const request = event.data;
+      if ("kind" in request) prepareSceneReply(request, (reply, transfer) => self.postMessage(reply, { transfer }), game);
+      else prepareWorld(request, (reply) => self.postMessage(reply), game);
+    };
+  }
+}
