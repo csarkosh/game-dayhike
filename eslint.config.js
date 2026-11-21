@@ -13,6 +13,11 @@ const ENGINE = [
   { group: ["@csarkosh/engine", "@csarkosh/engine/**"], message: "Inside the engine, name a module by its relative path." },
 ];
 
+const GAME_ON_ENGINE = [
+  { group: ["**/client/**", "**/server/**"], message: "The empty game must not depend on another game or on the server." },
+  { group: ["../../src/**", "../../../src/**"], message: "The empty game names the engine by its package, as a game does." },
+];
+
 export default tseslint.config(
   // `.claude/worktrees/` holds whole second checkouts of this repository. Each
   // carries its own tsconfig.json, which gives typescript-eslint a second
@@ -42,6 +47,13 @@ export default tseslint.config(
   {
     files: ["engine/**/*.ts"],
     rules: { "no-restricted-imports": ["error", { patterns: [...ENGINE] }] },
+  },
+  // The empty game stands in the engine's folder but is a game: it names the engine by the package,
+  // as any game does, so that a copy of it is a new game's start; it never reaches into the engine's
+  // files by a path, nor into another game or the server.
+  {
+    files: ["engine/empty/**/*.ts"],
+    rules: { "no-restricted-imports": ["error", { patterns: [...GAME_ON_ENGINE] }] },
   },
   {
     files: ["engine/src/sim/**/*.ts"],
