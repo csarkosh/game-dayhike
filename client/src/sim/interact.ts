@@ -1,7 +1,7 @@
 import type { PlayerState, Vec3 } from "./types.js";
 import type { World } from "./world.js";
-import { PLAYER_EYE_OFFSET } from "./constants.js";
-import { aimDirection } from "./view.js";
+import { PLAYER_EYE_OFFSET } from "@csarkosh/engine/sim/constants";
+import { aimDirection } from "@csarkosh/engine/sim/view";
 
 /**
  * A thing a player can act on. Registered by the system that owns

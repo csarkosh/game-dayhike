@@ -2,7 +2,7 @@ import { expect } from "vitest";
 import "../../src/sim/passes/index.js";
 import { bowlFor, olympicPreTrailSample } from "../../src/sim/mountain.js";
 import { elevationSampleAt, setActiveTerrainVariant, DEFAULT_TERRAIN_VARIANT } from "@csarkosh/engine/sim/terrain";
-import { MAX_WALKABLE_GRADIENT } from "../../src/sim/ground.js";
+import { MAX_WALKABLE_GRADIENT } from "@csarkosh/engine/sim/ground";
 import { TRAIL_PAINT_MAX_SEGMENTS, TRAIL_PAINT_BUCKET_MAX, buildTrailTable, trailSegments } from "@csarkosh/engine/game/trailPaint";
 import { featureStageD } from "@csarkosh/engine/sim/features";
 import type { EdgeKind } from "@csarkosh/engine/sim/trail";

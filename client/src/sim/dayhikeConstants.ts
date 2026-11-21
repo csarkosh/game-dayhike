@@ -2,7 +2,7 @@
  * Day Hike's own numbers for its players and its enemies. What the engine's simulation reads
  * (the tick, movement, the network's pacing) is the engine's (`constants.ts`).
  */
-import type { Vec3 } from "./core.js";
+import type { Vec3 } from "@csarkosh/engine/sim/core";
 
 export const ENEMY_HALF: Vec3 = { x: 0.4, y: 0.9, z: 0.4 };
 export const PLAYER_MAX_HEALTH = 100;

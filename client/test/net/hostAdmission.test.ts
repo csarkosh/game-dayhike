@@ -2,7 +2,7 @@ import { describe, it, expect } from "vitest";
 import type { JoinedInfo, SignalingClient } from "@csarkosh/engine/net/signaling";
 import type { Transport } from "@csarkosh/engine/net/transport";
 import { createLobby, type Lobby } from "@csarkosh/engine/net/lobby";
-import { createHostAdmission, type AdmittingHost } from "../../src/net/hostAdmission.js";
+import { createHostAdmission, type AdmittingHost } from "@csarkosh/engine/net/hostAdmission";
 
 const LOBBY = "3f2504e0-4f89-41d3-9a0c-0305e82c3301";
 const HOST = "host-1";

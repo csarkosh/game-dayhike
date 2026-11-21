@@ -52,8 +52,8 @@ import { clutterFadeEdges, coverWiden } from "@csarkosh/engine/game/clutterField
 import {
   CLUTTER_MODEL_IDS, CUT_CLASSES, DRIFTLOG_BLEACH, FAR_LOD, FOLIAGE_BY_CLASS, NEAR_LOD, SHRUB_F0, SHRUB_ROUGHNESS, WET_CAP_BY_CLASS, clutterLodNames,
   clutterNearLodName, cutModel, seatDriftLogs,
-} from "../clutterInstances.js";
-import { createClutterLists, type ClutterBucket, type ClutterLists } from "../clutterLists.js";
+} from "@csarkosh/engine/game/clutterInstances";
+import { createClutterLists, type ClutterBucket, type ClutterLists } from "@csarkosh/engine/game/clutterLists";
 import type { FirstBuilds } from "@csarkosh/engine/game/firstBuilds";
 import { FOLIAGE_CARD_CONTRAST, coverAlbedoTint } from "@csarkosh/engine/game/coverAlbedoParams";
 import { foliageLook, foliageMatched, type FoliageLook, type FoliageProfile } from "@csarkosh/engine/game/foliageUniforms";

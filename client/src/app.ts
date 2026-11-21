@@ -1,12 +1,12 @@
-import { parseLevel } from "./sim/level.js";
-import { createForest } from "./sim/forest.js";
+import { parseLevel } from "@csarkosh/engine/sim/level";
+import { createForest } from "@csarkosh/engine/sim/forest";
 import { createHikeRenderer } from "./game/hikeRenderer.js";
 import type { FreecamView, Renderer } from "./game/rendererTypes.js";
 import type { EndSceneSetup } from "./game/scenePlay.js";
 import { parseGpuTime } from "@csarkosh/engine/game/gpuTimeReport";
 import { createInputSampler } from "./game/input.js";
 import { createTouchModel, createTouchLayer } from "./game/touchControls.js";
-import { FixedStepAccumulator } from "./game/loop.js";
+import { FixedStepAccumulator } from "@csarkosh/engine/game/loop";
 import { capturedEye, type EyePose } from "./game/eyeBlend.js";
 import { createHud } from "./game/hud.js";
 import { RING_COUNT } from "@csarkosh/engine/game/clipmap";
@@ -45,8 +45,8 @@ import { createAmbientAudio } from "./game/ambientAudio.js";
 import { createWildlifeAudio, listenerToAudio } from "./game/wildlifeAudio.js";
 import { createWaterLifeAudio } from "./game/waterLifeAudio.js";
 import { createSurfAudio } from "./game/surfAudio.js";
-import { wildlifePresenceUnder } from "./game/wildlifeBehaviour.js";
-import { DEFAULT_BOB_SCALE } from "./game/viewBob.js";
+import { wildlifePresenceUnder } from "@csarkosh/engine/game/wildlifeBehaviour";
+import { DEFAULT_BOB_SCALE } from "@csarkosh/engine/game/viewBob";
 import { DEFAULT_WEATHER, WEATHER_PRESETS, type WeatherParams, type WeatherPresetName } from "@csarkosh/engine/game/weather";
 import { DEFAULT_PAINT_PALETTE, PAINT_PALETTES, type PaintPaletteName } from "./game/gradeParams.js";
 import { actsUnder,
@@ -65,11 +65,11 @@ import {
   setActiveTerrainVariant,
   terrainVariantNames,
 } from "@csarkosh/engine/sim/terrain";
-import { connectAsClient } from "./net/peer.js";
+import { connectAsClient } from "@csarkosh/engine/net/peer";
 import { createHostSession } from "./net/hostSession.js";
-import { createHostAdmission, type HostAdmission } from "./net/hostAdmission.js";
+import { createHostAdmission, type HostAdmission } from "@csarkosh/engine/net/hostAdmission";
 import { createClientSession } from "./net/clientSession.js";
-import { degradeTransport, parseNetConditions } from "./net/channels.js";
+import { degradeTransport, parseNetConditions } from "@csarkosh/engine/net/channels";
 import type { Transport } from "@csarkosh/engine/net/transport";
 import { isTouchDevice } from "@csarkosh/engine/game/platform";
 import { isMobile } from "@csarkosh/engine/game/gpuSignals";
@@ -131,7 +131,7 @@ import { CAP_SCENE_S, SHOTS, SUMMIT_SCENE_S, THRESHOLD_AT_S, thresholdAt, thresh
 import { DIED_CLOSE_FROM_S } from "./game/ending.js";
 import { RETURN_LIFT_MS, causeName, createDeathReturn } from "./game/deathReturn.js";
 import { returnHollowAt } from "./sim/returns.js";
-import { PLAYER_EYE_OFFSET, PLAYER_HALF } from "./sim/constants.js";
+import { PLAYER_EYE_OFFSET, PLAYER_HALF } from "@csarkosh/engine/sim/constants";
 import { ENEMY_HALF } from "./sim/dayhikeConstants.js";
 import { HOLLOW_CALL_AFTER, HOLLOW_CALL_RATE } from "./game/ambientAudio.js";
 

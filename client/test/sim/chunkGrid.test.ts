@@ -1,14 +1,14 @@
 import { afterEach, describe, it, expect } from "vitest";
 import "../../src/sim/passes/index.js";
-import { createChunkGrid, installChunks } from "../../src/sim/chunkGrid.js";
-import { CELLS_PER_CHUNK, generateChunk, type Chunk } from "../../src/sim/chunk.js";
+import { createChunkGrid, installChunks } from "@csarkosh/engine/sim/chunkGrid";
+import { CELLS_PER_CHUNK, generateChunk, type Chunk } from "@csarkosh/engine/sim/chunk";
 import { activeTerrainVariantName } from "@csarkosh/engine/sim/terrain";
-import { depenetrate, raycast, sweepBox } from "../../src/sim/collision.js";
-import { PLAYER_HALF } from "../../src/sim/constants.js";
+import { depenetrate, raycast, sweepBox } from "@csarkosh/engine/sim/collision";
+import { PLAYER_HALF } from "@csarkosh/engine/sim/constants";
 import { CHUNK_SIZE } from "@csarkosh/engine/sim/forestConstants";
 import { elevationAt } from "@csarkosh/engine/sim/terrain";
 import type { Vec3 } from "../../src/sim/types.js";
-import type { Aabb } from "../../src/sim/level.js";
+import type { Aabb } from "@csarkosh/engine/sim/level";
 
 const SEED = 0xf0e57;
 

@@ -51,10 +51,10 @@ import {
 import type { LakeSource } from "@csarkosh/engine/sim/terrain";
 import { LAKE_SURFACE_REACH } from "@csarkosh/engine/game/bedHeight";
 import { lakeCalmUnder, type CalmFade, type LakeCalmFrame } from "@csarkosh/engine/game/lakeCalmFrame";
-import { lakeSunShare } from "../lakeRipples.js";
+import { lakeSunShare } from "@csarkosh/engine/game/lakeRipples";
 import { lakeDrawnFrom, lakeInViewFrom, lakeViewPoints, type ViewPlane } from "@csarkosh/engine/game/lakeSeen";
 import { MIRROR_MOTION_SMEAR, mirrorMotion } from "@csarkosh/engine/game/mirrorPass";
-import { SKYLINE_SHADE, SKYLINE_TEXELS, skylineElevations, skylineTexels, skylineTrees } from "../lakeSkyline.js";
+import { SKYLINE_SHADE, SKYLINE_TEXELS, skylineElevations, skylineTexels, skylineTrees } from "@csarkosh/engine/game/lakeSkyline";
 import { LAKE_SURFACE_SPACING, lakeSurfaceDepths, lakeSurfaceGrid } from "@csarkosh/engine/game/lakeSurfaceGrid";
 import type { PreparedLakeSurface } from "../preparedScene.js";
 import type { QualityTier } from "@csarkosh/engine/game/quality";

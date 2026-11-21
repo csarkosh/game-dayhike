@@ -23,9 +23,9 @@ import {
   addToScene, createMeshFromData, createPbrMaterial, disposeMeshGpu, removeFromScene,
   type EngineContext, type MaterialPlugin, type PluginUniformBlock, type Mesh, type PbrMaterialProps, type SceneContext,
 } from "@babylonjs/lite";
-import type { ChunkGrid } from "../../sim/chunkGrid.js";
+import type { ChunkGrid } from "@csarkosh/engine/sim/chunkGrid";
 import type { FirstBuilds } from "@csarkosh/engine/game/firstBuilds";
-import { PROP_ROUGHNESS, chunkPropBoxes, propBoxGeometry, propChunk, propChunkKey, propColour, propWindow } from "../propBoxes.js";
+import { PROP_ROUGHNESS, chunkPropBoxes, propBoxGeometry, propChunk, propChunkKey, propColour, propWindow } from "@csarkosh/engine/game/propBoxes";
 import type { Slices, SyncJobs } from "@csarkosh/engine/game/syncJobs";
 import type { WetUniforms } from "@csarkosh/engine/game/wetSurface";
 import { DRAW_ORDER } from "@csarkosh/engine/game/lite/drawOrder";

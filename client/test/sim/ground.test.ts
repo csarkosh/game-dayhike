@@ -1,9 +1,9 @@
 import { describe, it, expect } from "vitest";
 import "../../src/sim/passes/index.js";
-import { createGroundField, MAX_WALKABLE_GRADIENT, type GroundField } from "../../src/sim/ground.js";
+import { createGroundField, MAX_WALKABLE_GRADIENT, type GroundField } from "@csarkosh/engine/sim/ground";
 import { rockLayerAt } from "@csarkosh/engine/sim/rockSurface";
-import { raycastGround, raycastScene } from "../../src/sim/collision.js";
-import { stepMovement, type MoveState } from "../../src/sim/movement.js";
+import { raycastGround, raycastScene } from "@csarkosh/engine/sim/collision";
+import { stepMovement, type MoveState } from "@csarkosh/engine/sim/movement";
 import {
   DEFAULT_TERRAIN_VARIANT,
   elevationSampleAt,
@@ -15,8 +15,8 @@ import {
   PLAYER_HALF,
   TICK_DT,
   SPRINT_SPEED,
-} from "../../src/sim/constants.js";
-import type { Aabb } from "../../src/sim/level.js";
+} from "@csarkosh/engine/sim/constants";
+import type { Aabb } from "@csarkosh/engine/sim/level";
 import { Button, type InputCommand, type Vec3 } from "../../src/sim/types.js";
 
 const SEED = 0xf0e57;

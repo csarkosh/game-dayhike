@@ -1,11 +1,11 @@
 import { describe, expect, it } from "vitest";
-import type { ChunkGrid } from "../../src/sim/chunkGrid.js";
+import type { ChunkGrid } from "@csarkosh/engine/sim/chunkGrid";
 import { CHUNK_SIZE } from "@csarkosh/engine/sim/forestConstants";
 import {
   PROP_COLOURS, PROP_DRAWN_ELSEWHERE, PROP_MESH_RADIUS_CHUNKS, PROP_ROUGHNESS, brushBoxes, chunkPropBoxes, propBoxGeometry, propBoxesGeometry, propChunk,
   propChunkKey, propColour, propWindow,
-} from "../../src/game/propBoxes.js";
-import { parseLevel } from "../../src/sim/level.js";
+} from "@csarkosh/engine/game/propBoxes";
+import { parseLevel } from "@csarkosh/engine/sim/level";
 import sandbox01 from "../../levels/sandbox01.json" with { type: "json" };
 import { babylonValues } from "../helpers/babylonFixture.js";
 

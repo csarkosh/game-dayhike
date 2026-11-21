@@ -1,6 +1,6 @@
 import { describe, it, expect } from "vitest";
 import "../../src/sim/passes/index.js";
-import { GROUND_NORMAL_Y } from "../../src/sim/constants.js";
+import { GROUND_NORMAL_Y } from "@csarkosh/engine/sim/constants";
 import { groundCover, rockSlopeBand, type ClutterInstance } from "@csarkosh/engine/sim/clutter";
 import { hash3 } from "@csarkosh/engine/sim/field";
 import { elevationSampleAt } from "@csarkosh/engine/sim/terrain";
@@ -8,10 +8,10 @@ import { forestDensity } from "@csarkosh/engine/sim/vegetation";
 import {
   CLIFF_CELL, CLIFF_MODEL_WIDTH, CLIFF_RUN_REACH, CLIFF_TILT_MAX,
   cliffCellPoint, cliffCellRuns, cliffFacing, leanPoint, type CliffPoint,
-} from "../../src/sim/cliffField.js";
+} from "@csarkosh/engine/sim/cliffField";
 import {
   CLIFF_BUDGET, CLIFF_PAD, CLIFF_RINGS, cliffBands, cliffOrigin, collectCliffs, createCliffCollector,
-} from "../../src/game/cliffField.js";
+} from "@csarkosh/engine/game/cliffField";
 import { seatOnGroundCapped } from "@csarkosh/engine/game/groundTilt";
 import { classifySurface } from "@csarkosh/engine/game/terrainSurface";
 import { CLIFF_LAID } from "../sim/helpers/cliffLaid.js";

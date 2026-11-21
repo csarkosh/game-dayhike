@@ -6,7 +6,7 @@ import { nearestTrailNode, trailDistance, TRAIL_BED_HALF, type TrailGraph } from
 import { signPostSites, signPosts, SIGN_POST_HALF, SUMMIT_LABEL, TRAILHEAD_LABEL } from "../../src/sim/signs.js";
 import { signSites } from "../../src/sim/placeNames.js";
 import { hikerNames } from "../../src/sim/hikerNames.js";
-import { createChunkGrid } from "../../src/sim/chunkGrid.js";
+import { createChunkGrid } from "@csarkosh/engine/sim/chunkGrid";
 import { CHUNK_SIZE } from "@csarkosh/engine/sim/forestConstants";
 import { PROBE_SEEDS } from "./trailGateSeeds.js";
 import { timeLimit } from "../helpers/timeLimit.js";

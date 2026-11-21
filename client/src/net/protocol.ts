@@ -1,4 +1,4 @@
-import type { InputCommand, Vec3 } from "../sim/core.js";
+import type { InputCommand, Vec3 } from "@csarkosh/engine/sim/core";
 import type { DeathCause } from "../sim/types.js";
 
 /**

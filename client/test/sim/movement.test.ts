@@ -1,9 +1,9 @@
 import { describe, it, expect } from "vitest";
-import { stepMovement, wishDirection, type MoveState } from "../../src/sim/movement.js";
-import type { Aabb } from "../../src/sim/level.js";
+import { stepMovement, wishDirection, type MoveState } from "@csarkosh/engine/sim/movement";
+import type { Aabb } from "@csarkosh/engine/sim/level";
 import type { InputCommand } from "../../src/sim/types.js";
 import { Button } from "../../src/sim/types.js";
-import { TICK_DT, WALK_SPEED, SPRINT_SPEED } from "../../src/sim/constants.js";
+import { TICK_DT, WALK_SPEED, SPRINT_SPEED } from "@csarkosh/engine/sim/constants";
 
 const floor: Aabb = { min: { x: -50, y: -1, z: -50 }, max: { x: 50, y: 0, z: 50 } };
 const ledge: Aabb = { min: { x: 5, y: 0, z: -10 }, max: { x: 15, y: 0.45, z: 10 } };

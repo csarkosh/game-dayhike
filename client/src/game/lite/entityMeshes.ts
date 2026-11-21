@@ -77,7 +77,7 @@ import {
   type EngineContext, type MaterialPlugin, type Mesh, type PbrMaterialProps, type PluginUniformBlock, type SceneContext,
 } from "@babylonjs/lite";
 import catalog from "../../../assets/catalog.json" with { type: "json" };
-import { PLAYER_HALF } from "../../sim/constants.js";
+import { PLAYER_HALF } from "@csarkosh/engine/sim/constants";
 import { clipNameFor, resolveCharacterAssets, type CharacterAsset, type ClipKind } from "../characterAssets.js";
 import { HOLLOW_MODEL, stepClip, type ClipClock, type EntityFrame, type EntityModels, type ShadeLook } from "../entityPoses.js";
 import { HOLLOW_EYE_COLOR, HOLLOW_EYE_INTENSITY, HOLLOW_SCALE } from "../hollowLook.js";

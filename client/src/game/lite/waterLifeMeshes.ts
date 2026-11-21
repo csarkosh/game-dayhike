@@ -20,7 +20,7 @@ import type { WaterLifeMade } from "@csarkosh/engine/game/waterLifeField";
 import { createWaterLifeScene, type WaterLifeDraws, type WaterLifeFrame } from "../waterLifeScene.js";
 import { createLiteDragonflies } from "./dragonflyMeshes.js";
 import type { FrameUploads } from "@csarkosh/engine/game/lite/frameUploads";
-import { createLiteMidges } from "./midgeMeshes.js";
+import { createLiteMidges } from "@csarkosh/engine/game/lite/midgeMeshes";
 
 export type LiteWaterLife = {
   /** A frame of the life, stepped and drawn; the midges toned by the frame's `exposure` and `contrast`. */

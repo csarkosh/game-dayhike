@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import "../../src/sim/passes/index.js";
-import { createForest } from "../../src/sim/forest.js";
+import { createForest } from "@csarkosh/engine/sim/forest";
 import { createForestWorld, spawnPlayer, tickWorld } from "../../src/sim/world.js";
 import type { World } from "../../src/sim/world.js";
 import { seedFromToken } from "@csarkosh/engine/game/seed";
@@ -8,7 +8,7 @@ import { timeLimit } from "../helpers/timeLimit.js";
 import { setActiveTerrainVariant, DEFAULT_TERRAIN_VARIANT, elevationAt } from "@csarkosh/engine/sim/terrain";
 import { AiState, DeathCause, Phase } from "../../src/sim/types.js";
 import type { EnemyState, PlayerState, Vec3 } from "../../src/sim/types.js";
-import { PLAYER_EYE_OFFSET, TICK_DT, WALK_SPEED } from "../../src/sim/constants.js";
+import { PLAYER_EYE_OFFSET, TICK_DT, WALK_SPEED } from "@csarkosh/engine/sim/constants";
 import type { TrailNode } from "@csarkosh/engine/sim/trail";
 import { stemNodes } from "@csarkosh/engine/sim/trailRoute";
 import { isOnCorridor } from "../../src/sim/containment.js";

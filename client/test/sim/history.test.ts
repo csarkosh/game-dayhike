@@ -1,6 +1,6 @@
 import { describe, it, expect } from "vitest";
-import { PositionHistory } from "../../src/sim/history.js";
-import { LAG_COMP_HISTORY_TICKS } from "../../src/sim/constants.js";
+import { PositionHistory } from "@csarkosh/engine/sim/history";
+import { LAG_COMP_HISTORY_TICKS } from "@csarkosh/engine/sim/constants";
 
 describe("PositionHistory", () => {
   it("returns what was recorded for a tick", () => {

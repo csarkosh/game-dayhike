@@ -4,13 +4,13 @@ import {
   CLUTTER_BOULDER, CLUTTER_BUSH, CLUTTER_CLASS_COUNT, CLUTTER_DRIFTLOG, CLUTTER_DRIFTWOOD, CLUTTER_FERN, CLUTTER_GRASS, CLUTTER_LITTER,
   CLUTTER_MEADOW, CLUTTER_ROCK,
 } from "@csarkosh/engine/sim/clutter";
-import { BOULDER_A_BASE_H, BOULDER_B_BASE_H, BOULDER_SINK } from "../../src/sim/passes/clutter.js";
+import { BOULDER_A_BASE_H, BOULDER_B_BASE_H, BOULDER_SINK } from "@csarkosh/engine/sim/passes/clutter";
 import { activeTerrainVariant } from "@csarkosh/engine/sim/terrain";
 import { forestDensity } from "@csarkosh/engine/sim/vegetation";
 import {
   CLUTTER_MODEL_IDS, CLUTTER_SINK, CUT_CLASSES, DRIFTLOG_SINK, FOLIAGE_BY_CLASS, LITTER_VARIANT_SCALE, clutterLodNames, clutterNearLodName,
   cutModel, cutOf, cutsFor, instanceMatrixFor, seatDriftLogs, trampleFrame, writeFoliage,
-} from "../../src/game/clutterInstances.js";
+} from "@csarkosh/engine/game/clutterInstances";
 import { FOLIAGE_PROFILES } from "@csarkosh/engine/game/foliageUniforms";
 import { transformPoint } from "@csarkosh/engine/game/instancePose";
 import { trunkSeat } from "@csarkosh/engine/game/logSeat";

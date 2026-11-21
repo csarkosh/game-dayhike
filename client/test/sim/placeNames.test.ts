@@ -6,7 +6,7 @@ import { MEADOW_NAMES, NAMES_SALT, POND_NAMES, placeNames, signSites } from "../
 import { FIRST_NAMES, hikerNames } from "../../src/sim/hikerNames.js";
 import type { Feature } from "@csarkosh/engine/sim/features";
 import { createWorld } from "../../src/sim/world.js";
-import { parseLevel } from "../../src/sim/level.js";
+import { parseLevel } from "@csarkosh/engine/sim/level";
 import { seedFromToken } from "@csarkosh/engine/game/seed";
 import { timeLimit } from "../helpers/timeLimit.js";
 

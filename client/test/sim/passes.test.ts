@@ -1,7 +1,7 @@
 import { describe, it, expect } from "vitest";
 import "../../src/sim/passes/index.js";
-import { createChunkGrid } from "../../src/sim/chunkGrid.js";
-import { registerPass } from "../../src/sim/chunk.js";
+import { createChunkGrid } from "@csarkosh/engine/sim/chunkGrid";
+import { registerPass } from "@csarkosh/engine/sim/chunk";
 
 const SEED = 0xd3a5e;
 

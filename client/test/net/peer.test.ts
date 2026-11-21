@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
-import { acceptAsHost, connectAsClient } from "../../src/net/peer.js";
-import { ICE_TIMEOUT_MS } from "../../src/sim/constants.js";
+import { acceptAsHost, connectAsClient } from "@csarkosh/engine/net/peer";
+import { ICE_TIMEOUT_MS } from "@csarkosh/engine/sim/constants";
 import type { SignalingClient } from "@csarkosh/engine/net/signaling";
 
 /**

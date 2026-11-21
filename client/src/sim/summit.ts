@@ -18,7 +18,7 @@ import { SUMMIT_REVEAL_S, spawnHollow } from "./hollow.js";
 import { wayOf } from "./wayDraw.js";
 import { hideWatcher } from "./watcher.js";
 import { HAUNT_REST_CHASE, isShadeState } from "./haunt.js";
-import { PLAYER_HALF } from "./constants.js";
+import { PLAYER_HALF } from "@csarkosh/engine/sim/constants";
 import { ENEMY_HALF } from "./dayhikeConstants.js";
 import { stemAhead } from "@csarkosh/engine/sim/trailRoute";
 

@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import "../../../src/sim/passes/index.js";
-import { generateChunk, registeredPasses } from "../../../src/sim/chunk.js";
+import { generateChunk, registeredPasses } from "@csarkosh/engine/sim/chunk";
 import { CHUNK_SIZE } from "@csarkosh/engine/sim/forestConstants";
 import { clutterInRect, CLUTTER_BOULDER } from "@csarkosh/engine/sim/clutter";
 import {
@@ -9,11 +9,11 @@ import {
   BOULDER_B_BASE_HALF,
   BOULDER_B_BASE_H,
   BOULDER_SINK,
-} from "../../../src/sim/passes/clutter.js";
-import { createForest } from "../../../src/sim/forest.js";
-import { createGroundField } from "../../../src/sim/ground.js";
-import { stepMovement } from "../../../src/sim/movement.js";
-import { PLAYER_HALF, PLAYER_EYE_OFFSET } from "../../../src/sim/constants.js";
+} from "@csarkosh/engine/sim/passes/clutter";
+import { createForest } from "@csarkosh/engine/sim/forest";
+import { createGroundField } from "@csarkosh/engine/sim/ground";
+import { stepMovement } from "@csarkosh/engine/sim/movement";
+import { PLAYER_HALF, PLAYER_EYE_OFFSET } from "@csarkosh/engine/sim/constants";
 import { elevationAt } from "@csarkosh/engine/sim/terrain";
 import { CLUTTER_BOULDER_SCALE_MAX } from "@csarkosh/engine/sim/clutter";
 

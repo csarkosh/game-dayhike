@@ -1,13 +1,13 @@
 import { describe, it, expect } from "vitest";
 import "../../../src/sim/passes/index.js";
-import { generateChunk, registeredPasses } from "../../../src/sim/chunk.js";
-import { registryDigest } from "../../../src/sim/forest.js";
+import { generateChunk, registeredPasses } from "@csarkosh/engine/sim/chunk";
+import { registryDigest } from "@csarkosh/engine/sim/forest";
 import { CHUNK_SIZE } from "@csarkosh/engine/sim/forestConstants";
 import { groundSpawn } from "../../../src/sim/spawn.js";
-import { createChunkGrid } from "../../../src/sim/chunkGrid.js";
-import { PLAYER_HALF } from "../../../src/sim/constants.js";
+import { createChunkGrid } from "@csarkosh/engine/sim/chunkGrid";
+import { PLAYER_HALF } from "@csarkosh/engine/sim/constants";
 import { treesInRect, COHORT_LOG, LOG_HALF_LENGTH, LOG_SCALE_MAX, LOG_SCALE_MIN, logAxis } from "@csarkosh/engine/sim/vegetation";
-import { LOG_BOX_HALF, LOG_RADIUS, LOG_STAND_SHARE } from "../../../src/sim/passes/trees.js";
+import { LOG_BOX_HALF, LOG_RADIUS, LOG_STAND_SHARE } from "@csarkosh/engine/sim/passes/trees";
 
 const SEED = 0x5eed;
 

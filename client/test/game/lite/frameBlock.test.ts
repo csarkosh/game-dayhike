@@ -22,7 +22,7 @@ import { emptyMoteUniforms } from "@csarkosh/engine/game/moteField";
 import { emptyRainUniforms } from "../../../src/game/rainField.js";
 import { emptySplashUniforms } from "../../../src/game/splashField.js";
 import { emptyTerrainUniforms, terrainUniforms } from "@csarkosh/engine/game/terrainUniforms";
-import { emptySeaFrameUniforms } from "../../../src/game/seaUniforms.js";
+import { emptySeaFrameUniforms } from "@csarkosh/engine/game/seaUniforms";
 import { emptyWaterFrameUniforms } from "@csarkosh/engine/game/waterSurface";
 import {
   WET_BAND, WET_COVE_END, WET_DRY_S, WET_NO_COVE, WET_SWASH_VECS, emptyWetUniforms, setWetCove, setWetSwash, setWetWeather, wetUniforms,

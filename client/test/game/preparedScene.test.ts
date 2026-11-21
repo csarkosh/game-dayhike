@@ -10,7 +10,7 @@ import { BED_GRID, bakeBed, createBedGrid } from "@csarkosh/engine/game/bedHeigh
 import { oceanFieldFor } from "@csarkosh/engine/game/oceanWaves";
 import { SWELL_COMPONENTS, SWELL_COMPONENTS_LOW } from "@csarkosh/engine/game/oceanSwell";
 import { waterLifeBed, waterLifeLayout, type WaterLifeLayout } from "@csarkosh/engine/game/waterLifeField";
-import { skylineElevations, skylineTrees } from "../../src/game/lakeSkyline.js";
+import { skylineElevations, skylineTrees } from "@csarkosh/engine/game/lakeSkyline";
 import { lakeSurfaceGrid } from "@csarkosh/engine/game/lakeSurfaceGrid";
 import { waterPlantPlacements } from "@csarkosh/engine/game/waterPlantField";
 import { prepareScene, sceneTransfer, type PreparedScene } from "../../src/game/preparedScene.js";

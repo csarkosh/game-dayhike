@@ -48,7 +48,7 @@ import { MIRROR_CANOPY_SHADE, mirrorGroundColour, type MirrorGroundSky } from "@
 import {
   PANORAMA_EYE_UP, PANORAMA_FAR, PANORAMA_HEIGHT, PANORAMA_NEAR, PANORAMA_SECTOR_WIDTH, PANORAMA_WIDTH, createPanoramaArming, createPanoramaTurn, panoramaFrustum,
   sectorYaw, type PanoramaFrustum,
-} from "../panoramaTurn.js";
+} from "@csarkosh/engine/game/panoramaTurn";
 import type { WeatherParams } from "@csarkosh/engine/game/weather";
 import { wgslFloat } from "./forestPlugins.js";
 import { FRAME_BLOCK } from "./frameBlock.js";

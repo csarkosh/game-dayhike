@@ -6,8 +6,8 @@ import "../../src/sim/passes/index.js";
 // through these two modules: the trample frame, the matrix and the tint
 // writer every list imports, and the ground colour inside the tint writer.
 // The wrappers pass straight through, so every value is the real one.
-vi.mock("../../src/game/clutterInstances.js", async (importOriginal) => {
-  const m = await importOriginal<typeof import("../../src/game/clutterInstances.js")>();
+vi.mock("@csarkosh/engine/game/clutterInstances", async (importOriginal) => {
+  const m = await importOriginal<typeof import("@csarkosh/engine/game/clutterInstances")>();
   return { ...m, trampleFrame: vi.fn(m.trampleFrame), writeFoliage: vi.fn(m.writeFoliage), instanceMatrixFor: vi.fn(m.instanceMatrixFor) };
 });
 vi.mock("@csarkosh/engine/game/terrainSurface", async (importOriginal) => {
@@ -20,12 +20,12 @@ import {
   CLUTTER_WETPLANT, type ClutterInstance,
 } from "@csarkosh/engine/sim/clutter";
 import { BLADE_REBUILD_CELL, createBladeCollector, type BladeTiers } from "@csarkosh/engine/game/bladeField";
-import { createBladeLists } from "../../src/game/bladeInstances.js";
+import { createBladeLists } from "@csarkosh/engine/game/bladeInstances";
 import { createClutterCollector, type ClutterBands } from "@csarkosh/engine/game/clutterField";
-import { cutsFor, instanceMatrixFor, trampleFrame, writeFoliage } from "../../src/game/clutterInstances.js";
-import { createClutterLists } from "../../src/game/clutterLists.js";
+import { cutsFor, instanceMatrixFor, trampleFrame, writeFoliage } from "@csarkosh/engine/game/clutterInstances";
+import { createClutterLists } from "@csarkosh/engine/game/clutterLists";
 import { DUFF_REACH, DUFF_REBUILD_CELL, createDuffCollector, type DuffTiers } from "@csarkosh/engine/game/duffField";
-import { createDuffLists } from "../../src/game/duffInstances.js";
+import { createDuffLists } from "@csarkosh/engine/game/duffInstances";
 import type { InstanceList } from "@csarkosh/engine/game/instanceLists";
 import { finish, type Slices } from "@csarkosh/engine/game/syncJobs";
 import { surfaceAlbedo } from "@csarkosh/engine/game/terrainSurface";

@@ -1,13 +1,13 @@
 import { describe, expect, it } from "vitest";
 import "../../src/sim/passes/index.js";
-import { createForest } from "../../src/sim/forest.js";
+import { createForest } from "@csarkosh/engine/sim/forest";
 import { createForestWorld, createWorld, removePlayer, spawnPlayer, tickWorld } from "../../src/sim/world.js";
-import { parseLevel } from "../../src/sim/level.js";
+import { parseLevel } from "@csarkosh/engine/sim/level";
 import { seedFromToken } from "@csarkosh/engine/game/seed";
 import { setActiveTerrainVariant, DEFAULT_TERRAIN_VARIANT, elevationAt } from "@csarkosh/engine/sim/terrain";
 import { AiState, Outcome, Phase } from "../../src/sim/types.js";
 import type { EnemyState, PlayerState } from "../../src/sim/types.js";
-import { PLAYER_EYE_OFFSET, SIM_TICK_HZ } from "../../src/sim/constants.js";
+import { PLAYER_EYE_OFFSET, SIM_TICK_HZ } from "@csarkosh/engine/sim/constants";
 import { ENEMY_HALF, PLAYER_MAX_HEALTH } from "../../src/sim/dayhikeConstants.js";
 import { HOLLOW_STALK_SPEED, playerSees, spawnHollow, spawnHollowStepping } from "../../src/sim/hollow.js";
 import { spawnShade } from "../../src/sim/haunt.js";

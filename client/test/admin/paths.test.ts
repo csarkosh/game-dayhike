@@ -3,7 +3,7 @@ import { sessionsOf, worldDetail, worldLines, worldsOf } from "../../src/admin/p
 import type { Row } from "../../src/admin/source.js";
 import { browserZone, useZone } from "../../src/admin/timeline.js";
 import { buildTrailFor, parseWorld, sameGeneration } from "../../src/admin/trail.js";
-import { GEN_VERSION } from "../../src/sim/forest.js";
+import { GEN_VERSION } from "@csarkosh/engine/sim/forest";
 import { DEFAULT_TERRAIN_VARIANT } from "@csarkosh/engine/sim/terrain";
 import { timeLimit } from "../helpers/timeLimit.js";
 

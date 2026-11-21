@@ -1,22 +1,22 @@
-import { createGroundField } from "../../../src/sim/ground.js";
+import { createGroundField } from "@csarkosh/engine/sim/ground";
 import { describe, expect, it } from "vitest";
 import "../../../src/sim/passes/index.js";
-import { generateChunk, registeredPasses } from "../../../src/sim/chunk.js";
+import { generateChunk, registeredPasses } from "@csarkosh/engine/sim/chunk";
 import { CHUNK_SIZE } from "@csarkosh/engine/sim/forestConstants";
-import type { Aabb } from "../../../src/sim/level.js";
-import { depenetrate, sweepBox } from "../../../src/sim/collision.js";
-import { GROUND_NORMAL_Y, PLAYER_HALF } from "../../../src/sim/constants.js";
-import { createForest } from "../../../src/sim/forest.js";
+import type { Aabb } from "@csarkosh/engine/sim/level";
+import { depenetrate, sweepBox } from "@csarkosh/engine/sim/collision";
+import { GROUND_NORMAL_Y, PLAYER_HALF } from "@csarkosh/engine/sim/constants";
+import { createForest } from "@csarkosh/engine/sim/forest";
 import { elevationSampleAt } from "@csarkosh/engine/sim/terrain";
 import { createForestWorld, spawnPlayer, tickWorld } from "../../../src/sim/world.js";
 import { Button } from "../../../src/sim/types.js";
 import {
   CLIFF_CELL, CLIFF_DENSITY, CLIFF_RUN_REACH, CLIFF_TUNABLES, cliffCellRuns,
-} from "../../../src/sim/cliffField.js";
+} from "@csarkosh/engine/sim/cliffField";
 import {
   CLIFF_BOX_STEP, CLIFF_BURY_MAX, CLIFF_BURY_SAMPLE, CLIFF_BURY_STEP, CLIFF_GATHER_REACH, CLIFF_MATERIAL,
   CLIFF_SOLID_REACH, cliffBoxesInRect, cliffCellBoxes, cliffModuleBoxes, clearCliffCellBoxCache,
-} from "../../../src/sim/passes/cliffs.js";
+} from "@csarkosh/engine/sim/passes/cliffs";
 import { CLIFF_LAID, laidCells, laidChunk, laidGrid } from "../helpers/cliffLaid.js";
 import { timeLimit } from "../../helpers/timeLimit.js";
 

@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import "../../src/sim/passes/index.js";
 import { elevationSampleAt } from "@csarkosh/engine/sim/terrain";
-import { passHash } from "../../src/sim/forest.js";
+import { passHash } from "@csarkosh/engine/sim/forest";
 import { treeInCell, treesInRect } from "@csarkosh/engine/sim/vegetation";
 import {
   clutterInCell,

@@ -16,7 +16,7 @@ import { activeTerrainVariant, activeTerrainVariantName, setActiveTerrainVariant
 import { BED_GRID, bakeBed, bedOriginFor, createBedGrid, type BedGrid } from "@csarkosh/engine/game/bedHeight";
 import { BASE_SPACING_BY_TIER, RING_COUNT, createRingSamples, ringSpacing, snapOrigin, type RingSamples } from "@csarkosh/engine/game/clipmap";
 import { FEATURE_TEX_ROWS, FEATURE_TEX_WIDTH, featureTableFor } from "@csarkosh/engine/game/featureTable";
-import { skylineElevations, skylineTrees } from "./lakeSkyline.js";
+import { skylineElevations, skylineTrees } from "@csarkosh/engine/game/lakeSkyline";
 import { lakeSurfaceDepths, lakeSurfaceGrid } from "@csarkosh/engine/game/lakeSurfaceGrid";
 import { SWELL_COMPONENTS, SWELL_COMPONENTS_LOW } from "@csarkosh/engine/game/oceanSwell";
 import { oceanFieldFor, type OceanField } from "@csarkosh/engine/game/oceanWaves";

@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import "../../src/sim/passes/index.js";
 import { CLUTTER_GRASS, CLUTTER_LITTER, groundCover } from "@csarkosh/engine/sim/clutter";
-import { instanceMatrixFor, LITTER_VARIANT_SCALE } from "../../src/game/clutterInstances.js";
+import { instanceMatrixFor, LITTER_VARIANT_SCALE } from "@csarkosh/engine/game/clutterInstances";
 import { bladeCellAt } from "@csarkosh/engine/game/bladeField";
 import { DUFF_CHARACTER_COUNT } from "@csarkosh/engine/game/duffClump";
 import {

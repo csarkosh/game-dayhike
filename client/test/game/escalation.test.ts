@@ -1,13 +1,13 @@
 import { describe, expect, it } from "vitest";
 import { createWorld, spawnPlayer } from "../../src/sim/world.js";
-import { parseLevel } from "../../src/sim/level.js";
+import { parseLevel } from "@csarkosh/engine/sim/level";
 import { AiState } from "../../src/sim/types.js";
-import { PLAYER_EYE_OFFSET } from "../../src/sim/constants.js";
+import { PLAYER_EYE_OFFSET } from "@csarkosh/engine/sim/constants";
 import { ENEMY_HALF } from "../../src/sim/dayhikeConstants.js";
 import { spawnHollow } from "../../src/sim/hollow.js";
 import { Phase } from "../../src/sim/types.js";
 import { WEATHER_PRESETS } from "@csarkosh/engine/game/weather";
-import { wildlifePresenceUnder } from "../../src/game/wildlifeBehaviour.js";
+import { wildlifePresenceUnder } from "@csarkosh/engine/game/wildlifeBehaviour";
 import { rainCountUnder, splashCountUnder } from "@csarkosh/engine/game/rainParams";
 import { lensStrengthUnder } from "@csarkosh/engine/game/lensParams";
 import { HAUNT_DREAD, HAUNT_IN_S, HAUNT_OUT_S, NIGHT_SPAN, CHASE_EASE_S, ACT_WET, DUSK_AT, WET_AT, WET_SPAN, actsUnder,

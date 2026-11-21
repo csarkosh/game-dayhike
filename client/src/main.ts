@@ -45,7 +45,7 @@ import { signalingUrl } from "@csarkosh/engine/net/signalingUrl";
 import { createLobby, joinLobby, lobbyErrorMessage, type Lobby } from "@csarkosh/engine/net/lobby";
 import { browserDeps, createTelemetry, installErrorCapture, referrerOf, telemetryUrl, testerMark, visitorId, type EarlyCatch, type Telemetry } from "@csarkosh/engine/net/telemetry";
 import { PROTOCOL_VERSION } from "./net/protocol.js";
-import { GEN_VERSION } from "./sim/forest.js";
+import { GEN_VERSION } from "@csarkosh/engine/sim/forest";
 import { startGame, type GameHandle } from "./app.js";
 import type { EngineOnCanvas } from "./game/rendererSwap.js";
 import { LOSS_ENDED_LINE, createLossRecord } from "@csarkosh/engine/game/lossBound";

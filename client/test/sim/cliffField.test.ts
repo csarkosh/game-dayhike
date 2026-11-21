@@ -1,14 +1,14 @@
 import { describe, it, expect } from "vitest";
 import "../../src/sim/passes/index.js";
-import { registeredPasses } from "../../src/sim/chunk.js";
-import { GROUND_NORMAL_Y } from "../../src/sim/constants.js";
+import { registeredPasses } from "@csarkosh/engine/sim/chunk";
+import { GROUND_NORMAL_Y } from "@csarkosh/engine/sim/constants";
 import { CLUTTER_ROCK, rockSlopeBand, type ClutterInstance } from "@csarkosh/engine/sim/clutter";
 import { hash3 } from "@csarkosh/engine/sim/field";
 import {
   DEFAULT_TERRAIN_VARIANT, elevationSampleAt, registerTerrainVariant, setActiveTerrainVariant, type WaterBodySource,
 } from "@csarkosh/engine/sim/terrain";
 import { stadiumLake } from "../helpers/lakeShapes.js";
-import * as cliffField from "../../src/sim/cliffField.js";
+import * as cliffField from "@csarkosh/engine/sim/cliffField";
 import { boxShell, seat } from "./helpers/cliffSolid.js";
 import { CLIFF_LAID } from "./helpers/cliffLaid.js";
 import {
@@ -17,7 +17,7 @@ import {
   CLIFF_RUN_SPACING, CLIFF_SCALE, CLIFF_SINK, CLIFF_STAND_MARGIN, CLIFF_TILT_COS, CLIFF_TILT_MAX, CLIFF_TILT_SIN,
   CLIFF_TUNABLES, CLIFF_WALL_A, CLIFF_WALL_B, CLIFF_YAW_JITTER, CLIFF_YAW_TAN,
   cliffCellPoint, cliffCellRuns, cliffFacing, cliffGate, cliffGround, cliffLeanTrig, leanPoint, type CliffPoint,
-} from "../../src/sim/cliffField.js";
+} from "@csarkosh/engine/sim/cliffField";
 import { timeLimit } from "../helpers/timeLimit.js";
 
 /** Seed 1's worst 400 m disc for steep rock (5,549 four-metre cells), from

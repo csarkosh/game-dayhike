@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { MAX_PLAYERS } from "../../../src/sim/constants.js";
+import { MAX_PLAYERS } from "@csarkosh/engine/sim/constants";
 import { SHADE_EYES_DULL, SHADE_EYES_SHADE, eyeLevelOf } from "../../../src/game/entityPoses.js";
 import { HOLLOW_EYE_INTENSITY } from "../../../src/game/hollowLook.js";
 import { emptyAtmosphereUniforms } from "../../../src/game/atmosphereParams.js";

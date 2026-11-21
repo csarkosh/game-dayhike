@@ -5,7 +5,7 @@ import {
   cellCenter,
   generateChunk,
   quantize,
-} from "../../src/sim/chunk.js";
+} from "@csarkosh/engine/sim/chunk";
 import { elevationAt } from "@csarkosh/engine/sim/terrain";
 import { HEIGHT_QUANTUM } from "@csarkosh/engine/sim/forestConstants";
 

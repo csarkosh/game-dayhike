@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import "../../src/sim/passes/index.js";
-import { createGroundField } from "../../src/sim/ground.js";
+import { createGroundField } from "@csarkosh/engine/sim/ground";
 import { activeTerrainVariant, elevationAt, elevationSampleAt } from "@csarkosh/engine/sim/terrain";
 import { trailDistance } from "@csarkosh/engine/sim/trail";
 import { groundReliefD, groundWalkD } from "@csarkosh/engine/sim/faceRelief";

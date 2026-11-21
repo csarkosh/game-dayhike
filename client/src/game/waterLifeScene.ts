@@ -29,9 +29,9 @@
  * let go, and the presence starts again from the weather's own when the
  * camera comes back.
  */
-import { MAX_PLAYERS } from "../sim/constants.js";
+import { MAX_PLAYERS } from "@csarkosh/engine/sim/constants";
 import type { LakeSource } from "@csarkosh/engine/sim/terrain";
-import { nextRandom } from "../sim/core.js";
+import { nextRandom } from "@csarkosh/engine/sim/core";
 import type { QualityTier } from "@csarkosh/engine/game/quality";
 import type { SkyState } from "@csarkosh/engine/game/skyState";
 import type { WeatherParams } from "@csarkosh/engine/game/weather";
@@ -57,8 +57,8 @@ import {
   stepHeads,
   swarmFrame,
   type SwarmFrame,
-} from "./midgeMotion.js";
-import type { MidgeFrame } from "./midgeLook.js";
+} from "@csarkosh/engine/game/midgeMotion";
+import type { MidgeFrame } from "@csarkosh/engine/game/midgeLook";
 import { DRAGONFLY_RANGE, createDragonflyBehaviour, type Dragonflies } from "@csarkosh/engine/game/dragonflyBehaviour";
 import { FROG_QUIET_RADIUS, createFrogChorus, type FrogCall } from "./frogChorus.js";
 import { FROG_BED_REF, FROG_RANGE, type WaterLifeSound } from "./waterLifeAudio.js";

@@ -1,7 +1,7 @@
 import { describe, it, expect } from "vitest";
 import "../../src/sim/passes/index.js";
 import { seedFromToken } from "@csarkosh/engine/game/seed";
-import { createForest } from "../../src/sim/forest.js";
+import { createForest } from "@csarkosh/engine/sim/forest";
 import { createForestWorld, spawnPlayer } from "../../src/sim/world.js";
 import { expectSurvives } from "./wireRangeSweep.js";
 

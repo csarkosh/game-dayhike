@@ -5,14 +5,14 @@
  * it at `CLIFF_LAID`, the share the modules stood at, so what they pin is
  * still the field's own work and holds when the modules return.
  */
-import { generateChunkWith, registeredPasses, type Chunk, type Pass } from "../../../src/sim/chunk.js";
-import type { BoxSource } from "../../../src/sim/boxSource.js";
+import { generateChunkWith, registeredPasses, type Chunk, type Pass } from "@csarkosh/engine/sim/chunk";
+import type { BoxSource } from "@csarkosh/engine/sim/boxSource";
 import { CHUNK_SIZE } from "@csarkosh/engine/sim/forestConstants";
-import type { Aabb } from "../../../src/sim/level.js";
+import type { Aabb } from "@csarkosh/engine/sim/level";
 import type { Vec3 } from "../../../src/sim/types.js";
 import {
   cachedCliffCellBoxes, cliffChunkProps, type CliffCellSource,
-} from "../../../src/sim/passes/cliffs.js";
+} from "@csarkosh/engine/sim/passes/cliffs";
 
 /** The share of cells that start a run when these tests lay the field. */
 export const CLIFF_LAID = 0.1;

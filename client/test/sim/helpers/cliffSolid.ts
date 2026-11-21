@@ -7,7 +7,7 @@ import type { ClutterInstance } from "@csarkosh/engine/sim/clutter";
 import {
   CLIFF_MODEL_BASE, CLIFF_MODEL_DEPTH, CLIFF_MODEL_FRONT, CLIFF_MODEL_HEIGHT, CLIFF_MODEL_RIGHT, CLIFF_MODEL_WIDTH, CLIFF_SINK,
   cliffFacing, leanPoint, type CliffPoint,
-} from "../../../src/sim/cliffField.js";
+} from "@csarkosh/engine/sim/cliffField";
 
 /** A point in the module's own frame, seated as the field seats it: turned
  * to the module's facing, then leant by the capped lean, relative to the

@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import type { MaterialPlugin, PluginUniformBlock } from "@babylonjs/lite";
 import { BLADE_SOFT } from "@csarkosh/engine/game/bladeClump";
-import { CLIFF_GROUND_TINT } from "../../../src/game/cliffInstances.js";
+import { CLIFF_GROUND_TINT } from "@csarkosh/engine/game/cliffInstances";
 import { bladeTierBands } from "@csarkosh/engine/game/bladeField";
 import { COVER_GREEN, FOLIAGE_ALBEDO_FLOOR } from "@csarkosh/engine/game/coverAlbedoParams";
 import { DEADWOOD_CONTACT, DEADWOOD_LOG_DRAW, deadwoodUniforms, emptyDeadwoodUniforms } from "@csarkosh/engine/game/deadwoodParams";

@@ -32,7 +32,7 @@ import {
   SURF_SPRAY_BURSTS, SURF_SPRAY_DRAG, SURF_SPRAY_ELEVATION, SURF_SPRAY_G, SURF_SPRAY_LIFE_S, SURF_SPRAY_OPACITY, SURF_SPRAY_SIZE_M, SURF_SPRAY_SPEED_MIN,
   SURF_SPRAY_STRETCH_M, createSprayBursts, emptySprayUniforms, sprayBurstName, sprayColour, sprayInstances, sprayUniforms, sprayWind,
   type SprayLight, type SprayThrown,
-} from "../sprayField.js";
+} from "@csarkosh/engine/game/sprayField";
 import type { WindRecord } from "@csarkosh/engine/game/windParams";
 import { DISPLAY_CURVE_WGSL, onColourPath } from "@csarkosh/engine/game/lite/displayCurve";
 import { SEE_THROUGH_ORDER } from "@csarkosh/engine/game/lite/drawOrder";

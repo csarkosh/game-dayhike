@@ -13,9 +13,9 @@
  */
 import "@csarkosh/engine/sim/montane";
 import "../mountain.js";
-import "./elevation.js";
-import "./trees.js";
-import "./clutter.js";
+import "@csarkosh/engine/sim/passes/elevation";
+import "@csarkosh/engine/sim/passes/trees";
+import "@csarkosh/engine/sim/passes/clutter";
 import "./trailhead.js";
 import "./signs.js";
-import "./cliffs.js";
+import "@csarkosh/engine/sim/passes/cliffs";

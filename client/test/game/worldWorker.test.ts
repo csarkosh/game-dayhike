@@ -3,8 +3,8 @@ import { prepareSceneReply, prepareWorld, type WorldPrepReply } from "../../src/
 import { RING_COUNT } from "@csarkosh/engine/game/clipmap";
 import { sceneTransfer } from "../../src/game/preparedScene.js";
 import { DEFAULT_TERRAIN_VARIANT, setActiveTerrainVariant } from "@csarkosh/engine/sim/terrain";
-import { generateChunk } from "../../src/sim/chunk.js";
-import { PLAYER_HALF } from "../../src/sim/constants.js";
+import { generateChunk } from "@csarkosh/engine/sim/chunk";
+import { PLAYER_HALF } from "@csarkosh/engine/sim/constants";
 import { spawnChunkCells } from "../../src/sim/spawn.js";
 import { timeLimit } from "../helpers/timeLimit.js";
 

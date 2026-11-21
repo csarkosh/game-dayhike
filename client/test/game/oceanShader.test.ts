@@ -31,7 +31,7 @@ import {
 import { FFT_CASCADES, FFT_N, LOOP_FRAMES, LOOP_N, LOOP_SECONDS, LOOP_SIZE, WIND_SEA_HS_COEFF } from "@csarkosh/engine/game/oceanSpectrum";
 import {
   WIND_SEA_FETCH_COEFF, WIND_SEA_U_FLOOR, WIND_SEA_U_REF, fetchShare, windSeaShare, windSeaStateFor,
-} from "../../src/game/oceanWindSea.js";
+} from "@csarkosh/engine/game/oceanWindSea";
 import { OCEAN_G, WEGGEL_GAMMA_MAX, WEGGEL_GAMMA_MIN, WHITECAP_MAX } from "@csarkosh/engine/game/oceanPhysics";
 import { SWELL_Q_SUM_MAX } from "@csarkosh/engine/game/oceanSwell";
 import {
@@ -51,7 +51,7 @@ import {
 } from "@csarkosh/engine/game/swashTable";
 import { SWASH_REACH_MAX_M } from "@csarkosh/engine/game/swashRunUp";
 import { WET_COVE_END } from "@csarkosh/engine/game/wetSurface";
-import { oceanComponentsFor } from "../../src/game/oceanFrame.js";
+import { oceanComponentsFor } from "@csarkosh/engine/game/oceanFrame";
 import { babylonText } from "../helpers/babylonFixture.js";
 import { timeLimit } from "../helpers/timeLimit.js";
 

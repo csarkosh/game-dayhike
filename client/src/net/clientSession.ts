@@ -1,8 +1,8 @@
-import type { InputCommand, Vec3 } from "../sim/core.js";
+import type { InputCommand, Vec3 } from "@csarkosh/engine/sim/core";
 import type { EnemyState, PlayerState, WorldState } from "../sim/types.js";
-import { cloneVec3 } from "../sim/core.js";
+import { cloneVec3 } from "@csarkosh/engine/sim/core";
 import { AiState, Outcome, Phase } from "../sim/types.js";
-import type { Level } from "../sim/level.js";
+import type { Level } from "@csarkosh/engine/sim/level";
 import {
   createForestWorld,
   createWorld,
@@ -10,8 +10,8 @@ import {
   tickWorld,
   type World,
 } from "../sim/world.js";
-import type { Forest } from "../sim/forest.js";
-import { INTERP_DELAY_MS, MAX_UNACKED_INPUTS, TELEPORT_M } from "../sim/constants.js";
+import type { Forest } from "@csarkosh/engine/sim/forest";
+import { INTERP_DELAY_MS, MAX_UNACKED_INPUTS, TELEPORT_M } from "@csarkosh/engine/sim/constants";
 import type { Transport } from "@csarkosh/engine/net/transport";
 import {
   MessageType,

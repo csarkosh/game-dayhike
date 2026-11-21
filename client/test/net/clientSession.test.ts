@@ -1,13 +1,13 @@
 import { blendPosition } from "../../src/net/clientSession.js";
-import { TELEPORT_M } from "../../src/sim/constants.js";
+import { TELEPORT_M } from "@csarkosh/engine/sim/constants";
 import { describe, it, expect } from "vitest";
 import { createHostSession } from "../../src/net/hostSession.js";
 import { classifyLevelMismatch, createClientSession, type SessionEnd } from "../../src/net/clientSession.js";
-import { FakeNetwork } from "../../src/net/fakeNetwork.js";
+import { FakeNetwork } from "@csarkosh/engine/net/fakeNetwork";
 import { PERFECT_NETWORK, type NetworkConditions } from "@csarkosh/engine/net/transport";
-import { parseLevel } from "../../src/sim/level.js";
-import { createForest } from "../../src/sim/forest.js";
-import { MAX_UNACKED_INPUTS, TICK_DT } from "../../src/sim/constants.js";
+import { parseLevel } from "@csarkosh/engine/sim/level";
+import { createForest } from "@csarkosh/engine/sim/forest";
+import { MAX_UNACKED_INPUTS, TICK_DT } from "@csarkosh/engine/sim/constants";
 import { PLAYER_MAX_HEALTH } from "../../src/sim/dayhikeConstants.js";
 import { Button, Outcome, Phase, type InputCommand } from "../../src/sim/types.js";
 import { encodeEvent, MessageType, PROTOCOL_VERSION } from "../../src/net/protocol.js";

@@ -3,9 +3,9 @@ import { HOLE_CELLS } from "@csarkosh/engine/game/clipmap";
 import {
   SEA_ALBEDO_WGSL, SEA_BUMP_WGSL, SEA_COMPOSE_WGSL, SEA_LIP_SHAPE_WGSL, SEA_LIP_VERTEX_WGSL, SEA_RAIN_WGSL, SEA_VERTEX_WGSL, seaLightsWgsl, seaRestVertexWgsl,
   seaShadeWgsl, seaSurfaceWgsl,
-} from "../../../src/game/lite/seaWgsl.js";
+} from "@csarkosh/engine/game/lite/seaWgsl";
 import { WATER_RING_CELLS, WATER_RING_COUNT, WATER_UV_SCALE } from "@csarkosh/engine/game/water";
-import { waterThroughWgsl } from "../../../src/game/lite/waterWgsl.js";
+import { waterThroughWgsl } from "@csarkosh/engine/game/lite/waterWgsl";
 import { babylonText } from "../../helpers/babylonFixture.js";
 import { inOrder, tight } from "./wgslText.js";
 

@@ -1,8 +1,8 @@
 import { describe, expect, it } from "vitest";
 import "../../src/sim/passes/index.js";
-import { createForest } from "../../src/sim/forest.js";
+import { createForest } from "@csarkosh/engine/sim/forest";
 import { createForestWorld, createWorld, spawnPlayer, type World } from "../../src/sim/world.js";
-import { parseLevel } from "../../src/sim/level.js";
+import { parseLevel } from "@csarkosh/engine/sim/level";
 import { seedFromToken } from "@csarkosh/engine/game/seed";
 import { DEFAULT_TERRAIN_VARIANT, elevationAt, setActiveTerrainVariant } from "@csarkosh/engine/sim/terrain";
 import { AiState, DeathCause, Phase } from "../../src/sim/types.js";

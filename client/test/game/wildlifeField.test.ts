@@ -4,7 +4,7 @@ import "../../src/sim/passes/index.js";
 import { setActiveTerrainVariant, activeTerrainVariant, elevationSampleAt } from "@csarkosh/engine/sim/terrain";
 import { forestDensity, treeInCell, TREE_CELL, COHORT_GIANT, COHORT_SNAG } from "@csarkosh/engine/sim/vegetation";
 import { clutterInRect, clutterDensity, CLUTTER_BUSH, CLUTTER_FLOWER, CLUTTER_GRASS_CANOPY_LO } from "@csarkosh/engine/sim/clutter";
-import { MAX_WALKABLE_GRADIENT } from "../../src/sim/ground.js";
+import { MAX_WALKABLE_GRADIENT } from "@csarkosh/engine/sim/ground";
 import { SAND_TOP } from "@csarkosh/engine/game/terrainSurface";
 import {
   SPECIES_COUNT, SPECIES_ELK, SPECIES_DEER, SPECIES_RABBIT, SPECIES_SQUIRREL, SPECIES_RAVEN_ROOST,
@@ -14,7 +14,7 @@ import {
   groundAnchor,
   type WildlifeUnit,
   GROUND_ROAD_CLEAR, GROUND_SHORE_ALT, forestGround, lastAllowed, speciesGround,
-} from "../../src/game/wildlifeField.js";
+} from "@csarkosh/engine/game/wildlifeField";
 import { shoreHeight } from "../../src/sim/shoreStrip.js";
 import { timeLimit } from "../helpers/timeLimit.js";
 

@@ -7,8 +7,8 @@ import {
 import {
   CALL_COUNT, CALL_GULL_CRY, CALL_SQUIRREL_CHATTER, CALL_ELK_BUGLE, wildlifePresenceUnder,
   type WildlifeEvent,
-} from "../../src/game/wildlifeBehaviour.js";
-import { SPECIES_ELK, SPECIES_GULL, SPECIES_SQUIRREL } from "../../src/game/wildlifeField.js";
+} from "@csarkosh/engine/game/wildlifeBehaviour";
+import { SPECIES_ELK, SPECIES_GULL, SPECIES_SQUIRREL } from "@csarkosh/engine/game/wildlifeField";
 import { WEATHER_PRESETS } from "@csarkosh/engine/game/weather";
 
 /**

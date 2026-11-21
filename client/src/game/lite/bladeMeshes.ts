@@ -33,7 +33,7 @@ import {
 } from "@babylonjs/lite";
 import { BLADE_ALBEDO, BLADE_CHARACTERS, bladeClumpGeometry, bladeCountFor, type BladeQuality } from "@csarkosh/engine/game/bladeClump";
 import { BLADE_CHARACTER_COUNT, BLADE_REBUILD_CELL, BLADE_SIZE_COUNT, bladeTierBands } from "@csarkosh/engine/game/bladeField";
-import { BLADE_ROUGHNESS, BLADE_TIER_COUNT, createBladeLists } from "../bladeInstances.js";
+import { BLADE_ROUGHNESS, BLADE_TIER_COUNT, createBladeLists } from "@csarkosh/engine/game/bladeInstances";
 import { FOLIAGE_PROFILES, foliageLook } from "@csarkosh/engine/game/foliageUniforms";
 import type { CullPose } from "@csarkosh/engine/game/grassCull";
 import type { FirstBuilds } from "@csarkosh/engine/game/firstBuilds";

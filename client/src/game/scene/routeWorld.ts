@@ -10,8 +10,8 @@
  * renderer to `world.state` as it stands.
  */
 import sandbox01 from "../../../levels/sandbox01.json" with { type: "json" };
-import { parseLevel, type Level } from "../../sim/level.js";
-import { createForest, type Forest } from "../../sim/forest.js";
+import { parseLevel, type Level } from "@csarkosh/engine/sim/level";
+import { createForest, type Forest } from "@csarkosh/engine/sim/forest";
 import { createWorld, type World } from "../../sim/world.js";
 import { DEFAULT_TERRAIN_VARIANT, activeTerrainVariant, elevationAt, setActiveTerrainVariant, type LakeSource } from "@csarkosh/engine/sim/terrain";
 import { coveFor } from "@csarkosh/engine/sim/olympic";
@@ -20,7 +20,7 @@ import { SUMMIT_LABEL, TRAIL_NAME, signPosts, type SignPost } from "../../sim/si
 import { signSites } from "../../sim/placeNames.js";
 import { boardDrawingOf, type BoardDrawing } from "../boardDraw.js";
 import { BOARD_IMAGE_URLS } from "../boardImages.js";
-import { lakeRimRadii, rimAt } from "../lakeSkyline.js";
+import { lakeRimRadii, rimAt } from "@csarkosh/engine/game/lakeSkyline";
 import { POSTER_LAST_SEEN } from "../posterPanel.js";
 import { carYaw, type TrailheadSites } from "../sceneryParts.js";
 import { seedFromToken } from "@csarkosh/engine/game/seed";

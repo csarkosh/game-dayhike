@@ -79,7 +79,7 @@ import { emptyMaterialGradeUniforms, type MaterialGradeUniforms } from "../mater
 import { emptyMoteUniforms } from "@csarkosh/engine/game/moteField";
 import { emptyRainUniforms } from "../rainField.js";
 import { emptySplashUniforms } from "../splashField.js";
-import { emptySeaFrameUniforms, type SeaFrameUniforms } from "../seaUniforms.js";
+import { emptySeaFrameUniforms, type SeaFrameUniforms } from "@csarkosh/engine/game/seaUniforms";
 import { WATER_RING_COUNT } from "@csarkosh/engine/game/water";
 import { FOLIAGE_PLAYERS, FOLIAGE_PROFILES, emptyFoliageUniforms, foliageLook, foliageUniforms } from "@csarkosh/engine/game/foliageUniforms";
 import { emptyTerrainUniforms, type TerrainUniforms } from "@csarkosh/engine/game/terrainUniforms";

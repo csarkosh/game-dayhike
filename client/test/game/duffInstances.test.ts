@@ -1,9 +1,9 @@
 import { describe, expect, it } from "vitest";
 import "../../src/sim/passes/index.js";
-import { CLUTTER_SINK, instanceMatrixFor, trampleFrame, writeFoliage } from "../../src/game/clutterInstances.js";
+import { CLUTTER_SINK, instanceMatrixFor, trampleFrame, writeFoliage } from "@csarkosh/engine/game/clutterInstances";
 import { DUFF_CHARACTER_COUNT } from "@csarkosh/engine/game/duffClump";
 import { DUFF_REACH, DUFF_REBUILD_CELL, createDuffCollector, type DuffCell } from "@csarkosh/engine/game/duffField";
-import { DUFF_ROUGHNESS, DUFF_TIER_COUNT, createDuffLists } from "../../src/game/duffInstances.js";
+import { DUFF_ROUGHNESS, DUFF_TIER_COUNT, createDuffLists } from "@csarkosh/engine/game/duffInstances";
 import type { InstanceList } from "@csarkosh/engine/game/instanceLists";
 import { finish } from "@csarkosh/engine/game/syncJobs";
 

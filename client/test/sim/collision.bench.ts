@@ -1,9 +1,9 @@
 import { bench, describe } from "vitest";
 import "../../src/sim/passes/index.js";
-import { depenetrate, raycast, sweepBox } from "../../src/sim/collision.js";
-import type { Aabb } from "../../src/sim/level.js";
-import { PLAYER_HALF } from "../../src/sim/constants.js";
-import { createChunkGrid } from "../../src/sim/chunkGrid.js";
+import { depenetrate, raycast, sweepBox } from "@csarkosh/engine/sim/collision";
+import type { Aabb } from "@csarkosh/engine/sim/level";
+import { PLAYER_HALF } from "@csarkosh/engine/sim/constants";
+import { createChunkGrid } from "@csarkosh/engine/sim/chunkGrid";
 
 /**
  * Deterministic pseudo-random field of 1 m boxes, so runs are comparable across

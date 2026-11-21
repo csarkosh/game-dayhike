@@ -1,10 +1,10 @@
 import { describe, expect, it } from "vitest";
-import { SKYLINE_TEXELS } from "../../../src/game/lakeSkyline.js";
-import { PANORAMA_EYE_UP, PANORAMA_HEIGHT_M } from "../../../src/game/panoramaTurn.js";
+import { SKYLINE_TEXELS } from "@csarkosh/engine/game/lakeSkyline";
+import { PANORAMA_EYE_UP, PANORAMA_HEIGHT_M } from "@csarkosh/engine/game/panoramaTurn";
 import {
   LAKE_COMPOSE_WGSL, LAKE_LENS_WGSL, LAKE_LIGHTS_WGSL, LAKE_MIRROR_WGSL, LAKE_PANORAMA_WGSL, LAKE_RIPPLES_WGSL, LAKE_SHORE_WGSL, WATER_BUMP_WGSL, WATER_DEFS_WGSL, WATER_SPLIT_WGSL,
   WATER_THROUGH_DEFS_WGSL, WATER_THROUGH_FINAL_WGSL, WATER_VERTEX_WGSL, lakeComposeWgsl, lakeLightsWgsl, waterThroughWgsl,
-} from "../../../src/game/lite/waterWgsl.js";
+} from "@csarkosh/engine/game/lite/waterWgsl";
 import { WATER_F0 } from "@csarkosh/engine/game/waterShading";
 import { babylonText } from "../../helpers/babylonFixture.js";
 import { inOrder, tight } from "./wgslText.js";

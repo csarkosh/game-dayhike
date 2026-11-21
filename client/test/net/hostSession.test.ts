@@ -1,8 +1,8 @@
 import { describe, it, expect } from "vitest";
 import { createHostSession } from "../../src/net/hostSession.js";
-import { FakeNetwork } from "../../src/net/fakeNetwork.js";
+import { FakeNetwork } from "@csarkosh/engine/net/fakeNetwork";
 import { PERFECT_NETWORK } from "@csarkosh/engine/net/transport";
-import { parseLevel } from "../../src/sim/level.js";
+import { parseLevel } from "@csarkosh/engine/sim/level";
 import {
   encodeInput,
   decodeEvent,
@@ -10,7 +10,7 @@ import {
   messageTypeOf,
   MessageType,
 } from "../../src/net/protocol.js";
-import { TICKS_PER_SNAPSHOT } from "../../src/sim/constants.js";
+import { TICKS_PER_SNAPSHOT } from "@csarkosh/engine/sim/constants";
 import { Button, type InputCommand } from "../../src/sim/types.js";
 import sandbox01 from "../../levels/sandbox01.json" with { type: "json" };
 

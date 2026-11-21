@@ -7,13 +7,13 @@ import {
   LAKE_BREEZE_GAIN, LAKE_BREEZE_FLOOR, LAKE_WARP_M, lakeBreeze,
   lakeGust, lakePawDrift, lakePaw, lakePawThreshold, octaveAmplitude, lakeLiveRings, lakeRingHeight, lakeRingDh, lakeRingHash, lakeRainSlope,
   lakeSunShare,
-} from "../../src/game/lakeRipples.js";
+} from "@csarkosh/engine/game/lakeRipples";
 import {
   WIND_TIME_WRAP, WIND_K1, WIND_K2, WIND_OMEGA_GUST, WIND_OMEGA_GUST2, WIND_RAGGED, WIND_RAGGED_CELL,
   directionAt, gustAt, windRecordUnder,
 } from "@csarkosh/engine/game/windParams";
 import { WEATHER_PRESETS } from "@csarkosh/engine/game/weather";
-import { midgeHash } from "../../src/game/midgeMotion.js";
+import { midgeHash } from "@csarkosh/engine/game/midgeMotion";
 import { babylonText } from "../helpers/babylonFixture.js";
 import { timeLimit } from "../helpers/timeLimit.js";
 

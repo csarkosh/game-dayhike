@@ -3,7 +3,7 @@ import { describe, expect, it } from "vitest";
 import { timeLimit } from "../helpers/timeLimit.js";
 import "../../src/sim/passes/index.js";
 import { facingYaw } from "@csarkosh/engine/sim/facing";
-import { createForest } from "../../src/sim/forest.js";
+import { createForest } from "@csarkosh/engine/sim/forest";
 import { trailheadStart } from "../../src/sim/spawn.js";
 import { stemAhead } from "@csarkosh/engine/sim/trailRoute";
 import type { InputCommand } from "../../src/sim/types.js";

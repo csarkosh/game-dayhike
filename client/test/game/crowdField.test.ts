@@ -6,7 +6,7 @@ import {
   CROWD_HOLD_S, CROWD_LANE_AHEAD_M, CROWD_LANE_M, CROWD_REACH_FROM_M, CROWD_REACH_S, CROWD_TOUCH_M, CROWD_TOUCH_PRESENCE,
   crowdGives, crowdLetGo, crowdLunges, crowdScatter, crowdSpeed, crowdTakes, crowdTarget, figureOf, newCrowd, placeCrowd, presenceOf, stepCrowd, type Crowd, type CrowdFigure, type CrowdWorld,
 } from "../../src/game/crowdField.js";
-import { SPRINT_SPEED, WALK_SPEED } from "../../src/sim/constants.js";
+import { SPRINT_SPEED, WALK_SPEED } from "@csarkosh/engine/sim/constants";
 import { WAY_FLOOR_M, WAY_RIM_M } from "../../src/sim/wayDown.js";
 
 /** A straight way along +x, 400 m long, and ground that admits everything but one square beside it. */

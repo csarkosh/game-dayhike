@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { EngineContext, MaterialPlugin, PluginUniformBlock, SceneContext } from "@babylonjs/lite";
-import type { ChunkGrid } from "../../../src/sim/chunkGrid.js";
+import type { ChunkGrid } from "@csarkosh/engine/sim/chunkGrid";
 import { createFirstBuilds } from "@csarkosh/engine/game/firstBuilds";
 import { emptyWetUniforms } from "@csarkosh/engine/game/wetSurface";
 import { createSyncJobs } from "@csarkosh/engine/game/syncJobs";

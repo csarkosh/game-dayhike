@@ -34,8 +34,8 @@
  * hike starts at the class's tier (`runProbe`).
  */
 import sandbox01 from "../../../levels/sandbox01.json" with { type: "json" };
-import { createForest } from "../../sim/forest.js";
-import { parseLevel } from "../../sim/level.js";
+import { createForest } from "@csarkosh/engine/sim/forest";
+import { parseLevel } from "@csarkosh/engine/sim/level";
 import { DEFAULT_TERRAIN_VARIANT, setActiveTerrainVariant } from "@csarkosh/engine/sim/terrain";
 import { createWorld } from "../../sim/world.js";
 import { PROBE_HOUR, PROBE_READY_MAX_MS, PROBE_SEED_TOKEN, createProbeMeter, probePose } from "@csarkosh/engine/game/frameProbe";

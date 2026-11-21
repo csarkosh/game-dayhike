@@ -1,9 +1,9 @@
 import { expect } from "vitest";
 import "../../../src/sim/passes/index.js";
-import type { Aabb } from "../../../src/sim/level.js";
+import type { Aabb } from "@csarkosh/engine/sim/level";
 import { elevationSampleAt } from "@csarkosh/engine/sim/terrain";
-import { CLIFF_CELL, CLIFF_RUN_REACH, cliffCellRuns, type CliffPoint } from "../../../src/sim/cliffField.js";
-import { cliffBuryFace, cliffModuleBoxes } from "../../../src/sim/passes/cliffs.js";
+import { CLIFF_CELL, CLIFF_RUN_REACH, cliffCellRuns, type CliffPoint } from "@csarkosh/engine/sim/cliffField";
+import { cliffBuryFace, cliffModuleBoxes } from "@csarkosh/engine/sim/passes/cliffs";
 import { drawnShell, seat } from "../helpers/cliffSolid.js";
 import { CLIFF_LAID } from "../helpers/cliffLaid.js";
 import { seedPart } from "../../helpers/seedPart.js";

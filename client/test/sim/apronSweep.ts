@@ -2,7 +2,7 @@ import { expect } from "vitest";
 import "../../src/sim/passes/index.js";
 import { olympicPreTrailSample } from "../../src/sim/mountain.js";
 import { elevationAt, setActiveTerrainVariant, DEFAULT_TERRAIN_VARIANT, activeTerrainVariant } from "@csarkosh/engine/sim/terrain";
-import { MAX_WALKABLE_GRADIENT } from "../../src/sim/ground.js";
+import { MAX_WALKABLE_GRADIENT } from "@csarkosh/engine/sim/ground";
 import { seedFromToken } from "@csarkosh/engine/game/seed";
 import { BOWL_U_MIN, BOWL_U_MAX, BOWL_Z_HALF, TRAIL_Z_ANCHOR, TRAILHEAD_U, APRON_CLIFF_U } from "../../src/sim/bowl.js";
 import { seedPart } from "../helpers/seedPart.js";

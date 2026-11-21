@@ -1,10 +1,10 @@
 import { describe, it, expect } from "vitest";
 import { LIP_SPEED_MAX, LIP_SPEED_MIN, type LipTracker } from "@csarkosh/engine/game/oceanBreaker";
-import { WIND_SEA_U_PER_WIND } from "../../src/game/oceanWindSea.js";
+import { WIND_SEA_U_PER_WIND } from "@csarkosh/engine/game/oceanWindSea";
 import {
   SURF_SPRAY_BURSTS, SURF_SPRAY_LIFE_S, SURF_SPRAY_NEVER_AGE, SURF_SPRAY_PER_BURST, SURF_SPRAY_RANGE_M, SURF_SPRAY_SLOT_FLOATS, SURF_SPRAY_THROW,
   SURF_SPRAY_SEED, createSprayBursts, createSprayThrow, emptySprayUniforms, sprayBurstName, sprayColour, sprayInstances, spraySeeds, spraySlots, sprayUniforms, sprayWind,
-} from "../../src/game/sprayField.js";
+} from "@csarkosh/engine/game/sprayField";
 import { SWASH_G } from "@csarkosh/engine/game/swashRunUp";
 import type { SwashCove } from "@csarkosh/engine/game/swashTable";
 import { OCEAN_FOAM_ALBEDO } from "@csarkosh/engine/game/waterShading";

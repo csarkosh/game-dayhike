@@ -10,8 +10,8 @@ import {
   STRIDE_LENGTH,
   type BobOffset,
   type ViewBob,
-} from "../../src/game/viewBob.js";
-import { WALK_SPEED } from "../../src/sim/constants.js";
+} from "@csarkosh/engine/game/viewBob";
+import { WALK_SPEED } from "@csarkosh/engine/sim/constants";
 
 /**
  * The walking cue is a render effect, so its whole contract is the offset it

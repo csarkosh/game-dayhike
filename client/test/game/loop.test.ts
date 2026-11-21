@@ -1,6 +1,6 @@
 import { describe, it, expect } from "vitest";
-import { FixedStepAccumulator } from "../../src/game/loop.js";
-import { TICK_DT } from "../../src/sim/constants.js";
+import { FixedStepAccumulator } from "@csarkosh/engine/game/loop";
+import { TICK_DT } from "@csarkosh/engine/sim/constants";
 
 describe("FixedStepAccumulator", () => {
   it("yields no ticks for a frame shorter than one step", () => {

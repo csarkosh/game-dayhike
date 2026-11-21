@@ -1,13 +1,13 @@
 import { describe, expect, it } from "vitest";
 import "../../src/sim/passes/index.js";
 import { elevationAt, setActiveTerrainVariant } from "@csarkosh/engine/sim/terrain";
-import { SPRINT_SPEED, SIM_TICK_HZ } from "../../src/sim/constants.js";
+import { SPRINT_SPEED, SIM_TICK_HZ } from "@csarkosh/engine/sim/constants";
 import { WEATHER_PRESETS } from "@csarkosh/engine/game/weather";
 import { treeInCell, TREE_CELL, COHORT_GIANT } from "@csarkosh/engine/sim/vegetation";
 import {
   SPECIES_ELK, SPECIES_RABBIT, SPECIES_SQUIRREL, SPECIES_RAVEN_ROOST, SPECIES_GULL, SPECIES_EAGLE, SPECIES_BUTTERFLY,
   SPECIES_COUNT, SPECIES_DEER, RAVEN_PERCH_HEIGHT, GIANT_TRUNK_RADIUS_PER_SCALE, wildlifeUnitsInDisc, forestGround, type WildlifeUnit,
-} from "../../src/game/wildlifeField.js";
+} from "@csarkosh/engine/game/wildlifeField";
 import {
   PHASE_REST, PHASE_ALERT, PHASE_FLEE, PHASE_SETTLE, PHASE_RETURN, CALL_ELK_BUGLE, CALL_RAVEN_CROAK,
   CALL_SQUIRREL_CHATTER, ELK_FLEE_SPEED, RABBIT_BOLT_SPEED, RABBIT_HIDDEN_SECONDS, SQUIRREL_RUN_SPEED,
@@ -18,7 +18,7 @@ import {
   RAVEN_BLEND_SECONDS, RAVEN_CLIMB_MPS, ravenBlendSeconds, clipForPhase,
   PHASE_CUE, RABBIT_RETURN_SPEED, GULL_SPEED, startCue, BUTTERFLY_ALT, BUTTERFLY_SPEED, BUTTERFLY_CUE_SPEED,
   createUnitState, groundReads, stepUnit, wildlifePresenceUnder, type PlayerPoint, type WildlifeEvent, type UnitState,
-} from "../../src/game/wildlifeBehaviour.js";
+} from "@csarkosh/engine/game/wildlifeBehaviour";
 import { timeLimit } from "../helpers/timeLimit.js";
 
 setActiveTerrainVariant("olympic");

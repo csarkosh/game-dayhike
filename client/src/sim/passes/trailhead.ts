@@ -1,4 +1,4 @@
-import { registerPass } from "../chunk.js";
+import { registerPass } from "@csarkosh/engine/sim/chunk";
 import { CHUNK_SIZE } from "@csarkosh/engine/sim/forestConstants";
 import { activeTerrainVariant, elevationSampleAt } from "@csarkosh/engine/sim/terrain";
 import type { Vec3 } from "../types.js";

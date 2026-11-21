@@ -24,8 +24,8 @@ import { onWay } from "./chaseLine.js";
 import { wayPoint, wayProject } from "./wayDown.js";
 import { causeOfDeath } from "./deathCause.js";
 import { decided, returnsOn } from "./checkpoint.js";
-import { stepMovement } from "./movement.js";
-import { aimDirection } from "./view.js";
+import { stepMovement } from "@csarkosh/engine/sim/movement";
+import { aimDirection } from "@csarkosh/engine/sim/view";
 import { STUCK_EPSILON, STUCK_SECONDS, UNSTICK_SECONDS, hasLineOfSight } from "./ai.js";
 import { containInLakes, isOnCorridor, roadOffset, waterLevelAt } from "./containment.js";
 import { ROAD_CORRIDOR_HALF } from "@csarkosh/engine/sim/road";
@@ -36,7 +36,7 @@ import {
   SIM_TICK_HZ,
   SPRINT_SPEED,
   WALK_SPEED,
-} from "./constants.js";
+} from "@csarkosh/engine/sim/constants";
 import { ENEMY_HALF, ENEMY_MAX_HEALTH } from "./dayhikeConstants.js";
 
 /** Hunting, m/s: a touch under SPRINT_SPEED 7, so walking, stopping or turning back is what closes the gap. */

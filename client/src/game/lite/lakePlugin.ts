@@ -37,7 +37,7 @@ import type { WaterBehind } from "@csarkosh/engine/game/lite/waterBehind";
 import {
   LAKE_LENS_WGSL, LAKE_MIRROR_WGSL, LAKE_PANORAMA_WGSL, LAKE_RIPPLES_WGSL, LAKE_SHORE_WGSL, WATER_BUMP_WGSL, WATER_DEFS_WGSL, WATER_SPLIT_WGSL, WATER_THROUGH_DEFS_WGSL,
   WATER_THROUGH_FINAL_WGSL, WATER_VERTEX_WGSL, lakeComposeWgsl, lakeLightsWgsl,
-} from "./waterWgsl.js";
+} from "@csarkosh/engine/game/lite/waterWgsl";
 import derivativeUniformitySource from "../shaders/diagnostic/derivativeUniformity.wgsl?raw";
 import { wgsl } from "@csarkosh/engine/game/shaders/shaderText";
 

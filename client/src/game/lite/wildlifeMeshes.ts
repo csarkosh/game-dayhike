@@ -42,13 +42,13 @@ import { expectModels } from "../loadReport.js";
 import type { FirstBuilds } from "@csarkosh/engine/game/firstBuilds";
 import { composeInto, type Quat } from "@csarkosh/engine/game/instancePose";
 import { writeClipParams, type BakedClip } from "@csarkosh/engine/game/skinInstances";
-import type { ClipRole, PlayerPoint, WildlifeEvent } from "../wildlifeBehaviour.js";
-import type { MatchState, View } from "../wildlifeDirector.js";
-import { FIRST_BIRD_SPECIES, SPECIES_BUTTERFLY, SPECIES_COUNT } from "../wildlifeField.js";
+import type { ClipRole, PlayerPoint, WildlifeEvent } from "@csarkosh/engine/game/wildlifeBehaviour";
+import type { MatchState, View } from "@csarkosh/engine/game/wildlifeDirector";
+import { FIRST_BIRD_SPECIES, SPECIES_BUTTERFLY, SPECIES_COUNT } from "@csarkosh/engine/game/wildlifeField";
 import {
   BIRD_ASSET, BIRD_PERCHED_ASSET, BUTTERFLY_COLOURWAYS, SPECIES_ASSET, birdBucketOmega, butterflyGeometry, createWildlifeScene,
   type BirdBucket, type ViewPlane, type WildlifeScene,
-} from "../wildlifeScene.js";
+} from "@csarkosh/engine/game/wildlifeScene";
 import type { WeatherParams } from "@csarkosh/engine/game/weather";
 import { DRAW_ORDER, createDrawOrders } from "@csarkosh/engine/game/lite/drawOrder";
 import { loadModel } from "./forestModels.js";

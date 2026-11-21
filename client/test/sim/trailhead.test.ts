@@ -1,9 +1,9 @@
 import { describe, it, expect } from "vitest";
 import "../../src/sim/passes/index.js";
-import { createChunkGrid } from "../../src/sim/chunkGrid.js";
+import { createChunkGrid } from "@csarkosh/engine/sim/chunkGrid";
 import { CHUNK_SIZE } from "@csarkosh/engine/sim/forestConstants";
 import { setActiveTerrainVariant, DEFAULT_TERRAIN_VARIANT, terrainVariant } from "@csarkosh/engine/sim/terrain";
-import type { Brush } from "../../src/sim/level.js";
+import type { Brush } from "@csarkosh/engine/sim/level";
 import {
   BOARD_BOX_HALF, CAR_HALF, bedGap, boardBoxes, boardSite, carDirection, carSite, doorSpot, trailEntrance, trailheadPlaces,
 } from "../../src/sim/trailhead.js";

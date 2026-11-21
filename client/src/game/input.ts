@@ -1,5 +1,5 @@
 import { bindCanvas } from "@csarkosh/engine/game/canvasBinding";
-import type { InputCommand } from "../sim/core.js";
+import type { InputCommand } from "@csarkosh/engine/sim/core";
 import { Button } from "../sim/types.js";
 import type { TouchSource } from "./touchControls.js";
 

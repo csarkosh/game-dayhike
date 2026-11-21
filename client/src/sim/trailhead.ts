@@ -1,6 +1,6 @@
 import { ROAD_BED_HALF } from "@csarkosh/engine/sim/road";
 import { TRAILHEAD_RADIUS } from "./bowl.js";
-import { PLAYER_HALF } from "./constants.js";
+import { PLAYER_HALF } from "@csarkosh/engine/sim/constants";
 import { segmentBoxGap, type Ground } from "@csarkosh/engine/sim/boxGap";
 import { TRAIL_BED_HALF } from "@csarkosh/engine/sim/trail";
 import type { TrailGraph, TrailNode } from "@csarkosh/engine/sim/trail";

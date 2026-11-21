@@ -1,9 +1,9 @@
 import { describe, it, expect } from "vitest";
 import { createForestWorld, createWorld, spawnPlayer, tickWorld, isDead } from "../../src/sim/world.js";
-import { createForest } from "../../src/sim/forest.js";
-import { depenetrate } from "../../src/sim/collision.js";
-import { parseLevel } from "../../src/sim/level.js";
-import { PLAYER_HALF } from "../../src/sim/constants.js";
+import { createForest } from "@csarkosh/engine/sim/forest";
+import { depenetrate } from "@csarkosh/engine/sim/collision";
+import { parseLevel } from "@csarkosh/engine/sim/level";
+import { PLAYER_HALF } from "@csarkosh/engine/sim/constants";
 import { ENEMY_POPULATION_CAP } from "../../src/sim/dayhikeConstants.js";
 import { AiState, type InputCommand } from "../../src/sim/types.js";
 import sandbox01 from "../../levels/sandbox01.json" with { type: "json" };

@@ -3,7 +3,7 @@ import { graph } from "./helpers/stemGraph.js";
 import { POSTER_INTERACTABLE_ID, InteractKind, buildSearch, installSearch } from "../../src/sim/search.js";
 import { createWorld, spawnPlayer } from "../../src/sim/world.js";
 import { resolveInteract } from "../../src/sim/interact.js";
-import { parseLevel } from "../../src/sim/level.js";
+import { parseLevel } from "@csarkosh/engine/sim/level";
 
 const flat = parseLevel({
   id: "flat",

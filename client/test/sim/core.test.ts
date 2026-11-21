@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { MoveButton, cloneVec3, nextRandom } from "../../src/sim/core.js";
+import { MoveButton, cloneVec3, nextRandom } from "@csarkosh/engine/sim/core";
 import * as types from "../../src/sim/types.js";
 import { Button } from "../../src/sim/types.js";
 

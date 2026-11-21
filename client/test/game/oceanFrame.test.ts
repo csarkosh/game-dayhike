@@ -2,11 +2,11 @@ import { describe, expect, it } from "vitest";
 import "@csarkosh/engine/sim/olympic";
 import { coveFor } from "@csarkosh/engine/sim/olympic";
 import { setActiveTerrainVariant } from "@csarkosh/engine/sim/terrain";
-import { OCEAN_NO_TIP, createOceanFrame, oceanComponentsFor, oceanTipsFor, type WindSeaDrawn } from "../../src/game/oceanFrame.js";
+import { OCEAN_NO_TIP, createOceanFrame, oceanComponentsFor, oceanTipsFor, type WindSeaDrawn } from "@csarkosh/engine/game/oceanFrame";
 import { SWELL_COMPONENTS, SWELL_COMPONENTS_LOW } from "@csarkosh/engine/game/oceanSwell";
 import { OCEAN_COAST_RECENTRE, OCEAN_COAST_STEP, coastProfilesFor } from "@csarkosh/engine/game/oceanTables";
 import { oceanFieldFor, swellPhases } from "@csarkosh/engine/game/oceanWaves";
-import { windSeaAtSpeed, windSeaStateFor, type WindSeaState } from "../../src/game/oceanWindSea.js";
+import { windSeaAtSpeed, windSeaStateFor, type WindSeaState } from "@csarkosh/engine/game/oceanWindSea";
 import { seedFromToken } from "@csarkosh/engine/game/seed";
 
 setActiveTerrainVariant("olympic");

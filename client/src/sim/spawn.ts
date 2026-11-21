@@ -1,8 +1,8 @@
 import type { Vec3 } from "./types.js";
 import { nextRandom } from "./types.js";
-import type { BoxProvider, BoxSource } from "./boxSource.js";
+import type { BoxProvider, BoxSource } from "@csarkosh/engine/sim/boxSource";
 import { CHUNK_SIZE } from "@csarkosh/engine/sim/forestConstants";
-import { depenetrate } from "./collision.js";
+import { depenetrate } from "@csarkosh/engine/sim/collision";
 import { activeTerrainVariant, elevationSampleAt } from "@csarkosh/engine/sim/terrain";
 import { carSite, trailheadSpawn, type Start } from "./trailhead.js";
 import { lakeShoreInto, newLakeShore } from "@csarkosh/engine/sim/lakeShape";

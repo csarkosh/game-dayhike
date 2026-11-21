@@ -22,10 +22,10 @@ import {
   createMeshFromData, createPbrMaterial, disposeMeshGpu, removeFromScene, setPbrMetallicReflectance,
   type EngineContext, type MaterialPlugin, type PluginUniformBlock, type PbrMaterialProps, type SceneContext,
 } from "@babylonjs/lite";
-import { CLIFF_DENSITY, CLIFF_MODELS } from "../../sim/cliffField.js";
+import { CLIFF_DENSITY, CLIFF_MODELS } from "@csarkosh/engine/sim/cliffField";
 import { modelUrl } from "../assetUrls.js";
-import { cliffOrigin } from "../cliffField.js";
-import { CLIFF_FAR_LOD, CLIFF_GROUND_TINT, CLIFF_LOD_NODES, createCliffLists } from "../cliffInstances.js";
+import { cliffOrigin } from "@csarkosh/engine/game/cliffField";
+import { CLIFF_FAR_LOD, CLIFF_GROUND_TINT, CLIFF_LOD_NODES, createCliffLists } from "@csarkosh/engine/game/cliffInstances";
 import type { InstanceList } from "@csarkosh/engine/game/instanceLists";
 import type { QualityTier } from "@csarkosh/engine/game/quality";
 import type { WetUniforms } from "@csarkosh/engine/game/wetSurface";

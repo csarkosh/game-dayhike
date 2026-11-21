@@ -2,13 +2,13 @@ import { describe, it, expect } from "vitest";
 import { hasLineOfSight, acquireTarget, stepEnemy } from "../../src/sim/ai.js";
 import { spawnEnemy, updateDirector, targetPopulation } from "../../src/sim/director.js";
 import { createForestWorld, createWorld, spawnPlayer, tickWorld } from "../../src/sim/world.js";
-import { createForest } from "../../src/sim/forest.js";
+import { createForest } from "@csarkosh/engine/sim/forest";
 import { isHollow } from "../../src/sim/hollow.js";
-import { parseLevel } from "../../src/sim/level.js";
+import { parseLevel } from "@csarkosh/engine/sim/level";
 import { AiState } from "../../src/sim/types.js";
 import {
   TICK_DT,
-} from "../../src/sim/constants.js";
+} from "@csarkosh/engine/sim/constants";
 import { ENEMY_CORPSE_SECONDS, ENEMY_MAX_HEALTH, PLAYER_MAX_HEALTH } from "../../src/sim/dayhikeConstants.js";
 import sandbox01 from "../../levels/sandbox01.json" with { type: "json" };
 

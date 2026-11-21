@@ -31,7 +31,7 @@ import {
 } from "@babylonjs/lite";
 import { DUFF_ALBEDO, DUFF_CHARACTERS, DUFF_CHARACTER_COUNT, DUFF_TIER_COUNTS, duffClumpGeometry } from "@csarkosh/engine/game/duffClump";
 import { DUFF_REACH, DUFF_REBUILD_CELL, duffTierBands } from "@csarkosh/engine/game/duffField";
-import { DUFF_ROUGHNESS, DUFF_TIER_COUNT, createDuffLists } from "../duffInstances.js";
+import { DUFF_ROUGHNESS, DUFF_TIER_COUNT, createDuffLists } from "@csarkosh/engine/game/duffInstances";
 import { FOLIAGE_PROFILES, foliageLook } from "@csarkosh/engine/game/foliageUniforms";
 import type { FirstBuilds } from "@csarkosh/engine/game/firstBuilds";
 import type { InstanceList } from "@csarkosh/engine/game/instanceLists";

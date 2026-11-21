@@ -1,10 +1,10 @@
 import { describe, expect, it } from "vitest";
 import "@csarkosh/engine/sim/olympic";
 import { setActiveTerrainVariant } from "@csarkosh/engine/sim/terrain";
-import { createOceanFrame } from "../../src/game/oceanFrame.js";
+import { createOceanFrame } from "@csarkosh/engine/game/oceanFrame";
 import { SEA_RING_FLOATS } from "@csarkosh/engine/game/seaLattice";
 import { seedFromToken } from "@csarkosh/engine/game/seed";
-import { SEA_COMPONENT_VECS, emptySeaFrameUniforms, emptySeaUniforms, seaFrameUniforms, seaUniforms } from "../../src/game/seaUniforms.js";
+import { SEA_COMPONENT_VECS, emptySeaFrameUniforms, emptySeaUniforms, seaFrameUniforms, seaUniforms } from "@csarkosh/engine/game/seaUniforms";
 import { WATER_RING_COUNT } from "@csarkosh/engine/game/water";
 import { WATER_ROWS, waterSkinOffset } from "@csarkosh/engine/game/waterShading";
 import { advanceWater, createBumpDrift, createWaterSurface, setWaterCove, setWaterWind } from "@csarkosh/engine/game/waterSurface";

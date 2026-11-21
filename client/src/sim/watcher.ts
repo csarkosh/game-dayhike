@@ -31,10 +31,10 @@ import { trailDistance } from "@csarkosh/engine/sim/trail";
 import { stemAhead, stemProgress } from "@csarkosh/engine/sim/trailRoute";
 import { groundSpawn } from "./spawn.js";
 import { hasLineOfSight } from "./ai.js";
-import { aimDirection } from "./view.js";
+import { aimDirection } from "@csarkosh/engine/sim/view";
 import { isOnCorridor } from "./containment.js";
 import { horizontalDistSq, playerHasInView } from "./hollow.js";
-import { PLAYER_EYE_OFFSET } from "./constants.js";
+import { PLAYER_EYE_OFFSET } from "@csarkosh/engine/sim/constants";
 import { ENEMY_HALF, ENEMY_MAX_HEALTH } from "./dayhikeConstants.js";
 
 /** Metres it keeps from every trail centreline: 6 stands just inside the 7 m cleared strip. */

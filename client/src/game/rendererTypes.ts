@@ -9,7 +9,7 @@
  * mode's report (`gpuTimeReport.ts`). No renderer is handed an engine here:
  * the hike's makes its own (`hikeRenderer.ts`).
  */
-import type { Vec3 } from "../sim/core.js";
+import type { Vec3 } from "@csarkosh/engine/sim/core";
 import type { WorldState } from "../sim/types.js";
 import type { WayDown } from "../sim/wayDown.js";
 import type { ListenerPose } from "./ambientAudio.js";
@@ -29,7 +29,7 @@ import type { StareLens } from "./stareLens.js";
 import type { SurfSound } from "@csarkosh/engine/game/surfSound";
 import type { WaterLifeSound } from "./waterLifeAudio.js";
 import type { WeatherParams, WeatherPresetName } from "@csarkosh/engine/game/weather";
-import type { WildlifeEvent } from "./wildlifeBehaviour.js";
+import type { WildlifeEvent } from "@csarkosh/engine/game/wildlifeBehaviour";
 import type { WindRecord } from "@csarkosh/engine/game/windParams";
 
 /** The free camera's view; `fov` (rad, vertical) and `roll` (rad) are a film

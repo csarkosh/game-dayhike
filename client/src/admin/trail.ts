@@ -14,7 +14,7 @@
  */
 
 import "../sim/passes/index.js";
-import { GEN_VERSION } from "../sim/forest.js";
+import { GEN_VERSION } from "@csarkosh/engine/sim/forest";
 import { hikerNames } from "../sim/hikerNames.js";
 import { placeNames } from "../sim/placeNames.js";
 import { activeTerrainVariant, setActiveTerrainVariant, terrainVariantNames } from "@csarkosh/engine/sim/terrain";

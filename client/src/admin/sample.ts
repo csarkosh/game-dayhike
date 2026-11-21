@@ -13,7 +13,7 @@ import type { Live, QueryName, Range, Row, Source } from "./source.js";
 import { calendarDate } from "./timeline.js";
 import { buildTrailFor, type DrawableTrail } from "./trail.js";
 import { LOSS_ENDED_LINE } from "@csarkosh/engine/game/lossBound";
-import { GEN_VERSION } from "../sim/forest.js";
+import { GEN_VERSION } from "@csarkosh/engine/sim/forest";
 import { DEFAULT_TERRAIN_VARIANT } from "@csarkosh/engine/sim/terrain";
 
 const DAY = 86_400_000;

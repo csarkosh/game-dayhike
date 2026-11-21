@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { parseLevel } from "../../src/sim/level.js";
+import { parseLevel } from "@csarkosh/engine/sim/level";
 import { createWorld, spawnPlayer, tickWorld } from "../../src/sim/world.js";
 import { targetPopulation } from "../../src/sim/director.js";
 import type { InputCommand } from "../../src/sim/types.js";

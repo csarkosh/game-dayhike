@@ -2,10 +2,10 @@
 import { describe, it, expect, vi } from "vitest";
 import { LOOP_FRAMES, LOOP_N, LOOP_SECONDS, LOOP_SIZE, cascadeBands, windSeaH0 } from "@csarkosh/engine/game/oceanSpectrum";
 import { WIND_SEA_CHOPPINESS, windSeaFields } from "@csarkosh/engine/game/oceanFft";
-import { windSeaStateFor } from "../../src/game/oceanWindSea.js";
+import { windSeaStateFor } from "@csarkosh/engine/game/oceanWindSea";
 import {
   bakeWindSeaLoop, fromHalf, loopFrame, loopSpectrum, loopStats, toHalf, windSeaBandStats, type LoopReply,
-} from "../../src/game/oceanLoopBake.js";
+} from "@csarkosh/engine/game/oceanLoopBake";
 import { timeLimit } from "../helpers/timeLimit.js";
 
 const SEED = 0x5eed;
@@ -122,7 +122,7 @@ describe("the loop's worker", () => {
     const postMessage = vi.fn();
     vi.stubGlobal("self", { postMessage });
     try {
-      await import("../../src/game/oceanLoop.worker.js");
+      await import("@csarkosh/engine/game/oceanLoop.worker");
       const scope = (globalThis as unknown as { self: { onmessage: (event: { data: { seed: number } }) => void } }).self;
       scope.onmessage({ data: { seed: 7 } });
       expect(postMessage).toHaveBeenCalledTimes(1);

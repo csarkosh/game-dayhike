@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { createWorld, spawnPlayer, tickWorld } from "../../src/sim/world.js";
-import { parseLevel } from "../../src/sim/level.js";
+import { parseLevel } from "@csarkosh/engine/sim/level";
 import { AiState, DeathCause } from "../../src/sim/types.js";
 import { ENEMY_HALF } from "../../src/sim/dayhikeConstants.js";
 import { spawnHollow } from "../../src/sim/hollow.js";

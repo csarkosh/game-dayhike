@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { aimDirection } from "../../src/sim/view.js";
+import { aimDirection } from "@csarkosh/engine/sim/view";
 
 describe("aimDirection", () => {
   it("points along +Z at yaw 0 and pitch 0", () => {

@@ -1,4 +1,4 @@
-import type { Vec3 } from "./core.js";
+import type { Vec3 } from "@csarkosh/engine/sim/core";
 
 export const enum EntityKind {
   Player = 0,
@@ -200,5 +200,5 @@ export type WorldState = {
 };
 
 // What is no game's own is the engine's (`core.ts`), and is named from here as it always was.
-export { cloneVec3, distanceSquared, nextRandom, randomRange, vec3 } from "./core.js";
-export type { InputCommand, Vec3 } from "./core.js";
+export { cloneVec3, distanceSquared, nextRandom, randomRange, vec3 } from "@csarkosh/engine/sim/core";
+export type { InputCommand, Vec3 } from "@csarkosh/engine/sim/core";

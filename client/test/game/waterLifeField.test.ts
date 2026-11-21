@@ -10,7 +10,7 @@ import {
   BEAT_LENGTH, FROG_SPACING, FROGS_MAX, FROGS_MIN, MARKER_SPACING, MARKERS_MAX, PERCH_SPACING, SHORE_BAND_IN, SHORE_BAND_OUT, SHORE_STEP,
   STEM_AREA, STEMS_MAX, WATER_LIFE_SALT, arcOf, inShoreBand, marshMid, shoreWalk, waterLifeLayout, type WaterLifeLayout,
 } from "@csarkosh/engine/game/waterLifeField";
-import { HEAD_ROW0 } from "../../src/game/midgeMotion.js";
+import { HEAD_ROW0 } from "@csarkosh/engine/game/midgeMotion";
 import { timeLimit } from "../helpers/timeLimit.js";
 import { stadiumLake, type StadiumOptions } from "../helpers/lakeShapes.js";
 

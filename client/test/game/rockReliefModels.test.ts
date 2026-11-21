@@ -3,9 +3,9 @@ import {
   ROCK_CAP_SHARE, ROCK_CUTS, ROCK_DEPTH, ROCK_PLANES,
   rockPlaneCandidates, rockPlanes, rockRelief, type RockArrays, type RockPlane,
 } from "@csarkosh/engine/game/rockRelief";
-import { CLUTTER_SINK } from "../../src/game/clutterInstances.js";
+import { CLUTTER_SINK } from "@csarkosh/engine/game/clutterInstances";
 import { CLUTTER_BOULDER_SCALE_MAX, CLUTTER_ROCK_SCALE_MAX } from "@csarkosh/engine/sim/clutter";
-import { BOULDER_A_BASE_H, BOULDER_B_BASE_H, BOULDER_SINK } from "../../src/sim/passes/clutter.js";
+import { BOULDER_A_BASE_H, BOULDER_B_BASE_H, BOULDER_SINK } from "@csarkosh/engine/sim/passes/clutter";
 import { babylonValues } from "../helpers/babylonFixture.js";
 import { timeLimit } from "../helpers/timeLimit.js";
 

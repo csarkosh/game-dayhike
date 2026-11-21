@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   PANORAMA_EYE_UP, PANORAMA_HEIGHT, PANORAMA_HEIGHT_M, PANORAMA_SECTORS, PANORAMA_SECTOR_WIDTH, PANORAMA_WIDTH, TURN_HOLD, TURN_IDLE, createPanoramaArming,
   createPanoramaTurn, panoramaFrustum, sectorYaw,
-} from "../../src/game/panoramaTurn.js";
+} from "@csarkosh/engine/game/panoramaTurn";
 import { babylonValues } from "../helpers/babylonFixture.js";
 
 /** The projection the shell on Babylon.js froze the shore panorama's camera at, in [0, 1] depth, for each radius, recorded. */

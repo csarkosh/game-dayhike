@@ -1,11 +1,11 @@
 import { expect } from "vitest";
 import "../../src/sim/passes/index.js";
-import { createForest } from "../../src/sim/forest.js";
+import { createForest } from "@csarkosh/engine/sim/forest";
 import { createForestWorld, spawnPlayer, tickWorld } from "../../src/sim/world.js";
 import { seedFromToken } from "@csarkosh/engine/game/seed";
 import { setActiveTerrainVariant, DEFAULT_TERRAIN_VARIANT } from "@csarkosh/engine/sim/terrain";
 import { AiState, Button, DeathCause, Phase } from "../../src/sim/types.js";
-import { SPRINT_SPEED, TICK_DT } from "../../src/sim/constants.js";
+import { SPRINT_SPEED, TICK_DT } from "@csarkosh/engine/sim/constants";
 import { SUMMIT_REVEAL_S } from "../../src/sim/hollow.js";
 import { stemAhead } from "@csarkosh/engine/sim/trailRoute";
 import { chaseLineDistance, chaseLinePoint } from "../../src/sim/chaseLine.js";
