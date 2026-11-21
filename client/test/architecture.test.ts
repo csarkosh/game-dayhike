@@ -396,14 +396,16 @@ describe("layer boundaries", () => {
     // two stands for its own loads. The shell (`shell.ts`) is the engine's and is handed the game's page.
     const main = at("main.ts");
     const entry = loads(main);
-    expect(entry, "./shell.js").toContain("./shell.js");
+    const shellSpec = `${ENGINE_PACKAGE}shell`;
+    expect(entry, shellSpec).toContain(shellSpec);
     expect(entry, "./hikePageGame.js").toContain("./hikePageGame.js");
     const shellFile = at("shell.ts");
     const ofShell = loads(shellFile);
     // The shell names the game only as `hikePageGame.ts`, which names the hike: its own loads stand in for that one.
     const gamePage = at("hikePageGame.ts");
     const ofGame = loads(gamePage);
-    const ofHike = [`${ENGINE_PACKAGE}app`, "./hikeGame.js"];
+    // The shell stands in the engine, beside the page that runs a session: it names it as a neighbour.
+    const ofHike = ["./app.js", "./hikeGame.js"];
     expect(ofShell, ofHike[0]).toContain(ofHike[0] as string);
     expect(ofGame, ofHike[1]).toContain(ofHike[1] as string);
     for (const specs of [entry, ofShell, ofGame]) {
@@ -411,7 +413,7 @@ describe("layer boundaries", () => {
     }
     const seen = new Map<string, string | null>();
     const stack: [string, string | null][] = [
-      ...entry.filter((spec) => spec !== "./shell.js" && spec !== "./hikePageGame.js").map((spec): [string, null] => [followed(main, spec) as string, null]),
+      ...entry.filter((spec) => spec !== shellSpec && spec !== "./hikePageGame.js").map((spec): [string, null] => [followed(main, spec) as string, null]),
       ...ofShell.filter((spec) => spec !== ofHike[0]).map((spec): [string, null] => [followed(shellFile, spec) as string, null]),
       ...ofGame.filter((spec) => spec !== ofHike[1]).map((spec): [string, null] => [followed(gamePage, spec) as string, null]),
     ];

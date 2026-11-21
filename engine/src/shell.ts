@@ -15,34 +15,34 @@ import {
   hostRoute,
   stripOverrides,
   type Route,
-} from "@csarkosh/engine/game/router";
-import { afterNextPaint } from "@csarkosh/engine/game/paint";
-import { setLoadProgress } from "@csarkosh/engine/game/loadReport";
-import { markedProgress } from "@csarkosh/engine/game/loadProgress";
-import { createRouteAnnouncer } from "@csarkosh/engine/game/routeAnnounce";
-import { worldInputs } from "@csarkosh/engine/game/worldInputs";
-import { sceneLine, startWorldPrep, worldPrepLine, type WorldPrepOutcome } from "@csarkosh/engine/game/worldPrep";
-import type { PreparedScene } from "@csarkosh/engine/game/preparedScene";
-import { isDesktop, isTouchDevice, hostPlatform, desktopVersion } from "@csarkosh/engine/game/platform";
-import { inviteLink, parseJoinLink } from "@csarkosh/engine/game/joinLink";
-import { createRoster } from "@csarkosh/engine/game/roster";
-import { rosterModel, attemptPending } from "@csarkosh/engine/game/rosterModel";
-import { startAttemptClock, type AttemptClock } from "@csarkosh/engine/game/attemptClock";
-import { parseLatest, type DesktopRelease } from "@csarkosh/engine/net/desktopRelease";
-import { createSignalingClient, type SignalingClient } from "@csarkosh/engine/net/signaling";
-import { signalingUrl } from "@csarkosh/engine/net/signalingUrl";
-import { createLobby, joinLobby, lobbyErrorMessage, type Lobby } from "@csarkosh/engine/net/lobby";
-import { browserDeps, createTelemetry, installErrorCapture, referrerOf, telemetryUrl, testerMark, visitorId, type EarlyCatch, type Telemetry } from "@csarkosh/engine/net/telemetry";
-import { GEN_VERSION } from "@csarkosh/engine/sim/forest";
-import { startGame, type GameHandle } from "@csarkosh/engine/app";
-import type { EngineOnCanvas } from "@csarkosh/engine/game/rendererSwap";
-import { LOSS_ENDED_LINE, createLossRecord } from "@csarkosh/engine/game/lossBound";
-import { browserEnv, browserMajor, offersWebGpu, readSignals, type GpuSignals, type NavigatorLike } from "@csarkosh/engine/game/gpuSignals";
-import { adapterVerdict, loadVerdict, type LoadVerdict } from "@csarkosh/engine/game/loadCheck";
-import { LOADING_LINE, START_FAILED_LINE, autoPick, launchLine, liteProbeSteps, startFallbacks, startHike, startupTier, type ProbeSteps, type StartupTier } from "@csarkosh/engine/game/frameProbe";
-import { createMuteButton, readMuted, writeMuted } from "@csarkosh/engine/game/muteButton";
-import { containerPixels, withGovernorDrop, type QualityTier, type VerdictEngine } from "@csarkosh/engine/game/quality";
-import type { AutoSummary } from "@csarkosh/engine/game/settings";
+} from "./game/router.js";
+import { afterNextPaint } from "./game/paint.js";
+import { setLoadProgress } from "./game/loadReport.js";
+import { markedProgress } from "./game/loadProgress.js";
+import { createRouteAnnouncer } from "./game/routeAnnounce.js";
+import { worldInputs } from "./game/worldInputs.js";
+import { sceneLine, startWorldPrep, worldPrepLine, type WorldPrepOutcome } from "./game/worldPrep.js";
+import type { PreparedScene } from "./game/preparedScene.js";
+import { isDesktop, isTouchDevice, hostPlatform, desktopVersion } from "./game/platform.js";
+import { inviteLink, parseJoinLink } from "./game/joinLink.js";
+import { createRoster } from "./game/roster.js";
+import { rosterModel, attemptPending } from "./game/rosterModel.js";
+import { startAttemptClock, type AttemptClock } from "./game/attemptClock.js";
+import { parseLatest, type DesktopRelease } from "./net/desktopRelease.js";
+import { createSignalingClient, type SignalingClient } from "./net/signaling.js";
+import { signalingUrl } from "./net/signalingUrl.js";
+import { createLobby, joinLobby, lobbyErrorMessage, type Lobby } from "./net/lobby.js";
+import { browserDeps, createTelemetry, installErrorCapture, referrerOf, telemetryUrl, testerMark, visitorId, type EarlyCatch, type Telemetry } from "./net/telemetry.js";
+import { GEN_VERSION } from "./sim/forest.js";
+import { startGame, type GameHandle } from "./app.js";
+import type { EngineOnCanvas } from "./game/rendererSwap.js";
+import { LOSS_ENDED_LINE, createLossRecord } from "./game/lossBound.js";
+import { browserEnv, browserMajor, offersWebGpu, readSignals, type GpuSignals, type NavigatorLike } from "./game/gpuSignals.js";
+import { adapterVerdict, loadVerdict, type LoadVerdict } from "./game/loadCheck.js";
+import { LOADING_LINE, START_FAILED_LINE, autoPick, launchLine, liteProbeSteps, startFallbacks, startHike, startupTier, type ProbeSteps, type StartupTier } from "./game/frameProbe.js";
+import { createMuteButton, readMuted, writeMuted } from "./game/muteButton.js";
+import { containerPixels, withGovernorDrop, type QualityTier, type VerdictEngine } from "./game/quality.js";
+import type { AutoSummary } from "./game/settings.js";
 import {
   createChoiceKeeper,
   leaveNotice,
@@ -54,14 +54,14 @@ import {
   writeAutoRecord,
   type TierChoice,
   type TierSource,
-} from "@csarkosh/engine/game/tierChoice";
-import { createVeil } from "@csarkosh/engine/game/veil";
-import type { Opening, PageGame } from "@csarkosh/engine/game/pageGame";
-import type { AmbientAudio } from "@csarkosh/engine/game/ambientAudio";
-import type { RenderPlayer, RenderState } from "@csarkosh/engine/game/lite/renderGame";
-import type { PageHud, PageRenderer, PageWorld } from "@csarkosh/engine/game/sessionGame";
-import type { ClientSession } from "@csarkosh/engine/net/client";
-import type { HostSession } from "@csarkosh/engine/net/host";
+} from "./game/tierChoice.js";
+import { createVeil } from "./game/veil.js";
+import type { Opening, PageGame } from "./game/pageGame.js";
+import type { AmbientAudio } from "./game/ambientAudio.js";
+import type { RenderPlayer, RenderState } from "./game/lite/renderGame.js";
+import type { PageHud, PageRenderer, PageWorld } from "./game/sessionGame.js";
+import type { ClientSession } from "./net/client.js";
+import type { HostSession } from "./net/host.js";
 
 /**
  * The page's shell: the routes, the lobby and its roster, telemetry, the load

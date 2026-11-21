@@ -33,7 +33,7 @@ describe("the version of Babylon Lite the page is built with", () => {
     expect(readFileSync(new URL('../engine/src/env.d.ts', CLIENT), 'utf8')).toContain('declare const __LITE_VERSION__: string;');
     expect(readFileSync(new URL('tsconfig.json', CLIENT), 'utf8')).toMatch(/"include": \[[^\]]*"\.\.\/engine\/src\/env\.d\.ts"[^\]]*\]/);
     // The page names it once, in what every telemetry row carries.
-    const shell = readFileSync(new URL('src/shell.ts', CLIENT), 'utf8');
+    const shell = readFileSync(new URL('../engine/src/shell.ts', CLIENT), 'utf8');
     expect(shell.match(/__LITE_VERSION__/g)).toHaveLength(1);
     expect(shell).toContain('      lite: __LITE_VERSION__,');
   });

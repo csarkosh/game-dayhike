@@ -36,7 +36,7 @@ describe("the seed and the terrain a hike's world is made from", () => {
   });
 
   it("is what the page starts the world's worker with, which the start waits for and a start left ends", () => {
-    const main = readFileSync(new URL("../../src/shell.ts", import.meta.url), "utf8").replace(/\/\*[\s\S]*?\*\//g, "").replace(/\/\/.*$/gm, "");
+    const main = readFileSync(new URL("../../../engine/src/shell.ts", import.meta.url), "utf8").replace(/\/\*[\s\S]*?\*\//g, "").replace(/\/\/.*$/gm, "");
     expect(main.match(/\bstartWorldPrep\(/g)).toEqual(["startWorldPrep("]);
     expect(main).toContain("const prep = startWorldPrep(worldInputs(route.token, location.search), page.worldWorker);");
     expect(main).toContain("prepOutcome = await prep.ready;");
@@ -45,7 +45,7 @@ describe("the seed and the terrain a hike's world is made from", () => {
   });
 
   it("asks the worker for the hike's first scene once, at the tier decided, waits for it before the build and hands it to the build once", () => {
-    const main = readFileSync(new URL("../../src/shell.ts", import.meta.url), "utf8").replace(/\/\*[\s\S]*?\*\//g, "").replace(/\/\/.*$/gm, "");
+    const main = readFileSync(new URL("../../../engine/src/shell.ts", import.meta.url), "utf8").replace(/\/\*[\s\S]*?\*\//g, "").replace(/\/\/.*$/gm, "");
     expect(main.match(/prep\.scene\(/g)).toEqual(["prep.scene("]);
     expect(main).toContain("sampling = prep.scene(decided.tier);");
     // After the world is ready, so the wait for it is its own lap.

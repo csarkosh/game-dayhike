@@ -6,6 +6,8 @@ import { createHikePage } from "../../src/hikePage.js";
 import { startHikeWorldWorker } from "../../src/game/hikeWorldWorker.js";
 import { runLiteSceneRoute } from "../../src/game/lite/sceneRoute.js";
 import { PROTOCOL_VERSION } from "../../src/net/protocol.js";
+import { existsSync } from "node:fs";
+import { fileURLToPath } from "node:url";
 import { sourceText } from "../helpers/source.js";
 
 /**
@@ -50,9 +52,13 @@ describe("the page's shell", () => {
     // Nothing of it runs as it is imported: every statement but its imports stands inside the function.
     const after = shell.slice(shell.indexOf("export function startShell<"));
     expect(after.slice(after.indexOf("): void {\n")).split("\n").filter((line) => line !== "" && !line.startsWith("  ") && line !== "): void {" && line !== "}")).toEqual([]);
+    // It stands in the engine's package, where no module may import the game's (`architecture.test.ts`), and its
+    // own imports are of its neighbours there alone.
+    expect(existsSync(fileURLToPath(new URL("../../../engine/src/shell.ts", import.meta.url)))).toBe(true);
+    expect(existsSync(fileURLToPath(new URL("../../src/shell.ts", import.meta.url)))).toBe(false);
     const specs = [...shell.matchAll(/^(?:import [^\n]*?|\} from )"([^"]+)";$/gm)].map((m) => m[1] as string);
     expect(specs.length).toBeGreaterThan(30);
-    expect(specs.filter((spec) => !spec.startsWith("@csarkosh/engine/"))).toEqual([]);
+    expect(specs.filter((spec) => !spec.startsWith("./"))).toEqual([]);
   });
 
   it("is started by Day Hike's entry, after its registrations, with Day Hike's definition", () => {
@@ -62,7 +68,7 @@ describe("the page's shell", () => {
         'import "./game/dayhikeAssets.js";',
         'import "./sim/passes/index.js";',
         'import { HIKE_PAGE } from "./hikePageGame.js";',
-        'import { startShell } from "./shell.js";',
+        'import { startShell } from "@csarkosh/engine/shell";',
         "",
         "startShell(HIKE_PAGE);",
       ].join("\n"),

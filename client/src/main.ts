@@ -8,6 +8,6 @@ import "./game/dayhikeAssets.js";
 // Day Hike's terrain registers as this is imported, before the world is read or prepared.
 import "./sim/passes/index.js";
 import { HIKE_PAGE } from "./hikePageGame.js";
-import { startShell } from "./shell.js";
+import { startShell } from "@csarkosh/engine/shell";
 
 startShell(HIKE_PAGE);
