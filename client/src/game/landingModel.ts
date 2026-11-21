@@ -64,7 +64,7 @@ export function downloadCard(latest: DesktopRelease, platform: Platform): Downlo
   };
 }
 
-/** Which panel is showing. The route decides; see main.ts. */
+/** Which panel is showing. The route decides; see shell.ts. */
 export type LandingPanel = "home" | "downloads" | "settings" | "credits";
 
 const LANDING_PANELS: readonly LandingPanel[] = ["home", "downloads", "settings", "credits"];

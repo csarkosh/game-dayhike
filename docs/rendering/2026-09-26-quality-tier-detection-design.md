@@ -291,7 +291,7 @@ type GpuSignals = {
   `isTouchDevice` is a different question and stays so: a touch-screen Windows
   laptop keeps its GPU's tier.
 
-It runs once per page, at load, in `main.ts`; the title screen repaints when it
+It runs once per page, at load, in `shell.ts`; the title screen repaints when it
 resolves (tens of milliseconds), and a page opened straight on a game route
 awaits it before the game is built.
 
@@ -469,7 +469,7 @@ either never raises the tier of any class.
 When the page is about to start a hike on **Auto**, with no override, and
 `autoTier` returns a `probeFrom`: a probed class with no verdict that holds and
 fewer than three attempts. Also, on Auto, with `?probe=high|medium` in the
-address, from that tier, whatever the class and the record, for the gate. It runs in `main.ts`'s game
+address, from that tier, whatever the class and the record, for the gate. It runs in `shell.ts`'s game
 route, **before** `startGame`: nothing of the hike exists yet, so it cannot
 stall a session or pop anything a player is looking at, and a follower simply
 arrives a few seconds after the host.
@@ -585,7 +585,7 @@ So at most two measurements and one rebuild. The verdict is written (§6.2,
 
 A dark screen and "Setting up graphics…", once per machine and browser, on the
 first hike that needs it: a world build (one blocks the page "for a second or
-more", `main.ts:391`), the models from the HTTP cache after the first visit,
+more", `shell.ts`), the models from the HTTP cache after the first visit,
 compilation, about 3 s of frames per tier. The whole probe is capped at 30 s; on
 the cap, or on a throw anywhere in it, the probe is abandoned, the hike starts at
 the class's start tier, and the attempt counts. What a step that already missed
@@ -809,7 +809,7 @@ the new one from the next frame.
 
 ### 9.2 What is bound to the renderer, its scene or its canvas
 
-Every binding in `app.ts` and `main.ts`, and what a swap does with it:
+Every binding in `app.ts` and `shell.ts`, and what a swap does with it:
 
 | binding | where | on a swap |
 | --- | --- | --- |
@@ -829,7 +829,7 @@ Every binding in `app.ts` and `main.ts`, and what a swap does with it:
 | the touch layer | four pointer listeners and `setPointerCapture` on the canvas (`touchControls.ts:542–557`) | `rebind(fresh)` |
 | touch model size, prompt size, resize | `canvas.clientWidth` / `clientHeight`, `app.ts:193`, `:409`, `:1052` | `canvas` becomes a `let`; `touchModel.resize` after the swap |
 | `canvas.style.touchAction` | `app.ts:188` | set on the fresh canvas |
-| the WebGPU watcher (WebGPU branch) | `watchWebGpu(engine, onGpuFailure)` in `main.ts`'s `launch` | moves into the swap: removed from the old engine, attached to a new WebGPU one (§9.4) |
+| the WebGPU watcher (WebGPU branch) | `watchWebGpu(engine, onGpuFailure)` in `shell.ts`'s `launch` | moves into the swap: removed from the old engine, attached to a new WebGPU one (§9.4) |
 | observers on the scene or the engine | none in `app.ts`; on the WebGPU branch, the watcher's four on the engine (`gpuEngine.ts`) | the watcher's, as above; the renderer's own go with its scene |
 | everything else in the container | HUD, command bar, pause menu, connect panel, poster, end panel, netgraph, prompt | untouched: DOM over the canvas, no scene reference |
 
@@ -890,7 +890,7 @@ one live instance per page and breaks with two:
   machine that is lowering its tier because it is short of GPU.
 
 The landing-to-game path already disposes one renderer before it builds the
-next (`main.ts:424`), so dispose-first is the order everything is written for.
+next (`shell.ts`), so dispose-first is the order everything is written for.
 
 **Failures.** The previous renderer is gone once step 3 runs, so falling back
 means rebuilding the previous configuration, not keeping the previous object:
@@ -963,7 +963,7 @@ The loop is the engine's render loop, so steps 1–7 run with no frame and no ti
 JavaScript runs one thing at a time, and the rebuild is one synchronous job. For
 its length the page does nothing else: the host's world does not advance, no
 snapshot is sent, no input is read. What is known of its length: the page's own
-comments say a world build blocks "for a second or more" (`main.ts:391`,
+comments say a world build blocks "for a second or more" (`shell.ts`,
 `app.ts:688`); a renderer rebuild does less (no `createForest`, no session), and
 more on WebGPU, where pipelines compile on first draw. The gate measures it
 (§13.4). After it:

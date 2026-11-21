@@ -39,7 +39,7 @@ export type IntroRun = {
 
 /**
  * Day Hike's own of the page: the intro's film, the title's loop, the landing page, the page for
- * those turned away, the player's name and the mode. The page's shell (`main.ts`) makes it once
+ * those turned away, the player's name and the mode. The page's shell (`shell.ts`) makes it once
  * and calls it at its own points.
  */
 export function createHikePage(h: PageHost): PageSide {

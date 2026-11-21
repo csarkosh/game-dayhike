@@ -17,11 +17,11 @@ watchers. The keeper holds one engine at a time; keeping a second releases
 the first.
 
 The next hike asks the keeper before making an engine (`hikeEngineFor`,
-`main.ts`): the kept engine is taken only when it is the engine the WebGPU
+`shell.ts`): the kept engine is taken only when it is the engine the WebGPU
 rule gives that hike now — same kind, same tier, the adapter's verdict the
 one read at load — and still standing. Anything else releases it: a hike that
 will not use it needs its memory more. A WebGPU engine is handed on as the
-hike's engine, as `main.ts` always gave one; a WebGL2 engine is left on its
+hike's engine, as `shell.ts` always gave one; a WebGL2 engine is left on its
 canvas for the renderer to take up (`adoptEngine`), so "no engine given"
 still means WebGL2 everywhere.
 

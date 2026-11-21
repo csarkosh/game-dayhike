@@ -265,7 +265,7 @@ export type PanelExit = {
   toLanding(): void;
 };
 
-/** The real browser wiring; main.ts passes this. */
+/** The real browser wiring; shell.ts passes this. */
 export const browserExit: PanelExit = {
   pushedFromLanding,
   back: () => history.back(),

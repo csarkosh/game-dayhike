@@ -24,7 +24,7 @@ export default defineConfig({
     // The version of Babylon Lite the hike is drawn with, as this package
     // pins it: the fork's tag, which names its patches, where the installed
     // package's own version says only which release they stand on. Every
-    // telemetry row carries it (`main.ts`).
+    // telemetry row carries it (`shell.ts`).
     __LITE_VERSION__: JSON.stringify(liteVersion(readFileSync(new URL("package.json", import.meta.url), "utf8"))),
   },
   // The web build lives under games.csarko.sh/dayhike; the desktop shell serves

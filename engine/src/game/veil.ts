@@ -1,6 +1,6 @@
 /**
  * The veil: a black sheet over the whole page that the route switches
- * behind (main.ts). The title and the game used to swap in one frame; now
+ * behind (shell.ts). The title and the game used to swap in one frame; now
  * the veil comes down over VEIL_COVER_MS, the page is swapped under it, and
  * it lifts over VEIL_LIFT_MS. It takes no input and is never in the way of
  * anything but the eye.

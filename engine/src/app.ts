@@ -125,7 +125,7 @@ export type GameOptions = {
    * every renderer made after the first. Absent, or with none to give, the
    * renderer samples the ground itself, as always. */
   takePrepared?: () => PreparedScene | null;
-  /** A fresh canvas for a renderer at `tier` (`main.ts`'s `hikeCanvasNow`):
+  /** A fresh canvas for a renderer at `tier` (`shell.ts`'s `hikeCanvasNow`):
    * what a switch of tier, and a rebuild after a failure, builds on. It
    * carries no engine: the renderer makes its own from it. It throws where
    * the page lets no hike be drawn. */
@@ -138,7 +138,7 @@ export type GameOptions = {
    * rebuilds makes of it; `ended` is called as the hike ends by that bound,
    * for the landing page's line. */
   losses: { note(): LossNote; ended(): void };
-  /** The tier `main.ts` decided (`startupTier`): `?tier=`, the player's
+  /** The tier `shell.ts` decided (`startupTier`): `?tier=`, the player's
    * choice, or Auto. The hike starts at it; the pause screen's Settings can
    * change it while the hike runs. */
   tier: QualityTier;
@@ -935,7 +935,7 @@ function buildGame<
       // Applied below via applyView; never written back to `?cmd=`.
       if (parsed.name !== "volume" && parsed.name !== "mist" && parsed.name !== "way" && parsed.name !== "escalation" && parsed.name !== "end" && !isLook(parsed.name)) persist(parsed.name, args);
       if (findCommand(parsed.name)?.kind === "world") {
-        // Re-initialise through the path `main.ts` already listens on.
+        // Re-initialise through the path `shell.ts` already listens on.
         window.dispatchEvent(new PopStateEvent("popstate"));
       } else {
         applyView(parsed.name, args);
@@ -984,7 +984,7 @@ function buildGame<
         swapError = null;
       },
       // A new mode is kept, and the hike started over on it: a world entry,
-      // re-initialised through the path `main.ts` listens on, as `/mode` is.
+      // re-initialised through the path `shell.ts` listens on, as `/mode` is.
       onChooseMode: (picked) => {
         // A value that is not one of the game's modes is ignored.
         if (!isMode(game.modes, picked)) return;

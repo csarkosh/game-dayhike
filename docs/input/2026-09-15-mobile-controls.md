@@ -293,7 +293,7 @@ Changed:
   menu, share-sheet Invite.
 - `client/src/game/landing.ts`, `landingModel.ts`: phone-width rules and the touch download
   note.
-- `client/src/main.ts`: passes `touch` into the roster model and the game options.
+- `engine/src/shell.ts`: passes `touch` into the roster model and the game options.
 
 The layering rule is untouched: `sim/` gains nothing, `net/` gains a getter.
 
