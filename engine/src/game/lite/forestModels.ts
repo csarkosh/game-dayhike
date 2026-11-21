@@ -18,12 +18,12 @@ import {
   disposeMeshGpu, enableKtx2WorkerDecoding, getContainerMeshes, getMeshGeometry, loadGltf, loadKtx2Texture2D, setKtx2DecoderUrl,
   type EngineContext, type Mesh, type PbrMaterialProps, type SceneNode, type Texture2D,
 } from "@babylonjs/lite";
-import { glbParts, type GlbPart } from "@csarkosh/engine/game/glbParts";
-import { bakeGeometry, boundsOf, chainMatrix, type PlacedNode } from "@csarkosh/engine/game/modelBake";
-import type { Vec3 } from "@csarkosh/engine/game/instancePose";
-import { BASE } from "@csarkosh/engine/game/router";
-import { fetchRetried } from "@csarkosh/engine/game/fetchRetry";
-import { pageTurns } from "@csarkosh/engine/game/downloadTurns";
+import { glbParts, type GlbPart } from "../glbParts.js";
+import { bakeGeometry, boundsOf, chainMatrix, type PlacedNode } from "../modelBake.js";
+import type { Vec3 } from "../instancePose.js";
+import { BASE } from "../router.js";
+import { fetchRetried } from "../fetchRetry.js";
+import { pageTurns } from "../downloadTurns.js";
 import { modelLoadTold } from "../loadReport.js";
 
 /** One primitive of a LOD: its geometry at the origin, what its file says of its material, and the loader's textures of it. */

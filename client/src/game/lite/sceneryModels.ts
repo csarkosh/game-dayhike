@@ -46,12 +46,12 @@ import {
   type EngineContext, type MaterialPlugin, type Mesh, type PbrMaterialProps, type PluginUniformBlock, type Texture2D,
 } from "@babylonjs/lite";
 import { TURN_ROW_FLOATS } from "../carParts.js";
-import { modelUrl } from "../assetUrls.js";
+import { modelUrl } from "@csarkosh/engine/game/assetUrls";
 import { glbOcclusion, glbParts, type GlbOcclusion } from "@csarkosh/engine/game/glbParts";
 import { composeInto, quatFromEuler } from "@csarkosh/engine/game/instancePose";
 import { bakeGeometry } from "@csarkosh/engine/game/modelBake";
 import type { WetUniforms } from "@csarkosh/engine/game/wetSurface";
-import { loadModelFile, type ModelPart } from "./forestModels.js";
+import { loadModelFile, type ModelPart } from "@csarkosh/engine/game/lite/forestModels";
 import { baseColourPlugin, surfaceWetPlugin } from "@csarkosh/engine/game/lite/forestPlugins";
 import carTurnsFrameSource from "../shaders/sceneryModels/carTurnsFrame.wgsl?raw";
 import carTurnsSource from "../shaders/sceneryModels/carTurns.wgsl?raw";

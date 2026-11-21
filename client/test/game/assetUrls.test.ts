@@ -1,6 +1,6 @@
 import { describe, it, expect } from "vitest";
 import "../../src/game/dayhikeAssets.js";
-import { audioUrl, modelBytes, modelUrl } from "../../src/game/assetUrls.js";
+import { audioUrl, modelBytes, modelUrl } from "@csarkosh/engine/game/assetUrls";
 import catalog from "../../assets/catalog.json" with { type: "json" };
 
 /** Every model the catalog declares, by the `output` key callers pass. */
@@ -111,7 +111,7 @@ describe("audioUrl", () => {
   });
 });
 
-import { assetBytes, textureUrl } from "../../src/game/assetUrls.js";
+import { assetBytes, textureUrl } from "@csarkosh/engine/game/assetUrls";
 
 describe("textureUrl", () => {
   /** The KTX2 maps the catalog declares: the bark sets (four sets, two

@@ -6,9 +6,9 @@
  * same clip.
  */
 import { modelUrl } from "./assetUrls.js";
-import type { ClipRole } from "@csarkosh/engine/game/wildlifeBehaviour";
+import type { ClipRole } from "./wildlifeBehaviour.js";
 
-export type { ClipRole } from "@csarkosh/engine/game/wildlifeBehaviour";
+export type { ClipRole } from "./wildlifeBehaviour.js";
 
 /** Every wildlife role, in the order a model's clips are resolved. */
 export const CREATURE_ROLES: readonly ClipRole[] = ["graze", "idle", "walk", "run", "alert"];

@@ -26,7 +26,7 @@
  * registers. Importing it registers them; the page's entry does.
  */
 import catalog from "../../assets/catalog.json" with { type: "json" };
-import { registerAssets } from "./assetUrls.js";
+import { registerAssets } from "@csarkosh/engine/game/assetUrls";
 
 const GLOB_URLS = import.meta.glob("../../assets/models/*.glb", {
   query: "?url",

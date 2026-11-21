@@ -33,12 +33,12 @@ import {
   setThinInstanceCount, setThinInstances,
   type AssetContainer, type EngineContext, type Mesh, type PbrMaterialProps, type SceneContext, type SceneNode, type Texture2D, type VatHandle,
 } from "@babylonjs/lite";
-import { glbEmissive } from "@csarkosh/engine/game/glbParts";
-import { CLIP_FLOATS, SKIN_CLOCK_FOLD, type BakedClip } from "@csarkosh/engine/game/skinInstances";
-import type { FrameUploads } from "@csarkosh/engine/game/lite/frameUploads";
-import { fetchRetried } from "@csarkosh/engine/game/fetchRetry";
+import { glbEmissive } from "../glbParts.js";
+import { CLIP_FLOATS, SKIN_CLOCK_FOLD, type BakedClip } from "../skinInstances.js";
+import type { FrameUploads } from "./frameUploads.js";
+import { fetchRetried } from "../fetchRetry.js";
 import { modelLoadTold } from "../loadReport.js";
-import { MATRIX_BYTES } from "@csarkosh/engine/game/lite/listMeshes";
+import { MATRIX_BYTES } from "./listMeshes.js";
 
 /** The clock every baked mesh's rows are read by, seconds, folded. */
 export type SkinClock = {

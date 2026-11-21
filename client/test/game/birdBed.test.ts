@@ -1,7 +1,7 @@
 import { describe, it, expect, vi } from "vitest";
 import "../../src/game/dayhikeAssets.js";
 import { BIRD_BED_CLIP, loadBirdBed } from "../../src/game/birdBed.js";
-import { audioUrl } from "../../src/game/assetUrls.js";
+import { audioUrl } from "@csarkosh/engine/game/assetUrls";
 
 /** The three calls the loader makes of the ambient graph, with the unlock held until `unlock()`. */
 function fakeAmbient(decoded: AudioBuffer | null) {

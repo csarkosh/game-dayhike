@@ -1,11 +1,11 @@
 import { afterEach, describe, expect, it } from "vitest";
 import "../../src/game/dayhikeAssets.js";
-import { modelBytes, modelUrl } from "../../src/game/assetUrls.js";
+import { modelBytes, modelUrl } from "@csarkosh/engine/game/assetUrls";
 import { createLoadProgress, markedProgress, type LoadProgress, type Stage } from "@csarkosh/engine/game/loadProgress";
 import {
   GROUND_STAGE_TOTAL, expectModels, modelLoadTold, reportGroundImage, reportLayer, reportModel, reportProgress, setLoadProgress,
-} from "../../src/game/loadReport.js";
-import * as groundMaps from "../../src/game/groundLayers.js";
+} from "@csarkosh/engine/game/loadReport";
+import * as groundMaps from "@csarkosh/engine/game/groundLayers";
 
 /** A progress model that says what it was told. */
 function told(): LoadProgress & { log: string[] } {

@@ -22,20 +22,20 @@ import {
   createMeshFromData, createPbrMaterial, disposeMeshGpu, removeFromScene, setPbrMetallicReflectance,
   type EngineContext, type MaterialPlugin, type PluginUniformBlock, type PbrMaterialProps, type SceneContext,
 } from "@babylonjs/lite";
-import { CLIFF_DENSITY, CLIFF_MODELS } from "@csarkosh/engine/sim/cliffField";
+import { CLIFF_DENSITY, CLIFF_MODELS } from "../../sim/cliffField.js";
 import { modelUrl } from "../assetUrls.js";
-import { cliffOrigin } from "@csarkosh/engine/game/cliffField";
-import { CLIFF_FAR_LOD, CLIFF_GROUND_TINT, CLIFF_LOD_NODES, createCliffLists } from "@csarkosh/engine/game/cliffInstances";
-import type { InstanceList } from "@csarkosh/engine/game/instanceLists";
-import type { QualityTier } from "@csarkosh/engine/game/quality";
-import type { WetUniforms } from "@csarkosh/engine/game/wetSurface";
+import { cliffOrigin } from "../cliffField.js";
+import { CLIFF_FAR_LOD, CLIFF_GROUND_TINT, CLIFF_LOD_NODES, createCliffLists } from "../cliffInstances.js";
+import type { InstanceList } from "../instanceLists.js";
+import type { QualityTier } from "../quality.js";
+import type { WetUniforms } from "../wetSurface.js";
 import { loadModel, type ModelPart } from "./forestModels.js";
-import { baseColourPlugin, surfaceWetPlugin, vegetationInstanceLayout, vegetationPlugin, type Vegetation } from "@csarkosh/engine/game/lite/forestPlugins";
-import { DRAW_ORDER, createDrawOrders } from "@csarkosh/engine/game/lite/drawOrder";
-import type { FrameUploads } from "@csarkosh/engine/game/lite/frameUploads";
-import type { ReflectionRegistry } from "@csarkosh/engine/game/lite/lakePanorama";
-import type { CoverRegistry } from "@csarkosh/engine/game/lite/rainMap";
-import { listMesh, showList, type ListMesh } from "@csarkosh/engine/game/lite/listMeshes";
+import { baseColourPlugin, surfaceWetPlugin, vegetationInstanceLayout, vegetationPlugin, type Vegetation } from "./forestPlugins.js";
+import { DRAW_ORDER, createDrawOrders } from "./drawOrder.js";
+import type { FrameUploads } from "./frameUploads.js";
+import type { ReflectionRegistry } from "./lakePanorama.js";
+import type { CoverRegistry } from "./rainMap.js";
+import { listMesh, showList, type ListMesh } from "./listMeshes.js";
 
 export function cliffMeshName(model: number, lod: number): string {
   return `cliff_m${model}_l${lod}`;

@@ -8,7 +8,7 @@
  * hike, the wildlife's calls) loads no renderer's library to do it.
  */
 import { modelBytes } from "./assetUrls.js";
-import type { LoadProgress } from "@csarkosh/engine/game/loadProgress";
+import type { LoadProgress } from "./loadProgress.js";
 
 let progress: LoadProgress | null = null;
 /** The models asked for under the bar that is up, by url: the models stage's total is their count. */

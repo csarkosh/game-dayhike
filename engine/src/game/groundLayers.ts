@@ -22,7 +22,7 @@
  * the arrays.
  */
 import { textureUrl } from "./assetUrls.js";
-import { fetchRetried } from "@csarkosh/engine/game/fetchRetry";
+import { fetchRetried } from "./fetchRetry.js";
 
 export const GROUND_LAYERS = 6;
 export const GROUND_MAP_SIZE = 512;

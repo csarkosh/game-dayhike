@@ -13,7 +13,7 @@ import {
   type SceneryPart,
 } from "../../../src/game/lite/sceneryModels.js";
 import { carPartTurn, partMatrix, poseVertices, restTurns, writeTurnRows } from "../../../src/game/carParts.js";
-import type { ModelPart } from "../../../src/game/lite/forestModels.js";
+import type { ModelPart } from "@csarkosh/engine/game/lite/forestModels";
 
 function viewFrom(eye: CameraPose, cover: SceneryView["cover"] = null): SceneryView {
   return { planes: viewPlanes(eye, cameraAxes(eye.yaw, eye.pitch, eye.roll, restAxes()), 1.4, 1.5, 0.05, 10_000, restPlanes()), eye, cover };

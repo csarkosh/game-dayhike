@@ -4,7 +4,7 @@ import { describe, expect, it } from "vitest";
 import "../../../src/game/dayhikeAssets.js";
 import "../../../src/sim/passes/index.js";
 import { impostorQuad } from "@csarkosh/engine/game/forestInstances";
-import { cardGeometry, cardNormals } from "../../../src/game/lite/forestMeshes.js";
+import { cardGeometry, cardNormals } from "@csarkosh/engine/game/lite/forestMeshes";
 
 describe("a billboard's card on Babylon Lite", () => {
   it("is the tree's quad about its origin, facing -z, its coordinates laid as the bake's rows: the first at the foot", () => {
@@ -34,7 +34,7 @@ describe("a billboard's card on Babylon Lite", () => {
  * that once a bake: seven times a forest.
  */
 describe("the billboards' cards joining the scene on Babylon Lite", () => {
-  const source = readFileSync(fileURLToPath(new URL("../../../src/game/lite/forestMeshes.ts", import.meta.url)), "utf8");
+  const source = readFileSync(fileURLToPath(new URL("../../../../engine/src/game/lite/forestMeshes.ts", import.meta.url)), "utf8");
   const bake = source.slice(source.indexOf("async function bakeBillboard("), source.indexOf("  function dress("));
 
   it("are not made by a bake as it lands: the bake keeps its pictures for the step that makes every card", () => {

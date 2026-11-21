@@ -10,7 +10,7 @@ import { FixedStepAccumulator } from "@csarkosh/engine/game/loop";
 import { capturedEye, type EyePose } from "./game/eyeBlend.js";
 import { createHud } from "./game/hud.js";
 import { RING_COUNT } from "@csarkosh/engine/game/clipmap";
-import { reportProgress } from "./game/loadReport.js";
+import { reportProgress } from "@csarkosh/engine/game/loadReport";
 import {
   endSceneRunner,
   END_FADE_AT_S, END_LANDING_AT_S, END_ROAD_AT_S, ESCAPE_FROM_M, ESCAPE_SETTLE_S, ESCAPE_WAIT_S, MASTER_FADE_S, PULL_AWAY_AT_S, RUN_MAX_S, TITLE_AT_S, WORLD_FADE_S, carHeard,

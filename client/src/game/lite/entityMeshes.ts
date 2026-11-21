@@ -88,7 +88,7 @@ import { baseColourPlugin, surfaceWetPlugin } from "@csarkosh/engine/game/lite/f
 import type { FrameUploads } from "@csarkosh/engine/game/lite/frameUploads";
 import { MATRIX_BYTES } from "@csarkosh/engine/game/lite/listMeshes";
 import { writeShadeLook, type LiteShadeMask } from "@csarkosh/engine/game/lite/shadeMask";
-import { loadSkinnedModel, type SkinClock, type SkinnedModel, type SkinnedPart } from "./skinnedModels.js";
+import { loadSkinnedModel, type SkinClock, type SkinnedModel, type SkinnedPart } from "@csarkosh/engine/game/lite/skinnedModels";
 import eyeLevelVertexSource from "../shaders/entity/eyeLevelVertex.wgsl?raw";
 import eyeLevelColourSource from "../shaders/entity/eyeLevelColour.wgsl?raw";
 import { wgsl } from "@csarkosh/engine/game/shaders/shaderText";

@@ -15,11 +15,11 @@ import {
   createRenderTexture2D, createTexture2DArrayFromPixels, createTexture2DFromPixels, updateTexture2DFromPixels, updateTextureRegion,
   type EngineContext, type Texture2D, type Texture2DArray,
 } from "@babylonjs/lite";
-import { CLOUD_NOISE_SIZE, cloudNoiseMap, writeCloudGround, type CloudGround } from "@csarkosh/engine/game/cloudParams";
+import { CLOUD_NOISE_SIZE, cloudNoiseMap, writeCloudGround, type CloudGround } from "../cloudParams.js";
 import { GROUND_ALBEDOS, GROUND_LAYERS, GROUND_LAYER_URLS, GROUND_MAP_SIZE, decodeGroundLayer, interleaveLayers } from "../groundLayers.js";
 import { reportGroundImage } from "../loadReport.js";
-import type { FloatTable } from "@csarkosh/engine/game/terrainTables";
-import type { TerrainTextures } from "@csarkosh/engine/game/lite/terrainPlugins";
+import type { FloatTable } from "../terrainTables.js";
+import type { TerrainTextures } from "./terrainPlugins.js";
 
 /** The layer arrays: each layer's albedo, the normals and the RAH maps. */
 export type GroundArrays = Pick<TerrainTextures, "grass" | "floor" | "rock" | "sand" | "pebble" | "asphalt" | "normals" | "rah">;

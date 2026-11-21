@@ -8,7 +8,7 @@
  * silent and not asked for again: the subtitle stands on its own.
  */
 import type { AmbientAudio } from "./ambientAudio.js";
-import { audioUrl } from "./assetUrls.js";
+import { audioUrl } from "@csarkosh/engine/game/assetUrls";
 import { pageTurns } from "@csarkosh/engine/game/downloadTurns";
 import type { VoiceLine } from "./innerVoice.js";
 

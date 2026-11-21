@@ -6,7 +6,7 @@
 // Package-layout note (@babylonjs/ktx2decoder@9.18.0): the published npm
 // package is ESM-only, meant for bundler consumption — it does NOT ship the
 // prebuilt UMD "babylon.ktx2Decoder.js" that Babylon Lite's KTX2 loader is
-// pointed at (`setKtx2DecoderUrl`, `client/src/game/lite/forestModels.ts`).
+// pointed at (`setKtx2DecoderUrl`, `engine/src/game/lite/forestModels.ts`).
 // That URL is loaded as a classic script, on the main thread or by
 // `importScripts` inside the KTX2 worker — both require plain, non-module script syntax that
 // sets a global `KTX2DECODER`, which is exactly what the CDN's prebuilt file

@@ -29,7 +29,7 @@ import {
 import type { ActorPose } from "../scene/timeline.js";
 import type { FrameUploads } from "@csarkosh/engine/game/lite/frameUploads";
 import { fetchRetried } from "@csarkosh/engine/game/fetchRetry";
-import { modelLoadTold } from "../loadReport.js";
+import { modelLoadTold } from "@csarkosh/engine/game/loadReport";
 
 /** How far (the largest float of a bone's sixteen) the rig's bones at rest may stand from the ones the loader made, in the mesh's own units. */
 export const REST_BONES_APART = 1e-2;

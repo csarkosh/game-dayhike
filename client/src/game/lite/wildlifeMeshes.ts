@@ -34,10 +34,10 @@ import {
   setThinInstanceCount, setThinInstances,
   type EngineContext, type MaterialPlugin, type Mesh, type PbrMaterialProps, type PluginUniformBlock, type SceneContext, type Texture2D,
 } from "@babylonjs/lite";
-import { assetCatalog, modelUrl } from "../assetUrls.js";
-import { creatureRoleGroups, resolveCreatureAssets, type CreatureAsset } from "../creatureAssets.js";
+import { assetCatalog, modelUrl } from "@csarkosh/engine/game/assetUrls";
+import { creatureRoleGroups, resolveCreatureAssets, type CreatureAsset } from "@csarkosh/engine/game/creatureAssets";
 import { stepClip, type ClipClock } from "../entityPoses.js";
-import { expectModels } from "../loadReport.js";
+import { expectModels } from "@csarkosh/engine/game/loadReport";
 import type { FirstBuilds } from "@csarkosh/engine/game/firstBuilds";
 import { composeInto, type Quat } from "@csarkosh/engine/game/instancePose";
 import { writeClipParams, type BakedClip } from "@csarkosh/engine/game/skinInstances";
@@ -50,11 +50,11 @@ import {
 } from "@csarkosh/engine/game/wildlifeScene";
 import type { WeatherParams } from "@csarkosh/engine/game/weather";
 import { DRAW_ORDER, createDrawOrders } from "@csarkosh/engine/game/lite/drawOrder";
-import { loadModel } from "./forestModels.js";
+import { loadModel } from "@csarkosh/engine/game/lite/forestModels";
 import { oneSidedLightPlugin } from "@csarkosh/engine/game/lite/forestPlugins";
 import type { FrameUploads } from "@csarkosh/engine/game/lite/frameUploads";
 import { MATRIX_BYTES } from "@csarkosh/engine/game/lite/listMeshes";
-import { loadSkinnedModel, type SkinClock, type SkinnedModel } from "./skinnedModels.js";
+import { loadSkinnedModel, type SkinClock, type SkinnedModel } from "@csarkosh/engine/game/lite/skinnedModels";
 import { WING_AMP_AT, WING_COLOURWAY_AT, WING_PHASE_AT, wingPlugin } from "@csarkosh/engine/game/lite/wingPlugin";
 
 /** The most members of one ground species drawn at once. */

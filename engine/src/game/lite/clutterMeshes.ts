@@ -46,32 +46,32 @@ import {
   setPbrMetallicReflectance,
   type EngineContext, type MaterialPlugin, type PluginUniformBlock, type Mesh, type PbrMaterialProps, type SceneContext,
 } from "@babylonjs/lite";
-import { CLUTTER_CLASS_COUNT, CLUTTER_DRIFTLOG, CLUTTER_GRASS_CELL, CLUTTER_HIGHPLANT, CLUTTER_SHRUB, CLUTTER_WETPLANT } from "@csarkosh/engine/sim/clutter";
+import { CLUTTER_CLASS_COUNT, CLUTTER_DRIFTLOG, CLUTTER_GRASS_CELL, CLUTTER_HIGHPLANT, CLUTTER_SHRUB, CLUTTER_WETPLANT } from "../../sim/clutter.js";
 import { modelUrl } from "../assetUrls.js";
-import { clutterFadeEdges, coverWiden } from "@csarkosh/engine/game/clutterField";
+import { clutterFadeEdges, coverWiden } from "../clutterField.js";
 import {
   CLUTTER_MODEL_IDS, CUT_CLASSES, DRIFTLOG_BLEACH, FAR_LOD, FOLIAGE_BY_CLASS, NEAR_LOD, SHRUB_F0, SHRUB_ROUGHNESS, WET_CAP_BY_CLASS, clutterLodNames,
   clutterNearLodName, cutModel, seatDriftLogs,
-} from "@csarkosh/engine/game/clutterInstances";
-import { createClutterLists, type ClutterBucket, type ClutterLists } from "@csarkosh/engine/game/clutterLists";
-import type { FirstBuilds } from "@csarkosh/engine/game/firstBuilds";
-import { FOLIAGE_CARD_CONTRAST, coverAlbedoTint } from "@csarkosh/engine/game/coverAlbedoParams";
-import { foliageLook, foliageMatched, type FoliageLook, type FoliageProfile } from "@csarkosh/engine/game/foliageUniforms";
-import type { CullPose } from "@csarkosh/engine/game/grassCull";
-import { HIGH_PLANT_COUNT, highPlantGeometry } from "@csarkosh/engine/game/highPlantClump";
-import { ROCK_CUTS, rockPlanes, rockRelief } from "@csarkosh/engine/game/rockRelief";
-import { SHRUB_CHARACTERS, shrubGeometry } from "@csarkosh/engine/game/shrubClump";
-import type { Slices, SyncJobs } from "@csarkosh/engine/game/syncJobs";
-import { WET_PLANT_COUNT, wetPlantGeometry } from "@csarkosh/engine/game/wetPlantClump";
-import type { WetUniforms } from "@csarkosh/engine/game/wetSurface";
+} from "../clutterInstances.js";
+import { createClutterLists, type ClutterBucket, type ClutterLists } from "../clutterLists.js";
+import type { FirstBuilds } from "../firstBuilds.js";
+import { FOLIAGE_CARD_CONTRAST, coverAlbedoTint } from "../coverAlbedoParams.js";
+import { foliageLook, foliageMatched, type FoliageLook, type FoliageProfile } from "../foliageUniforms.js";
+import type { CullPose } from "../grassCull.js";
+import { HIGH_PLANT_COUNT, highPlantGeometry } from "../highPlantClump.js";
+import { ROCK_CUTS, rockPlanes, rockRelief } from "../rockRelief.js";
+import { SHRUB_CHARACTERS, shrubGeometry } from "../shrubClump.js";
+import type { Slices, SyncJobs } from "../syncJobs.js";
+import { WET_PLANT_COUNT, wetPlantGeometry } from "../wetPlantClump.js";
+import type { WetUniforms } from "../wetSurface.js";
 import { loadModel, type LoadedModel, type ModelPart } from "./forestModels.js";
 import {
   baseColourPlugin, oneSidedLightPlugin, surfaceWetPlugin, vegetationInstanceLayout, vegetationPlugin, type Vegetation,
-} from "@csarkosh/engine/game/lite/forestPlugins";
-import { DRAW_ORDER, createDrawOrders } from "@csarkosh/engine/game/lite/drawOrder";
-import type { FrameUploads } from "@csarkosh/engine/game/lite/frameUploads";
-import { listBytes, listMesh, showList, type ListMesh } from "@csarkosh/engine/game/lite/listMeshes";
-import { cellOrigin, createRebuilds } from "@csarkosh/engine/game/lite/rebuildJobs";
+} from "./forestPlugins.js";
+import { DRAW_ORDER, createDrawOrders } from "./drawOrder.js";
+import type { FrameUploads } from "./frameUploads.js";
+import { listBytes, listMesh, showList, type ListMesh } from "./listMeshes.js";
+import { cellOrigin, createRebuilds } from "./rebuildJobs.js";
 
 /** What showing the clutter's lists is expected to take (ms): every bucket handed its list, one step. The scheduler
  * learns the figure on the device it runs on (`syncJobs.ts`) and trusts it where it is more. */
