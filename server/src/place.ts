@@ -5,7 +5,8 @@
  * region, the city and the city's coordinates (to a tenth of a degree), never
  * keeping the address (lib-visits' SPEC section 7).
  * This service holds no database of its own and writes no address: only the
- * place, on one `place` row a session (`telemetry.ts`).
+ * place, on one `geo` row a session (`telemetry.ts`; not `place`, which is the game's own event
+ * for a named place on the trail).
  *
  * Configured by `PLACE_URL` (the collector's route) and `PLACE_TOKEN` (its
  * bearer token); without both, nothing is placed. A lookup that fails or

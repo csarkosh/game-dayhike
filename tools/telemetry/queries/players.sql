@@ -13,7 +13,7 @@
 -- far; the frame rate, the median of each session's heartbeat median (`hb`,
 -- every 30 s of a match); and the worst frame any heartbeat reported. And who
 -- they are: the machine they were last seen on (the `gpu`, the `os`, the
--- `load` row's tier and engine) and where they were last placed (`place`
+-- `load` row's tier and engine) and where they were last placed (`geo`
 -- rows, from csarko.sh's analytics collector's city database; never an
 -- address). Replaces `health.sql` and `visitors.sql` (2026-11-21).
 -- The rows that are real play, the same text in every query (`README.md`):
@@ -40,7 +40,7 @@ WITH real AS (
         AND timestamp >= TIMESTAMP_SUB(CURRENT_TIMESTAMP(), INTERVAL 90 DAY)
     )
 ),
--- Each session's place: the `place` row the server writes after a session's
+-- Each session's place: the `geo` row the server writes after a session's
 -- first batch, from csarko.sh's analytics collector's city database (the
 -- country, region and city; never the address).
 places AS (
@@ -51,7 +51,7 @@ places AS (
     ANY_VALUE(JSON_VALUE(json_payload.cc)) AS country
   FROM real
   WHERE JSON_VALUE(json_payload.svc) = 'telemetry'
-    AND JSON_VALUE(json_payload.n) = 'place'
+    AND JSON_VALUE(json_payload.n) = 'geo'
     AND timestamp >= TIMESTAMP(DATE_SUB(DATE_ADD(CURRENT_DATE('America/New_York'), INTERVAL 1 DAY), INTERVAL 7 DAY), 'America/New_York') -- range
   GROUP BY sid
 ),

@@ -379,7 +379,9 @@ telemetry has no tie to the analytics' visits, so the place comes to it: after a
 first batch the telemetry route posts the client's address to lib-visits' place route
 (`POST /place` on csarko.sh's collector, `PLACE_URL` and `PLACE_TOKEN`; `server/src/place.ts`),
 which answers from the city database bundled there and writes nothing, and the route writes one
-`place` row with the session's envelope and the place, never the address. The queries read it
+`geo` row with the session's envelope and the place, never the address (named `geo`, not
+`place`, since 2026-11-21: `place` is the game's own event for a named place on the trail, which
+the trail drawing reads). The queries read it
 as `places` (`health.sql`, `visitors.sql`, `progress.sql`); a player is where their newest
 placed session was. The funnel is now one smooth shape read left to right, its height each
 stage's share of the first, each stage's count over it and each step's share of the stage before
@@ -410,7 +412,7 @@ most visited cities with their counts. It opens turned to the visits' weighted m
 only half way to its latitude, and turns under a drag; a city on the far side is hidden until it
 comes round. The coordinates are the city's own, to a tenth of a degree: lib-visits writes them as
 `s.la` and `s.lo` beside the city and its place route answers them, so `places.sql` reads them and
-the `place` rows carry them. "Where parties went" is no longer a card: it is the last part of
+the `geo` rows carry them. "Where parties went" is no longer a card: it is the last part of
 Players, "Where they went", the drawing and its scrubber with the chosen world's sessions beside
 them (the session, its farthest, where it went and its end; the six tiles and the role and
 minutes columns left, since the players' lines above say them), and the list of worlds at the

@@ -191,7 +191,7 @@ const machineColumn: Column = {
   },
 };
 
-/** Where a player is, by city (`place` rows; `placeName`); a dash where the collector had not placed them yet. */
+/** Where a player is, by city (`geo` rows; `placeName`); a dash where the collector had not placed them yet. */
 const whereColumn: Column = {
   key: "city",
   label: "Where",

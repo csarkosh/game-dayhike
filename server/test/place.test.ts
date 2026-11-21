@@ -48,7 +48,7 @@ describe("PlacedSessions", () => {
   });
 });
 
-describe("the telemetry route's place row", () => {
+describe("the telemetry route's geo row", () => {
   let server: SignalingServer;
   let base: string;
   const rows: LogRow[] = [];
@@ -78,7 +78,7 @@ describe("the telemetry route's place row", () => {
     expect((await post("s-place")).status).toBe(204);
     expect((await post("s-place")).status).toBe(204);
     await new Promise((resolve) => setTimeout(resolve, 20));
-    const places = rows.filter((r) => r.n === "place");
+    const places = rows.filter((r) => r.n === "geo");
     expect(places).toHaveLength(1);
     expect(places[0]).toMatchObject({ sid: "s-place", vid: "v1", build: "abc1234", gpu: "Apple M2", cc: "US", rg: "Washington", ct: "Port Angeles", svc: "telemetry", dh: 1 });
     expect(JSON.stringify(places[0])).not.toContain("198.51.100.7");

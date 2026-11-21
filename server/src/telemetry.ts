@@ -231,14 +231,15 @@ export function rowsOf(batch: Batch, meta: ReceiptMeta): LogRow[] {
 }
 
 /**
- * A session's place as its own row: the batch's envelope (its session,
+ * A session's place as its own row, named `geo` (the game's own `place` events are the trail's
+ * named places, which the trail drawing reads): the batch's envelope (its session,
  * visitor, build and machine, so every query's exclusion reads it as it reads
  * the session's other rows), the owner's or a preview's marks, and the
  * country, region and city. Never the address.
  */
 export function placeRow(batch: Batch, meta: ReceiptMeta, place: Place, at: number): LogRow {
   const fields = { ...batch.envelope, ...meta.stamp, ...place, t: 0, at, sbuild: meta.serverBuild, svc: "telemetry" };
-  return row("INFO", "place", fields, `place: ${[place.ct, place.rg, place.cc].filter(Boolean).join(", ")}`, new Date(at).toISOString());
+  return row("INFO", "geo", fields, `geo: ${[place.ct, place.rg, place.cc].filter(Boolean).join(", ")}`, new Date(at).toISOString());
 }
 
 export type PostLimiterOptions = {
@@ -317,7 +318,7 @@ export type TelemetryRouteOptions = {
   ignore?: readonly IpRange[];
   /**
    * Places a new session's address by city (`place.ts`): the first batch of
-   * each session is followed by one `place` row with its country, region and
+   * each session is followed by one `geo` row with its country, region and
    * city, never the address. Absent, nothing is placed.
    */
   placer?: Placer;
