@@ -139,7 +139,8 @@ describe("the page for those turned away, as data", () => {
     expect(page).toContain("  for (const e of options.credits) creditsList.append(creditItem(e));");
     const screen = readFileSync(fileURLToPath(new URL("../../src/game/credits.ts", import.meta.url)), "utf8");
     expect(screen).toContain("  for (const e of entries) list.append(creditItem(e));");
-    const main = readFileSync(fileURLToPath(new URL("../../src/main.ts", import.meta.url)), "utf8");
+    // Day Hike's own of the page hands them over (`hikePage.ts`).
+    const main = readFileSync(fileURLToPath(new URL("../../src/hikePage.ts", import.meta.url)), "utf8");
     expect(main).toContain("    credits: creditsEntries(),");
   });
 

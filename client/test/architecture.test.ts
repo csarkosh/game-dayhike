@@ -471,9 +471,11 @@ describe("layer boundaries", () => {
     expect(main).toContain("function settleVerdict(next: LoadVerdict): void {\n  verdict = next;\n  if (next.play) return;");
     // Every route is refused in one place, before anything of it is looked at: the page for those turned away.
     expect(main).toContain(
-      "function render(container: HTMLDivElement): void {\n  const route = parseRoute(location.pathname);\n  if (verdict !== null && !verdict.play) {\n    showTurnedAway(container, route, verdict);\n    return;\n  }",
+      "function render(container: HTMLDivElement): void {\n  const route = parseRoute(location.pathname);\n  if (verdict !== null && !verdict.play) {\n    hikePage.showTurnedAway(container, route, verdict);\n    return;\n  }",
     );
-    expect([...main.matchAll(/\brenderTurnedAway\(/g)].length).toBe(1);
+    // The page itself is Day Hike's own of the page (`hikePage.ts`), drawn in one place there and nowhere in the shell.
+    expect([...readFileSync(at("hikePage.ts"), "utf8").matchAll(/\brenderTurnedAway\(/g)].length).toBe(1);
+    expect([...main.matchAll(/\brenderTurnedAway\(/g)].length).toBe(0);
     // A hike or a staged scene asked for before the signals are in waits for them, and that wait stands before
     // everything either starts with: the world's worker, the tier check, a follower's film, a canvas.
     const body = main.slice(main.indexOf("function render(container: HTMLDivElement): void {"), main.indexOf("\nfunction launch("));
