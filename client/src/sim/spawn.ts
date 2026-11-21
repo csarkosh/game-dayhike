@@ -3,11 +3,11 @@ import type { BoxSource } from "@csarkosh/engine/sim/boxSource";
 import { CHUNK_SIZE } from "@csarkosh/engine/sim/forestConstants";
 import { activeTerrainVariant } from "@csarkosh/engine/sim/terrain";
 import { carSite, trailheadSpawn, type Start } from "./trailhead.js";
-import { groundSpawn } from "./spawnGround.js";
+import { groundSpawn } from "@csarkosh/engine/sim/spawnGround";
 
 export { trailheadSpawn, type Start } from "./trailhead.js";
 // A hull's place on the ground is no game's: Day Hike's rules name it from here, as they did.
-export { SPAWN_FREEBOARD, SPAWN_LAKE_MARGIN, groundSpawn, ringSample, spiralSpawn } from "./spawnGround.js";
+export { SPAWN_FREEBOARD, SPAWN_LAKE_MARGIN, groundSpawn, ringSample, spiralSpawn } from "@csarkosh/engine/sim/spawnGround";
 
 /**
  * The start on the active terrain's world for a seed, or null where the

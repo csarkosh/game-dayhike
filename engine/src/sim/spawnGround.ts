@@ -4,11 +4,11 @@
  * (`spiralSpawn`), and a point drawn in a ring round another (`ringSample`).
  * Every peer finds the same places from the seed alone.
  */
-import type { BoxProvider } from "@csarkosh/engine/sim/boxSource";
-import { depenetrate } from "@csarkosh/engine/sim/collision";
-import { nextRandom, type Vec3 } from "@csarkosh/engine/sim/core";
-import { lakeShoreInto, newLakeShore } from "@csarkosh/engine/sim/lakeShape";
-import { activeTerrainVariant, elevationSampleAt } from "@csarkosh/engine/sim/terrain";
+import type { BoxProvider } from "./boxSource.js";
+import { depenetrate } from "./collision.js";
+import { nextRandom, type Vec3 } from "./core.js";
+import { lakeShoreInto, newLakeShore } from "./lakeShape.js";
+import { activeTerrainVariant, elevationSampleAt } from "./terrain.js";
 
 /** Attempts per call. Bounded so a caller cannot hang the tick. */
 const RING_ATTEMPTS = 8;
