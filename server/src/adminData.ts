@@ -12,7 +12,7 @@
 import { BigQuery } from "@google-cloud/bigquery";
 import type { AdminData, Json, LiveView, Row } from "./admin.js";
 import { KPI_WEEKS, shapeKpis } from "./adminKpis.js";
-import { forBigQuery, readQuery, type LookupName, type QueryName } from "./adminQueries.js";
+import { forBigQuery, NOW_QUERY, readQuery, type LookupName, type QueryName } from "./adminQueries.js";
 import type { Store } from "./store.js";
 
 export type AdminDataOptions = {
@@ -44,7 +44,7 @@ export function plain(value: unknown): Json {
 export function createAdminData(options: AdminDataOptions): AdminData {
   const bq = new BigQuery({ projectId: options.projectId });
   const now = options.now ?? (() => Date.now());
-  const run = async (name: QueryName | LookupName, values: Record<string, number | string>): Promise<Row[]> => {
+  const run = async (name: QueryName | LookupName | typeof NOW_QUERY, values: Record<string, number | string>): Promise<Row[]> => {
     const prepared = forBigQuery(readQuery(name, options.queriesDir), options.projectId, options.dataset);
     const params: Record<string, number | string> = {};
     for (const p of prepared.params) params[p] = values[p] ?? "";
@@ -55,7 +55,7 @@ export function createAdminData(options: AdminDataOptions): AdminData {
       return out;
     });
   };
-  const live = async (): Promise<LiveView> => {
+  const rooms = async (): Promise<Omit<LiveView, "playing">> => {
     const at = now();
     if (options.store === null) return { at, instances: [], rooms: [] };
     const [rooms, instances] = await Promise.all([options.store.listRooms(), options.store.listInstances()]);
@@ -65,6 +65,18 @@ export function createAdminData(options: AdminDataOptions): AdminData {
       rooms: rooms.map(({ id, doc }) => ({ id, hostId: doc.hostId, createdAt: doc.createdAt, hostDroppedAt: doc.hostDroppedAt, peers: Object.keys(doc.peers).length })),
     };
   };
+  // The live view: the rooms, and the sessions heard from in the last two minutes. A failed
+  // read of the second is logged and answered as null, so the rooms still show.
+  const live = async (): Promise<LiveView> => {
+    const [view, playing] = await Promise.all([
+      rooms(),
+      run(NOW_QUERY, {}).catch((error: unknown) => {
+        console.error("admin: the now query failed", error);
+        return null;
+      }),
+    ]);
+    return { ...view, playing };
+  };
   return {
     query: (name, days, zone) => run(name, { days, tz: zone }),
     // Each lookup's file names its parameter after its id (`sid`, `vid`, `game`).
@@ -72,9 +84,9 @@ export function createAdminData(options: AdminDataOptions): AdminData {
     live,
     // The index card: the `kpis` query over the weeks its trends span, by the
     // caller's calendar, and the lobbies open now from the same store the live
-    // view reads.
+    // view reads (not its sessions: the card counts lobbies).
     async kpis(zone) {
-      const [rows, view] = await Promise.all([run("kpis", { days: KPI_WEEKS * 7, tz: zone }), live()]);
+      const [rows, view] = await Promise.all([run("kpis", { days: KPI_WEEKS * 7, tz: zone }), rooms()]);
       return shapeKpis(rows, view.rooms.length, now(), zone);
     },
   };

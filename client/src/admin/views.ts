@@ -1,9 +1,10 @@
 /**
  * The page's sections, one a query plus the live rooms: each takes its rows
- * and returns a card. The forms follow the data's job: the funnel and the
- * live counts are figures; lobbies a day and how far parties got are
- * magnitudes, so single-hue columns; matches, errors, health and visitors are
- * tables, with a status mark beside a word where a state is the point; paths
+ * and returns a card. The forms follow the data's job: the funnel is a
+ * flow, and who is playing now one mark beside the range; where players are
+ * is a bar a city; the players are one table, a line a person, over two
+ * verdict bars (how far they got, how the game ran); errors are a table, with
+ * a status mark beside a word where a state is the point; paths
  * are a drawing; a session is a trail (`timeline.ts`), in a drawer.
  *
  * Every time shown is in the viewer's own zone (`timeline.ts`): the relative
@@ -11,13 +12,15 @@
  * queries bucket by; a label names the zone by its short name (`PDT`).
  */
 
-import { ago, columns, compact, el, folded, funnel, histogram, table, tableView, tile, type Column } from "./charts.js";
+import { ago, compact, el, folded, funnel, table, tile, type Column } from "./charts.js";
+import { worldMap, type MapPlace } from "./worldMap.js";
 import { accordion, easeHeight, fadeIn, look, parseDuration, play, rootToken, settled, tokens } from "./motion.js";
 import type { Live, Row } from "./source.js";
 import { clock, dayOf, delta, duration, envelopeLine, fullWhen, sessionsOf, trailOf, when as wallWhen, zoneName, type Segment, type Step } from "./timeline.js";
 
 const num = (v: unknown): number => (typeof v === "number" ? v : Number(v ?? 0) || 0);
 const str = (v: unknown): string => (v === null || v === undefined ? "" : String(v));
+const bool = (v: unknown): boolean => v === true || v === "true";
 const shortId = (id: string): string => id.slice(0, 8);
 /** A session id as the link that opens its timeline (`main.ts` listens for `data-sid`). */
 const sidLink = (sid: string): Node => el("a", { href: "#", class: "mono", "data-sid": sid, title: `Open session ${sid}` }, shortId(sid));
@@ -69,30 +72,27 @@ export function failedCard(title: string, sub: string, cls: string, message: str
   return card(title, sub, cls, el("p", { class: "error", role: "status" }, `Could not be read. ${message}`));
 }
 
-export function liveView(live: Live): HTMLElement {
-  const players = live.rooms.reduce((n, r) => n + r.peers, 0);
-  const tiles = el(
-    "div",
-    { class: "tiles" },
-    tile("Open lobbies", String(live.rooms.length)),
-    tile("Players in lobbies", String(players)),
-    tile("Instances up", String(live.instances.length), { text: live.instances.length === 0 ? "scaled to zero" : `last heard ${ago(Math.max(...live.instances.map((i) => i.seenAt)), live.at)}` }),
-  );
-  const columns: Column[] = [
-    { key: "id", label: "Lobby", render: (v) => el("span", { class: "mono" }, shortId(str(v))) },
-    { key: "hostId", label: "Host", render: (v) => el("span", { class: "mono" }, str(v)) },
-    { key: "peers", label: "Players", num: true },
-    {
-      key: "hostDroppedAt",
-      label: "State",
-      render: (v, row) => {
-        const away = typeof v === "number";
-        return el("span", { class: `status ${away ? "away" : "hosting"}` }, away ? `host away ${ago(v, live.at)}` : row.peers === 1 ? "waiting for players" : "hosting");
-      },
-    },
-    { key: "createdAt", label: "Open for", render: (v) => ago(num(v), live.at).replace(" ago", "") },
-  ];
-  return card("Right now", `What signaling holds this moment, refreshed every 10 s · ${new Date(live.at).toLocaleTimeString()}`, "", tiles, table(columns, live.rooms, "No lobby is open."));
+/**
+ * Who is playing now, as one small mark beside the range: a dot, lit while
+ * anyone is in a match, and how many are. Playing is a session whose heartbeat
+ * was heard in the last two minutes (`now.sql`), so a solo hike counts though
+ * it opens no lobby; an open lobby adds "1 lobby open", the one thing about
+ * lobbies worth seeing at a glance. Its title names each session: its build,
+ * tier, how far up it is and its frame rate. Null `playing` (that read failed)
+ * says the lobbies alone.
+ */
+export function nowIndicator(live: Live): HTMLElement {
+  const playing = live.playing ?? [];
+  const lobbies = live.rooms.length;
+  const count = playing.length;
+  const words = live.playing === null ? "Playing now unknown" : count === 0 ? "No one playing" : `${count} playing now`;
+  const lobbyWords = lobbies === 0 ? "" : ` · ${lobbies} lobb${lobbies === 1 ? "y" : "ies"} open`;
+  const lines = playing.map((r) => {
+    const parts = [shortId(str(r.vid) || str(r.sid)), str(r.tier), r.p === null || r.p === undefined ? "" : `${Math.round(num(r.p) * 100)}% up`, r.fps === null || r.fps === undefined ? "" : `${Math.round(num(r.fps))} fps`, str(r.build)];
+    return parts.filter(Boolean).join(" · ");
+  });
+  const title = [`Sessions heard from in the last two minutes, as of ${new Date(live.at).toLocaleTimeString()}`, ...lines].join("\n");
+  return el("span", { class: `now${count > 0 ? " on" : ""}`, role: "status", title }, el("span", { class: "dot", "aria-hidden": "true" }), el("span", { class: "words" }, words + lobbyWords));
 }
 
 /**
@@ -105,17 +105,18 @@ export function liveView(live: Live): HTMLElement {
 export function funnelLine(all: Row, builds: number): string {
   const turned = num(all.turned_away);
   const away = all.turned_away === undefined || all.turned_away === null ? "" : `; ${turned} of those that landed could not play here and were turned away`;
-  return `${num(all.sessions)} sessions on ${builds} build${builds === 1 ? "" : "s"}, each stage of the one before${away}; every build in the table`;
+  return `${num(all.sessions)} sessions on ${builds} build${builds === 1 ? "" : "s"}, each stage's share of the one before${away}`;
 }
 
 /**
- * The funnel's headline is the query's `all` row, every build together; the
- * builds are the breakdown in the table. The stages nest per session (a
- * session counts at a stage only where it counted at the one before), so the
- * shares read as shares. The sessions the load check turned away are a count
- * beside the stages, not one of them: they landed and could go no further.
+ * The funnel is the query's `all` row, every build together, drawn as a
+ * funnel; the per-build rows only count the builds in the line under the
+ * title. The stages nest per session (a session counts at a stage only where
+ * it counted at the one before), so the shares read as shares. The sessions
+ * the load check turned away are a count beside the stages, not one of them:
+ * they landed and could go no further.
  */
-export function funnelView(rows: Row[]): HTMLElement {
+function funnelPart(rows: Row[]): HTMLElement {
   const all = rows.find((r) => r.build === "all");
   const builds = rows.filter((r) => r.build !== "all");
   const stages = all === undefined ? [] : [
@@ -124,113 +125,12 @@ export function funnelView(rows: Row[]): HTMLElement {
     { name: "Started a match", value: num(all.started) },
     { name: "Reached an end", value: num(all.finished) },
   ];
-  const cols: Column[] = [
-    { key: "build", label: "Build", render: (v) => el("span", { class: "mono" }, str(v)) },
-    { key: "sessions", label: "Sessions", num: true },
-    { key: "landed", label: "Landed", num: true },
-    { key: "turned_away", label: "Turned away", num: true },
-    { key: "pressed_play", label: "Pressed Play", num: true },
-    { key: "started", label: "Started", num: true },
-    { key: "finished", label: "Reached an end", num: true },
-    { key: "last_seen", label: "Last seen", when: true, render: when },
-  ];
-  return card(
-    "From landing to the end",
-    all === undefined ? "Sessions by what they reached" : funnelLine(all, builds.length),
-    "",
-    all === undefined || num(all.landed) === 0 ? el("div", { class: "empty" }, "No sessions in this range.") : funnel(stages),
-    tableView(cols, builds),
-  );
-}
-
-export function lobbiesView(rows: Row[]): HTMLElement {
-  const bars = rows.map((r) => ({ label: str(r.day).slice(5), value: num(r.lobbies), detail: `${str(r.day)} · ${num(r.lobbies_joined)} joined · largest ${str(r.largest) || "–"}` }));
-  const refused = rows.reduce((n, r) => n + num(r.refused_full) + num(r.refused_stale_invite) + num(r.refused_host_away), 0);
-  const lost = rows.reduce((n, r) => n + num(r.hosts_lost), 0);
-  const cols: Column[] = [
-    { key: "day", label: `Day (${zoneName()})` },
-    { key: "lobbies", label: "Lobbies", num: true },
-    { key: "lobbies_joined", label: "Joined", num: true },
-    { key: "largest", label: "Largest", num: true },
-    { key: "median_life_min", label: "Median life (min)", num: true },
-    { key: "refused_full", label: "Full", num: true },
-    { key: "refused_stale_invite", label: "Stale invite", num: true },
-    { key: "refused_host_away", label: "Host away", num: true },
-    { key: "hosts_lost", label: "Hosts lost", num: true },
-  ];
-  return card(
-    "Lobbies a day",
-    `From signaling's own rows · ${refused} joins refused, ${lost} hosts lost in this range`,
-    "",
-    rows.length === 0 ? el("div", { class: "empty" }, "No lobbies in this range.") : columns(bars, { height: 170, width: 520 }),
-    tableView(cols, rows),
-  );
-}
-
-const acts = (row: Record<string, unknown>): Node =>
-  el(
-    "span",
-    {},
-    ...(["wet", "dusk", "mist", "summit", "chase"] as const).map((a) => el("span", { class: `chip${row[a] === true ? " on" : ""}` }, a)),
-  );
-
-/** How long a match may go unheard before it no longer counts as still playing: four of the page's 30 s heartbeats. */
-const QUIET_MS = 120_000;
-
-/**
- * A match's End column: its outcome (and whether anyone died), else the first
- * way out any of its sessions reported, else "still playing" while it is still
- * heard from and "ended silently" once it is not (a page that died, or was
- * closed with no `pagehide`).
- */
-export function matchEnd(row: Record<string, unknown>, now: number): { text: string; tone: string } {
-  const result = str(row.result);
-  if (result !== "") return { text: `${result}${row.died === true ? ", died" : ""}`, tone: result };
-  const left = str(row.left_by);
-  if (left !== "") return { text: left, tone: "" };
-  const heard = Date.parse(str(row.last_seen) || str(row.started_at));
-  if (Number.isFinite(heard) && now - heard < QUIET_MS) return { text: "still playing", tone: "" };
-  return { text: "ended silently", tone: "warn" };
-}
-
-export function progressView(rows: Row[]): HTMLElement {
-  const values = rows.map((r) => num(r.farthest));
-  const won = rows.filter((r) => r.result === "won").length;
-  const lost = rows.filter((r) => r.result === "lost").length;
-  const silent = rows.filter((r) => matchEnd(r, Date.now()).text === "ended silently").length;
-  const tiles = el(
+  return el(
     "div",
-    { class: "tiles" },
-    tile("Matches", String(rows.length), { text: `${rows.reduce((n, r) => n + num(r.players), 0)} players in them` }),
-    tile("Reached the crest", String(rows.filter((r) => r.summit === true).length)),
-    tile("Won", String(won), { text: rows.length ? `${Math.round((won / rows.length) * 100)}% of matches` : "" }),
-    tile("Lost", String(lost)),
-    tile("Ended silently", String(silent), { text: "no outcome, no way out", tone: silent > 0 ? "bad" : undefined }),
-  );
-  const cols: Column[] = [
-    { key: "started_at", label: "Started", when: true, render: when },
-    { key: "sid", label: "Host", render: (v) => sidLink(str(v)) },
-    { key: "players", label: "Players", num: true, render: (v, row) => gameLink(str(row.game), `${num(v)} of ${num(row.party) || num(v)}`) },
-    { key: "farthest", label: "Farthest", num: true, render: (v) => `${Math.round(num(v) * 100)}%` },
-    { key: "wet", label: "Acts", render: (_, row) => acts(row) },
-    {
-      key: "result",
-      label: "End",
-      render: (_, row) => {
-        const end = matchEnd(row, Date.now());
-        return el("span", { class: `status ${end.tone}`.trim() }, end.text);
-      },
-    },
-    { key: "minutes", label: "Minutes", num: true },
-    { key: "build", label: "Build", render: (v) => el("span", { class: "mono" }, str(v)) },
-  ];
-  return card(
-    "How far parties got",
-    "One line a match (a game with a host's match_start); each match's farthest climb, 0 at the trailhead and 1 at the crest; the night falls from 30%",
-    "",
-    tiles,
-    rows.length === 0 ? el("div", { class: "empty" }, "No matches in this range.") : histogram(values, 10, (lo, hi) => `${Math.round(lo * 100)}–${Math.round(hi * 100)}%`, 1100),
-    folded(`Matches, the latest ${Math.min(rows.length, 12)} of ${rows.length}`, table(cols, rows.slice(0, 12)), true),
+    { class: "part" },
+    el("h3", {}, "From landing to the end"),
+    el("p", { class: "sub" }, all === undefined ? "Sessions by what they reached" : funnelLine(all, builds.length)),
+    all === undefined || num(all.landed) === 0 ? el("div", { class: "empty" }, "No sessions in this range.") : funnel(stages),
   );
 }
 
@@ -273,62 +173,222 @@ export function errorsView(rows: Row[]): HTMLElement {
   return card("What went wrong", sub, "", table(cols, rows, "Nothing went wrong in this range."));
 }
 
-/**
- * Clean is of the sessions that said goodbye (an `end` row), unknown is the
- * sessions that did not, its own number and not a dirty one. Of the sessions
- * that played and never said goodbye, one whose tab went hidden and never
- * came back went to the background; the rest ended silently.
- */
-export function healthView(rows: Row[]): HTMLElement {
-  const sum = (key: string): number => rows.reduce((n, r) => n + num(r[key]), 0);
-  const sessions = sum("sessions");
-  const ended = sum("ended");
-  const clean = sum("clean");
-  const unknown = sum("unknown");
-  const silent = sum("ended_silently");
-  const backgrounded = sum("backgrounded");
-  const tiles = el(
-    "div",
-    { class: "tiles" },
-    tile("Sessions", compact(sessions)),
-    tile("Clean", compact(clean), { text: ended ? `${Math.round((clean / ended) * 100)}% of the ${ended} that said goodbye` : "none said goodbye yet", tone: ended ? "good" : undefined }),
-    tile("Unknown", compact(unknown), { text: "no goodbye, so no verdict" }),
-    tile("Ended silently", String(silent), { text: "played, then nothing", tone: silent > 0 ? "bad" : undefined }),
-    tile("Went to the background", String(backgrounded), { text: "played, then the tab went hidden" }),
-  );
-  const cols: Column[] = [
-    { key: "build", label: "Build", render: (v) => el("span", { class: "mono" }, str(v)) },
-    { key: "tier", label: "Tier" },
-    { key: "engine", label: "Engine" },
-    { key: "sessions", label: "Sessions", num: true },
-    { key: "played", label: "Played", num: true },
-    { key: "ended", label: "Said goodbye", num: true },
-    { key: "clean", label: "Clean", num: true },
-    { key: "troubled", label: "Troubled", num: true },
-    { key: "unknown", label: "Unknown", num: true },
-    { key: "ended_silently", label: "Silent", num: true },
-    { key: "backgrounded", label: "Background", num: true },
-    { key: "p50_start_ms", label: "Start p50 (ms)", num: true },
-    { key: "p90_start_ms", label: "Start p90 (ms)", num: true },
-    { key: "p50_ready_ms", label: "Ready p50 (ms)", num: true },
-    { key: "p50_fps", label: "fps p50", num: true },
-    { key: "p90_worst_frame_ms", label: "Worst frame p90 (ms)", num: true },
-  ];
-  return card("Load times and frame rates", "By build, tier and engine; the start is the tier's decision, the engine and the build, the ready is the world's first whole frame", "", tiles, table(cols, rows));
+/** An operating system as people say it, from the page's `os` (`darwin-arm64`, `win32-x64`, `android-arm64`). */
+export function osName(raw: string): string {
+  const os = raw.split(/[-\s]/)[0]?.toLowerCase() ?? "";
+  return ({ darwin: "macOS", win32: "Windows", linux: "Linux", android: "Android", ios: "iOS", cros: "ChromeOS" } as Record<string, string>)[os] ?? (raw === "" ? "" : "Other");
+}
+
+/** The machine column: the GPU as people say it, else the operating system; the details in its title. */
+const machineColumn: Column = {
+  key: "gpu",
+  label: "Machine",
+  render: (v, row) => {
+    const gpu = gpuName(str(v));
+    // A browser that hides its GPU names itself there (Brave); the system says more then.
+    const name = gpu !== "" && !/^(Brave|Apple GPU)$/.test(gpu) ? gpu : [gpu === "Apple GPU" ? "Apple GPU" : "", osName(str(row.os) || str(row.machine))].filter(Boolean).join(", ");
+    return el("span", { title: [str(v), str(row.os) || str(row.machine), str(row.tier) && `${str(row.tier)} tier`, str(row.engine)].filter(Boolean).join(" · ") }, name || "–");
+  },
+};
+
+/** Where a player is, by city (`place` rows; `placeName`); a dash where the collector had not placed them yet. */
+const whereColumn: Column = {
+  key: "city",
+  label: "Where",
+  render: (_, row) => {
+    const where = placeName(row);
+    return where === "" ? el("span", { class: "faint", title: "Not placed: from before places were recorded, or the address was unknown" }, "–") : el("span", { class: "where" }, where);
+  },
+};
+
+/** How far a visitor got in the range: finished a hike, played one, or only looked. */
+type Reach = "finished" | "played" | "looked";
+const REACHES: Reach[] = ["finished", "played", "looked"];
+const REACH_WORDS: Record<Reach, string> = { finished: "Finished", played: "Played", looked: "Only looked" };
+const REACH_TONE: Record<Reach, string> = { finished: "good", played: "played", looked: "looked" };
+export function reachOf(row: Record<string, unknown>): Reach {
+  return num(row.finished) > 0 ? "finished" : num(row.played) > 0 ? "played" : "looked";
 }
 
 /**
- * Visitors: distinct browsers (`vid`) over the range and how many came back
- * (seen on more than one day in the last ninety), from the `kpis` query's
- * range row; the last seven days against the seven before
- * from its window rows; and the browsers themselves, the most recently seen
- * first, from the `visitors` query, each a link to its sessions.
+ * How a player's game went, by the two things a player feels: how long it took
+ * to load (from Play to the world's first whole frame, `health.sql`) and how
+ * smoothly it ran (the median frame rate in a match). Each is good, slow or bad against the marks below;
+ * a player's verdict is the worse of the two, and a player with neither (gone
+ * before the world was in) has none.
  */
-export function visitorsView(kpis: Row[], visitors: Row[]): HTMLElement {
+export const LOAD_MS = { good: 15_000, slow: 30_000 } as const;
+export const FPS = { good: 50, slow: 30 } as const;
+export type Verdict = "good" | "slow" | "bad";
+const RANK: Record<Verdict, number> = { good: 0, slow: 1, bad: 2 };
+const WORDS: Record<Verdict, string> = { good: "Good", slow: "Slow", bad: "Bad" };
+
+export function loadVerdict(ms: number | null): Verdict | null {
+  if (ms === null) return null;
+  return ms <= LOAD_MS.good ? "good" : ms <= LOAD_MS.slow ? "slow" : "bad";
+}
+export function fpsVerdict(fps: number | null): Verdict | null {
+  if (fps === null) return null;
+  return fps >= FPS.good ? "good" : fps >= FPS.slow ? "slow" : "bad";
+}
+export function playerVerdict(row: Record<string, unknown>): Verdict | null {
+  const marks = [loadVerdict(present(row.load_ms)), fpsVerdict(present(row.fps))].filter((v): v is Verdict => v !== null);
+  return marks.length === 0 ? null : marks.reduce((a, b) => (RANK[b] > RANK[a] ? b : a));
+}
+/** A number from a row, or null where the row has none (a session that never reached that point). */
+function present(v: unknown): number | null {
+  if (v === null || v === undefined || v === "") return null;
+  const n = Number(v);
+  return Number.isFinite(n) ? n : null;
+}
+/** A GPU's name as people say it: the renderer string's ANGLE wrapping and driver text dropped. */
+export function gpuName(raw: string): string {
+  const angle = /^ANGLE \([^,]*,\s*([^,]+?)(?:\s*\(0x[0-9a-f]+\))?\s*(?:Direct3D|OpenGL|Vulkan|,|\)$)/i.exec(raw);
+  // A driver's own words in brackets at the end (`(radeonsi navi22 LLVM 17.0.6)`) go too.
+  // and so do ANGLE's renderer label (`ANGLE Metal Renderer: Apple M3 Max`) and a GL bus suffix (`/PCIe/SSE2`).
+  return (angle?.[1] ?? raw)
+    .replace(/\s*\([^)]*\)$/, "")
+    .replace(/^ANGLE [A-Za-z0-9]+ Renderer:\s*/, "")
+    .replace(/\/PCIe\/SSE2$/, "")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+const mark = (verdict: Verdict | null, text: string): Node =>
+  verdict === null ? el("span", { class: "faint" }, "–") : el("span", { class: `status ${verdict}` }, text);
+
+/** A country's English name from its ISO code, the code itself where the runtime has no name. */
+function countryName(code: string): string {
+  try {
+    return new Intl.DisplayNames(["en"], { type: "region" }).of(code) ?? code;
+  } catch {
+    return code;
+  }
+}
+
+/** A place as people say it: the city and its region, then the country, leaving out whatever the database did not know. */
+export function placeName(row: Record<string, unknown>): string {
+  const city = str(row.city);
+  const region = str(row.region);
+  const country = str(row.country);
+  const local = [city, region !== city ? region : ""].filter(Boolean).join(", ");
+  if (local === "") return country === "" ? "" : countryName(country);
+  return country === "" ? local : `${local} · ${country}`;
+}
+
+/**
+ * Where Day Hike's visitors are (`places.sql`, from csarko.sh's analytics): a flat map of the world
+ * with a mark a city (`worldMap.ts`), and beside it the most visited cities with their counts, the ones that
+ * reached a game first in each pair. Visits the collector could not place (any from before it had
+ * the city database) are a line under the list; a city with no coordinates is in the list and not
+ * on the map. DB-IP's licence asks for its name and a link wherever its places are shown, so the
+ * part ends with both.
+ */
+function placesPart(rows: Row[]): HTMLElement {
+  const placed = rows.filter((r) => placeName(r) !== "");
+  const unplaced = rows.filter((r) => placeName(r) === "");
+  const visits = rows.reduce((n, r) => n + num(r.visits), 0);
+  const played = rows.reduce((n, r) => n + num(r.played), 0);
+  const countries = new Set(placed.map((r) => str(r.country)).filter(Boolean)).size;
+  const onMap: MapPlace[] = placed
+    .filter((r) => present(r.lat) !== null && present(r.lon) !== null)
+    .map((r) => ({ name: placeName(r), lat: num(r.lat), lon: num(r.lon), visits: num(r.visits), played: num(r.played) }));
+  const top = placed.slice(0, 8);
+  const away = unplaced.reduce((n, r) => n + num(r.visits), 0);
+  const list = el(
+    "div",
+    { class: "place-list" },
+    el("div", { class: "verdict-key places-key" }, el("span", { class: "key played" }, "reached a game"), el("span", { class: "key landed" }, "only the landing page")),
+    ...top.map((r) =>
+      el(
+        "div",
+        { class: "place-line" },
+        el("span", { class: "name" }, placeName(r)),
+        el("span", { class: "n" }, el("b", {}, String(num(r.visits))), el("span", { class: "share" }, `${num(r.played)} played`)),
+      ),
+    ),
+    ...(placed.length > top.length ? [el("p", { class: "faint more" }, `and ${placed.length - top.length} more on the map`)] : []),
+    ...(away > 0 ? [el("p", { class: "faint more" }, `${away} visit${away === 1 ? "" : "s"} with no place recorded`)] : []),
+  );
+  const sub =
+    visits === 0
+      ? "Day Hike's visits by city, from csarko.sh's analytics"
+      : `${visits} visit${visits === 1 ? "" : "s"} from ${placed.length} place${placed.length === 1 ? "" : "s"} in ${countries} countr${countries === 1 ? "y" : "ies"}; ${played} reached a game`;
+  return el(
+    "div",
+    { class: "part" },
+    el("h3", {}, "Where players are"),
+    el("p", { class: "sub" }, sub),
+    rows.length === 0 ? el("div", { class: "empty" }, "No visits in this range.") : el("div", { class: "places-map" }, worldMap(onMap), list),
+    el("p", { class: "attribution" }, "Places by city, never by address: ", el("a", { href: "https://db-ip.com", rel: "noopener" }, "IP Geolocation by DB-IP")),
+  );
+}
+
+/**
+ * The Overview card (Cyrus, 2026-11-21: one card for the completion funnel and where players
+ * are): how far sessions got, from landing to the end of a hike (`funnel.sql`), and where the
+ * visitors came from (`places.sql`), one part under the other.
+ */
+export function overviewView(funnelRows: Row[], placeRows: Row[]): HTMLElement {
+  return card("Overview", "How far sessions got, from landing to the end of a hike, and where the visitors came from", "overview", funnelPart(funnelRows), placesPart(placeRows));
+}
+
+/** A verdict bar with its key under it: one segment a kind, as long as its count, in its tone. */
+function verdictStrip(label: string, parts: { key: string; words: string; tone: string; count: number }[]): HTMLElement {
+  return el(
+    "div",
+    { class: "verdicts" },
+    el("div", { class: "verdict-label" }, label),
+    el(
+      "div",
+      { class: "verdict-bar", role: "img", "aria-label": `${label}: ${parts.map((p) => `${p.count} ${p.words}`).join(", ")}` },
+      ...parts.filter((p) => p.count > 0).map((p) => el("span", { class: `seg ${p.tone}`, style: `flex-grow:${p.count}`, title: `${p.count} ${p.words}` })),
+    ),
+    el("div", { class: "verdict-key" }, ...parts.map((p) => el("span", { class: `status ${p.tone}` }, el("b", {}, String(p.count)), ` ${p.words}`))),
+  );
+}
+
+/**
+ * The climb column: how far a player got and how it ended. A bar to their farthest point (0 at
+ * the trailhead, the crest at its end) with the share, and "won" or "lost" where a match of
+ * theirs reached an outcome (won before lost); "didn't play" where none of their sessions
+ * started a match. Its title has the counts behind it.
+ */
+const climbColumn: Column = {
+  key: "farthest",
+  label: "Climb",
+  render: (v, row) => {
+    const played = num(row.played);
+    const title = `${played} of ${num(row.sessions)} session${num(row.sessions) === 1 ? "" : "s"} played, ${num(row.finished)} reached an end${row.died === true ? "; died at least once" : ""}${num(row.party) > 1 ? `; played in a party of up to ${num(row.party)}` : ""}`;
+    if (played === 0) return el("span", { class: "faint", title }, "didn't play");
+    const far = Math.max(0, Math.min(1, num(v)));
+    const result = str(row.result);
+    return el(
+      "span",
+      { class: "climb", title },
+      el("span", { class: "climb-track" }, el("span", { class: "climb-fill", style: `width:${far * 100}%` })),
+      el("span", { class: "climb-n" }, `${Math.round(far * 100)}%`),
+      result === "" ? "" : el("span", { class: `status ${result === "won" ? "good" : "ended"}` }, result),
+    );
+  },
+};
+
+/**
+ * Players: everything the page says of one person, once. Over the range, the players and how
+ * many came back (the `kpis` query, its last seven days against the seven before), and two bars:
+ * how far they got (finished a hike, played, only looked) and how the game ran for them (good,
+ * slow or bad, the worse of their load and frame rate). Then one line a player (`players.sql`),
+ * the most recently seen first: who and where, on what machine, how often they came, how far
+ * they climbed and how it ended, their load time and their frame rate, each load and frame rate
+ * marked good, slow or bad against `LOAD_MS` and `FPS`. The player's link opens every session.
+ * Last, `went`: where they went on the trail, with the world to show chosen at the card's bottom
+ * (`paths.ts`, pathsSection).
+ */
+export function playersView(kpis: Row[], players: Row[], went: HTMLElement | null = null): HTMLElement {
   const range = kpis.find((r) => r.kind === "range");
   const current = kpis.find((r) => r.kind === "window" && r.period === "current");
   const previous = kpis.find((r) => r.kind === "window" && r.period === "previous");
-  const unique = range === undefined ? 0 : num(range.visitors);
+  const unique = range === undefined ? players.length : num(range.visitors);
   const returning = range === undefined ? 0 : num(range.returning);
   const sessions = range === undefined ? 0 : num(range.sessions);
   // The windows are the last seven days and the seven before, inside the range: a range
@@ -342,28 +402,71 @@ export function visitorsView(kpis: Row[], visitors: Row[]): HTMLElement {
   const tiles = el(
     "div",
     { class: "tiles" },
-    tile("Visitors", compact(unique), trend("visitors")),
+    tile("Players", compact(unique), trend("visitors")),
     tile("Returning", compact(returning), { text: unique ? `${Math.round((returning / unique) * 100)}% came back on another day` : "seen on more than one day" }),
-    tile("Sessions a visitor", unique ? (sessions / unique).toFixed(1) : "0"),
+    tile("Sessions a player", unique ? (sessions / unique).toFixed(1) : "0"),
+  );
+  const reach = { finished: 0, played: 0, looked: 0 } as Record<Reach, number>;
+  const ran = { good: 0, slow: 0, bad: 0 } as Record<Verdict, number>;
+  for (const r of players) {
+    reach[reachOf(r)]++;
+    const v = playerVerdict(r);
+    if (v !== null) ran[v]++;
+  }
+  const strips = el(
+    "div",
+    { class: "strips" },
+    verdictStrip("How far they got", REACHES.map((k) => ({ key: k, words: REACH_WORDS[k].toLowerCase(), tone: REACH_TONE[k], count: reach[k] }))),
+    verdictStrip("How the game ran for them", (["good", "slow", "bad"] as const).map((k) => ({ key: k, words: WORDS[k].toLowerCase(), tone: k, count: ran[k] }))),
   );
   const cols: Column[] = [
-    { key: "vid", label: "Visitor", render: (v) => vidLink(str(v)) },
-    { key: "sessions", label: "Sessions", num: true },
-    { key: "days", label: "Days", num: true },
-    { key: "played", label: "Played", num: true },
-    { key: "finished", label: "Reached an end", num: true },
-    { key: "machine", label: "Machine" },
-    { key: "build", label: "Last build", render: (v) => el("span", { class: "mono" }, str(v)) },
-    { key: "last_sid", label: "Last session", render: (v) => (str(v) === "" ? "" : sidLink(str(v))) },
-    { key: "last_seen", label: "Last seen", when: true, render: when },
+    { key: "vid", label: "Player", render: (v) => vidLink(str(v)) },
+    whereColumn,
+    machineColumn,
+    {
+      key: "sessions",
+      label: "Came",
+      render: (v, row) => {
+        const days = num(row.days);
+        // Returning is the 90-day test the Returning tile counts (`players.sql`), whatever the range.
+        const back = bool(row.returning) ? el("span", { class: "chip on" }, "returning") : "";
+        return el("span", { class: "came", title: `${num(v)} session${num(v) === 1 ? "" : "s"} on ${days} day${days === 1 ? "" : "s"} in this range${bool(row.returning) ? "; seen on more than one day in the last ninety" : ""}` }, `${num(v)} session${num(v) === 1 ? "" : "s"} `, back);
+      },
+    },
+    climbColumn,
+    {
+      key: "load_ms",
+      label: "Load",
+      num: true,
+      render: (v) => {
+        const ms = present(v);
+        return mark(loadVerdict(ms), ms === null ? "" : `${(ms / 1000).toFixed(1)} s`);
+      },
+    },
+    {
+      key: "fps",
+      label: "Frame rate",
+      num: true,
+      render: (v, row) => {
+        const fps = present(v);
+        const worst = present(row.worst_frame_ms);
+        return el("span", { title: worst === null ? "" : `Worst frame ${worst} ms` }, mark(fpsVerdict(fps), fps === null ? "" : `${Math.round(fps)} fps`));
+      },
+    },
+    // How long ago alone, the moment in its title: the line is long enough already.
+    { key: "last_seen", label: "Seen", when: true, render: (v) => el("span", { title: fullWhen(Date.parse(str(v))) }, ago(Date.parse(str(v)))) },
   ];
-  const shown = visitors.slice(0, 12);
+  const shown = players.slice(0, 20);
   return card(
-    "Visitors",
-    `Distinct browsers in this range; returning is one seen on more than one day (${zoneName()}) in the last ninety`,
+    "Players",
+    `Each person in this range (a browser), how far they got and how the game ran for them; load ${LOAD_MS.good / 1000} s or less is good and past ${LOAD_MS.slow / 1000} s bad, ${FPS.good} fps or more good and under ${FPS.slow} bad; returning is seen on more than one day (${zoneName()}) in the last ninety`,
     "",
     tiles,
-    folded(`Visitors, the latest ${shown.length} of ${visitors.length}`, table(cols, shown, "No visitors in this range."), true),
+    ...(players.length > 0 ? [strips] : []),
+    shown.length < players.length
+      ? folded(`Players, the latest ${shown.length} of ${players.length}`, table(cols, shown), true)
+      : table(cols, shown, "No one in this range."),
+    ...(went === null ? [] : [went]),
   );
 }
 

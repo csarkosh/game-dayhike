@@ -5,6 +5,7 @@ import type { Peer } from "./rooms.js";
 import { MemoryRegistry } from "./memoryRegistry.js";
 import type { Registry, RoomInfo } from "./registry.js";
 import { row, stdoutSink, type LogSink } from "./log.js";
+import type { Placer } from "./place.js";
 import { PostLimiter, telemetryRoute, type PostLimiterOptions } from "./telemetry.js";
 import { adminRoute, type AdminData } from "./admin.js";
 import type { AdminAuth } from "./adminAuth.js";
@@ -190,6 +191,8 @@ export type SignalingServerOptions = {
   postLimits?: PostLimiterOptions;
   /** Addresses whose batches the telemetry route drops (`TELEMETRY_IGNORE_IPS`). Defaults to none. */
   ignoreIps?: readonly IpRange[];
+  /** Places each new session's address by city for the telemetry route (`place.ts`). Defaults to none. */
+  placer?: Placer;
   /**
    * Where the rooms live. Defaults to this process's memory
    * (`MemoryRegistry`), which is right for one instance; the shared one
@@ -258,7 +261,7 @@ export function createSignalingServer(
   const limiter = new ConnectionLimiter({ now: options.now, ...options.limits });
   const postLimiter = new PostLimiter({ now: options.now, ...options.postLimits });
   const telemetry =
-    role === "signaling" ? null : telemetryRoute({ allowedOrigins, limiter: postLimiter, log, serverBuild, now, ignore: options.ignoreIps ?? [] });
+    role === "signaling" ? null : telemetryRoute({ allowedOrigins, limiter: postLimiter, log, serverBuild, now, ignore: options.ignoreIps ?? [], ...(options.placer ? { placer: options.placer } : {}) });
   const admin =
     role === "signaling" || options.admin === undefined
       ? null

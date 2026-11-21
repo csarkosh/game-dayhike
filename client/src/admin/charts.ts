@@ -1,6 +1,6 @@
 /**
  * The page's marks, in plain SVG and DOM: a column chart, a histogram and a
- * horizontal funnel, each with a hover tooltip and a table beneath; stat
+ * funnel, each with a hover tooltip and a table beneath; stat
  * tiles; and the table every number is also reachable through. One series a
  * chart, so the series colour is the one token and no legend is needed.
  */
@@ -225,25 +225,85 @@ function drawColumns(bars: Bar[], W: number, H: number, unit: string | undefined
 
 export type Stage = { name: string; value: number };
 
-/** A funnel as horizontal bars on the ordinal ramp, each stage's share of the first at its tip. */
+/**
+ * A funnel as a flow, read left to right: one smooth shape whose height at each stage is that
+ * stage's share of the first, easing down to the next stage between them, in the ordinal ramp
+ * from the first stage's tone to the last's. Over each stage its name, its count and its share
+ * of the first; on each narrowing, the share of the stage before that went on. A stage with
+ * any sessions keeps a sliver of height, so it never reads as none.
+ */
 export function funnel(stages: Stage[]): HTMLElement {
   const first = stages[0]?.value ?? 0;
-  const ramp = ["var(--ord-1)", "var(--ord-2)", "var(--ord-3)", "var(--ord-4)"];
-  return el(
-    "div",
-    { class: "funnel" },
-    ...stages.map((stage, i) => {
-      const share = first > 0 ? stage.value / first : 0;
-      const fill = el("div", { class: "fill", style: `width:${Math.max(share * 100, stage.value > 0 ? 1 : 0)}%;background:${ramp[Math.min(i, 3)]}`, title: `${stage.value.toLocaleString()} ${stage.name}` });
-      return el(
-        "div",
-        { class: "row" },
-        el("span", { class: "name" }, stage.name),
-        el("div", { class: "track" }, fill),
-        el("span", { class: "n" }, `${stage.value.toLocaleString()}${i === 0 ? "" : ` · ${Math.round(share * 100)}%`}`),
-      );
-    }),
+  const n = Math.max(stages.length, 1);
+  const W = n * 100;
+  const H = 100;
+  const FLAT = 62; // how much of each stage's width is level before it eases to the next
+  const half = (value: number): number => (first > 0 ? Math.max((value / first) * (H / 2 - 2), value > 0 ? 1.5 : 0) : 0);
+  const top: string[] = [];
+  const bottom: string[] = [];
+  stages.forEach((stage, i) => {
+    const h = half(stage.value);
+    const x0 = i * 100;
+    const x1 = x0 + FLAT;
+    const next = stages[i + 1];
+    top.push(`${i === 0 ? "M" : "L"}${x0},${H / 2 - h} L${x1},${H / 2 - h}`);
+    bottom.unshift(`L${x1},${H / 2 + h} L${x0},${H / 2 + h}`);
+    if (next !== undefined) {
+      const hn = half(next.value);
+      const x2 = x0 + 100;
+      const mid = (x1 + x2) / 2;
+      top.push(`C${mid},${H / 2 - h} ${mid},${H / 2 - hn} ${x2},${H / 2 - hn}`);
+      bottom.unshift(`C${mid},${H / 2 + hn} ${mid},${H / 2 + h} ${x1},${H / 2 + h}`);
+    } else {
+      top.push(`L${x0 + 100},${H / 2 - h}`);
+      bottom.unshift(`L${x0 + 100},${H / 2 + h} L${x1},${H / 2 + h}`);
+    }
+  });
+  const svg = document.createElementNS(SVG, "svg");
+  svg.setAttribute("viewBox", `0 0 ${W} ${H}`);
+  svg.setAttribute("preserveAspectRatio", "none");
+  svg.setAttribute("aria-hidden", "true");
+  const defs = document.createElementNS(SVG, "defs");
+  const grad = document.createElementNS(SVG, "linearGradient");
+  const gid = `funnel-${Math.random().toString(36).slice(2, 8)}`;
+  grad.setAttribute("id", gid);
+  ["--ord-1", "--ord-2", "--ord-3", "--ord-4"].forEach((token, i, all) => {
+    const stop = document.createElementNS(SVG, "stop");
+    stop.setAttribute("offset", `${(i / (all.length - 1)) * 100}%`);
+    stop.setAttribute("style", `stop-color: var(${token})`);
+    grad.append(stop);
+  });
+  defs.append(grad);
+  const shape = document.createElementNS(SVG, "path");
+  shape.setAttribute("d", `${top.join(" ")} ${bottom.join(" ")} Z`);
+  shape.setAttribute("fill", `url(#${gid})`);
+  svg.append(defs, shape);
+  // The stage boundaries, faint, so each stage's span reads.
+  for (let i = 1; i < n; i++) {
+    const line = document.createElementNS(SVG, "line");
+    line.setAttribute("x1", String(i * 100));
+    line.setAttribute("x2", String(i * 100));
+    line.setAttribute("y1", "0");
+    line.setAttribute("y2", String(H));
+    line.setAttribute("class", "edge");
+    line.setAttribute("vector-effect", "non-scaling-stroke");
+    svg.append(line);
+  }
+  const heads = stages.map((stage, i) =>
+    el(
+      "div",
+      { class: "head", title: `${stage.value.toLocaleString()} ${stage.name.toLowerCase()}` },
+      el("span", { class: "name" }, stage.name),
+      el("b", { class: "count" }, stage.value.toLocaleString()),
+      el("span", { class: "of" }, i === 0 || first === 0 ? "\u00a0" : `${Math.round((stage.value / first) * 100)}% of all`),
+    ),
   );
+  const steps = stages.slice(1).map((stage, i) => {
+    const before = stages[i]!.value;
+    const kept = before > 0 ? Math.round((stage.value / before) * 100) : 0;
+    return el("span", { class: "step", style: `left:${((i * 100 + (FLAT + 100) / 2) / W) * 100}%`, title: `${kept}% of ${stages[i]!.name.toLowerCase()} went on to ${stage.name.toLowerCase()}` }, `${kept}%`);
+  });
+  return el("div", { class: "flow", style: `--stages:${n}` }, el("div", { class: "heads" }, ...heads), el("div", { class: "shape" }, svg, ...steps));
 }
 
 /** Values binned into `bins` equal bins over [0, 1], as columns. */

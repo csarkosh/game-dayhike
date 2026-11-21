@@ -16,10 +16,10 @@ import { el } from "./charts.js";
 import { sampleSource } from "./sample.js";
 import { rangeFrom, remoteSource, searchWithRange, type QueryName, type Range, type Row, type Source } from "./source.js";
 import { accountMenu, requireSession, UNAUTHORIZED, type User } from "./auth.js";
-import { errorsView, failedCard, funnelView, healthView, liveView, lobbiesView, progressView, sessionDrawer, sessionsDrawer, visitorsView, waitingCard, type Shape } from "./views.js";
+import { errorsView, failedCard, nowIndicator, overviewView, playersView, sessionDrawer, sessionsDrawer, waitingCard, type Shape } from "./views.js";
 import { hold, settle } from "./hold.js";
 import { fadeIn, fadeOut, tokens } from "./motion.js";
-import { pathsCard, trailBuilder } from "./paths.js";
+import { pathsSection, trailBuilder } from "./paths.js";
 import { zoneName } from "./timeline.js";
 
 /**
@@ -33,7 +33,7 @@ const RANGES: { days: Range; label: string; title: (zone: string) => string }[] 
   { days: 30, label: "30 days", title: (zone) => `Today and the 29 before, calendar days in ${zone}` },
   { days: 90, label: "90 days", title: (zone) => `Today and the 89 before, calendar days in ${zone}` },
 ];
-const LIVE_EVERY_MS = 10_000;
+const LIVE_EVERY_MS = 30_000;
 
 const root = document.querySelector<HTMLDivElement>("#admin");
 if (root === null) throw new Error("#admin not found");
@@ -83,20 +83,6 @@ function adopt(card: HTMLElement, next: HTMLElement): void {
 /** What fades as a card's content changes: everything under its title, which stays. */
 const content = (card: HTMLElement): HTMLElement[] => [...card.children].filter((node): node is HTMLElement => node instanceof HTMLElement && node.localName !== "h2");
 
-/** Each element with no element in it, by where it sits in `card`, with its text. */
-function figures(card: HTMLElement): Map<string, { node: Element; text: string }> {
-  const out = new Map<string, { node: Element; text: string }>();
-  const walk = (node: Element, path: string): void => {
-    if (node.childElementCount === 0) {
-      out.set(path, { node, text: node.textContent ?? "" });
-      return;
-    }
-    [...node.children].forEach((child, i) => walk(child, `${path}/${child.localName}${i}`));
-  };
-  walk(card, "");
-  return out;
-}
-
 /** The admin routes' base: the telemetry service, whose `/t` is the batches' route. */
 function adminBase(): string | null {
   const url = import.meta.env.VITE_TELEMETRY_URL;
@@ -108,7 +94,7 @@ function adminBase(): string | null {
  * The page itself, for the account given (null for the sample). Returns what
  * stops its live refresh, for when the account signs out or is refused: the
  * shell hides the page behind its gate then, and the refresh would otherwise
- * keep asking, and keep being refused, every ten seconds. `trailFor` is the
+ * keep asking, and keep being refused, every thirty seconds. `trailFor` is the
  * trail builder, one worker for the page's life, its answers kept; the sample
  * shares the page's so its trail is built once, off the main thread.
  */
@@ -135,50 +121,60 @@ function dashboard(source: Source, account: User | null | undefined, trailFor = 
     });
     return b;
   });
-  const filters = el("div", { class: "filters" }, el("span", { class: "label", title: `Calendar days in ${zone}` }, "Range"), ...buttons);
-  // "Right now" waits as a skeleton too, held at its last height, so the cards under it
-  // never drop when it first fills.
-  const liveWaiting = waitingCard("Right now", "What signaling holds this moment, refreshed every 10 s", "", { tiles: 3, rows: 3 });
-  const liveSlot = el("div", { class: "grid" }, liveWaiting);
+  // Who is playing now sits at the end of the range bar, one small mark (Cyrus, 2026-11-21:
+  // a whole card was too big for how few play): it waits blank, then refreshes in place every
+  // thirty seconds, the heartbeat's own pace, its words cross-fading (short3) when they change.
+  const now = el("span", { class: "now", role: "status" }, el("span", { class: "dot", "aria-hidden": "true" }), el("span", { class: "words" }, "\u00a0"));
+  const filters = el("div", { class: "filters" }, el("span", { class: "label", title: `Calendar days in ${zone}` }, "Range"), ...buttons, now);
   const grid = el("div", { class: "grid" });
-  root!.replaceChildren(filters, liveSlot, el("div", { style: "height:16px" }), grid);
-  hold(liveWaiting, "live");
+  root!.replaceChildren(filters, grid);
 
-  // "Right now" fills its waiting card, then refreshes in place every ten seconds: the figures
-  // that changed cross-fade (short3) and the card does not rebuild visibly; when lobbies come or
-  // go, its height eases to the new one.
-  let liveShown = false;
   async function refreshLive(): Promise<void> {
     let next: HTMLElement;
     try {
-      next = liveView(await source.live());
+      next = nowIndicator(await source.live());
     } catch (error) {
-      next = el("section", { class: "card" }, el("h2", {}, "Right now"), el("p", { class: "sub" }, `Could not read the rooms: ${error instanceof Error ? error.message : String(error)}`));
+      next = el("span", { class: "now", role: "status", title: error instanceof Error ? error.message : String(error) }, el("span", { class: "dot", "aria-hidden": "true" }), el("span", { class: "words" }, "Playing now unknown"));
     }
-    const from = liveWaiting.getBoundingClientRect().height;
-    const before = liveShown ? figures(liveWaiting) : null;
-    adopt(liveWaiting, next);
-    liveShown = true;
-    if (before === null) content(liveWaiting).forEach((node) => fadeIn(node));
-    else for (const [path, now] of figures(liveWaiting)) if (before.get(path)?.text !== now.text) fadeIn(now.node, tokens().short3);
-    settle(liveWaiting, "live", from);
+    const before = now.textContent;
+    now.className = next.className;
+    now.title = next.title;
+    now.replaceChildren(...next.childNodes);
+    if (now.textContent !== before) fadeIn(now.querySelector(".words")!, tokens().short3);
   }
 
-  // The seven cards, each over one query or two: each is on the page at once
+  // The three cards, each over a query or a few: each is on the page at once
   // as a skeleton the shape of what it waits for, fills on its own as its
   // queries answer, and shows its own error, so a slow or failed query holds
   // only its card. The title and copy here are the waiting card's; the
   // rendered card brings its own, with what the rows say.
   const CARDS: { names: QueryName[]; title: string; sub: string; cls: string; shape: Shape; render(rows: Row[][]): HTMLElement }[] = [
-    { names: ["funnel"], title: "From landing to the end", sub: "Sessions by what they reached, each stage of the one before", cls: "", shape: { chart: 99, folds: 1 }, render: ([rows = []]) => funnelView(rows) },
-    { names: ["lobbies"], title: "Lobbies a day", sub: "From signaling's own rows", cls: "", shape: { chart: 170, folds: 1 }, render: ([rows = []]) => lobbiesView(rows) },
-    { names: ["kpis", "visitors"], title: "Visitors", sub: "Distinct browsers in this range, and how many came back on another day", cls: "", shape: { tiles: 3, rows: 12, row: 32 }, render: ([kpis = [], visitors = []]) => visitorsView(kpis, visitors) },
-    { names: ["progress"], title: "How far parties got", sub: "One line a match; each match's farthest climb, 0 at the trailhead and 1 at the crest; the night falls from 30%", cls: "", shape: { tiles: 5, chart: 160, rows: 12 }, render: ([rows = []]) => progressView(rows) },
+    { names: ["funnel", "places"], title: "Overview", sub: "How far sessions got, from landing to the end of a hike, and where the visitors came from", cls: "overview", shape: { chart: 160, rows: 6, row: 30 }, render: ([funnelRows = [], placeRows = []]) => overviewView(funnelRows, placeRows) },
+    { names: ["kpis", "players"], title: "Players", sub: "Each person in this range, how far they got and how the game ran for them, and where they went", cls: "", shape: { tiles: 3, chart: 60, rows: 12, row: 34 }, render: ([kpis = [], players = []]) => playersView(kpis, players, wentSlot()) },
     { names: ["errors"], title: "What went wrong", sub: "Problems in this range, grouped by their first hundred characters", cls: "", shape: { rows: 5 }, render: ([rows = []]) => errorsView(rows) },
-    { names: ["health"], title: "Load times and frame rates", sub: "By build, tier and engine; the start is the tier's decision, the engine and the build, the ready is the world's first whole frame", cls: "", shape: { tiles: 5, tile: 133, rows: 6, row: 32 }, render: ([rows = []]) => healthView(rows) },
-    { names: ["paths"], title: "Where parties went", sub: "One world at a time: the trail rebuilt from its seed, each session's path over it", cls: "", shape: { chart: 715 }, render: ([rows = []]) => pathsCard(rows, trailFor) },
   ];
   const slots = CARDS.map((c) => waitingCard(c.title, c.sub, c.cls, c.shape));
+
+  // Where they went, the Players card's last part: its query (and in the sample, the trail it is
+  // built on) is the slowest on the page, so the players show as soon as theirs answer and this
+  // part fills in under them when its own does, fading in. A load started since drops it.
+  function wentSlot(): HTMLElement {
+    const asked = loading;
+    const slot = el("div", { class: "where-went" }, el("h3", {}, "Where they went"), el("p", { class: "sub" }, "Reading the paths…"));
+    void source.query("paths", range).then(
+      (rows) => {
+        if (asked !== loading) return;
+        const section = pathsSection(rows, trailFor);
+        slot.replaceWith(section);
+        fadeIn(section);
+      },
+      (error: unknown) => {
+        if (asked !== loading) return;
+        slot.replaceChildren(el("h3", {}, "Where they went"), el("p", { class: "error", role: "status" }, `Could not be read. ${error instanceof Error ? error.message : String(error)}`));
+      },
+    );
+    return slot;
+  }
   grid.replaceChildren(...slots);
   const holdId = (c: (typeof CARDS)[number]): string => c.names.join("+");
   CARDS.forEach((c, i) => hold(slots[i]!, holdId(c)));

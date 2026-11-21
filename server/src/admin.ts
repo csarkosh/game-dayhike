@@ -3,7 +3,8 @@
  * (`client/src/admin/`, served from the shared admin host) reads, and what
  * that host's index reads of this app, behind the allowlist (`adminAuth.ts`).
  *
- *   GET /admin/live                  the open rooms and the instances up
+ *   GET /admin/live                  the open rooms, the instances up, and the
+ *                                    sessions heard from in the last two minutes
  *   GET /admin/query/<name>?days=N   one of the saved queries, over the last N
  *                                    calendar days in the caller's zone (1 is
  *                                    today)
@@ -42,6 +43,12 @@ export type LiveView = {
   at: number;
   instances: { id: string; seenAt: number }[];
   rooms: { id: string; hostId: string; createdAt: number; hostDroppedAt: number | null; peers: number }[];
+  /**
+   * The sessions in a match now: those whose heartbeat was heard in the last
+   * two minutes (`now.sql`), a solo hike among them, which opens no room. Null
+   * when that read failed, so the rooms still answer.
+   */
+  playing: Row[] | null;
 };
 
 export interface AdminData {

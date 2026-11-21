@@ -330,3 +330,104 @@ minutes; the errors card lists them.
 **One query more, pasted.** `gpu.sql` lists one session's GPU rows in order with a column for
 each field. It is not on the page, whose trail names the same rows; the deploy's dry run
 covers it with the others.
+
+## 10. Easier to read at a glance (amended 2026-11-21)
+
+Cyrus, 2026-11-21: the page showed more than a game this young needs. Four changes:
+
+- **"Right now" is one mark, not a card.** A dot and a few words at the end of the range bar:
+  "2 playing now", "No one playing", and "· 1 lobby open" while signaling holds a room; its title
+  names each session (player, tier, how far up, frame rate, build). Playing means a heartbeat
+  (`hb`, every 30 s of a match) heard in the last two minutes, read by `now.sql` on the
+  `/admin/live` route beside the rooms, so a solo hike counts: it opens no lobby, and the old card,
+  which read only the rooms, missed it. The mark refreshes every 30 s, the heartbeat's own pace,
+  not every 10 s. When `now.sql` fails the route answers `playing: null` and the mark says
+  "Playing now unknown" with the lobbies still counted. The index card's lobby count reads the
+  rooms alone, as before.
+- **"Lobbies a day" is gone from the page.** `lobbies.sql` stays, pasted in the console and on
+  its route.
+- **"From landing to the end" is a funnel shape**: a band a stage, centred, as wide as the stage
+  is of the first and narrowing to the next, with each stage's count and its share of the stage
+  before. The per-build table is gone; the line under the title still counts the builds and the
+  sessions turned away.
+- **"Load times and frame rates" is a verdict a player.** `health.sql` is one line a player (a
+  `vid`; a session without one stands alone) with the median load, the median frame rate and the
+  worst frame over their sessions, and the machine they were last seen on. The load is the whole
+  wait after Play: the start chain (`decideMs + engineMs + buildMs`) and then `ready`'s `ms`. Each
+  is good, slow or bad: a load of 15 s or less is good, past 30 s bad; 50 fps or more is good,
+  under 30 bad (`LOAD_MS` and `FPS` in `views.ts`, set against the first month of real players,
+  whose loads ran from 6 s on an M3 Max to over 60 s on a phone). A player's verdict is the worse
+  of the two. The card is one bar split good, slow and bad with its counts, over the players, the
+  worst first. The palette has one warm hue, so slow is the warning faded toward the surface and
+  bad the warning itself. How sessions ended (clean, unknown, silent, backgrounded) left this
+  card; "How far parties got" still counts the matches that ended silently.
+
+**Where players are** *(2026-11-21, the same day)*: a card under the funnel, one bar a city, as
+long as its visits are of the most any city had, the part that reached a game (`/dayhike/game/<id>`)
+in the accent and the rest faded, with the count of each. It reads csarko.sh's analytics
+(`places.sql` over `csarko-sh.csarko_visits`), not this game's telemetry: the game's pages report
+their visits to lib-visits' collector, which from lib-visits' `feat/city` looks each address up in
+DB-IP's IP to City Lite, bundled in its image, and writes the country, region and city, never the
+address. Visits from before that carry no place and are one line at the end. DB-IP's licence (CC
+BY 4.0) asks for its name and a link wherever its places show, so the card ends with both. The
+telemetry service's account needs to read that dataset in the `csarko-sh` project.
+
+**Places beside the players, the funnel as a flow, the visitors at a glance** *(2026-11-21,
+later)*: every table of individual players (the load times, the visitors, the matches' hosts)
+has a Where column, the city, region and country the player was last placed in. The game's
+telemetry has no tie to the analytics' visits, so the place comes to it: after a session's
+first batch the telemetry route posts the client's address to lib-visits' place route
+(`POST /place` on csarko.sh's collector, `PLACE_URL` and `PLACE_TOKEN`; `server/src/place.ts`),
+which answers from the city database bundled there and writes nothing, and the route writes one
+`place` row with the session's envelope and the place, never the address. The queries read it
+as `places` (`health.sql`, `visitors.sql`, `progress.sql`); a player is where their newest
+placed session was. The funnel is now one smooth shape read left to right, its height each
+stage's share of the first, each stage's count over it and each step's share of the stage before
+on its narrowing. The Visitors table reads as the load times do: a bar of how far visitors got
+(finished a hike, played, only looked) over one line a visitor with that mark, where they are,
+the machine as people name it, how often they came (with a "returning" chip) and when; the build
+and the last session left it (the visitor's link opens every session).
+
+**One Players card** *(2026-11-21, later still)*: "How far parties got", "Visitors" and "Load
+times and frame rates" said much of the same about the same people, so they are one card,
+Players, over one query, `players.sql` (which replaces `health.sql` and `visitors.sql`; the
+match-by-match `progress.sql` stays as a pasted query, no longer on the page). It opens with three
+tiles (players with their seven-day trend, returning, sessions a player) and two verdict bars side
+by side: how far they got (finished a hike, played, only looked) and how the game ran for them
+(good, slow or bad, the worse of load and frame rate). Then one line a person, each fact once:
+who (the link opens every session) and where, the machine, how often they came (sessions, with a
+"returning" chip; the days in its title), the climb (a small bar to their farthest point with its
+share, and won or lost where a match of theirs ended; "didn't play" where none did; party size and
+deaths in its title), the load, the frame rate (the worst frame in its title) and how long ago
+they were seen. The match table, its acts chips and its histogram of how far matches got are
+gone: a match's players are in this card, and its trail in a session's drawer.
+
+**A globe, and where they went inside Players** *(2026-11-21, last)*: "Where players are" is a
+globe (`globe.ts`: an orthographic Earth from Natural Earth's 1:110m land and borders in
+`world-atlas`, drawn with `d3-geo`, every colour a page token) with a mark a city, sized by the
+square root of its visits and filled as far as they reached a game, beside a list of the eight
+most visited cities with their counts. It opens turned to the visits' weighted middle, tilted
+only half way to its latitude, and turns under a drag; a city on the far side is hidden until it
+comes round. The coordinates are the city's own, to a tenth of a degree: lib-visits writes them as
+`s.la` and `s.lo` beside the city and its place route answers them, so `places.sql` reads them and
+the `place` rows carry them. "Where parties went" is no longer a card: it is the last part of
+Players, "Where they went", the drawing and its scrubber with the chosen world's sessions beside
+them (the session, its farthest, where it went and its end; the six tiles and the role and
+minutes columns left, since the players' lines above say them), and the list of worlds at the
+bottom of the card. Its query is the page's slowest, so the players show as soon as theirs
+answer and this part fills in under them.
+
+**A flat map, and errors before players** *(2026-11-21)*: the globe was too hard to get around
+(Cyrus), so "Where players are" is a flat map of the whole world (`worldMap.ts`: the Equal Earth
+projection, centred a little east of Greenwich so the Pacific is the seam, fitted to the land with
+Antarctica left off; no drag, no hidden side), the same marks, and the most visited cities listed
+under it in columns. "What went wrong" now comes before Players, so the page reads: the funnel,
+where players are, what went wrong, then the players and where they went.
+
+**An Overview card, returning over ninety days, errors last** *(2026-11-21)*: the funnel and the
+map are one card, Overview, the completion funnel ("From landing to the end") over where the
+visitors came from ("Where players are"), each a part with its own heading and line. A player's
+"returning" chip is now the same test as the Returning tile, seen on more than one day in the
+last ninety whatever the range (`players.sql`'s `visitor_days`, as `kpis.sql` has it), so it
+means "has been here before" on Today too; the range's own days stay in the chip's title. "What
+went wrong" is back at the bottom: Overview, Players, What went wrong.

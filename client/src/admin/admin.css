@@ -105,12 +105,85 @@ button { font: inherit; }
 .tooltip .k { color: var(--ink-2); }
 .tooltip .key { display: inline-block; width: 10px; height: 2px; background: var(--series); vertical-align: middle; margin-right: 6px; }
 
-.funnel { display: grid; gap: 6px; }
-.funnel .row { display: grid; grid-template-columns: 110px 1fr 64px; gap: 10px; align-items: center; font-variant-numeric: tabular-nums; }
-.funnel .row .name { color: var(--ink-2); font-size: 12px; }
-.funnel .track { height: 20px; }
-.funnel .fill { height: 20px; border-radius: 0 4px 4px 0; }
-.funnel .n { text-align: right; }
+/* The funnel as a flow, left to right (`charts.ts`, funnel()): the stages' heads over one shape,
+   and on each narrowing the share that went on. */
+.flow { display: grid; gap: 10px; }
+.flow .heads { display: grid; grid-template-columns: repeat(var(--stages), minmax(0, 1fr)); }
+.flow .head { display: flex; flex-direction: column; gap: 2px; padding-right: 8px; font-variant-numeric: tabular-nums; }
+.flow .head .name { color: var(--ink-2); font-size: 12px; }
+.flow .head .count { font-size: 22px; font-weight: 600; line-height: 1.15; color: var(--ink); }
+.flow .head .of { color: var(--faint); font-size: 12px; }
+.flow .shape { position: relative; height: 120px; }
+.flow .shape svg { display: block; width: 100%; height: 100%; }
+.flow .shape .edge { stroke: var(--grid); stroke-width: 1; }
+.flow .step { position: absolute; top: 50%; translate: -50% -50%; background: var(--surface); border: 1px solid var(--ring); border-radius: 999px; padding: 1px 8px; font-size: 12px; color: var(--ink-2); font-variant-numeric: tabular-nums; }
+@media (max-width: 560px) {
+  .flow .head .count { font-size: 18px; }
+  .flow .shape { height: 90px; }
+}
+
+/* Health's verdicts at a glance: one bar split good, slow and bad, its key under it (`views.ts`,
+   healthView()). The palette has one warm hue, so severity is its strength: slow is the warning
+   faded toward the surface, bad the warning itself, and the word beside each mark says which. */
+:root { --slow: color-mix(in srgb, var(--warning) 45%, var(--surface)); }
+.verdicts { margin: 0 0 12px; max-width: 760px; }
+.verdict-bar { display: flex; height: 10px; border-radius: 5px; overflow: hidden; gap: 2px; }
+.verdict-bar .seg.good { background: var(--good); }
+.verdict-bar .seg.slow { background: var(--slow); }
+.verdict-bar .seg.bad { background: var(--warning); }
+.verdict-key { display: flex; gap: 16px; margin-top: 6px; font-size: 12px; color: var(--ink-2); font-variant-numeric: tabular-nums; }
+.verdict-key b { color: var(--ink); font-weight: 600; }
+.status.good::before { background: var(--good); }
+.status.played::before { background: var(--ord-2); }
+.status.looked::before { background: color-mix(in srgb, var(--faint) 60%, var(--surface)); }
+.verdict-bar .seg.played { background: var(--ord-2); }
+.verdict-bar .seg.looked { background: color-mix(in srgb, var(--faint) 45%, var(--surface)); }
+/* The Players card (`views.ts`, playersView()): two verdict bars side by side, and the climb a
+   small bar to the farthest point with its share and how it ended. */
+.strips { display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 12px 28px; margin: 4px 0 14px; }
+.strips .verdicts { margin: 0; max-width: none; }
+.verdict-label { font-size: 12px; color: var(--ink-2); margin: 0 0 6px; }
+.climb { display: inline-flex; align-items: center; gap: 8px; white-space: nowrap; }
+.climb-track { display: inline-block; width: 48px; height: 6px; border-radius: 3px; background: var(--grid); overflow: hidden; }
+.climb-fill { display: block; height: 100%; background: var(--series); }
+.climb-n { font-variant-numeric: tabular-nums; min-width: 34px; color: var(--ink-2); }
+.status.ended::before { background: var(--ink-2); }
+td .came { white-space: nowrap; }
+.status.slow::before { background: var(--slow); }
+.status.bad::before { background: var(--warning); }
+.faint { color: var(--faint); }
+
+/* Where players are: a flat map of the world over the most visited cities (`views.ts`,
+   placesPart(); `worldMap.ts`). The Earth is the page's tokens: the land a step off the card, the
+   borders the card itself; a city a ring of the accent filled as far as its visits reached a game. */
+.places-map { display: flex; flex-wrap: wrap; gap: 16px 32px; align-items: flex-start; }
+.world-map { flex: 1 1 100%; }
+.world-map svg { user-select: none; }
+.world-map .land { fill: color-mix(in srgb, var(--text) 16%, var(--surface)); }
+.world-map .borders { fill: none; stroke: var(--surface); stroke-width: 0.6; }
+.world-map .mark { cursor: pointer; outline: none; }
+.world-map .mark .ring { fill: color-mix(in srgb, var(--series) 22%, transparent); stroke: var(--series); stroke-width: 1.2; }
+.world-map .mark .fill { fill: var(--series); }
+.world-map .mark:focus-visible .ring { stroke-width: 2.5; }
+.place-list { flex: 1 1 100%; min-width: 0; display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 6px 32px; align-content: start; }
+.place-list .places-key, .place-list .more { grid-column: 1 / -1; }
+.place-line { display: flex; justify-content: space-between; gap: 12px; font-size: 13px; font-variant-numeric: tabular-nums; padding: 3px 0; border-bottom: 1px solid var(--grid); }
+.place-line .name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.place-line .n { display: flex; gap: 8px; align-items: baseline; flex: none; }
+.place-line .share { color: var(--faint); font-size: 12px; min-width: 52px; text-align: right; }
+.place-list .more { margin: 4px 0 0; font-size: 12px; }
+.places-key { margin: 0 0 8px; }
+.places-key .key::before { content: ""; display: inline-block; width: 10px; height: 10px; border-radius: 50%; margin-right: 6px; vertical-align: -1px; }
+.places-key .key.played::before { background: var(--series); }
+.places-key .key.landed::before { background: color-mix(in srgb, var(--series) 22%, transparent); box-shadow: inset 0 0 0 1.2px var(--series); border-radius: 50%; }
+.card .attribution { margin: 12px 0 0; font-size: 11px; color: var(--faint); }
+.card .attribution a { color: inherit; }
+
+/* Who is playing now: one mark at the end of the range bar, lit while anyone is in a match (`views.ts`, nowIndicator()). */
+.filters .now { margin-left: auto; display: inline-flex; align-items: center; gap: 7px; font-size: 13px; color: var(--ink-2); font-variant-numeric: tabular-nums; cursor: default; }
+.filters .now .dot { width: 8px; height: 8px; border-radius: 50%; background: var(--faint); transition: background-color var(--md-duration-short3) var(--md-easing-standard); }
+.filters .now.on { color: var(--ink); }
+.filters .now.on .dot { background: var(--good); box-shadow: 0 0 0 3px color-mix(in srgb, var(--good) 25%, transparent); }
 
 /* A table never widens the page: its cells wrap, and what still does not fit scrolls
    inside its own wrapper (`charts.ts`, table()). */
@@ -145,6 +218,11 @@ details.table summary::before, .drawer details summary::before { content: "▸";
 details.table[open]:not([data-closing]) > summary::before, .drawer details[open]:not([data-closing]) > summary::before { transform: rotate(90deg); transition: transform var(--md-duration-medium2) var(--md-easing-standard); }
 .empty { color: var(--faint); padding: 16px 0; }
 
+.where-went, .part + .part { margin-top: 22px; padding-top: 16px; border-top: 1px solid var(--grid); }
+.where-went h3, .part h3 { font-size: 13px; font-weight: 600; margin: 0 0 2px; }
+.world-pick { margin-top: 14px; }
+.world-pick .label { display: block; font-size: 12px; color: var(--ink-2); margin: 0 0 6px; }
+.world-pick .worlds { margin: 0; }
 .paths { display: flex; gap: 16px; align-items: flex-start; flex-wrap: wrap; }
 .paths .drawing { flex: 1 1 420px; max-width: 640px; min-width: 0; }
 .paths canvas { background: var(--page); border: 1px solid var(--ring); border-radius: 8px; width: 100%; aspect-ratio: 1; display: block; }

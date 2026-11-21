@@ -11,7 +11,7 @@
  * the drawing follows it frame by frame, as anything dragged should.
  */
 
-import { ago, compact, el, table, tile, tipMotion, type Column } from "./charts.js";
+import { ago, el, table, tipMotion, type Column } from "./charts.js";
 import { easeHeight, fadeIn, live, look, play, tokens } from "./motion.js";
 import type { Row } from "./source.js";
 import { zoned } from "./timeline.js";
@@ -289,8 +289,13 @@ const mmss = (tick: number): string => {
   return `${Math.floor(s / 60)}:${String(s % 60).padStart(2, "0")}`;
 };
 
-/** The paths card: the world selector, the drawing with its scrubber, and the sessions beside it. */
-export function pathsCard(rows: Row[], trailFor: (world: string, seed: number) => Promise<DrawableTrail | null>): HTMLElement {
+/**
+ * Where they went, the Players card's last part (`views.ts`, playersView): the drawing with its
+ * scrubber and the sessions of the chosen world beside it, and under them, at the bottom of the
+ * card, the list of worlds to choose from (Cyrus, 2026-11-21: one card for the players, the map
+ * selector at its bottom).
+ */
+export function pathsSection(rows: Row[], trailFor: (world: string, seed: number) => Promise<DrawableTrail | null>): HTMLElement {
   // Newest party first, so the list opens on the latest walk.
   const worlds = worldsOf(rows);
   // The list of worlds: one radio a line, its parts in columns, the newest checked.
@@ -339,32 +344,18 @@ export function pathsCard(rows: Row[], trailFor: (world: string, seed: number) =
   const sidePanel = (): void => {
     const cols: Column[] = [
       { key: "sid", label: "Session", render: (v) => el("a", { href: "#", class: "mono", "data-sid": str(v), "data-pick": str(v) }, str(v).slice(0, 8)) },
-      { key: "role", label: "Role" },
       { key: "farthest", label: "Farthest", num: true, render: (v) => `${Math.round(num(v) * 100)}%` },
-      { key: "minutes", label: "Min", num: true },
       { key: "went", label: "Went" },
       { key: "end", label: "End", render: (v) => el("span", { class: `status ${str(v) === "won" ? "won" : str(v) === "lost" || str(v) === "died" ? "lost" : ""}` }, str(v) || "–") },
     ];
     const rowsOut = sessions.map((s) => ({
       sid: s.sid,
-      role: s.role,
       farthest: s.farthest,
-      minutes: Math.round((s.ticks / 3600) * 10) / 10,
       went: [s.walkedLoop ? "loop" : "", s.offTrail ? "off trail" : "", s.lamp ? "lamp" : "", ...s.places].filter((w) => w !== "").join(", "),
       end: s.died ? "died" : s.result,
     }));
     side.replaceChildren(
-      el(
-        "div",
-        { class: "tiles" },
-        tile("Sessions", String(sessions.length)),
-        tile("Walked a loop", String(sessions.filter((s) => s.walkedLoop).length)),
-        tile("Left the trail", String(sessions.filter((s) => s.offTrail).length)),
-        tile("Used the lamp", String(sessions.filter((s) => s.lamp).length)),
-        tile("Died", String(sessions.filter((s) => s.died).length)),
-        tile("Samples", compact(sessions.reduce((n, s) => n + s.samples.length, 0))),
-      ),
-      el("p", { class: "sub" }, "Click a session to follow it alone; click again for all. The id opens its timeline."),
+      el("p", { class: "sub" }, `${sessions.length} session${sessions.length === 1 ? "" : "s"} in this world. Click one to follow it alone; click again for all. The id opens its timeline.`),
       table(cols, rowsOut, "No samples for this world in the range."),
     );
   };
@@ -491,21 +482,22 @@ export function pathsCard(rows: Row[], trailFor: (world: string, seed: number) =
   });
   canvas.addEventListener("pointerleave", () => tipping.hide());
 
-  const card = el(
-    "section",
-    { class: "card" },
-    el("h2", {}, "Where parties went"),
-    el("p", { class: "sub" }, "One world at a time: the trail rebuilt from its seed, each session's path over it, a × where they died, a ◇ where they first saw the Hollow, a □ where they read the poster. Hover a path for its moment."),
+  const section = el(
+    "div",
+    { class: "where-went" },
+    el("h3", {}, "Where they went"),
+    el("p", { class: "sub" }, "One world at a time: the trail rebuilt from its seed, each session's path over it, a × where they died, a ◇ where they first saw the Hollow, a □ where they read the poster. Hover a path for its moment; choose the world below."),
     layout,
+    lines.length === 0 ? el("p", { class: "empty" }, "No parties in this range.") : el("div", { class: "world-pick" }, el("span", { class: "label" }, "World"), list),
   );
-  layout.append(el("div", { class: "drawing" }, lines.length === 0 ? el("p", { class: "empty" }, "No parties in this range.") : list, wrap, el("div", { class: "scrub" }, scrub, clock), note), side);
+  layout.append(el("div", { class: "drawing" }, wrap, el("div", { class: "scrub" }, scrub, clock), note), side);
   if (worlds.length === 0) {
     side.replaceChildren(el("div", { class: "empty" }, "No position samples in this range."));
   } else {
     choose();
   }
   void ago;
-  return card;
+  return section;
 }
 
 /** The trail builder, in a worker, one answer a request, with the answers kept. */
