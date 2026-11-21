@@ -36,16 +36,16 @@ describe("the seed and the terrain a hike's world is made from", () => {
   });
 
   it("is what the page starts the world's worker with, which the start waits for and a start left ends", () => {
-    const main = readFileSync(new URL("../../src/main.ts", import.meta.url), "utf8").replace(/\/\*[\s\S]*?\*\//g, "").replace(/\/\/.*$/gm, "");
+    const main = readFileSync(new URL("../../../engine/src/shell.ts", import.meta.url), "utf8").replace(/\/\*[\s\S]*?\*\//g, "").replace(/\/\/.*$/gm, "");
     expect(main.match(/\bstartWorldPrep\(/g)).toEqual(["startWorldPrep("]);
-    expect(main).toContain("const prep = startWorldPrep(worldInputs(route.token, location.search), startHikeWorldWorker);");
+    expect(main).toContain("const prep = startWorldPrep(worldInputs(route.token, location.search), page.worldWorker);");
     expect(main).toContain("prepOutcome = await prep.ready;");
     // A render that moves on, and a start that fails, end the worker; a start that built lets go of it and its scene.
     expect(main.match(/prep\.dispose\(\);/g)).toHaveLength(3);
   });
 
   it("asks the worker for the hike's first scene once, at the tier decided, waits for it before the build and hands it to the build once", () => {
-    const main = readFileSync(new URL("../../src/main.ts", import.meta.url), "utf8").replace(/\/\*[\s\S]*?\*\//g, "").replace(/\/\/.*$/gm, "");
+    const main = readFileSync(new URL("../../../engine/src/shell.ts", import.meta.url), "utf8").replace(/\/\*[\s\S]*?\*\//g, "").replace(/\/\/.*$/gm, "");
     expect(main.match(/prep\.scene\(/g)).toEqual(["prep.scene("]);
     expect(main).toContain("sampling = prep.scene(decided.tier);");
     // After the world is ready, so the wait for it is its own lap.
@@ -53,7 +53,7 @@ describe("the seed and the terrain a hike's world is made from", () => {
     expect(wait).toContain("sampled = await sampling;");
     expect(wait).toContain('lap("scene");');
     // Nothing here holds the scene past the wait: the promise that carried it is let go of at once.
-    expect(wait).toContain("sampled = await sampling;\n      sampling = Promise.resolve(null);");
+    expect(wait).toContain("sampled = await sampling;\n        sampling = Promise.resolve(null);");
     // The game is handed the way to take it, never the scene: the first renderer made takes it, and a start
     // made again finds none left.
     expect(main).toContain("takePrepared: takeSampled,");
@@ -79,6 +79,7 @@ describe("the seed and the terrain a hike's world is made from", () => {
   });
 
   it("is handed the way to start the world's worker by the page", () => {
-    expect(sourceText("main.ts")).toContain("startWorldPrep(worldInputs(route.token, location.search), startHikeWorldWorker)");
+    expect(sourceText("shell.ts")).toContain("startWorldPrep(worldInputs(route.token, location.search), page.worldWorker)");
+    expect(sourceText("hikePageGame.ts")).toContain("worldWorker: startHikeWorldWorker,");
   });
 });

@@ -21,7 +21,7 @@ ceiling. On 2026-10-01 the high tier's stages passed 8 MiB, and the ceiling
 was raised once, to 10 MiB (10,485,760); the split by platform is the step
 after that, not a higher ceiling again. The tier is the platform the page
 knows before its engine is made
-(`startupTier` in `main.ts` decides it, and `engineFor(tier, …)` makes the
+(`startupTier` in `shell.ts` decides it, and `engineFor(tier, …)` makes the
 engine for it), and it is the largest divider of the corpus: a page at one
 tier never asks for another tier's variants.
 
@@ -35,7 +35,7 @@ tier never asks for another tier's variants.
 | 4 | **A recording names its tiers** (`"tiers": ["high"]` in the envelope, format `/1` kept, the field optional); **a recording without the field is merged into every tier.** | Old recordings stay valid. One page may make engines at two tiers (a change in Settings); the report keeps every tier its engines were made for, and the recording names them all. |
 | 5 | **Each map carries its tier** (`"tier": "low"` after the salt; the page refuses another tier's). | Two tiers' maps of the same entries would otherwise be the same bytes, which the build folds into one file; and a page can tell a wrong map. |
 | 6 | **Every stage is translated once**; the three maps are made of subsets of the one translation. | Translation is the cost (about 84 ms a stage); a map is a `mapText` of its entries. |
-| 7 | **An engine made for no tier takes the medium map** (`DEFAULT_TIER`, the renderer's own default). | Only the tests make one; `main.ts` always gives the tier it decided, and `webgpuSwitchOff.test.ts` pins that line. |
+| 7 | **An engine made for no tier takes the medium map** (`DEFAULT_TIER`, the renderer's own default). | Only the tests make one; `shell.ts` always gives the tier it decided, and `webgpuSwitchOff.test.ts` pins that line. |
 
 ## 3. The index
 
@@ -100,7 +100,7 @@ has made them; under the suite, three empty strings.
 
 ## 6. The page's fetch
 
-`createWebGpuEngine(canvas, { tier, … })`: `main.ts` passes the tier the
+`createWebGpuEngine(canvas, { tier, … })`: `shell.ts` passes the tier the
 engine is made for (`input.tier`, the one `startupTier` decided, or the one
 a switch in Settings asks for). The engine's default sources are
 `defaultSources(salt, wgslMapUrls[tier], tier)`: `loadWgslMap` fetches that

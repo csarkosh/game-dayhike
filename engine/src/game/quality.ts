@@ -383,7 +383,7 @@ export function withVerdict(
  * low, which has nothing below it.
  *
  * The page passes the engine the WebGPU rule gives the high tier
- * (`verdictEngineNow`, `main.ts`), not the running tier's, so a drop from
+ * (`verdictEngineNow`, `shell.ts`), not the running tier's, so a drop from
  * medium to low, drawn on WebGL2, is recorded under WebGPU where the rule
  * gives high WebGPU. What that costs: should that key later turn to WebGL2
  * (a remembered failure, an adapter that no longer fits), the drop is not

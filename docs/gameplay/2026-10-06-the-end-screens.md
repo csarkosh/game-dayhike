@@ -65,7 +65,7 @@ sought nevermore." The landing comes at 8 s.
 - `app.ts`: death sets the ending and the line and schedules the fade; the end, won and alive,
   sets the ending and the line and schedules the panel; otherwise the panel at once.
 
-## 2. The veil (`game/veil.ts`, `main.ts`)
+## 2. The veil (`game/veil.ts`, `shell.ts`)
 
 The title and the game used to swap in one frame. A black sheet over the whole page now comes
 down over `VEIL_COVER_MS` (0.6 s) before any change of page (the title, the game, a scene),

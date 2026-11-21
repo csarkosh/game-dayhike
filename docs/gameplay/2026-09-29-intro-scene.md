@@ -87,7 +87,7 @@ and the caption reads this" is a literal), and trivial skip and hold (choosing *
 - The scene's car is its own placed model with named parts (four wheels, the driver's door, the
   steering wheel). With today's car, which has no parts, the whole model slides along the road as
   the stand-in.
-- `router.ts`, `main.ts`: a scene route, `/dayhike/scene/intro`, plays the staged scene on its
+- `router.ts`, `shell.ts`: a scene route, `/dayhike/scene/intro`, plays the staged scene on its
   fixed world, with `?t=<seconds>` to seek and `?step=<n>` to hold frame *n* at 24 frames a
   second, so a recorder can ask for any frame. The route exposes `dayhikeScene` with `seek(t)`
   and `frame()` (renders one frame and resolves when it is drawn).

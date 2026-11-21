@@ -289,11 +289,11 @@ Changed:
   layer, the prompt, `registerInteractables`, and the visibility-change disengage.
 - `client/src/game/renderer.ts`: `project`.
 - `client/src/net/clientSession.ts`: `readonly world`.
-- `client/src/game/rosterModel.ts`, `roster.ts`: `"hidden"` presence, unlocked on the pause
+- `engine/src/game/rosterModel.ts`, `roster.ts`: `"hidden"` presence, unlocked on the pause
   menu, share-sheet Invite.
 - `client/src/game/landing.ts`, `landingModel.ts`: phone-width rules and the touch download
   note.
-- `client/src/main.ts`: passes `touch` into the roster model and the game options.
+- `engine/src/shell.ts`: passes `touch` into the roster model and the game options.
 
 The layering rule is untouched: `sim/` gains nothing, `net/` gains a getter.
 

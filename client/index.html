@@ -46,7 +46,7 @@
     <!-- csarko.sh's analytics (lib-visits, vendored by tools/vendor-visits.mjs): the page is a step of
          one visit that may have begun on csarko.sh, so its beacon goes to that host's collector with
          this origin. No cookie, no storage; the owner's own addresses are dropped at the collector.
-         Each screen the game shows is a route, which main.ts reports with visits.page(). -->
+         Each screen the game shows is a route, which the engine's shell (shell.ts) reports with visits.page(). -->
     <script defer src="/libs/visits/visits.min.js" data-visits="https://csarko.sh/v"></script>
     <style>
       html, body { margin: 0; height: 100%; overflow: hidden; background: #101014; }

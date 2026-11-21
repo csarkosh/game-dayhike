@@ -37,7 +37,6 @@
     "sim/trailPlan.ts",
     "sim/shoreStrip.ts",
     "sim/mountain.ts",
-    "game/attemptClock.ts",
     "game/board*",
     "game/carAudio.ts",
     "game/carParts.ts",
@@ -64,7 +63,6 @@
     "game/oddSounds.ts",
     "game/passages.ts",
     "game/posterPanel.ts",
-    "game/roster*",
     "game/scenePlay.ts",
     "game/sceneryParts.ts",
     "game/shotBodies.ts",
@@ -112,10 +110,12 @@
     "game/wildlifeInputs.ts",
     "game/hikeAudio.ts",
     "hike.ts",
-    "hikeGame.ts"
+    "hikeGame.ts",
+    "hikePage.ts",
+    "hikePageGame.ts"
   ],
   "hold": {
-    "env.d.ts": "the client's own ambient types",
+    "env.d.ts": "the client's own ambient types; the engine's are engine/src/env.d.ts",
     "sim/kernel/fieldWasm.ts": "written by tools/rust/build.mjs at this path; moves with the kernel's build"
   }
 }

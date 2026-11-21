@@ -426,7 +426,7 @@ times the pixels.
 - `setMaximumLimits` asks the device for everything the adapter has, so a
   pipeline that outgrows the limits every adapter guarantees still runs on the
   reference machine and fails only on a weaker one.
-- `main.ts` awaits `createWebGpuEngine` with no rejection handler: a device or
+- `shell.ts` awaits `createWebGpuEngine` with no rejection handler: a device or
   translator failure leaves a blank canvas and an unhandled rejection. Its own
   `webGpuRequested` helper is exported and unused.
 - The impostor bake's six-fold budget is still a deadline, still silent past it,
@@ -459,7 +459,7 @@ The sweep of the six compatibility changes covers the scene from scratch rather 
 ## 4. Who reaches the WebGPU tiers
 
 Before the engine choice was built, `createRenderer` detected the tier itself, since `app.ts` gave
-it none; now `main.ts` resolves the tier before the game starts (`?tier=` where
+it none; now `shell.ts` resolves the tier before the game starts (`?tier=` where
 valid, else `detectTier` in `quality.ts`, the same body) and passes it through
 `app.ts` to the renderer. Detection is `tierFor` (`quality.ts`): high needs
 more than eight threads **and** more than 8 GB of `navigator.deviceMemory`.
@@ -667,7 +667,7 @@ the startup window is not over before the party connects: the lobby belongs to
 the page and is usually made on the landing page, and the host's admission and
 a follower's handshake both start inside `startGame`, so they run during the
 window. A reload fires `pagehide`, and the page leaves the lobby
-(`main.ts`'s `pagehide` listener):
+(`shell.ts`'s `pagehide` listener):
 
 - A **host**'s leave ends the room: every follower sees "The host ended this
   session.", and the invite is dead.
@@ -784,7 +784,7 @@ smoke keeps exercising that path.
 
 `landingScene.ts:55` builds its renderer with `{ tier: "low" }`, so it stays
 WebGL2. The landing's engine is disposed before the game's is made
-(`main.ts:424`), so the two never run at once.
+(`shell.ts`), so the two never run at once.
 
 ### 5.9 The frame probe and the switch's cover, per engine
 

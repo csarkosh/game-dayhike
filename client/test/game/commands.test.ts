@@ -408,6 +408,7 @@ describe("a game's own commands", () => {
     expect(sourceText("game/commands.ts")).not.toContain("gameMode");
     // The game as the page is handed it registers them (`hikeGame.ts`), which the game's page imports.
     expect(sourceText("hikeGame.ts")).toContain('import "./game/hikeCommands.js";');
-    expect(sourceText("main.ts")).toContain('import { HIKE_GAME } from "./hikeGame.js";');
+    expect(sourceText("main.ts")).toContain('import { HIKE_PAGE } from "./hikePageGame.js";');
+    expect(sourceText("hikePageGame.ts")).toContain('import { HIKE_GAME } from "./hikeGame.js";');
   });
 });

@@ -316,7 +316,7 @@ export type { LandingPanel } from "./landingModel.js";
 
 export type LandingHandle = {
   setView(view: LandingView): void;
-  /** Swaps panels in place. main.ts calls this instead of rebuilding the page,
+  /** Swaps panels in place. shell.ts calls this instead of rebuilding the page,
    * because a rebuild would replace the nodes mid-transition and kill it. */
   setPanel(panel: LandingPanel): void;
   dispose(): void;
@@ -377,7 +377,7 @@ export function renderLanding(
   },
   panel: LandingPanel = "home",
 ): LandingHandle {
-  // Appends rather than clearing: main.ts owns the container and may have
+  // Appends rather than clearing: shell.ts owns the container and may have
   // already placed the still this overlay sits on.
   const style = document.createElement("style");
   style.textContent = STYLE;

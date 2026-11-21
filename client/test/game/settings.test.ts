@@ -73,7 +73,7 @@ describe("settingsModel", () => {
   });
 
   it("names the class's start tier where the probe is skipped because its steps cannot be measured", () => {
-    // Firefox 156 on an Apple M4, and the page's own summary of Auto (`autoSummary` in main.ts).
+    // Firefox 156 on an Apple M4, and the page's own summary of Auto (`autoSummary` in shell.ts).
     const firefox: GpuSignals = {
       renderer: "Apple M1, or similar", adapter: null, limits: null, features: null, adapterStatus: "none", parallelCompile: false,
       cores: 10, memoryGb: null, mobile: false, browser: 156,

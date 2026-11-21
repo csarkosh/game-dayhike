@@ -1,7 +1,7 @@
 import type { RosterView } from "./rosterModel.js";
 
 /**
- * The roster. Mounted once on document.body by main.ts so the
+ * The roster. Mounted once on document.body by shell.ts so the
  * per-route `replaceChildren` on #app never touches it, and repainted from a
  * `RosterView`. DOM APIs and textContent only: names come from other peers.
  *
@@ -185,7 +185,7 @@ export function createRoster(handlers: {
       invite.className = "create";
       invite.textContent = "Invite";
       // Disabled the instant an attempt starts, well before the bar is worth
-      // drawing: the guard in main.ts would refuse a second attempt anyway,
+      // drawing: the guard in shell.ts would refuse a second attempt anyway,
       // and a button that still looks live while being ignored is the thing
       // this whole pending state exists to stop.
       invite.disabled = view.invite.busy;
@@ -330,7 +330,7 @@ export function createRoster(handlers: {
     field.focus();
     field.select();
     let finished = false;
-    // The contract with main.ts: `onRename` MUST lead to a `setView` repaint.
+    // The contract with shell.ts: `onRename` MUST lead to a `setView` repaint.
     // That repaint is what removes this field — committing does not replace it
     // with the label, because the repainted row carries the new name — so
     // without one the input stays on screen and inert.

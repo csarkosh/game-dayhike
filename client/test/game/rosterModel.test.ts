@@ -5,7 +5,7 @@ import {
   PENDING_AFTER_MS,
   OVERRUN_MS,
   type RosterAttempt,
-} from "../../src/game/rosterModel.js";
+} from "@csarkosh/engine/game/rosterModel";
 import type { LobbyState } from "@csarkosh/engine/net/lobby";
 
 const LOBBY = "3f2504e0-4f89-41d3-9a0c-0305e82c3301";

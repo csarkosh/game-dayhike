@@ -556,7 +556,7 @@ describe("startupTier", () => {
         });
       }
       const t = fakes((tier) => ({ ...reading(tier, 16.7), engine: "webgpu" }), storage);
-      // The page's summary for Settings (`autoSummary` in main.ts).
+      // The page's summary for Settings (`autoSummary` in shell.ts).
       const record = readAutoRecord(storage);
       const pending = autoPick(signals, { record, pixels: 2_073_600, now: 1_790_000_000_000, engine: "webgpu", stepSettles: steps.settle }).probeFrom !== null;
       await startupTier(signals, { ...page(), engine: "webgpu", steps }, t.deps);
