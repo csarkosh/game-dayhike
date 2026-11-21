@@ -12,11 +12,11 @@ import { fileURLToPath } from "node:url";
 const src = readFileSync(fileURLToPath(new URL("../../src/app.ts", import.meta.url)), "utf8");
 
 describe("the lake's sound in app.ts", () => {
-  it("voices the lake after renderer.sync and the drips, on BOTH the host and the client loop", () => {
-    // Counting over the whole file would pass with both calls in the host loop.
+  it("voices the lake after renderer.sync and the drips, in the one frame the host and a follower run", () => {
+    // The host and a follower run one frame (`frame`, appFrame.test.ts), so each step is written once.
     const loops = [...src.matchAll(/renderer\.sync\([^)]*\);\n\s*playWildlifeAudio\(\);\n\s*syncWind\(\);\n\s*syncDrip\(\);\n\s*syncWaterLife\(\);/g)];
-    expect(loops).toHaveLength(2);
-    expect(src.match(/syncWaterLife\(\);/g)).toHaveLength(2);
+    expect(loops).toHaveLength(1);
+    expect(src.match(/syncWaterLife\(\);/g)).toHaveLength(1);
   });
 
   it("hears the renderer that runs, from its listener, so a switch of tier's renderer is the one heard", () => {

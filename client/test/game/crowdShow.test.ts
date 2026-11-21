@@ -101,8 +101,8 @@ describe("the renderer and the app", () => {
   const commands = readFileSync(clientFile("src/game/commands.ts"), "utf8");
 
   it("the app steps this screen's crowd every frame on the host and on a client, before the renderer's own sync", () => {
-    expect(app).toContain("      syncCrowd(host.world, state, host.localEntityId, dt);\n      syncWayDraw(host.world, state);");
-    expect(app).toContain("      syncCrowd(client.world, state, client.localEntityId, dt);\n      syncWayDraw(client.world, state);");
+    expect(app).toContain("    syncCrowd(live.world, state, live.localEntityId, dt);\n    syncWayDraw(live.world, state);");
+    expect(app.match(/\bframe\((?:host|client), state, cmd, dt\);/g)).toHaveLength(2);
     // And says whether the crowd is up: while it is, the chase's killers are drawn among it, as shadows.
     expect(app).toContain("renderer.setCrowd(crowd.figures, seconds, up);");
     // Whether a figure may have this player now: alive, in the chase, the match undecided, off the road.
@@ -115,8 +115,8 @@ describe("the renderer and the app", () => {
     expect(app).toContain("{ x: me.pos.x, z: me.pos.z, yaw: me.yaw, prey }");
     // A player their crowd has says so to the host in every command until their death is seen, on the host and on a client alike.
     expect(app).toContain("crowd !== null && crowd.has !== 0 && !crowdTook ? { ...cmd, buttons: cmd.buttons | Button.Taken } : cmd");
-    expect(app).toContain("cmd = taken(ranToCar(stilled(input.sample(++seq), me, host.world), me));");
-    expect(app).toContain("cmd = taken(ranToCar(stilled(input.sample(++seq), me, client.world), me));");
+    expect(app).toContain("cmd = taken(ranToCar(stilled(input.sample(++seq), me, live.world), me));");
+    expect(app.match(/const cmd = stepTicks\((?:host|client), ticks\);/g)).toHaveLength(2);
     // And what is at the centre of their view, for the chase's dark: the crowd's figures and the state's enemies; null where the chase does not have them.
     expect(app).toContain("renderer.setChaseThreat(threat);");
     expect(app).toContain("threat = Math.max(threat, threatOf(eyeAt, f.x, f.z, presenceOf(f, seconds)));");

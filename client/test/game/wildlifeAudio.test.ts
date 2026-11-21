@@ -370,11 +370,11 @@ describe("app.ts wiring", () => {
   // and the game looks exactly as it does with it fed.
   const src = readFileSync(fileURLToPath(new URL("../../src/app.ts", import.meta.url)), "utf8");
 
-  it("feeds the shell after renderer.sync on BOTH the host and the client loop", () => {
-    // Counting over the whole file would pass with both calls in the host loop.
+  it("feeds the shell after renderer.sync, in the one frame the host and a follower run", () => {
+    // The host and a follower run one frame (`frame`, appFrame.test.ts), so each step is written once.
     const calls = [...src.matchAll(/renderer\.sync\([^)]*\);\n\s*playWildlifeAudio\(\);/g)];
-    expect(calls).toHaveLength(2);
-    expect(src.match(/playWildlifeAudio\(\);/g)).toHaveLength(2);
+    expect(calls).toHaveLength(1);
+    expect(src.match(/playWildlifeAudio\(\);/g)).toHaveLength(1);
   });
 
   it("takes the listener and the events from the renderer, and the gain from the weather", () => {

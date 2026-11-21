@@ -2096,6 +2096,59 @@ function buildGame(
     for (const lift of [...onSessionOver]) lift();
   }
 
+  /** A session a frame is stepped and drawn for: the host's or a follower's. */
+  type Live = { readonly world: World; readonly localEntityId: number; tick(cmd: InputCommand): void };
+
+  /**
+   * A frame's ticks, the host's and a follower's alike: each tick's command
+   * sampled, filtered by the hike (held still in a scene, run to the car,
+   * taken by the crowd) and handed to the session. Returns the last command,
+   * or null for a frame with no tick.
+   */
+  function stepTicks(live: Live, ticks: number): InputCommand | null {
+    let cmd: InputCommand | null = null;
+    for (let i = 0; i < ticks; i++) {
+      const me = live.world.state.players.get(live.localEntityId);
+      cmd = taken(ranToCar(stilled(input.sample(++seq), me, live.world), me));
+      if (i === ticks - 1) eyeBefore = me === undefined ? null : capturedEye(me, eyeBeforeScratch);
+      live.tick(cmd);
+    }
+    return cmd;
+  }
+
+  /**
+   * A frame after its ticks, the host's and a follower's alike, from the state
+   * it draws (the host's own, a follower's blended one). The order is the
+   * hike's: what the renderer's sync reads is stepped before it, the world's
+   * sound after it, then the hike's own reading of the frame, then the draw.
+   */
+  function frame(live: Live, state: WorldState, cmd: InputCommand | null, dt: number): void {
+    const self = state.players.get(live.localEntityId);
+    syncWayLight(live.world, dt);
+    syncCrowd(live.world, state, live.localEntityId, dt);
+    syncWayDraw(live.world, state);
+    syncAtmosphere(live.world, state, live.localEntityId, dt);
+    renderer.sync(state, live.localEntityId, accumulator.alpha, { dt, sprinting: input.sprinting, before: eyeBefore });
+    playWildlifeAudio();
+    syncWind();
+    syncDrip();
+    syncWaterLife();
+    syncSurf();
+    syncTouch(self?.lamp.on ?? false);
+    syncPrompt(live.world, self);
+    if (cmd !== null) syncPoster(live.world, self, cmd);
+    syncRoadLine(self, state);
+    syncDeath(self, state, live.world);
+    syncOutcome(state, live.localEntityId);
+    syncEndScene();
+    syncTelemetry(live.world, state, self, input.sprinting);
+    // True exactly when `sync` took its player-following branch, which is
+    // the only case in which `renderer.cameraPosition()` is an eye position
+    // a pending freecam can adopt.
+    cameraOnPlayer = self !== undefined && freecam === null;
+    drawHike();
+  }
+
   /**
    * Hosting covers solo play too: a host session with zero peers is exactly a
    * local game, so the only difference a lobby makes is whether offers are
@@ -2232,41 +2285,12 @@ function buildGame(
       const dt = frameSeconds();
       feedGovernor(dt);
       const ticks = accumulator.advance(dt);
-      let cmd: InputCommand | null = null;
       escapeStep?.();
-      for (let i = 0; i < ticks; i++) {
-        const me = host.world.state.players.get(host.localEntityId);
-        cmd = taken(ranToCar(stilled(input.sample(++seq), me, host.world), me));
-        if (i === ticks - 1) eyeBefore = me === undefined ? null : capturedEye(me, eyeBeforeScratch);
-        host.tick(cmd);
-      }
+      const cmd = stepTicks(host, ticks);
       stepFreecamView(dt);
 
       const state: WorldState = host.world.state;
-      const self = state.players.get(host.localEntityId);
-      syncWayLight(host.world, dt);
-      syncCrowd(host.world, state, host.localEntityId, dt);
-      syncWayDraw(host.world, state);
-      syncAtmosphere(host.world, state, host.localEntityId, dt);
-      renderer.sync(state, host.localEntityId, accumulator.alpha, { dt, sprinting: input.sprinting, before: eyeBefore });
-      playWildlifeAudio();
-      syncWind();
-      syncDrip();
-      syncWaterLife();
-      syncSurf();
-      syncTouch(self?.lamp.on ?? false);
-      syncPrompt(host.world, self);
-      if (cmd !== null) syncPoster(host.world, self, cmd);
-      syncRoadLine(self, state);
-      syncDeath(self, state, host.world);
-      syncOutcome(state, host.localEntityId);
-      syncEndScene();
-      syncTelemetry(host.world, state, self, input.sprinting);
-      // True exactly when `sync` took its player-following branch, which is
-      // the only case in which `renderer.cameraPosition()` is an eye position
-      // a pending freecam can adopt.
-      cameraOnPlayer = self !== undefined && freecam === null;
-      drawHike();
+      frame(host, state, cmd, dt);
 
       const now = performance.now();
       frameRate.add(1, now);
@@ -2391,38 +2415,12 @@ function buildGame(
       const dt = frameSeconds();
       feedGovernor(dt);
       const ticks = accumulator.advance(dt);
-      let cmd: InputCommand | null = null;
-      for (let i = 0; i < ticks; i++) {
-        const me = client.world.state.players.get(client.localEntityId);
-        cmd = taken(ranToCar(stilled(input.sample(++seq), me, client.world), me));
-        if (i === ticks - 1) eyeBefore = me === undefined ? null : capturedEye(me, eyeBeforeScratch);
-        client.tick(cmd);
-      }
+      const cmd = stepTicks(client, ticks);
       stepFreecamView(dt);
 
+      // A follower draws the state blended between the host's snapshots, at this frame's time.
       const state = client.renderState(performance.now());
-      const self = state.players.get(client.localEntityId);
-      syncWayLight(client.world, dt);
-      syncCrowd(client.world, state, client.localEntityId, dt);
-      syncWayDraw(client.world, state);
-      syncAtmosphere(client.world, state, client.localEntityId, dt);
-      renderer.sync(state, client.localEntityId, accumulator.alpha, { dt, sprinting: input.sprinting, before: eyeBefore });
-      playWildlifeAudio();
-      syncWind();
-      syncDrip();
-      syncWaterLife();
-      syncSurf();
-      syncTouch(self?.lamp.on ?? false);
-      syncPrompt(client.world, self);
-      if (cmd !== null) syncPoster(client.world, self, cmd);
-      syncRoadLine(self, state);
-      syncDeath(self, state, client.world);
-      syncOutcome(state, client.localEntityId);
-      syncEndScene();
-      syncTelemetry(client.world, state, self, input.sprinting);
-      // See the host loop: a pending freecam waits for this.
-      cameraOnPlayer = self !== undefined && freecam === null;
-      drawHike();
+      frame(client, state, cmd, dt);
 
       const now = performance.now();
       frameRate.add(1, now);
