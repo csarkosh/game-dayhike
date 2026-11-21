@@ -141,7 +141,7 @@ describe("the page for those turned away, as data", () => {
     expect(screen).toContain("  for (const e of entries) list.append(creditItem(e));");
     // Day Hike's own of the page hands them over (`hikePage.ts`).
     const main = readFileSync(fileURLToPath(new URL("../../src/hikePage.ts", import.meta.url)), "utf8");
-    expect(main).toContain("    credits: creditsEntries(),");
+    expect(main).toContain("      credits: creditsEntries(),");
   });
 
   it("ends with the one technical line, with what the graphics card is short of where the check named it", () => {
