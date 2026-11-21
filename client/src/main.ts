@@ -16,25 +16,22 @@ import {
   stripOverrides,
   type Route,
 } from "@csarkosh/engine/game/router";
-import { renderLanding } from "./game/landing.js";
 import { afterNextPaint } from "@csarkosh/engine/game/paint";
 import { setLoadProgress } from "@csarkosh/engine/game/loadReport";
 import { markedProgress } from "@csarkosh/engine/game/loadProgress";
-import { titleStillUrl, titleVideoUrl } from "./game/dayhikeAssets.js";
+// Day Hike's shipped files register as this is imported, before anything asks for one by name.
+import "./game/dayhikeAssets.js";
 // Day Hike's terrain registers as this is imported, before the world is read or prepared.
 import "./sim/passes/index.js";
 import { createRouteAnnouncer } from "@csarkosh/engine/game/routeAnnounce";
-import { createTitleLoop, titleLoopEnv } from "./game/titleLoop.js";
 import { startHikeWorldWorker } from "./game/hikeWorldWorker.js";
 import { worldInputs } from "@csarkosh/engine/game/worldInputs";
 import { sceneLine, startWorldPrep, worldPrepLine, type WorldPrepOutcome } from "@csarkosh/engine/game/worldPrep";
 import type { PreparedScene } from "@csarkosh/engine/game/preparedScene";
 import { runLiteSceneRoute } from "./game/lite/sceneRoute.js";
 import { liteProbeDeps } from "./game/lite/probeScene.js";
-import { landingModel } from "./game/landingModel.js";
 import { isDesktop, isTouchDevice, hostPlatform, desktopVersion } from "@csarkosh/engine/game/platform";
 import { inviteLink, parseJoinLink } from "@csarkosh/engine/game/joinLink";
-import { saveName } from "./game/playerName.js";
 import { createRoster } from "@csarkosh/engine/game/roster";
 import { rosterModel, attemptPending } from "@csarkosh/engine/game/rosterModel";
 import { startAttemptClock, type AttemptClock } from "@csarkosh/engine/game/attemptClock";
@@ -53,7 +50,6 @@ import { browserEnv, browserMajor, offersWebGpu, readSignals, type GpuSignals, t
 import { adapterVerdict, loadVerdict, type LoadVerdict } from "@csarkosh/engine/game/loadCheck";
 import { LOADING_LINE, START_FAILED_LINE, autoPick, launchLine, liteProbeSteps, startFallbacks, startHike, startupTier, type ProbeSteps, type StartupTier } from "@csarkosh/engine/game/frameProbe";
 import { createHud } from "./game/hud.js";
-import { isGameMode } from "./game/gameMode.js";
 import { createMuteButton, readMuted, writeMuted } from "@csarkosh/engine/game/muteButton";
 import { containerPixels, withGovernorDrop, type QualityTier, type VerdictEngine } from "@csarkosh/engine/game/quality";
 import type { AutoSummary } from "@csarkosh/engine/game/settings";
@@ -65,13 +61,12 @@ import {
   parseTierOverride,
   readAutoRecord,
   recordFallback,
-  takeNotice,
   writeAutoRecord,
   type TierChoice,
   type TierSource,
 } from "@csarkosh/engine/game/tierChoice";
 import { createVeil } from "@csarkosh/engine/game/veil";
-import { createHikePage, type IntroRun } from "./hikePage.js";
+import { createHikePage, type Opening } from "./hikePage.js";
 
 const found = document.querySelector<HTMLDivElement>("#app");
 
@@ -120,7 +115,7 @@ const mute = createMuteButton(document.body, {
   onChange: (on) => {
     writeMuted(pageStorage(), on);
     gameMute?.(on);
-    hikePage.activeIntro?.overlay.setSound();
+    hikePage.muteChanged();
   },
 });
 
@@ -238,7 +233,7 @@ void signalsReady.then((read) => {
   // known, and nothing is refused meanwhile. The same request's answer
   // decides when it comes, however late.
   else void signalsRead.adapter.then((later) => settleVerdict(adapterVerdict(later)));
-  hikePage.repaintLanding();
+  hikePage.repaint();
 });
 
 // ---- the load check ------------------------------------------------------------
@@ -262,11 +257,14 @@ let verdict: LoadVerdict | null = loadVerdict(webgpuOffered, null);
  * those turned away takes the place of whatever is shown, a hike that had
  * started on an adapter request still unanswered among it.
  */
+/** The `turned_away` row is sent once. */
+let turnedAwayTold = false;
+
 function settleVerdict(next: LoadVerdict): void {
   verdict = next;
   if (next.play) return;
-  if (!hikePage.turnedAwayTold) {
-    hikePage.turnedAwayTold = true;
+  if (!turnedAwayTold) {
+    turnedAwayTold = true;
     telemetry.event("turned_away", next.short === null ? { reason: next.reason } : { reason: next.reason, short: next.short });
   }
   if (joining) abandonAttempt();
@@ -275,8 +273,7 @@ function settleVerdict(next: LoadVerdict): void {
     detach();
   }
   // Already up (no WebGPU, known as the page loaded): what the signals add is the GPU's name, for the app's offer.
-  if (hikePage.turnedAway !== null) hikePage.turnedAway.setView(hikePage.turnedAwayView(next));
-  else render(app);
+  if (!hikePage.turnedAwayNow(next)) render(app);
 }
 
 // ---- the graphics setting ------------------------------------------------------
@@ -376,8 +373,7 @@ const roster = createRoster({
   onRetry: retryAttempt,
   onInviteCopied: () => telemetry.event("invite_copied"),
   onRename: (raw) => {
-    hikePage.selfName = saveName(raw);
-    lobby?.setName(hikePage.selfName);
+    lobby?.setName(hikePage.rename(raw));
     // The repaint the roster's rename contract requires: it is what removes
     // the edit field, so it must happen on every onRename.
     paintRoster();
@@ -386,12 +382,12 @@ const roster = createRoster({
 
 function paintRoster(): void {
   // Gone with everything else of the game once a visitor is turned away.
-  if (hikePage.turnedAway !== null) return;
+  if (hikePage.awayShown()) return;
   roster.setView(
     rosterModel({
       lobby: lobby?.state ?? null,
       selfId,
-      selfName: hikePage.selfName,
+      selfName: hikePage.name(),
       inviteUrl: (id) => inviteLink(id, webBase),
       inGame: parseRoute(location.pathname).kind === "game",
       hidden: parseRoute(location.pathname).kind === "scene",
@@ -503,14 +499,14 @@ function attachLobby(next: Lobby): void {
     // A follower's page is wherever the host last sent it; a lobby that ends
     // mid-game is handled by the game's own session-end path, but a lobby that
     // ends on a landing page just needs the roster to say so.
-    if (parseRoute(location.pathname).kind !== "game") hikePage.repaintLanding();
+    if (parseRoute(location.pathname).kind !== "game") hikePage.repaint();
   });
   detachLobby = () => {
     offChange();
     offEnd();
   };
   paintRoster();
-  hikePage.repaintLanding();
+  hikePage.repaint();
   follow(next);
 }
 
@@ -564,7 +560,7 @@ async function openLobby(): Promise<void> {
       signaling,
       peerId: selfId,
       lobbyId: createLobbyId(),
-      name: hikePage.selfName,
+      name: hikePage.name(),
       route: hostRoute(currentRoutePath()),
     });
     // Abandoned while the reply was in the air. The room is real and hosted by
@@ -610,7 +606,7 @@ async function enterLobby(lobbyId: string): Promise<void> {
   });
   paintRoster();
   try {
-    const joined = await joinLobby({ signaling, peerId: selfId, lobbyId, name: hikePage.selfName });
+    const joined = await joinLobby({ signaling, peerId: selfId, lobbyId, name: hikePage.name() });
     if (epoch !== attemptEpoch) {
       joined.leave();
       return;
@@ -626,7 +622,7 @@ async function enterLobby(lobbyId: string): Promise<void> {
     telemetry.event("lobby_error", { kind: "join", code, ms: attemptMs() });
     lobbyError = lobbyErrorMessage(code);
     paintRoster();
-    hikePage.repaintLanding();
+    hikePage.repaint();
   } finally {
     offOpen();
     if (epoch === attemptEpoch) joining = false;
@@ -685,13 +681,8 @@ function onPlay(): void {
   launching = true;
   telemetry.event("play", { party: lobby === null ? 1 : lobby.state.members.length });
   // The game's load gets the bandwidth: the loop's download stops here.
-  hikePage.titleLoop?.stop();
-  const src = hikePage.introSource();
-  if (src !== null) {
-    hikePage.endIntro(hikePage.pendingIntro);
-    hikePage.pendingIntro = hikePage.startIntro(src, false);
-  }
-  hikePage.repaintLanding();
+  hikePage.played();
+  hikePage.repaint();
   afterNextPaint(() => {
     launching = false;
     navigateToGame(createLobbyId());
@@ -796,7 +787,7 @@ function render(container: HTMLDivElement): void {
   // this render runs again under it, and it lifts once the page is up. The
   // intro's own film carries the title into the game, so it goes without.
   const page = pageOf(route);
-  if (shownPage !== null && page !== shownPage && !veil.down && hikePage.pendingIntro === null) {
+  if (shownPage !== null && page !== shownPage && !veil.down && !hikePage.carriesToGame()) {
     void veil.cover().then(() => render(container));
     return;
   }
@@ -833,8 +824,8 @@ function render(container: HTMLDivElement): void {
   // Landing and its panels are one page, so moving between them swaps a class
   // rather than rebuilding: a rebuild would replace the nodes the transition is
   // running on, and it would also drop and re-place the still behind them.
-  if (isLandingRoute(route) && hikePage.landing !== null) {
-    hikePage.landing.setPanel(hikePage.panelFor(route));
+  if (isLandingRoute(route) && hikePage.landingUp()) {
+    hikePage.showPanel(route);
     pageRow();
     announcer.now();
     paintRoster();
@@ -846,8 +837,7 @@ function render(container: HTMLDivElement): void {
   running = null;
   game = null;
   paused = false;
-  hikePage.landing = null;
-  hikePage.endIntro(hikePage.activeIntro);
+  hikePage.left();
   container.replaceChildren();
   // The mute sits faint over a hike, under its Pause button; plain on every other page.
   mute.setHike(route.kind === "game");
@@ -863,7 +853,7 @@ function render(container: HTMLDivElement): void {
     const line = createHud(container);
     line.setStatus(LOADING_LINE);
     // The film Play started stays in the page meanwhile: taken out of it, it would stop.
-    hikePage.pendingIntro?.overlay.mount(container);
+    hikePage.keepOpening(container);
     running = { dispose: () => line.dispose() };
     paintRoster();
     void signalsReady.then(() => {
@@ -896,65 +886,22 @@ function render(container: HTMLDivElement): void {
   }
 
   if (isLandingRoute(route)) {
-    hikePage.endIntro(hikePage.pendingIntro);
-    // The still goes in first so the UI paints above it; the loop behind it
-    // fetches nothing until the page has loaded. Nothing of the game is built
-    // before Play, and of it only the intro film's head is fetched, so the
-    // film starts at the tap.
-    hikePage.titleLoop = createTitleLoop(container, titleStillUrl(), titleVideoUrl(), titleLoopEnv());
-    hikePage.warmFilmHead();
-    hikePage.landingNotice = takeNotice(pageSessionStorage(), Date.now());
-
-    const handle = renderLanding(
-      container,
-      landingModel(hikePage.landingInput()),
-      {
-        onCreate: onPlay,
-        onJoin: (text) => {
-          const lobbyId = parseJoinLink(text, webBase);
-          if (lobbyId === null) {
-            handle.setView(
-              landingModel(hikePage.landingInput({ joinError: "That is not an invite link or lobby id." })),
-            );
-            return;
-          }
-          void enterLobby(lobbyId);
-        },
-        onDownloads: () => navigateToPanel("downloads"),
-        onDownload: (platform) => telemetry.event("download", { platform }),
-        onSettings: () => navigateToPanel("settings"),
-        onChooseTier: (choice) => {
-          saveChoice(choice);
-          hikePage.repaintLanding();
-        },
-        onChooseMode: (mode) => {
-          // A value that is not one of the hike's modes is ignored.
-          if (!isGameMode(mode)) return;
-          hikePage.saveMode(mode);
-          hikePage.repaintLanding();
-        },
-        onCredits: () => navigateToPanel("credits"),
-        // Popping history where we can, so the Back button and the browser's
-        // own back button do the same thing; router.ts owns the decision and
-        // the case where there is nothing of ours to pop.
-        onBack: () => leavePanel(browserExit),
+    running = hikePage.showLanding(container, route, {
+      play: onPlay,
+      // False where the text is no invite link or lobby id: the page says so.
+      join: (text) => {
+        const lobbyId = parseJoinLink(text, webBase);
+        if (lobbyId === null) return false;
+        void enterLobby(lobbyId);
+        return true;
       },
-      hikePage.panelFor(route),
-    );
-    hikePage.landing = handle;
-    // Repaint with the release info once it lands — unless the player has
-    // already left the landing page, in which case this handle is dead.
-    void latestReady.then(() => {
-      if (hikePage.landing === handle) handle.setView(landingModel(hikePage.landingInput()));
+      toPanel: (panel) => navigateToPanel(panel),
+      chooseTier: (choice) => saveChoice(choice),
+      // Popping history where we can, so the Back button and the browser's
+      // own back button do the same thing; router.ts owns the decision and
+      // the case where there is nothing of ours to pop.
+      back: () => leavePanel(browserExit),
     });
-
-    running = {
-      dispose: () => {
-        hikePage.titleLoop?.dispose();
-        hikePage.titleLoop = null;
-        handle.dispose();
-      },
-    };
     announcer.now();
     paintRoster();
     return;
@@ -975,14 +922,7 @@ function render(container: HTMLDivElement): void {
   // follower is brought here by the host's Play, with no click of its own,
   // so its intro starts with the sound off (a browser plays it no other way
   // without a gesture) and the sound button turns it on.
-  let intro = hikePage.pendingIntro;
-  hikePage.pendingIntro = null;
-  if (intro === null && lobby !== null && lobby.state.role === "client") {
-    const src = hikePage.introSource();
-    if (src !== null) intro = hikePage.startIntro(src, true);
-  }
-  hikePage.activeIntro = intro;
-  if (intro !== null) intro.overlay.mount(container);
+  const opening = hikePage.openingFor(container, lobby !== null && lobby.state.role === "client");
   // The loads report to the intro's bar when there is one, and in every case
   // name their stage as telemetry's breadcrumb while the hike is built, so
   // an error in the build says which stage was in progress. Before it the
@@ -990,7 +930,7 @@ function render(container: HTMLDivElement): void {
   // `start:decide`), and after it the game's: the renderer asks for its
   // models once its device is made, and an error under a hike is the game's.
   let building = false;
-  setLoadProgress(markedProgress(intro?.overlay.progress ?? null, (stage) => telemetry.mark(`load:${stage}`), () => building));
+  setLoadProgress(markedProgress(opening?.progress ?? null, (stage) => telemetry.mark(`load:${stage}`), () => building));
   // The hike's trail and level check, made off this thread from now, while
   // the tier is decided, the film buffers and the engine starts: the build
   // waits for them (`beforeBuild`) and finds them made. With no worker, or
@@ -1063,12 +1003,12 @@ function render(container: HTMLDivElement): void {
         return decided;
       }),
     before:
-      intro === null
+      opening === null
         ? undefined
-        : () => hikePage.waitForBuffer(intro.overlay, hikePage.INTRO_BUFFER_S, hikePage.INTRO_BUFFER_MAX_MS).then(() => lap("intro")),
+        : () => opening.beforeEngine().then(() => lap("intro")),
     beforeBuild: async () => {
-      if (intro !== null) {
-        await hikePage.waitForBuffer(intro.overlay, hikePage.INTRO_BUILD_BUFFER_S, hikePage.INTRO_BUILD_BUFFER_MAX_MS);
+      if (opening !== null) {
+        await opening.beforeBuild();
         lap("film");
       }
       prepOutcome = await prep.ready;
@@ -1090,7 +1030,7 @@ function render(container: HTMLDivElement): void {
       lap("engine");
       telemetry.mark("start:build");
       building = true;
-      launch(onCanvas, route.token, decided, () => hikeCanvasNow(), intro, takeSampled);
+      launch(onCanvas, route.token, decided, () => hikeCanvasNow(), opening, takeSampled);
       lap("build");
       // The build has what it wanted of the worker: the worker ends, and the scene is let go of.
       prep.dispose();
@@ -1110,7 +1050,7 @@ function render(container: HTMLDivElement): void {
       telemetry.event("start_fail", { ...laps, msg: error instanceof Error ? error.message : String(error) });
       console.error("The game could not start.", error);
       prep.dispose();
-      hikePage.endIntro(intro);
+      opening?.failed();
       // Whichever canvas the start left: a renderer that fell back to a lower
       // tier builds on a fresh one in the first one's place.
       for (const left of container.querySelectorAll("canvas")) left.remove();
@@ -1135,7 +1075,7 @@ function launch(
   worldToken: string,
   decided: StartupTier,
   engineForGame: (tier: QualityTier) => EngineOnCanvas,
-  intro: IntroRun | null,
+  opening: Opening | null,
   takeSampled: () => PreparedScene | null,
 ): void {
   const handle = startGame(onCanvas.canvas, worldToken, {
@@ -1148,9 +1088,9 @@ function launch(
       paintRoster();
     },
     onConnectPanel: () => {
-      if (intro !== null && hikePage.activeIntro === intro) hikePage.cutIntro(intro, "error");
+      opening?.connectPanel();
     },
-    deferClipmap: intro !== null,
+    deferClipmap: opening !== null,
     takePrepared: takeSampled,
     engineFor: engineForGame,
     engineFailed,
@@ -1169,7 +1109,7 @@ function launch(
       notice: () => choiceNotice,
       save: saveChoice,
     },
-    mode: { choice: hikePage.currentMode, save: hikePage.saveMode },
+    mode: { choice: hikePage.mode, save: hikePage.saveMode },
     mute: {
       bind: (apply) => {
         gameMute = apply;
@@ -1188,26 +1128,8 @@ function launch(
     () => telemetry.event("ready", { ms: Math.round(performance.now() - launchedAt) }),
     () => undefined,
   );
-  // Under the intro the hike is covered until the cut, which takes the
-  // pointer on the gesture it was made with and lifts the cover once it has
-  // it, so no pause menu shows between; a video that failed lets the hike
-  // start as one with no intro does. Ready lets the intro be skipped.
-  if (intro !== null) {
-    const release = handle.cover();
-    // A start that fails while the world is made is the start's failure
-    // (`fail` above ends the intro); nothing is left for ready to say.
-    handle.ready.then(
-      () => intro.overlay.ready(),
-      () => undefined,
-    );
-    intro.launched = (reason) => {
-      // Watched to its end, cut early, or failed: which, for the timeline.
-      telemetry.event("intro", { reason });
-      if (reason === "error") release();
-      else void handle.engage().then(release);
-    };
-    if (intro.cutEarly !== null) intro.launched(intro.cutEarly);
-  }
+  // Under an opening the session is covered until its cut (`Opening.launched`).
+  opening?.launched(handle);
   announcer.afterPaint();
   paintRoster();
 }

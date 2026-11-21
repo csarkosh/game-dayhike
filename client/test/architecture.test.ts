@@ -274,7 +274,7 @@ describe("layer boundaries", () => {
     expect([...main.matchAll(/\bstartHike</g)].length).toBe(1);
     // A hike's canvas carries no engine: its renderer makes its own from it, at the start and for every switch after.
     expect(main).toContain("    engine: () => hikeCanvas(),");
-    expect(main).toContain("launch(onCanvas, route.token, decided, () => hikeCanvasNow(), intro, takeSampled);");
+    expect(main).toContain("launch(onCanvas, route.token, decided, () => hikeCanvasNow(), opening, takeSampled);");
     // The scene route is drawn by the same renderer, on a canvas of the same kind: the one other caller.
     expect(main).toContain("    void hikeCanvas().then(");
     expect(main).toContain("runLiteSceneRoute({ canvas, container, tier }, parseSceneSearch(location.search), route.name);");
@@ -481,7 +481,7 @@ describe("layer boundaries", () => {
     const body = main.slice(main.indexOf("function render(container: HTMLDivElement): void {"), main.indexOf("\nfunction launch("));
     const wait = body.indexOf("  if (!isLandingRoute(route) && signals === null) {");
     expect(wait).toBeGreaterThan(0);
-    for (const start of ["void hikeCanvas().then(", "runLiteSceneRoute(", "startIntro(src, true)", "startWorldPrep(", "liteProbeDeps(container)", "void startHike<EngineOnCanvas>("]) {
+    for (const start of ["void hikeCanvas().then(", "runLiteSceneRoute(", "hikePage.openingFor(", "startWorldPrep(", "liteProbeDeps(container)", "void startHike<EngineOnCanvas>("]) {
       expect(body.indexOf(start), start).toBeGreaterThan(wait);
       expect(body.lastIndexOf(start), start).toBe(body.indexOf(start));
     }
@@ -1325,7 +1325,7 @@ describe("layer boundaries", () => {
     const main = code("main.ts");
     expect(main).toContain('function hikeCanvasNow(): EngineOnCanvas {\n  if (verdict !== null && !verdict.play) throw new Error(`this browser cannot draw a hike (${verdict.reason})`);\n  return { canvas: document.createElement("canvas") };\n}');
     expect(main).toContain("  return new Promise((resolve) => resolve(hikeCanvasNow()));");
-    expect(main).toContain("      launch(onCanvas, route.token, decided, () => hikeCanvasNow(), intro, takeSampled);");
+    expect(main).toContain("      launch(onCanvas, route.token, decided, () => hikeCanvasNow(), opening, takeSampled);");
     expect(app).toContain("  engineFor(tier: QualityTier): EngineOnCanvas;");
     const swap = code("game/rendererSwap.ts");
     expect(swap).toContain("export type EngineOnCanvas = { canvas: HTMLCanvasElement };");

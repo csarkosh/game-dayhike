@@ -1,14 +1,14 @@
 import { type Route } from "@csarkosh/engine/game/router";
-import { type LandingHandle, type LandingPanel } from "./game/landing.js";
+import { renderLanding, type LandingHandle, type LandingPanel } from "./game/landing.js";
 import { createIntroOverlay, type CutReason, type IntroOverlay } from "./game/introOverlay.js";
 import { pageTurns, turnsLine } from "@csarkosh/engine/game/downloadTurns";
 import { INTRO_CAPTIONS } from "./game/scene/intro.js";
 import { setLoadProgress } from "@csarkosh/engine/game/loadReport";
-import { titleStillUrl, videoUrl } from "./game/dayhikeAssets.js";
-import { titleLoopEnv, type TitleLoop } from "./game/titleLoop.js";
+import { titleStillUrl, titleVideoUrl, videoUrl } from "./game/dayhikeAssets.js";
+import { createTitleLoop, titleLoopEnv, type TitleLoop } from "./game/titleLoop.js";
 import { createFilmHead, fetchFilmHead, filmHeadWanted, onCellular, warmWhenLoaded } from "./game/filmHead.js";
 import { landingModel, type LandingInput } from "./game/landingModel.js";
-import { loadName } from "./game/playerName.js";
+import { loadName, saveName } from "./game/playerName.js";
 import { type DesktopRelease } from "@csarkosh/engine/net/desktopRelease";
 import { type Lobby } from "@csarkosh/engine/net/lobby";
 import { type Telemetry } from "@csarkosh/engine/net/telemetry";
@@ -18,9 +18,10 @@ import { type LoadVerdict } from "@csarkosh/engine/game/loadCheck";
 import { creditsEntries } from "./game/credits.js";
 import { renderTurnedAway, type TurnedAwayHandle } from "./game/turnedAway.js";
 import { turnedAwayModel, visitorDevice, type TurnedAwayView } from "./game/turnedAwayModel.js";
-import { HIKE_MODES, createModeKeeper, type GameMode } from "./game/gameMode.js";
+import { HIKE_MODES, createModeKeeper, isGameMode, type GameMode } from "./game/gameMode.js";
+import type { LoadProgress } from "@csarkosh/engine/game/loadProgress";
 import type { AutoSummary } from "@csarkosh/engine/game/settings";
-import { pageStorage, parseTierOverride, type TierChoice } from "@csarkosh/engine/game/tierChoice";
+import { pageStorage, parseTierOverride, type TierChoice, pageSessionStorage, takeNotice } from "@csarkosh/engine/game/tierChoice";
 import { VEIL_CUT_COVER_MS, VEIL_CUT_LIFT_MS } from "@csarkosh/engine/game/veil";
 import type { Veil } from "@csarkosh/engine/game/veil";
 import type { Roster } from "@csarkosh/engine/game/roster";
@@ -44,6 +45,37 @@ export type IntroRun = {
   cutEarly: CutReason | null;
   /** Takes the film away from the hike's downloads, which then start as they are asked for. */
   untell: () => void;
+};
+
+/** What the landing page asks of the page's shell. */
+export type LandingShell = {
+  /** Play was pressed. */
+  play(): void;
+  /** An invite link or lobby id was entered; false where the text is neither. */
+  join(text: string): boolean;
+  toPanel(panel: "downloads" | "settings" | "credits"): void;
+  /** A graphics choice was picked: kept. */
+  chooseTier(choice: TierChoice): void;
+  back(): void;
+};
+
+/**
+ * A session's opening, as the shell holds it while it starts the session
+ * under it: for Day Hike the intro's film.
+ */
+export type Opening = {
+  /** The bar the loads report to. */
+  readonly progress: LoadProgress;
+  /** Before the engine is made: the film's first buffer. */
+  beforeEngine(): Promise<void>;
+  /** Before the build: the film's top-up. */
+  beforeBuild(): Promise<void>;
+  /** The start failed: the opening ends. */
+  failed(): void;
+  /** The connect panel is up: the opening gives way to it. */
+  connectPanel(): void;
+  /** The session is launched under the opening, and covered until its cut. */
+  launched(handle: { ready: Promise<void>; cover(): () => void; engage(): Promise<boolean> }): void;
 };
 
 /**
@@ -94,8 +126,6 @@ export function createHikePage(h: HikePageHost) {
   });
   /** The page for those turned away, once it is up: it stays for the page's life. */
   let turnedAway: TurnedAwayHandle | null = null;
-  /** Whether the visitor's `turned_away` row has been sent: one a page. */
-  let turnedAwayTold = false;
 
   /** What the page for those turned away shows now (`turnedAwayModel`). */
   function turnedAwayView(why: Exclude<LoadVerdict, { play: true }>): TurnedAwayView {
@@ -323,39 +353,197 @@ export function createHikePage(h: HikePageHost) {
     void h.latestReady.then(() => handle.setView(turnedAwayView(why)));
   }
 
+  /** Play was pressed: the title's loop gives the bandwidth up, and the intro's film starts, to be carried into the game. */
+  function played(): void {
+    titleLoop?.stop();
+    const src = introSource();
+    if (src !== null) {
+      endIntro(pendingIntro);
+      pendingIntro = startIntro(src, false);
+    }
+  }
+
+  /** The page's mute changed: the film playing follows it. */
+  function muteChanged(): void {
+    activeIntro?.overlay.setSound();
+  }
+
+  /** Whether a film Play started waits to be carried into the game: the page then changes with no veil, the film being the way in. */
+  function carriesToGame(): boolean {
+    return pendingIntro !== null;
+  }
+
+  /** The landing page is up. */
+  function landingUp(): boolean {
+    return landing !== null;
+  }
+
+  /** The landing page, already up, at the route's panel. */
+  function showPanel(route: Route): void {
+    landing?.setPanel(panelFor(route));
+  }
+
+  /** A page is left for another: the landing page's handle is let go, and the film playing ends. */
+  function left(): void {
+    landing = null;
+    endIntro(activeIntro);
+  }
+
+  /** The film Play started stays in the page while a route waits: taken out of it, it would stop. */
+  function keepOpening(container: HTMLElement): void {
+    pendingIntro?.overlay.mount(container);
+  }
+
+  /**
+   * The landing page, shown in `container` at the route's panel, with the
+   * title's loop behind it. What it asks of the shell is `shell`'s. Returns
+   * what lets it go.
+   */
+  function showLanding(container: HTMLDivElement, route: Route, shell: LandingShell): { dispose(): void } {
+    endIntro(pendingIntro);
+    // The still goes in first so the UI paints above it; the loop behind it
+    // fetches nothing until the page has loaded. Nothing of the game is built
+    // before Play, and of it only the intro film's head is fetched, so the
+    // film starts at the tap.
+    titleLoop = createTitleLoop(container, titleStillUrl(), titleVideoUrl(), titleLoopEnv());
+    warmFilmHead();
+    landingNotice = takeNotice(pageSessionStorage(), Date.now());
+
+    const handle = renderLanding(
+      container,
+      landingModel(landingInput()),
+      {
+        onCreate: shell.play,
+        onJoin: (text) => {
+          if (!shell.join(text)) {
+            handle.setView(
+              landingModel(landingInput({ joinError: "That is not an invite link or lobby id." })),
+            );
+          }
+        },
+        onDownloads: () => shell.toPanel("downloads"),
+        onDownload: (platform) => h.telemetry.event("download", { platform }),
+        onSettings: () => shell.toPanel("settings"),
+        onChooseTier: (choice) => {
+          shell.chooseTier(choice);
+          repaintLanding();
+        },
+        onChooseMode: (mode) => {
+          // A value that is not one of the hike's modes is ignored.
+          if (!isGameMode(mode)) return;
+          saveMode(mode);
+          repaintLanding();
+        },
+        onCredits: () => shell.toPanel("credits"),
+        onBack: shell.back,
+      },
+      panelFor(route),
+    );
+    landing = handle;
+    // Repaint with the release info once it lands — unless the player has
+    // already left the landing page, in which case this handle is dead.
+    void h.latestReady.then(() => {
+      if (landing === handle) handle.setView(landingModel(landingInput()));
+    });
+
+    return {
+      dispose: () => {
+        titleLoop?.dispose();
+        titleLoop = null;
+        handle.dispose();
+      },
+    };
+  }
+
+  /**
+   * A session's opening on a game's route: the film Play started, or, for a
+   * follower the host's Play brought here with no click of its own, a film
+   * started now with its sound off (a browser plays it no other way without
+   * a gesture; the sound button turns it on). Mounted in `container`. Null
+   * where there is no film.
+   */
+  function openingFor(container: HTMLElement, follower: boolean): Opening | null {
+    let intro = pendingIntro;
+    pendingIntro = null;
+    if (intro === null && follower) {
+      const src = introSource();
+      if (src !== null) intro = startIntro(src, true);
+    }
+    activeIntro = intro;
+    if (intro === null) return null;
+    intro.overlay.mount(container);
+    const run = intro;
+    return {
+      progress: run.overlay.progress,
+      beforeEngine: () => waitForBuffer(run.overlay, INTRO_BUFFER_S, INTRO_BUFFER_MAX_MS),
+      beforeBuild: () => waitForBuffer(run.overlay, INTRO_BUILD_BUFFER_S, INTRO_BUILD_BUFFER_MAX_MS),
+      failed: () => endIntro(run),
+      connectPanel: () => {
+        if (activeIntro === run) cutIntro(run, "error");
+      },
+      launched: (handle) => {
+        // Under the intro the hike is covered until the cut, which takes the
+        // pointer on the gesture it was made with and lifts the cover once it has
+        // it, so no pause menu shows between; a video that failed lets the hike
+        // start as one with no intro does. Ready lets the intro be skipped.
+        const release = handle.cover();
+        // A start that fails while the world is made is the start's failure
+        // (`failed` ends the intro); nothing is left for ready to say.
+        handle.ready.then(
+          () => run.overlay.ready(),
+          () => undefined,
+        );
+        run.launched = (reason) => {
+          // Watched to its end, cut early, or failed: which, for the timeline.
+          h.telemetry.event("intro", { reason });
+          if (reason === "error") release();
+          else void handle.engage().then(release);
+        };
+        if (run.cutEarly !== null) run.launched(run.cutEarly);
+      },
+    };
+  }
+
+  /** A verdict of "cannot play" come while the page for those turned away is up: it is shown what the verdict adds. False where that page is not up. */
+  function turnedAwayNow(next: Exclude<LoadVerdict, { play: true }>): boolean {
+    if (turnedAway === null) return false;
+    turnedAway.setView(turnedAwayView(next));
+    return true;
+  }
+
+  /** The page for those turned away is up. */
+  function awayShown(): boolean {
+    return turnedAway !== null;
+  }
+
+  /** The player's name, kept as typed and cleaned; returns what it is now. */
+  function rename(raw: string): string {
+    selfName = saveName(raw);
+    return selfName;
+  }
+
   return {
-    get landing() { return landing; },
-    set landing(value) { landing = value; },
-    get titleLoop() { return titleLoop; },
-    set titleLoop(value) { titleLoop = value; },
-    get turnedAway() { return turnedAway; },
-    get turnedAwayTold() { return turnedAwayTold; },
-    set turnedAwayTold(value) { turnedAwayTold = value; },
-    turnedAwayView,
-    currentMode,
-    saveMode,
-    get landingNotice() { return landingNotice; },
-    set landingNotice(value) { landingNotice = value; },
-    get selfName() { return selfName; },
-    set selfName(value) { selfName = value; },
-    get pendingIntro() { return pendingIntro; },
-    set pendingIntro(value) { pendingIntro = value; },
-    get activeIntro() { return activeIntro; },
-    set activeIntro(value) { activeIntro = value; },
-    introSource,
-    INTRO_BUFFER_S,
-    INTRO_BUFFER_MAX_MS,
-    INTRO_BUILD_BUFFER_S,
-    INTRO_BUILD_BUFFER_MAX_MS,
-    waitForBuffer,
-    endIntro,
-    cutIntro,
-    warmFilmHead,
-    startIntro,
-    landingInput,
-    repaintLanding,
-    panelFor,
+    // The landing page and what plays behind it.
+    showLanding,
+    landingUp,
+    showPanel,
+    repaint: repaintLanding,
+    left,
+    // What plays before a session starts.
+    played,
+    carriesToGame,
+    keepOpening,
+    openingFor,
+    muteChanged,
+    // The page for those turned away.
     showTurnedAway,
+    turnedAwayNow,
+    awayShown,
+    // The player's name and the mode.
+    name: (): string => selfName,
+    rename,
+    mode: currentMode,
+    saveMode,
   };
 }
 
