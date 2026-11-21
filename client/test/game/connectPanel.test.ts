@@ -5,7 +5,7 @@ import {
   connectFailureMessage,
   runRetry,
   sessionEndOutcome,
-} from "../../src/game/connectPanel.js";
+} from "@csarkosh/engine/game/connectPanel";
 
 describe("connectFailureMessage", () => {
   it("blames the network when ICE failed", () => {

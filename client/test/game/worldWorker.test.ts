@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, it } from "vitest";
 import { prepareSceneReply, prepareWorld, type WorldPrepReply } from "../../src/game/world.worker.js";
 import { RING_COUNT } from "@csarkosh/engine/game/clipmap";
-import { sceneTransfer } from "../../src/game/preparedScene.js";
+import { sceneTransfer } from "@csarkosh/engine/game/preparedScene";
 import { DEFAULT_TERRAIN_VARIANT, setActiveTerrainVariant } from "@csarkosh/engine/sim/terrain";
 import { generateChunk } from "@csarkosh/engine/sim/chunk";
 import { PLAYER_HALF } from "@csarkosh/engine/sim/constants";

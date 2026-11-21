@@ -29,7 +29,7 @@ import { PLAYER_HALF } from "@csarkosh/engine/sim/constants";
 import { passHash, passHashKey } from "@csarkosh/engine/sim/forest";
 import { spawnChunkCells, trailheadStart } from "../sim/spawn.js";
 import { activeTerrainVariant, setActiveTerrainVariant } from "@csarkosh/engine/sim/terrain";
-import { prepareScene, sceneTransfer, type PreparedScene } from "./preparedScene.js";
+import { prepareScene, sceneTransfer, type PreparedScene } from "@csarkosh/engine/game/preparedScene";
 import type { QualityTier } from "@csarkosh/engine/game/quality";
 
 /** `skip`: what the page already holds and the worker leaves out. */

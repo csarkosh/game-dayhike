@@ -7,19 +7,19 @@
  * they stand at, and their order is the renderer's.
  */
 import type { EngineContext, MaterialPlugin, Mesh, PluginUniformBlock, SceneContext } from "@babylonjs/lite";
-import type { Forest } from "@csarkosh/engine/sim/forest";
-import type { emptyAtmosphereUniforms } from "@csarkosh/engine/game/atmosphereParams";
-import type { LampState } from "@csarkosh/engine/game/lampParams";
-import type { QualityTier } from "@csarkosh/engine/game/quality";
-import type { StareLens } from "@csarkosh/engine/game/stareLens";
-import type { SyncJobs } from "@csarkosh/engine/game/syncJobs";
-import type { WetUniforms } from "@csarkosh/engine/game/wetSurface";
-import type { PlayerPoint, WildlifeEvent } from "@csarkosh/engine/game/wildlifeBehaviour";
-import type { MatchState, View } from "@csarkosh/engine/game/wildlifeDirector";
-import type { CameraAxes, CameraPose, ViewFrustumPlane } from "@csarkosh/engine/game/lite/cameraPose";
-import type { FrameUploads } from "@csarkosh/engine/game/lite/frameUploads";
-import type { LiteShadeMask } from "@csarkosh/engine/game/lite/shadeMask";
-import type { SkinClock } from "@csarkosh/engine/game/lite/skinnedModels";
+import type { Forest } from "../../sim/forest.js";
+import type { emptyAtmosphereUniforms } from "../atmosphereParams.js";
+import type { LampState } from "../lampParams.js";
+import type { QualityTier } from "../quality.js";
+import type { StareLens } from "../stareLens.js";
+import type { SyncJobs } from "../syncJobs.js";
+import type { WetUniforms } from "../wetSurface.js";
+import type { PlayerPoint, WildlifeEvent } from "../wildlifeBehaviour.js";
+import type { MatchState, View } from "../wildlifeDirector.js";
+import type { CameraAxes, CameraPose, ViewFrustumPlane } from "./cameraPose.js";
+import type { FrameUploads } from "./frameUploads.js";
+import type { LiteShadeMask } from "./shadeMask.js";
+import type { SkinClock } from "./skinnedModels.js";
 
 /** What the renderer reads of a player to place the camera, the wind and the animals. */
 export type RenderPlayer = {

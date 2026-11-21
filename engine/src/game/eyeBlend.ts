@@ -15,7 +15,7 @@
  * camera (`lite/renderer.ts`), and the loops capture the pose before their last
  * tick (`app.ts`).
  */
-import type { PlayerCore } from "@csarkosh/engine/sim/tick";
+import type { PlayerCore } from "../sim/tick.js";
 
 /** A pose of the eye: the hull's centre and the look, as the sim holds them. */
 export type EyePose = { x: number; y: number; z: number; yaw: number; pitch: number };

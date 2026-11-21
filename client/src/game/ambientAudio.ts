@@ -173,7 +173,7 @@ export type LoopEmitter = {
  * `setTargetAtTime` whose time constant is a third of it is within 5 % by then. */
 export const LOOP_GAIN_RAMP_S = 0.1;
 
-export type { ListenerPose } from "./listenerPose.js";
+export type { ListenerPose } from "@csarkosh/engine/game/listenerPose";
 
 export type AmbientAudio = {
   /** Builds the graph. Call from a user gesture — browsers gate AudioContext on one. */

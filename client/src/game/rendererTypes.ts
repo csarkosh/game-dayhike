@@ -10,15 +10,15 @@
  * the hike's makes its own (`hikeRenderer.ts`).
  */
 import type { Vec3 } from "@csarkosh/engine/sim/core";
-import type { ListenerPose } from "./listenerPose.js";
+import type { ListenerPose } from "@csarkosh/engine/game/listenerPose";
 import type { EngineHandle, EngineName } from "@csarkosh/engine/game/engineHandle";
 import type { WatchEngine } from "@csarkosh/engine/game/engineWatch";
-import type { EyePose } from "./eyeBlend.js";
+import type { EyePose } from "@csarkosh/engine/game/eyeBlend";
 import type { FirstBuilds } from "@csarkosh/engine/game/firstBuilds";
 import type { GpuTimeReport } from "@csarkosh/engine/game/gpuTimeReport";
 import type { PaintPaletteName } from "@csarkosh/engine/game/gradeParams";
 import type { ImpostorBake } from "@csarkosh/engine/game/impostorBake";
-import type { PreparedScene } from "./preparedScene.js";
+import type { PreparedScene } from "@csarkosh/engine/game/preparedScene";
 import type { QualityTier } from "@csarkosh/engine/game/quality";
 import type { SkyTable } from "@csarkosh/engine/game/skyTable";
 import type { SurfSound } from "@csarkosh/engine/game/surfSound";

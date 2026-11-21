@@ -13,7 +13,7 @@ import { waterLifeBed, waterLifeLayout, type WaterLifeLayout } from "@csarkosh/e
 import { skylineElevations, skylineTrees } from "@csarkosh/engine/game/lakeSkyline";
 import { lakeSurfaceGrid } from "@csarkosh/engine/game/lakeSurfaceGrid";
 import { waterPlantPlacements } from "@csarkosh/engine/game/waterPlantField";
-import { prepareScene, sceneTransfer, type PreparedScene } from "../../src/game/preparedScene.js";
+import { prepareScene, sceneTransfer, type PreparedScene } from "@csarkosh/engine/game/preparedScene";
 import { waterBumpData } from "@csarkosh/engine/game/waterBump";
 import { featureTableFor } from "@csarkosh/engine/game/featureTable";
 import { timeLimit } from "../helpers/timeLimit.js";

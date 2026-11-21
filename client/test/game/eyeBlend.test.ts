@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { blendedEye, capturedEye, EYE_SNAP_M, type EyePose } from "../../src/game/eyeBlend.js";
+import { blendedEye, capturedEye, EYE_SNAP_M, type EyePose } from "@csarkosh/engine/game/eyeBlend";
 
 const pose = (x: number, y: number, z: number, yaw: number, pitch: number): EyePose => ({ x, y, z, yaw, pitch });
 const player = (x: number, y: number, z: number, yaw: number, pitch: number) => ({ pos: { x, y, z }, yaw, pitch });

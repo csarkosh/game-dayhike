@@ -1,4 +1,4 @@
-import type { SessionEnd } from "@csarkosh/engine/net/client";
+import type { SessionEnd } from "../net/client.js";
 
 const STYLE = `
   .connectfail {

@@ -35,7 +35,7 @@ import { createCapMesh, type CapMesh } from "./capMesh.js";
 import { createLiteCrowdCards, type LiteCrowdCards } from "./crowdCardMeshes.js";
 import { createLiteCrowdEyes, type LiteCrowdEyes } from "./crowdEyeMeshes.js";
 import { createEntityMeshes, type EntityMeshes } from "./entityMeshes.js";
-import type { RenderCloudPath, RenderGame, RenderHost, RenderLook, RenderMakeMasked, RenderShot, RenderSide } from "./renderGame.js";
+import type { RenderCloudPath, RenderGame, RenderHost, RenderLook, RenderMakeMasked, RenderShot, RenderSide } from "@csarkosh/engine/game/lite/renderGame";
 import { createLiteScenery, deferredScenery, type LiteCar, type LiteScenery, type SceneryHost, type SceneryView } from "./sceneryMeshes.js";
 import { createLiteWayField, type LiteWayField } from "./wayFieldMesh.js";
 import { createLiteWayLight, type LiteWayLight } from "./wayLightMeshes.js";

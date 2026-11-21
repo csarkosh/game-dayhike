@@ -164,7 +164,7 @@ export function advanceTrack(track: Track, x: number, y: number, z: number, alph
   track.z = track.pz + (track.tz - track.pz) * alpha;
 }
 
-export { stepClip, type ClipClock } from "./clipClock.js";
+export { stepClip, type ClipClock } from "@csarkosh/engine/game/clipClock";
 
 /** A hiker in a frame. */
 export type PlayerPose = {

@@ -29,7 +29,7 @@ import { createTitleLoop, titleLoopEnv, type TitleLoop } from "./game/titleLoop.
 import { createFilmHead, fetchFilmHead, filmHeadWanted, onCellular, warmWhenLoaded } from "./game/filmHead.js";
 import { worldInputs } from "./game/worldInputs.js";
 import { sceneLine, startWorldPrep, worldPrepLine, type WorldPrepOutcome } from "./game/worldPrep.js";
-import type { PreparedScene } from "./game/preparedScene.js";
+import type { PreparedScene } from "@csarkosh/engine/game/preparedScene";
 import { runLiteSceneRoute } from "./game/lite/sceneRoute.js";
 import { liteProbeDeps } from "./game/lite/probeScene.js";
 import { landingModel, type LandingInput } from "./game/landingModel.js";
