@@ -106,4 +106,24 @@ describe("the engine's public files", () => {
     expect(get('/dayhike/libs/ktx2/..%2f..%2f..%2fpackage.json').next).toBe(true);
     expect(get('/dayhike/libs/ktx2/').next).toBe(true);
   });
+  it("has a game's dev server and its tests treat the engine as source, installed or not", async () => {
+    const { enginePreset } = await import('../../../engine/vite/preset.mjs');
+    const preset = enginePreset();
+    expect(preset.optimizeDeps).toEqual({ exclude: ['@csarkosh/engine'] });
+    const inline = preset.test.server.deps.inline;
+    expect(inline).toHaveLength(1);
+    expect(inline[0].test('/x/node_modules/@csarkosh/engine/src/shell.ts')).toBe(true);
+    expect(inline[0].test('/x/node_modules/vitest/dist/index.js')).toBe(false);
+  });
+
+  it("is plain JavaScript a config can load from an installed package, the time limit's helper with it", async () => {
+    const { readdirSync } = await import('node:fs');
+    const names = readdirSync(new URL('../../../engine/vite/', import.meta.url));
+    expect(names.filter((name) => name.endsWith('.ts') && !name.endsWith('.d.mts'))).toEqual([]);
+    expect(names).toContain('timeLimit.mjs');
+    const helper = await import('../../../engine/vite/timeLimit.mjs');
+    expect(helper.parseTimeScale(undefined)).toBe(1);
+    expect(helper.parseTimeScale('3')).toBe(3);
+    expect(() => helper.parseTimeScale('0')).toThrow(/TEST_TIME_SCALE/);
+  });
 });

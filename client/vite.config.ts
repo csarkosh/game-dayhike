@@ -2,7 +2,7 @@ import { fileURLToPath } from "node:url";
 import { mergeConfig } from "vite";
 import { defineConfig } from "vitest/config";
 import { enginePreset } from "@csarkosh/engine/vite/preset";
-import { timeLimit } from "@csarkosh/engine/testing/timeLimit";
+import { timeLimit } from "@csarkosh/engine/vite/timeLimit";
 
 export default mergeConfig(
   enginePreset(),
