@@ -6,7 +6,7 @@
  * the world, a name and the one mode.
  */
 import { createModeKeeper } from "@csarkosh/engine/game/modeList";
-import type { LandingShell, PageGame, PageHost, PageSide, TurnedAway } from "@csarkosh/engine/game/pageGame";
+import type { LandingShell, PageGame, PageHost, PageSide } from "@csarkosh/engine/game/pageGame";
 import { pageProbe } from "@csarkosh/engine/game/probePage";
 import { pageStorage } from "@csarkosh/engine/game/tierChoice";
 import type { AmbientAudio } from "@csarkosh/engine/game/ambientAudio";
@@ -20,13 +20,11 @@ const STYLE = `
 .empty-landing h1 { font-size: 22px; letter-spacing: 0.3em; margin: 0; font-weight: 600; }
 .empty-landing button { font: inherit; color: inherit; background: #fff1; border: 1px solid #fff5; border-radius: 4px; padding: 8px 28px; letter-spacing: 0.2em; }
 .empty-landing button:disabled { opacity: 0.5; }
-.empty-away { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; padding: 24px; text-align: center; font: 16px/1.5 ui-monospace, Menlo, monospace; color: #e8e8ea; }
 `;
 
 /** The empty game's own of the page: made once by the shell, called at the page's own points. */
 export function createEmptyPage(h: PageHost): PageSide {
   let landing: { play: HTMLButtonElement; root: HTMLElement } | null = null;
-  let away: HTMLElement | null = null;
   const mode = createModeKeeper(WALK_MODES, pageStorage);
 
   /** The landing page shows what the shell holds now: a follower waits for the host, and Play says so while it loads. */
@@ -74,18 +72,9 @@ export function createEmptyPage(h: PageHost): PageSide {
     keepOpening: () => undefined,
     openingFor: () => null,
     muteChanged: () => undefined,
-    // The shell has let go of the session, the mute and the roster, and emptied the container.
-    showTurnedAway(container: HTMLDivElement, why: TurnedAway) {
+    // A visitor turned away is shown the engine's page; the landing page held goes first.
+    turnedAway() {
       landing = null;
-      const style = document.createElement("style");
-      style.textContent = STYLE;
-      away = document.createElement("div");
-      away.className = "empty-away";
-      away.textContent = `This browser cannot draw the world (${why.reason}).`;
-      container.append(style, away);
-    },
-    turnedAwayNow(next: TurnedAway) {
-      if (away !== null) away.textContent = `This browser cannot draw the world (${next.reason}).`;
     },
     mode: mode.mode,
     saveMode(next) {
@@ -97,6 +86,9 @@ export function createEmptyPage(h: PageHost): PageSide {
 export const EMPTY_PAGE: PageGame<WalkWorld, WalkState, Walker, WalkRenderer, AmbientAudio, WalkHud, WalkHost, WalkClient> = {
   game: EMPTY_GAME,
   side: createEmptyPage,
+  title: "The Empty Game",
+  /** The page for those turned away stands on no still and credits no works. */
+  away: { still: () => null, credits: () => [] },
   name: { key: "empty.playerName", prefix: "Walker" },
   protocol: WALK_PROTOCOL,
   statusLine: createStatusLine,

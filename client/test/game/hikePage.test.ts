@@ -29,11 +29,13 @@ describe("the page's shell and Day Hike's own of the page", () => {
       expect(shell, inner).not.toMatch(new RegExp(`\\b${inner}`));
     }
     // Nor the modules those are made with.
-    for (const module of ["game/landing.js", "game/landingModel.js", "game/titleLoop.js", "game/introOverlay.js", "game/filmHead.js", "game/turnedAway"]) {
+    for (const module of ["game/landing.js", "game/landingModel.js", "game/titleLoop.js", "game/introOverlay.js", "game/filmHead.js"]) {
       expect(shell, module).not.toContain(module);
     }
     // The player's name is no longer one of them: the engine keeps it (`playerName.ts`), and Day Hike's own of the page holds none.
     expect(own).not.toMatch(/playerName|selfName|loadName|saveName|\brename\b/);
+    // Nor the page for those turned away, which is the engine's and shown by the shell: Day Hike's own draws none of it.
+    expect(own).not.toMatch(/renderTurnedAway|turnedAwayModel|turnedAwayView|game\/turnedAway|creditsEntries|visitorDevice/);
   });
 
   it("Play stops the title's loop and starts the film, to be carried into the game", () => {
@@ -72,39 +74,42 @@ describe("the page's shell and Day Hike's own of the page", () => {
     expect(own).toContain("waitForBuffer(run.overlay, INTRO_BUILD_BUFFER_S, INTRO_BUILD_BUFFER_MAX_MS)");
   });
 
-  it("a visitor turned away is told once and shown the page: the shell lets the page go, Day Hike's own draws its page", () => {
-    expect(shell).toContain("    if (awayUp) side.turnedAwayNow(next);\n    else render(app);");
-    const now = bodyOf("turnedAwayNow");
-    expect(now).toContain("turnedAway?.setView(turnedAwayView(next));");
-    expect(shell).toContain("    // Gone with everything else of the game once a visitor is turned away.\n    if (awayUp) return;");
+  it("a visitor turned away is told once and shown the engine's page by the shell; Day Hike's own lets go of what is its own", () => {
+    expect(shell).toContain("    if (away !== null) away.setView(awayView(next));\n    else render(app);");
+    expect(shell).toContain("    // Gone with everything else of the game once a visitor is turned away.\n    if (away !== null) return;");
     // What goes before the page is the shell's, done once and in this order, for every game alike; the page is
-    // up, by the shell's own account, only once the game has drawn it.
+    // up, by the shell's own account, only once it is drawn.
     const at = shell.indexOf("  function turnAway(container: HTMLDivElement, route: Route, why: TurnedAway): void {");
     expect(at).toBeGreaterThan(0);
     const turn = shell.slice(at, shell.indexOf("\n  }\n", at));
     const order = [
-      "renderToken += 1;", 'telemetry.mark("turned-away");', "if (awayUp) return;", "running?.dispose();", "running = null;", "game = null;", "paused = false;",
+      "renderToken += 1;", 'telemetry.mark("turned-away");', "if (away !== null) return;", "running?.dispose();", "running = null;", "game = null;", "paused = false;",
       "container.replaceChildren();", "mute.dispose();", "roster.dispose();", "if (veil.down) veil.lift();", "if (shownPage === null) {",
-      'telemetry.event("page", { kind: route.kind });', "window.visits?.page?.();", "side.showTurnedAway(container, why);", "awayUp = true;",
+      'telemetry.event("page", { kind: route.kind });', "window.visits?.page?.();", "side.turnedAway();",
+      "const handle = renderTurnedAway(container, awayView(why), {", "still: page.away.still(),", "credits: page.away.credits(),",
+      'onDownload: (platform) => telemetry.event("download", { platform }),', "away = handle;", "void latestReady.then(() => handle.setView(awayView(why)));",
     ];
     const places = order.map((line) => turn.indexOf(line));
     expect(places.every((place) => place >= 0), JSON.stringify(places)).toBe(true);
     expect(places).toEqual([...places].sort((a, b) => a - b));
-    expect(shell.split("awayUp = ").length - 1).toBe(2);
-    // Day Hike's own lets go of what is Day Hike's (the landing page it held, a film playing or waiting) and draws.
-    const show = bodyOf("showTurnedAway");
-    const mine = ["landing = null;", "endIntro(activeIntro);", "endIntro(pendingIntro);", "const handle = renderTurnedAway(container, turnedAwayView(why), {", "turnedAway = handle;"];
-    const mineAt = mine.map((line) => show.indexOf(line));
+    expect(shell.split("away = ").length - 1).toBe(1);
+    // The page says the game's own name, and what the shell knows of the visitor's browser and computer.
+    expect(shell).toContain("    return turnedAwayModel({\n      title: page.title,\n      reason: why.reason,\n      short: why.short,\n      desktop,\n");
+    // Day Hike's own lets go of what is Day Hike's: the landing page it held, a film playing or waiting.
+    const let_go = bodyOf("turnedAway");
+    const mine = ["landing = null;", "endIntro(activeIntro);", "endIntro(pendingIntro);"];
+    const mineAt = mine.map((line) => let_go.indexOf(line));
     expect(mineAt.every((place) => place >= 0), JSON.stringify(mineAt)).toBe(true);
     expect(mineAt).toEqual([...mineAt].sort((a, b) => a - b));
     // And writes nothing of the shell's: the session, the pause, the render's token, the roster and the page shown
     // are not handed to a game at all.
-    expect(own).not.toMatch(/\bh\.(renderToken|running|game|paused|roster|shownPage)\b/);
+    expect(own).not.toMatch(/\bh\.(renderToken|running|game|paused|roster|shownPage|signals)\b/);
     const host = sourceText("game/pageGame.ts");
     const fields = host.slice(host.indexOf("export type PageHost = {"), host.indexOf("\n};\n", host.indexOf("export type PageHost = {")));
     expect(fields).not.toMatch(/^ {2}(?!readonly )\w/m);
-    expect(fields).not.toMatch(/\b(renderToken|running|game|paused|roster|shownPage)\b/);
+    expect(fields).not.toMatch(/\b(renderToken|running|game|paused|roster|shownPage|signals)\b/);
     expect(host).not.toContain("awayShown");
+    expect(host).not.toMatch(/showTurnedAway|turnedAwayNow/);
     // The row is the shell's, sent once.
     expect(shell.split('telemetry.event("turned_away"').length - 1).toBe(1);
   });

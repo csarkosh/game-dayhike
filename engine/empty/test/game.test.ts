@@ -4,6 +4,7 @@ import { describe, expect, it } from "vitest";
 import { noGameSound } from "@csarkosh/engine/game/ambientAudio";
 import { isMode } from "@csarkosh/engine/game/modeList";
 import { NO_ACTIONS, type InputCommand } from "@csarkosh/engine/sim/core";
+import { turnedAwayModel } from "@csarkosh/engine/game/turnedAwayModel";
 import { parseLevel } from "@csarkosh/engine/sim/level";
 import { EMPTY_GAME, WALK_MODES, WALK_SIDE } from "../src/game.js";
 import { WALK } from "../src/net.js";
@@ -70,11 +71,19 @@ describe("the empty game as the page's shell is handed it", () => {
     }
   });
 
-  it("draws its own page for a visitor turned away and leaves what goes before it to the shell", () => {
+  it("leaves a visitor turned away to the engine's page, under its own name, over no still and with no credits", () => {
+    expect(EMPTY_PAGE.title).toBe("The Empty Game");
+    expect(EMPTY_PAGE.away.still()).toBeNull();
+    expect(EMPTY_PAGE.away.credits()).toEqual([]);
     const page = code("page.ts");
-    expect(page).toContain("    showTurnedAway(container: HTMLDivElement, why: TurnedAway) {\n      landing = null;\n");
-    expect(page).not.toMatch(/\bh\.(renderToken|running|game|paused|roster|shownPage|mute|veil)\b/);
+    expect(page).toContain("    turnedAway() {\n      landing = null;\n    },");
+    expect(page).not.toMatch(/\bh\.(renderToken|running|game|paused|roster|shownPage|mute|veil|signals)\b/);
     expect(page).not.toContain("replaceChildren");
+    expect(page).not.toMatch(/empty-away|cannot draw the world/);
+    // The page it is shown reads as that game's, and nothing of another's.
+    const view = turnedAwayModel({ title: EMPTY_PAGE.title, reason: "no-webgpu", short: null, desktop: false, device: "mac", host: "other", userAgent: "", renderer: null, latest: null });
+    expect([view.title, view.headline, view.browsers?.intro]).toEqual(["The Empty Game", "This browser cannot run The Empty Game.", "The Empty Game runs in:"]);
+    expect(JSON.stringify(view)).not.toMatch(/Day Hike|hike/i);
   });
 
   it("is started by an entry that registers the shipped files and the terrain first", () => {

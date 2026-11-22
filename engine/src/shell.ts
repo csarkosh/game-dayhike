@@ -38,7 +38,9 @@ import { GEN_VERSION } from "./sim/forest.js";
 import { startGame, type GameHandle } from "./app.js";
 import type { EngineOnCanvas } from "./game/rendererSwap.js";
 import { LOSS_ENDED_LINE, createLossRecord } from "./game/lossBound.js";
-import { browserEnv, browserMajor, offersWebGpu, readSignals, type GpuSignals, type NavigatorLike } from "./game/gpuSignals.js";
+import { browserEnv, browserMajor, hostOs, isMobile, offersWebGpu, readSignals, type GpuSignals, type NavigatorLike } from "./game/gpuSignals.js";
+import { renderTurnedAway, type TurnedAwayHandle } from "./game/turnedAway.js";
+import { turnedAwayModel, visitorDevice, type TurnedAwayView } from "./game/turnedAwayModel.js";
 import { adapterVerdict, loadVerdict, type LoadVerdict } from "./game/loadCheck.js";
 import { LOADING_LINE, START_FAILED_LINE, autoPick, launchLine, liteProbeSteps, startFallbacks, startSession, startupTier, type ProbeSteps, type StartupTier } from "./game/frameProbe.js";
 import { createMuteButton, readMuted, writeMuted } from "./game/muteButton.js";
@@ -95,7 +97,6 @@ export function startShell<
     get latest() { return latest; },
     get latestReady() { return latestReady; },
     get telemetry() { return telemetry; },
-    get signals() { return signals; },
     get currentChoice() { return currentChoice; },
     get choiceStored() { return choiceStored; },
     get choiceNotice() { return choiceNotice; },
@@ -263,8 +264,24 @@ export function startShell<
    */
   /** The `turned_away` row is sent once. */
   let turnedAwayTold = false;
-  /** The page for those turned away is up (`turnAway`). */
-  let awayUp = false;
+  /** The page for those turned away, once it is up (`turnAway`): it stays for the page's life. */
+  let away: TurnedAwayHandle | null = null;
+
+  /** What the page for those turned away shows now (`turnedAwayModel`), under the game's own name. */
+  function awayView(why: TurnedAway): TurnedAwayView {
+    const nav = navigator as NavigatorLike;
+    return turnedAwayModel({
+      title: page.title,
+      reason: why.reason,
+      short: why.short,
+      desktop,
+      device: visitorDevice(hostOs(nav), isMobile(nav), navigator.userAgent),
+      host,
+      userAgent: navigator.userAgent,
+      renderer: signals?.renderer ?? null,
+      latest,
+    });
+  }
 
   function settleVerdict(next: LoadVerdict): void {
     verdict = next;
@@ -279,7 +296,7 @@ export function startShell<
       detach();
     }
     // Already up (no WebGPU, known as the page loaded): what the signals add is the GPU's name, for the app's offer.
-    if (awayUp) side.turnedAwayNow(next);
+    if (away !== null) away.setView(awayView(next));
     else render(app);
   }
 
@@ -390,7 +407,7 @@ export function startShell<
 
   function paintRoster(): void {
     // Gone with everything else of the game once a visitor is turned away.
-    if (awayUp) return;
+    if (away !== null) return;
     roster.setView(
       rosterModel({
         lobby: lobby?.state ?? null,
@@ -791,15 +808,16 @@ export function startShell<
    * scene. Put up once and left up, since the verdict does not change while
    * the page lives; whatever was shown or starting goes first, and nothing of
    * a session is asked for after. The address is left as it is, so the same
-   * link works once the visitor has a browser that plays. What the page shows
-   * is the game's (`PageSide.showTurnedAway`); all that goes before it is done
-   * here, for every game alike.
+   * link works once the visitor has a browser that plays. The page is the
+   * engine's (`turnedAway.ts`), under the game's name and over the game's still
+   * and credits (`PageGame.title`, `PageGame.away`); the game lets go of its
+   * own first (`PageSide.turnedAway`).
    */
   function turnAway(container: HTMLDivElement, route: Route, why: TurnedAway): void {
     // Whatever start was waiting on this page is no longer the page's.
     renderToken += 1;
     telemetry.mark("turned-away");
-    if (awayUp) return;
+    if (away !== null) return;
     running?.dispose();
     running = null;
     game = null;
@@ -815,8 +833,16 @@ export function startShell<
       telemetry.event("page", { kind: route.kind });
       window.visits?.page?.();
     }
-    side.showTurnedAway(container, why);
-    awayUp = true;
+    side.turnedAway();
+    const handle = renderTurnedAway(container, awayView(why), {
+      still: page.away.still(),
+      // The credit the still's works are owed, within reach here as from a landing page.
+      credits: page.away.credits(),
+      onDownload: (platform) => telemetry.event("download", { platform }),
+    });
+    away = handle;
+    // The app's offer waits on the release, which lands after the page is up.
+    void latestReady.then(() => handle.setView(awayView(why)));
   }
 
   function render(container: HTMLDivElement): void {

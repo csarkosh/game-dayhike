@@ -8,14 +8,10 @@ import { titleStillUrl, titleVideoUrl, videoUrl } from "./game/dayhikeAssets.js"
 import { createTitleLoop, titleLoopEnv, type TitleLoop } from "./game/titleLoop.js";
 import { createFilmHead, fetchFilmHead, filmHeadWanted, onCellular, warmWhenLoaded } from "./game/filmHead.js";
 import { landingModel, type LandingInput } from "./game/landingModel.js";
-import { hostOs, isMobile, type NavigatorLike } from "@csarkosh/engine/game/gpuSignals";
-import { creditsEntries } from "./game/hikeCredits.js";
-import { renderTurnedAway, type TurnedAwayHandle } from "@csarkosh/engine/game/turnedAway";
-import { turnedAwayModel, visitorDevice, type TurnedAwayView } from "@csarkosh/engine/game/turnedAwayModel";
 import { HIKE_MODES, createModeKeeper, isGameMode, type GameMode } from "./game/gameMode.js";
 import { pageStorage, parseTierOverride, pageSessionStorage, takeNotice } from "@csarkosh/engine/game/tierChoice";
 import { VEIL_CUT_COVER_MS, VEIL_CUT_LIFT_MS } from "@csarkosh/engine/game/veil";
-import type { LandingShell, Opening, PageHost, PageSide, TurnedAway } from "@csarkosh/engine/game/pageGame";
+import type { LandingShell, Opening, PageHost, PageSide } from "@csarkosh/engine/game/pageGame";
 
 /**
  * The intro over a start (`introOverlay.ts`). Made on Play, in the click,
@@ -37,8 +33,8 @@ export type IntroRun = {
 };
 
 /**
- * Day Hike's own of the page: the intro's film, the title's loop, the landing page, the page for
- * those turned away and the mode. The page's shell (`shell.ts`) makes it once
+ * Day Hike's own of the page: the intro's film, the title's loop, the landing page and the
+ * mode. The page's shell (`shell.ts`) makes it once
  * and calls it at its own points.
  */
 export function createHikePage(h: PageHost): PageSide {
@@ -51,24 +47,6 @@ export function createHikePage(h: PageHost): PageSide {
     // Chrome preloads a film's metadata only on a cellular connection: there the page fetches the head itself first.
     fetchHead: (src) => (onCellular(navigator as { connection?: { type?: string } }) ? fetchFilmHead(src) : null),
   });
-  /** The page for those turned away, once it is up: it stays for the page's life. */
-  let turnedAway: TurnedAwayHandle | null = null;
-
-  /** What the page for those turned away shows now (`turnedAwayModel`). */
-  function turnedAwayView(why: TurnedAway): TurnedAwayView {
-    const nav = navigator as NavigatorLike;
-    return turnedAwayModel({
-      title: "Day Hike",
-      reason: why.reason,
-      short: why.short,
-      desktop: h.desktop,
-      device: visitorDevice(hostOs(nav), isMobile(nav), navigator.userAgent),
-      host: h.host,
-      userAgent: navigator.userAgent,
-      renderer: h.signals?.renderer ?? null,
-      latest: h.latest,
-    });
-  }
   // The mode (gameMode.ts), kept the same way; the hike reads it where its address names none.
   const modeChoice = createModeKeeper(pageStorage);
   const currentMode = (): GameMode => modeChoice.mode();
@@ -238,25 +216,11 @@ export function createHikePage(h: PageHost): PageSide {
     return "home";
   }
 
-  /**
-   * The page for a visitor who cannot play (`turnedAway.ts`), put up by the
-   * shell once, in a container it has emptied (`shell.ts`, `turnAway`).
-   * Day Hike's own goes first: the landing page it held and a film playing
-   * or waiting.
-   */
-  function showTurnedAway(container: HTMLDivElement, why: TurnedAway): void {
+  /** A visitor cannot play, and the shell shows the page for those turned away: the landing page held and a film playing or waiting go first. */
+  function turnedAway(): void {
     landing = null;
     endIntro(activeIntro);
     endIntro(pendingIntro);
-    const handle = renderTurnedAway(container, turnedAwayView(why), {
-      still: titleStillUrl(),
-      // The credit the still's works are owed, within reach here as from the landing page.
-      credits: creditsEntries(),
-      onDownload: (platform) => h.telemetry.event("download", { platform }),
-    });
-    turnedAway = handle;
-    // The app's offer waits on the release, which lands after the page is up.
-    void h.latestReady.then(() => handle.setView(turnedAwayView(why)));
   }
 
   /** Play was pressed: the title's loop gives the bandwidth up, and the intro's film starts, to be carried into the game. */
@@ -410,11 +374,6 @@ export function createHikePage(h: PageHost): PageSide {
     };
   }
 
-  /** A verdict of "cannot play" come while the page for those turned away is up: it is shown what the verdict adds. */
-  function turnedAwayNow(next: TurnedAway): void {
-    turnedAway?.setView(turnedAwayView(next));
-  }
-
   return {
     // The landing page and what plays behind it.
     showLanding,
@@ -428,10 +387,9 @@ export function createHikePage(h: PageHost): PageSide {
     keepOpening,
     openingFor,
     muteChanged,
-    // The page for those turned away.
-    showTurnedAway,
-    turnedAwayNow,
-    // The player's name and the mode.
+    // A visitor turned away.
+    turnedAway,
+    // The mode.
     mode: currentMode,
     saveMode: (mode: string): void => {
       if (isGameMode(mode)) saveMode(mode);

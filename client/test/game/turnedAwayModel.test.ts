@@ -144,9 +144,9 @@ describe("the page for those turned away, as data", () => {
     expect(page).toContain("  for (const e of options.credits) creditsList.append(creditItem(e));");
     const screen = readFileSync(fileURLToPath(new URL("../../../engine/src/game/credits.ts", import.meta.url)), "utf8");
     expect(screen).toContain("  for (const e of entries) list.append(creditItem(e));");
-    // Day Hike's own of the page hands them over (`hikePage.ts`).
-    const main = readFileSync(fileURLToPath(new URL("../../src/hikePage.ts", import.meta.url)), "utf8");
-    expect(main).toContain("      credits: creditsEntries(),");
+    // Day Hike's definition hands them over (`hikePageGame.ts`), and the shell asks for them as it draws the page.
+    expect(sourceText("hikePageGame.ts")).toContain("  away: { still: titleStillUrl, credits: creditsEntries },");
+    expect(sourceText("shell.ts")).toContain("      credits: page.away.credits(),");
   });
 
   it("ends with the one technical line, with what the graphics card is short of where the check named it", () => {
@@ -243,8 +243,9 @@ describe("the game the words name", () => {
       "Day Hike is drawn with WebGPU, which is running without the graphics card on this computer.",
     ]);
     for (const page of pages("Day Hike")) expect(page).not.toContain("{game}");
-    // The name Day Hike's own of the page hands in.
-    expect(sourceText("hikePage.ts")).toContain('    return turnedAwayModel({\n      title: "Day Hike",\n');
+    // The name Day Hike's definition hands the shell, which the shell hands the page's model.
+    expect(sourceText("hikePageGame.ts")).toContain('  title: "Day Hike",\n');
+    expect(sourceText("shell.ts")).toContain("    return turnedAwayModel({\n      title: page.title,\n");
   });
 
   it("is another game's on that game's page, with nothing of Day Hike left in it", () => {

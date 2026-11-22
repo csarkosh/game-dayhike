@@ -1,14 +1,14 @@
 /**
  * A game as the page's shell is handed it: one definition (`PageGame`), the
  * game's own of the page (`PageSide`: its landing page, what plays before a
- * session starts, its page for those turned away and the mode), which the
+ * session starts and the mode), which the
  * shell calls at the page's own points, and what that side
  * reads of the shell (`PageHost`). The shell is written over these and names
  * no game; the game a session is of (`SessionGame`) is carried through with
  * its own type parameters.
  */
 import type { AmbientAudio } from "./ambientAudio.js";
-import type { GpuSignals } from "./gpuSignals.js";
+import type { CreditEntry } from "./credits.js";
 import type { RenderPlayer, RenderState } from "./lite/renderGame.js";
 import type { LoadVerdict } from "./loadCheck.js";
 import type { LoadProgress } from "./loadProgress.js";
@@ -78,7 +78,6 @@ export type PageHost = {
   readonly latest: DesktopRelease | null;
   readonly latestReady: Promise<void>;
   readonly telemetry: Telemetry;
-  readonly signals: GpuSignals | null;
   readonly currentChoice: () => TierChoice;
   readonly choiceStored: () => boolean;
   readonly choiceNotice: string | null;
@@ -111,15 +110,13 @@ export type PageSide = {
   openingFor(container: HTMLElement, follower: boolean): Opening | null;
   /** The page's mute changed. */
   muteChanged(): void;
-  // The page for those turned away.
+  // A visitor turned away.
   /**
-   * The page for a visitor who cannot play, in place of every route: put up once, in a `container` the shell has
-   * emptied, after the shell has let go of the session, the mute and the roster. What the game itself had on the
-   * page or starting is let go here.
+   * A visitor cannot play, and the shell is about to show the page for those turned away (`turnedAway.ts`) in place of
+   * every route: the game lets go of what is its own on the page or starting. The shell has already let go of the
+   * session, the mute and the roster, and emptied the page.
    */
-  showTurnedAway(container: HTMLDivElement, why: TurnedAway): void;
-  /** A verdict of "cannot play" come while that page is up: it is shown what the verdict adds. */
-  turnedAwayNow(next: TurnedAway): void;
+  turnedAway(): void;
   // The mode.
   /** The mode saved, one of the game's list. */
   mode(): string;
@@ -142,6 +139,10 @@ export type PageGame<
   game: SessionGame<W, S, P, R, A, H, HostS, ClientS>;
   /** The game's own of the page, made once. */
   side(host: PageHost): PageSide;
+  /** The game's name, as its pages title it: the title of the page for those turned away, and the name that page's sentences say. */
+  title: string;
+  /** What the page for those turned away shows of the game's: the still it is laid over, or null, and the works credited at its foot (none, and no credits are offered). */
+  away: { still(): string | null; credits(): readonly CreditEntry[] };
   /** Where the player's name is kept between visits and what a name made for a new visitor starts with; the shell keeps the name (`playerName.ts`). */
   name: NameOf;
   /** The version of the game's wire, which every telemetry row names: two pages play together only at the same one. */

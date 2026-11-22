@@ -24,6 +24,10 @@ describe("Day Hike as the page's shell is handed it", () => {
     expect(HIKE_PAGE.protocol).toBe(PROTOCOL_VERSION);
     // The key a hiker's name has always been kept under, so a saved name is found again.
     expect(HIKE_PAGE.name).toEqual({ key: "dayhike.playerName", prefix: "Hiker" });
+    // What the page for those turned away says and shows of Day Hike's: its name, the title's still, its credits.
+    expect(HIKE_PAGE.title).toBe("Day Hike");
+    expect(typeof HIKE_PAGE.away.still).toBe("function");
+    expect(HIKE_PAGE.away.credits().length).toBeGreaterThan(5);
     expect(HIKE_PAGE.worldWorker).toBe(startHikeWorldWorker);
     expect(HIKE_PAGE.scene).toBe(runLiteSceneRoute);
     expect(typeof HIKE_PAGE.statusLine).toBe("function");
