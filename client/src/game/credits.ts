@@ -1,8 +1,8 @@
 /**
  * The Credits screen. CC-BY-4.0 requires the credit to be reasonably visible to the people
  * receiving the work, and a file in the repository is not that; this screen is. It renders
- * CREDITS.md, imported at build time: the models, textures and recordings the catalog ships,
- * and the code of others the game carries (the library it is drawn with, a table, a tone
+ * a credits file in CREDITS.md's shape, handed to it as text: the models, textures and
+ * recordings the catalog ships, and the code of others the game carries (the library it is drawn with, a table, a tone
  * map, and the KTX2 decoder with the transcoders it loads), each under its licence.
  *
  * `creditsModel` parses that file's fixed shape only: an `## <id>` heading followed by
@@ -10,8 +10,6 @@
  * The fields are `Source`, `Author`, `Licence` and `URL`, and one more a work may carry:
  * `- **Modified:** no`, for a work the game ships as its author made it, byte for byte.
  */
-import credits from "../../../CREDITS.md?raw";
-
 export type CreditEntry = {
   id: string;
   source: string;
@@ -126,10 +124,6 @@ export function creditsRows(entries: readonly CreditEntry[]): CreditEntry[] {
   // Array.prototype.sort is required to be stable (ES2019), which is what "each group in
   // catalog order" rests on — no tiebreaker is needed or wanted.
   return unique.sort((a, b) => Number(requiresAttribution(b.license)) - Number(requiresAttribution(a.license)));
-}
-
-export function creditsEntries(): CreditEntry[] {
-  return creditsRows(creditsModel(credits));
 }
 
 /**

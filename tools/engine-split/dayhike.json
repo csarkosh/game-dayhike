@@ -71,7 +71,7 @@
     "game/voiceClips.ts",
     "game/way*",
     "game/woodsVoice.ts",
-    "game/credits.ts",
+    "game/hikeCredits.ts",
     "game/hud.ts",
     "game/gameMode.ts",
     "game/hikeScenery.ts",

@@ -9,7 +9,7 @@ import { createTitleLoop, titleLoopEnv, type TitleLoop } from "./game/titleLoop.
 import { createFilmHead, fetchFilmHead, filmHeadWanted, onCellular, warmWhenLoaded } from "./game/filmHead.js";
 import { landingModel, type LandingInput } from "./game/landingModel.js";
 import { hostOs, isMobile, type NavigatorLike } from "@csarkosh/engine/game/gpuSignals";
-import { creditsEntries } from "./game/credits.js";
+import { creditsEntries } from "./game/hikeCredits.js";
 import { renderTurnedAway, type TurnedAwayHandle } from "./game/turnedAway.js";
 import { turnedAwayModel, visitorDevice, type TurnedAwayView } from "./game/turnedAwayModel.js";
 import { HIKE_MODES, createModeKeeper, isGameMode, type GameMode } from "./game/gameMode.js";
