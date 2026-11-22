@@ -11,16 +11,23 @@ import type { Hud } from "./game/hud.js";
 import type { ClientSession } from "./net/clientSession.js";
 import type { HostSession } from "./net/hostSession.js";
 import type { PlayerState, WorldState } from "./sim/types.js";
-import type { World } from "./sim/world.js";
+import { createWorld, type World } from "./sim/world.js";
 import { titleStillUrl } from "./game/dayhikeAssets.js";
 import { creditsEntries } from "./game/hikeCredits.js";
 import { startHikeWorldWorker } from "./game/hikeWorldWorker.js";
 import { createHud } from "./game/hud.js";
-import { liteProbeDeps } from "./game/lite/probeScene.js";
+import { liteProbeDeps, type ProbeGame } from "./game/lite/probeScene.js";
 import { runLiteSceneRoute } from "./game/lite/sceneRoute.js";
 import { HIKE_GAME } from "./hikeGame.js";
 import { createHikePage } from "./hikePage.js";
 import { PROTOCOL_VERSION } from "./net/protocol.js";
+
+/** Day Hike as the tier check measures it (`probeScene.ts`): the sandbox level, the hike's renderer, and an empty world nothing steps. */
+const HIKE_PROBE: ProbeGame<WorldState> = {
+  level: HIKE_GAME.level,
+  renderer: HIKE_GAME.renderer,
+  state: (level, seed) => createWorld(level, seed, false).state,
+};
 
 export const HIKE_PAGE: PageGame<World, WorldState, PlayerState, Renderer, HikeAudio, Hud, HostSession, ClientSession> = {
   /** The hike, as the page that runs one is handed it. */
@@ -42,5 +49,5 @@ export const HIKE_PAGE: PageGame<World, WorldState, PlayerState, Renderer, HikeA
   /** The staged intro and title, a frame at a time for their recording. */
   scene: runLiteSceneRoute,
   /** The tier check's steps, measured on the hike's own renderer. */
-  probe: (container: HTMLElement) => liteProbeDeps(container),
+  probe: (container: HTMLElement) => liteProbeDeps(container, HIKE_PROBE),
 };
