@@ -1,10 +1,12 @@
 import { readFileSync, readdirSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
+import "../src/terrain.js";
 import { noGameSound } from "@csarkosh/engine/game/ambientAudio";
 import { isMode } from "@csarkosh/engine/game/modeList";
 import { NO_ACTIONS, type InputCommand } from "@csarkosh/engine/sim/core";
 import { turnedAwayModel } from "@csarkosh/engine/game/turnedAwayModel";
+import { createForest } from "@csarkosh/engine/sim/forest";
 import { parseLevel } from "@csarkosh/engine/sim/level";
 import { EMPTY_GAME, WALK_MODES, WALK_SIDE } from "../src/game.js";
 import { WALK } from "../src/net.js";
@@ -60,6 +62,11 @@ describe("the empty game as the page's shell is handed it", () => {
     // The name is the shell's to keep; the game says only where, and what a made one starts with.
     expect(EMPTY_PAGE.name).toEqual({ key: "empty.playerName", prefix: "Walker" });
     expect(code("page.ts")).not.toMatch(/sanitiseName|loadName|rename/);
+    // The tier check measures the engine's renderer on the yard with nobody in it.
+    const forest = createForest(20261121);
+    const empty = EMPTY_PAGE.probeState(parseLevel(EMPTY_GAME.level), 20261121, forest);
+    expect([empty.tick, empty.players.size, empty.rngSeed]).toEqual([0, 0, 20261121]);
+    expect(code("page.ts")).not.toMatch(/pageProbe|Promise\.resolve\(null\)/);
     // No scene is staged: a scene's address is answered with nothing to let go.
     expect(typeof EMPTY_PAGE.scene({ canvas: undefined as never, container: undefined as never, tier: "low" }, { t: null, step: null }, "intro").dispose).toBe("function");
   });

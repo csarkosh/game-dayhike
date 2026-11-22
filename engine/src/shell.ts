@@ -42,6 +42,7 @@ import { browserEnv, browserMajor, hostOs, isMobile, offersWebGpu, readSignals, 
 import { renderTurnedAway, type TurnedAwayHandle } from "./game/turnedAway.js";
 import { turnedAwayModel, visitorDevice, type TurnedAwayView } from "./game/turnedAwayModel.js";
 import { adapterVerdict, loadVerdict, type LoadVerdict } from "./game/loadCheck.js";
+import { liteProbeDeps } from "./game/lite/probeScene.js";
 import { LOADING_LINE, START_FAILED_LINE, autoPick, launchLine, liteProbeSteps, startFallbacks, startSession, startupTier, type ProbeSteps, type StartupTier } from "./game/frameProbe.js";
 import { createMuteButton, readMuted, writeMuted } from "./game/muteButton.js";
 import { containerPixels, withGovernorDrop, type QualityTier, type VerdictEngine } from "./game/quality.js";
@@ -1026,7 +1027,7 @@ export function startShell<
     // (`runLiteProbeStep`): the page makes no engine for it. A step whose
     // renderer cannot be made, or whose device fails under it, reads nothing;
     // the game's failure handling never hears of it.
-    const probe = page.probe(container);
+    const probe = liteProbeDeps(container, { level: page.game.level, renderer: page.game.renderer, state: page.probeState });
     running = {
       dispose: () => {
         probe.abort();

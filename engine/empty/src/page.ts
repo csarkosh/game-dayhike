@@ -7,13 +7,12 @@
  */
 import { createModeKeeper } from "@csarkosh/engine/game/modeList";
 import type { LandingShell, PageGame, PageHost, PageSide } from "@csarkosh/engine/game/pageGame";
-import { pageProbe } from "@csarkosh/engine/game/probePage";
 import { pageStorage } from "@csarkosh/engine/game/tierChoice";
 import type { AmbientAudio } from "@csarkosh/engine/game/ambientAudio";
 import { EMPTY_GAME, WALK_MODES, type WalkClient, type WalkHost, type WalkRenderer } from "./game.js";
 import { createStatusLine, type WalkHud } from "./hud.js";
 import { WALK_PROTOCOL } from "./net.js";
-import type { WalkState, WalkWorld, Walker } from "./sim.js";
+import { createWalkWorld, type WalkState, type WalkWorld, type Walker } from "./sim.js";
 
 const STYLE = `
 .empty-landing { position: absolute; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 16px; font: 16px/1.4 ui-monospace, Menlo, monospace; color: #e8e8ea; }
@@ -96,6 +95,6 @@ export const EMPTY_PAGE: PageGame<WalkWorld, WalkState, Walker, WalkRenderer, Am
   worldWorker: () => new Worker(new URL("./world.worker.ts", import.meta.url), { type: "module" }),
   /** The empty game stages no scene: a scene's address draws nothing. */
   scene: () => ({ dispose: () => undefined }),
-  /** The tier check's steps read nothing yet, so the tier is chosen from what the browser says of the GPU alone. */
-  probe: (container) => pageProbe(container, () => Promise.resolve(null)),
+  /** What the tier check draws as it measures the renderer: the yard with nobody in it. */
+  probeState: (_level, _seed, forest) => createWalkWorld(forest, false).state,
 };

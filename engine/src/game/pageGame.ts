@@ -14,7 +14,6 @@ import type { LoadVerdict } from "./loadCheck.js";
 import type { LoadProgress } from "./loadProgress.js";
 import type { MuteButton } from "./muteButton.js";
 import type { NameOf } from "./playerName.js";
-import type { PageProbe } from "./probePage.js";
 import type { QualityTier } from "./quality.js";
 import type { Route } from "./router.js";
 import type { PageHud, PageRenderer, PageWorld, SessionGame } from "./sessionGame.js";
@@ -26,6 +25,8 @@ import type { DesktopRelease, Platform } from "../net/desktopRelease.js";
 import type { HostSession } from "../net/host.js";
 import type { Lobby } from "../net/lobby.js";
 import type { Telemetry } from "../net/telemetry.js";
+import type { Forest } from "../sim/forest.js";
+import type { Level } from "../sim/level.js";
 
 /** A verdict of "cannot play", with its reason. */
 export type TurnedAway = Exclude<LoadVerdict, { play: true }>;
@@ -157,6 +158,9 @@ export type PageGame<
     search: { t: number | null; step: number | null },
     name: Extract<Route, { kind: "scene" }>["name"],
   ): { dispose(): void };
-  /** The tier check's steps, each measured on the game's own renderer (`probePage.ts`). */
-  probe(container: HTMLElement): PageProbe;
+  /**
+   * The state of a world on the game's level with no player in it and nothing stepping it: what the tier check
+   * draws as it measures each step on the game's own renderer (`lite/probeScene.ts`).
+   */
+  probeState(level: Level, seed: number, forest: Forest): S;
 };
