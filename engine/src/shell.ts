@@ -762,7 +762,7 @@ export function startShell<
    * running session asks for after a verdict that came late is refused.
    */
   function sessionCanvasNow(): EngineOnCanvas {
-    if (verdict !== null && !verdict.play) throw new Error(`this browser cannot draw a hike (${verdict.reason})`);
+    if (verdict !== null && !verdict.play) throw new Error(`this browser cannot draw a ${page.identity.session} (${verdict.reason})`);
     return { canvas: document.createElement("canvas") };
   }
 

@@ -14,6 +14,8 @@ export type GameIdentity = {
   player: string;
   /** What every key the page keeps in the browser's storage begins with. */
   storage: string;
+  /** The token the game's desktop app puts before its version in its user agent (`DayHike` in `DayHike/1.2.0`). */
+  desktop: string;
 };
 
 let current: GameIdentity | null = null;

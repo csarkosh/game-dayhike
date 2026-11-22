@@ -95,7 +95,7 @@ describe("stalePageMessage", () => {
   });
 
   it("names another game under that game's identity, with no hike in it", () => {
-    setGameIdentity({ title: "Other", session: "round", player: "Guest", storage: "other" });
+    setGameIdentity({ title: "Other", session: "round", player: "Guest", storage: "other", desktop: "Other" });
     expect(stalePageMessage()).toContain("different versions of Other.");
     expect(stalePageMessage()).not.toMatch(/hike/i);
   });

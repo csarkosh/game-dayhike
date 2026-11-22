@@ -103,7 +103,7 @@ const STYLE = `
   }
   /* Over a hike it sits as faint as the touch controls do, and comes up when wanted or when pressed;
      the Pause button sits under it (44px tall at 14px from the corner, in the touch layer and the HUD alike). */
-  .mute.hike { opacity: 0.35; }
+  .mute.session { opacity: 0.35; }
   .mute.on, .mute:hover, .mute:focus-visible { opacity: 1; }
   .mute.on { background: rgba(255, 255, 255, 0.18); }
   .mute:focus-visible { outline: 2px solid rgba(255, 255, 255, 0.7); outline-offset: 3px; }
@@ -157,7 +157,7 @@ export function createMuteButton(host: HTMLElement, options: { muted: boolean; s
     muted: () => muted,
     set,
     setOverGame(on) {
-      button.classList.toggle("hike", on);
+      button.classList.toggle("session", on);
     },
     dispose() {
       window.removeEventListener("keydown", onKeyDown);

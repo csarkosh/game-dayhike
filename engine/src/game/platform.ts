@@ -1,3 +1,4 @@
+import { gameIdentity } from "../identity.js";
 import type { Platform } from "../net/desktopRelease.js";
 
 /**
@@ -24,13 +25,15 @@ export function hostPlatform(userAgent: string = navigator.userAgent): Platform 
 }
 
 /**
- * The desktop shell's own version, from the `DayHike/<x.y.z>` token it appends
- * to the user agent (`desktop/main.cjs`); undefined on the web. The page is
+ * The desktop shell's own version, from the `<token>/<x.y.z>` the shell appends
+ * to the user agent, the token being the game's own (`gameIdentity().desktop`);
+ * undefined on the web. The page is
  * the same web build everywhere, so this is the only way the shell can tell
  * it what it is.
  */
 export function desktopVersion(userAgent: string = navigator.userAgent): string | undefined {
-  return /\bDayHike\/(\d+\.\d+\.\d+)\b/.exec(userAgent)?.[1];
+  const token = gameIdentity().desktop.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  return new RegExp(`\\b${token}\\/(\\d+\\.\\d+\\.\\d+)\\b`).exec(userAgent)?.[1];
 }
 
 export type TouchFacts = { coarsePointer: boolean; maxTouchPoints: number };

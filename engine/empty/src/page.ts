@@ -85,7 +85,7 @@ export function createEmptyPage(h: PageHost): PageSide {
 export const EMPTY_PAGE: PageGame<WalkWorld, WalkState, Walker, WalkRenderer, AmbientAudio, WalkHud, WalkHost, WalkClient> = {
   game: EMPTY_GAME,
   side: createEmptyPage,
-  identity: { title: "The Empty Game", session: "walk", player: "Walker", storage: "empty" },
+  identity: { title: "The Empty Game", session: "walk", player: "Walker", storage: "empty", desktop: "EmptyGame" },
   /** The page for those turned away stands on no still and credits no works. */
   away: { still: () => null, credits: () => [] },
   protocol: WALK_PROTOCOL,

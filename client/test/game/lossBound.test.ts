@@ -77,7 +77,7 @@ describe("the line a bound's end leaves", () => {
   });
 
   it("is another game's under that game's identity, with no hike in it", () => {
-    setGameIdentity({ title: "Other", session: "round", player: "Guest", storage: "other" });
+    setGameIdentity({ title: "Other", session: "round", player: "Guest", storage: "other", desktop: "Other" });
     expect(lossEndedLine()).toBe("The round ended: this device's graphics keep resetting. Restarting the browser may help.");
     expect(lossEndedLine()).not.toMatch(/hike/i);
   });

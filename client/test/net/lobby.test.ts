@@ -278,7 +278,7 @@ describe("fallbackName", () => {
   });
 
   it("is another game's word under that game's identity, with no hike in it", () => {
-    setGameIdentity({ title: "Other", session: "round", player: "Guest", storage: "other" });
+    setGameIdentity({ title: "Other", session: "round", player: "Guest", storage: "other", desktop: "Other" });
     expect(fallbackName()).toBe("Guest");
     expect(sanitiseName("   ")).toBe("Guest");
   });

@@ -468,7 +468,7 @@ describe("layer boundaries", () => {
     const hike = importsOf(at("app.ts")).map((spec) => followed(at("app.ts"), spec)).filter((to): to is string => to !== null).map(logical);
     expect(hike).toContain("game/engineFailure.ts");
     expect(hike).toContain("game/gpuTimeReport.ts");
-    expect(importsOf(at("game/engineFailure.ts"))).toEqual(["./rendererSwap.js"]);
+    expect(importsOf(at("game/engineFailure.ts"))).toEqual(["../identity.js", "./rendererSwap.js"]);
   });
 
   it("decides once whether the browser can play, with no engine and no request of its own, and starts nothing of a hike where it cannot", () => {
@@ -1326,10 +1326,10 @@ describe("layer boundaries", () => {
     expect(spelt).toEqual([]);
     // The record's reader loads the file system and nothing else.
     expect(importsOf(join(TESTS, "helpers/babylonFixture.ts"))).toEqual(["node:fs"]);
-    // And the swap and the renderer's types load nothing at all.
+    // And the swap loads only the identity (for its line's word), and the renderer's types load nothing at all.
     const loaded = (file: string): string[] =>
       [...readFileSync(file, "utf8").matchAll(/^\s*(?:import|export)\s+(?!type\s)(?:[^"'();]*?\s+from\s+)?["']([^"']+)["']/gm)].map((m) => m[1] as string);
-    expect(loaded(at("game/rendererSwap.ts"))).toEqual([]);
+    expect(loaded(at("game/rendererSwap.ts"))).toEqual(["../identity.js"]);
     expect(loaded(at("game/rendererTypes.ts"))).toEqual([]);
   });
 
@@ -1362,7 +1362,7 @@ describe("layer boundaries", () => {
     // The page makes a canvas and nothing more, and the swap holds it as that.
     // A switch is handed its canvas at once, and one the page refuses is a throw; a start's chain takes the same canvas as a promise.
     const main = code("shell.ts");
-    expect(main).toContain('  function sessionCanvasNow(): EngineOnCanvas {\n    if (verdict !== null && !verdict.play) throw new Error(`this browser cannot draw a hike (${verdict.reason})`);\n    return { canvas: document.createElement("canvas") };\n  }');
+    expect(main).toContain('  function sessionCanvasNow(): EngineOnCanvas {\n    if (verdict !== null && !verdict.play) throw new Error(`this browser cannot draw a ${page.identity.session} (${verdict.reason})`);\n    return { canvas: document.createElement("canvas") };\n  }');
     expect(main).toContain("    return new Promise((resolve) => resolve(sessionCanvasNow()));");
     expect(main).toContain("        launch(onCanvas, route.token, decided, () => sessionCanvasNow(), opening, takeSampled);");
     expect(app).toContain("  engineFor(tier: QualityTier): EngineOnCanvas;");

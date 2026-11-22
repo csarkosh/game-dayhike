@@ -580,7 +580,7 @@ describe("the session word in the settings lines", () => {
   });
 
   it("is another game's under that game's identity, with no hike in the lines", () => {
-    setGameIdentity({ title: "Other", session: "round", player: "Guest", storage: "other" });
+    setGameIdentity({ title: "Other", session: "round", player: "Guest", storage: "other", desktop: "Other" });
     const pending = settingsModel({ modes: HIKE_MODES, context: "title", choice: "high", auto: { tier: "medium", probePending: true }, override: null, stored: true });
     const paused = settingsModel({ modes: HIKE_MODES, context: "pause", choice: "auto", auto: null, running: "high", override: null, stored: true });
     expect(pending.lines).toEqual(["Auto tests this computer when your next round starts."]);
