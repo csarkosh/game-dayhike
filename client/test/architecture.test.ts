@@ -1330,6 +1330,9 @@ describe("layer boundaries", () => {
     const loaded = (file: string): string[] =>
       [...readFileSync(file, "utf8").matchAll(/^\s*(?:import|export)\s+(?!type\s)(?:[^"'();]*?\s+from\s+)?["']([^"']+)["']/gm)].map((m) => m[1] as string);
     expect(loaded(at("game/rendererSwap.ts"))).toEqual(["../identity.js"]);
+    // The identity it reads is a record and two functions, and loads nothing itself: so the swap still reaches no module but that one.
+    expect(loaded(at("identity.ts"))).toEqual([]);
+    expect(importsOf(at("identity.ts"))).toEqual([]);
     expect(loaded(at("game/rendererTypes.ts"))).toEqual([]);
   });
 
