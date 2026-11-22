@@ -1,5 +1,7 @@
 import { describe, expect, it } from "vitest";
 import "../../src/game/dayhikeAssets.js";
+import "../../src/sim/passes/index.js";
+import { parseLevel } from "@csarkosh/engine/sim/level";
 import { HIKE_PAGE } from "../../src/hikePageGame.js";
 import { HIKE_GAME } from "../../src/hikeGame.js";
 import { createHikePage } from "../../src/hikePage.js";
@@ -22,10 +24,18 @@ describe("Day Hike as the page's shell is handed it", () => {
     expect(HIKE_PAGE.game).toBe(HIKE_GAME);
     expect(HIKE_PAGE.side).toBe(createHikePage);
     expect(HIKE_PAGE.protocol).toBe(PROTOCOL_VERSION);
+    // The key a hiker's name has always been kept under, so a saved name is found again.
+    expect(HIKE_PAGE.name).toEqual({ key: "dayhike.playerName", prefix: "Hiker" });
+    // What the page for those turned away says and shows of Day Hike's: its name, the title's still, its credits.
+    expect(HIKE_PAGE.title).toBe("Day Hike");
+    expect(typeof HIKE_PAGE.away.still).toBe("function");
+    expect(HIKE_PAGE.away.credits().length).toBeGreaterThan(5);
     expect(HIKE_PAGE.worldWorker).toBe(startHikeWorldWorker);
     expect(HIKE_PAGE.scene).toBe(runLiteSceneRoute);
     expect(typeof HIKE_PAGE.statusLine).toBe("function");
-    expect(typeof HIKE_PAGE.probe).toBe("function");
+    // What the tier check draws: a world on the hike's level that nothing steps, with nobody in it.
+    const empty = HIKE_PAGE.probeState(parseLevel(HIKE_GAME.level), 20261121, null as never);
+    expect([empty.tick, empty.players.size]).toEqual([0, 0]);
   });
 
   it("is typed by the engine's definition of a page's game, as Day Hike's own of the page is by its side and host", () => {
@@ -81,9 +91,9 @@ describe("the page's shell", () => {
     expect(shell.split("page.statusLine(container)").length - 1).toBe(3);
     expect(shell).toContain("startWorldPrep(worldInputs(route.token, location.search), page.worldWorker)");
     expect(shell).toContain("const scene = page.scene({ canvas, container, tier }, parseSceneSearch(location.search), route.name);");
-    expect(shell).toContain("const probe = page.probe(container);");
+    expect(shell).toContain("const probe = liteProbeDeps(container, { level: page.game.level, renderer: page.game.renderer, state: page.probeState });");
     expect(shell).toMatch(/const handle = startGame\(onCanvas\.canvas, worldToken, \{[\s\S]*?\n {4}\}, page\.game\);/);
-    for (const named of ["createHud", "PROTOCOL_VERSION", "startHikeWorldWorker", "runLiteSceneRoute", "liteProbeDeps", "HIKE_GAME", "HIKE_PAGE", "createHikePage"]) {
+    for (const named of ["createHud", "PROTOCOL_VERSION", "startHikeWorldWorker", "runLiteSceneRoute", "createWorld", "sandbox01", "hikeParts", "HIKE_GAME", "HIKE_PAGE", "createHikePage"]) {
       expect(shell, named).not.toMatch(new RegExp(`\\b${named}\\b`));
     }
   });

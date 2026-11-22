@@ -9,6 +9,10 @@
  * (`TURNED_AWAY_DETAIL`), because it is the word a visitor's browser uses
  * for this in its own settings and help pages, and the one to search for.
  *
+ * No game is named either: a sentence says `{game}` where the game's name
+ * goes (`GAME`), and the page's model puts in the name the game is handed
+ * to the shell with (`named`), which is also the page's title.
+ *
  * The versions in the browsers' lines are where each browser turned WebGPU
  * on for everyone, from the WebGPU working group's implementation status
  * page as edited 2026-10-02:
@@ -16,23 +20,28 @@
  */
 import type { TurnedAwayReason } from "./loadCheck.js";
 
-/** The page's title: the landing page's own. */
-export const TURNED_AWAY_TITLE = "Day Hike";
+/** Where a sentence names the game: what the game's own name is put in for (`named`). */
+export const GAME = "{game}";
+
+/** A sentence of this file with the game's name in it, as the page shows it. */
+export function named(line: string, title: string): string {
+  return line.replaceAll(GAME, title);
+}
 
 /** What is wrong, in one sentence, by reason, in a browser. */
 export const TURNED_AWAY_HEADLINE: Readonly<Record<TurnedAwayReason, string>> = {
-  "no-webgpu": "This browser cannot run Day Hike.",
-  "no-adapter": "This browser could not reach the graphics card, so Day Hike cannot run in it.",
-  software: "This browser has graphics acceleration turned off, so Day Hike cannot run in it.",
-  short: "The graphics card in this device cannot run Day Hike.",
+  "no-webgpu": "This browser cannot run {game}.",
+  "no-adapter": "This browser could not reach the graphics card, so {game} cannot run in it.",
+  software: "This browser has graphics acceleration turned off, so {game} cannot run in it.",
+  short: "The graphics card in this device cannot run {game}.",
 };
 
 /** What is wrong, in one sentence, by reason, in the desktop app, where there is no browser to name. */
 export const TURNED_AWAY_HEADLINE_APP: Readonly<Record<TurnedAwayReason, string>> = {
-  "no-webgpu": "Day Hike cannot run on this computer.",
-  "no-adapter": "Day Hike could not reach the graphics card in this computer.",
-  software: "Day Hike could not use the graphics card in this computer.",
-  short: "The graphics card in this computer cannot run Day Hike.",
+  "no-webgpu": "{game} cannot run on this computer.",
+  "no-adapter": "{game} could not reach the graphics card in this computer.",
+  software: "{game} could not use the graphics card in this computer.",
+  short: "The graphics card in this computer cannot run {game}.",
 };
 
 /** What to do, by reason, in a browser on a computer: one or two sentences, before the list of browsers. */
@@ -62,10 +71,10 @@ export const TURNED_AWAY_ADVICE_PHONE: Readonly<Record<TurnedAwayReason, readonl
 };
 
 /** What to do in the desktop app, whatever the reason: there is no other browser to send the player to. */
-export const TURNED_AWAY_ADVICE_APP: readonly string[] = ["Updating the graphics driver may help. Then open Day Hike again."];
+export const TURNED_AWAY_ADVICE_APP: readonly string[] = ["Updating the graphics driver may help. Then open {game} again."];
 
 /** Over the list of browsers. */
-export const TURNED_AWAY_BROWSERS_INTRO = "Day Hike runs in:";
+export const TURNED_AWAY_BROWSERS_INTRO = "{game} runs in:";
 
 /** The list's lines, by the device the visitor is on: what runs the game there. */
 export const TURNED_AWAY_BROWSERS = {
@@ -83,7 +92,7 @@ export const TURNED_AWAY_BROWSERS = {
 } as const satisfies Record<string, readonly string[]>;
 
 /** Over the desktop app's download, where the app would run on this computer. */
-export const TURNED_AWAY_APP_INTRO = "Or play in the Day Hike app, which needs no browser:";
+export const TURNED_AWAY_APP_INTRO = "Or play in the {game} app, which needs no browser:";
 
 /**
  * The small line at the foot, by reason: the page's one technical sentence,
@@ -91,10 +100,10 @@ export const TURNED_AWAY_APP_INTRO = "Or play in the Day Hike app, which needs n
  * graphics card is short of, as the check names it.
  */
 export const TURNED_AWAY_DETAIL: Readonly<Record<TurnedAwayReason, string>> = {
-  "no-webgpu": "Day Hike is drawn with WebGPU, which this browser does not have.",
-  "no-adapter": "Day Hike is drawn with WebGPU, which this browser has but could not start on this device.",
-  software: "Day Hike is drawn with WebGPU, which this browser is running without the graphics card.",
-  short: "Day Hike is drawn with WebGPU, and this graphics card offers less of it than the game needs",
+  "no-webgpu": "{game} is drawn with WebGPU, which this browser does not have.",
+  "no-adapter": "{game} is drawn with WebGPU, which this browser has but could not start on this device.",
+  software: "{game} is drawn with WebGPU, which this browser is running without the graphics card.",
+  short: "{game} is drawn with WebGPU, and this graphics card offers less of it than the game needs",
 };
 
 /** The word the credits open under, at the foot: the landing page's own. */
@@ -102,8 +111,8 @@ export const TURNED_AWAY_CREDITS = "Credits";
 
 /** The same line in the desktop app, where there is no browser to name. */
 export const TURNED_AWAY_DETAIL_APP: Readonly<Record<TurnedAwayReason, string>> = {
-  "no-webgpu": "Day Hike is drawn with WebGPU, which is not available on this computer.",
-  "no-adapter": "Day Hike is drawn with WebGPU, which could not start on this computer.",
-  software: "Day Hike is drawn with WebGPU, which is running without the graphics card on this computer.",
-  short: "Day Hike is drawn with WebGPU, and this graphics card offers less of it than the game needs",
+  "no-webgpu": "{game} is drawn with WebGPU, which is not available on this computer.",
+  "no-adapter": "{game} is drawn with WebGPU, which could not start on this computer.",
+  software: "{game} is drawn with WebGPU, which is running without the graphics card on this computer.",
+  short: "{game} is drawn with WebGPU, and this graphics card offers less of it than the game needs",
 };

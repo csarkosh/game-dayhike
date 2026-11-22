@@ -6,42 +6,24 @@
  * the world, a name and the one mode.
  */
 import { createModeKeeper } from "@csarkosh/engine/game/modeList";
-import type { LandingShell, PageGame, PageHost, PageSide, TurnedAway } from "@csarkosh/engine/game/pageGame";
-import { pageProbe } from "@csarkosh/engine/game/probePage";
+import type { LandingShell, PageGame, PageHost, PageSide } from "@csarkosh/engine/game/pageGame";
 import { pageStorage } from "@csarkosh/engine/game/tierChoice";
 import type { AmbientAudio } from "@csarkosh/engine/game/ambientAudio";
-import { sanitiseName } from "@csarkosh/engine/net/lobby";
 import { EMPTY_GAME, WALK_MODES, type WalkClient, type WalkHost, type WalkRenderer } from "./game.js";
 import { createStatusLine, type WalkHud } from "./hud.js";
 import { WALK_PROTOCOL } from "./net.js";
-import type { WalkState, WalkWorld, Walker } from "./sim.js";
-
-const NAME_KEY = "empty.playerName";
+import { createWalkWorld, type WalkState, type WalkWorld, type Walker } from "./sim.js";
 
 const STYLE = `
 .empty-landing { position: absolute; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 16px; font: 16px/1.4 ui-monospace, Menlo, monospace; color: #e8e8ea; }
 .empty-landing h1 { font-size: 22px; letter-spacing: 0.3em; margin: 0; font-weight: 600; }
 .empty-landing button { font: inherit; color: inherit; background: #fff1; border: 1px solid #fff5; border-radius: 4px; padding: 8px 28px; letter-spacing: 0.2em; }
 .empty-landing button:disabled { opacity: 0.5; }
-.empty-away { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; padding: 24px; text-align: center; font: 16px/1.5 ui-monospace, Menlo, monospace; color: #e8e8ea; }
 `;
-
-/** The player's name as the roster shows it, kept across visits where the browser allows. */
-function loadName(): string {
-  try {
-    const stored = pageStorage()?.getItem(NAME_KEY);
-    if (typeof stored === "string") return sanitiseName(stored);
-  } catch {
-    /* storage refused: a name for this visit */
-  }
-  return `Walker-${String(Math.min(9999, Math.floor(Math.random() * 10000))).padStart(4, "0")}`;
-}
 
 /** The empty game's own of the page: made once by the shell, called at the page's own points. */
 export function createEmptyPage(h: PageHost): PageSide {
   let landing: { play: HTMLButtonElement; root: HTMLElement } | null = null;
-  let away: HTMLElement | null = null;
-  let name = loadName();
   const mode = createModeKeeper(WALK_MODES, pageStorage);
 
   /** The landing page shows what the shell holds now: a follower waits for the host, and Play says so while it loads. */
@@ -89,43 +71,9 @@ export function createEmptyPage(h: PageHost): PageSide {
     keepOpening: () => undefined,
     openingFor: () => null,
     muteChanged: () => undefined,
-    showTurnedAway(container: HTMLDivElement, route, why: TurnedAway) {
-      // Whatever start was waiting on this page is no longer the page's.
-      h.renderToken += 1;
-      h.telemetry.mark("turned-away");
-      if (away !== null) return;
-      h.running?.dispose();
-      h.running = null;
-      h.game = null;
-      h.paused = false;
+    // A visitor turned away is shown the engine's page; the landing page held goes first.
+    turnedAway() {
       landing = null;
-      container.replaceChildren();
-      h.mute.dispose();
-      h.roster.dispose();
-      if (h.veil.down) h.veil.lift();
-      if (h.shownPage === null) h.telemetry.event("page", { kind: route.kind });
-      const style = document.createElement("style");
-      style.textContent = STYLE;
-      away = document.createElement("div");
-      away.className = "empty-away";
-      away.textContent = `This browser cannot draw the world (${why.reason}).`;
-      container.append(style, away);
-    },
-    turnedAwayNow(next: TurnedAway) {
-      if (away === null) return false;
-      away.textContent = `This browser cannot draw the world (${next.reason}).`;
-      return true;
-    },
-    awayShown: () => away !== null,
-    name: () => name,
-    rename(raw) {
-      name = sanitiseName(raw);
-      try {
-        pageStorage()?.setItem(NAME_KEY, name);
-      } catch {
-        /* the name is still in force for this visit */
-      }
-      return name;
     },
     mode: mode.mode,
     saveMode(next) {
@@ -137,12 +85,16 @@ export function createEmptyPage(h: PageHost): PageSide {
 export const EMPTY_PAGE: PageGame<WalkWorld, WalkState, Walker, WalkRenderer, AmbientAudio, WalkHud, WalkHost, WalkClient> = {
   game: EMPTY_GAME,
   side: createEmptyPage,
+  title: "The Empty Game",
+  /** The page for those turned away stands on no still and credits no works. */
+  away: { still: () => null, credits: () => [] },
+  name: { key: "empty.playerName", prefix: "Walker" },
   protocol: WALK_PROTOCOL,
   statusLine: createStatusLine,
   /** The worker that makes a session's world: the entry is the game's, since a worker is named by a path. */
   worldWorker: () => new Worker(new URL("./world.worker.ts", import.meta.url), { type: "module" }),
   /** The empty game stages no scene: a scene's address draws nothing. */
   scene: () => ({ dispose: () => undefined }),
-  /** The tier check's steps read nothing yet, so the tier is chosen from what the browser says of the GPU alone. */
-  probe: (container) => pageProbe(container, () => Promise.resolve(null)),
+  /** What the tier check draws as it measures the renderer: the yard with nobody in it. */
+  probeState: (_level, _seed, forest) => createWalkWorld(forest, false).state,
 };

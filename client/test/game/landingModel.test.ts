@@ -2,13 +2,12 @@ import { describe, it, expect } from "vitest";
 import { HIKE_MODES } from "../../src/game/gameMode.js";
 import {
   DOWNLOADS_UNAVAILABLE,
-  FIRST_OPEN_NOTE,
-  FIRST_RUN_NOTE_WINDOWS,
   TOUCH_DOWNLOADS_NOTE,
   WAITING_FOR_HOST,
   landingModel,
   landingPanelFocus,
 } from "../../src/game/landingModel.js";
+import { FIRST_OPEN_NOTE, FIRST_RUN_NOTE_WINDOWS } from "@csarkosh/engine/game/downloadCard";
 
 const MAC = {
   url: "https://storage.googleapis.com/fps-csarko-downloads/desktop/DayHike-1.2.0-arm64.dmg",

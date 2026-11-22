@@ -346,12 +346,15 @@ describe("layer boundaries", () => {
   it("measures every step of the tier check on the hike's own renderer: the page makes no engine, for a step or for anything", () => {
     const main = stripComments(readFileSync(at("shell.ts"), "utf8"));
     // The page's deps are the probe's on the hike's own renderer, which makes each step's renderer, canvas and engine
-    // and lets them go with the step. The page asks the game for them (`page.probe`); the game's page names the probe.
-    expect(main).toContain("    const probe = page.probe(container);");
-    expect([...main.matchAll(/\bpage\.probe\(/g)].length).toBe(1);
+    // and lets them go with the step. The page makes them itself, on the game's level and renderer and the empty state
+    // the game hands it (`page.probeState`); the game's page names no probe.
+    expect(main).toContain("    const probe = liteProbeDeps(container, { level: page.game.level, renderer: page.game.renderer, state: page.probeState });");
+    expect([...main.matchAll(/\bliteProbeDeps\(/g)].length).toBe(1);
     const game = stripComments(readFileSync(at("hikePageGame.ts"), "utf8"));
-    expect([...game.matchAll(/\bliteProbeDeps\(/g)].length).toBe(1);
-    expect(importsOf(at("hikePageGame.ts"))).toContain("./game/lite/probeScene.js");
+    expect([...game.matchAll(/\bliteProbeDeps\(/g)].length).toBe(0);
+    expect(game).toContain("  probeState: (level, seed) => createWorld(level, seed, false).state,");
+    expect(importsOf(at("shell.ts"))).toContain("./game/lite/probeScene.js");
+    expect(importsOf(at("hikePageGame.ts"))).not.toContain("@csarkosh/engine/game/lite/probeScene");
     expect(importsOf(at("hikePageGame.ts"))).not.toContain("./game/probeScene.js");
     // No step is handed an engine.
     expect(main).not.toMatch(/\b(?:probeDeps|probeStepEngine|probeStepCanSettle|measureOnRuleEngine)\b/);
@@ -491,17 +494,17 @@ describe("layer boundaries", () => {
     expect(main).toContain("  function settleVerdict(next: LoadVerdict): void {\n    verdict = next;\n    if (next.play) return;");
     // Every route is refused in one place, before anything of it is looked at: the page for those turned away.
     expect(main).toContain(
-      "  function render(container: HTMLDivElement): void {\n    const route = parseRoute(location.pathname);\n    if (verdict !== null && !verdict.play) {\n      side.showTurnedAway(container, route, verdict);\n      return;\n    }",
+      "  function render(container: HTMLDivElement): void {\n    const route = parseRoute(location.pathname);\n    if (verdict !== null && !verdict.play) {\n      turnAway(container, route, verdict);\n      return;\n    }",
     );
-    // The page itself is Day Hike's own of the page (`hikePage.ts`), drawn in one place there and nowhere in the shell.
-    expect([...readFileSync(at("hikePage.ts"), "utf8").matchAll(/\brenderTurnedAway\(/g)].length).toBe(1);
-    expect([...main.matchAll(/\brenderTurnedAway\(/g)].length).toBe(0);
+    // The page itself is the engine's (`turnedAway.ts`), drawn in one place in the shell and nowhere in Day Hike's own of the page.
+    expect([...main.matchAll(/\brenderTurnedAway\(/g)].length).toBe(1);
+    expect([...readFileSync(at("hikePage.ts"), "utf8").matchAll(/\brenderTurnedAway\(/g)].length).toBe(0);
     // A hike or a staged scene asked for before the signals are in waits for them, and that wait stands before
     // everything either starts with: the world's worker, the tier check, a follower's film, a canvas.
     const body = main.slice(main.indexOf("function render(container: HTMLDivElement): void {"), main.indexOf("\n  function launch("));
     const wait = body.indexOf("    if (!isLandingRoute(route) && signals === null) {");
     expect(wait).toBeGreaterThan(0);
-    for (const start of ["void sessionCanvas().then(", "page.scene(", "side.openingFor(", "startWorldPrep(", "page.probe(container)", "void startSession<EngineOnCanvas>("]) {
+    for (const start of ["void sessionCanvas().then(", "page.scene(", "side.openingFor(", "startWorldPrep(", "liteProbeDeps(container, ", "void startSession<EngineOnCanvas>("]) {
       expect(body.indexOf(start), start).toBeGreaterThan(wait);
       expect(body.lastIndexOf(start), start).toBe(body.indexOf(start));
     }

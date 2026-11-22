@@ -31,14 +31,18 @@ import { startAttemptClock, type AttemptClock } from "./game/attemptClock.js";
 import { parseLatest, type DesktopRelease } from "./net/desktopRelease.js";
 import { createSignalingClient, type SignalingClient } from "./net/signaling.js";
 import { signalingUrl } from "./net/signalingUrl.js";
+import { loadName, saveName } from "./game/playerName.js";
 import { createLobby, joinLobby, lobbyErrorMessage, type Lobby } from "./net/lobby.js";
 import { browserDeps, createTelemetry, installErrorCapture, referrerOf, telemetryUrl, testerMark, visitorId, type EarlyCatch, type Telemetry } from "./net/telemetry.js";
 import { GEN_VERSION } from "./sim/forest.js";
 import { startGame, type GameHandle } from "./app.js";
 import type { EngineOnCanvas } from "./game/rendererSwap.js";
 import { LOSS_ENDED_LINE, createLossRecord } from "./game/lossBound.js";
-import { browserEnv, browserMajor, offersWebGpu, readSignals, type GpuSignals, type NavigatorLike } from "./game/gpuSignals.js";
+import { browserEnv, browserMajor, hostOs, isMobile, offersWebGpu, readSignals, type GpuSignals, type NavigatorLike } from "./game/gpuSignals.js";
+import { renderTurnedAway, type TurnedAwayHandle } from "./game/turnedAway.js";
+import { turnedAwayModel, visitorDevice, type TurnedAwayView } from "./game/turnedAwayModel.js";
 import { adapterVerdict, loadVerdict, type LoadVerdict } from "./game/loadCheck.js";
+import { liteProbeDeps } from "./game/lite/probeScene.js";
 import { LOADING_LINE, START_FAILED_LINE, autoPick, launchLine, liteProbeSteps, startFallbacks, startSession, startupTier, type ProbeSteps, type StartupTier } from "./game/frameProbe.js";
 import { createMuteButton, readMuted, writeMuted } from "./game/muteButton.js";
 import { containerPixels, withGovernorDrop, type QualityTier, type VerdictEngine } from "./game/quality.js";
@@ -56,7 +60,7 @@ import {
   type TierSource,
 } from "./game/tierChoice.js";
 import { createVeil } from "./game/veil.js";
-import type { Opening, PageGame } from "./game/pageGame.js";
+import type { Opening, PageGame, TurnedAway } from "./game/pageGame.js";
 import type { AmbientAudio } from "./game/ambientAudio.js";
 import type { RenderPlayer, RenderState } from "./game/lite/renderGame.js";
 import type { PageHud, PageRenderer, PageWorld } from "./game/sessionGame.js";
@@ -87,12 +91,6 @@ export function startShell<
     get veil() { return veil; },
     get VEIL_SETTLE_MS() { return VEIL_SETTLE_MS; },
     get mute() { return mute; },
-    get running() { return running; },
-    set running(value) { running = value; },
-    get game() { return game; },
-    set game(value) { game = value; },
-    get paused() { return paused; },
-    set paused(value) { paused = value; },
     get desktop() { return desktop; },
     get touch() { return touch; },
     get host() { return host; },
@@ -100,20 +98,17 @@ export function startShell<
     get latest() { return latest; },
     get latestReady() { return latestReady; },
     get telemetry() { return telemetry; },
-    get signals() { return signals; },
     get currentChoice() { return currentChoice; },
     get choiceStored() { return choiceStored; },
     get choiceNotice() { return choiceNotice; },
     get autoSummary() { return autoSummary; },
-    get renderToken() { return renderToken; },
-    set renderToken(value) { renderToken = value; },
     get lobby() { return lobby; },
     get launching() { return launching; },
-    get roster() { return roster; },
-    get shownPage() { return shownPage; },
   });
   if (!found) throw new Error("#app not found");
   const app: HTMLDivElement = found;
+  /** The player's name as the roster shows it, kept under the game's key between visits (`playerName.ts`). */
+  let selfName = loadName(page.name);
   /** The veil the pages switch behind (veil.ts), and the milliseconds a new page gets to settle before it lifts. */
   const veil = createVeil(document.body);
   const VEIL_SETTLE_MS = 250;
@@ -255,7 +250,7 @@ export function startShell<
   // refused: the landing page is shown, and a session or a staged scene asked for
   // meanwhile waits for the signals before anything of it starts (`render`).
   // Once it is "cannot", every route shows the page for those turned away
-  // (`showTurnedAway`), and nothing of a session is fetched, made or drawn.
+  // (`turnAway`), and nothing of a session is fetched, made or drawn.
   const webgpuOffered = offersWebGpu(navigator as NavigatorLike);
   let verdict: LoadVerdict | null = loadVerdict(webgpuOffered, null);
 
@@ -270,6 +265,24 @@ export function startShell<
    */
   /** The `turned_away` row is sent once. */
   let turnedAwayTold = false;
+  /** The page for those turned away, once it is up (`turnAway`): it stays for the page's life. */
+  let away: TurnedAwayHandle | null = null;
+
+  /** What the page for those turned away shows now (`turnedAwayModel`), under the game's own name. */
+  function awayView(why: TurnedAway): TurnedAwayView {
+    const nav = navigator as NavigatorLike;
+    return turnedAwayModel({
+      title: page.title,
+      reason: why.reason,
+      short: why.short,
+      desktop,
+      device: visitorDevice(hostOs(nav), isMobile(nav), navigator.userAgent),
+      host,
+      userAgent: navigator.userAgent,
+      renderer: signals?.renderer ?? null,
+      latest,
+    });
+  }
 
   function settleVerdict(next: LoadVerdict): void {
     verdict = next;
@@ -284,7 +297,8 @@ export function startShell<
       detach();
     }
     // Already up (no WebGPU, known as the page loaded): what the signals add is the GPU's name, for the app's offer.
-    if (!side.turnedAwayNow(next)) render(app);
+    if (away !== null) away.setView(awayView(next));
+    else render(app);
   }
 
   // ---- the graphics setting ------------------------------------------------------
@@ -384,7 +398,8 @@ export function startShell<
     onRetry: retryAttempt,
     onInviteCopied: () => telemetry.event("invite_copied"),
     onRename: (raw) => {
-      lobby?.setName(side.rename(raw));
+      selfName = saveName(page.name, raw);
+      lobby?.setName(selfName);
       // The repaint the roster's rename contract requires: it is what removes
       // the edit field, so it must happen on every onRename.
       paintRoster();
@@ -393,12 +408,12 @@ export function startShell<
 
   function paintRoster(): void {
     // Gone with everything else of the game once a visitor is turned away.
-    if (side.awayShown()) return;
+    if (away !== null) return;
     roster.setView(
       rosterModel({
         lobby: lobby?.state ?? null,
         selfId,
-        selfName: side.name(),
+        selfName,
         inviteUrl: (id) => inviteLink(id, webBase),
         inGame: parseRoute(location.pathname).kind === "game",
         hidden: parseRoute(location.pathname).kind === "scene",
@@ -571,7 +586,7 @@ export function startShell<
         signaling,
         peerId: selfId,
         lobbyId: createLobbyId(),
-        name: side.name(),
+        name: selfName,
         route: hostRoute(currentRoutePath()),
       });
       // Abandoned while the reply was in the air. The room is real and hosted by
@@ -617,7 +632,7 @@ export function startShell<
     });
     paintRoster();
     try {
-      const joined = await joinLobby({ signaling, peerId: selfId, lobbyId, name: side.name() });
+      const joined = await joinLobby({ signaling, peerId: selfId, lobbyId, name: selfName });
       if (epoch !== attemptEpoch) {
         joined.leave();
         return;
@@ -788,10 +803,53 @@ export function startShell<
   /** Set for the one render a route asks for itself once the GPU's signals are in: the same navigation, so no second `page` row. */
   let rendersAgain = false;
 
+  /**
+   * The page for a visitor who cannot play, in place of every route: the
+   * landing page and its panels, an invitation, a game's address, a staged
+   * scene. Put up once and left up, since the verdict does not change while
+   * the page lives; whatever was shown or starting goes first, and nothing of
+   * a session is asked for after. The address is left as it is, so the same
+   * link works once the visitor has a browser that plays. The page is the
+   * engine's (`turnedAway.ts`), under the game's name and over the game's still
+   * and credits (`PageGame.title`, `PageGame.away`); the game lets go of its
+   * own first (`PageSide.turnedAway`).
+   */
+  function turnAway(container: HTMLDivElement, route: Route, why: TurnedAway): void {
+    // Whatever start was waiting on this page is no longer the page's.
+    renderToken += 1;
+    telemetry.mark("turned-away");
+    if (away !== null) return;
+    running?.dispose();
+    running = null;
+    game = null;
+    paused = false;
+    container.replaceChildren();
+    // Nothing here makes a sound or starts a party: the page's mute goes, and its key with it, and the roster, which
+    // hidden would still take the keyboard's focus and a screen reader's.
+    mute.dispose();
+    roster.dispose();
+    if (veil.down) veil.lift();
+    // The navigation's row, where no route's own render sent it first: a visitor turned away as the page loads.
+    if (shownPage === null) {
+      telemetry.event("page", { kind: route.kind });
+      window.visits?.page?.();
+    }
+    side.turnedAway();
+    const handle = renderTurnedAway(container, awayView(why), {
+      still: page.away.still(),
+      // The credit the still's works are owed, within reach here as from a landing page.
+      credits: page.away.credits(),
+      onDownload: (platform) => telemetry.event("download", { platform }),
+    });
+    away = handle;
+    // The app's offer waits on the release, which lands after the page is up.
+    void latestReady.then(() => handle.setView(awayView(why)));
+  }
+
   function render(container: HTMLDivElement): void {
     const route = parseRoute(location.pathname);
     if (verdict !== null && !verdict.play) {
-      side.showTurnedAway(container, route, verdict);
+      turnAway(container, route, verdict);
       return;
     }
     // A change of page goes behind the veil (veil.ts): it comes down first,
@@ -969,7 +1027,7 @@ export function startShell<
     // (`runLiteProbeStep`): the page makes no engine for it. A step whose
     // renderer cannot be made, or whose device fails under it, reads nothing;
     // the game's failure handling never hears of it.
-    const probe = page.probe(container);
+    const probe = liteProbeDeps(container, { level: page.game.level, renderer: page.game.renderer, state: page.probeState });
     running = {
       dispose: () => {
         probe.abort();

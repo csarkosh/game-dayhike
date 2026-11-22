@@ -1,22 +1,20 @@
 /**
  * A game as the page's shell is handed it: one definition (`PageGame`), the
  * game's own of the page (`PageSide`: its landing page, what plays before a
- * session starts, its page for those turned away, the player's name and the
- * mode), which the shell calls at the page's own points, and what that side
+ * session starts and the mode), which the
+ * shell calls at the page's own points, and what that side
  * reads of the shell (`PageHost`). The shell is written over these and names
  * no game; the game a session is of (`SessionGame`) is carried through with
  * its own type parameters.
  */
-import type { GameHandle } from "../app.js";
 import type { AmbientAudio } from "./ambientAudio.js";
-import type { GpuSignals } from "./gpuSignals.js";
+import type { CreditEntry } from "./credits.js";
 import type { RenderPlayer, RenderState } from "./lite/renderGame.js";
 import type { LoadVerdict } from "./loadCheck.js";
 import type { LoadProgress } from "./loadProgress.js";
 import type { MuteButton } from "./muteButton.js";
-import type { PageProbe } from "./probePage.js";
+import type { NameOf } from "./playerName.js";
 import type { QualityTier } from "./quality.js";
-import type { Roster } from "./roster.js";
 import type { Route } from "./router.js";
 import type { PageHud, PageRenderer, PageWorld, SessionGame } from "./sessionGame.js";
 import type { AutoSummary } from "./settings.js";
@@ -27,6 +25,8 @@ import type { DesktopRelease, Platform } from "../net/desktopRelease.js";
 import type { HostSession } from "../net/host.js";
 import type { Lobby } from "../net/lobby.js";
 import type { Telemetry } from "../net/telemetry.js";
+import type { Forest } from "../sim/forest.js";
+import type { Level } from "../sim/level.js";
 
 /** A verdict of "cannot play", with its reason. */
 export type TurnedAway = Exclude<LoadVerdict, { play: true }>;
@@ -63,18 +63,15 @@ export type Opening = {
 };
 
 /**
- * What a game's own of the page reads of the page's shell, and the few of
- * its variables it writes: the shell's own, handed over as they stand each
- * time they are read.
+ * What a game's own of the page reads of the page's shell: the shell's own,
+ * handed over as they stand each time they are read, and none of them the
+ * game's to write.
  */
 export type PageHost = {
   readonly app: HTMLDivElement;
   readonly veil: Veil;
   readonly VEIL_SETTLE_MS: number;
   readonly mute: MuteButton;
-  running: { dispose(): void } | null;
-  game: GameHandle | null;
-  paused: boolean;
   readonly desktop: boolean;
   readonly touch: boolean;
   readonly host: Platform | "other";
@@ -82,16 +79,12 @@ export type PageHost = {
   readonly latest: DesktopRelease | null;
   readonly latestReady: Promise<void>;
   readonly telemetry: Telemetry;
-  readonly signals: GpuSignals | null;
   readonly currentChoice: () => TierChoice;
   readonly choiceStored: () => boolean;
   readonly choiceNotice: string | null;
   readonly autoSummary: () => AutoSummary | null;
-  renderToken: number;
   readonly lobby: Lobby | null;
   readonly launching: boolean;
-  readonly roster: Roster;
-  readonly shownPage: "landing" | "game" | "scene" | null;
 };
 
 /** A game's own of the page, called by the shell at the page's own points. */
@@ -118,17 +111,14 @@ export type PageSide = {
   openingFor(container: HTMLElement, follower: boolean): Opening | null;
   /** The page's mute changed. */
   muteChanged(): void;
-  // The page for those turned away.
-  /** The page for a visitor who cannot play, in place of every route. */
-  showTurnedAway(container: HTMLDivElement, route: Route, why: TurnedAway): void;
-  /** A verdict of "cannot play" come while that page is up: it is shown what the verdict adds. False where it is not up. */
-  turnedAwayNow(next: TurnedAway): boolean;
-  /** The page for those turned away is up. */
-  awayShown(): boolean;
-  // The player's name and the mode.
-  name(): string;
-  /** The player's name, kept as typed and cleaned; returns what it is now. */
-  rename(raw: string): string;
+  // A visitor turned away.
+  /**
+   * A visitor cannot play, and the shell is about to show the page for those turned away (`turnedAway.ts`) in place of
+   * every route: the game lets go of what is its own on the page or starting. The shell has already let go of the
+   * session, the mute and the roster, and emptied the page.
+   */
+  turnedAway(): void;
+  // The mode.
   /** The mode saved, one of the game's list. */
   mode(): string;
   /** Keeps a mode; one that is not of the game's list is ignored. */
@@ -150,6 +140,12 @@ export type PageGame<
   game: SessionGame<W, S, P, R, A, H, HostS, ClientS>;
   /** The game's own of the page, made once. */
   side(host: PageHost): PageSide;
+  /** The game's name, as its pages title it: the title of the page for those turned away, and the name that page's sentences say. */
+  title: string;
+  /** What the page for those turned away shows of the game's: the still it is laid over, or null, and the works credited at its foot (none, and no credits are offered). */
+  away: { still(): string | null; credits(): readonly CreditEntry[] };
+  /** Where the player's name is kept between visits and what a name made for a new visitor starts with; the shell keeps the name (`playerName.ts`). */
+  name: NameOf;
   /** The version of the game's wire, which every telemetry row names: two pages play together only at the same one. */
   protocol: number;
   /** A line of status in `container`, for a start's waits and its failure. */
@@ -162,6 +158,9 @@ export type PageGame<
     search: { t: number | null; step: number | null },
     name: Extract<Route, { kind: "scene" }>["name"],
   ): { dispose(): void };
-  /** The tier check's steps, each measured on the game's own renderer (`probePage.ts`). */
-  probe(container: HTMLElement): PageProbe;
+  /**
+   * The state of a world on the game's level with no player in it and nothing stepping it: what the tier check
+   * draws as it measures each step on the game's own renderer (`lite/probeScene.ts`).
+   */
+  probeState(level: Level, seed: number, forest: Forest): S;
 };

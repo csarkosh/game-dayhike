@@ -306,7 +306,8 @@ const STYLE = `
 `;
 
 import type { Platform } from "@csarkosh/engine/net/desktopRelease";
-import { creditsEntries, renderCredits } from "./credits.js";
+import { renderCredits } from "@csarkosh/engine/game/credits";
+import { creditsEntries } from "./hikeCredits.js";
 import { landingPanelFocus, type LandingPanel, type LandingView } from "./landingModel.js";
 import { openerOf, renderSettings, type Opener } from "@csarkosh/engine/game/settings";
 import { tokensLink } from "@csarkosh/engine/game/tokens";

@@ -1,8 +1,14 @@
+import { existsSync } from "node:fs";
+import { fileURLToPath } from "node:url";
 import { describe, expect, it, vi } from "vitest";
 import "../../../src/game/dayhikeAssets.js";
 import "../../../src/sim/passes/index.js";
 import { PROBE_FRAMES, PROBE_HOUR, PROBE_QUIET_MS, PROBE_WARMUP_FRAMES, probePose } from "@csarkosh/engine/game/frameProbe";
-import { LET_GO_MAX_MS, buildLiteProbeScene, liteProbeDeps, liteProbeReady, runLiteProbeStep, type ProbeRendererMaker } from "../../../src/game/lite/probeScene.js";
+import { LET_GO_MAX_MS, buildLiteProbeScene, liteProbeDeps, liteProbeReady, runLiteProbeStep, type ProbeGame } from "@csarkosh/engine/game/lite/probeScene";
+import sandbox01 from "../../../levels/sandbox01.json" with { type: "json" };
+import { createWorld } from "../../../src/sim/world.js";
+import type { WorldState } from "../../../src/sim/types.js";
+import { sourceText } from "../../helpers/source.js";
 import type { FreecamView } from "@csarkosh/engine/game/rendererTypes";
 import type { Renderer } from "../../../src/game/hikeRendererTypes.js";
 import { createSkyTable } from "@csarkosh/engine/game/skyTable";
@@ -11,6 +17,9 @@ import { WEATHER_PRESETS } from "@csarkosh/engine/game/weather";
 import { skyFixture } from "../helpers/skyFixture.js";
 import { asHtml, installStandInDom } from "../helpers/standInDom.js";
 import { timeLimit } from "../../helpers/timeLimit.js";
+
+/** A game whose renderer is `make`: Day Hike's level and an empty world, as the hike's own is. */
+const game = (make: ProbeGame<WorldState>["renderer"]): ProbeGame<WorldState> => ({ level: sandbox01, renderer: make, state: (level, seed) => createWorld(level, seed, false).state });
 
 /** A renderer that draws nothing, runs its loop when told, and says what it was asked. */
 function fake(over: { failOn?: string; made?: Promise<boolean>; watched?: boolean } = {}) {
@@ -45,7 +54,7 @@ function fake(over: { failOn?: string; made?: Promise<boolean>; watched?: boolea
       return () => { state.watchers.delete(onFailure); state.unwatched += 1; };
     },
   };
-  const make: ProbeRendererMaker = (_canvas, _level, _forest, options) => {
+  const make: ProbeGame<WorldState>["renderer"] = (_canvas, _level, _forest, options) => {
     state.options = options;
     return renderer as unknown as Renderer;
   };
@@ -58,7 +67,7 @@ describe("the startup probe's scene on the hike's own renderer", () => {
   it("puts the camera on the canopy pose at the tier asked, in mist at the probe's hour, and draws a frame of a world nothing steps", () => {
     const f = fake();
     const sky = createSkyTable();
-    const probe = buildLiteProbeScene({} as HTMLCanvasElement, "medium", sky, f.make);
+    const probe = buildLiteProbeScene({} as HTMLCanvasElement, "medium", game(f.make), sky);
     expect(f.state.options).toEqual({ tier: "medium", skyTable: sky });
     expect(f.log).toEqual(["weather mist", `hour ${PROBE_HOUR}`]);
     probe.frame();
@@ -68,13 +77,13 @@ describe("the startup probe's scene on the hike's own renderer", () => {
     expect(f.state.disposed).toBe(1);
     // With no sky handed in the renderer makes its own.
     const own = fake();
-    buildLiteProbeScene({} as HTMLCanvasElement, "low", undefined, own.make).dispose();
+    buildLiteProbeScene({} as HTMLCanvasElement, "low", game(own.make)).dispose();
     expect(own.state.options).toEqual({ tier: "low" });
   }, timeLimit(60_000));
 
   it("lets go of a renderer whose scene could not be set up", () => {
     const f = fake({ failOn: "weather" });
-    expect(() => buildLiteProbeScene({} as HTMLCanvasElement, "low", undefined, f.make)).toThrow(/no weather/);
+    expect(() => buildLiteProbeScene({} as HTMLCanvasElement, "low", game(f.make))).toThrow(/no weather/);
     expect(f.state.disposed).toBe(1);
   }, timeLimit(60_000));
 
@@ -92,7 +101,7 @@ describe("a probe step on the hike's own renderer", () => {
     const container = doc.createElement("div");
     Object.assign(container, { clientWidth: 1470, clientHeight: 956 });
     const clock = { ms: 1000 };
-    const reading = runLiteProbeStep(asHtml(container), "high", { cancelled: over.cancelled ?? (() => false), make: f.make, now: () => clock.ms, sky: skyFixture(), ...(over.signal ? { signal: over.signal } : {}), ...(over.readyBy !== undefined ? { readyBy: over.readyBy } : {}) });
+    const reading = runLiteProbeStep(asHtml(container), "high", game(f.make), { cancelled: over.cancelled ?? (() => false), now: () => clock.ms, sky: skyFixture(), ...(over.signal ? { signal: over.signal } : {}), ...(over.readyBy !== undefined ? { readyBy: over.readyBy } : {}) });
     return { container, clock, reading };
   }
 
@@ -294,8 +303,8 @@ describe("the page's probe on the hike's own renderer", () => {
     const first = fake();
     const second = fake();
     const fakes = [first, second];
-    const make: ProbeRendererMaker = (...args) => (fakes.shift() as typeof first).make(...args);
-    const probe = liteProbeDeps(asHtml(container), startSky, make);
+    const make: ProbeGame<WorldState>["renderer"] = (...args) => (fakes.shift() as typeof first).make(...args);
+    const probe = liteProbeDeps(asHtml(container), game(make), startSky);
     expect(probe.pixels()).toBe(1470 * 956);
     const painted = (): Promise<void> => new Promise((resolve) => setTimeout(resolve, 20));
     // A step the probe's own time ends: its renderer and its canvas are gone before its reading is handed back.
@@ -328,4 +337,14 @@ describe("the page's probe on the hike's own renderer", () => {
     expect(container.querySelectorAll("canvas")).toHaveLength(0);
     vi.unstubAllGlobals();
   }, timeLimit(60_000));
+
+  it("imports nothing of a game's: it stands in the engine, and every import of its source is of a neighbour there", () => {
+    const specs = [...sourceText("game/lite/probeScene.ts").matchAll(/^\s*(?:import|export)\s[^;]*?\bfrom\s+["']([^"']+)["']|^\s*import\s+["']([^"']+)["']/gm)].map((m) => (m[1] ?? m[2]) as string);
+    expect(specs.length).toBeGreaterThan(0);
+    expect(existsSync(fileURLToPath(new URL("../../../../engine/src/game/lite/probeScene.ts", import.meta.url)))).toBe(true);
+    expect(existsSync(fileURLToPath(new URL("../../../src/game/lite/probeScene.ts", import.meta.url)))).toBe(false);
+    // Relative, and so inside the engine's package, where no module may import a game's (`architecture.test.ts`).
+    expect(specs.filter((spec) => !spec.startsWith("."))).toEqual([]);
+    expect(specs.filter((spec) => /client|@csarkosh/.test(spec))).toEqual([]);
+  });
 });
