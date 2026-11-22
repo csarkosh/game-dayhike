@@ -3,11 +3,12 @@
  *
  * The order is `resolveTier`'s: `?tier=` in the address (for testing) over the
  * player's choice, and the choice over Auto. Auto's record (`AutoRecord`,
- * `quality.ts`) is kept under `AUTO_KEY`, in the storage `pageStorage` gives.
+ * `quality.ts`) is kept under `autoKey`, in the storage `pageStorage` gives.
  * Every storage access is inside `try`/`catch`: a private window or a browser
  * that blocks site data throws on the accessor itself, and a record that does
  * not read back whole is no record.
  */
+import { gameIdentity } from "../identity.js";
 import { CLASS_TIERS, type GpuClass } from "./gpuClass.js";
 import {
   onEngine,
@@ -22,9 +23,13 @@ import {
   type VerdictEngine,
 } from "./quality.js";
 
-export const AUTO_KEY = "dayhike.quality.auto";
+export function autoKey(): string {
+  return `${gameIdentity().storage}.quality.auto`;
+}
 /** Where the player's choice is kept. */
-export const QUALITY_KEY = "dayhike.quality";
+export function qualityKey(): string {
+  return `${gameIdentity().storage}.quality`;
+}
 
 /** The player's choice on the Settings screen: Auto, or a tier. */
 export type TierChoice = "auto" | QualityTier;
@@ -50,7 +55,9 @@ function isClass(value: unknown): value is GpuClass {
 const TIER_NAMES: Record<QualityTier, string> = { high: "High", medium: "Medium", low: "Low" };
 
 /** Where the landing's one-shot notice waits, for this tab only. */
-export const NOTICE_KEY = "dayhike.notice";
+export function noticeKey(): string {
+  return `${gameIdentity().storage}.notice`;
+}
 /** How long a line left for the landing waits to be shown: a reload before
  * the landing drew it drops it rather than show it out of its moment. */
 export const NOTICE_MAX_AGE_MS = 30_000;
@@ -70,7 +77,7 @@ export function pageSessionStorage(): Storage | null {
 export function leaveNotice(storage: Storage | null, text: string, now: number): boolean {
   if (storage === null) return false;
   try {
-    storage.setItem(NOTICE_KEY, JSON.stringify({ text, at: now }));
+    storage.setItem(noticeKey(), JSON.stringify({ text, at: now }));
     return true;
   } catch {
     return false;
@@ -83,9 +90,9 @@ export function leaveNotice(storage: Storage | null, text: string, now: number):
 export function takeNotice(storage: Storage | null, now: number): string | null {
   if (storage === null) return null;
   try {
-    const raw = storage.getItem(NOTICE_KEY);
+    const raw = storage.getItem(noticeKey());
     if (raw === null) return null;
-    storage.removeItem(NOTICE_KEY);
+    storage.removeItem(noticeKey());
     const left: unknown = JSON.parse(raw);
     if (typeof left !== "object" || left === null) return null;
     const { text, at } = left as { text?: unknown; at?: unknown };
@@ -214,7 +221,7 @@ function asRecord(value: unknown): AutoRecord | null {
 export function readAutoRecord(storage: Storage | null): AutoRecord | null {
   if (storage === null) return null;
   try {
-    const text = storage.getItem(AUTO_KEY);
+    const text = storage.getItem(autoKey());
     return text === null ? null : asRecord(JSON.parse(text));
   } catch {
     return null;
@@ -229,7 +236,7 @@ export function readAutoRecord(storage: Storage | null): AutoRecord | null {
 export function readChoice(storage: Storage | null): { choice: TierChoice; stored: boolean } {
   if (storage === null) return { choice: "auto", stored: false };
   try {
-    const value = storage.getItem(QUALITY_KEY);
+    const value = storage.getItem(qualityKey());
     return { choice: value === "auto" || isTier(value) ? value : "auto", stored: true };
   } catch {
     return { choice: "auto", stored: false };
@@ -240,7 +247,7 @@ export function readChoice(storage: Storage | null): { choice: TierChoice; store
 export function writeChoice(storage: Storage | null, choice: TierChoice): boolean {
   if (storage === null) return false;
   try {
-    storage.setItem(QUALITY_KEY, choice);
+    storage.setItem(qualityKey(), choice);
     return true;
   } catch {
     return false;
@@ -278,7 +285,7 @@ export function createChoiceKeeper(storage: () => Storage | null): {
 export function writeAutoRecord(storage: Storage | null, record: AutoRecord): boolean {
   if (storage === null) return false;
   try {
-    storage.setItem(AUTO_KEY, JSON.stringify(record));
+    storage.setItem(autoKey(), JSON.stringify(record));
     return true;
   } catch {
     return false;

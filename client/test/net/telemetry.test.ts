@@ -9,12 +9,12 @@ import {
   MAX_MESSAGE_LENGTH,
   MAX_TROUBLE,
   referrerOf,
-  SWITCH_KEY,
+  switchKey,
   telemetryUrl,
-  TESTER_KEY,
+  testerKey,
   testerMark,
   textOf,
-  VISITOR_KEY,
+  visitorKey,
   visitorId,
   worldVersionOf,
   type Fields,
@@ -330,10 +330,10 @@ describe("telemetryUrl", () => {
   it("?telemetry=off is remembered and ?telemetry=on forgets it", () => {
     const storage = memoryStorage();
     expect(telemetryUrl(PROD_ENV, { ...DEV, search: "?telemetry=off" }, storage)).toBeNull();
-    expect(storage.getItem(SWITCH_KEY)).toBe("off");
+    expect(storage.getItem(switchKey())).toBe("off");
     expect(telemetryUrl(PROD_ENV, DEV, storage)).toBeNull();
     expect(telemetryUrl(PROD_ENV, { ...DEV, search: "?telemetry=on" }, storage)).toBe(PROD_ENV.VITE_TELEMETRY_URL);
-    expect(storage.getItem(SWITCH_KEY)).toBeNull();
+    expect(storage.getItem(switchKey())).toBeNull();
     expect(telemetryUrl(PROD_ENV, DEV, storage)).toBe(PROD_ENV.VITE_TELEMETRY_URL);
   });
 
@@ -350,7 +350,7 @@ describe("telemetryUrl", () => {
     const storage = memoryStorage();
     expect(testerMark(storage)).toBe(false);
     expect(telemetryUrl(PROD_ENV, { ...DEV, search: "?telemetry=tester" }, storage)).toBe(PROD_ENV.VITE_TELEMETRY_URL);
-    expect(storage.getItem(TESTER_KEY)).toBe("1");
+    expect(storage.getItem(testerKey())).toBe("1");
     expect(testerMark(storage)).toBe(true);
     // A later visit without the parameter is still the tester's.
     expect(telemetryUrl(PROD_ENV, DEV, storage)).toBe(PROD_ENV.VITE_TELEMETRY_URL);
@@ -359,8 +359,8 @@ describe("telemetryUrl", () => {
     expect(telemetryUrl(PROD_ENV, { ...DEV, search: "?telemetry=off" }, storage)).toBeNull();
     expect(testerMark(storage)).toBe(true);
     expect(telemetryUrl(PROD_ENV, { ...DEV, search: "?telemetry=on" }, storage)).toBe(PROD_ENV.VITE_TELEMETRY_URL);
-    expect(storage.getItem(TESTER_KEY)).toBeNull();
-    expect(storage.getItem(SWITCH_KEY)).toBeNull();
+    expect(storage.getItem(testerKey())).toBeNull();
+    expect(storage.getItem(switchKey())).toBeNull();
     expect(testerMark(storage)).toBe(false);
   });
 });
@@ -394,7 +394,7 @@ describe("visitorId", () => {
     const first = visitorId(storage, () => `id${++n}`);
     expect(first).toBe("id1");
     expect(visitorId(storage, () => `id${++n}`)).toBe("id1");
-    expect(storage.getItem(VISITOR_KEY)).toBe("id1");
+    expect(storage.getItem(visitorKey())).toBe("id1");
   });
 
   it("is null where storage refuses or is absent", () => {

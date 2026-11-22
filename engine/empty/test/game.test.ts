@@ -60,7 +60,7 @@ describe("the empty game as the page's shell is handed it", () => {
     expect(EMPTY_PAGE.side).toBe(createEmptyPage);
     expect(EMPTY_PAGE.protocol).toBe(WALK.protocolVersion);
     // The name is the shell's to keep; the game says only where, and what a made one starts with.
-    expect(EMPTY_PAGE.name).toEqual({ key: "empty.playerName", prefix: "Walker" });
+    expect({ key: `${EMPTY_PAGE.identity.storage}.playerName`, prefix: EMPTY_PAGE.identity.player }).toEqual({ key: "empty.playerName", prefix: "Walker" });
     expect(code("page.ts")).not.toMatch(/sanitiseName|loadName|rename/);
     // The tier check measures the engine's renderer on the yard with nobody in it.
     const forest = createForest(20261121);
@@ -79,7 +79,7 @@ describe("the empty game as the page's shell is handed it", () => {
   });
 
   it("leaves a visitor turned away to the engine's page, under its own name, over no still and with no credits", () => {
-    expect(EMPTY_PAGE.title).toBe("The Empty Game");
+    expect(EMPTY_PAGE.identity.title).toBe("The Empty Game");
     expect(EMPTY_PAGE.away.still()).toBeNull();
     expect(EMPTY_PAGE.away.credits()).toEqual([]);
     const page = code("page.ts");
@@ -88,7 +88,7 @@ describe("the empty game as the page's shell is handed it", () => {
     expect(page).not.toContain("replaceChildren");
     expect(page).not.toMatch(/empty-away|cannot draw the world/);
     // The page it is shown reads as that game's, and nothing of another's.
-    const view = turnedAwayModel({ title: EMPTY_PAGE.title, reason: "no-webgpu", short: null, desktop: false, device: "mac", host: "other", userAgent: "", renderer: null, latest: null });
+    const view = turnedAwayModel({ title: EMPTY_PAGE.identity.title, reason: "no-webgpu", short: null, desktop: false, device: "mac", host: "other", userAgent: "", renderer: null, latest: null });
     expect([view.title, view.headline, view.browsers?.intro]).toEqual(["The Empty Game", "This browser cannot run The Empty Game.", "The Empty Game runs in:"]);
     expect(JSON.stringify(view)).not.toMatch(/Day Hike|hike/i);
   });

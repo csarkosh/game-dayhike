@@ -244,8 +244,8 @@ describe("the game the words name", () => {
     ]);
     for (const page of pages("Day Hike")) expect(page).not.toContain("{game}");
     // The name Day Hike's definition hands the shell, which the shell hands the page's model.
-    expect(sourceText("hikePageGame.ts")).toContain('  title: "Day Hike",\n');
-    expect(sourceText("shell.ts")).toContain("    return turnedAwayModel({\n      title: page.title,\n");
+    expect(sourceText("hikeIdentity.ts")).toContain('{ title: "Day Hike", session:');
+    expect(sourceText("shell.ts")).toContain("    return turnedAwayModel({\n      title: page.identity.title,\n");
   });
 
   it("is another game's on that game's page, with nothing of Day Hike left in it", () => {

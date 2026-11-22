@@ -31,7 +31,8 @@ import { startAttemptClock, type AttemptClock } from "./game/attemptClock.js";
 import { parseLatest, type DesktopRelease } from "./net/desktopRelease.js";
 import { createSignalingClient, type SignalingClient } from "./net/signaling.js";
 import { signalingUrl } from "./net/signalingUrl.js";
-import { loadName, saveName } from "./game/playerName.js";
+import { loadName, saveName, type NameOf } from "./game/playerName.js";
+import { setGameIdentity } from "./identity.js";
 import { createLobby, joinLobby, lobbyErrorMessage, type Lobby } from "./net/lobby.js";
 import { browserDeps, createTelemetry, installErrorCapture, referrerOf, telemetryUrl, testerMark, visitorId, type EarlyCatch, type Telemetry } from "./net/telemetry.js";
 import { GEN_VERSION } from "./sim/forest.js";
@@ -83,6 +84,7 @@ export function startShell<
   HostS extends HostSession<W, unknown>,
   ClientS extends ClientSession<W, P, S, unknown>,
 >(page: PageGame<W, S, P, R, A, H, HostS, ClientS>): void {
+  setGameIdentity(page.identity);
   const found = document.querySelector<HTMLDivElement>("#app");
 
   /** The game's own of the page (`PageSide`): made here, once everything of the shell's it reads while it is made stands. */
@@ -108,7 +110,8 @@ export function startShell<
   if (!found) throw new Error("#app not found");
   const app: HTMLDivElement = found;
   /** The player's name as the roster shows it, kept under the game's key between visits (`playerName.ts`). */
-  let selfName = loadName(page.name);
+  const selfNameOf: NameOf = { key: `${page.identity.storage}.playerName`, prefix: page.identity.player };
+  let selfName = loadName(selfNameOf);
   /** The veil the pages switch behind (veil.ts), and the milliseconds a new page gets to settle before it lifts. */
   const veil = createVeil(document.body);
   const VEIL_SETTLE_MS = 250;
@@ -272,7 +275,7 @@ export function startShell<
   function awayView(why: TurnedAway): TurnedAwayView {
     const nav = navigator as NavigatorLike;
     return turnedAwayModel({
-      title: page.title,
+      title: page.identity.title,
       reason: why.reason,
       short: why.short,
       desktop,
@@ -398,7 +401,7 @@ export function startShell<
     onRetry: retryAttempt,
     onInviteCopied: () => telemetry.event("invite_copied"),
     onRename: (raw) => {
-      selfName = saveName(page.name, raw);
+      selfName = saveName(selfNameOf, raw);
       lobby?.setName(selfName);
       // The repaint the roster's rename contract requires: it is what removes
       // the edit field, so it must happen on every onRename.

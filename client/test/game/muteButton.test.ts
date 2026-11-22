@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { MUTE_HOTKEY, MUTE_KEY, createMuteButton, isMuteKey, muteLabel, readMuted, writeMuted, type KeyPress } from "@csarkosh/engine/game/muteButton";
+import { MUTE_HOTKEY, muteKey, createMuteButton, isMuteKey, muteLabel, readMuted, writeMuted, type KeyPress } from "@csarkosh/engine/game/muteButton";
 import { StandInElement, asHtml, installStandInDom } from "./helpers/standInDom.js";
 
 function memoryStorage(): Storage {
@@ -19,10 +19,10 @@ describe("the page's mute", () => {
     const storage = memoryStorage();
     expect(readMuted(storage)).toBe(false);
     expect(writeMuted(storage, true)).toBe(true);
-    expect(storage.getItem(MUTE_KEY)).toBe("1");
+    expect(storage.getItem(muteKey())).toBe("1");
     expect(readMuted(storage)).toBe(true);
     expect(writeMuted(storage, false)).toBe(true);
-    expect(storage.getItem(MUTE_KEY)).toBeNull();
+    expect(storage.getItem(muteKey())).toBeNull();
     expect(readMuted(null)).toBe(false);
     expect(writeMuted(null, true)).toBe(false);
   });

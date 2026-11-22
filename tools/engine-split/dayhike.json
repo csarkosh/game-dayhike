@@ -110,6 +110,7 @@
     "game/hikeAudio.ts",
     "hike.ts",
     "hikeGame.ts",
+    "hikeIdentity.ts",
     "hikePage.ts",
     "hikePageGame.ts"
   ],

@@ -90,6 +90,7 @@ export default defineConfig({
   test: {
     environment: "node",
     include: ["test/**/*.test.ts"],
+    setupFiles: ["test/setup/identity.ts"],
     // vitest's own defaults (5 s a test, 10 s a hook), scaled like every
     // explicit limit. Only under vitest, which sets VITEST before it loads this
     // file: `vite dev` and `vite build` load it too, and must not read or
