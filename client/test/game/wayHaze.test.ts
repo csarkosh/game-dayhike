@@ -1,10 +1,7 @@
-import { readFileSync } from "node:fs";
-import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
+import { sourceText } from "../helpers/source.js";
 import { emptyAtmosphereUniforms } from "@csarkosh/engine/game/atmosphereParams";
 import { WAY_HAZE_DENSITY, WAY_HAZE_SHARE, wayHazeInto } from "../../src/game/wayHaze.js";
-
-const clientFile = (path: string): string => fileURLToPath(new URL(`../../${path}`, import.meta.url));
 
 /** A night's clear air: thin, dark and blue. */
 function air() {
@@ -60,14 +57,11 @@ describe("the chase's haze on the tiers with no post chain", () => {
 });
 
 describe("the renderer", () => {
-  // The renderer, and Day Hike's side of it (`lite/hikeParts.ts`), where what is this game's own in a frame is written.
-  const renderer = readFileSync(clientFile("../engine/src/game/lite/renderer.ts"), "utf8") + readFileSync(clientFile("src/game/lite/hikeParts.ts"), "utf8");
+  // Day Hike's side of the renderer (`lite/hikeParts.ts`), where what is this game's own in a frame is written; the engine's renderer is read by the engine's own suite.
+  const renderer = sourceText("game/lite/hikeParts.ts");
 
   it("lays the haze on the frame's air only where no chain grades the frame, in the mist's own colour under the chase's cast", () => {
-    expect(renderer).toContain("if (made.chain === null) side.haze(airValues);");
     expect(renderer).toContain('wayHazeInto(air, wayLevel, wayTint("material", cloudColourUnder(host.nearColour()), 1, look.cast, CHASE_TINT));');
-    // After the air's record is written for the frame, so it never builds on itself.
-    expect(renderer.indexOf("atmosphereUniforms(light.air, cloud,")).toBeLessThan(renderer.indexOf("side.haze(airValues"));
     expect(renderer.match(/wayHazeInto\(/g)).toHaveLength(1);
   });
 });

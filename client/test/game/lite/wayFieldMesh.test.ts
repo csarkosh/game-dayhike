@@ -4,10 +4,11 @@ import { WAY_FIELD_WGSL } from "../../../src/game/lite/wayFieldMesh.js";
 import { WAY_LIGHT_WGSL } from "../../../src/game/lite/wayLightMeshes.js";
 import { emptyWayFieldUniforms } from "../../../src/game/wayMistField.js";
 import { tight } from "@csarkosh/engine/testing/wgslText";
+import { sourceText } from "../../helpers/source.js";
 
 const src = readFileSync(new URL("../../../src/game/lite/wayFieldMesh.ts", import.meta.url), "utf8");
-// The renderer, and Day Hike's side of it (`hikeParts.ts`), where what is this game's own in a frame is written.
-const renderer = readFileSync(new URL("../../../../engine/src/game/lite/renderer.ts", import.meta.url), "utf8") + readFileSync(new URL("../../../src/game/lite/hikeParts.ts", import.meta.url), "utf8");
+// Day Hike's side of the renderer (`hikeParts.ts`), where what is this game's own in a frame is written; the engine's renderer is read by the engine's own suite.
+const renderer = sourceText("game/lite/hikeParts.ts");
 const VERTEX = tight(WAY_FIELD_WGSL.vertex);
 const FRAGMENT = tight(WAY_FIELD_WGSL.fragment);
 
