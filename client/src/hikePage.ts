@@ -8,7 +8,7 @@ import { titleStillUrl, titleVideoUrl, videoUrl } from "./game/dayhikeAssets.js"
 import { createTitleLoop, titleLoopEnv, type TitleLoop } from "./game/titleLoop.js";
 import { createFilmHead, fetchFilmHead, filmHeadWanted, onCellular, warmWhenLoaded } from "./game/filmHead.js";
 import { landingModel, type LandingInput } from "./game/landingModel.js";
-import { loadName, saveName, type NameOf } from "./game/playerName.js";
+import { loadName, saveName, type NameOf } from "@csarkosh/engine/game/playerName";
 import { hostOs, isMobile, type NavigatorLike } from "@csarkosh/engine/game/gpuSignals";
 import { creditsEntries } from "./game/credits.js";
 import { renderTurnedAway, type TurnedAwayHandle } from "./game/turnedAway.js";

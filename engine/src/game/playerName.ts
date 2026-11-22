@@ -1,4 +1,4 @@
-import { sanitiseName } from "@csarkosh/engine/net/lobby";
+import { sanitiseName } from "../net/lobby.js";
 
 /**
  * The name shown in the roster. Kept in localStorage so it

@@ -74,7 +74,6 @@
     "game/credits.ts",
     "game/hud.ts",
     "game/gameMode.ts",
-    "game/playerName.ts",
     "game/hikeScenery.ts",
     "game/scene/*",
     "game/lite/capMesh.ts",

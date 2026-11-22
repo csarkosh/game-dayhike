@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { defaultName, loadName, saveName, type NameOf } from "../../src/game/playerName.js";
+import { defaultName, loadName, saveName, type NameOf } from "@csarkosh/engine/game/playerName";
 import { sourceText } from "../helpers/source.js";
 
 /** Day Hike's own: where its name is kept, and what a made one starts with. */
