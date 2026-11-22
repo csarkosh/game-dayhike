@@ -12,7 +12,6 @@
  * file. What it cannot see is listed where each rule is stated, in
  * architecture.test.ts.
  */
-import { dirname, relative } from "node:path";
 import ts from "typescript";
 
 const TESTS = new Set(["it", "test"]);
@@ -447,9 +446,8 @@ export interface ScannedFile {
 export function limitOffenders(files: ScannedFile[]): string[] {
   const out = new Set<string>();
   for (const { file, scan } of files) {
-    let helper = relative(dirname(file), "helpers/timeLimit.js");
-    if (!helper.startsWith(".")) helper = `./${helper}`;
-    const importLine = `import { timeLimit } from "${helper}"`;
+    // The helper is the engine's (`engine/testing/timeLimit.ts`): a game's test names it by the package.
+    const importLine = 'import { timeLimit } from "@csarkosh/engine/testing/timeLimit"';
     for (const c of scan.calls) {
       if (c.kind === "wait" && c.limits.length === 0 && !c.limitsUnseen) {
         out.add(`${file}:${c.line} ${c.callee}: no limit, so vitest's unscaled 1 s default applies — pass { timeout: timeLimit(1_000) } (${importLine})`);
