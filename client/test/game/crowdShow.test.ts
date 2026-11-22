@@ -1,13 +1,10 @@
-import { readFileSync } from "node:fs";
-import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
+import { sourceText } from "../helpers/source.js";
 import {
   CROWD_ADMIT_EVERY, CROWD_HEIGHTS_A_FRAME, CROWD_HEIGHT_STALE_M, crowdHeights, crowdOn, figureOf, newCrowd, stepCrowd, type CrowdFigure, type CrowdGround, type CrowdWorld,
 } from "../../src/game/crowdField.js";
 import { Outcome, Phase } from "../../src/sim/types.js";
 
-/** A file of the client, wherever the suite is run from (the gate runs it from the repository's root). */
-const clientFile = (path: string): string => fileURLToPath(new URL(`../../${path}`, import.meta.url));
 const figure = (id: number, x: number, z: number): CrowdFigure => ({ id, x, z, born: 0, gone: -1, rise: 0, ...figureOf(id, 1) });
 
 describe("when the crowd is up", () => {
@@ -95,17 +92,14 @@ describe("the crowd's cost in the ground's admissions", () => {
 });
 
 describe("the renderer and the app", () => {
-  // The renderer, and Day Hike's side of it (`lite/hikeParts.ts`), where what is this game's own in a frame is written.
-  const renderer = readFileSync(clientFile("../engine/src/game/lite/renderer.ts"), "utf8") + readFileSync(clientFile("src/game/lite/hikeParts.ts"), "utf8");
-  const app = readFileSync(clientFile("../engine/src/app.ts"), "utf8");
+  // Day Hike's side of the renderer (`lite/hikeParts.ts`), where what is this game's own in a frame is written; the engine's own files are read by the engine's suite.
+  const renderer = sourceText("game/lite/hikeParts.ts");
   // The crowd's own half of the frame is the hike's (`hike.ts`, where a variable of `app.ts` is written `h.<name>`); `app.ts` calls it as `side.<name>`.
-  const hike = readFileSync(clientFile("src/hike.ts"), "utf8");
-  const commands = readFileSync(clientFile("src/game/hikeCommands.ts"), "utf8");
+  const hike = sourceText("hike.ts");
+  const commands = sourceText("game/hikeCommands.ts");
 
   it("the app steps this screen's crowd every frame on the host and on a client, before the renderer's own sync", () => {
-    expect(app).toContain("    side.beforeSync(live.world, state, live.localEntityId, dt);");
     expect(hike).toContain("    syncCrowd(world, state, localId, dt);\n    syncWayDraw(world, state);");
-    expect(app.match(/\bframe\((?:host|client), state, cmd, dt\);/g)).toHaveLength(2);
     // And says whether the crowd is up: while it is, the chase's killers are drawn among it, as shadows.
     expect(hike).toContain("h.renderer.setCrowd(crowd.figures, seconds, up);");
     // Whether a figure may have this player now: alive, in the chase, the match undecided, off the road.
@@ -118,9 +112,7 @@ describe("the renderer and the app", () => {
     expect(hike).toContain("{ x: me.pos.x, z: me.pos.z, yaw: me.yaw, prey }");
     // A player their crowd has says so to the host in every command until their death is seen, on the host and on a client alike.
     expect(hike).toContain("crowd !== null && crowd.has !== 0 && !crowdTook ? { ...cmd, buttons: cmd.buttons | Button.Taken } : cmd");
-    expect(app).toContain("cmd = side.command(input.sample(++seq), me, live.world);");
     expect(hike).toContain("    return taken(ranToCar(stilled(sample, me, world), me));");
-    expect(app.match(/const cmd = stepTicks\((?:host|client), ticks\);/g)).toHaveLength(2);
     // And what is at the centre of their view, for the chase's dark: the crowd's figures and the state's enemies; null where the chase does not have them.
     expect(hike).toContain("h.renderer.setChaseThreat(threat);");
     expect(hike).toContain("threat = Math.max(threat, threatOf(eyeAt, f.x, f.z, presenceOf(f, seconds)));");
@@ -143,7 +135,7 @@ describe("the renderer and the app", () => {
   });
 
   it("the renderer draws the chase's killers among the crowd while it is up, and not as the model: first in what is shown, from where their bodies stand each frame", () => {
-    const meshes = readFileSync(clientFile("src/game/lite/entityMeshes.ts"), "utf8");
+    const meshes = sourceText("game/lite/entityMeshes.ts");
     expect(renderer).toContain("poses.shadows = shadows;");
     expect(renderer).toContain("killers.step(bodies === null ? NO_BODIES : bodies.hollows, crowdSeconds);");
     expect(renderer).toContain("const shown = killers.shown(figures);");

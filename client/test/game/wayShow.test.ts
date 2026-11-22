@@ -1,6 +1,5 @@
-import { readFileSync } from "node:fs";
-import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
+import { sourceText } from "../helpers/source.js";
 import { createWorld, type World } from "../../src/sim/world.js";
 import { parseLevel } from "@csarkosh/engine/sim/level";
 import { Outcome, Phase } from "../../src/sim/types.js";
@@ -8,9 +7,6 @@ import { makeWay } from "../../src/sim/wayDown.js";
 import { THRESHOLD_AT_S } from "../../src/game/cutscene.js";
 import { WAY_DIM, WAY_FADE_S, wayDimAt, wayLevelFor } from "../../src/game/wayLevel.js";
 import { CLOUD_TRAIL_EDGE_M, CLOUD_TRAIL_FADE_M, WAY_MIST_EDGE_M, WAY_MIST_FADE_M, cloudGroundMap } from "@csarkosh/engine/game/cloudParams";
-
-/** A file of the client, wherever the suite is run from (the gate runs it from the repository's root). */
-const clientFile = (path: string): string => fileURLToPath(new URL(`../../${path}`, import.meta.url));
 
 const FLOOR = { min: [-300, -1, -300] as [number, number, number], max: [300, 0, 300] as [number, number, number], material: "concrete" };
 /** A flat world in `phase`, with a straight way or none. */
@@ -77,11 +73,10 @@ describe("the mist over the way", () => {
 });
 
 describe("the renderer and the app", () => {
-  // The renderer, and Day Hike's side of it (`lite/hikeParts.ts`), where what is this game's own in a frame is written.
-  const renderer = readFileSync(clientFile("../engine/src/game/lite/renderer.ts"), "utf8") + readFileSync(clientFile("src/game/lite/hikeParts.ts"), "utf8");
-  const chain = readFileSync(clientFile("../engine/src/game/lite/postChain.ts"), "utf8");
+  // Day Hike's side of the renderer (`lite/hikeParts.ts`), where what is this game's own in a frame is written; the engine's renderer is read by the engine's own suite.
+  const renderer = sourceText("game/lite/hikeParts.ts");
   // The way's half of the frame is the hike's own (`hike.ts`, where a variable of `app.ts` is written `h.<name>`).
-  const hike = readFileSync(clientFile("src/hike.ts"), "utf8");
+  const hike = sourceText("hike.ts");
 
   it("the renderer makes the way's mist once, for a forest, toned for the tier's colour path, and disposes it", () => {
     expect(renderer.match(/createLiteWayLight\(/g)).toHaveLength(1);
@@ -91,11 +86,6 @@ describe("the renderer and the app", () => {
   });
 
   it("the renderer dims the frame by the mist's level on both colour paths and gives the mist the dim to undo", () => {
-    // With no chain the exposure every material ends with carries it, beside the stare's.
-    expect(renderer).toContain("(chained ? light.exposure : light.exposure * sightUnder(shownStare.level) * side.look.dim)");
-    // With one the grade's does.
-    expect(renderer).toContain("standing.chain?.setDim(side.look.dim);\n        standing.chain?.update(");
-    expect(chain).toContain("if (dim !== 1) record = { ...record, exposure: record.exposure * dim };");
     // The way's mist is a shade of the ground mist's own colour, which every tier has, and drifts on the frame's clock.
     expect(renderer).toContain("const wayMist = cloudColourUnder(host.nearColour());");
     expect(renderer).toContain("wayLight.update(wayLevel, 1 / wayDimAt(wayLevel), wayMist, seconds, look.cast);");
@@ -103,7 +93,6 @@ describe("the renderer and the app", () => {
 
   it("the renderer feeds the ground cloud's map the way in place of the trail while the mist is up, and builds it again when that changes", () => {
     expect(renderer).toContain("const over = way !== null && wayLevel > 0 ? way : null;");
-    expect(renderer).toContain("if (cloudGroundDue(cloudGroundAt, pose.x, pose.z) || (over !== null) !== wayMistBuilt) {");
     // Only as far as the mist's fade reaches: 4,096 places a rebuild, most of them far from the way.
     expect(renderer).toContain("cloudWayPath = { distance: (x, z) => wayDistanceWithin(over, x, z, WAY_MIST_FADE_M), edge: WAY_MIST_EDGE_M, fade: WAY_MIST_FADE_M };");
   });

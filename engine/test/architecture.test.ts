@@ -2,7 +2,9 @@ import { describe, it, expect } from "vitest";
 import { readdirSync, readFileSync, existsSync } from "node:fs";
 import { join, relative } from "node:path";
 import { fileURLToPath } from "node:url";
+import ts from "typescript";
 import { limitOffenders, scanTestSource, wallClockOffenders, type ScannedFile } from "../testing/testCalls.js";
+import { PAGE_ENTRIES, PURE_ENTRIES, TERRAIN_ENTRIES } from "../testing/pageEntries.js";
 
 /**
  * The engine's own rules of layout: what its modules may import, what its pages and shell may name, and the
@@ -54,6 +56,44 @@ function testFiles(): string[] {
 function testPath(file: string): string {
   const root = [ENGINE_TESTING].find((r) => !relative(r, file).startsWith("..")) ?? TESTS;
   return relative(root, file);
+}
+
+/** The file a module's import names, where it is one of the engine's own modules: null for a package's or a file that is not a module. */
+function followed(file: string, spec: string): string | null {
+  return spec.startsWith(".") && spec.endsWith(".js") ? join(file, "..", spec.replace(/\.js$/, ".ts")) : null;
+}
+
+function walkFiles(dir: string, ext: string): string[] {
+  const out: string[] = [];
+  for (const entry of readdirSync(dir, { withFileTypes: true })) {
+    const full = join(dir, entry.name);
+    if (entry.isDirectory()) out.push(...walkFiles(full, ext));
+    else if (entry.name.endsWith(ext)) out.push(full);
+  }
+  return out;
+}
+
+/** What a module loads when it is built: its imports and re-exports that are not types' (a type's import is erased and loads nothing). */
+function loaded(file: string): string[] {
+  return [...readFileSync(file, "utf8").matchAll(/^\s*(?:import|export)\s+(?!type\s)(?:[^"'();]*?\s+from\s+)?["']([^"']+)["']/gm)].map((m) => m[1] as string);
+}
+
+/** Every module that loads from `roots`, followed through what each loads, and each import of Babylon (Lite's included) found in them. */
+function babylonIn(roots: string[]): { seen: Set<string>; bad: string[] } {
+  const seen = new Set<string>();
+  const stack = [...roots];
+  const bad: string[] = [];
+  while (stack.length > 0) {
+    const file = stack.pop() as string;
+    if (seen.has(file)) continue;
+    seen.add(file);
+    for (const spec of loaded(file)) {
+      if (spec.startsWith("@babylonjs")) bad.push(`${logical(file)} imports ${spec}`);
+      const next = followed(file, spec);
+      if (next !== null) stack.push(next);
+    }
+  }
+  return { seen, bad };
 }
 
 function importsOf(file: string): string[] {
@@ -394,6 +434,945 @@ describe("layer boundaries", () => {
     expect(loaded(at("identity.ts"))).toEqual([]);
     expect(importsOf(at("identity.ts"))).toEqual([]);
     expect(loaded(at("game/rendererTypes.ts"))).toEqual([]);
+  });
+
+  it("registers Day Hike's world in every thread that asks for one: the page, the admin page and each worker that reaches the terrain reach the registration: the engine's half", () => {
+    // The engine's terrain registers nothing of its own, so a thread that reaches it without a game's registration would
+    // throw at its first world. None of the engine's own workers reaches it. A game's thread that names one of
+    // `TERRAIN_ENTRIES` reaches it, and the game's half holds that each such thread reaches the game's registration.
+    const loads = (file: string): string[] => {
+      const text = stripComments(readFileSync(file, "utf8"));
+      return [
+        ...[...text.matchAll(/^\s*(?:import|export)\s+(?!type\s)(?:[^"'();]*?\s+from\s+)?["']([^"'?]+)["']/gm)].map((m) => m[1] as string),
+        ...[...text.matchAll(/\bimport\(\s*["']([^"'?]+)["']\s*\)/g)].map((m) => m[1] as string),
+      ];
+    };
+    const reach = (entry: string): Set<string> => {
+      const seen = new Set<string>();
+      const stack = [entry];
+      while (stack.length > 0) {
+        const file = stack.pop() as string;
+        if (seen.has(file) || !existsSync(file)) continue;
+        seen.add(file);
+        for (const spec of loads(file)) {
+          const next = followed(file, spec);
+          if (next !== null) stack.push(next);
+        }
+      }
+      return seen;
+    };
+    const entries = sourceFiles(SRC).filter((file) => file.endsWith(".worker.ts"));
+    expect(entries.length).toBeGreaterThan(2);
+    const terrain = at("sim", "terrain.ts");
+    expect(entries.filter((entry) => reach(entry).has(terrain)).map(logical)).toEqual([]);
+    // The modules a game's page names that load the terrain are exactly the list the game's half reads.
+    expect(PAGE_ENTRIES.filter((entry) => reach(at(`${entry}.ts`)).has(terrain))).toEqual([...TERRAIN_ENTRIES]);
+  });
+
+  it("registers Day Hike's shipped files as the page starts, and nowhere else: the engine's half", () => {
+    // The engine's modules ask for a model, a texture or a clip by name (`game/assetUrls.ts`) and
+    // answer from what a game registered; nothing is registered until the game's own file runs.
+    const callers = sourceFiles(SRC)
+      .filter((file) => /\bregisterAssets\(/.test(stripComments(readFileSync(file, "utf8"))))
+      .map(logical)
+      .sort();
+    expect(callers).toEqual(["game/assetUrls.ts"]);
+  });
+
+  it("defines each helper the tier and engine code share once: the tier override, the browser's version, the storage accessors: the engine's half", () => {
+    const definitions = (name: string): string[] =>
+      sourceFiles(SRC).flatMap((file) =>
+        [...stripComments(readFileSync(file, "utf8")).matchAll(new RegExp(`\\bfunction ${name}\\(`, "g"))].map(() => logical(file)),
+      );
+    expect(definitions("parseTierOverride")).toEqual(["game/tierChoice.ts"]);
+    expect(definitions("browserMajor")).toEqual(["game/gpuSignals.ts"]);
+    expect(definitions("pageStorage")).toEqual(["game/tierChoice.ts"]);
+    expect(definitions("pageSessionStorage")).toEqual(["game/tierChoice.ts"]);
+    expect(definitions("safeStorage")).toEqual([]);
+    // The landing notice's pair: the engine's own reload notice is gone with
+    // the reload.
+    expect(definitions("leaveNotice")).toEqual(["game/tierChoice.ts"]);
+    expect(definitions("takeNotice")).toEqual(["game/tierChoice.ts"]);
+  });
+
+  it("answers a WebGPU failure without reloading the page: the one reload left is the player's, on a build mismatch: the engine's half", () => {
+    const calls = (pattern: RegExp): string[] =>
+      sourceFiles(SRC).flatMap((file) =>
+        [...stripComments(readFileSync(file, "utf8")).matchAll(pattern)].map((m) => `${logical(file)}: ${m[0]}`),
+      );
+    expect(calls(/location\.replace\(/g)).toEqual([]);
+    expect(calls(/.*location\.reload\(.*/g)).toEqual(["app.ts:     onReload: () => location.reload(),"]);
+  });
+
+  it("asks for a WebGPU adapter in one place, the GPU's signals, and never through Babylon's support check: the engine's half", () => {
+    const naming = (pattern: RegExp): string[] =>
+      sourceFiles(SRC).flatMap((file) =>
+        [...stripComments(readFileSync(file, "utf8")).matchAll(pattern)].map(() => logical(file)),
+      );
+    expect(naming(/\.requestAdapter\(/g)).toEqual(["game/gpuSignals.ts"]);
+    expect(naming(/\bIsSupportedAsync\b/g)).toEqual([]);
+  });
+
+  it("loads no Babylon.js with the page: nothing the page's entry (main.ts), the engine's shell (shell.ts) and the game's page (hikePageGame.ts) import for themselves reaches it, by an import or a dynamic one: the engine's half", () => {
+    // The shell's own imports and the modules a game's page reaches (`PAGE_ENTRIES`: the ones the game's entry, its page and its hike name), each
+    // followed through everything it loads, static or dynamic, name no module of Babylon.js (the hike, which is the
+    // page that runs a session, `app.ts`, has its own test below and is left out here). Babylon Lite, which the hike
+    // is drawn with, is another library.
+    const code = (file: string): string => stripComments(readFileSync(file, "utf8"));
+    const loads = (file: string): string[] => [
+      ...[...code(file).matchAll(/^\s*(?:import|export)\s+(?!type\s)(?:[^"'();]*?\s+from\s+)?["']([^"']+)["']/gm)].map((m) => m[1] as string),
+      ...[...code(file).matchAll(/\bimport\(\s*["']([^"']+)["']\s*\)/g)].map((m) => m[1] as string),
+    ];
+    const shellFile = at("shell.ts");
+    const ofShell = loads(shellFile);
+    // The shell stands in the engine, beside the page that runs a session: it names it as a neighbour.
+    expect(ofShell, "./app.js").toContain("./app.js");
+    expect(ofShell.filter((spec) => !spec.startsWith("."))).toEqual([]);
+    const seen = new Map<string, string | null>();
+    const stack: [string, string | null][] = [
+      ...ofShell.filter((spec) => spec !== "./app.js").map((spec): [string, null] => [followed(shellFile, spec) as string, null]),
+      ...PAGE_ENTRIES.filter((entry) => entry !== "shell").map((entry): [string, null] => [at(`${entry}.ts`), null]),
+    ];
+    const bad: string[] = [];
+    while (stack.length > 0) {
+      const [file, from] = stack.pop() as [string, string | null];
+      if (seen.has(file)) continue;
+      expect(existsSync(file), file).toBe(true);
+      seen.set(file, from);
+      for (const spec of loads(file)) {
+        if (spec.startsWith("@babylonjs/") && spec !== "@babylonjs/lite") {
+          const chain: string[] = [];
+          for (let at: string | null = file; at !== null; at = seen.get(at) ?? null) chain.unshift(logical(at));
+          bad.push(`${chain.join(" > ")} imports ${spec}`);
+        }
+        const path = spec.replace(/\?.*$/, "");
+        const next = followed(file, path);
+        if (next !== null) stack.push([next, file]);
+      }
+    }
+    // The renderer on Babylon Lite and everything it is made with are among them: this is the page's whole graph but the hike's.
+    // (The game's half holds its own modules of it; the two together are over three hundred.)
+    expect(seen.size).toBeGreaterThan(250);
+    expect([...seen.keys()].map((file) => logical(file))).toContain("game/lite/renderer.ts");
+    expect(bad).toEqual([]);
+    // The page keeps no engine between hikes, reads no library's version and hears no library's log.
+    expect(code(shellFile)).not.toMatch(/\b(?:releaseEngine|adoptEngine|dropEngine|keepEngine|engineVersion|hearEngineLog|tellEngineLog)\b/);
+    // The line of a renderer built again is the failure answer's own (`engineFailure.ts`), which holds no
+    // rule and no record: the page's recorder gives none and the page reads nothing of that module.
+    expect(code(shellFile)).not.toMatch(/engineFailure\.js|NOTICE_RESTARTED/);
+    // How long the line shows is the answer's too, and the measurement mode's flag is the measurement's
+    // (`gpuTimeReport.ts`).
+    // The page that runs a session is the engine's and names its neighbours by path: each import is followed to its file.
+    const hike = importsOf(at("app.ts")).map((spec) => followed(at("app.ts"), spec)).filter((to): to is string => to !== null).map(logical);
+    expect(hike).toContain("game/engineFailure.ts");
+    expect(hike).toContain("game/gpuTimeReport.ts");
+    expect(importsOf(at("game/engineFailure.ts"))).toEqual(["../identity.js", "./rendererSwap.js"]);
+  });
+
+  it("decides once whether the browser can play, with no engine and no request of its own, and starts nothing of a hike where it cannot: the engine's half", () => {
+    // The check and the page for those turned away are made with no engine, whatever they import.
+    const ENGINE_FREE = ["loadCheck.ts", "turnedAway.ts", "turnedAwayModel.ts", "turnedAwayWords.ts", "gpuSignals.ts"];
+    const stack = ENGINE_FREE.map((name) => at("game", name));
+    for (const file of stack) expect(existsSync(file), file).toBe(true);
+    const { seen, bad } = babylonIn(stack);
+    expect(seen.size).toBeGreaterThan(ENGINE_FREE.length);
+    expect(bad).toEqual([]);
+    // The verdict reads the answer to the page's one adapter request (the test above holds that there is one):
+    // the check itself asks the browser nothing.
+    const check = stripComments(readFileSync(at("game/loadCheck.ts"), "utf8"));
+    expect(check).not.toMatch(/\bnavigator\b|requestAdapter|requestDevice|document\b|window\b/);
+    expect(loaded(at("game/loadCheck.ts"))).toEqual([]);
+
+    const main = stripComments(readFileSync(at("shell.ts"), "utf8"));
+    // One verdict a page: known at once where the browser offers no WebGPU, else settled from the signals, or
+    // from the same request's later answer where the signals went on without it; set in that one place after.
+    expect(main).toContain("const webgpuOffered = offersWebGpu(navigator as NavigatorLike);\n  let verdict: LoadVerdict | null = loadVerdict(webgpuOffered, null);");
+    expect(main).toContain("    const known = loadVerdict(webgpuOffered, read);\n    if (known !== null) settleVerdict(known);");
+    expect(main).toContain("    else void signalsRead.adapter.then((later) => settleVerdict(adapterVerdict(later)));");
+    expect([...main.matchAll(/\bverdict = /g)].length).toBe(1);
+    expect(main).toContain("  function settleVerdict(next: LoadVerdict): void {\n    verdict = next;\n    if (next.play) return;");
+    // Every route is refused in one place, before anything of it is looked at: the page for those turned away.
+    expect(main).toContain(
+      "  function render(container: HTMLDivElement): void {\n    const route = parseRoute(location.pathname);\n    if (verdict !== null && !verdict.play) {\n      turnAway(container, route, verdict);\n      return;\n    }",
+    );
+    // The page itself is the engine's (`turnedAway.ts`), drawn in one place in the shell and nowhere else.
+    expect([...main.matchAll(/\brenderTurnedAway\(/g)].length).toBe(1);
+    // A hike or a staged scene asked for before the signals are in waits for them, and that wait stands before
+    // everything either starts with: the world's worker, the tier check, a follower's film, a canvas.
+    const body = main.slice(main.indexOf("function render(container: HTMLDivElement): void {"), main.indexOf("\n  function launch("));
+    const wait = body.indexOf("    if (!isLandingRoute(route) && signals === null) {");
+    expect(wait).toBeGreaterThan(0);
+    for (const start of ["void sessionCanvas().then(", "page.scene(", "side.openingFor(", "startWorldPrep(", "liteProbeDeps(container, ", "void startSession<EngineOnCanvas>("]) {
+      expect(body.indexOf(start), start).toBeGreaterThan(wait);
+      expect(body.lastIndexOf(start), start).toBe(body.indexOf(start));
+    }
+    // No canvas is made under a verdict of "cannot", for a route or for a hike that was running when it came.
+    expect(main).toContain("    if (verdict !== null && !verdict.play) throw new Error(");
+    // An invitation is joined once the signals are in, and not by a visitor turned away; one who is leaves a
+    // lobby joined meanwhile, by the lobby's own leaving.
+    expect([...main.matchAll(/\benterLobby\(route\.lobbyId\)/g)].length).toBe(1);
+    expect(main).toContain("      void signalsReady.then(() => {\n        if (verdict === null || verdict.play) void enterLobby(route.lobbyId);\n      });");
+    expect(main).toContain("    if (joining) abandonAttempt();\n    if (lobby !== null) {\n      lobby.leave();\n      detach();\n    }");
+    // The visitor's one row, said in one place.
+    expect([...main.matchAll(/"turned_away"/g)].length).toBe(1);
+    expect(main).toContain('      telemetry.event("turned_away", next.short === null ? { reason: next.reason } : { reason: next.reason, short: next.short });');
+  });
+
+  it("loads no module of Babylon.js with the page, the hike under it included, followed into whatever a library's module loads in turn: the engine's half", () => {
+    const NODE_MODULES = fileURLToPath(new URL("../../node_modules", import.meta.url));
+    const runtimeImports = (file: string): string[] =>
+      [...readFileSync(file, "utf8").matchAll(/^\s*(?:import|export)\s+(?!type\s)(?:[^"'();]*?\s+from\s+)?["']([^"'?]+)["']/gm)].map((m) => m[1] as string);
+    const resolveIn = (from: string, spec: string): string | null => {
+      // Babylon Lite is a library of its own, imported whole by its package's name: it holds no
+      // module of Babylon.js and registers nothing on Babylon.js's classes.
+      if (spec === "@babylonjs/lite") return null;
+      if (spec.startsWith("@babylonjs/")) return join(NODE_MODULES, spec);
+      if (!spec.startsWith(".")) return null;
+      const path = join(from, "..", spec);
+      return from.includes("node_modules") ? path : path.replace(/\.js$/, ".ts");
+    };
+    const graph = (entries: string[]): Set<string> => {
+      const seen = new Set<string>();
+      const stack = [...entries];
+      while (stack.length > 0) {
+        const file = stack.pop() as string;
+        if (seen.has(file) || !existsSync(file)) continue;
+        seen.add(file);
+        for (const spec of runtimeImports(file)) {
+          const next = resolveIn(file, spec);
+          if (next !== null) stack.push(next);
+        }
+      }
+      return seen;
+    };
+    // What a game's page reaches of the engine (`PAGE_ENTRIES`) loads no module of Babylon.js, with the hike under it or without.
+    expect([...graph(PAGE_ENTRIES.map((entry) => at(`${entry}.ts`)))].filter((f) => f.includes("@babylonjs"))).toEqual([]);
+  });
+
+  /**
+   * `game/` is deliberately split: `colour.ts`, `sky.ts`, `quality.ts`,
+   * `terrainSurface.ts` and the rest of this list are pure arithmetic, tested
+   * under `environment: "node"`, while the modules under `game/lite/` are the
+   * ones that draw, with Babylon Lite. A stray import of the engine in
+   * `sky.ts` would build, and would pass every other test.
+   *
+   * Per-file, not per-directory: `game/` as a whole also contains the
+   * modules that draw, so a directory-wide check here would fail on files
+   * that are supposed to import the engine.
+   */
+  it("the pure game/ arithmetic modules stay Babylon-free: the engine's half", () => {
+    const BABYLON_FREE_FILES = [
+      at("game", "colour.ts"),
+      at("game", "sky.ts"),
+      at("game", "quality.ts"),
+      at("game", "terrainSurface.ts"),
+      at("game", "waterGround.ts"),
+      at("game", "panoramaTurn.ts"),
+      at("game", "mirrorGround.ts"),
+      at("game", "mirrorPass.ts"),
+      at("game", "firstBuilds.ts"),
+      at("game", "downloadTurns.ts"),
+      at("game", "framePace.ts"),
+      at("game", "atmosphereParams.ts"),
+      at("game", "cloudParams.ts"),
+      at("game", "clipmap.ts"),
+      at("game", "facePatches.ts"),
+      at("game", "roadPaint.ts"),
+      at("game", "trailPaint.ts"),
+      at("game", "water.ts"),
+      at("game", "forestField.ts"),
+      at("game", "mistField.ts"),
+      at("game", "mistBanks.ts"),
+      at("game", "weather.ts"),
+      at("game", "skinParams.ts"),
+      at("game", "viewBob.ts"),
+      at("game", "gradeParams.ts"),
+      at("game", "groundHexParams.ts"),
+      at("game", "trailBenchParams.ts"),
+      at("game", "postParams.ts"),
+      at("game", "windParams.ts"),
+      at("game", "motesParams.ts"),
+      at("game", "moteField.ts"),
+      at("game", "rainField.ts"),
+      at("game", "splashField.ts"),
+      at("game", "rainCover.ts"),
+      at("game", "lensCanopy.ts"),
+      at("game", "lampParams.ts"),
+      at("game", "forestLookParams.ts"),
+      at("game", "barkParams.ts"),
+      at("game", "coverAlbedoParams.ts"),
+      at("game", "mossParams.ts"),
+      at("game", "stareLens.ts"),
+      at("game", "woodsSounds.ts"),
+      at("game", "bladeClump.ts"),
+      at("game", "bladeField.ts"),
+      at("game", "rockRelief.ts"),
+      at("game", "gpuSignals.ts"),
+      at("game", "gpuClass.ts"),
+      at("game", "tierChoice.ts"),
+      at("game", "frameProbe.ts"),
+      at("game", "probePage.ts"),
+      at("game", "probeScreen.ts"),
+      at("game", "gpuTimeReport.ts"),
+      at("game", "settings.ts"),
+      at("game", "governor.ts"),
+      at("game", "rainParams.ts"),
+      at("game", "lensParams.ts"),
+      at("game", "shadeVeilParams.ts"),
+      at("game", "oceanLoopBake.ts"),
+      at("game", "oceanLoop.worker.ts"),
+      at("game", "oceanWindSea.ts"),
+      at("game", "oceanWaves.ts"),
+      at("game", "oceanTables.ts"),
+      at("game", "oceanSwell.ts"),
+      at("game", "oceanPhysics.ts"),
+      at("game", "oceanSpectrum.ts"),
+      at("game", "oceanFft.ts"),
+      at("game", "skyModel.ts"),
+      at("game", "skyTable.ts"),
+      at("game", "sky.worker.ts"),
+      at("game", "skyWorker.ts"),
+      at("game", "worldPrep.ts"),
+      at("game", "preparedScene.ts"),
+      at("game", "lakeSurfaceGrid.ts"),
+      at("game", "waterPlantField.ts"),
+      at("game", "waterBump.ts"),
+      at("game", "featureTable.ts"),
+      at("game", "extrasLater.ts"),
+      at("game", "impostorField.ts"),
+      at("game", "impostorField.worker.ts"),
+      at("game", "impostorFieldWorker.ts"),
+      at("game", "skyState.ts"),
+      at("game", "skyDomeParams.ts"),
+      at("game", "skyProbeParams.ts"),
+      at("game", "halfFloat.ts"),
+      at("game", "waterLifeParams.ts"),
+      at("game", "waterLifeField.ts"),
+      at("game", "midgeMotion.ts"),
+      at("game", "dragonflyBehaviour.ts"),
+      at("game", "frogChorus.ts"),
+      at("game", "lakeCalm.ts"),
+      at("game", "mirrorView.ts"),
+      at("game", "lakeSkyline.ts"),
+      at("game", "lakeRipples.ts"),
+      at("game", "swashRunUp.ts"),
+      at("game", "swashTable.ts"),
+      at("game", "oceanBreaker.ts"),
+      at("game", "surfSound.ts"),
+      at("game", "shoreAtlas.ts"),
+      at("game", "lakeChoice.ts"),
+      at("game", "terrainTables.ts"),
+      at("game", "terrainUniforms.ts"),
+      at("game", "groundLayers.ts"),
+      at("game", "wetSurface.ts"),
+      at("game", "terrainVertices.ts"),
+      at("game", "sceneLights.ts"),
+      at("game", "gameLens.ts"),
+      at("game", "skyWait.ts"),
+      at("game", "listenerPose.ts"),
+      at("game", "hollowLook.ts"),
+      at("game", "creatureAssets.ts"),
+      at("game", "wingParams.ts"),
+      at("game", "wildlifeScene.ts"),
+      at("game", "skinInstances.ts"),
+      at("game", "wildlifeInputs.ts"),
+      at("game", "waterSurface.ts"),
+      at("game", "bedFollow.ts"),
+      at("game", "lakeCalmFrame.ts"),
+      at("game", "lakeSeen.ts"),
+      at("game", "waterPlantShapes.ts"),
+      at("game", "waterLifeScene.ts"),
+      at("game", "waterLifeInputs.ts"),
+      at("game", "midgeLook.ts"),
+      at("game", "dragonflyShapes.ts"),
+      at("game", "oceanFrame.ts"),
+      at("game", "seaEdge.ts"),
+      at("game", "oceanFftPasses.ts"),
+      at("game", "windSeaField.ts"),
+      at("game", "lipStrip.ts"),
+      at("game", "sprayField.ts"),
+      at("game", "seaLattice.ts"),
+      at("game", "seaUniforms.ts"),
+      at("game", "postFrame.ts"),
+      at("game", "materialGrade.ts"),
+      at("game", "shadeMaskParams.ts"),
+      at("game", "loadReport.ts"),
+      at("game", "rendererTypes.ts"),
+    ];
+
+    // Guards against the guard: a rename or deletion of one of these files
+    // must fail loudly here rather than silently shrinking the check to
+    // nothing, the same failure mode "can actually see the source tree"
+    // exists to catch above.
+    expect(BABYLON_FREE_FILES.length).toBeGreaterThan(0);
+    for (const file of BABYLON_FREE_FILES) {
+      expect(existsSync(file)).toBe(true);
+    }
+
+    const found = BABYLON_FREE_FILES.flatMap((file) =>
+      importsOf(file)
+        .filter((spec) => /^@babylonjs/.test(spec))
+        .map((spec) => `${file} imports ${spec}`),
+    );
+    expect(found).toEqual([]);
+  });
+
+  /**
+   * What the ground, the air over it and the mist banks that stand in it, the sky's dome and the scene's light
+   * are drawn with, and the lens they are seen through, is computed by modules that load no
+   * Babylon at all: not by an import of
+   * their own (the list above) and not through anything they import, so each
+   * runs, and is tested, with no engine made. A type's import is erased when
+   * the module is built and loads nothing, so only the imports that load a
+   * module are followed.
+   */
+  it("what the terrain, the air and the light are drawn with, and the lens, is computed without loading Babylon, whatever it imports", () => {
+    const ENGINE_FREE = [
+      "terrainTables.ts", "terrainUniforms.ts", "groundLayers.ts", "wetSurface.ts", "terrainVertices.ts",
+      "atmosphereParams.ts", "cloudParams.ts", "skyState.ts", "skyDomeParams.ts", "skyProbeParams.ts", "weather.ts", "sceneLights.ts", "lampParams.ts", "gameLens.ts",
+      "mistField.ts", "mistBanks.ts", "motesParams.ts", "moteField.ts",
+      "rainParams.ts", "rainField.ts", "splashField.ts", "rainCover.ts", "lensCanopy.ts",
+    ];
+    const stack = ENGINE_FREE.map((name) => at("game", name));
+    for (const file of stack) expect(existsSync(file), file).toBe(true);
+    const { seen, bad } = babylonIn(stack);
+    expect(seen.size).toBeGreaterThan(ENGINE_FREE.length);
+    expect(bad).toEqual([]);
+  });
+
+  /**
+   * What the forest is drawn with is computed by modules that load no
+   * Babylon either: each plugin's uniforms as a record by name, the instance
+   * lists and their per-instance attributes as typed arrays, the fade bands,
+   * the bark's dressing and the trees' share of the sky, the pose math the
+   * lists are composed with, how a far tree's bake is posed and framed, and
+   * what is read of a model's file and baked into its vertices. The meshes that draw them
+   * (`lite/forestMeshes.ts`) and their plugins take their values from these.
+   */
+  it("what the forest is drawn with is computed without loading Babylon, whatever it imports", () => {
+    const ENGINE_FREE = [
+      "forestField.ts", "forestInstances.ts", "instancePose.ts", "groundTilt.ts", "logSeat.ts", "nurseLog.ts",
+      "foliageUniforms.ts", "distanceFade.ts", "groundConform.ts", "deadwoodParams.ts", "mossParams.ts", "barkParams.ts",
+      "forestLookParams.ts", "coverAlbedoParams.ts", "windParams.ts", "impostorField.ts", "impostorBake.ts", "glbParts.ts", "modelBake.ts",
+    ];
+    const stack = ENGINE_FREE.map((name) => at("game", name));
+    for (const file of stack) expect(existsSync(file), file).toBe(true);
+    const { seen, bad } = babylonIn(stack);
+    expect(seen.size).toBeGreaterThan(ENGINE_FREE.length);
+    expect(bad).toEqual([]);
+  });
+
+  /**
+   * What the ground cover, the cliffs and the chunk props are drawn with is computed by
+   * modules that load no Babylon either: which model and LOD a clutter class draws, an instance's
+   * matrix and ground tint, the lists a bucket is drawn from and their cut to
+   * the view, the fields that place the cover, the geometry of the clumps
+   * built in code, and a prop's box and colour. The meshes that draw them
+   * take their values from these.
+   */
+  it("what the ground cover, the cliffs and the chunk props are drawn with is computed without loading Babylon, whatever it imports", () => {
+    const ENGINE_FREE = [
+      "clutterInstances.ts", "clutterLists.ts", "instanceLists.ts", "bladeInstances.ts", "duffInstances.ts", "cliffInstances.ts", "clutterField.ts", "bladeField.ts", "bladeClump.ts", "duffField.ts", "duffClump.ts", "cliffField.ts",
+      "shrubClump.ts", "wetPlantClump.ts", "highPlantClump.ts", "rockRelief.ts", "grassCull.ts", "keptValues.ts", "propBoxes.ts",
+    ];
+    const stack = ENGINE_FREE.map((name) => at("game", name));
+    for (const file of stack) expect(existsSync(file), file).toBe(true);
+    const { seen, bad } = babylonIn(stack);
+    expect(seen.size).toBeGreaterThan(ENGINE_FREE.length);
+    expect(bad).toEqual([]);
+  });
+
+  /**
+   * What the hikers, the Hollows, the dropped cap and the animals are drawn
+   * with: where each
+   * body stands and how (the poses), which file and which clip it is, a
+   * lamp's state, the cap's place and shape, and the wildlife a frame at a
+   * time with its field, its behaviour and its director. The meshes that
+   * draw them take their values from these.
+   */
+  it("what the hikers, the Hollows, the cap and the animals are drawn with is computed without loading Babylon, whatever it imports: the engine's half", () => {
+    const ENGINE_FREE = [
+      "hollowLook.ts", "lampParams.ts", "skinParams.ts", "creatureAssets.ts", "wingParams.ts",
+      "wildlifeScene.ts", "wildlifeField.ts", "wildlifeBehaviour.ts", "wildlifeDirector.ts", "groundTilt.ts", "skinInstances.ts", "wildlifeInputs.ts",
+    ];
+    // And what Day Hike's own modules of this kind (`characterAssets.ts`, `entityPoses.ts`, `droppedCap.ts`) load of the engine: the modules of `PURE_ENTRIES`.
+    const stack = [...ENGINE_FREE.map((name) => at("game", name)), ...PURE_ENTRIES.map((entry) => at(`${entry}.ts`))];
+    for (const file of stack) expect(existsSync(file), file).toBe(true);
+    const { seen, bad } = babylonIn(stack);
+    expect(seen.size).toBeGreaterThan(ENGINE_FREE.length);
+    expect(bad).toEqual([]);
+  });
+
+  /**
+   * What the lakes' water is drawn with: a surface's numbers and its uniforms by name,
+   * the bed's square following the camera, a lake's calm through the
+   * weather's fade, whether a view holds a lake, its surface's grid, its
+   * skyline, the ripple bump and the rows it is shaded by; its plants as
+   * shapes and lists; and its life a frame at a time, with the midges' and
+   * the dragonflies' draws as numbers. The meshes that draw them take
+   * their values from these.
+   */
+  it("what the lakes' water, plants and life are drawn with is computed without loading Babylon, whatever it imports", () => {
+    const ENGINE_FREE = [
+      "waterSurface.ts", "bedFollow.ts", "bedHeight.ts", "lakeCalmFrame.ts", "lakeCalm.ts", "lakeSeen.ts", "lakeSkyline.ts", "lakeSurfaceGrid.ts", "lakeRipples.ts",
+      "lakeChoice.ts", "waterBump.ts", "waterShading.ts", "water.ts", "waterPlantShapes.ts", "waterPlantField.ts",
+      "waterLifeScene.ts", "waterLifeInputs.ts", "waterLifeField.ts", "waterLifeParams.ts", "midgeLook.ts", "midgeMotion.ts", "dragonflyShapes.ts",
+      "dragonflyBehaviour.ts", "frogChorus.ts",
+    ];
+    const stack = ENGINE_FREE.map((name) => at("game", name));
+    for (const file of stack) expect(existsSync(file), file).toBe(true);
+    const { seen, bad } = babylonIn(stack);
+    expect(seen.size).toBeGreaterThan(ENGINE_FREE.length);
+    expect(bad).toEqual([]);
+  });
+
+  /**
+   * What the sea is drawn with: the swell and the wind sea as numbers, the sea following its
+   * wind, the wind sea's loop asked of its worker, which field draws the wind sea and the passes of the one that
+   * is computed each frame, its edge on the cove with the swash's table and the breaker's
+   * tracker, the strips of the plunging lip's curl and the spray's bursts, the rings as one lattice, their samples and the box each has
+   * water in, the sea's uniforms by name, and the surf as heard. The meshes
+   * that draw it take their values from these.
+   */
+  it("what the sea is drawn with is computed without loading Babylon, whatever it imports", () => {
+    const ENGINE_FREE = [
+      "oceanFrame.ts", "oceanWindSea.ts", "oceanLoopStart.ts", "oceanLoopBake.ts", "oceanWaves.ts", "oceanTables.ts", "oceanSwell.ts", "seaEdge.ts", "swashTable.ts",
+      "oceanBreaker.ts", "seaLattice.ts", "seaUniforms.ts", "surfSound.ts", "water.ts", "waterSurface.ts",
+      "oceanFftPasses.ts", "windSeaField.ts", "lipStrip.ts", "sprayField.ts",
+    ];
+    const stack = ENGINE_FREE.map((name) => at("game", name));
+    for (const file of stack) expect(existsSync(file), file).toBe(true);
+    const { seen, bad } = babylonIn(stack);
+    expect(seen.size).toBeGreaterThan(ENGINE_FREE.length);
+    expect(bad).toEqual([]);
+    // The wind's lag is made in one place.
+    expect(readFileSync(at("game/windSeaField.ts"), "utf8")).toContain("createSeaWindLag()");
+  });
+
+  /**
+   * What a scene and an ending are played with is computed by Day Hike's own modules that load no Babylon
+   * (the game's half of this rule). What they load of the engine is the modules of `PURE_ENTRIES`, which load none either.
+   */
+  it("what the scenes and the endings are played with is computed without loading Babylon, whatever it imports: the engine's half", () => {
+    const stack = PURE_ENTRIES.map((entry) => at(`${entry}.ts`));
+    for (const file of stack) expect(existsSync(file), file).toBe(true);
+    const { seen, bad } = babylonIn(stack);
+    expect(seen.size).toBeGreaterThan(PURE_ENTRIES.length);
+    expect(bad).toEqual([]);
+  });
+
+  /**
+   * What stands between a renderer and the page it draws on is the game's
+   * own arithmetic too: the frame's size from the canvas's box, the tier's
+   * scaling and the render scale under the paint, the watch a renderer
+   * keeps on an engine it made for itself, the count of what a device is
+   * asked to make of shaders, and the measurement mode's report. The
+   * renderer reads the rule that says where the render scale runs, and
+   * answers the one type a renderer is held by (`rendererTypes.ts`). The
+   * hike's renderer's wait for its world is of the same kind (`worldWait.ts`),
+   * and so are the swap of one renderer for another, the answer to an engine
+   * that fails and the start's gate.
+   */
+  it("what a renderer is sized and started by is computed without loading Babylon, whatever it imports", () => {
+    const ENGINE_FREE = ["frameSize.ts", "renderScale.ts", "quality.ts", "engineWatch.ts", "deviceMakes.ts", "gpuTimeTasks.ts", "gpuTimeReport.ts", "gpuFaults.ts", "deviceHeld.ts", "lossBound.ts", "rendererTypes.ts", "worldWait.ts", "rendererSwap.ts", "engineFailure.ts", "startReady.ts", "drawnSettle.ts"];
+    const stack = ENGINE_FREE.map((name) => at("game", name));
+    for (const file of stack) expect(existsSync(file), file).toBe(true);
+    const { seen, bad } = babylonIn(stack);
+    expect(seen.size).toBeGreaterThan(ENGINE_FREE.length);
+    expect(bad).toEqual([]);
+    const lite = readFileSync(at("game/lite/renderer.ts"), "utf8");
+    expect(lite).toContain("createFrameFit(tier, renderScaleRuns(postFeatures.paint, options.gpuTime === true), {");
+    // The surface is sized by the game's rule alone: Lite's own fit to the display's ratio is not called.
+    expect(lite).not.toContain("resizeEngine");
+    // A lost device is told to the hike, which builds the renderer again: Lite's recovery in place is not used.
+    expect(lite).toContain('engineWatch.fail("lost");');
+    expect(lite).toContain("ownWatch: engineWatch.watch,");
+    expect(lite).not.toContain("enableDeviceLostSceneRecovery");
+    // What the engine tells is told from the device's own calls, and timed by Lite's own timers.
+    expect(lite).toContain("onShaderCompiled: (fn) => makes.onMade(fn),");
+    // Its world is waited for by the bound of whoever asks: the swap's module walks no scene.
+    expect(lite).toContain("    whenReady(maxMs) {\n      return whenWorldIn(sceneryReady, maxMs).then(() => {");
+    expect(readFileSync(at("game/rendererSwap.ts"), "utf8")).not.toMatch(/whenSceneReady|walkSceneReady|@babylonjs/);
+    expect(readFileSync(at("game/lite/gpuTimeReadout.ts"), "utf8")).toContain("taskTimeReport({");
+  });
+
+  /**
+   * What the GPU says went wrong under a hike is told through the game's
+   * own record (`gpuFaults.ts`, with no engine: the list above): the
+   * renderer tells it of every error its device reports and of a loss it
+   * did not ask for, the hike keeps the record for its life and gives it
+   * each renderer that stands, and the page counts the losses its hikes
+   * have had, so the loss that is one too many ends the hike by the way a
+   * hike already ends when its graphics cannot be restarted.
+   */
+  it("tells the hike's record of the device's errors and losses, and ends a hike by the page's count of losses, through its one line: the engine's half", () => {
+    const lite = readFileSync(at("game/lite/renderer.ts"), "utf8");
+    // Every error nobody caught, and every one a scope handed back.
+    expect(lite).toContain('      heard?.error(gpuFaults, error, "uncaptured");');
+    expect(lite).toContain('    stopScopes = hearErrorScopes(getGpuDevice(engine), (error) => heard?.error(gpuFaults, error, "scope"));');
+    // A loss is told before the hike is asked to answer it; the renderer's own letting go is told to no one.
+    const lost = lite.slice(lite.indexOf("    onEngineDeviceLost(engine, (info) => {"), lite.indexOf('      engineWatch.fail("lost");'));
+    expect(lost.indexOf("      if (disposed) return;")).toBeGreaterThan(0);
+    expect(lost.indexOf("      heard?.lost(gpuFaults, info);")).toBeGreaterThan(lost.indexOf("      if (disposed) return;"));
+    expect(lite).toContain("      heard = null;\n      stopScopes();\n      held.stop();");
+    // A frame with no error counts itself and does no more: the picture is read in one place, when the record asks,
+    // and what the device holds is counted only for a hike that sends it on.
+    expect([...lite.matchAll(/\bdrawn\+\+/g)].length).toBe(1);
+    expect([...lite.matchAll(/\breadPictureSmall\(/g)].length).toBe(1);
+    expect(lite).toContain("    if (heard?.counting === true) {\n      holds = true;\n      held.count(getGpuDevice(engine) as unknown as HeldDevice);\n    }");
+    expect(lite).toContain("    gpuFaults,\n    gpuTime,");
+    // The hike gives its record each renderer that stands, as it puts the watch on it.
+    const app = stripComments(readFileSync(at("app.ts"), "utf8"));
+    expect([...app.matchAll(/\bcreateGpuFaults\(/g)].length).toBe(1);
+    expect(app).toContain("      faults.attach(r);\n      const engine = r.engine;");
+    expect(app).toContain("    loss: () => options.losses.note(),");
+    // The loss that is one too many is not answered by another renderer: the hike ends as any hike that cannot go on.
+    expect(app).toContain('    ends: (reason) => reason === "lost" && faults.lastLoss?.end === true,');
+    expect(app).toContain('      options.losses.ended();\n      endSession(lossEndedLine(), { why: "device_lost", losses: loss?.losses ?? 0, recent: loss?.recent ?? 0 });');
+    // The page's count is one record for every hike of the page, and the landing's line is the same function's.
+    const main = stripComments(readFileSync(at("shell.ts"), "utf8"));
+    expect([...main.matchAll(/\bcreateLossRecord\(/g)].length).toBe(1);
+    expect(main).toContain("    note: () => lostDevices.note(performance.now()),");
+    expect(main).toContain("    ended: () => void leaveNotice(pageSessionStorage(), lossEndedLine(), Date.now()),");
+    expect(main).toContain("      engineFailed,\n      losses,");
+    // The line's words stand in one function, and the bound's numbers in one module.
+    const naming = (pattern: RegExp): string[] =>
+      sourceFiles(SRC).flatMap((file) => [...stripComments(readFileSync(file, "utf8")).matchAll(pattern)].map(() => logical(file)));
+    expect(naming(/\bfunction lossEndedLine\(/g)).toEqual(["game/lossBound.ts"]);
+    expect(naming(/\bLOSS_BOUND_(?:COUNT|WINDOW_MS) = /g)).toEqual(["game/lossBound.ts", "game/lossBound.ts"]);
+  });
+
+  /**
+   * A hike is handed no engine. Its renderer makes its own from the canvas
+   * it is built on, keeps its own watch on it and lets it go with itself, so
+   * the hike, the swap and the type a renderer is held by carry nothing that
+   * was written for an engine made elsewhere: none handed to a start or to
+   * a renderer, none kept for the next hike with its shaders pinned, no
+   * watchers of one, no start held or switch's cover kept up until one had
+   * drawn a whole frame, no log of one heard, and no override of one in the
+   * address.
+   */
+  it("hands a hike no engine, keeps none after it and waits on none: its renderer makes its own and lets it go with itself", () => {
+    const code = (name: string): string => stripComments(readFileSync(at(name), "utf8"));
+    const app = code("app.ts");
+    expect(app).not.toMatch(/\b(?:unowned|keepEngine|KeptEngine|watchers|EngineWatchers|pipelinesFor|AsyncPipelines|asyncPipelines|pinCompiles|keepShaders|retire)\b/);
+    expect(app).not.toMatch(/\b(?:holdReveal|whenFrameWhole|endRevealHold|firstWholeFrame|revealWhenWhole|revealHold|reveal:)/);
+    expect(app).not.toMatch(/options\.engine\b(?!F)/);
+    // A renderer is made from its canvas, its tier and the world, at the start and for every swap: no engine among them.
+    expect([...app.matchAll(/\bgame\.renderer\(next, level, forest, \{ tier: (?:at|target), /g)].length).toBe(2);
+    expect(app).not.toMatch(/engine: engine|pipelines:/);
+    // A switch's ladder is handed a tier and no engine, and its cover waits for the new renderer's world alone.
+    expect(app).toContain("          { tier: target, fallbackTier: tier },");
+    expect(code("game/rendererSwap.ts")).not.toMatch(/\bEngineHandle\b|engineFailed|engineFellBack/);
+    expect(app).toContain("      await renderer.whenReady(readyMaxMs);\n      return tier;\n    } finally {");
+    // The hike's end lets its renderer go, engine and all.
+    const dispose = app.slice(app.lastIndexOf("    dispose() {\n      disposed = true;"));
+    expect(dispose).toMatch(/unwatchCompiles\?\.\(\);\s+renderer\.dispose\(\);\s+\}/);
+    // The page makes a canvas and nothing more, and the swap holds it as that.
+    // A switch is handed its canvas at once, and one the page refuses is a throw; a start's chain takes the same canvas as a promise.
+    const main = code("shell.ts");
+    expect(main).toContain('  function sessionCanvasNow(): EngineOnCanvas {\n    if (verdict !== null && !verdict.play) throw new Error(`this browser cannot draw a ${page.identity.session} (${verdict.reason})`);\n    return { canvas: document.createElement("canvas") };\n  }');
+    expect(main).toContain("    return new Promise((resolve) => resolve(sessionCanvasNow()));");
+    expect(main).toContain("        launch(onCanvas, route.token, decided, () => sessionCanvasNow(), opening, takeSampled);");
+    expect(app).toContain("  engineFor(tier: QualityTier): EngineOnCanvas;");
+    const swap = code("game/rendererSwap.ts");
+    expect(swap).toContain("export type EngineOnCanvas = { canvas: HTMLCanvasElement };");
+    // The swap waits for no canvas: it keeps no timer and no bound but the two its callers pass.
+    expect(swap).not.toMatch(/\b(?:setTimeout|setTimer|engineWithinBound|SWAP_SCENE_MIN_MS)\b|\bnow\(\)/);
+    expect(swap).not.toMatch(/\b(?:EngineWatchers|AsyncPipelines|whenSceneReady|walkSceneReady)\b/);
+    // The type every renderer is held by names no engine handed in, no pipelines, no kept shaders and no retiring;
+    // the hike's renderer answers none, and the start's gate waits on no frame of one.
+    const types = code("game/rendererTypes.ts");
+    expect(types).not.toMatch(/\b(?:keepShaders|retire|pipelines|AsyncPipelines)\b|\bengine\?:/);
+    const lite = code("game/lite/renderer.ts");
+    expect(lite).not.toMatch(/\b(?:keepShaders|retire)\b|options\.engine|options\.pipelines/);
+    expect(code("game/startReady.ts")).not.toMatch(/\breveal\b/);
+    // The address's `?engine=` and `?wgsl=` are no page's own, and the page's error capture hears no library's log.
+    expect(code("game/router.ts")).toContain('const OVERRIDES = ["tier", "probe"] as const;');
+    expect(code("net/telemetry.ts")).not.toMatch(/babylon|EngineLog/i);
+  });
+
+  /**
+   * The hike's renderer is drawn with Babylon Lite, and nothing of it is
+   * Babylon.js: not a module under `game/lite/`, and not anything one of
+   * them loads. What it is made with beside Lite is the engine's own
+   * arithmetic, which loads no engine, and types, which load nothing.
+   */
+  it("draws the hike with Babylon Lite alone: nothing under game/lite/ loads Babylon.js, whatever it imports: the engine's half", () => {
+    const own = sourceFiles(at("game", "lite"));
+    expect(own.length).toBeGreaterThan(5);
+    // And what a game's own modules under `game/lite/` load of the engine: the modules of `PAGE_ENTRIES`.
+    const seen = new Set<string>();
+    const stack = [...own, ...PAGE_ENTRIES.map((entry) => at(`${entry}.ts`))];
+    const bad: string[] = [];
+    const lite: string[] = [];
+    while (stack.length > 0) {
+      const file = stack.pop() as string;
+      if (seen.has(file)) continue;
+      seen.add(file);
+      for (const spec of loaded(file)) {
+        if (spec === "@babylonjs/lite") lite.push(logical(file));
+        else if (spec.startsWith("@babylonjs")) bad.push(`${logical(file)} imports ${spec}`);
+        {
+          const next = followed(file, spec);
+          if (next !== null) stack.push(next);
+        }
+      }
+    }
+    expect(seen.size).toBeGreaterThan(own.length);
+    expect(bad).toEqual([]);
+    // Lite itself is loaded only by the modules that draw: the plugins, the pose and the light name its types alone.
+    expect(lite.sort()).toEqual([
+      "game/lite/bladeMeshes.ts", "game/lite/brushMeshes.ts", "game/lite/cliffMeshes.ts", "game/lite/clutterMeshes.ts",
+      "game/lite/dragonflyMeshes.ts", "game/lite/duffMeshes.ts", "game/lite/forestMeshes.ts", "game/lite/forestModels.ts",
+      "game/lite/gpuTimeReadout.ts", "game/lite/groundTextures.ts", "game/lite/impostorBake.ts", "game/lite/lakeMeshes.ts", "game/lite/lakeMirror.ts",
+      "game/lite/lakePanorama.ts", "game/lite/lipMeshes.ts", "game/lite/listMeshes.ts", "game/lite/midgeMeshes.ts", "game/lite/mistMeshes.ts",
+      "game/lite/motes.ts", "game/lite/postChain.ts", "game/lite/propMeshes.ts", "game/lite/rain.ts", "game/lite/rainMap.ts",
+      "game/lite/rainSplash.ts", "game/lite/renderer.ts", "game/lite/seaFft.ts", "game/lite/seaMeshes.ts", "game/lite/shadeMask.ts",
+      "game/lite/shadeVeil.ts", "game/lite/shaderUniforms.ts", "game/lite/skinnedModels.ts", "game/lite/skyCapture.ts", "game/lite/skyDome.ts",
+      "game/lite/surfSpray.ts", "game/lite/terrainMeshes.ts", "game/lite/waterBed.ts", "game/lite/waterBehind.ts", "game/lite/waterPlantMeshes.ts",
+      "game/lite/wildlifeMeshes.ts",
+    ]);
+  });
+
+  /**
+   * A renderer is held by types alone (`rendererTypes.ts`): the hike, the
+   * ladders that swap one renderer for another, the staged scenes and the
+   * renderer on Babylon Lite name them there, and naming them loads nothing.
+   */
+  it("holds a renderer by types that load nothing: the hike's, the swap's, the staged scenes' and the renderer's name them in one module: the engine's half", () => {
+    const types = at("game/rendererTypes.ts");
+    // Every import of it is a type's, and it names nothing of an engine's own package.
+    expect(loaded(types)).toEqual([]);
+    expect(importsOf(types).length).toBeGreaterThan(10);
+    expect(importsOf(types).filter((spec) => spec.startsWith("@babylonjs"))).toEqual([]);
+    const text = readFileSync(types, "utf8");
+    for (const name of ["FreecamView", "FrameView", "RendererOptions"]) expect(text, name).toContain(`export type ${name} = {`);
+    // The engine's renderer of the world, whatever state a game hands it; a game's own is that over its state
+    // with its own methods beside it, in a module of types as bare.
+    expect(text).toContain("export type WorldRenderer<S> = {");
+    // Each of them is defined once in src/.
+    const defined = sourceFiles(SRC).flatMap((file) =>
+      [...stripComments(readFileSync(file, "utf8")).matchAll(/\bexport type (?:FreecamView|FrameView|Renderer|RendererOptions) =/g)].map(() => logical(file)),
+    );
+    expect(defined.sort()).toEqual(["game/rendererTypes.ts", "game/rendererTypes.ts", "game/rendererTypes.ts"]);
+    // Who holds a renderer takes the types from there.
+    for (const holder of ["app.ts", "game/rendererSwap.ts", "game/lite/renderer.ts", "game/lite/notDrawn.ts", "game/lite/probeScene.ts"]) {
+      const specs = importsOf(at(holder));
+      expect(specs.some((spec) => /\/(?:rendererTypes|hikeRendererTypes)(?:\.js)?$/.test(spec)), holder).toBe(true);
+    }
+  });
+
+  /**
+   * A hike loads no Babylon.js: not `app.ts` by an import of its own (the
+   * test above) and not anything it imports, by an import or by a dynamic
+   * one, however deep. What it loads of an engine is Babylon Lite, through
+   * the renderer it is handed. So what it is told by comes from the modules
+   * that compute it with no engine (`skyWait.ts`, `loadReport.ts`).
+   */
+  it("loads no Babylon.js under a hike: nothing app.ts imports, by an import or a dynamic one, reaches a module that loads it: the engine's half", () => {
+    const loads = (file: string): string[] => {
+      const text = readFileSync(file, "utf8");
+      const imported = [...text.matchAll(/^\s*(?:import|export)\s+(?!type\s)(?:[^"'();]*?\s+from\s+)?["']([^"']+)["']/gm)].map((m) => m[1] as string);
+      const asked = [...stripComments(text).matchAll(/\bimport\(\s*["']([^"']+)["']\s*\)/g)].map((m) => m[1] as string);
+      return [...imported, ...asked];
+    };
+    /** Every module the `entries` load, with the Babylon.js each loads (and the chain it is reached by) and the modules that load Babylon Lite. */
+    const reach = (entries: string[]): { seen: number; babylon: string[]; lite: string[] } => {
+      const from = new Map<string, string | null>(entries.map((entry) => [entry, null]));
+      const queue = [...entries];
+      const babylon: string[] = [];
+      const lite: string[] = [];
+      for (let at = 0; at < queue.length; at++) {
+        const file = queue[at] as string;
+        if (!existsSync(file)) continue;
+        for (const spec of loads(file)) {
+          if (spec === "@babylonjs/lite") lite.push(logical(file));
+          else if (spec.startsWith("@babylonjs")) {
+            const chain: string[] = [];
+            for (let f: string | null = file; f !== null; f = from.get(f) ?? null) chain.unshift(logical(f));
+            babylon.push(`${chain.join(" > ")} loads ${spec}`);
+          }
+          const next = followed(file, spec);
+          if (next === null) continue;
+          if (!from.has(next)) {
+            from.set(next, file);
+            queue.push(next);
+          }
+        }
+      }
+      return { seen: from.size, babylon, lite: [...new Set(lite)] };
+    };
+    // A hike is the page's half (`app.ts`) and the game it is handed, which the page names by type alone: the walk
+    // starts from both, the game's by the modules it names (`PAGE_ENTRIES`).
+    const page = reach([at("app.ts")]);
+    const hike = reach([at("app.ts"), ...PAGE_ENTRIES.map((entry) => at(`${entry}.ts`))]);
+    // Guards against the guard: the walk goes through the whole hike and finds the engine it does load.
+    expect(hike.seen).toBeGreaterThan(250);
+    expect(page.seen).toBeGreaterThan(50);
+    expect(hike.lite).toContain("game/lite/renderer.ts");
+    expect(hike.babylon).toEqual([]);
+    expect(page.babylon).toEqual([]);
+    // What the hike is told by is taken where it is computed. Each import is followed to its file.
+    const told = [at("app.ts")].flatMap((file) =>
+      importsOf(file).map((spec) => followed(file, spec)).filter((to): to is string => to !== null).map(logical),
+    );
+    for (const home of ["game/skyWait.ts", "game/loadReport.ts"]) expect(told, home).toContain(home);
+  });
+
+  /**
+   * `Math.sin` and friends are implementation-defined and may differ by an ULP
+   * between JS engines. A generator that uses one produces a different forest in
+   * Chrome than in Firefox from the identical seed, which is unrecoverable —
+   * nothing about the world crosses the wire, so there is no correction.
+   *
+   * `movement.ts` — `wishDirection` runs on BOTH sides, for every input,
+   * including reconciliation replay. This is the real hazard, and retiring it
+   * means a fixed-point angle representation. Its own project. `view.ts` —
+   * `aimDirection` feeds Interact's resolver (host-only, so only the host's
+   * answer is authoritative) and the headlamp's direction (render-only, never
+   * hashed), so an engine difference is unobservable either way.
+   *
+   * Allowlisted by call text rather than by line number, deliberately: matching
+   * on content is robust to moves while still failing on anything new, removed,
+   * or duplicated. Do not extend this list without an argument for why the new
+   * site cannot diverge two peers. The game's own sim holds the rest of them.
+   */
+  it("sim/ contains exactly the known implementation-defined Math calls: the engine's half", () => {
+    const FORBIDDEN =
+      /\bMath\.(?:sin|cos|tan|asin|acos|atan|atan2|pow|exp|log|log2|log10|cbrt|hypot)\s*\(/g;
+    const EXPECTED = [
+      "movement.ts Math.cos(",
+      "movement.ts Math.sin(",
+      "view.ts Math.cos(",
+      "view.ts Math.cos(",
+      "view.ts Math.sin(",
+      "view.ts Math.sin(",
+    ];
+
+    const found: string[] = [];
+    for (const file of sourceFiles(at("sim"))) {
+      const name = file.split("/").pop() ?? file;
+      const code = stripComments(readFileSync(file, "utf8"));
+      for (const match of code.matchAll(FORBIDDEN)) found.push(`${name} ${match[0].trim()}`);
+    }
+    expect(found.sort()).toEqual(EXPECTED);
+  });
+
+  it("holds or frees the controls only through the play gate: the engine's half", () => {
+    // `createPlayGate` owns suppression outright: the bar, the menu, the
+    // match's end and the governor's cover all go through it, so no path can
+    // free the controls one of the others holds. Every mention of the name is
+    // counted, not only `x.setSuppressed(` calls, so optional chaining,
+    // brackets, a split line, `.bind` or destructuring cannot slip past:
+    // input.ts declares and defines it, pauseMenu.ts declares the gate's
+    // dependency and calls it once, app.ts hands the gate `input`'s.
+    const mentions: Record<string, number> = {};
+    for (const file of sourceFiles(SRC)) {
+      const count = [...stripComments(readFileSync(file, "utf8")).matchAll(/\bsetSuppressed\b/g)].length;
+      if (count > 0) mentions[logical(file).split("\\").join("/")] = count;
+    }
+    expect(mentions).toEqual({ "app.ts": 2, "game/input.ts": 2, "game/pauseMenu.ts": 2 });
+    expect(readFileSync(at("app.ts"), "utf8")).toContain("setSuppressed: (on) => input.setSuppressed(on),");
+  });
+});
+
+/**
+ * The engine's WGSL is kept in `.wgsl` files under `game/shaders/`, each imported where it is used with `?raw`, and
+ * not written out in a TypeScript module. What stays in a module is what code makes at run time: a number
+ * formatted in, lines written by a loop, a binding made from a layout, and the choice between pieces.
+ */
+describe("the engine's WGSL is kept in files", () => {
+  /** What WGSL is told by: a stage's entry point, a binding, a built-in, a sampling call, a function's return type, the tag. */
+  const TOKENS: readonly RegExp[] = [
+    /@vertex/, /@fragment/, /@compute/, /@group\(/, /@binding\(/, /@location\(/, /@builtin\(/,
+    /\bfn\s+\w+\s*\([^)]*\)\s*->/, /textureSample/, /var<uniform>/, /\/\*\s*wgsl\s*\*\//,
+  ];
+  /** The lines of a module that carry such a token and are not static shader text, each with why. A line is named by a piece of its text. */
+  const ALLOWED: readonly { file: string; text: string; why: string }[] = [
+    { file: "game/lite/postWgsl.ts", text: "const taps = offsets.map(", why: "one blur tap for each of the kernel's taps, with its two numbers formatted in: lines made by a loop" },
+    { file: "game/lite/postWgsl.ts", text: "halation ? \"@group(0)@binding(5)var halationSampler", why: "one declaration under 120 characters that the grade's halation switches on" },
+  ];
+  const wgslFiles = walkFiles(SRC, ".wgsl");
+  const modules = sourceFiles(SRC);
+
+  it("can actually see the files and the modules", () => {
+    expect(wgslFiles.length).toBeGreaterThan(100);
+    expect(modules.length).toBeGreaterThan(300);
+  });
+
+  it("holds no static WGSL in a TypeScript module but the lines it lists, each with its reason", () => {
+    const found: string[] = [];
+    const used = new Set<number>();
+    for (const file of modules) {
+      const name = logical(file).split("\\").join("/");
+      stripComments(readFileSync(file, "utf8")).split("\n").forEach((line, i) => {
+        if (!TOKENS.some((token) => token.test(line))) return;
+        const at = ALLOWED.findIndex((a) => a.file === name && line.includes(a.text));
+        if (at >= 0) used.add(at);
+        else found.push(`${name}:${i + 1}: ${line.trim().slice(0, 100)}`);
+      });
+    }
+    expect(found, "shader text belongs in a .wgsl file under game/shaders/, imported with ?raw").toEqual([]);
+    expect(ALLOWED.filter((_, at) => !used.has(at)).map((a) => `${a.file}: ${a.text}`), "an allowance no line needs: remove it").toEqual([]);
+  });
+
+  /** For each module, the `.wgsl` files it imports with `?raw` (by the name it gives them) and the slots each `fill(wgsl(name), {...})` gives. */
+  const readImports = (file: string): { imported: Map<string, string>; fills: Map<string, string[]> } => {
+    const source = ts.createSourceFile(file, readFileSync(file, "utf8"), ts.ScriptTarget.Latest, true);
+    const imported = new Map<string, string>();
+    const fills = new Map<string, string[]>();
+    const visit = (node: ts.Node): void => {
+      if (ts.isImportDeclaration(node) && ts.isStringLiteral(node.moduleSpecifier) && node.moduleSpecifier.text.endsWith(".wgsl?raw") && node.importClause?.name !== undefined) {
+        imported.set(node.importClause.name.text, join(file, "..", node.moduleSpecifier.text.slice(0, -"?raw".length)));
+      }
+      if (ts.isCallExpression(node) && ts.isIdentifier(node.expression)) {
+        const named = (call: ts.Node): string | null =>
+          ts.isCallExpression(call) && ts.isIdentifier(call.expression) && call.expression.text === "wgsl" && call.arguments[0] !== undefined && ts.isIdentifier(call.arguments[0]) ? call.arguments[0].text : null;
+        if (node.expression.text === "fill" && node.arguments[0] !== undefined) {
+          const name = named(node.arguments[0]);
+          const slots = node.arguments[1];
+          if (name !== null && slots !== undefined && ts.isObjectLiteralExpression(slots)) {
+            fills.set(name, slots.properties.map((property) => (ts.isShorthandPropertyAssignment(property) || ts.isPropertyAssignment(property) ? property.name.getText() : "?")));
+          }
+        }
+      }
+      ts.forEachChild(node, visit);
+    };
+    visit(source);
+    return { imported, fills };
+  };
+  const slotsOf = (file: string): string[] => [...new Set([...readFileSync(file, "utf8").matchAll(/\$\{([^}]*)\}/g)].map((m) => m[1] as string))];
+
+  it("has every file imported by some module", () => {
+    const imported = new Set<string>();
+    for (const file of modules) for (const path of readImports(file).imported.values()) imported.add(path);
+    for (const path of imported) expect(existsSync(path), `${path} is imported and is not there`).toBe(true);
+    expect(wgslFiles.filter((file) => !imported.has(file)).map((file) => logical(file))).toEqual([]);
+  });
+
+  it("has every slot of a file filled by the module that imports it, and no value for a slot the file does not have", () => {
+    const wrong: string[] = [];
+    for (const file of modules) {
+      const { imported, fills } = readImports(file);
+      for (const [name, path] of imported) {
+        const slots = slotsOf(path);
+        for (const slot of slots) if (!/^[A-Za-z_][A-Za-z0-9_]*$/.test(slot)) wrong.push(`${logical(path)}: \${${slot}} is not a slot name`);
+        const given = fills.get(name);
+        const where = `${logical(file)} imports ${logical(path)}`;
+        if (given === undefined) {
+          if (slots.length > 0) wrong.push(`${where} and does not fill ${slots.join(", ")}`);
+        } else {
+          for (const slot of slots) if (!given.includes(slot)) wrong.push(`${where} and gives no value for \${${slot}}`);
+          for (const key of given) if (!slots.includes(key)) wrong.push(`${where} and gives a value for ${key}, which the file does not have`);
+        }
+      }
+    }
+    expect(wrong).toEqual([]);
+  });
+
+  it("is told by the one helper, which imports nothing", () => {
+    expect(importsOf(at("game/shaders/shaderText.ts"))).toEqual([]);
   });
 });
 
