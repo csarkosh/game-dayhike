@@ -150,7 +150,7 @@ describe("creditsModel", () => {
     expect(Object.keys(named)).toEqual(code.map((e) => e.id));
     expect(Object.values(named).flat().sort()).toEqual(served);
     // A row that says its work is unchanged names files that are the package's own, byte for byte; the
-    // decoder is bundled from the package's modules (`tools/vendor-ktx2.mjs`), so its row says nothing of the kind.
+    // decoder is bundled from the package's modules (`engine/tools/vendor-ktx2.mjs`), so its row says nothing of the kind.
     const shipped = join(dirname(createRequire(import.meta.url).resolve("@babylonjs/ktx2decoder/package.json")), "wasm");
     for (const e of code) {
       expect(e.modified, e.id).toBe(e.id === "render.ktx2_decoder");

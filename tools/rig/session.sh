@@ -95,7 +95,7 @@ up() {
       [ "$t" -lt 900 ] || { say "rig $i ($id): Session Manager not online after 15 minutes; see the console"; break; }
       sleep 10; t=$(( t + 10 ))
     done
-    nohup "$here/tools/frame-budget/rig/forward.sh" "$id" "$port" > "$dir/forward-$port.log" 2>&1 &
+    nohup "$here/engine/tools/frame-budget/rig/forward.sh" "$id" "$port" > "$dir/forward-$port.log" 2>&1 &
     echo $! > "$dir/forward-$port.pid"
     disown 2>/dev/null || true
     t=0

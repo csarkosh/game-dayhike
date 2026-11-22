@@ -125,6 +125,8 @@ jobs:
       - run: npx vitest run --root server
       - if: ${{ !cancelled() && steps.install.outcome == 'success' }}
         run: npx vitest run --root tools
+      - if: ${{ !cancelled() && steps.install.outcome == 'success' }}
+        run: npx vitest run --root engine/tools
       # The empty game on the engine alone (`engine/empty`): its world, its rules and two peers
       # through the engine's sessions. It makes its world from a seed and reads no shipped file.
       - if: ${{ !cancelled() && steps.install.outcome == 'success' }}

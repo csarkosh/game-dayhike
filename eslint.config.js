@@ -25,7 +25,7 @@ export default tseslint.config(
   // one stray worktree breaks `npm run lint` for the main checkout too. Flat
   // config does not read .gitignore, so the path has to be named here as well.
   // client/public/libs/** (the visit counter) and engine/public/libs/** are vendored third-party decoder/transcoder JS+wasm glue
-  // (tools/vendor-ktx2.mjs) — not code this repo authors, so it is not linted.
+  // (engine/tools/vendor-ktx2.mjs) — not code this repo authors, so it is not linted.
   // tools/electron-spike/** is a throwaway Electron probe: Electron's sandboxed
   // preload must be CommonJS, which the repo's no-require-imports rule forbids.
   // desktop/** is the standalone desktop shell package: Electron's main is

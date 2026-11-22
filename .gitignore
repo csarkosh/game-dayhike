@@ -3,7 +3,7 @@ dist/
 # The admin page's own build, for the shared admin host (client/vite.admin.config.ts).
 client/dist-admin/
 site/
-# The frame-budget harness's rows and screenshots (tools/frame-budget/measure.mjs).
+# The frame-budget harness's rows and screenshots (engine/tools/frame-budget/measure.mjs).
 tools/frame-budget/runs/
 server/dist/
 .DS_Store

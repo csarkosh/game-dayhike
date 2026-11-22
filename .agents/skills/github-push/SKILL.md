@@ -106,12 +106,12 @@ npm run gate -- --plan    # which plan this branch needs, and why
 npm run gate              # run it
 ```
 
-The gate (`tools/gate.mjs`) reads what the branch changes against `origin/main`, committed or
-not, and picks one of two plans (`tools/gate/plan.mjs`):
+The gate (`engine/tools/gate.mjs`) reads what the branch changes against `origin/main`, committed or
+not, and picks one of two plans (`engine/tools/gate/plan.mjs`):
 
-- **light**: only tooling, docs, branding or agent files changed (`tools/` except `tools/rust/`,
-  `docs/`, `branding/`, `.agents/`, `.claude/`, `README.md`, `AGENTS.md`, `ARCHITECTURE.md`).
-  Lint and the tools suite, here, in seconds: neither has a time limit, so load cannot fail
+- **light**: only tooling, docs, branding or agent files changed (`tools/`, `engine/tools/` except
+  `engine/tools/rust/`, `docs/`, `branding/`, `.agents/`, `.claude/`, `README.md`, `AGENTS.md`, `ARCHITECTURE.md`).
+  Lint and the tools suites (`tools/` and `engine/tools/`), here, in seconds: neither has a time limit, so load cannot fail
   them, and nothing the client or server suites test was touched.
 - **cloud**: anything else (the game, the server, the build, the field kernel's tools,
   dependencies, CI, `CREDITS.md`). The gate dispatches the `test` workflow on GitHub's runners
