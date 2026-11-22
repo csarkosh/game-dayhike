@@ -10,7 +10,7 @@ The game is live at **https://games.csarko.sh/dayhike**. Two independent things 
 | Piece | Where | What ships it |
 | --- | --- | --- |
 | Client (`client/dist`) | Firebase Hosting, free CDN | `npm run deploy:client` |
-| Signaling server (`server/`) | Cloud Run `fps-signaling`, `us-west1`, scales from zero; rooms in Firestore | `npm run deploy:server` |
+| Signaling server (`server/`: the engine's server, `@csarkosh/engine-server`, from the release `server/package.json` names) | Cloud Run `fps-signaling`, `us-west1`, scales from zero; rooms in Firestore | `npm run deploy:server` |
 | Telemetry service (the same image, `ROLE=telemetry`), with the admin routes | Cloud Run `fps-telemetry`, `us-west1`, scales from zero | `npm run deploy:server` (both services, one image) |
 | The admin page (`client/admin/`, `client/src/admin/`) | The shared admin host, `https://admin.csarko.sh/game-dayhike/`, published by the csarko.sh repository's `admin/deploy.sh` from the bundle this repo uploads to `gs://fps-csarko-downloads/admin/latest/` | `npm run deploy:admin` (builds `client/dist-admin/` with `vite.admin.config.ts`, uploads it, then runs `~/Projects/csarko.sh/admin/deploy.sh` when it is there, or names it) |
 
@@ -98,6 +98,11 @@ You still need, locally:
 - **Docker running**, and the image built `--platform linux/amd64`. The script passes it.
   Cloud Run will not run an arm64 image, and Apple Silicon builds arm64 by default — the
   failure shows up as a container that will not start, far from its cause.
+  The image (`server/Dockerfile`, built from the repository root) compiles nothing: it installs
+  the engine's server from its release with `npm ci --omit=dev` (the server's and the root's
+  dependencies, not the client's), copies `server/game.json` and `tools/telemetry/queries/`
+  beside it and runs `node_modules/@csarkosh/engine-server/dist/index.js`. A new release of the
+  server is an edit of the address in `server/package.json`, `npm install`, and a deploy.
 - **`gcloud` authenticated**, with the active project set to `fps-csarko`. The script
   refuses to run when the active project differs, because a deploy that targets the wrong
   project fails in ways that look like success.
@@ -137,12 +142,12 @@ tidying and costs a debugging session.
 The page at https://admin.csarko.sh/game-dayhike/ signs in through the csarko.sh
 repository's Firebase Auth, on its project `csarko-sh`; the telemetry service verifies the
 ID token against that issuer (`ADMIN_AUTH_PROJECT`, default `csarko-sh`) and admits only
-the accounts in `ADMIN_EMAILS` (`server/src/adminAuth.ts`). Both are the service's
+the accounts in `ADMIN_EMAILS` (the engine's server `src/adminAuth.ts`). Both are the service's
 environment, set by Terraform (`_infra/modules/gcp-telemetry`): the accounts are
 `admin_emails` in the git-ignored `terraform.tfvars`, so adding or removing a reader is
 `terraform apply` followed at once by `npm run deploy:server` (the apply makes a revision
 against the live image; see the next paragraph). An empty list serves no admin routes at all
-(`server/src/index.ts` logs `admin routes off`). Nothing here holds a secret: the Google
+(the engine's server `src/index.ts` logs `admin routes off`). Nothing here holds a secret: the Google
 provider, its OAuth client and the sign-in's redirect URIs are the csarko.sh repository's
 to set up, not this one's. `docs/admin/` §6 has the history of the sign-in's move.
 

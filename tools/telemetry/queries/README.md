@@ -45,13 +45,13 @@ sessions, visitors or health.
 
 Each query over a range reads the last seven calendar days (`kpis.sql` the last twelve
 weeks, the length of the trends it feeds): the line marked `-- range` is the one to change,
-and the admin page's server sets its days from the range chosen there (`server/src/admin.ts`;
+and the admin page's server sets its days from the range chosen there (the engine's server `src/admin.ts`;
 1 is today, 7 today and the six days before), or to the twelve weeks for the index card.
 Every day, week and window is by the dates of one zone. Pasted, that zone is New York's: the
 files are written in `'America/New_York'`. The admin routes run them in the viewer's zone
 instead *(2026-10-22)*: the page sends the browser's zone as `tz` on every request (and the
 shared admin host's index sends one to `GET /admin/kpis`), and the server
-(`server/src/adminQueries.ts` `forBigQuery`) turns every `'America/New_York'` in a file into
+(the engine's server `src/adminQueries.ts` `forBigQuery`) turns every `'America/New_York'` in a file into
 the `@tz` parameter, as it turns the range line's days into `@days`; a route given no `tz`
 reads New York's, as a pasted query does. So write a query's zone as that literal, wherever a
 date is read (`DATE(timestamp, 'America/New_York')`, `CURRENT_DATE('America/New_York')`), and

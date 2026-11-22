@@ -21,7 +21,7 @@ export function productionEnv() {
     VITE_SIGNALING_URL: `${signalingUrl.replace(/^https:/, 'wss:')}/ws`,
     VITE_WEB_BASE: siteUrl,
     VITE_DOWNLOADS_URL: `${tfOutput('downloads_url')}/desktop/latest.json`,
-    // The telemetry route on its own service (`server/src/telemetry.ts`),
+    // The telemetry route on its own service (the engine's server `src/telemetry.ts`),
     // and the commit this build is of, which every row the page sends names.
     VITE_TELEMETRY_URL: `${tfOutput('telemetry_url')}/t`,
     VITE_BUILD_SHA: buildTag(),

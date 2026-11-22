@@ -11,7 +11,7 @@
  * resolved by the browser against the host.
  *
  * The server's admin routes verify the ID token against that project's issuer
- * and their own allowlist (`server/src/adminAuth.ts`, `ADMIN_EMAILS`): the
+ * and their own allowlist (the engine's server `src/adminAuth.ts`, `ADMIN_EMAILS`): the
  * sign-in proves who the account is, the server decides whether it may read.
  * A 401 is the shell's to notice (`admin:unauthorized`) and to answer with
  * the gate again, saying which account was refused; this page's part is to

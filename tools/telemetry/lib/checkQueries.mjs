@@ -1,6 +1,6 @@
 // The saved queries (tools/telemetry/queries/), dry-run against BigQuery as
 // the admin routes run them: the same rewrites the server makes
-// (server/src/adminQueries.ts), then a job BigQuery plans but does not
+// (the engine's server `src/adminQueries.ts`), then a job BigQuery plans but does not
 // execute, which costs nothing and refuses a query it could not run. Log
 // Analytics' editor accepts what BigQuery's parser does not (`rows` as a
 // name, found on the first sign-in), so the engine is the only judge.

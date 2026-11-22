@@ -106,12 +106,12 @@ jobs:
       - if: ${{ !cancelled() && steps.install.outcome == 'success' }}
         run: npm run lint
 
-  server-and-tools:
+  tools:
     runs-on: ubuntu-latest
-    # Measured: 21 s.
+    # Measured: 21 s with the server's suite, which has moved to the engine; the tools alone take less.
     timeout-minutes: 10
     steps:
-      # None of these suites reads an LFS object.
+      # This suite reads no LFS object.
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           lfs: false
@@ -120,11 +120,8 @@ jobs:
         with:
           node-version: ${{ env.NODE_VERSION }}
           cache: npm
-      - id: install
-        run: npm ci
-      - run: npx vitest run --root server
-      - if: ${{ !cancelled() && steps.install.outcome == 'success' }}
-        run: npx vitest run --root tools
+      - run: npm ci
+      - run: npx vitest run --root tools
 
   # The client suite whole on one runner took 17 min (vitest's own figure:
   # 1014 s). Five shards bring the longest to about 5 min: vitest assigns files
@@ -246,7 +243,7 @@ jobs:
   # `gates` on a superseded commit is that cancellation, not a failure to chase.
   gates:
     if: always()
-    needs: [lfs, static, server-and-tools, client, build]
+    needs: [lfs, static, tools, client, build]
     runs-on: ubuntu-latest
     timeout-minutes: 2
     steps:

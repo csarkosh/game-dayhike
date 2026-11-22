@@ -10,7 +10,7 @@
 // production, not theorised.
 //
 // The rooms live in Firestore now, shared across revisions
-// (`server/src/sharedRegistry.ts`), so a drained revision is only untidy.
+// (the engine's server `src/sharedRegistry.ts`), so a drained revision is only untidy.
 // Deleting the superseded revisions still ends their instances: each seats its
 // peers out on SIGTERM, every peer reconnects onto the one revision serving
 // traffic, and a returning host reclaims its room from the store. The window
