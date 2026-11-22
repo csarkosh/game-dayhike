@@ -8,7 +8,6 @@ import { titleStillUrl, titleVideoUrl, videoUrl } from "./game/dayhikeAssets.js"
 import { createTitleLoop, titleLoopEnv, type TitleLoop } from "./game/titleLoop.js";
 import { createFilmHead, fetchFilmHead, filmHeadWanted, onCellular, warmWhenLoaded } from "./game/filmHead.js";
 import { landingModel, type LandingInput } from "./game/landingModel.js";
-import { loadName, saveName, type NameOf } from "@csarkosh/engine/game/playerName";
 import { hostOs, isMobile, type NavigatorLike } from "@csarkosh/engine/game/gpuSignals";
 import { creditsEntries } from "./game/credits.js";
 import { renderTurnedAway, type TurnedAwayHandle } from "./game/turnedAway.js";
@@ -37,12 +36,9 @@ export type IntroRun = {
   untell: () => void;
 };
 
-/** Where Day Hike keeps the player's name between visits, and what a name made for a new visitor starts with. */
-const HIKE_NAME: NameOf = { key: "dayhike.playerName", prefix: "Hiker" };
-
 /**
  * Day Hike's own of the page: the intro's film, the title's loop, the landing page, the page for
- * those turned away, the player's name and the mode. The page's shell (`shell.ts`) makes it once
+ * those turned away and the mode. The page's shell (`shell.ts`) makes it once
  * and calls it at its own points.
  */
 export function createHikePage(h: PageHost): PageSide {
@@ -82,7 +78,6 @@ export function createHikePage(h: PageHost): PageSide {
 
   /** A line left for the landing by the hike that just ended, taken when the landing is built. */
   let landingNotice: string | null = null;
-  let selfName = loadName(HIKE_NAME);
   /** Made by Play, waiting for the game route's render. */
   let pendingIntro: IntroRun | null = null;
   /** Playing over the hike being started. */
@@ -419,12 +414,6 @@ export function createHikePage(h: PageHost): PageSide {
     turnedAway?.setView(turnedAwayView(next));
   }
 
-  /** The player's name, kept as typed and cleaned; returns what it is now. */
-  function rename(raw: string): string {
-    selfName = saveName(HIKE_NAME, raw);
-    return selfName;
-  }
-
   return {
     // The landing page and what plays behind it.
     showLanding,
@@ -442,8 +431,6 @@ export function createHikePage(h: PageHost): PageSide {
     showTurnedAway,
     turnedAwayNow,
     // The player's name and the mode.
-    name: (): string => selfName,
-    rename,
     mode: currentMode,
     saveMode: (mode: string): void => {
       if (isGameMode(mode)) saveMode(mode);

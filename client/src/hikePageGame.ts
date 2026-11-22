@@ -23,8 +23,10 @@ import { PROTOCOL_VERSION } from "./net/protocol.js";
 export const HIKE_PAGE: PageGame<World, WorldState, PlayerState, Renderer, HikeAudio, Hud, HostSession, ClientSession> = {
   /** The hike, as the page that runs one is handed it. */
   game: HIKE_GAME,
-  /** Day Hike's own of the page: the intro's film, the title's loop, the landing page, the page for those turned away, the name, the mode. */
+  /** Day Hike's own of the page: the intro's film, the title's loop, the landing page, the page for those turned away, the mode. */
   side: createHikePage,
+  /** Where a hiker's name is kept between visits, and what one made for a new visitor starts with. */
+  name: { key: "dayhike.playerName", prefix: "Hiker" },
   /** The version of the hike's wire (`protocol.ts`), which every telemetry row names. */
   protocol: PROTOCOL_VERSION,
   /** A start's line of status: the hike's HUD with nothing else of it shown. */

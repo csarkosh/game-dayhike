@@ -31,6 +31,7 @@ import { startAttemptClock, type AttemptClock } from "./game/attemptClock.js";
 import { parseLatest, type DesktopRelease } from "./net/desktopRelease.js";
 import { createSignalingClient, type SignalingClient } from "./net/signaling.js";
 import { signalingUrl } from "./net/signalingUrl.js";
+import { loadName, saveName } from "./game/playerName.js";
 import { createLobby, joinLobby, lobbyErrorMessage, type Lobby } from "./net/lobby.js";
 import { browserDeps, createTelemetry, installErrorCapture, referrerOf, telemetryUrl, testerMark, visitorId, type EarlyCatch, type Telemetry } from "./net/telemetry.js";
 import { GEN_VERSION } from "./sim/forest.js";
@@ -104,6 +105,8 @@ export function startShell<
   });
   if (!found) throw new Error("#app not found");
   const app: HTMLDivElement = found;
+  /** The player's name as the roster shows it, kept under the game's key between visits (`playerName.ts`). */
+  let selfName = loadName(page.name);
   /** The veil the pages switch behind (veil.ts), and the milliseconds a new page gets to settle before it lifts. */
   const veil = createVeil(document.body);
   const VEIL_SETTLE_MS = 250;
@@ -377,7 +380,8 @@ export function startShell<
     onRetry: retryAttempt,
     onInviteCopied: () => telemetry.event("invite_copied"),
     onRename: (raw) => {
-      lobby?.setName(side.rename(raw));
+      selfName = saveName(page.name, raw);
+      lobby?.setName(selfName);
       // The repaint the roster's rename contract requires: it is what removes
       // the edit field, so it must happen on every onRename.
       paintRoster();
@@ -391,7 +395,7 @@ export function startShell<
       rosterModel({
         lobby: lobby?.state ?? null,
         selfId,
-        selfName: side.name(),
+        selfName,
         inviteUrl: (id) => inviteLink(id, webBase),
         inGame: parseRoute(location.pathname).kind === "game",
         hidden: parseRoute(location.pathname).kind === "scene",
@@ -564,7 +568,7 @@ export function startShell<
         signaling,
         peerId: selfId,
         lobbyId: createLobbyId(),
-        name: side.name(),
+        name: selfName,
         route: hostRoute(currentRoutePath()),
       });
       // Abandoned while the reply was in the air. The room is real and hosted by
@@ -610,7 +614,7 @@ export function startShell<
     });
     paintRoster();
     try {
-      const joined = await joinLobby({ signaling, peerId: selfId, lobbyId, name: side.name() });
+      const joined = await joinLobby({ signaling, peerId: selfId, lobbyId, name: selfName });
       if (epoch !== attemptEpoch) {
         joined.leave();
         return;

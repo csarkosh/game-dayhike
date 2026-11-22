@@ -56,6 +56,9 @@ describe("the empty game as the page's shell is handed it", () => {
     expect(EMPTY_PAGE.game).toBe(EMPTY_GAME);
     expect(EMPTY_PAGE.side).toBe(createEmptyPage);
     expect(EMPTY_PAGE.protocol).toBe(WALK.protocolVersion);
+    // The name is the shell's to keep; the game says only where, and what a made one starts with.
+    expect(EMPTY_PAGE.name).toEqual({ key: "empty.playerName", prefix: "Walker" });
+    expect(code("page.ts")).not.toMatch(/sanitiseName|loadName|rename/);
     // No scene is staged: a scene's address is answered with nothing to let go.
     expect(typeof EMPTY_PAGE.scene({ canvas: undefined as never, container: undefined as never, tier: "low" }, { t: null, step: null }, "intro").dispose).toBe("function");
   });

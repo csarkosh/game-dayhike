@@ -1,8 +1,8 @@
 /**
  * A game as the page's shell is handed it: one definition (`PageGame`), the
  * game's own of the page (`PageSide`: its landing page, what plays before a
- * session starts, its page for those turned away, the player's name and the
- * mode), which the shell calls at the page's own points, and what that side
+ * session starts, its page for those turned away and the mode), which the
+ * shell calls at the page's own points, and what that side
  * reads of the shell (`PageHost`). The shell is written over these and names
  * no game; the game a session is of (`SessionGame`) is carried through with
  * its own type parameters.
@@ -13,6 +13,7 @@ import type { RenderPlayer, RenderState } from "./lite/renderGame.js";
 import type { LoadVerdict } from "./loadCheck.js";
 import type { LoadProgress } from "./loadProgress.js";
 import type { MuteButton } from "./muteButton.js";
+import type { NameOf } from "./playerName.js";
 import type { PageProbe } from "./probePage.js";
 import type { QualityTier } from "./quality.js";
 import type { Route } from "./router.js";
@@ -119,10 +120,7 @@ export type PageSide = {
   showTurnedAway(container: HTMLDivElement, why: TurnedAway): void;
   /** A verdict of "cannot play" come while that page is up: it is shown what the verdict adds. */
   turnedAwayNow(next: TurnedAway): void;
-  // The player's name and the mode.
-  name(): string;
-  /** The player's name, kept as typed and cleaned; returns what it is now. */
-  rename(raw: string): string;
+  // The mode.
   /** The mode saved, one of the game's list. */
   mode(): string;
   /** Keeps a mode; one that is not of the game's list is ignored. */
@@ -144,6 +142,8 @@ export type PageGame<
   game: SessionGame<W, S, P, R, A, H, HostS, ClientS>;
   /** The game's own of the page, made once. */
   side(host: PageHost): PageSide;
+  /** Where the player's name is kept between visits and what a name made for a new visitor starts with; the shell keeps the name (`playerName.ts`). */
+  name: NameOf;
   /** The version of the game's wire, which every telemetry row names: two pages play together only at the same one. */
   protocol: number;
   /** A line of status in `container`, for a start's waits and its failure. */

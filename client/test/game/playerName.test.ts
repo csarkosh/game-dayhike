@@ -68,9 +68,10 @@ describe("saveName", () => {
 
 describe("a game's own of the name", () => {
   it("is Day Hike's key and word for Day Hike, as they have always been", () => {
-    expect(sourceText("hikePage.ts")).toContain('const HIKE_NAME: NameOf = { key: "dayhike.playerName", prefix: "Hiker" };');
-    expect(sourceText("hikePage.ts")).toContain("  let selfName = loadName(HIKE_NAME);");
-    expect(sourceText("hikePage.ts")).toContain("    selfName = saveName(HIKE_NAME, raw);");
+    expect(sourceText("hikePageGame.ts")).toContain('  name: { key: "dayhike.playerName", prefix: "Hiker" },');
+    // The shell loads and saves it under whatever key the game hands it.
+    expect(sourceText("shell.ts")).toContain("  let selfName = loadName(page.name);");
+    expect(sourceText("shell.ts")).toContain("      selfName = saveName(page.name, raw);");
   });
   it("keeps another game's name under that game's key, made from that game's word", () => {
     const other: NameOf = { key: "other.playerName", prefix: "Walker" };

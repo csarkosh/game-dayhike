@@ -29,9 +29,11 @@ describe("the page's shell and Day Hike's own of the page", () => {
       expect(shell, inner).not.toMatch(new RegExp(`\\b${inner}`));
     }
     // Nor the modules those are made with.
-    for (const module of ["game/landing.js", "game/landingModel.js", "game/titleLoop.js", "game/introOverlay.js", "game/playerName.js", "game/filmHead.js", "game/turnedAway"]) {
+    for (const module of ["game/landing.js", "game/landingModel.js", "game/titleLoop.js", "game/introOverlay.js", "game/filmHead.js", "game/turnedAway"]) {
       expect(shell, module).not.toContain(module);
     }
+    // The player's name is no longer one of them: the engine keeps it (`playerName.ts`), and Day Hike's own of the page holds none.
+    expect(own).not.toMatch(/playerName|selfName|loadName|saveName|\brename\b/);
   });
 
   it("Play stops the title's loop and starts the film, to be carried into the game", () => {
@@ -107,9 +109,13 @@ describe("the page's shell and Day Hike's own of the page", () => {
     expect(shell.split('telemetry.event("turned_away"').length - 1).toBe(1);
   });
 
-  it("the name and the mode are asked of Day Hike's own", () => {
-    expect(shell).toContain("      lobby?.setName(side.rename(raw));");
-    expect(shell).toContain("        selfName: side.name(),");
+  it("the name is the shell's, kept under the game's key; the mode is asked of Day Hike's own", () => {
+    expect(shell).toContain("  let selfName = loadName(page.name);");
+    expect(shell).toContain("      selfName = saveName(page.name, raw);\n      lobby?.setName(selfName);");
+    expect(shell).toContain("        selfName,\n        inviteUrl:");
+    expect(shell).toContain("        name: selfName,\n        route: hostRoute(currentRoutePath()),");
+    expect(shell).toContain("joinLobby({ signaling, peerId: selfId, lobbyId, name: selfName });");
+    expect(shell).not.toMatch(/side\.(name|rename)\b/);
     expect(shell).toContain("      mode: { choice: side.mode, save: side.saveMode },");
   });
 });

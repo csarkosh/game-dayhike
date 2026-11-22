@@ -10,13 +10,10 @@ import type { LandingShell, PageGame, PageHost, PageSide, TurnedAway } from "@cs
 import { pageProbe } from "@csarkosh/engine/game/probePage";
 import { pageStorage } from "@csarkosh/engine/game/tierChoice";
 import type { AmbientAudio } from "@csarkosh/engine/game/ambientAudio";
-import { sanitiseName } from "@csarkosh/engine/net/lobby";
 import { EMPTY_GAME, WALK_MODES, type WalkClient, type WalkHost, type WalkRenderer } from "./game.js";
 import { createStatusLine, type WalkHud } from "./hud.js";
 import { WALK_PROTOCOL } from "./net.js";
 import type { WalkState, WalkWorld, Walker } from "./sim.js";
-
-const NAME_KEY = "empty.playerName";
 
 const STYLE = `
 .empty-landing { position: absolute; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 16px; font: 16px/1.4 ui-monospace, Menlo, monospace; color: #e8e8ea; }
@@ -26,22 +23,10 @@ const STYLE = `
 .empty-away { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; padding: 24px; text-align: center; font: 16px/1.5 ui-monospace, Menlo, monospace; color: #e8e8ea; }
 `;
 
-/** The player's name as the roster shows it, kept across visits where the browser allows. */
-function loadName(): string {
-  try {
-    const stored = pageStorage()?.getItem(NAME_KEY);
-    if (typeof stored === "string") return sanitiseName(stored);
-  } catch {
-    /* storage refused: a name for this visit */
-  }
-  return `Walker-${String(Math.min(9999, Math.floor(Math.random() * 10000))).padStart(4, "0")}`;
-}
-
 /** The empty game's own of the page: made once by the shell, called at the page's own points. */
 export function createEmptyPage(h: PageHost): PageSide {
   let landing: { play: HTMLButtonElement; root: HTMLElement } | null = null;
   let away: HTMLElement | null = null;
-  let name = loadName();
   const mode = createModeKeeper(WALK_MODES, pageStorage);
 
   /** The landing page shows what the shell holds now: a follower waits for the host, and Play says so while it loads. */
@@ -102,16 +87,6 @@ export function createEmptyPage(h: PageHost): PageSide {
     turnedAwayNow(next: TurnedAway) {
       if (away !== null) away.textContent = `This browser cannot draw the world (${next.reason}).`;
     },
-    name: () => name,
-    rename(raw) {
-      name = sanitiseName(raw);
-      try {
-        pageStorage()?.setItem(NAME_KEY, name);
-      } catch {
-        /* the name is still in force for this visit */
-      }
-      return name;
-    },
     mode: mode.mode,
     saveMode(next) {
       if (WALK_MODES.modes.some((m) => m.id === next)) mode.save(next);
@@ -122,6 +97,7 @@ export function createEmptyPage(h: PageHost): PageSide {
 export const EMPTY_PAGE: PageGame<WalkWorld, WalkState, Walker, WalkRenderer, AmbientAudio, WalkHud, WalkHost, WalkClient> = {
   game: EMPTY_GAME,
   side: createEmptyPage,
+  name: { key: "empty.playerName", prefix: "Walker" },
   protocol: WALK_PROTOCOL,
   statusLine: createStatusLine,
   /** The worker that makes a session's world: the entry is the game's, since a worker is named by a path. */

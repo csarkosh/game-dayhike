@@ -22,6 +22,8 @@ describe("Day Hike as the page's shell is handed it", () => {
     expect(HIKE_PAGE.game).toBe(HIKE_GAME);
     expect(HIKE_PAGE.side).toBe(createHikePage);
     expect(HIKE_PAGE.protocol).toBe(PROTOCOL_VERSION);
+    // The key a hiker's name has always been kept under, so a saved name is found again.
+    expect(HIKE_PAGE.name).toEqual({ key: "dayhike.playerName", prefix: "Hiker" });
     expect(HIKE_PAGE.worldWorker).toBe(startHikeWorldWorker);
     expect(HIKE_PAGE.scene).toBe(runLiteSceneRoute);
     expect(typeof HIKE_PAGE.statusLine).toBe("function");
