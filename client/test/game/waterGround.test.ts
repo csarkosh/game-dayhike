@@ -7,7 +7,7 @@ import { TRAIL_Z_ANCHOR } from "../../src/sim/bowl.js";
 import { firstPondWorld, lakeOf } from "../sim/helpers/lakes.js";
 import { rayToShore } from "@csarkosh/engine/sim/lakeShape";
 import { NO_WATER_GROUND, waterGroundAt } from "@csarkosh/engine/game/waterGround";
-import { timeLimit } from "../helpers/timeLimit.js";
+import { timeLimit } from "@csarkosh/engine/testing/timeLimit";
 
 describe("waterGroundAt", { timeout: timeLimit(120_000) }, () => {
   it("is nothing far from every lake and the cove", () => {

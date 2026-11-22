@@ -14,7 +14,7 @@ import { WAY_RIM_M, wayDirection, wayDistance, wayPoint, wayProject } from "../.
 import { wayOf } from "../../src/sim/wayDraw.js";
 import { CREST_GRACE_M, WAY_SLACK_M, chaseLineDistance, chaseLinePoint, onWay } from "../../src/sim/chaseLine.js";
 import { graph } from "./helpers/stemGraph.js";
-import { timeLimit } from "../helpers/timeLimit.js";
+import { timeLimit } from "@csarkosh/engine/testing/timeLimit";
 
 setActiveTerrainVariant(DEFAULT_TERRAIN_VARIANT);
 const seed = seedFromToken("hollow");

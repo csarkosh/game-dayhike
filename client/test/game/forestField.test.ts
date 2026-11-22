@@ -2,8 +2,8 @@ import { describe, it, expect } from "vitest";
 import "../../src/sim/passes/index.js";
 import "@csarkosh/engine/sim/olympic";
 import { setActiveTerrainVariant } from "@csarkosh/engine/sim/terrain";
-import { runBySlices } from "../helpers/sliceRun.js";
-import { timeLimit } from "../helpers/timeLimit.js";
+import { runBySlices } from "@csarkosh/engine/testing/sliceRun";
+import { timeLimit } from "@csarkosh/engine/testing/timeLimit";
 import {
   treeInCell,
   TREE_CELL,

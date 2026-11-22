@@ -6,7 +6,7 @@ import { PLAYER_HALF } from "@csarkosh/engine/sim/constants";
 import { DEFAULT_TERRAIN_VARIANT, setActiveTerrainVariant } from "@csarkosh/engine/sim/terrain";
 import { Button, type InputCommand, type Vec3 } from "../../src/sim/types.js";
 import { spiralSpawn } from "../../src/sim/spawn.js";
-import { timeLimit } from "../helpers/timeLimit.js";
+import { timeLimit } from "@csarkosh/engine/testing/timeLimit";
 
 /**
  * Walking has to feel smooth, and "smooth" is a measurable property of the sim,

@@ -11,7 +11,7 @@ import { stemAhead } from "@csarkosh/engine/sim/trailRoute";
 import { chaseLineDistance, chaseLinePoint } from "../../src/sim/chaseLine.js";
 import { WAY_RIM_M } from "../../src/sim/wayDown.js";
 import { WAY_APART_M, WAY_BACK_MAX_M, wayOf } from "../../src/sim/wayDraw.js";
-import { seedPart } from "../helpers/seedPart.js";
+import { seedPart } from "@csarkosh/engine/testing/seedPart";
 import { BACK_SLACK_M, TURN_MOST_DEG, UNGENTLE_SHARE_MOST, wayRules } from "./helpers/wayRules.js";
 import { runDown } from "./helpers/wayRunner.js";
 

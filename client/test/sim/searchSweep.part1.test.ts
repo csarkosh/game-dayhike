@@ -1,6 +1,6 @@
 import { describe, it } from "vitest";
 import { SEARCH_PARTS, checkSearchPart } from "./searchSweep.js";
-import { timeLimit } from "../helpers/timeLimit.js";
+import { timeLimit } from "@csarkosh/engine/testing/timeLimit";
 
 // A limit for a hang, not a bar on speed: a part's 76 worlds build in about a minute here.
 describe(`the search over the 227-seed sweep, part 1 of ${SEARCH_PARTS}`, { timeout: timeLimit(300_000) }, () => {

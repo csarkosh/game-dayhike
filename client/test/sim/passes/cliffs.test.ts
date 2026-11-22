@@ -18,7 +18,7 @@ import {
   CLIFF_SOLID_REACH, cliffBoxesInRect, cliffCellBoxes, cliffModuleBoxes, clearCliffCellBoxCache,
 } from "@csarkosh/engine/sim/passes/cliffs";
 import { CLIFF_LAID, laidCells, laidChunk, laidGrid } from "../helpers/cliffLaid.js";
-import { timeLimit } from "../../helpers/timeLimit.js";
+import { timeLimit } from "@csarkosh/engine/testing/timeLimit";
 
 /** The atmo scarp the gates are shot at, and the chunk holding it. */
 const ATMO = 627994160;

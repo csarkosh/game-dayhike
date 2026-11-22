@@ -1,7 +1,7 @@
 import { describe, it } from "vitest";
 import "../../src/sim/passes/index.js";
 import { WATER_CHECKS, WATER_PARTS } from "./waterTerrainSweep.js";
-import { timeLimit } from "../helpers/timeLimit.js";
+import { timeLimit } from "@csarkosh/engine/testing/timeLimit";
 
 // A limit for a hang, not a bar on speed: a part's worlds build and are scanned in about a minute on a CI runner.
 describe(`the water terrain over 200 worlds, part 5 of ${WATER_PARTS}`, { timeout: timeLimit(1_200_000) }, () => {

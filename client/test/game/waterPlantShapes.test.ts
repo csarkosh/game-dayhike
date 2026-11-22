@@ -6,7 +6,7 @@ import { waterPlantPlacements } from "@csarkosh/engine/game/waterPlantField";
 import {
   LILY_LIFT, REED_CHARACTERS, lilyFlowers, lilyYaw, waterPlantLists,
 } from "@csarkosh/engine/game/waterPlantShapes";
-import { timeLimit } from "../helpers/timeLimit.js";
+import { timeLimit } from "@csarkosh/engine/testing/timeLimit";
 
 describe("a lake's plants as lists, with no engine", { timeout: timeLimit(60_000) }, () => {
   const { seed } = firstPondWorld((f) => (f.murk ?? 0) >= 0.8);

@@ -3,8 +3,8 @@ import "../../src/sim/passes/index.js";
 import "@csarkosh/engine/sim/olympic";
 import { elevationAt, setActiveTerrainVariant } from "@csarkosh/engine/sim/terrain";
 import { BED_GRID, LAKE_SURFACE_REACH, createBedGrid, bedOriginFor, bedNeedsRebake, bakeBed, beginBake, bakeRows, bedSquareHasWater, bedOutsideSquare } from "@csarkosh/engine/game/bedHeight";
-import { stadiumLake } from "../helpers/lakeShapes.js";
-import { timeLimit } from "../helpers/timeLimit.js";
+import { stadiumLake } from "@csarkosh/engine/testing/lakeShapes";
+import { timeLimit } from "@csarkosh/engine/testing/timeLimit";
 
 const SEED = 0x5eed;
 beforeAll(() => setActiveTerrainVariant("olympic"));

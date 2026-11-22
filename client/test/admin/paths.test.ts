@@ -5,7 +5,7 @@ import { browserZone, useZone } from "../../src/admin/timeline.js";
 import { buildTrailFor, parseWorld, sameGeneration } from "../../src/admin/trail.js";
 import { GEN_VERSION } from "@csarkosh/engine/sim/forest";
 import { DEFAULT_TERRAIN_VARIANT } from "@csarkosh/engine/sim/terrain";
-import { timeLimit } from "../helpers/timeLimit.js";
+import { timeLimit } from "@csarkosh/engine/testing/timeLimit";
 
 describe("parseWorld", () => {
   it("reads the generation and the variant from a world version", () => {

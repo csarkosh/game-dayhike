@@ -10,7 +10,7 @@ import { PLAYER_HALF, TICK_DT } from "@csarkosh/engine/sim/constants";
 import { ENEMY_HALF } from "../../src/sim/dayhikeConstants.js";
 import { HOLLOW_HUNT_SPEED, hollowsOf, spawnHollow } from "../../src/sim/hollow.js";
 import { Phase } from "../../src/sim/types.js";
-import { seedPart } from "../helpers/seedPart.js";
+import { seedPart } from "@csarkosh/engine/testing/seedPart";
 
 /**
  * Where the trail crosses the treeline: the point on the stem nearest the pad,

@@ -1,7 +1,7 @@
 import { describe, it, expect } from "vitest";
 import "../../src/sim/passes/index.js";
 import { createHud } from "../../src/game/hud.js";
-import { StandInElement, asHtml, installStandInDom } from "./helpers/standInDom.js";
+import { StandInElement, asHtml, installStandInDom } from "@csarkosh/engine/testing/standInDom";
 
 describe("the HUD's lamp hint", () => {
   it("shows the torch and the key that lights it, lit with the lamp, and goes on null", () => {

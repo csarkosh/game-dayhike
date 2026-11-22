@@ -4,7 +4,7 @@ import "../../../src/game/dayhikeAssets.js";
 import "../../../src/sim/passes/index.js";
 import { CROWD_CARD_WGSL, CROWD_PASS } from "../../../src/game/lite/crowdCardMeshes.js";
 import { CROWD_CARD_WIDE } from "../../../src/game/crowdCards.js";
-import { tight } from "./wgslText.js";
+import { tight } from "@csarkosh/engine/testing/wgslText";
 
 const src = readFileSync(new URL("../../../src/game/lite/crowdCardMeshes.ts", import.meta.url), "utf8");
 const mask = readFileSync(new URL("../../../../engine/src/game/lite/shadeMask.ts", import.meta.url), "utf8");

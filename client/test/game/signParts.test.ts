@@ -6,7 +6,7 @@ import {
   ARM_THICKNESS, LABEL_LIFT, LABEL_SIZE, POST_HEIGHT, SIGN_ARM_OUTPUT, faceNormals, labelAlong, plankCount, postHeight, signPlaces, squareEnd,
 } from "../../src/game/signParts.js";
 import { babylonValues } from "../helpers/babylonFixture.js";
-import { carried, inverse } from "../helpers/ruler.js";
+import { carried, inverse } from "@csarkosh/engine/testing/ruler";
 
 /**
  * The shipped arm as Babylon.js's loader handed it, recorded: a level of detail each, its positions, normals and

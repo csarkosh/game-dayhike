@@ -126,4 +126,4 @@ The site is on Firebase Hosting at `games.csarko.sh/dayhike`; the signaling serv
 
 ## Testing
 
-Vitest runs three roots — `client`, `server`, `tools` — all headless. What draws is tested with no device: the modules that compute with no engine run under Node, the WGSL is read as text, and the hike's renderer is held as it stands before its engine does; `client/test/game/catalogModels.test.ts` reads every catalog model with the game's own reader and checks its nodes, clips and vertices.
+Vitest runs these roots — `client`, `engine`, `engine/empty`, `server`, `tools` — all headless. The engine's own tests stand in `engine/test`, its shared test helpers in `engine/testing`, and Day Hike's tests (those that need the game) stay in `client/test`. What draws is tested with no device: the modules that compute with no engine run under Node, the WGSL is read as text, and the hike's renderer is held as it stands before its engine does; `client/test/game/catalogModels.test.ts` reads every catalog model with the game's own reader and checks its nodes, clips and vertices.

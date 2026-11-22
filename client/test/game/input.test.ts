@@ -3,7 +3,7 @@ import { createInputSampler } from "@csarkosh/engine/game/input";
 import { createTouchModel } from "@csarkosh/engine/game/touchControls";
 import { HIKE_ACTIONS } from "../../src/sim/types.js";
 import { sourceText } from "../helpers/source.js";
-import { installStandInDom } from "./helpers/standInDom.js";
+import { installStandInDom } from "@csarkosh/engine/testing/standInDom";
 
 type Listener = (e: unknown) => void;
 const listeners = new Map<string, Listener[]>();

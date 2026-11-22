@@ -4,7 +4,7 @@ import { SKY_DOME_SIZE, createSkyTableUploads, emptySkyDomeUniforms, skyDomeUnif
 import { skyStateFor } from "@csarkosh/engine/game/skyState";
 import { WEATHER_PRESETS } from "@csarkosh/engine/game/weather";
 import { babylonText, babylonValues } from "../helpers/babylonFixture.js";
-import { skyFixture } from "./helpers/skyFixture.js";
+import { skyFixture } from "@csarkosh/engine/testing/skyFixture";
 
 /** The uniforms the dome's shell on Babylon.js names, and of them the image's, bound at each draw: recorded. */
 const { skyDomeUniforms: SKY_DOME_UNIFORMS, skyDomeImageUniforms: SKY_DOME_IMAGE_UNIFORMS } = babylonValues<{ skyDomeUniforms: string[]; skyDomeImageUniforms: string[] }>("stages/declared.json");

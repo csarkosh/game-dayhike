@@ -9,7 +9,7 @@ import {
   sweepPoints,
   TOL_RATIO,
   variantOrThrow,
-} from "./helpers/derivatives.js";
+} from "@csarkosh/engine/testing/derivatives";
 
 describe.each(["plain", "ridged", "dense"])("variant %s", (name) => {
   it("returns exact analytic derivatives across a wide sweep", () => {

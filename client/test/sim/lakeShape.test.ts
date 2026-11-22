@@ -6,9 +6,9 @@ import {
   smin, smootherstepD, spineMetricInto, type LakeShape,
 } from "@csarkosh/engine/sim/lakeShape";
 import { fbm2d } from "@csarkosh/engine/sim/field";
-import { stadiumShape } from "../helpers/lakeShapes.js";
-import { H, TOL_RATIO } from "./helpers/derivatives.js";
-import { timeLimit } from "../helpers/timeLimit.js";
+import { stadiumShape } from "@csarkosh/engine/testing/lakeShapes";
+import { H, TOL_RATIO } from "@csarkosh/engine/testing/derivatives";
+import { timeLimit } from "@csarkosh/engine/testing/timeLimit";
 
 const metric = { v: 0, dx: 0, dz: 0 };
 

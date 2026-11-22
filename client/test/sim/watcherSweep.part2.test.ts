@@ -1,6 +1,6 @@
 import { describe, it } from "vitest";
 import { WATCHER_PARTS, checkWatcherPart } from "./watcherSweep.js";
-import { timeLimit } from "../helpers/timeLimit.js";
+import { timeLimit } from "@csarkosh/engine/testing/timeLimit";
 
 describe(`the watcher on fifty seeds, part 2 of ${WATCHER_PARTS}`, () => {
   // A limit for a hang, not a bar on speed: a part's six or seven worlds take up to about two minutes on a CI runner.

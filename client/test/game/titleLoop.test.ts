@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { createTitleLoop } from "../../src/game/titleLoop.js";
-import { asHtml, installStandInDom, type StandInVideo } from "./helpers/standInDom.js";
+import { asHtml, installStandInDom, type StandInVideo } from "@csarkosh/engine/testing/standInDom";
 
 afterEach(() => vi.unstubAllGlobals());
 const fast = { saveData: false, effectiveType: "4g", reducedMotion: false };

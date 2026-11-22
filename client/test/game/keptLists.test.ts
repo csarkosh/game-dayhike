@@ -29,7 +29,7 @@ import { createDuffLists } from "@csarkosh/engine/game/duffInstances";
 import type { InstanceList } from "@csarkosh/engine/game/instanceLists";
 import { finish, type Slices } from "@csarkosh/engine/game/syncJobs";
 import { surfaceAlbedo } from "@csarkosh/engine/game/terrainSurface";
-import { timeLimit } from "../helpers/timeLimit.js";
+import { timeLimit } from "@csarkosh/engine/testing/timeLimit";
 
 const SEED = 1;
 

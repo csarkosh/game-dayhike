@@ -9,7 +9,7 @@ import {
 } from "@csarkosh/engine/sim/features";
 import { TRAIL_GRID_CAP } from "../../src/sim/trailGrid.js";
 import type { TerrainSample } from "@csarkosh/engine/sim/terrain";
-import { stadiumShape } from "../helpers/lakeShapes.js";
+import { stadiumShape } from "@csarkosh/engine/testing/lakeShapes";
 import { lakeShoreInto, newLakeShore } from "@csarkosh/engine/sim/lakeShape";
 
 const flat: TerrainSample = { h: 100, dx: 0, dz: 0 };

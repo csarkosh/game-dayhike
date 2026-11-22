@@ -8,7 +8,7 @@ import { seaLookFor } from "@csarkosh/engine/game/lite/seaMeshes";
 import { seaFields, seaPlugin, seaRestPlugin } from "@csarkosh/engine/game/lite/seaPlugin";
 import { SEA_COMPONENT_VECS, emptySeaFrameUniforms, emptySeaUniforms } from "@csarkosh/engine/game/seaUniforms";
 import { WATER_RING_COUNT } from "@csarkosh/engine/game/water";
-import { laidOut, readUniform, standInTexture } from "./pluginFixture.js";
+import { laidOut, readUniform, standInTexture } from "@csarkosh/engine/testing/pluginFixture";
 
 const SHARED = { name: FRAME_BLOCK } as unknown as PluginUniformBlock;
 const TABLES = { atlas: standInTexture("atlas"), swash: standInTexture("swash"), ringBeds: standInTexture("ringBeds"), bed: standInTexture("bed") };

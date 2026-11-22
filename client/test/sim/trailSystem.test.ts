@@ -4,7 +4,7 @@ import { bowlFor } from "../../src/sim/mountain.js";
 import { activeTerrainVariant, setActiveTerrainVariant, DEFAULT_TERRAIN_VARIANT } from "@csarkosh/engine/sim/terrain";
 import { segmentDistance, TRAIL_EDGE_MIN_GAP, TRAIL_HARD_SLOPE_MAX } from "@csarkosh/engine/sim/trail";
 import { TRAILHEAD_U } from "../../src/sim/bowl.js";
-import { closeNonAdjacentEdgePairs } from "./helpers/edgeGap.js";
+import { closeNonAdjacentEdgePairs } from "@csarkosh/engine/testing/edgeGap";
 import {
   FEATURE_SPACING,
   LOOP_WEIGHT_1,
@@ -21,7 +21,7 @@ import {
 } from "@csarkosh/engine/sim/features";
 import { lakeShoreInto, newLakeShore } from "@csarkosh/engine/sim/lakeShape";
 import { SEEDS } from "./trailGateSeeds.js";
-import { timeLimit } from "../helpers/timeLimit.js";
+import { timeLimit } from "@csarkosh/engine/testing/timeLimit";
 
 /**
  * THE 227-SEED TRAIL-SYSTEM GATE.

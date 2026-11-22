@@ -3,13 +3,16 @@ import { readdirSync, readFileSync, existsSync } from "node:fs";
 import { join, relative } from "node:path";
 import { fileURLToPath } from "node:url";
 import ts from "typescript";
-import { limitOffenders, scanTestSource, wallClockOffenders, type ScannedFile } from "./helpers/testCalls.js";
+import { limitOffenders, scanTestSource, wallClockOffenders, type ScannedFile } from "@csarkosh/engine/testing/testCalls";
 
 // Resolve against this file, never process.cwd(). Vitest is launched from the
 // repo root with `--root client`, so cwd is the repo root: a relative "src/sim"
 // silently points at nothing and every check below passes vacuously forever.
 const SRC = fileURLToPath(new URL("../src", import.meta.url));
 const TESTS = fileURLToPath(new URL(".", import.meta.url));
+/** The engine's own tests and their shared helpers, beside its source: the rules about tests below hold over these as over the game's. */
+const ENGINE_TESTS = fileURLToPath(new URL("../../engine/test", import.meta.url));
+const ENGINE_TESTING = fileURLToPath(new URL("../../engine/testing", import.meta.url));
 /**
  * The engine's modules, in the package beside this one. A module keeps its path when it moves
  * there (`game/quality.ts` here is `game/quality.ts` there), so the rules below name a file by
@@ -53,6 +56,17 @@ function filesUnder(dir: string): string[] {
 function sourceFiles(dir: string): string[] {
   const mirrored = dir === SRC || dir.startsWith(`${SRC}/`) ? filesUnder(join(ENGINE, relative(SRC, dir))) : [];
   return [...filesUnder(dir), ...mirrored];
+}
+
+/** Every file of every test folder: the game's and the engine's (`test` and `testing`). */
+function testFiles(): string[] {
+  return [...sourceFiles(TESTS), ...filesUnder(ENGINE_TESTS), ...filesUnder(ENGINE_TESTING)];
+}
+
+/** A test file's path under the test folder it stands in. */
+function testPath(file: string): string {
+  const root = [ENGINE_TESTS, ENGINE_TESTING].find((r) => !relative(r, file).startsWith("..")) ?? TESTS;
+  return relative(root, file);
 }
 
 function walkFiles(dir: string, ext: string): string[] {
@@ -1292,7 +1306,7 @@ describe("layer boundaries", () => {
     // patterns, which are no imports).
     const ofBabylon = (spec: string): boolean => /^@babylonjs\/[\w.@/-]+$/.test(spec) && spec !== "@babylonjs/lite";
     expect(["@babylonjs/core", "@babylonjs/core/Engines/engine.js", "@babylonjs/loaders/glTF/index.js", "@babylonjs/lite"].map(ofBabylon)).toEqual([true, true, true, false]);
-    const files = [...sourceFiles(SRC), ...sourceFiles(TESTS)];
+    const files = [...sourceFiles(SRC), ...testFiles()];
     const named: string[] = [];
     let lite = 0;
     for (const file of files) {
@@ -1302,7 +1316,7 @@ describe("layer boundaries", () => {
     }
     // Guards against the guard: the walk reads the whole of src/ and test/ and finds the library where it is named.
     expect(sourceFiles(SRC).length).toBeGreaterThan(400);
-    expect(sourceFiles(TESTS).length).toBeGreaterThan(400);
+    expect(testFiles().length).toBeGreaterThan(400);
     expect(lite).toBeGreaterThan(40);
     expect(named).toEqual([]);
     // Nor is such a package spelt in src/ outside an import: a path into it, a `require`, a URL.
@@ -1586,9 +1600,9 @@ describe("the game's WGSL is kept in files", () => {
 });
 
 function scannedTestFiles(): ScannedFile[] {
-  return sourceFiles(TESTS)
+  return testFiles()
     .filter((f) => f.endsWith(".test.ts"))
-    .map((f) => ({ file: relative(TESTS, f), scan: scanTestSource(f, readFileSync(f, "utf8")) }));
+    .map((f) => ({ file: testPath(f), scan: scanTestSource(f, readFileSync(f, "utf8")) }));
 }
 
 describe("test time limits", () => {

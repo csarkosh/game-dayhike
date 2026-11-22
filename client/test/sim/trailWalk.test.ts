@@ -7,7 +7,7 @@ import { elevationSampleAt, setActiveTerrainVariant, DEFAULT_TERRAIN_VARIANT } f
 import { PLAYER_HALF } from "@csarkosh/engine/sim/constants";
 import { MAX_WALKABLE_GRADIENT } from "@csarkosh/engine/sim/ground";
 import { Phase, type InputCommand } from "../../src/sim/types.js";
-import { timeLimit } from "../helpers/timeLimit.js";
+import { timeLimit } from "@csarkosh/engine/testing/timeLimit";
 
 /**
  * The graph is walkable end to end. The sim has no pathing, so each edge is walked separately: the

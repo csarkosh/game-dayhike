@@ -11,7 +11,7 @@ import { WING_AMP_AT, WING_COLOURWAY_AT, WING_PHASE_AT } from "@csarkosh/engine/
 import { MIDGE_HEAD_FLOATS, swarmSphere } from "@csarkosh/engine/game/midgeLook";
 import { MIDGE_SWARMS_MAX, SWARM_ROW_FLOATS, packSwarm } from "@csarkosh/engine/game/midgeMotion";
 import { babylonText } from "../../helpers/babylonFixture.js";
-import { inOrder, tight } from "./wgslText.js";
+import { inOrder, tight } from "@csarkosh/engine/testing/wgslText";
 
 /** A stage of the game's GLSL on Babylon.js, whole, as recorded from its `.fx` file. */
 const fx = (name: string): string => babylonText(`stages/${name.replace(/\.fx$/, ".glsl")}`);

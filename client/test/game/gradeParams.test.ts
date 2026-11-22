@@ -7,7 +7,7 @@ import { CHASE_LIFT, CHASE_TINT,
 import { WEATHER_PRESETS, exposureUnder, vignetteWeightUnder, VIGNETTE_WEIGHT_BASE } from "@csarkosh/engine/game/weather";
 import { sunPositionAt } from "@csarkosh/engine/game/sky";
 import { skyStateFor } from "@csarkosh/engine/game/skyState";
-import { skyFixture } from "./helpers/skyFixture.js";
+import { skyFixture } from "@csarkosh/engine/testing/skyFixture";
 import { STARE_LENS_REST, STARE_SIDE_SHIFT, stareReach, type StareLens } from "@csarkosh/engine/game/stareLens";
 
 const CLEAR = WEATHER_PRESETS.clear;

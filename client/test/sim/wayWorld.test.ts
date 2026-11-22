@@ -9,7 +9,7 @@ import { seedFromToken } from "@csarkosh/engine/game/seed";
 import { DEFAULT_TERRAIN_VARIANT, elevationAt, setActiveTerrainVariant } from "@csarkosh/engine/sim/terrain";
 import { AiState, Phase } from "../../src/sim/types.js";
 import { drawWayNow, stepWay, wayOf } from "../../src/sim/wayDraw.js";
-import { timeLimit } from "../helpers/timeLimit.js";
+import { timeLimit } from "@csarkosh/engine/testing/timeLimit";
 
 /** A file of the client, wherever the suite is run from (the gate runs it from the repository's root). */
 const clientFile = (path: string): string => fileURLToPath(new URL(`../../${path}`, import.meta.url));

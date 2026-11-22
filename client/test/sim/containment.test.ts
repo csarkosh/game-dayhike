@@ -9,11 +9,11 @@ import { createForest, GEN_VERSION } from "@csarkosh/engine/sim/forest";
 import { createForestWorld, spawnPlayer, tickWorld } from "../../src/sim/world.js";
 import { activeTerrainVariant, elevationAt, type LakeSource } from "@csarkosh/engine/sim/terrain";
 import { lakeShelfWidth, lakeShoreInto, newLakeShore, rayToShore } from "@csarkosh/engine/sim/lakeShape";
-import { stadiumShape } from "../helpers/lakeShapes.js";
+import { stadiumShape } from "@csarkosh/engine/testing/lakeShapes";
 import { LOBBY_SEEDS } from "./trailGateSeeds.js";
 import { CAR_HALF, CAR_ROAD_U } from "../../src/sim/trailhead.js";
 import type { InputCommand } from "../../src/sim/types.js";
-import { timeLimit } from "../helpers/timeLimit.js";
+import { timeLimit } from "@csarkosh/engine/testing/timeLimit";
 
 const input = (over: Partial<InputCommand> = {}): InputCommand =>
   ({ seq: 1, moveX: 0, moveZ: 0, yaw: 0, pitch: 0, buttons: 0, ...over });

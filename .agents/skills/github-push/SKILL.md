@@ -130,14 +130,14 @@ Read the report. A failing gate is reported to the user before pushing, not afte
 
 vitest hands a file to one worker whole, so no file should take much over a minute and a half:
 a sweep over hundreds of worlds is split into part files by seed
-(`client/test/helpers/seedPart.ts`; `client/test/sim/searchSweep.ts` and its parts are the
+(`engine/testing/seedPart.ts`; `client/test/sim/searchSweep.ts` and its parts are the
 pattern), or a file of many slow tests into files by `describe`. A runner's report names the
 slowest file.
 
 The `test` workflow (`.github/workflows/test.yml`) runs the same commands on GitHub's runners,
 **only when started by hand** (`workflow_dispatch`; no push or pull request triggers it, Cyrus,
 2026-10-13): typecheck and lint in one job, the server and tools suites in another, the client
-suite split across shards, and a final `gates` job that fails unless every other job passed.
+suite split across shards, the engine's suite (`engine/test`) in a job of its own, and a final `gates` job that fails unless every other job passed.
 `gates` is the one result to read. What the workflow adds is a clean checkout: a runner takes
 this tree's files, untracked ones included, where the workflow runs only what was pushed.
 It is a pass-or-fail check; nothing it times means anything, because the runners
@@ -146,7 +146,7 @@ are shared machines. Two things differ from a local run for that reason:
 - **Time limits are scaled, in the client suite.** A test's time limit guards against a hang,
   not a bar on speed. Every explicit limit in the client suite — on a test, suite or hook, and
   on a wait (`vi.waitFor`, `expect.poll`) — is written `timeLimit(<ms>)`
-  (`client/test/helpers/timeLimit.ts`), which multiplies it by `TEST_TIME_SCALE`; unset,
+  (`engine/testing/timeLimit.ts`), which multiplies it by `TEST_TIME_SCALE`; unset,
   locally, the factor is exactly 1, and it may be at most 10. The workflow sets 3 for the client
   job, and a runner does as the workflow does. The server and tools suites set no limits and are not scaled. The architecture test
   fails on a limit written as a bare number, naming the line to change.

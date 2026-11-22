@@ -1,6 +1,6 @@
 import { describe, it } from "vitest";
 import { APRON_PARTS, checkApronPart } from "./apronSweep.js";
-import { timeLimit } from "../helpers/timeLimit.js";
+import { timeLimit } from "@csarkosh/engine/testing/timeLimit";
 
 describe(`the apron over 205 seeds, part 2 of ${APRON_PARTS}`, () => {
   // A limit for a hang, not a bar on speed: a part's 34 worlds take about a minute on a CI runner.

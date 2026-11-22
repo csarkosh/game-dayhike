@@ -6,7 +6,7 @@ import {
   createMistBanks, emptyMistUniforms, mistBankShown, mistUniforms, writeMistInstances, type DrawnMistBank, type MistOrder,
 } from "@csarkosh/engine/game/mistBanks";
 import { skyStateFor } from "@csarkosh/engine/game/skyState";
-import { skyFixture } from "./helpers/skyFixture.js";
+import { skyFixture } from "@csarkosh/engine/testing/skyFixture";
 import { MIST_CELL, MIST_RADIUS, collectMistBanks } from "@csarkosh/engine/game/mistField";
 import { WEATHER_PRESETS, mistOpacityUnder } from "@csarkosh/engine/game/weather";
 import { windRecordUnder } from "@csarkosh/engine/game/windParams";

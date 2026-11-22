@@ -13,7 +13,7 @@ import { forestDensity } from "@csarkosh/engine/sim/vegetation";
 import { clutterDensity, CLUTTER_BOULDER } from "@csarkosh/engine/sim/clutter";
 import { segmentDistance, TRAIL_CORRIDOR_HALF } from "@csarkosh/engine/sim/trail";
 import { BOWL_U_MIN, BOWL_U_MAX, BOWL_Z_HALF, TRAIL_Z_ANCHOR } from "../../src/sim/bowl.js";
-import { timeLimit } from "../helpers/timeLimit.js";
+import { timeLimit } from "@csarkosh/engine/testing/timeLimit";
 
 const SEEDS = [0x5eed, 1, 12345, 777, 4242];
 

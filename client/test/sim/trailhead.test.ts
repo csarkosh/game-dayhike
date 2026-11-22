@@ -10,7 +10,7 @@ import {
 import { trailheadSpawn, type Start } from "../../src/sim/spawn.js";
 import { facingYaw } from "@csarkosh/engine/sim/facing";
 import type { TrailGraph, TrailEdge } from "@csarkosh/engine/sim/trail";
-import { timeLimit } from "../helpers/timeLimit.js";
+import { timeLimit } from "@csarkosh/engine/testing/timeLimit";
 
 /**
  * The trailhead's rules at known numbers, on hand-built graphs and three

@@ -54,8 +54,8 @@ import { forestDensity } from "@csarkosh/engine/sim/vegetation";
 import { ROAD_BED_HALF, ROAD_CORRIDOR_HALF } from "@csarkosh/engine/sim/road";
 import { elevationSampleAt } from "@csarkosh/engine/sim/terrain";
 import { bowlFor } from "../../src/sim/mountain.js";
-import { variantOrThrow, DERIV_SEED } from "./helpers/derivatives.js";
-import { centerlineX } from "./helpers/roadLine.js";
+import { variantOrThrow, DERIV_SEED } from "@csarkosh/engine/testing/derivatives";
+import { centerlineX } from "@csarkosh/engine/testing/roadLine";
 import { setActiveTerrainVariant, DEFAULT_TERRAIN_VARIANT, activeTerrainVariant, type TerrainSample } from "@csarkosh/engine/sim/terrain";
 import { MEADOW_RIM } from "@csarkosh/engine/sim/features";
 import { lakeShoreInto, newLakeShore, rayToShore } from "@csarkosh/engine/sim/lakeShape";
@@ -875,7 +875,7 @@ describe("domain census — 90 km, both signs of z", () => {
 });
 
 import { landmarkMaskAt } from "@csarkosh/engine/sim/landmarks";
-import { timeLimit } from "../helpers/timeLimit.js";
+import { timeLimit } from "@csarkosh/engine/testing/timeLimit";
 describe("boulders honour the landmark mask", () => {
   it("exposes a boulder multiplier the density applies (unit: mask primitive)", () => {
     const m = landmarkMaskAt([{ type: "talus", x: 0, z: 0, carved: true, discX: 0, discZ: 0 }], 0, 0);

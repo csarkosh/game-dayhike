@@ -10,7 +10,7 @@ import type { Feature } from "@csarkosh/engine/sim/features";
 import "../../src/sim/passes/index.js";
 import { activeTerrainVariant, activeTerrainVariantName, setActiveTerrainVariant } from "@csarkosh/engine/sim/terrain";
 import type { TrailGraph } from "@csarkosh/engine/sim/trail";
-import { timeLimit } from "../helpers/timeLimit.js";
+import { timeLimit } from "@csarkosh/engine/testing/timeLimit";
 
 const centerX = (_seed: number, z: number): number => -300 + 0.25 * z;
 

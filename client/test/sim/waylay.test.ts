@@ -14,7 +14,7 @@ import {
 import { WAY_FLOOR_M, WAY_RIM_M, wayDirection, wayDistance, wayPoint, wayProject } from "../../src/sim/wayDown.js";
 import { wayOf } from "../../src/sim/wayDraw.js";
 import { runDown } from "./helpers/wayRunner.js";
-import { timeLimit } from "../helpers/timeLimit.js";
+import { timeLimit } from "@csarkosh/engine/testing/timeLimit";
 
 setActiveTerrainVariant(DEFAULT_TERRAIN_VARIANT);
 const seed = seedFromToken("hollow");

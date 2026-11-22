@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { groundNormalTilt, groundNormalY, seatOnGround, seatOnGroundCapped } from "@csarkosh/engine/game/groundTilt";
 import { babylonValues } from "../helpers/babylonFixture.js";
-import { dot, turned, type Quat, type Vec } from "../helpers/ruler.js";
+import { dot, turned, type Quat, type Vec } from "@csarkosh/engine/testing/ruler";
 
 const vec = (x: number, y: number, z: number): Vec => ({ x, y, z });
 /** A quaternion to write a rotation into: no turn, as a new one of Babylon.js's is. */

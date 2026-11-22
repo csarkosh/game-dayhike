@@ -16,7 +16,7 @@ import {
 import { WEATHER_PRESETS } from "@csarkosh/engine/game/weather";
 import { midgeHash } from "@csarkosh/engine/game/midgeMotion";
 import { babylonText } from "../helpers/babylonFixture.js";
-import { timeLimit } from "../helpers/timeLimit.js";
+import { timeLimit } from "@csarkosh/engine/testing/timeLimit";
 
 /** A stage of the game's on Babylon.js, as recorded: a stage's file whole, or what a plugin handed for a point. */
 const source = (name: string): string => babylonText(`stages/${name}.glsl`);

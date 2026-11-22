@@ -7,7 +7,7 @@ import { treesInRect } from "@csarkosh/engine/sim/vegetation";
 import { CLUTTER_BOULDER, CLUTTER_BUSH, CLUTTER_FUNGUS, CLUTTER_ROCK, clutterInRect } from "@csarkosh/engine/sim/clutter";
 import { shoreHeight } from "../../src/sim/shoreStrip.js";
 import { SEEDS } from "./trailGateSeeds.js";
-import { seedPart } from "../helpers/seedPart.js";
+import { seedPart } from "@csarkosh/engine/testing/seedPart";
 
 /** The parts the sweep is split into, one test file each (`treeline.part<k>.test.ts`). */
 export const TREELINE_PARTS = 4;

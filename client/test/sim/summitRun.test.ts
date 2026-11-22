@@ -18,7 +18,7 @@ import { runDown } from "./helpers/wayRunner.js";
 import { isOnCorridor } from "../../src/sim/containment.js";
 import { WATCH_SALT } from "../../src/sim/watcher.js";
 import { escalationTargets } from "../../src/game/escalation.js";
-import { timeLimit } from "../helpers/timeLimit.js";
+import { timeLimit } from "@csarkosh/engine/testing/timeLimit";
 
 setActiveTerrainVariant(DEFAULT_TERRAIN_VARIANT);
 

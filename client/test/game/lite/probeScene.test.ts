@@ -14,9 +14,9 @@ import type { Renderer } from "../../../src/game/hikeRendererTypes.js";
 import { createSkyTable } from "@csarkosh/engine/game/skyTable";
 import type { SkySource } from "@csarkosh/engine/game/skyWorker";
 import { WEATHER_PRESETS } from "@csarkosh/engine/game/weather";
-import { skyFixture } from "../helpers/skyFixture.js";
-import { asHtml, installStandInDom } from "../helpers/standInDom.js";
-import { timeLimit } from "../../helpers/timeLimit.js";
+import { skyFixture } from "@csarkosh/engine/testing/skyFixture";
+import { asHtml, installStandInDom } from "@csarkosh/engine/testing/standInDom";
+import { timeLimit } from "@csarkosh/engine/testing/timeLimit";
 
 /** A game whose renderer is `make`: Day Hike's level and an empty world, as the hike's own is. */
 const game = (make: ProbeGame<WorldState>["renderer"]): ProbeGame<WorldState> => ({ level: sandbox01, renderer: make, state: (level, seed) => createWorld(level, seed, false).state });

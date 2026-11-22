@@ -1,6 +1,6 @@
 import { describe, it } from "vitest";
 import { TRAILHEAD_PARTS, checkBoardPart, checkCarPart, checkPadPart, checkPlayerPart } from "./trailheadSweep.js";
-import { timeLimit } from "../helpers/timeLimit.js";
+import { timeLimit } from "@csarkosh/engine/testing/timeLimit";
 
 // A limit for a hang, not a bar on speed: the first test builds the part's 38 worlds, in about a minute
 // on a CI runner, and the three after it read the same worlds again.

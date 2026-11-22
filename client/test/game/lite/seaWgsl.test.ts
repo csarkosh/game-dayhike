@@ -8,7 +8,7 @@ import {
 import { WATER_RING_CELLS, WATER_RING_COUNT, WATER_UV_SCALE } from "@csarkosh/engine/game/water";
 import { waterThroughWgsl } from "@csarkosh/engine/game/lite/waterWgsl";
 import { babylonText } from "../../helpers/babylonFixture.js";
-import { inOrder, tight } from "./wgslText.js";
+import { inOrder, tight } from "@csarkosh/engine/testing/wgslText";
 
 /** A stage of the game's GLSL on Babylon.js, whole, as recorded from its `.fx` file. */
 const fx = (name: string): string => babylonText(`stages/${name.replace(/\.fx$/, ".glsl")}`);

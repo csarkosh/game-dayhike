@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import "../../src/sim/passes/index.js";
 import "@csarkosh/engine/sim/montane";
-import { variantOrThrow } from "./helpers/derivatives.js";
+import { variantOrThrow } from "@csarkosh/engine/testing/derivatives";
 
 /**
  * Bit-exact anchors for the accepted montane/plain/ridged fields, captured

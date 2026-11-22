@@ -31,8 +31,8 @@ import {
   GROUND_LOUD_LO,
   GROUND_LOUD_HI,
 } from "@csarkosh/engine/game/facePatches";
-import { runBySlices } from "../helpers/sliceRun.js";
-import { timeLimit } from "../helpers/timeLimit.js";
+import { runBySlices } from "@csarkosh/engine/testing/sliceRun";
+import { timeLimit } from "@csarkosh/engine/testing/timeLimit";
 
 /** The scarp by the road: the reference pose's world. */
 const SEED = 627994160;

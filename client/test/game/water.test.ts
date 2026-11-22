@@ -1,6 +1,6 @@
 import { beforeAll, describe, it, expect } from "vitest";
 import "../../src/sim/passes/index.js";
-import { timeLimit } from "../helpers/timeLimit.js";
+import { timeLimit } from "@csarkosh/engine/testing/timeLimit";
 import "@csarkosh/engine/sim/olympic";
 import { setActiveTerrainVariant } from "@csarkosh/engine/sim/terrain";
 import {

@@ -16,7 +16,7 @@ import {
   GROUND_ROAD_CLEAR, GROUND_SHORE_ALT, forestGround, lastAllowed, speciesGround,
 } from "@csarkosh/engine/game/wildlifeField";
 import { shoreHeight } from "../../src/sim/shoreStrip.js";
-import { timeLimit } from "../helpers/timeLimit.js";
+import { timeLimit } from "@csarkosh/engine/testing/timeLimit";
 
 setActiveTerrainVariant("olympic");
 const SEEDS = [1, 388817, -1117907922];

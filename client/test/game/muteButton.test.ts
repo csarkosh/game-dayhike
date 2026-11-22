@@ -1,6 +1,6 @@
 import { describe, it, expect } from "vitest";
 import { MUTE_HOTKEY, muteKey, createMuteButton, isMuteKey, muteLabel, readMuted, writeMuted, type KeyPress } from "@csarkosh/engine/game/muteButton";
-import { StandInElement, asHtml, installStandInDom } from "./helpers/standInDom.js";
+import { StandInElement, asHtml, installStandInDom } from "@csarkosh/engine/testing/standInDom";
 
 function memoryStorage(): Storage {
   const map = new Map<string, string>();

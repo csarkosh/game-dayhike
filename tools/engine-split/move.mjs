@@ -20,7 +20,7 @@ const isHeld = matcher(Object.keys(lists.hold));
 
 const clientFiles = walk(roots.client);
 const engineFiles = walk(roots.engine);
-const others = [...walk(join(repo, 'client/test')), ...walk(join(repo, 'tools')).filter((f) => !f.includes('node_modules'))].filter((f) =>
+const others = [...walk(join(repo, 'client/test')), ...walk(join(repo, 'engine/test')), ...walk(join(repo, 'engine/testing')), ...walk(join(repo, 'tools')).filter((f) => !f.includes('node_modules'))].filter((f) =>
   /\.(ts|mts|mjs|js)$/.test(f),
 );
 const rel = (f) => relative(roots.client, f);

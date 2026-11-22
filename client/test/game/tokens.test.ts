@@ -6,7 +6,7 @@ import { renderLanding } from "../../src/game/landing.js";
 import { landingModel } from "../../src/game/landingModel.js";
 import { TOKENS_PALETTE, TOKENS_PIXELS } from "@csarkosh/engine/game/tokens";
 import { HIKE_TOKENS_URL } from "../../src/hikeIdentity.js";
-import { StandInElement, asHtml, installStandInDom } from "./helpers/standInDom.js";
+import { StandInElement, asHtml, installStandInDom } from "@csarkosh/engine/testing/standInDom";
 
 /** Every link on the page to the donate page's door. */
 const doors = (root: StandInElement): StandInElement[] =>

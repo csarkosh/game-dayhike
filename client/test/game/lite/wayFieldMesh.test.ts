@@ -3,7 +3,7 @@ import { describe, expect, it } from "vitest";
 import { WAY_FIELD_WGSL } from "../../../src/game/lite/wayFieldMesh.js";
 import { WAY_LIGHT_WGSL } from "../../../src/game/lite/wayLightMeshes.js";
 import { emptyWayFieldUniforms } from "../../../src/game/wayMistField.js";
-import { tight } from "./wgslText.js";
+import { tight } from "@csarkosh/engine/testing/wgslText";
 
 const src = readFileSync(new URL("../../../src/game/lite/wayFieldMesh.ts", import.meta.url), "utf8");
 // The renderer, and Day Hike's side of it (`hikeParts.ts`), where what is this game's own in a frame is written.

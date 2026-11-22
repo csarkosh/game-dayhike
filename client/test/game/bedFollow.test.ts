@@ -4,7 +4,7 @@ import "@csarkosh/engine/sim/olympic";
 import { setActiveTerrainVariant } from "@csarkosh/engine/sim/terrain";
 import { BED_ROWS_PER_FRAME, createBedFollow } from "@csarkosh/engine/game/bedFollow";
 import { BED_GRID, bakeBed, bedOriginFor, createBedGrid } from "@csarkosh/engine/game/bedHeight";
-import { timeLimit } from "../helpers/timeLimit.js";
+import { timeLimit } from "@csarkosh/engine/testing/timeLimit";
 
 const SEED = 0x5eed;
 beforeAll(() => setActiveTerrainVariant("olympic"));

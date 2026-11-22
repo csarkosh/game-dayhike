@@ -14,7 +14,7 @@ import { spawnShade } from "../../src/sim/haunt.js";
 import { HOLLOW_PACK_MAX, RETURN_AFTER_S, RETURN_HOLD_S, held, returnsOn } from "../../src/sim/checkpoint.js";
 import { returnHollowAt } from "../../src/sim/returns.js";
 import { SHOTS } from "../../src/game/cutscene.js";
-import { timeLimit } from "../helpers/timeLimit.js";
+import { timeLimit } from "@csarkosh/engine/testing/timeLimit";
 
 setActiveTerrainVariant(DEFAULT_TERRAIN_VARIANT);
 const seed = seedFromToken("hollow");

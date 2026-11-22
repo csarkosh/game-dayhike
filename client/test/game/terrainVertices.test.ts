@@ -5,7 +5,7 @@ import { facePatchGeometry, type PatchStitch } from "@csarkosh/engine/game/faceP
 import {
   TERRAIN_ATTRIBUTES, TERRAIN_VERTEX_SIZES, facePatchVertices, ringVertices, type TerrainVertices,
 } from "@csarkosh/engine/game/terrainVertices";
-import { timeLimit } from "../helpers/timeLimit.js";
+import { timeLimit } from "@csarkosh/engine/testing/timeLimit";
 
 const ATTRIBUTES = ["positions", "normals", "colors", "weights", "weights2", "cover"] as const;
 

@@ -19,7 +19,7 @@ import { gustAt, windRecordUnder } from "@csarkosh/engine/game/windParams";
 import { ODD_KINDS } from "@csarkosh/engine/game/woodsSounds";
 import { ODD_LEVEL } from "../../src/game/oddSounds.js";
 import { CHASE_BPM_FAR, CHASE_BPM_NEAR, CHASE_DRONE_FAR_HZ, CHASE_DRONE_NEAR_HZ } from "../../src/game/chaseAudio.js";
-import { fakeCtx } from "./helpers/fakeAudio.js";
+import { fakeCtx } from "@csarkosh/engine/testing/fakeAudio";
 
 describe("createAmbientAudio", () => {
   it("is inert before unlock and builds the full graph on unlock", () => {

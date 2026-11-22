@@ -8,7 +8,7 @@ import { DEFAULT_TERRAIN_VARIANT, setActiveTerrainVariant } from "@csarkosh/engi
 import { generateChunk } from "@csarkosh/engine/sim/chunk";
 import { PLAYER_HALF } from "@csarkosh/engine/sim/constants";
 import { spawnChunkCells } from "../../src/sim/spawn.js";
-import { timeLimit } from "../helpers/timeLimit.js";
+import { timeLimit } from "@csarkosh/engine/testing/timeLimit";
 
 describe("a hike's world, prepared as the worker prepares it", () => {
   // `prepareWorld` sets the active terrain, as a worker of its own may; this thread's is put back.

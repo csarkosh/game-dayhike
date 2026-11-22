@@ -11,7 +11,7 @@ import {
   segmentDistance, TRAIL_HARD_SLOPE_MAX, TRAIL_EDGE_MIN_GAP,
   type TrailGraph,
 } from "@csarkosh/engine/sim/trail";
-import { closeNonAdjacentEdgePairs } from "./helpers/edgeGap.js";
+import { closeNonAdjacentEdgePairs } from "@csarkosh/engine/testing/edgeGap";
 import { LANDMARK_DISC_RADIUS } from "@csarkosh/engine/sim/landmarks";
 import {
   PEAK_INLAND_MIN, PEAK_INLAND_MAX, PEAK_RISE_MAX, STEM_LEN_MIN,

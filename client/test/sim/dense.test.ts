@@ -3,7 +3,7 @@ import { describe, expect, it } from "vitest";
 import "../../src/sim/passes/index.js";
 import "@csarkosh/engine/sim/montane";
 import { TREELINE_LO } from "@csarkosh/engine/sim/vegetation";
-import { variantOrThrow } from "./helpers/derivatives.js";
+import { variantOrThrow } from "@csarkosh/engine/testing/derivatives";
 
 /**
  * The density census: the promises tuning must keep, all counts and

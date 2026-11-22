@@ -11,8 +11,8 @@ import {
 } from "@csarkosh/engine/sim/olympic";
 import {
   checkDerivatives, DERIV_SEED as SEED, sweepPoints, TOL_RATIO, variantOrThrow, H,
-} from "./helpers/derivatives.js";
-import { centerlineX } from "./helpers/roadLine.js";
+} from "@csarkosh/engine/testing/derivatives";
+import { centerlineX } from "@csarkosh/engine/testing/roadLine";
 import {
   CLIFF_ALT_LO, CLIFF_ROAD_FAR, CLIFF_OUT_ALT_LO, cliffD, cliffMaskD,
 } from "@csarkosh/engine/sim/cliffs";

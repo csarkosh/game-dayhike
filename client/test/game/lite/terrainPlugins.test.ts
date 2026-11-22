@@ -12,7 +12,7 @@ import {
   FAR_SELF_SHADOW, FAR_SPEC_CUT, FAR_SUN_GAIN_MAX, FAR_SWARD, FAR_SWARD_COVER, FAR_SWARD_MAX,
   HEX_LATTICE, HEX_SHARPNESS, HEX_SKEW, HEX_UNSKEW, MACRO_DRY, MACRO_LUSH, MACRO_SLOPE, MACRO_WAVE, MACRO_WEIGHT,
 } from "@csarkosh/engine/game/groundHexParams";
-import { runBySlices } from "../../helpers/sliceRun.js";
+import { runBySlices } from "@csarkosh/engine/testing/sliceRun";
 import { ROAD_ASPHALT_HALF, ROAD_PAINT_END, ROAD_SHOULDER_HALF } from "@csarkosh/engine/game/roadPaint";
 import { NEEDLE_BED } from "@csarkosh/engine/game/terrainSurface";
 import { emptyTerrainUniforms, terrainUniforms, type TerrainUniformInputs } from "@csarkosh/engine/game/terrainUniforms";
@@ -24,7 +24,7 @@ import { TRAIL_PAINT_BUCKET_MAX, TRAIL_PAINT_INDEX_ROW } from "@csarkosh/engine/
 import { TRAIL_CORRIDOR_HALF } from "@csarkosh/engine/sim/trail";
 import { TERRAIN_ATTRIBUTES, TERRAIN_VERTEX_SIZES, type TerrainVertices } from "@csarkosh/engine/game/terrainVertices";
 import { WET_SWASH_VECS, emptyWetUniforms, wetUniforms } from "@csarkosh/engine/game/wetSurface";
-import { laidOut, readUniform, standInTexture } from "./pluginFixture.js";
+import { laidOut, readUniform, standInTexture } from "@csarkosh/engine/testing/pluginFixture";
 
 const TEXTURES = Object.fromEntries(TERRAIN_TEXTURE_ORDER.map(([, key]) => [key, standInTexture(key)])) as unknown as TerrainTextures;
 const ALL: TerrainPaints = { road: true, trail: true, features: true };

@@ -12,7 +12,7 @@ import {
 } from "../../../src/game/lite/sceneryPaint.js";
 import { TAIL_LAMP_APART, TAIL_LAMP_BACK, TAIL_LAMP_H, TAIL_LAMP_UP, TAIL_LAMP_W } from "../../../src/game/endScene.js";
 import { LABEL_TEXTURE, signPlaces } from "../../../src/game/signParts.js";
-import { inOrder, tight } from "./wgslText.js";
+import { inOrder, tight } from "@csarkosh/engine/testing/wgslText";
 
 /** The Standard material's fragment stage, as Babylon.js installs it (recorded). */
 const STANDARD = tight(babylonText("shaders/defaultPixelShader.glsl"));

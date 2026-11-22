@@ -4,7 +4,7 @@ import { babylonText } from "../../helpers/babylonFixture.js";
 import { FRAME_BLOCK, stageClocks, stageOwn, stageReads } from "@csarkosh/engine/game/lite/frameBlock";
 import { SPLASH_FRAME_READS, SPLASH_WGSL } from "@csarkosh/engine/game/lite/rainSplash";
 import { emptySplashStageUniforms, emptySplashUniforms } from "@csarkosh/engine/game/splashField";
-import { inOrder, tight } from "./wgslText.js";
+import { inOrder, tight } from "@csarkosh/engine/testing/wgslText";
 
 /**
  * The splash plugin's own code at its points on Babylon.js (its vertex definitions, where it

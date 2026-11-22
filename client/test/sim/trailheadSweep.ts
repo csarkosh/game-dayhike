@@ -10,7 +10,7 @@ import { trailheadSpawn } from "../../src/sim/spawn.js";
 import { ROAD_BED_HALF } from "@csarkosh/engine/sim/road";
 import { TRAILHEAD_U } from "../../src/sim/bowl.js";
 import { SEEDS } from "./trailGateSeeds.js";
-import { seedPart } from "../helpers/seedPart.js";
+import { seedPart } from "@csarkosh/engine/testing/seedPart";
 
 /**
  * The trailhead over the 227-seed sweep: the pad, the car, the player and the

@@ -12,7 +12,7 @@ import {
 import { refraction, shoalingFactor, waveNumber, weggelCoefficients, OCEAN_G } from "@csarkosh/engine/game/oceanPhysics";
 import { swellComponents, swellStateFor, type SwellComponent } from "@csarkosh/engine/game/oceanSwell";
 import { LOBBY_SEEDS } from "../sim/trailGateSeeds.js";
-import { timeLimit } from "../helpers/timeLimit.js";
+import { timeLimit } from "@csarkosh/engine/testing/timeLimit";
 
 const SEED = LOBBY_SEEDS[0] as number;
 

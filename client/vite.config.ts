@@ -2,7 +2,7 @@ import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { defineConfig } from "vitest/config";
 import { liteVersion } from "../tools/vite/liteVersion.mjs";
-import { timeLimit } from "./test/helpers/timeLimit.js";
+import { timeLimit } from "@csarkosh/engine/testing/timeLimit";
 
 export default defineConfig({
   plugins: [

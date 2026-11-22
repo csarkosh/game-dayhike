@@ -8,7 +8,7 @@ import { CLUTTER_SINK } from "@csarkosh/engine/game/clutterInstances";
 import { CLUTTER_BOULDER_SCALE_MAX, CLUTTER_ROCK_SCALE_MAX } from "@csarkosh/engine/sim/clutter";
 import { BOULDER_A_BASE_H, BOULDER_B_BASE_H, BOULDER_SINK } from "@csarkosh/engine/sim/passes/clutter";
 import { babylonValues } from "../helpers/babylonFixture.js";
-import { timeLimit } from "../helpers/timeLimit.js";
+import { timeLimit } from "@csarkosh/engine/testing/timeLimit";
 
 /**
  * The cut, run on the four models the game actually ships, rather than on the

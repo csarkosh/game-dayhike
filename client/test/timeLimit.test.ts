@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { parseTimeScale, timeLimit } from "./helpers/timeLimit.js";
+import { parseTimeScale, timeLimit } from "@csarkosh/engine/testing/timeLimit";
 
 /**
  * The config scales vitest's default limit only when VITEST is set, which the
@@ -50,16 +50,16 @@ describe("the scaled limits", () => {
   it("timeLimit multiplies by the factor, and leaves the literal alone when unset", async () => {
     vi.stubEnv("TEST_TIME_SCALE", "3");
     vi.resetModules();
-    expect((await import("./helpers/timeLimit.js")).timeLimit(60_000)).toBe(180_000);
+    expect((await import("@csarkosh/engine/testing/timeLimit")).timeLimit(60_000)).toBe(180_000);
     vi.stubEnv("TEST_TIME_SCALE", undefined);
     vi.resetModules();
-    expect((await import("./helpers/timeLimit.js")).timeLimit(60_000)).toBe(60_000);
+    expect((await import("@csarkosh/engine/testing/timeLimit")).timeLimit(60_000)).toBe(60_000);
   });
 
   it("reads the variable when a limit is asked for, not when the helper is imported", async () => {
     vi.stubEnv("TEST_TIME_SCALE", "garbage");
     vi.resetModules();
-    const helper = await import("./helpers/timeLimit.js");
+    const helper = await import("@csarkosh/engine/testing/timeLimit");
     expect(() => helper.timeLimit(1_000)).toThrow(/TEST_TIME_SCALE/);
   });
 

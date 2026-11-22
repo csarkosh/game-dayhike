@@ -4,7 +4,7 @@ import { CLOUD_NOISE_LARGE_M, CLOUD_NOISE_SMALL_M } from "@csarkosh/engine/game/
 import { SEE_THROUGH_ORDER } from "@csarkosh/engine/game/lite/drawOrder";
 import { PREMULTIPLIED_BLEND, WAY_LIGHT_WGSL } from "../../../src/game/lite/wayLightMeshes.js";
 import { emptyWayLightUniforms } from "../../../src/game/wayLight.js";
-import { tight } from "./wgslText.js";
+import { tight } from "@csarkosh/engine/testing/wgslText";
 
 const src = readFileSync(new URL("../../../src/game/lite/wayLightMeshes.ts", import.meta.url), "utf8");
 const VERTEX = tight(WAY_LIGHT_WGSL.vertex);

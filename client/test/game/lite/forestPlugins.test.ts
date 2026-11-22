@@ -26,7 +26,7 @@ import { WET_FIELDS } from "@csarkosh/engine/game/lite/wetWgsl";
 import { MOSS_ROUGHNESS, MOSS_TILE } from "@csarkosh/engine/game/mossParams";
 import { WET_CAP, WET_SWASH_VECS, emptyWetUniforms, wetUniforms } from "@csarkosh/engine/game/wetSurface";
 import { WIND_K1, WIND_OMEGA_FLUTTER, type WindRecord } from "@csarkosh/engine/game/windParams";
-import { laidOut, readUniform, standInTexture } from "./pluginFixture.js";
+import { laidOut, readUniform, standInTexture } from "@csarkosh/engine/testing/pluginFixture";
 
 /** The bake's fragment code and its one uniform's name on Babylon.js, recorded. */
 const IMPOSTOR_BAKE_FRAGMENT = babylonText("stages/impostorBake.fragment.glsl");

@@ -2,7 +2,7 @@ import { describe, it, expect } from "vitest";
 import {
   createAmbientAudio, HUSH_RAMP_S, noGameSound, WORLD_OPEN_HZ, type SoundGame, type SoundHost,
 } from "@csarkosh/engine/game/ambientAudio";
-import { fakeCtx } from "./helpers/fakeAudio.js";
+import { fakeCtx } from "@csarkosh/engine/testing/fakeAudio";
 import { sourceText } from "../helpers/source.js";
 
 /**

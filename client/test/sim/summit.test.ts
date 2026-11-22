@@ -12,7 +12,7 @@ import { HOLLOW_STEP_S, REVEAL_STARE_CAP, SUMMIT_REVEAL_S, revealing } from "../
 import { spawnShade } from "../../src/sim/haunt.js";
 import { GATHER_SIDE_M, GATHER_STEP_M } from "../../src/sim/summit.js";
 import { ROAD_CORRIDOR_HALF } from "@csarkosh/engine/sim/road";
-import { timeLimit } from "../helpers/timeLimit.js";
+import { timeLimit } from "@csarkosh/engine/testing/timeLimit";
 
 setActiveTerrainVariant(DEFAULT_TERRAIN_VARIANT);
 const seed = seedFromToken("hollow");

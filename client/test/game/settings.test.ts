@@ -11,7 +11,7 @@ import { sourceText } from "../helpers/source.js";
 import { renderLanding } from "../../src/game/landing.js";
 import { landingModel } from "../../src/game/landingModel.js";
 import type { TierChoice } from "@csarkosh/engine/game/tierChoice";
-import { StandInElement, StandInOption, StandInSelect, asHtml, installStandInDom } from "./helpers/standInDom.js";
+import { StandInElement, StandInOption, StandInSelect, asHtml, installStandInDom } from "@csarkosh/engine/testing/standInDom";
 
 const MODES = (selected: string) => [
   { mode: "game", label: "Game", selected: selected === "game", disabled: false },

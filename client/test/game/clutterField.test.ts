@@ -11,7 +11,7 @@ import {
 import {
   CLUTTER_CLASS_COUNT, clutterCell, CLUTTER_DRIFTWOOD, CLUTTER_GRASS, CLUTTER_GRASS_CELL, CLUTTER_JITTER,
   CLUTTER_MEADOW, CLUTTER_FERN, CLUTTER_SHRUB, CLUTTER_BUSH, CLUTTER_ROCK, CLUTTER_BOULDER, CLUTTER_FUNGUS, CLUTTER_DRIFTLOG } from "@csarkosh/engine/sim/clutter";
-import { timeLimit } from "../helpers/timeLimit.js";
+import { timeLimit } from "@csarkosh/engine/testing/timeLimit";
 
 const SEED = 0x5eed;
 const CAM = { x: 1800.5, z: -950.5 }; // inland mixed ground, verified non-empty

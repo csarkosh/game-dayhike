@@ -11,8 +11,8 @@ import {
 } from "@csarkosh/engine/game/preparedScene";
 import type { QualityTier } from "@csarkosh/engine/game/quality";
 import { FEATURE_TEX_ROWS, FEATURE_TEX_WIDTH } from "@csarkosh/engine/game/featureTable";
-import { stadiumLake } from "../helpers/lakeShapes.js";
-import { timeLimit } from "../helpers/timeLimit.js";
+import { stadiumLake } from "@csarkosh/engine/testing/lakeShapes";
+import { timeLimit } from "@csarkosh/engine/testing/timeLimit";
 
 const before = activeTerrainVariantName();
 afterEach(() => setActiveTerrainVariant(before));

@@ -9,7 +9,7 @@ import { hikerNames } from "../../src/sim/hikerNames.js";
 import { createChunkGrid } from "@csarkosh/engine/sim/chunkGrid";
 import { CHUNK_SIZE } from "@csarkosh/engine/sim/forestConstants";
 import { PROBE_SEEDS } from "./trailGateSeeds.js";
-import { timeLimit } from "../helpers/timeLimit.js";
+import { timeLimit } from "@csarkosh/engine/testing/timeLimit";
 
 setActiveTerrainVariant(DEFAULT_TERRAIN_VARIANT);
 
