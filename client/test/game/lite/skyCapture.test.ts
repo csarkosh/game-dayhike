@@ -1,8 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { createHash } from "node:crypto";
-import { readFileSync } from "node:fs";
 import "../../../src/sim/passes/index.js";
-import environmentBrdf from "../../../../engine/src/game/lite/environmentBrdf.png?inline";
 import { SKY_CAPTURE_BYTES, SKY_CAPTURE_WGSL, faceValues, skyCaptureValues } from "@csarkosh/engine/game/lite/skyCapture";
 import { SKY_RADIANCE_WGSL } from "@csarkosh/engine/game/lite/skyDome";
 import { SKY_DOME_SIZE } from "@csarkosh/engine/game/skyDomeParams";
@@ -51,19 +48,5 @@ describe("the sky's capture on Babylon Lite", () => {
       "letradiance=skyRadiance(d,sky.sunDir.xyz,sky.sunDir.w,sky.deckZenith.w,sky.deckZenith.xyz,sky.night.xyz,sky.disc.xyz,sky.mistAir.xyz,sky.night.w,1.0);",
     );
     expect(wgsl).toContain("returnvec4<f32>(radiance*sky.mistAir.w,1.0);");
-  });
-
-  it("weighs the reflection by the table the game keeps: a PNG of 256 by 256, held to its size and its bytes", () => {
-    const png = readFileSync(new URL("../../../../engine/src/game/lite/environmentBrdf.png", import.meta.url));
-    // The PNG's signature, and its header's size.
-    expect([...png.subarray(0, 8)]).toEqual([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]);
-    expect([png.readUInt32BE(16), png.readUInt32BE(20)]).toEqual([256, 256]);
-    expect(png.length).toBe(23_494);
-    expect(createHash("sha256").update(png).digest("hex")).toBe("f10818901fccd58cd708fef7979daa3a37294b0bca53f450dc37e1589419813d");
-    // The renderer is handed those bytes as a data URL, and nothing else.
-    expect(environmentBrdf).toBe(`data:image/png;base64,${png.toString("base64")}`);
-    const capture = readFileSync(new URL("../../../../engine/src/game/lite/skyCapture.ts", import.meta.url), "utf8");
-    expect(capture).toContain('import environmentBrdf from "./environmentBrdf.png?inline";');
-    expect(capture).toContain("brdfUrl: environmentBrdf,");
   });
 });

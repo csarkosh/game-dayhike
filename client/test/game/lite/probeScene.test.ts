@@ -8,7 +8,6 @@ import { LET_GO_MAX_MS, buildLiteProbeScene, liteProbeDeps, liteProbeReady, runL
 import sandbox01 from "../../../levels/sandbox01.json" with { type: "json" };
 import { createWorld } from "../../../src/sim/world.js";
 import type { WorldState } from "../../../src/sim/types.js";
-import { sourceText } from "../../helpers/source.js";
 import type { FreecamView } from "@csarkosh/engine/game/rendererTypes";
 import type { Renderer } from "../../../src/game/hikeRendererTypes.js";
 import { createSkyTable } from "@csarkosh/engine/game/skyTable";
@@ -339,12 +338,6 @@ describe("the page's probe on the hike's own renderer", () => {
   }, timeLimit(60_000));
 
   it("imports nothing of a game's: it stands in the engine, and every import of its source is of a neighbour there", () => {
-    const specs = [...sourceText("game/lite/probeScene.ts").matchAll(/^\s*(?:import|export)\s[^;]*?\bfrom\s+["']([^"']+)["']|^\s*import\s+["']([^"']+)["']/gm)].map((m) => (m[1] ?? m[2]) as string);
-    expect(specs.length).toBeGreaterThan(0);
-    expect(existsSync(fileURLToPath(new URL("../../../../engine/src/game/lite/probeScene.ts", import.meta.url)))).toBe(true);
     expect(existsSync(fileURLToPath(new URL("../../../src/game/lite/probeScene.ts", import.meta.url)))).toBe(false);
-    // Relative, and so inside the engine's package, where no module may import a game's (`architecture.test.ts`).
-    expect(specs.filter((spec) => !spec.startsWith("."))).toEqual([]);
-    expect(specs.filter((spec) => /client|@csarkosh/.test(spec))).toEqual([]);
   });
 });

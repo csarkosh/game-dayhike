@@ -11,9 +11,7 @@ import {
 } from "@csarkosh/engine/game/postParams";
 import { STARE_LENS_REST } from "@csarkosh/engine/game/stareLens";
 import { WEATHER_PRESETS } from "@csarkosh/engine/game/weather";
-import { sourceText } from "../helpers/source.js";
 
-const src = (name: string): string => sourceText(`game/${name}`);
 
 /** A camera at (1, 2, 3) looking along +Z, a right-angle lens on a frame twice as wide as tall. */
 const VIEW: PostView = { eye: { x: 1, y: 2, z: 3 }, forward: { x: 0, y: 0, z: 1 }, right: { x: 1, y: 0, z: 0 }, up: { x: 0, y: 1, z: 0 }, fov: Math.PI / 2, aspect: 2 };
@@ -142,9 +140,5 @@ describe("what the post chain's passes are drawn with", () => {
 
   it("steps the end's blur through three kernels", () => {
     expect([0, 0.1, 0.34, 0.67, 1].map(endBlurKernel)).toEqual([0, 28 / 3, (28 / 3) * 2, 28, 28]);
-  });
-
-  it("names nothing of Babylon.js", () => {
-    expect(src("postFrame.ts")).not.toMatch(/@babylonjs/);
   });
 });

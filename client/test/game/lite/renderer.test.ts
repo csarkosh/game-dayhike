@@ -1,6 +1,4 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { readFileSync } from "node:fs";
-import { fileURLToPath } from "node:url";
 import "../../../src/game/dayhikeAssets.js";
 import "../../../src/sim/passes/index.js";
 import { PLAYER_EYE_OFFSET } from "@csarkosh/engine/sim/constants";
@@ -421,12 +419,6 @@ describe("the hike's renderer on Babylon Lite, before its engine stands", () => 
     r.sync(windTestState(), -1, 0);
     // Nothing stands to step the life under Node; a renderer whose engine stands is silent the same way until it has.
     expect(r.waterLifeSound()).toBe(SILENT_WATER_LIFE);
-    const text = readFileSync(fileURLToPath(new URL("../../../../engine/src/game/lite/renderer.ts", import.meta.url)), "utf8");
-    expect(text).toContain("      return heardLife !== null && waterLifeStepped ? heardLife.sound() : SILENT_WATER_LIFE;");
-    expect(text).toContain("  let waterLifeStepped = false;");
-    // Stepped in one place, by a frame that drew a lake's life; a frame that did not takes the word back.
-    expect([...text.matchAll(/\bwaterLifeStepped = true;/g)].length).toBe(1);
-    expect([...text.matchAll(/\bwaterLifeStepped = false;/g)].length).toBe(2);
   });
 
   it("says nothing of the surf until a frame of its own has stepped the sea: silence, never the last frame's record again", () => {
@@ -437,11 +429,6 @@ describe("the hike's renderer on Babylon Lite, before its engine stands", () => 
     r.setFreecam({ x: 0, y: 10, z: 0, yaw: 0, pitch: 0 });
     r.sync(windTestState(), -1, 0);
     expect(r.surfSound()).toBe(silent);
-    const text = readFileSync(fileURLToPath(new URL("../../../../engine/src/game/lite/renderer.ts", import.meta.url)), "utf8");
-    expect(text).toContain("      return surfStepped ? surf : SILENT_SURF_SOUND;");
-    // Stepped in one place, by a frame that stepped the sea's edge; every frame takes the word back first.
-    expect([...text.matchAll(/\bsurfStepped = true;/g)].length).toBe(1);
-    expect([...text.matchAll(/\bsurfStepped = false;/g)].length).toBe(2);
   });
 
   it("lets its engine go once, by dispose, and resolves what waited on its first frame", async () => {

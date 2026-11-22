@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { existsSync, readFileSync, readdirSync } from "node:fs";
+import { readFileSync, readdirSync } from "node:fs";
 import { createRequire } from "node:module";
 import { dirname, join } from "node:path";
 import { creditsModel, creditsRows, requiresAttribution, safeHref } from "@csarkosh/engine/game/credits";
@@ -125,8 +125,6 @@ describe("creditsModel", () => {
     // What each names: the dependency pinned to that source, the table as a file of the game's, and the tone map's notice beside its numbers.
     const client = JSON.parse(readFileSync(new URL("../../package.json", import.meta.url), "utf8")) as { dependencies: Record<string, string> };
     expect(client.dependencies["@babylonjs/lite"]).toMatch(/^github:csarkosh\/babylon-lite#/);
-    expect(existsSync(new URL("../../../engine/src/game/lite/environmentBrdf.png", import.meta.url))).toBe(true);
-    expect(readFileSync(new URL("../../../engine/src/game/gradeParams.ts", import.meta.url), "utf8")).toContain("ported from three.js, MIT License, Copyright 2010-2024 three.js authors");
   });
   it("credits the KTX2 decoder the game ships and each work its notice names, each for files the game serves", () => {
     const code = creditsModel(REAL).filter((e) => e.id.startsWith("render.ktx2_"));

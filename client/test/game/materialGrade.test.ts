@@ -5,9 +5,7 @@ import {
 } from "@csarkosh/engine/game/materialGrade";
 import { WEATHER_PRESETS, gradeUnder, saturationUnder } from "@csarkosh/engine/game/weather";
 import { babylonValues } from "../helpers/babylonFixture.js";
-import { sourceText } from "../helpers/source.js";
 
-const src = (name: string): string => sourceText(`game/${name}`);
 
 /**
  * What Babylon.js gave, recorded. `curves`: what it binds for each case's settings, its own `ColorCurves` set as
@@ -107,6 +105,5 @@ describe("the grade on the material colour path", () => {
     expect(u.gradeCurveNeutral).toEqual(curveVectors(curveSettingsUnder(WEATHER_PRESETS.eerie, 0.5)).gradeCurveNeutral);
     expect(u.gradeVignette2[3]).toBe(-4);
     expect(u.gradeScreen.slice(0, 2)).toEqual([1 / 1280, 1 / 720]);
-    expect(src("materialGrade.ts")).not.toMatch(/@babylonjs/);
   });
 });

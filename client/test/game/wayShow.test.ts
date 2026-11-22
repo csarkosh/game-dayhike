@@ -81,7 +81,6 @@ describe("the renderer and the app", () => {
   const renderer = readFileSync(clientFile("../engine/src/game/lite/renderer.ts"), "utf8") + readFileSync(clientFile("src/game/lite/hikeParts.ts"), "utf8");
   const chain = readFileSync(clientFile("../engine/src/game/lite/postChain.ts"), "utf8");
   // The way's half of the frame is the hike's own (`hike.ts`, where a variable of `app.ts` is written `h.<name>`).
-  const app = readFileSync(clientFile("../engine/src/app.ts"), "utf8");
   const hike = readFileSync(clientFile("src/hike.ts"), "utf8");
 
   it("the renderer makes the way's mist once, for a forest, toned for the tier's colour path, and disposes it", () => {
@@ -123,6 +122,5 @@ describe("the renderer and the app", () => {
     expect(hike).toContain('h.telemetry.event("way", { length: Math.round(way.length), straight: Math.round(way.straight), fallback: way.fallback, tick: world.state.tick });');
     // Once in all: in `hike.ts`, and not again in `app.ts`.
     expect(hike.match(/telemetry\.event\("way"/g)).toHaveLength(1);
-    expect(app).not.toContain('telemetry.event("way"');
   });
 });

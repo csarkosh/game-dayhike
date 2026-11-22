@@ -4,9 +4,7 @@ import {
 } from "@csarkosh/engine/game/shadeMaskParams";
 
 import { babylonValues } from "../helpers/babylonFixture.js";
-import { sourceText } from "../helpers/source.js";
 
-const src = (name: string): string => sourceText(`game/${name}`);
 
 describe("what the haunt's figures are drawn into their mask with", () => {
   it("sizes the mask as Babylon.js sizes a render target given the mask's ratio, at every frame's size", () => {
@@ -35,9 +33,5 @@ describe("what the haunt's figures are drawn into their mask with", () => {
     expect(shadeSmokeUniforms(0.25, 12, 140, 5.4)).toEqual({ shadeSmoke: [0.25, 12, 140, 5.4], shadeSmokeEdge: [SHADE_SMOKE_FRAY, SHADE_SMOKE_SWELL_M] });
     expect(shadeSmokeSeconds(12_500)).toBe(12.5);
     expect(shadeSmokeSeconds((SHADE_SMOKE_FOLD_S + 3) * 1000)).toBe(3);
-  });
-
-  it("names nothing of Babylon.js", () => {
-    expect(src("shadeMaskParams.ts")).not.toMatch(/@babylonjs/);
   });
 });

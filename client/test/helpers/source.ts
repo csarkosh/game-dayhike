@@ -1,15 +1,12 @@
-import { existsSync, readFileSync } from "node:fs";
+import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 
 const GAME = fileURLToPath(new URL("../../src/", import.meta.url));
-const ENGINE = fileURLToPath(new URL("../../../engine/src/", import.meta.url));
 
 /**
- * The text of a module by its path under `src/` (`game/quality.ts`), whichever package holds
- * it: a module keeps its path when it moves from the game to the engine, so a test that reads
- * one by name reads it wherever it is.
+ * The text of one of Day Hike's own modules by its path under `src/` (`hike.ts`). The engine's modules are
+ * read by the engine's own suite (`engine/test/helpers/source.ts`), never from here.
  */
 export function sourceText(path: string): string {
-  const own = GAME + path;
-  return readFileSync(existsSync(own) ? own : ENGINE + path, "utf8");
+  return readFileSync(GAME + path, "utf8");
 }

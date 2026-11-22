@@ -126,15 +126,6 @@ describe("a hike's first scene, sampled as the worker samples it", () => {
 describe("the world's work and its two sides, by their source", () => {
   const code = (path: string): string => sourceText(path).replace(/\/\*[\s\S]*?\*\//g, "").replace(/\/\/.*$/gm, "");
 
-  it("names no game and no worker by path in the page's side or the work", () => {
-    for (const file of ["game/worldPrep.ts", "game/worldWork.ts"]) {
-      expect(sourceText(file), file).not.toContain("new URL(");
-      expect(code(file), file).not.toContain("world.worker");
-      expect(sourceText(file), file).not.toContain("sim/spawn");
-      expect(sourceText(file), file).not.toContain("passes/index");
-    }
-  });
-
   it("starts the worker in the form Vite bundles, from the game's own file", () => {
     expect(code("game/hikeWorldWorker.ts")).toContain('new Worker(new URL("./world.worker.ts", import.meta.url), { type: "module" })');
   });
