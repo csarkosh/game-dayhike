@@ -56,7 +56,7 @@ import {
   type TierSource,
 } from "./game/tierChoice.js";
 import { createVeil } from "./game/veil.js";
-import type { Opening, PageGame } from "./game/pageGame.js";
+import type { Opening, PageGame, TurnedAway } from "./game/pageGame.js";
 import type { AmbientAudio } from "./game/ambientAudio.js";
 import type { RenderPlayer, RenderState } from "./game/lite/renderGame.js";
 import type { PageHud, PageRenderer, PageWorld } from "./game/sessionGame.js";
@@ -87,12 +87,6 @@ export function startShell<
     get veil() { return veil; },
     get VEIL_SETTLE_MS() { return VEIL_SETTLE_MS; },
     get mute() { return mute; },
-    get running() { return running; },
-    set running(value) { running = value; },
-    get game() { return game; },
-    set game(value) { game = value; },
-    get paused() { return paused; },
-    set paused(value) { paused = value; },
     get desktop() { return desktop; },
     get touch() { return touch; },
     get host() { return host; },
@@ -105,12 +99,8 @@ export function startShell<
     get choiceStored() { return choiceStored; },
     get choiceNotice() { return choiceNotice; },
     get autoSummary() { return autoSummary; },
-    get renderToken() { return renderToken; },
-    set renderToken(value) { renderToken = value; },
     get lobby() { return lobby; },
     get launching() { return launching; },
-    get roster() { return roster; },
-    get shownPage() { return shownPage; },
   });
   if (!found) throw new Error("#app not found");
   const app: HTMLDivElement = found;
@@ -255,7 +245,7 @@ export function startShell<
   // refused: the landing page is shown, and a session or a staged scene asked for
   // meanwhile waits for the signals before anything of it starts (`render`).
   // Once it is "cannot", every route shows the page for those turned away
-  // (`showTurnedAway`), and nothing of a session is fetched, made or drawn.
+  // (`turnAway`), and nothing of a session is fetched, made or drawn.
   const webgpuOffered = offersWebGpu(navigator as NavigatorLike);
   let verdict: LoadVerdict | null = loadVerdict(webgpuOffered, null);
 
@@ -270,6 +260,8 @@ export function startShell<
    */
   /** The `turned_away` row is sent once. */
   let turnedAwayTold = false;
+  /** The page for those turned away is up (`turnAway`). */
+  let awayUp = false;
 
   function settleVerdict(next: LoadVerdict): void {
     verdict = next;
@@ -284,7 +276,8 @@ export function startShell<
       detach();
     }
     // Already up (no WebGPU, known as the page loaded): what the signals add is the GPU's name, for the app's offer.
-    if (!side.turnedAwayNow(next)) render(app);
+    if (awayUp) side.turnedAwayNow(next);
+    else render(app);
   }
 
   // ---- the graphics setting ------------------------------------------------------
@@ -393,7 +386,7 @@ export function startShell<
 
   function paintRoster(): void {
     // Gone with everything else of the game once a visitor is turned away.
-    if (side.awayShown()) return;
+    if (awayUp) return;
     roster.setView(
       rosterModel({
         lobby: lobby?.state ?? null,
@@ -788,10 +781,44 @@ export function startShell<
   /** Set for the one render a route asks for itself once the GPU's signals are in: the same navigation, so no second `page` row. */
   let rendersAgain = false;
 
+  /**
+   * The page for a visitor who cannot play, in place of every route: the
+   * landing page and its panels, an invitation, a game's address, a staged
+   * scene. Put up once and left up, since the verdict does not change while
+   * the page lives; whatever was shown or starting goes first, and nothing of
+   * a session is asked for after. The address is left as it is, so the same
+   * link works once the visitor has a browser that plays. What the page shows
+   * is the game's (`PageSide.showTurnedAway`); all that goes before it is done
+   * here, for every game alike.
+   */
+  function turnAway(container: HTMLDivElement, route: Route, why: TurnedAway): void {
+    // Whatever start was waiting on this page is no longer the page's.
+    renderToken += 1;
+    telemetry.mark("turned-away");
+    if (awayUp) return;
+    running?.dispose();
+    running = null;
+    game = null;
+    paused = false;
+    container.replaceChildren();
+    // Nothing here makes a sound or starts a party: the page's mute goes, and its key with it, and the roster, which
+    // hidden would still take the keyboard's focus and a screen reader's.
+    mute.dispose();
+    roster.dispose();
+    if (veil.down) veil.lift();
+    // The navigation's row, where no route's own render sent it first: a visitor turned away as the page loads.
+    if (shownPage === null) {
+      telemetry.event("page", { kind: route.kind });
+      window.visits?.page?.();
+    }
+    side.showTurnedAway(container, why);
+    awayUp = true;
+  }
+
   function render(container: HTMLDivElement): void {
     const route = parseRoute(location.pathname);
     if (verdict !== null && !verdict.play) {
-      side.showTurnedAway(container, route, verdict);
+      turnAway(container, route, verdict);
       return;
     }
     // A change of page goes behind the veil (veil.ts): it comes down first,

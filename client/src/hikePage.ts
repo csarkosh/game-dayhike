@@ -240,36 +240,15 @@ export function createHikePage(h: PageHost): PageSide {
   }
 
   /**
-   * The page for a visitor who cannot play (`turnedAway.ts`), in place of
-   * every route: the landing page and its panels, an invitation, a game's
-   * address, a staged scene. Put up once and left up, since the verdict does
-   * not change while the page lives; whatever was shown or starting goes
-   * first, and nothing of a hike is asked for after. The address is left as
-   * it is, so the same link works once the visitor has a browser that plays.
+   * The page for a visitor who cannot play (`turnedAway.ts`), put up by the
+   * shell once, in a container it has emptied (`shell.ts`, `turnAway`).
+   * Day Hike's own goes first: the landing page it held and a film playing
+   * or waiting.
    */
-  function showTurnedAway(container: HTMLDivElement, route: Route, why: TurnedAway): void {
-    // Whatever start was waiting on this page is no longer the page's.
-    h.renderToken += 1;
-    h.telemetry.mark("turned-away");
-    if (turnedAway !== null) return;
-    h.running?.dispose();
-    h.running = null;
-    h.game = null;
-    h.paused = false;
+  function showTurnedAway(container: HTMLDivElement, why: TurnedAway): void {
     landing = null;
     endIntro(activeIntro);
     endIntro(pendingIntro);
-    container.replaceChildren();
-    // Nothing here makes a sound or starts a party: the page's mute goes, and its key with it, and the roster, which
-    // hidden would still take the keyboard's focus and a screen reader's.
-    h.mute.dispose();
-    h.roster.dispose();
-    if (h.veil.down) h.veil.lift();
-    // The navigation's row, where no route's own render sent it first: a visitor turned away as the page loads.
-    if (h.shownPage === null) {
-      h.telemetry.event("page", { kind: route.kind });
-      window.visits?.page?.();
-    }
     const handle = renderTurnedAway(container, turnedAwayView(why), {
       still: titleStillUrl(),
       // The credit the still's works are owed, within reach here as from the landing page.
@@ -432,16 +411,9 @@ export function createHikePage(h: PageHost): PageSide {
     };
   }
 
-  /** A verdict of "cannot play" come while the page for those turned away is up: it is shown what the verdict adds. False where that page is not up. */
-  function turnedAwayNow(next: TurnedAway): boolean {
-    if (turnedAway === null) return false;
-    turnedAway.setView(turnedAwayView(next));
-    return true;
-  }
-
-  /** The page for those turned away is up. */
-  function awayShown(): boolean {
-    return turnedAway !== null;
+  /** A verdict of "cannot play" come while the page for those turned away is up: it is shown what the verdict adds. */
+  function turnedAwayNow(next: TurnedAway): void {
+    turnedAway?.setView(turnedAwayView(next));
   }
 
   /** The player's name, kept as typed and cleaned; returns what it is now. */
@@ -466,7 +438,6 @@ export function createHikePage(h: PageHost): PageSide {
     // The page for those turned away.
     showTurnedAway,
     turnedAwayNow,
-    awayShown,
     // The player's name and the mode.
     name: (): string => selfName,
     rename,

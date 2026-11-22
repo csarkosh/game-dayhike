@@ -89,21 +89,9 @@ export function createEmptyPage(h: PageHost): PageSide {
     keepOpening: () => undefined,
     openingFor: () => null,
     muteChanged: () => undefined,
-    showTurnedAway(container: HTMLDivElement, route, why: TurnedAway) {
-      // Whatever start was waiting on this page is no longer the page's.
-      h.renderToken += 1;
-      h.telemetry.mark("turned-away");
-      if (away !== null) return;
-      h.running?.dispose();
-      h.running = null;
-      h.game = null;
-      h.paused = false;
+    // The shell has let go of the session, the mute and the roster, and emptied the container.
+    showTurnedAway(container: HTMLDivElement, why: TurnedAway) {
       landing = null;
-      container.replaceChildren();
-      h.mute.dispose();
-      h.roster.dispose();
-      if (h.veil.down) h.veil.lift();
-      if (h.shownPage === null) h.telemetry.event("page", { kind: route.kind });
       const style = document.createElement("style");
       style.textContent = STYLE;
       away = document.createElement("div");
@@ -112,11 +100,8 @@ export function createEmptyPage(h: PageHost): PageSide {
       container.append(style, away);
     },
     turnedAwayNow(next: TurnedAway) {
-      if (away === null) return false;
-      away.textContent = `This browser cannot draw the world (${next.reason}).`;
-      return true;
+      if (away !== null) away.textContent = `This browser cannot draw the world (${next.reason}).`;
     },
-    awayShown: () => away !== null,
     name: () => name,
     rename(raw) {
       name = sanitiseName(raw);

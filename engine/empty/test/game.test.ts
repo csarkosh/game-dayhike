@@ -67,6 +67,13 @@ describe("the empty game as the page's shell is handed it", () => {
     }
   });
 
+  it("draws its own page for a visitor turned away and leaves what goes before it to the shell", () => {
+    const page = code("page.ts");
+    expect(page).toContain("    showTurnedAway(container: HTMLDivElement, why: TurnedAway) {\n      landing = null;\n");
+    expect(page).not.toMatch(/\bh\.(renderToken|running|game|paused|roster|shownPage|mute|veil)\b/);
+    expect(page).not.toContain("replaceChildren");
+  });
+
   it("is started by an entry that registers the shipped files and the terrain first", () => {
     expect(code("main.ts").trim()).toBe(
       ['import "./assets.js";', 'import "./terrain.js";', 'import { startShell } from "@csarkosh/engine/shell";', 'import { EMPTY_PAGE } from "./page.js";', "", "startShell(EMPTY_PAGE);"].join("\n"),
