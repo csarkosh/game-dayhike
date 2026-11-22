@@ -8,7 +8,7 @@ import { titleStillUrl, titleVideoUrl, videoUrl } from "./game/dayhikeAssets.js"
 import { createTitleLoop, titleLoopEnv, type TitleLoop } from "./game/titleLoop.js";
 import { createFilmHead, fetchFilmHead, filmHeadWanted, onCellular, warmWhenLoaded } from "./game/filmHead.js";
 import { landingModel, type LandingInput } from "./game/landingModel.js";
-import { loadName, saveName } from "./game/playerName.js";
+import { loadName, saveName, type NameOf } from "./game/playerName.js";
 import { hostOs, isMobile, type NavigatorLike } from "@csarkosh/engine/game/gpuSignals";
 import { creditsEntries } from "./game/credits.js";
 import { renderTurnedAway, type TurnedAwayHandle } from "./game/turnedAway.js";
@@ -36,6 +36,9 @@ export type IntroRun = {
   /** Takes the film away from the hike's downloads, which then start as they are asked for. */
   untell: () => void;
 };
+
+/** Where Day Hike keeps the player's name between visits, and what a name made for a new visitor starts with. */
+const HIKE_NAME: NameOf = { key: "dayhike.playerName", prefix: "Hiker" };
 
 /**
  * Day Hike's own of the page: the intro's film, the title's loop, the landing page, the page for
@@ -79,7 +82,7 @@ export function createHikePage(h: PageHost): PageSide {
 
   /** A line left for the landing by the hike that just ended, taken when the landing is built. */
   let landingNotice: string | null = null;
-  let selfName = loadName();
+  let selfName = loadName(HIKE_NAME);
   /** Made by Play, waiting for the game route's render. */
   let pendingIntro: IntroRun | null = null;
   /** Playing over the hike being started. */
@@ -418,7 +421,7 @@ export function createHikePage(h: PageHost): PageSide {
 
   /** The player's name, kept as typed and cleaned; returns what it is now. */
   function rename(raw: string): string {
-    selfName = saveName(raw);
+    selfName = saveName(HIKE_NAME, raw);
     return selfName;
   }
 
