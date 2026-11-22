@@ -1,5 +1,5 @@
 import dayCatalog from "../../assets/catalog.json" with { type: "json" };
-import engineCatalog from "../../../engine/assets/catalog.json" with { type: "json" };
+import { engineCatalog } from "@csarkosh/engine/testing/engineFiles";
 
 /**
  * The shipped files' catalogs: Day Hike's own (`client/assets/`), the engine's (`engine/assets/`), and the two as

@@ -2,9 +2,10 @@ import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import { glbEmissive, glbOcclusion, glbOutline, glbParts } from "@csarkosh/engine/game/glbParts";
+import { engineFile } from "@csarkosh/engine/testing/engineFiles";
 
 /** Day Hike's own models, and the engine's. */
-const MODELS = [join(import.meta.dirname, "../../assets/models"), join(import.meta.dirname, "../../../engine/assets/models")];
+const MODELS = [join(import.meta.dirname, "../../assets/models"), engineFile("assets/models")];
 
 /** A shipped model's bytes, as a page fetches them. */
 function model(name: string): ArrayBuffer {
