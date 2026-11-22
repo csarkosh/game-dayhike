@@ -191,7 +191,7 @@ Three layers stop this, and the third is the one that actually catches mistakes:
    `.7z`, `.rar`, `.tar`, `.tar.gz`, `.tgz`, `.dmg`), and Terraform's local state.
 2. **`.gitattributes`** — `.glb`, `.webp`, `.mp3`, `.mp4`, `.wasm`, `.png`, `.jpg` and `.ico` are tracked
    through **Git LFS**, so the object database stores a ~130-byte pointer instead of the
-   file. That covers every binary under `client/assets/` (models, ground textures and stills, wildlife
+   file. That covers every binary under `client/assets/` and `engine/assets/` (models, ground textures and stills, wildlife
    calls, the intro's film), the vendored KTX2 decoder's wasm, and the favicons under `client/public/`.
 3. **The check below** — run it before every push. `.gitignore` does not protect against
    `git add -f` or against a file that was already tracked before a rule existed.

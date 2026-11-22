@@ -467,7 +467,7 @@ export const CLUTTER_FLOWER_SALT = 0xf10a;
  * grass's own patchiness instead of forming their own, independent drifts. */
 export const CLUTTER_FLOWER_PATCH_SALT = 0xdf17;
 /** Natural-size re-derivation: the shipped
- * bush_a mesh (client/assets/models/clutter.bush_a.glb, LOD0) measures
+ * bush_a mesh (engine/assets/models/clutter.bush_a.glb, LOD0) measures
  * 1.919 m tall (via getBounds()), bush_b 1.522 m —
  * bush_a is the larger variant, so it sets the range (neither variant may
  * overshoot the 0.8–2.0 m band). scaleMin = 0.8 / 1.919 = 0.41688 → 0.42;
@@ -479,7 +479,7 @@ export const CLUTTER_BUSH_SCALE_MIN = 0.42;
 export const CLUTTER_BUSH_SCALE_MAX = 1.04;
 export const CLUTTER_BUSH_SALT = 0xb5a1;
 /** Scale ranges per class, re-derived from the shipped meshes
- * (client/assets/models/clutter.*.glb) against real-world size bands. Formula:
+ * (engine/assets/models/clutter.*.glb) against real-world size bands. Formula:
  * scaleMin = bandMin / meshSize, scaleMax = bandMax / meshSize, where
  * meshSize is the LARGER of the two variants' relevant dimension (so neither
  * variant overshoots its band), rounded to two decimals. Fungus is

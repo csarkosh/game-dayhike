@@ -21,12 +21,14 @@
  * everything resolves through: it is assigned once per model, and callers ask
  * for it by that name without knowing what Vite renamed it to.
  *
- * These are Day Hike's shipped files, every one under `client/assets/`: the engine's modules
- * and the game's alike ask for one through `assetUrls.ts`, which answers from what this file
- * registers. Importing it registers them; the page's entry does.
+ * These are Day Hike's shipped files, under `client/assets/`, and the engine's own, under
+ * `engine/assets/` (`engineAssets.ts`): the engine's modules and the game's alike ask for one
+ * through `assetUrls.ts`, which answers from what this file registers, the two merged. Importing
+ * it registers them; the page's entry does.
  */
 import catalog from "../../assets/catalog.json" with { type: "json" };
-import { registerAssets } from "@csarkosh/engine/game/assetUrls";
+import { mergeAssets, registerAssets } from "@csarkosh/engine/game/assetUrls";
+import { ENGINE_ASSETS } from "@csarkosh/engine/game/engineAssets";
 
 const GLOB_URLS = import.meta.glob("../../assets/models/*.glb", {
   query: "?url",
@@ -61,19 +63,6 @@ const VIDEO_GLOB_URLS = import.meta.glob("../../assets/video/*.mp4", {
   eager: true,
 }) as Record<string, string>;
 const IMAGE_GLOB_URLS = import.meta.glob("../../assets/images/*.webp", {
-  query: "?url",
-  import: "default",
-  eager: true,
-}) as Record<string, string>;
-
-/**
- * The trees' bark sets (`barkParams.ts`) and the trunks' moss set
- * (`mossParams.ts`), KTX2 files through the same mechanism: `?url` imports
- * any file as its served URL, so `vite.config.ts` needs nothing for the
- * extension, and at over 900 KB each none is near the inline limit. The
- * catalog's `textures` section lists them with their bytes.
- */
-const TEXTURE_GLOB_URLS = import.meta.glob(["../../assets/textures/bark.*.ktx2", "../../assets/textures/moss.*.ktx2", "../../assets/textures/ground.*.webp"], {
   query: "?url",
   import: "default",
   eager: true,
@@ -121,9 +110,14 @@ const MODEL_URLS = urlMap(GLOB_URLS);
 const AUDIO_URLS = urlMap(AUDIO_GLOB_URLS);
 const VIDEO_URLS = urlMap(VIDEO_GLOB_URLS);
 const IMAGE_URLS = urlMap(IMAGE_GLOB_URLS);
-const TEXTURE_URLS = urlMap(TEXTURE_GLOB_URLS);
 
-registerAssets({ models: MODEL_URLS, textures: TEXTURE_URLS, audio: AUDIO_URLS, catalog });
+/**
+ * Day Hike's own models, textures and sound, then the engine's. The bark, moss and ground textures
+ * are the engine's, so Day Hike has none of its own to register here (the board's two are read
+ * by `boardImages.ts`). Day Hike's go first, so the `assets` section, the one a module reads in
+ * order (the wildlife's creatures), comes out in the order it had when one file held every entry.
+ */
+registerAssets(mergeAssets({ models: MODEL_URLS, textures: urlMap({}), audio: AUDIO_URLS, catalog }, ENGINE_ASSETS));
 
 /** The intro film's hashed url, or null until it ships. */
 export function videoUrl(): string | null {

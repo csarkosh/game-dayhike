@@ -176,7 +176,7 @@ export const RAVEN_ROOST_ALT_FLOOR = 40;
 /**
  * Shipped model height (m) at scale 1, by `treeInCell`'s species index — 0 fir, 1 pine,
  * the order `lite/forestMeshes.ts` maps to tree.giant_fir / tree.giant_pine. The numbers are the
- * ACTUAL bounding boxes recorded in `client/assets/catalog.json`, not any
+ * ACTUAL bounding boxes recorded in `engine/assets/catalog.json`, not any
  * generic reference figures; `vegetation.ts` sizes a giant as this × its drawn scale, and
  * that scale already carries VALLEY_SCALE_BOOST.
  *
@@ -193,7 +193,7 @@ export const GIANT_MODEL_HEIGHT: readonly number[] = [14.70, 17.18];
  * stations, because a giant drawn at 2.8–4.1 × VALLEY_SCALE_BOOST has a trunk 0.29–0.72 m
  * across the axis at the height the squirrel climbs to).
  *
- * MEASURED, not guessed, from the shipped `client/assets/models/tree.giant_{pine,fir}.glb`:
+ * MEASURED, not guessed, from the shipped `engine/assets/models/tree.giant_{pine,fir}.glb`:
  * the LOD0 bark primitive's positions, sliced every 0.5 m, with the trunk axis tracked
  * upward from the unbranched 1–2 m band so that branch vertices are excluded, and the
  * mean ring radius taken per slice. Over the 5–10 m band the largest slice reads

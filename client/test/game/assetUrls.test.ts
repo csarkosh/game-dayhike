@@ -1,7 +1,7 @@
 import { describe, it, expect } from "vitest";
 import "../../src/game/dayhikeAssets.js";
 import { audioUrl, modelBytes, modelUrl } from "@csarkosh/engine/game/assetUrls";
-import catalog from "../../assets/catalog.json" with { type: "json" };
+import { catalog } from "../helpers/catalogs.js";
 
 /** Every model the catalog declares, by the `output` key callers pass. */
 const OUTPUTS = catalog.assets.map((a) => a.output);
@@ -51,7 +51,7 @@ describe("modelUrl", () => {
     // URLs on the live site by matching exactly that.
     for (const output of OUTPUTS) {
       const name = output.slice("models/".length, -".glb".length).replace(/\./g, "\\.");
-      expect(modelUrl(output)).toMatch(new RegExp(`^/assets/(models/)?${name}[^/]*\\.glb$`));
+      expect(modelUrl(output)).toMatch(new RegExp(`^(/assets/(models/)?|/@fs/.+/engine/assets/models/)${name}[^/]*\\.glb$`));
     }
   });
 
@@ -126,7 +126,7 @@ describe("textureUrl", () => {
     expect(new Set(BARK.map(textureUrl)).size).toBe(24);
     for (const output of BARK) {
       const name = output.slice("textures/".length, -".ktx2".length).replace(/\./g, "\\.");
-      expect(textureUrl(output)).toMatch(new RegExp(`^/assets/(textures/)?${name}[^/]*\\.ktx2$`));
+      expect(textureUrl(output)).toMatch(new RegExp(`^(/assets/(textures/)?|/@fs/.+/engine/assets/textures/)${name}[^/]*\\.ktx2$`));
       expect(textureUrl(output).startsWith("data:")).toBe(false);
     }
   });
@@ -137,7 +137,7 @@ describe("textureUrl", () => {
     expect(new Set(KTX2.map(textureUrl)).size).toBe(27);
     for (const output of MOSS) {
       const name = output.slice("textures/".length, -".ktx2".length).replace(/\./g, "\\.");
-      expect(textureUrl(output)).toMatch(new RegExp(`^/assets/(textures/)?${name}[^/]*\\.ktx2$`));
+      expect(textureUrl(output)).toMatch(new RegExp(`^(/assets/(textures/)?|/@fs/.+/engine/assets/textures/)${name}[^/]*\\.ktx2$`));
       expect(textureUrl(output).startsWith("data:")).toBe(false);
     }
   });

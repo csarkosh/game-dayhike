@@ -27,7 +27,7 @@ export function reachOf(maxHoriz: number, maxY: number, scale: number): Reach {
 }
 /** A card model's reach, from the POSITION bounds of every mesh in its file. */
 export function glbReach(file: string, scale: number): Reach {
-  const buf = readFileSync(fileURLToPath(new URL(`../../../assets/models/${file}.glb`, import.meta.url)));
+  const buf = readFileSync(fileURLToPath(new URL(`../../../../engine/assets/models/${file}.glb`, import.meta.url)));
   const json = JSON.parse(buf.subarray(20, 20 + buf.readUInt32LE(12)).toString()) as {
     nodes: { translation?: number[]; rotation?: number[]; scale?: number[]; matrix?: number[] }[];
     meshes: { primitives: { attributes: { POSITION: number } }[] }[];

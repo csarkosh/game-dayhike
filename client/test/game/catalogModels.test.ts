@@ -1,8 +1,8 @@
 import { describe, expect, it } from "vitest";
 import { createHash } from "node:crypto";
-import { readFileSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 
-import catalog from "../../assets/catalog.json" with { type: "json" };
+import { catalog } from "../helpers/catalogs.js";
 import { glbOutline } from "@csarkosh/engine/game/glbParts";
 import { babylonValues } from "../helpers/babylonFixture.js";
 
@@ -14,7 +14,8 @@ const LOD_KINDS = new Set(["prop", "environment"]);
 
 /** A shipped model's bytes, as a page fetches them. */
 function model(output: string): { bytes: Buffer; file: ArrayBuffer } {
-  const bytes = readFileSync(new URL(`../../assets/${output}`, import.meta.url));
+  const own = new URL(`../../assets/${output}`, import.meta.url);
+  const bytes = readFileSync(existsSync(own) ? own : new URL(`../../../engine/assets/${output}`, import.meta.url));
   return { bytes, file: bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength) as ArrayBuffer };
 }
 

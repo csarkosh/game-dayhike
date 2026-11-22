@@ -17,6 +17,8 @@ const TESTS = fileURLToPath(new URL(".", import.meta.url));
  * path back, and a folder is walked in both.
  */
 const ENGINE = fileURLToPath(new URL("../../engine/src", import.meta.url));
+/** The engine's own shipped files and their catalog, beside its source: a part of the engine that its source may name. */
+const ENGINE_ASSETS = fileURLToPath(new URL("../../engine/assets", import.meta.url));
 const ENGINE_PACKAGE = "@csarkosh/engine/";
 
 function at(...parts: string[]): string {
@@ -145,7 +147,7 @@ describe("layer boundaries", () => {
         if (spec.startsWith(ENGINE_PACKAGE)) bad.push(`${logical(file)} names the engine as a package: ${spec}`);
         if (!spec.startsWith(".")) continue;
         const target = join(file, "..", spec.replace(/[?#].*$/, ""));
-        if (!target.startsWith(`${ENGINE}/`)) bad.push(`${logical(file)} refers outside the engine: ${spec}`);
+        if (!target.startsWith(`${ENGINE}/`) && !target.startsWith(`${ENGINE_ASSETS}/`)) bad.push(`${logical(file)} refers outside the engine: ${spec}`);
       }
     }
     expect(bad).toEqual([]);

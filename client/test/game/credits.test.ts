@@ -3,7 +3,7 @@ import { existsSync, readFileSync, readdirSync } from "node:fs";
 import { createRequire } from "node:module";
 import { dirname, join } from "node:path";
 import { creditsModel, creditsRows, requiresAttribution, safeHref } from "@csarkosh/engine/game/credits";
-import catalog from "../../assets/catalog.json" with { type: "json" };
+import { catalog } from "../helpers/catalogs.js";
 
 const SAMPLE = `# Credits
 

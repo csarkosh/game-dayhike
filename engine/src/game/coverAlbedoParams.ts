@@ -67,7 +67,7 @@ export const FOLIAGE_ALBEDO_FLOOR: Rgb = { r: 0.0494, g: 0.0509, b: 0.0205 };
 export const FOLIAGE_SHADOW_FLOOR = 0.75;
 
 /** Mean linear luminance of each card model's base colour texture over the
- * texels its alpha mask keeps, by catalog id (`client/assets/catalog.json`).
+ * texels its alpha mask keeps, by catalog id (`engine/assets/catalog.json`).
  * The meadow ships the main tuft's texture and the two bushes share one. */
 export const COVER_ALBEDO_Y: Readonly<Record<string, number>> = {
   "clutter.grass_a": 0.0942,

@@ -14,7 +14,7 @@
  */
 import type { Rgb } from "./colour.js";
 
-/** The catalog `output` of the moss colour map (`client/assets/catalog.json`,
+/** The catalog `output` of the moss colour map (`engine/assets/catalog.json`,
  * `textures`): moss grown over wood, a 1.00 × 1.00 m plate at 1024 px, sRGB.
  * Its normal and ARM maps ship beside it and are not read: the bark's own
  * relief and roughness stay under the moss. */
