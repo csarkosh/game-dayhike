@@ -9,7 +9,7 @@
  */
 import type { DesktopRelease, Platform } from "@csarkosh/engine/net/desktopRelease";
 import type { HostOs } from "@csarkosh/engine/game/gpuSignals";
-import { downloadCard, type DownloadCard } from "./landingModel.js";
+import { downloadCard, type DownloadCard } from "./downloadCard.js";
 import type { TurnedAwayReason } from "@csarkosh/engine/game/loadCheck";
 import {
   TURNED_AWAY_ADVICE,

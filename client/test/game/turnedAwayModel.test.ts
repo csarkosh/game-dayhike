@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { TURNED_AWAY_REASONS } from "@csarkosh/engine/game/loadCheck";
-import { FIRST_OPEN_NOTE, FIRST_RUN_NOTE_WINDOWS } from "../../src/game/landingModel.js";
+import { FIRST_OPEN_NOTE, FIRST_RUN_NOTE_WINDOWS } from "../../src/game/downloadCard.js";
 import { appWouldRun, turnedAwayModel, visitorDevice, type TurnedAwayInput } from "../../src/game/turnedAwayModel.js";
 import * as words from "@csarkosh/engine/game/turnedAwayWords";
 import { sourceText } from "../helpers/source.js";
