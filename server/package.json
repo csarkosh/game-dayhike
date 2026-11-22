@@ -3,19 +3,10 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "dev": "tsx watch src/index.ts",
-    "build": "tsc -p tsconfig.build.json",
-    "start": "node dist/index.js"
+    "dev": "node --watch ../node_modules/@csarkosh/engine-server/dist/index.js",
+    "start": "node ../node_modules/@csarkosh/engine-server/dist/index.js"
   },
   "dependencies": {
-    "@google-cloud/bigquery": "9.2.0",
-    "@google-cloud/firestore": "9.3.1",
-    "jose": "6.2.12",
-    "ws": "8.21.1"
-  },
-  "devDependencies": {
-    "@types/ws": "8.18.1",
-    "tsx": "4.23.1",
-    "vitest": "4.1.10"
+    "@csarkosh/engine-server": "https://github.com/csarkosh/engine/releases/download/v0.2.1/csarkosh-engine-server-0.2.1.tgz"
   }
 }

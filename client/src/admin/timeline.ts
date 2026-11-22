@@ -16,7 +16,7 @@
 
 import type { Row } from "./source.js";
 
-/** A zone name's shape, the one the admin routes accept (`server/src/adminQueries.ts` `zoneOf`). */
+/** A zone name's shape, the one the admin routes accept (the engine's server `src/adminQueries.ts` `zoneOf`). */
 const ZONE_RE = /^[A-Za-z_]+(\/[A-Za-z0-9_+-]+){0,2}$/;
 
 /**

@@ -37,7 +37,7 @@ export default mergeConfig(
         // both use `/ws`.
         "/ws": { target: "ws://localhost:8080", ws: true },
         // The telemetry route, for a dev page started with `?telemetry=on`: the
-        // dev server process serves both roles (`server/src/index.ts`).
+        // dev server process serves both roles (the engine's server `src/index.ts`).
         "/t": { target: "http://localhost:8080" },
         // The admin host's shell, for the admin page in development
         // (http://localhost:5173/dayhike/admin/?preview): its token module and

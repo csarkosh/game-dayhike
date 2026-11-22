@@ -5,7 +5,6 @@ client/dist-admin/
 site/
 # The frame-budget harness's rows and screenshots (the engine's tools/frame-budget/measure.mjs).
 tools/frame-budget/runs/
-server/dist/
 .DS_Store
 *.log
 .env

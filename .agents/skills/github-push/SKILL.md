@@ -113,7 +113,7 @@ reads what the branch changes against `origin/main`, committed or not, and picks
 - **light**: only tooling, docs, branding or agent files changed (`tools/`, `docs/`, `branding/`, `.agents/`,
   `.claude/`, `README.md`, `AGENTS.md`, `ARCHITECTURE.md`).
   Lint and the tools suite (`tools/`), here, in seconds: neither has a time limit, so load cannot fail
-  them, and nothing the client or server suites test was touched.
+  them, and nothing the client suite tests was touched.
 - **cloud**: anything else (the game, the server, the build,
   dependencies, CI, `CREDITS.md`). The gate dispatches the `test` workflow on GitHub's runners
   for this branch and follows it to its end; its exit is the run's. It runs what is pushed, so
@@ -137,7 +137,7 @@ slowest file.
 
 The `test` workflow (`.github/workflows/test.yml`) runs the same commands on GitHub's runners,
 **only when started by hand** (`workflow_dispatch`; no push or pull request triggers it, Cyrus,
-2026-10-13): typecheck and lint in one job, the server and tools suites in another, the client
+2026-10-13): typecheck and lint in one job, the tools suite in another, the client
 suite split across shards, and a final `gates` job that fails unless every other job passed.
 `gates` is the one result to read. What the workflow adds is a clean checkout: a runner takes
 this tree's files, untracked ones included, where the workflow runs only what was pushed.
@@ -149,7 +149,7 @@ are shared machines. Two things differ from a local run for that reason:
   on a wait (`vi.waitFor`, `expect.poll`) — is written `timeLimit(<ms>)`
   (the engine's `testing/timeLimit.ts`, imported as `@csarkosh/engine/testing/timeLimit`), which multiplies it by `TEST_TIME_SCALE`; unset,
   locally, the factor is exactly 1, and it may be at most 10. The workflow sets 3 for the client
-  job, and a runner does as the workflow does. The server and tools suites set no limits and are not scaled. The architecture test
+  job, and a runner does as the workflow does. The tools suite sets no limits and is not scaled. The architecture test
   fails on a limit written as a bare number, naming the line to change.
 - **Wall-clock tests are left out.** A test that asserts on elapsed time carries the
   `wall-clock` tag, and the workflow skips the tag. `npm run test:wall-clock` runs only them, one

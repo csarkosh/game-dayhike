@@ -11,5 +11,6 @@
     "https://localhost:5173",
     "https://admin.csarko.sh",
     "http://localhost:8788"
-  ]
+  ],
+  "queries": "../tools/telemetry/queries"
 }
