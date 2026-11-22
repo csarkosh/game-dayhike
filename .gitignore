@@ -60,6 +60,3 @@ crash.*.log
 
 # Desktop release working state.
 desktop/.cache/
-
-# Firebase CLI's deploy cache.
-.firebase/

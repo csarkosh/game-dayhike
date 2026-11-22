@@ -1,9 +1,9 @@
 // The page every path outside the game is rewritten to, on both hosts. The site
-// root itself never reaches it: firebase.json 301s `/` to GAMES_INDEX. One
+// root itself never reaches it: the site's rules (`tools/deploy/site.rules.json`) 301 `/` to GAMES_INDEX. One
 // function decides where to send the visitor; the page embeds that function's
 // source, so the tested logic and the shipped logic are the same text.
 
-/** The list of games on csarko.sh. firebase.json's redirect for `/` names it too. */
+/** The list of games on csarko.sh. The redirect for `/` in `tools/deploy/site.rules.json` names it too. */
 export const GAMES_INDEX = 'https://csarko.sh/games';
 
 /**
