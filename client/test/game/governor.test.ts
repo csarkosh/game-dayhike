@@ -2,7 +2,7 @@ import { describe, it, expect, vi } from "vitest";
 import "../../src/sim/passes/index.js";
 import {
   GOVERNOR_IDLE_MAX_MS, GOVERNOR_LIMIT_MS, GOVERNOR_LINE_MS, GOVERNOR_START_MS, GOVERNOR_STALL_MS, GOVERNOR_WINDOW_MS, GOVERNOR_WINDOWS,
-  GOVERNOR_ENABLED, actOnDrop, createGovernor, governHike, governorDecision, governorLine, steadyFrame, type DropDeps, type Governor,
+  GOVERNOR_ENABLED, actOnDrop, createGovernor, governSession, governorDecision, governorLine, steadyFrame, type DropDeps, type Governor,
 } from "@csarkosh/engine/game/governor";
 import type { QualityTier } from "@csarkosh/engine/game/quality";
 import { whenWorldIn } from "@csarkosh/engine/game/worldWait";
@@ -350,7 +350,7 @@ describe("when a drop is acted on", () => {
 
 describe("a hike's governor, as the page makes and feeds it", () => {
   /**
-   * A hike on Auto at high, made as `app.ts` makes it (`governHike`, the
+   * A hike on Auto at high, made as `app.ts` makes it (`governSession`, the
    * switch as given, or the module's own when `enabled` is undefined), whose
    * every frame takes 25 ms, over the limit, steady and fed for 120 s of a test
    * clock: past the grace, every window counts. A drop is acted on as
@@ -389,7 +389,7 @@ describe("a hike's governor, as the page makes and feeds it", () => {
       const decision = governorDecision(hike?.verdict ?? "none", tier, "auto");
       if (decision !== null) acting.push(actOnDrop(tier, decision.next, deps));
     };
-    const hike = enabled === undefined ? governHike(0, onDrop) : governHike(0, onDrop, enabled);
+    const hike = enabled === undefined ? governSession(0, onDrop) : governSession(0, onDrop, enabled);
     let fed = 0;
     for (let now = 25; now <= 120_000; now += 25) {
       if (hike === null) continue;

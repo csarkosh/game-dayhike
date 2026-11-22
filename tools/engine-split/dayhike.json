@@ -107,7 +107,7 @@
     "game/world.worker.ts",
     "game/hikeWorldWorker.ts",
     "game/trace.ts",
-    "game/wildlifeInputs.ts",
+    "game/hikeWildlife.ts",
     "game/hikeAudio.ts",
     "hike.ts",
     "hikeGame.ts",

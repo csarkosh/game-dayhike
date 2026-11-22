@@ -30,7 +30,8 @@ import { wayHazeInto } from "../wayHaze.js";
 import { wayDimAt } from "../wayLevel.js";
 import type { WayColourPath } from "../wayLight.js";
 import { wayTint } from "../wayLightGeometry.js";
-import { createWildlifeInputs } from "../wildlifeInputs.js";
+import { createWildlifeInputs } from "@csarkosh/engine/game/wildlifeInputs";
+import { readHikeMatch } from "../hikeWildlife.js";
 import { createCapMesh, type CapMesh } from "./capMesh.js";
 import { createLiteCrowdCards, type LiteCrowdCards } from "./crowdCardMeshes.js";
 import { createLiteCrowdEyes, type LiteCrowdEyes } from "./crowdEyeMeshes.js";
@@ -94,7 +95,7 @@ export const hikeParts: RenderGame<WorldState, PlayerState, HikeRendererApi> = (
   let othersSeen = 0;
   /** The end scene's car's headlamps, as the one lamp the lens carries is lit while it stands at the car's nose. */
   const carLamp: LampState = { intensity: HEADLAMP_INTENSITY, colour: { r: LAMP_COLOUR[0], g: LAMP_COLOUR[1], b: LAMP_COLOUR[2] } };
-  const wildlife = createWildlifeInputs();
+  const wildlife = createWildlifeInputs(readHikeMatch);
 
   // The parts of a standing renderer: made with it (`lights`, `early`, `late`), let go with it (`release`).
   let mask: RenderMakeMasked["mask"] = null;

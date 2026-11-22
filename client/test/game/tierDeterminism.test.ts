@@ -16,7 +16,8 @@ import { createHikeRenderer } from "../../src/game/hikeRenderer.js";
 import type { QualityTier } from "@csarkosh/engine/game/quality";
 import { bodiesInShot } from "../../src/game/shotBodies.js";
 import { createPlayerSlots } from "@csarkosh/engine/game/waterLifeInputs";
-import { createWildlifeInputs } from "../../src/game/wildlifeInputs.js";
+import { createWildlifeInputs } from "@csarkosh/engine/game/wildlifeInputs";
+import { readHikeMatch } from "../../src/game/hikeWildlife.js";
 import { skyFixture } from "./helpers/skyFixture.js";
 import { timeLimit } from "../helpers/timeLimit.js";
 
@@ -44,7 +45,7 @@ function run(tier: QualityTier | null): { state: string; passHash: number; wrote
   let clock = 0;
   const renderer = tier === null ? null : createHikeRenderer(CANVAS, LEVEL, forest, { tier, skyTable: skyFixture(), clock: () => clock });
   const poses = createEntityPoses();
-  const wildlife = createWildlifeInputs();
+  const wildlife = createWildlifeInputs(readHikeMatch);
   const slots = createPlayerSlots(5);
   let wrote = 0;
   try {
@@ -63,7 +64,7 @@ function run(tier: QualityTier | null): { state: string; passHash: number; wrote
       if (local === undefined) throw new Error("the player left the world");
       wildlife.look(state, local.pos.x, local.pos.y + PLAYER_EYE_OFFSET, local.pos.z, local.yaw, local.pitch, GAME_FOV, 16 / 9, 12, 0);
       wildlife.players(state);
-      wildlife.findHollow(state, local.pos.x, local.pos.z);
+      readHikeMatch(state, local.pos.x, local.pos.z, wildlife.director.match);
       slots.fill(state.players);
       if (serializeWorldState(state) !== before) wrote++;
     }

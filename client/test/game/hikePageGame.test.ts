@@ -76,7 +76,7 @@ describe("the page's shell", () => {
   });
 
   it("reaches the game through the definition at every point it once named Day Hike", () => {
-    expect(shell).toContain("  const hikePage = page.side({");
+    expect(shell).toContain("  const side = page.side({");
     expect(shell).toContain("      proto: page.protocol,");
     expect(shell.split("page.statusLine(container)").length - 1).toBe(3);
     expect(shell).toContain("startWorldPrep(worldInputs(route.token, location.search), page.worldWorker)");

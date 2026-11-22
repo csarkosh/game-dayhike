@@ -269,8 +269,8 @@ export type GpuFaultDeps = {
   /** Whether rows are sent: false with telemetry off, when nothing is read or timed either. */
   enabled: boolean;
   send(name: "gpu_error" | "gpu_window" | "device_lost", fields: Fields): void;
-  /** What was happening in the hike, read when a row is made. `hidden` (the page is not shown) is read for the verdict. */
-  hike(): Fields & { hidden: boolean };
+  /** What was happening in the session, read when a row is made. `hidden` (the page is not shown) is read for the verdict. */
+  session(): Fields & { hidden: boolean };
   /** Notes a loss on the page's record and says what the bound makes of it (`lossBound.ts`). */
   loss(): LossNote;
   /** The page's JS heap (MB) where the browser says; null elsewhere. */
@@ -357,12 +357,12 @@ export function createGpuFaults(deps: GpuFaultDeps): GpuFaults {
     if (open === window) open = null;
     if (disposed) return;
     const facts = window.source.facts();
-    const hike = deps.hike();
+    const session = deps.session();
     const frames = Math.max(0, facts.frames - window.framesAt);
     const stats = read === null || read.rgba === null ? null : pictureStats(read.rgba);
     const darkened = facts.scene || facts.ending || facts.dark > 0;
     const fields: Fields = {
-      ...hike,
+      ...session,
       w: window.w,
       r: window.r,
       nth: window.nth,
@@ -374,7 +374,7 @@ export function createGpuFaults(deps: GpuFaultDeps): GpuFaults {
       total: errors,
       totalDistinct: known.size + (uncounted > 0 ? 1 : 0),
       frames,
-      picture: pictureVerdict({ frames, hidden: hike.hidden, stats, darkened }),
+      picture: pictureVerdict({ frames, hidden: session.hidden, stats, darkened }),
       read: stats !== null,
       scene: facts.scene,
       ending: facts.ending,
@@ -470,7 +470,7 @@ export function createGpuFaults(deps: GpuFaultDeps): GpuFaults {
         window.clear = deps.setTimer(() => judge(window), GPU_WINDOW_MS);
       }
       if (nth <= GPU_ERROR_ROWS) {
-        const fields: Fields = { ...deps.hike(), ...factFields(facts), r: serialOf(source), nth, kind, src: from, msg: text, labels: gpuLabelsIn(text) };
+        const fields: Fields = { ...deps.session(), ...factFields(facts), r: serialOf(source), nth, kind, src: from, msg: text, labels: gpuLabelsIn(text) };
         // The window it fell in, where one is open: the picture that followed it is that window's.
         if (open !== null) fields.w = open.w;
         deps.send("gpu_error", fields);
@@ -484,7 +484,7 @@ export function createGpuFaults(deps: GpuFaultDeps): GpuFaults {
       const facts = source.facts();
       const message = typeof info.message === "string" ? info.message : "";
       const fields: Fields = {
-        ...deps.hike(),
+        ...deps.session(),
         ...factFields(facts),
         r: serialOf(source),
         reason: typeof info.reason === "string" ? info.reason : "",

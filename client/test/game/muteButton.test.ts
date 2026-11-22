@@ -54,9 +54,9 @@ describe("the page's mute", () => {
     mute.set(false);
     expect(heard).toEqual([true, false]);
     expect(button.classList.contains("on")).toBe(false);
-    mute.setHike(true);
+    mute.setOverGame(true);
     expect(button.classList.contains("hike")).toBe(true);
-    mute.setHike(false);
+    mute.setOverGame(false);
     expect(button.classList.contains("hike")).toBe(false);
     mute.dispose();
     expect(host.querySelector("button")).toBeNull();

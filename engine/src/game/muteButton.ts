@@ -110,8 +110,8 @@ export type MuteButton = {
   muted(): boolean;
   /** The state set from outside (a key, a command): drawn, and told as a press is. */
   set(muted: boolean): void;
-  /** Over a hike: faint, the Pause button under it; plain on a page. */
-  setHike(on: boolean): void;
+  /** Over a session: faint, the Pause button under it; plain on a page. */
+  setOverGame(on: boolean): void;
   dispose(): void;
 };
 
@@ -153,7 +153,7 @@ export function createMuteButton(host: HTMLElement, options: { muted: boolean; s
   return {
     muted: () => muted,
     set,
-    setHike(on) {
+    setOverGame(on) {
       button.classList.toggle("hike", on);
     },
     dispose() {

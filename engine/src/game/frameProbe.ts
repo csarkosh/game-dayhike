@@ -663,7 +663,7 @@ export type HikeStartDeps<E> = {
 };
 
 /**
- * The page's start of a hike, in order: "Loading…" from the first moment, the
+ * The page's start of a session, in order: "Loading…" from the first moment, the
  * signals, the tier (the probe's screen taking over from the line when there
  * is one), then the engine for that tier ("Loading…" again, if the probe's
  * screen had taken over, and still there through `beforeBuild`'s wait, which
@@ -676,7 +676,7 @@ export type HikeStartDeps<E> = {
  * `beforeBuild`, between the engine and the build; with `paint`, it lets the
  * page paint before the engine and before the build.
  */
-export async function startHike<E>(deps: HikeStartDeps<E>): Promise<void> {
+export async function startSession<E>(deps: HikeStartDeps<E>): Promise<void> {
   let loading = deps.showLoading();
   let shown = true;
   const hide = (): void => {

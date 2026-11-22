@@ -12,7 +12,7 @@ import {
   cutVerdict,
   idleCadenceMs,
   startFallbacks,
-  startHike,
+  startSession,
   nextProbeStep,
   probeHolds,
   LITE_PROBE_STEPS_SETTLE,
@@ -781,16 +781,16 @@ describe("createProbeMeter", () => {
   });
 });
 
-describe("startHike", () => {
+describe("startSession", () => {
   const SAFARI: GpuSignals = {
     renderer: "Apple GPU", adapter: null, limits: null, features: null, adapterStatus: "none", parallelCompile: true, cores: 8, memoryGb: null, mobile: false, browser: 26,
   };
   const DECIDED = { tier: "medium" as const, source: "auto" as const, cls: "apple-unknown" as const };
 
-  function page(over: Partial<Parameters<typeof startHike<string>>[0]> = {}) {
+  function page(over: Partial<Parameters<typeof startSession<string>>[0]> = {}) {
     const events: string[] = [];
     let current = true;
-    const deps: Parameters<typeof startHike<string>>[0] = {
+    const deps: Parameters<typeof startSession<string>>[0] = {
       signals: Promise.resolve(SAFARI),
       current: () => current,
       showLoading: () => {
@@ -816,7 +816,7 @@ describe("startHike", () => {
   it("says Loading… from the start of the wait until the hike is built: the signals, the tier, then the engine", async () => {
     let signal: (s: GpuSignals) => void = () => undefined;
     const p = page({ signals: new Promise((resolve) => { signal = resolve; }) });
-    const started = startHike(p.deps);
+    const started = startSession(p.deps);
     expect(p.events).toEqual(["loading"]);
     signal(SAFARI);
     await started;
@@ -826,7 +826,7 @@ describe("startHike", () => {
   it("waits for beforeBuild between the engine and the build, still saying Loading…, and a start left meanwhile lets the engine go and builds nothing", async () => {
     let topped: () => void = () => undefined;
     const p = page({ beforeBuild: () => new Promise<void>((resolve) => { p.events.push("before build"); topped = resolve; }) });
-    const started = startHike(p.deps);
+    const started = startSession(p.deps);
     // The awaits up to the wait are promises already resolved: a turn of the task queue passes them.
     await new Promise((resolve) => setTimeout(resolve, 0));
     // The line stays through the wait: a start with no film over it has nothing else on the page.
@@ -837,7 +837,7 @@ describe("startHike", () => {
 
     let toppedLate: () => void = () => undefined;
     const left = page({ beforeBuild: () => new Promise<void>((resolve) => { left.events.push("before build"); toppedLate = resolve; }) });
-    const leaving = startHike(left.deps);
+    const leaving = startSession(left.deps);
     await new Promise((resolve) => setTimeout(resolve, 0));
     left.leave();
     toppedLate();
@@ -853,7 +853,7 @@ describe("startHike", () => {
         return DECIDED;
       },
     });
-    await startHike(p.deps);
+    await startSession(p.deps);
     expect(p.events).toEqual(["loading", "loading gone", "probe screen", "loading", "engine medium", "loading gone", "build medium on webgl2"]);
   });
 
@@ -866,17 +866,17 @@ describe("startHike", () => {
         return "webgpu";
       },
     });
-    await startHike(p.deps);
+    await startSession(p.deps);
     expect(seen).toEqual(["high Apple GPU"]);
     expect(p.events.at(-1)).toBe("build high on webgpu");
   });
 
   it("says the hike could not start when the engine or the build throws, rather than leaving a blank page", async () => {
     const building = page({ build: () => { throw new Error("no WebGL2"); } });
-    await startHike(building.deps);
+    await startSession(building.deps);
     expect(building.events).toEqual(["loading", "decide", "engine medium", "loading gone", "fail Error: no WebGL2"]);
     const engine = page({ engine: async () => { throw new Error("no canvas"); } });
-    await startHike(engine.deps);
+    await startSession(engine.deps);
     expect(engine.events).toEqual(["loading", "decide", "loading gone", "fail Error: no canvas"]);
     expect(START_FAILED_LINE).toBe("This browser could not start the game.");
   });
@@ -888,7 +888,7 @@ describe("startHike", () => {
         return DECIDED;
       },
     });
-    await startHike(decided.deps);
+    await startSession(decided.deps);
     expect(decided.events).toEqual(["loading", "loading gone"]);
     const made = page({
       engine: async () => {
@@ -896,7 +896,7 @@ describe("startHike", () => {
         return "webgpu";
       },
     });
-    await startHike(made.deps);
+    await startSession(made.deps);
     expect(made.events).toEqual(["loading", "decide", "loading gone", "discard webgpu"]);
   });
 
@@ -905,7 +905,7 @@ describe("startHike", () => {
       before: async () => void p.events.push("before"),
       paint: async () => void p.events.push("paint"),
     });
-    await startHike(p.deps);
+    await startSession(p.deps);
     expect(p.events).toEqual(["loading", "decide", "before", "paint", "engine medium", "loading gone", "paint", "build medium on webgl2"]);
   });
 
@@ -917,7 +917,7 @@ describe("startHike", () => {
         throw new Error("no terrain");
       },
     });
-    await startHike(p.deps);
+    await startSession(p.deps);
     expect(p.events).toEqual(["loading", "decide", "engine medium", "loading gone", "built medium on webgl2", "fail Error: no terrain"]);
   });
 
@@ -927,7 +927,7 @@ describe("startHike", () => {
         p.leave();
       },
     });
-    await startHike(p.deps);
+    await startSession(p.deps);
     expect(p.events).toEqual(["loading", "decide", "loading gone"]);
   });
 });

@@ -54,7 +54,7 @@ export const GOVERNOR_IDLE_MAX_MS = 2_000;
  * nothing changes it but the player in Settings. A change of level in the
  * middle of a hike covers play and rebuilds the renderer in front of a player
  * who did not ask for it; the decision belongs to the launch. So the page
- * makes no governor (`governHike`), feeds none, times no idle frames, raises
+ * makes no governor (`governSession`), feeds none, times no idle frames, raises
  * no cover and shows no line for it, and records no drop. A drop recorded
  * before is still read at launch until it lapses (`GOVERNOR_VERDICT_DAYS`,
  * `verdictHolds` in `quality.ts`).
@@ -155,11 +155,11 @@ export type HikeGovernor = {
 };
 
 /**
- * The hike's governor (`app.ts`): where `enabled`, one made at `start` that
+ * The session's governor (`app.ts`): where `enabled`, one made at `start` that
  * calls `onDrop` on the frame its drop is to be acted on (`Governor.frame`);
  * else null, and the page makes none, feeds none and acts on none.
  */
-export function governHike(start: number, onDrop: () => void, enabled: boolean = GOVERNOR_ENABLED): HikeGovernor | null {
+export function governSession(start: number, onDrop: () => void, enabled: boolean = GOVERNOR_ENABLED): HikeGovernor | null {
   if (!enabled) return null;
   const governor = createGovernor(start);
   return {

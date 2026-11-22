@@ -111,7 +111,7 @@ jobs:
     # Measured: 21 s.
     timeout-minutes: 10
     steps:
-      # Neither suite reads an LFS object.
+      # None of these suites reads an LFS object.
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           lfs: false
@@ -125,6 +125,10 @@ jobs:
       - run: npx vitest run --root server
       - if: ${{ !cancelled() && steps.install.outcome == 'success' }}
         run: npx vitest run --root tools
+      # The empty game on the engine alone (`engine/empty`): its world, its rules and two peers
+      # through the engine's sessions. It makes its world from a seed and reads no shipped file.
+      - if: ${{ !cancelled() && steps.install.outcome == 'success' }}
+        run: npx vitest run --root engine/empty
 
   # The client suite whole on one runner took 17 min (vitest's own figure:
   # 1014 s). Five shards bring the longest to about 5 min: vitest assigns files
@@ -238,6 +242,9 @@ jobs:
         env:
           DAYHIKE_BASE: /dayhike/
         run: npm run build
+      # The engine's page with a game of nothing on it: that it still builds without Day Hike.
+      - name: build the empty game
+        run: npm run build:empty
 
   # The one status to require and to read: it fails unless every job above
   # succeeded. `always()` matters: a job skipped because its dependency failed

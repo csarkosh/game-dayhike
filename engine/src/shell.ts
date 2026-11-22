@@ -39,7 +39,7 @@ import type { EngineOnCanvas } from "./game/rendererSwap.js";
 import { LOSS_ENDED_LINE, createLossRecord } from "./game/lossBound.js";
 import { browserEnv, browserMajor, offersWebGpu, readSignals, type GpuSignals, type NavigatorLike } from "./game/gpuSignals.js";
 import { adapterVerdict, loadVerdict, type LoadVerdict } from "./game/loadCheck.js";
-import { LOADING_LINE, START_FAILED_LINE, autoPick, launchLine, liteProbeSteps, startFallbacks, startHike, startupTier, type ProbeSteps, type StartupTier } from "./game/frameProbe.js";
+import { LOADING_LINE, START_FAILED_LINE, autoPick, launchLine, liteProbeSteps, startFallbacks, startSession, startupTier, type ProbeSteps, type StartupTier } from "./game/frameProbe.js";
 import { createMuteButton, readMuted, writeMuted } from "./game/muteButton.js";
 import { containerPixels, withGovernorDrop, type QualityTier, type VerdictEngine } from "./game/quality.js";
 import type { AutoSummary } from "./game/settings.js";
@@ -82,7 +82,7 @@ export function startShell<
   const found = document.querySelector<HTMLDivElement>("#app");
 
   /** The game's own of the page (`PageSide`): made here, once everything of the shell's it reads while it is made stands. */
-  const hikePage = page.side({
+  const side = page.side({
     get app() { return app; },
     get veil() { return veil; },
     get VEIL_SETTLE_MS() { return VEIL_SETTLE_MS; },
@@ -118,7 +118,7 @@ export function startShell<
   const veil = createVeil(document.body);
   const VEIL_SETTLE_MS = 250;
   /** The page's mute (muteButton.ts), on the body beside the veil: over every
-   * page and film, and the hike's ambient through `gameMute` while one runs. */
+   * page and film, and the session's ambient through `gameMute` while one runs. */
   let gameMute: ((muted: boolean) => void) | null = null;
   const mute = createMuteButton(document.body, {
     muted: readMuted(pageStorage()),
@@ -126,7 +126,7 @@ export function startShell<
     onChange: (on) => {
       writeMuted(pageStorage(), on);
       gameMute?.(on);
-      hikePage.muteChanged();
+      side.muteChanged();
     },
   });
 
@@ -166,7 +166,7 @@ export function startShell<
   // ---- telemetry -----------------------------------------------------------------
   // What this page tells of itself (net/telemetry.ts): a session id for the
   // visit, a visitor id for the browser, the build, the version of the library
-  // its hikes are drawn with and the versions that decide whether two pages
+  // its sessions are drawn with and the versions that decide whether two pages
   // can play together, the platform, and the page's own facts
   // (where it came from, which path, the language, the zone, the viewport, the
   // user agent, whether a robot drives it, whether a tester's browser). Made
@@ -179,7 +179,7 @@ export function startShell<
       sid: createLobbyId(),
       vid: visitorId(pageStorage(), createLobbyId) ?? "",
       build: import.meta.env.VITE_BUILD_SHA || "dev",
-      // The tag of Babylon Lite the build pins, which the hike is drawn with.
+      // The tag of Babylon Lite the build pins, which the session is drawn with.
       lite: __LITE_VERSION__,
       proto: page.protocol,
       gen: GEN_VERSION,
@@ -200,7 +200,7 @@ export function startShell<
     },
     browserDeps(),
   );
-  // What the hike's renderer and its library print is the console's, which
+  // What the session's renderer and its library print is the console's, which
   // the capture wraps: nothing of theirs is printed past it.
   installErrorCapture(telemetry, window, console, (window as unknown as { __dh?: EarlyCatch }).__dh);
   // Every change of visibility is a row: the last `hidden` is "last seen" for a
@@ -230,7 +230,7 @@ export function startShell<
   // page down rather than one feature.
   const selfId = createLobbyId();
   // What the browser says of the GPU, read once at load: tens of milliseconds,
-  // at most 2 s for the WebGPU adapter. A hike's tier is decided from it.
+  // at most 2 s for the WebGPU adapter. A session's tier is decided from it.
   const signalsRead = readSignals(browserEnv());
   const signalsReady = signalsRead.signals;
   let signals: GpuSignals | null = null;
@@ -244,7 +244,7 @@ export function startShell<
     // known, and nothing is refused meanwhile. The same request's answer
     // decides when it comes, however late.
     else void signalsRead.adapter.then((later) => settleVerdict(adapterVerdict(later)));
-    hikePage.repaint();
+    side.repaint();
   });
 
   // ---- the load check ------------------------------------------------------------
@@ -252,10 +252,10 @@ export function startShell<
   // page: at once, before the first render, where the browser offers no WebGPU
   // at all; else when the GPU's signals are in, from the adapter their one
   // request was answered with. While it is not known (null) nothing is
-  // refused: the landing page is shown, and a hike or a staged scene asked for
+  // refused: the landing page is shown, and a session or a staged scene asked for
   // meanwhile waits for the signals before anything of it starts (`render`).
   // Once it is "cannot", every route shows the page for those turned away
-  // (`showTurnedAway`), and nothing of a hike is fetched, made or drawn.
+  // (`showTurnedAway`), and nothing of a session is fetched, made or drawn.
   const webgpuOffered = offersWebGpu(navigator as NavigatorLike);
   let verdict: LoadVerdict | null = loadVerdict(webgpuOffered, null);
 
@@ -264,8 +264,8 @@ export function startShell<
    * (`turned_away`: the reason, and what the adapter is short of where the
    * check named it), sent once the GPU's signals are in, so that it carries
    * what every row says of the GPU; a lobby joined or being joined meanwhile
-   * is left, so no host waits on a hiker who cannot play; and the page for
-   * those turned away takes the place of whatever is shown, a hike that had
+   * is left, so no host waits on a player who cannot play; and the page for
+   * those turned away takes the place of whatever is shown, a session that had
    * started on an adapter request still unanswered among it.
    */
   /** The `turned_away` row is sent once. */
@@ -284,7 +284,7 @@ export function startShell<
       detach();
     }
     // Already up (no WebGPU, known as the page loaded): what the signals add is the GPU's name, for the app's offer.
-    if (!hikePage.turnedAwayNow(next)) render(app);
+    if (!side.turnedAwayNow(next)) render(app);
   }
 
   // ---- the graphics setting ------------------------------------------------------
@@ -305,10 +305,10 @@ export function startShell<
   };
 
   /**
-   * A tier failed to build, at a hike's start or on a switch mid-hike: what it
+   * A tier failed to build, at a session's start or on a switch mid-session: what it
    * leaves is `recordFallback`'s (a `build` verdict so Auto does not try it
    * again, a stored choice of it put back on Auto with a line saying so, nothing
-   * under `?tier=`). When nothing built and the hike is ending, the landing gets
+   * under `?tier=`). When nothing built and the session is ending, the landing gets
    * a line saying why.
    */
   function onTierFallback(fallback: { attempted: QualityTier; built: QualityTier | null; source: TierSource }): void {
@@ -328,7 +328,7 @@ export function startShell<
   }
 
   /** The governor lowered Auto's tier: remembered for this GPU, browser and
-   * class, so the next hike starts one step down too (`withGovernorDrop`). */
+   * class, so the next session starts one step down too (`withGovernorDrop`). */
   function onGovernorDrop(running: QualityTier): void {
     telemetry.event("governor_drop", { running });
     if (signals === null) return;
@@ -348,7 +348,7 @@ export function startShell<
     const pick = autoPick(signals, { record: readAutoRecord(pageStorage()), pixels, now: Date.now(), engine: verdictEngineNow(), stepSettles: probeSteps(signals).settle });
     return { tier: pick.tier, probePending: pick.probeFrom !== null, ceiling: pick.ceiling };
   }
-  // Bumped by every render, so a hike whose tier is still being decided for a
+  // Bumped by every render, so a session whose tier is still being decided for a
   // page that has since been left is never built.
   let renderToken = 0;
   let lobby: Lobby | null = null;
@@ -384,7 +384,7 @@ export function startShell<
     onRetry: retryAttempt,
     onInviteCopied: () => telemetry.event("invite_copied"),
     onRename: (raw) => {
-      lobby?.setName(hikePage.rename(raw));
+      lobby?.setName(side.rename(raw));
       // The repaint the roster's rename contract requires: it is what removes
       // the edit field, so it must happen on every onRename.
       paintRoster();
@@ -393,12 +393,12 @@ export function startShell<
 
   function paintRoster(): void {
     // Gone with everything else of the game once a visitor is turned away.
-    if (hikePage.awayShown()) return;
+    if (side.awayShown()) return;
     roster.setView(
       rosterModel({
         lobby: lobby?.state ?? null,
         selfId,
-        selfName: hikePage.name(),
+        selfName: side.name(),
         inviteUrl: (id) => inviteLink(id, webBase),
         inGame: parseRoute(location.pathname).kind === "game",
         hidden: parseRoute(location.pathname).kind === "scene",
@@ -510,14 +510,14 @@ export function startShell<
       // A follower's page is wherever the host last sent it; a lobby that ends
       // mid-game is handled by the game's own session-end path, but a lobby that
       // ends on a landing page just needs the roster to say so.
-      if (parseRoute(location.pathname).kind !== "game") hikePage.repaint();
+      if (parseRoute(location.pathname).kind !== "game") side.repaint();
     });
     detachLobby = () => {
       offChange();
       offEnd();
     };
     paintRoster();
-    hikePage.repaint();
+    side.repaint();
     follow(next);
   }
 
@@ -571,7 +571,7 @@ export function startShell<
         signaling,
         peerId: selfId,
         lobbyId: createLobbyId(),
-        name: hikePage.name(),
+        name: side.name(),
         route: hostRoute(currentRoutePath()),
       });
       // Abandoned while the reply was in the air. The room is real and hosted by
@@ -617,7 +617,7 @@ export function startShell<
     });
     paintRoster();
     try {
-      const joined = await joinLobby({ signaling, peerId: selfId, lobbyId, name: hikePage.name() });
+      const joined = await joinLobby({ signaling, peerId: selfId, lobbyId, name: side.name() });
       if (epoch !== attemptEpoch) {
         joined.leave();
         return;
@@ -633,7 +633,7 @@ export function startShell<
       telemetry.event("lobby_error", { kind: "join", code, ms: attemptMs() });
       lobbyError = lobbyErrorMessage(code);
       paintRoster();
-      hikePage.repaint();
+      side.repaint();
     } finally {
       offOpen();
       if (epoch === attemptEpoch) joining = false;
@@ -692,8 +692,8 @@ export function startShell<
     launching = true;
     telemetry.event("play", { party: lobby === null ? 1 : lobby.state.members.length });
     // The game's load gets the bandwidth: the loop's download stops here.
-    hikePage.played();
-    hikePage.repaint();
+    side.played();
+    side.repaint();
     afterNextPaint(() => {
       launching = false;
       navigateToGame(createLobbyId());
@@ -701,18 +701,18 @@ export function startShell<
   }
 
   // ---- the engine ----------------------------------------------------------------
-  // The page makes no engine. A hike, a staged scene and every step of the tier
-  // check are drawn by the hike's own renderer, which makes its engine from the
+  // The page makes no engine. A session, a staged scene and every step of the tier
+  // check are drawn by the session's own renderer, which makes its engine from the
   // canvas it is handed and draws with WebGPU alone. An engine that fails under
-  // a hike is answered by a live rebuild of the renderer (`app.ts`), never by a
+  // a session is answered by a live rebuild of the renderer (`app.ts`), never by a
   // reload, which would end a party; there is no other engine to remember it
   // against or to fall back to, and the address's `?engine=` is read by
   // nothing.
 
   /**
-   * The engine a hike is drawn with, which Auto's verdicts are kept for
+   * The engine a session is drawn with, which Auto's verdicts are kept for
    * (`AutoVerdict.engine`) and looked up under: WebGPU, in every browser, since
-   * the hike's own renderer draws with nothing else and the tier check is
+   * the session's own renderer draws with nothing else and the tier check is
    * measured on it.
    */
   function verdictEngineNow(): VerdictEngine {
@@ -720,7 +720,7 @@ export function startShell<
   }
 
   /**
-   * The tier check's steps as the page measures them, on the hike's own
+   * The tier check's steps as the page measures them, on the session's own
    * renderer: whether one can be measured in this browser, and why not where
    * it cannot (`liteProbeSteps`). A browser that offers no WebGPU, or offers
    * it and has no adapter (the GPU's signals, `read`, from the page's one
@@ -734,29 +734,29 @@ export function startShell<
   }
 
   /**
-   * A hike's canvas, made now: a fresh one, with no engine on it. The hike's renderer
+   * A session's canvas, made now: a fresh one, with no engine on it. The session's renderer
    * makes its own engine from its canvas (`createHikeRenderer`), so the page
-   * makes none for a hike, at its start or for a switch of tier or a rebuild
-   * later, and none is kept from one hike for the next: a hike's renderer
+   * makes none for a session, at its start or for a switch of tier or a rebuild
+   * later, and none is kept from one session for the next: a session's renderer
    * lets its engine go with itself. No canvas is made
    * where the load check's verdict is "cannot": no route reaches here then
    * (`render` shows the page for those turned away first), and a renderer a
-   * running hike asks for after a verdict that came late is refused.
+   * running session asks for after a verdict that came late is refused.
    */
-  function hikeCanvasNow(): EngineOnCanvas {
+  function sessionCanvasNow(): EngineOnCanvas {
     if (verdict !== null && !verdict.play) throw new Error(`this browser cannot draw a hike (${verdict.reason})`);
     return { canvas: document.createElement("canvas") };
   }
 
-  /** `hikeCanvasNow` for a start's chain: its refusal a rejection. */
-  function hikeCanvas(): Promise<EngineOnCanvas> {
-    return new Promise((resolve) => resolve(hikeCanvasNow()));
+  /** `sessionCanvasNow` for a start's chain: its refusal a rejection. */
+  function sessionCanvas(): Promise<EngineOnCanvas> {
+    return new Promise((resolve) => resolve(sessionCanvasNow()));
   }
 
   /**
-   * A failure of the engine a hike is drawn with: its row. Nothing is
-   * remembered of it for a later hike and nothing is pinned in the address:
-   * the rebuild is on WebGPU as the hike was, and how often a device may be
+   * A failure of the engine a session is drawn with: its row. Nothing is
+   * remembered of it for a later session and nothing is pinned in the address:
+   * the rebuild is on WebGPU as the session was, and how often a device may be
    * lost is the page's own count (`lostDevices`).
    */
   function engineFailed(reason: "pipeline" | "lost"): void {
@@ -764,11 +764,11 @@ export function startShell<
   }
 
   /**
-   * The devices this page's hikes have lost (`lossBound.ts`), by the page's
-   * clock: every hike's, since the machine is the same in the next one. A
-   * hike notes each loss here and reads what the bound on rebuilds makes of
+   * The devices this page's sessions have lost (`lossBound.ts`), by the page's
+   * clock: every session's, since the machine is the same in the next one. A
+   * session notes each loss here and reads what the bound on rebuilds makes of
    * it; one that ends by the bound leaves the landing page its line, as a
-   * hike whose graphics could not be restarted does (`onTierFallback`).
+   * session whose graphics could not be restarted does (`onTierFallback`).
    */
   const lostDevices = createLossRecord();
   const losses = {
@@ -791,14 +791,14 @@ export function startShell<
   function render(container: HTMLDivElement): void {
     const route = parseRoute(location.pathname);
     if (verdict !== null && !verdict.play) {
-      hikePage.showTurnedAway(container, route, verdict);
+      side.showTurnedAway(container, route, verdict);
       return;
     }
     // A change of page goes behind the veil (veil.ts): it comes down first,
     // this render runs again under it, and it lifts once the page is up. The
     // intro's own film carries the title into the game, so it goes without.
     const asked = pageOf(route);
-    if (shownPage !== null && asked !== shownPage && !veil.down && !hikePage.carriesToGame()) {
+    if (shownPage !== null && asked !== shownPage && !veil.down && !side.carriesToGame()) {
       void veil.cover().then(() => render(container));
       return;
     }
@@ -826,7 +826,7 @@ export function startShell<
       pageRow();
       replaceWithLanding();
       // Joined once the load check has the GPU's signals and has not turned the visitor away: a host's roster
-      // never shows a hiker who cannot play. A verdict not known by then (the adapter had not answered) joins.
+      // never shows a player who cannot play. A verdict not known by then (the adapter had not answered) joins.
       void signalsReady.then(() => {
         if (verdict === null || verdict.play) void enterLobby(route.lobbyId);
       });
@@ -835,8 +835,8 @@ export function startShell<
     // Landing and its panels are one page, so moving between them swaps a class
     // rather than rebuilding: a rebuild would replace the nodes the transition is
     // running on, and it would also drop and re-place the still behind them.
-    if (isLandingRoute(route) && hikePage.landingUp()) {
-      hikePage.showPanel(route);
+    if (isLandingRoute(route) && side.landingUp()) {
+      side.showPanel(route);
       pageRow();
       announcer.now();
       paintRoster();
@@ -848,12 +848,12 @@ export function startShell<
     running = null;
     game = null;
     paused = false;
-    hikePage.left();
+    side.left();
     container.replaceChildren();
-    // The mute sits faint over a hike, under its Pause button; plain on every other page.
-    mute.setHike(route.kind === "game");
+    // The mute sits faint over a session, under its Pause button; plain on every other page.
+    mute.setOverGame(route.kind === "game");
 
-    // A staged scene and a hike wait for the load check: where the GPU's
+    // A staged scene and a session wait for the load check: where the GPU's
     // signals are not in yet (a game's or a scene's own address, as the page
     // loads), nothing of either starts, no worker, no film of the route's own,
     // no canvas, until they are, under the start's own line. The signals'
@@ -864,7 +864,7 @@ export function startShell<
       const line = page.statusLine(container);
       line.setStatus(LOADING_LINE);
       // The film Play started stays in the page meanwhile: taken out of it, it would stop.
-      hikePage.keepOpening(container);
+      side.keepOpening(container);
       running = { dispose: () => line.dispose() };
       paintRoster();
       void signalsReady.then(() => {
@@ -877,13 +877,13 @@ export function startShell<
 
     // The staged intro on its fixed world, a frame at a time for its recording:
     // the film is made on the high tier, which is what Auto means here, drawn
-    // by the hike's own renderer on a canvas of its own, as a hike is
-    // (`hikeCanvas`); the address's `?tier=` and a saved choice are the page's
+    // by the session's own renderer on a canvas of its own, as a session is
+    // (`sessionCanvas`); the address's `?tier=` and a saved choice are the page's
     // own as everywhere.
     if (route.kind === "scene") {
       const choice = parseTierOverride(location.search) ?? currentChoice();
       const tier = choice === "auto" ? "high" : choice;
-      void hikeCanvas().then(
+      void sessionCanvas().then(
         ({ canvas }) => {
           if (token !== renderToken) return;
           container.appendChild(canvas);
@@ -897,7 +897,7 @@ export function startShell<
     }
 
     if (isLandingRoute(route)) {
-      running = hikePage.showLanding(container, route, {
+      running = side.showLanding(container, route, {
         play: onPlay,
         // False where the text is no invite link or lobby id: the page says so.
         join: (text) => {
@@ -918,42 +918,42 @@ export function startShell<
       return;
     }
 
-    // One chain, in order (`startHike`): "Loading…" from the first moment; the
+    // One chain, in order (`startSession`): "Loading…" from the first moment; the
     // GPU's signals; the tier (`startupTier`: the address's override, else the
     // saved choice, else Auto, with its probe behind its own screen on a machine
-    // whose GPU the browser will not name); then the hike's canvas, made only
+    // whose GPU the browser will not name); then the session's canvas, made only
     // now that the probe is done and its last step's renderer, canvas and
     // device have gone ("Loading…" again meanwhile); then the launch. `running`
     // covers the wait, so a render that moves on stops the probe, and disposes
     // its renderer, before building its own. A throw anywhere in the chain
     // leaves a line rather than a blank page.
     const cancelled = (): boolean => token !== renderToken;
-    // The intro Play started, over the hike from here: its bar is the one the
+    // The intro Play started, over the session from here: its bar is the one the
     // loads report to, and the download waits for its buffer (`before`). A
     // follower is brought here by the host's Play, with no click of its own,
     // so its intro starts with the sound off (a browser plays it no other way
     // without a gesture) and the sound button turns it on.
-    const opening = hikePage.openingFor(container, lobby !== null && lobby.state.role === "client");
+    const opening = side.openingFor(container, lobby !== null && lobby.state.role === "client");
     // The loads report to the intro's bar when there is one, and in every case
-    // name their stage as telemetry's breadcrumb while the hike is built, so
+    // name their stage as telemetry's breadcrumb while the session is built, so
     // an error in the build says which stage was in progress. Before it the
     // breadcrumb is the start's own (a tier check's renderer loads under
     // `start:decide`), and after it the game's: the renderer asks for its
-    // models once its device is made, and an error under a hike is the game's.
+    // models once its device is made, and an error under a session is the game's.
     let building = false;
     setLoadProgress(markedProgress(opening?.progress ?? null, (stage) => telemetry.mark(`load:${stage}`), () => building));
-    // The hike's trail and level check, made off this thread from now, while
+    // The session's trail and level check, made off this thread from now, while
     // the tier is decided, the film buffers and the engine starts: the build
     // waits for them (`beforeBuild`) and finds them made. With no worker, or
     // one that fails, the build makes them as it always did (`worldPrep.ts`).
     const prep = startWorldPrep(worldInputs(route.token, location.search), page.worldWorker);
     let prepOutcome: WorldPrepOutcome | null = null;
-    // The hike's first scene (`preparedScene.ts`): asked of the same worker
+    // The session's first scene (`preparedScene.ts`): asked of the same worker
     // once the tier is decided, waited for before the build, and taken by the
     // first renderer made, whose builders use its arrays in place of sampling
     // the ground. Where there is none, the build samples as it always did.
     // Nothing here holds it once it is taken: these closures live as long as
-    // the hike, and a renderer made later samples its own.
+    // the session, and a renderer made later samples its own.
     let sampling: Promise<PreparedScene | null> = Promise.resolve(null);
     let sampled: PreparedScene | null = null;
     /** The tier the scene was asked for, and the tier of the one that came (null: none came). */
@@ -964,7 +964,7 @@ export function startShell<
       sampled = null;
       return scene;
     };
-    // Each probe step is measured on the hike's own renderer, which makes its
+    // Each probe step is measured on the session's own renderer, which makes its
     // engine from the step's own canvas and lets both go with the step
     // (`runLiteProbeStep`): the page makes no engine for it. A step whose
     // renderer cannot be made, or whose device fails under it, reads nothing;
@@ -989,7 +989,7 @@ export function startShell<
       lapStart = now;
     };
     telemetry.mark("start:decide");
-    void startHike<EngineOnCanvas>({
+    void startSession<EngineOnCanvas>({
       signals: signalsReady,
       current: () => !cancelled(),
       showLoading: () => {
@@ -1032,7 +1032,7 @@ export function startShell<
         if (sceneTier !== null) console.info(sceneLine(sceneTier, sampled, laps.sceneMs ?? 0));
       },
       paint: () => new Promise((resolve) => afterNextPaint(resolve)),
-      engine: () => hikeCanvas(),
+      engine: () => sessionCanvas(),
       // A canvas the start has left carries no engine: there is nothing to let go.
       discard: () => undefined,
       build: (decided, onCanvas) => {
@@ -1041,7 +1041,7 @@ export function startShell<
         lap("engine");
         telemetry.mark("start:build");
         building = true;
-        launch(onCanvas, route.token, decided, () => hikeCanvasNow(), opening, takeSampled);
+        launch(onCanvas, route.token, decided, () => sessionCanvasNow(), opening, takeSampled);
         lap("build");
         // The build has what it wanted of the worker: the worker ends, and the scene is let go of.
         prep.dispose();
@@ -1073,11 +1073,11 @@ export function startShell<
   }
 
   /**
-   * Starts the game on `onCanvas` at the tier decided: the hike's renderer
+   * Starts the game on `onCanvas` at the tier decided: the session's renderer
    * makes its engine from the canvas, and the game listens to it and answers
    * its failures live (`app.ts`). A start that throws goes up to the start's
-   * one catch (`startHike`). `engineForGame` hands the canvas a switch of tier
-   * or a rebuild later builds on. `takeSampled` gives up the hike's first
+   * one catch (`startSession`). `engineForGame` hands the canvas a switch of tier
+   * or a rebuild later builds on. `takeSampled` gives up the session's first
    * scene from the world's worker, once: the first renderer made takes its
    * arrays, and one made after it samples the ground for itself.
    */
@@ -1120,7 +1120,7 @@ export function startShell<
         notice: () => choiceNotice,
         save: saveChoice,
       },
-      mode: { choice: hikePage.mode, save: hikePage.saveMode },
+      mode: { choice: side.mode, save: side.saveMode },
       mute: {
         bind: (apply) => {
           gameMute = apply;

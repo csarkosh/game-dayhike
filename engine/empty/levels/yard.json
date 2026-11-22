@@ -1,0 +1,6 @@
+{
+  "id": "empty-yard",
+  "brushes": [{ "min": [-8, -1, -8], "max": [8, 0, 8], "material": "concrete" }],
+  "playerSpawns": [[0, 0.9, 0]],
+  "enemySpawns": []
+}
