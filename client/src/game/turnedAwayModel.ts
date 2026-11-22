@@ -2,7 +2,8 @@
  * What the page for those who cannot play shows, as data: the sentence that
  * says what is wrong, what to do about it, the browsers that run the game on
  * the visitor's kind of device, and the desktop app's download where the app
- * would run on this computer. Every word is `turnedAwayWords.ts`'s; every
+ * would run on this computer. Every word is `turnedAwayWords.ts`'s but the
+ * game's name, which is handed in (`TurnedAwayInput.title`); every
  * decision is made here, where a test can reach it, and `turnedAway.ts`
  * only paints the result.
  */
@@ -22,7 +23,7 @@ import {
   TURNED_AWAY_DETAIL_APP,
   TURNED_AWAY_HEADLINE,
   TURNED_AWAY_HEADLINE_APP,
-  TURNED_AWAY_TITLE,
+  named,
 } from "@csarkosh/engine/game/turnedAwayWords";
 
 /** The kind of device the visitor is on, as far as the list of browsers differs by it. */
@@ -42,6 +43,8 @@ export function visitorDevice(os: HostOs, mobile: boolean, userAgent: string): V
 }
 
 export type TurnedAwayInput = {
+  /** The game's name: the page's title, and what every sentence that names the game says. */
+  title: string;
   reason: TurnedAwayReason;
   /** What the adapter is short of, for the reason `short` (`LoadVerdict.short`). */
   short: string | null;
@@ -99,28 +102,30 @@ export function appWouldRun(input: Pick<TurnedAwayInput, "reason" | "desktop" | 
 
 /** The page, from why the visitor is turned away and what they are on. */
 export function turnedAwayModel(input: TurnedAwayInput): TurnedAwayView {
+  /** A sentence with the game's name in it. */
+  const say = (line: string): string => named(line, input.title);
   if (input.desktop) {
     return {
       reason: input.reason,
-      title: TURNED_AWAY_TITLE,
-      headline: TURNED_AWAY_HEADLINE_APP[input.reason],
-      advice: TURNED_AWAY_ADVICE_APP,
+      title: input.title,
+      headline: say(TURNED_AWAY_HEADLINE_APP[input.reason]),
+      advice: TURNED_AWAY_ADVICE_APP.map(say),
       browsers: null,
       app: null,
-      detail: withShort(TURNED_AWAY_DETAIL_APP[input.reason], input),
+      detail: withShort(say(TURNED_AWAY_DETAIL_APP[input.reason]), input),
       credits: TURNED_AWAY_CREDITS,
     };
   }
   const card = appWouldRun(input) && input.latest !== null && input.host !== "other" ? downloadCard(input.latest, input.host) : null;
   return {
     reason: input.reason,
-    title: TURNED_AWAY_TITLE,
-    headline: TURNED_AWAY_HEADLINE[input.reason],
-    // A phone or a tablet has no setting for graphics acceleration and no driver to update.
+    title: input.title,
+    headline: say(TURNED_AWAY_HEADLINE[input.reason]),
+    // A phone or a tablet has no setting for graphics acceleration and no driver to update. A browser's advice names no game.
     advice: (input.device === "android" || input.device === "appleMobile" ? TURNED_AWAY_ADVICE_PHONE : TURNED_AWAY_ADVICE)[input.reason],
-    browsers: { intro: TURNED_AWAY_BROWSERS_INTRO, lines: TURNED_AWAY_BROWSERS[input.device] },
-    app: card === null ? null : { intro: TURNED_AWAY_APP_INTRO, card },
-    detail: withShort(TURNED_AWAY_DETAIL[input.reason], input),
+    browsers: { intro: say(TURNED_AWAY_BROWSERS_INTRO), lines: TURNED_AWAY_BROWSERS[input.device] },
+    app: card === null ? null : { intro: say(TURNED_AWAY_APP_INTRO), card },
+    detail: withShort(say(TURNED_AWAY_DETAIL[input.reason]), input),
     credits: TURNED_AWAY_CREDITS,
   };
 }

@@ -58,6 +58,7 @@ export function createHikePage(h: PageHost): PageSide {
   function turnedAwayView(why: TurnedAway): TurnedAwayView {
     const nav = navigator as NavigatorLike;
     return turnedAwayModel({
+      title: "Day Hike",
       reason: why.reason,
       short: why.short,
       desktop: h.desktop,
