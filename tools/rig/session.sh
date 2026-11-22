@@ -12,7 +12,7 @@
 #   tools/rig/session.sh down                        ends every rig and its forward
 #
 # Run from any checkout: the rigs are applied from the main checkout's root, as `round.sh` does.
-# Logs go on the lab disk (`DAYHIKE_LAB`, `/Volumes/CyrusExtSSD/dayhike-lab` by default), under
+# Logs go on the lab disk (`ENGINE_LAB`, `/Volumes/CyrusExtSSD/dayhike-lab` by default), under
 # `rig-sessions/<date>/`, never this Mac's own disk; `up` refuses to start without it. Making
 # machines costs money ($0.715 an hour each), so `up` is run with the owner's go-ahead, as any
 # `terraform apply` on the rigs is. Written for the bash 3.2 macOS ships.
@@ -22,12 +22,13 @@ here="$(cd "$(dirname "$0")/../.." && pwd)"
 main="$(dirname "$(git -C "$here" rev-parse --path-format=absolute --git-common-dir)")"
 root="$main/_infra/test-rig-aws-windows"
 region=us-east-1
-lab="${DAYHIKE_LAB:-/Volumes/CyrusExtSSD/dayhike-lab}"
+[ -n "${ENGINE_LAB:-}" ] || [ -z "${DAYHIKE_LAB:-}" ] || echo "DAYHIKE_LAB is read for now; set ENGINE_LAB instead" >&2
+lab="${ENGINE_LAB:-${DAYHIKE_LAB:-/Volumes/CyrusExtSSD/dayhike-lab}}"
 first_port=9333
 
 say() { echo "$(date '+%H:%M:%S') $*"; }
 need_root() { [ -d "$root/.terraform" ] || { echo "the rig root is not initialised: run terraform init in $root" >&2; exit 2; }; }
-need_lab() { [ -d "$lab" ] || { echo "the lab disk is not mounted ($lab): mount it, or set DAYHIKE_LAB" >&2; exit 2; }; }
+need_lab() { [ -d "$lab" ] || { echo "the lab disk is not mounted ($lab): mount it, or set ENGINE_LAB" >&2; exit 2; }; }
 session_dir() { echo "$lab/rig-sessions/$(date '+%Y-%m-%d')"; }
 
 # The machines the root's state names, one id a line.

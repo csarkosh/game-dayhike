@@ -16,7 +16,7 @@
 //
 // The cloud plan runs what is pushed, not this working tree: the branch must be pushed (a work
 // branch, never main) and nothing the game ships left uncommitted, or the gate says so and stops.
-// Where `DAYHIKE_GATE` names a runner, this checkout and the arguments are handed to it instead and
+// Where `ENGINE_GATE` (`DAYHIKE_GATE` is still read for now) names a runner, this checkout and the arguments are handed to it instead and
 // its exit is the gate's: a Node script (run with this Node) or an executable, given `--game <this
 // checkout>` and the arguments, that runs the same commands, and the client's build as the deploy
 // builds it, on other machines and prints one report; it may take options of its own.
@@ -27,7 +27,9 @@ import { gatePlan } from './gate/plan.mjs';
 const REPO = fileURLToPath(new URL('../', import.meta.url));
 const WORKFLOW = 'test.yml';
 const args = process.argv.slice(2);
-const runner = process.env.DAYHIKE_GATE;
+// ENGINE_GATE names the runner; the old DAYHIKE_GATE is read where it is unset, with a notice.
+if (!process.env.ENGINE_GATE && process.env.DAYHIKE_GATE) process.stderr.write('gate: DAYHIKE_GATE is read for now; set ENGINE_GATE instead\n');
+const runner = process.env.ENGINE_GATE || process.env.DAYHIKE_GATE;
 const run = (command, argv, env = process.env) => spawnSync(command, argv, { cwd: REPO, stdio: 'inherit', env }).status ?? 1;
 const read = (command, argv) => {
   const r = spawnSync(command, argv, { cwd: REPO, encoding: 'utf8' });
@@ -45,7 +47,7 @@ const OPTIONS = new Set(['--local', '--plan']);
 const options = args.filter((a) => a.startsWith('-'));
 const unknown = options.filter((o) => !OPTIONS.has(o));
 if (unknown.length > 0) {
-  say(`${unknown.join(' ')} is the runner's (DAYHIKE_GATE), and none is set; here the gate takes --plan, --local or client test files`);
+  say(`${unknown.join(' ')} is the runner's (ENGINE_GATE), and none is set; here the gate takes --plan, --local or client test files`);
   process.exit(2);
 }
 const files = args.filter((a) => !a.startsWith('-'));

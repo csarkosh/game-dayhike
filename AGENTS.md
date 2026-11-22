@@ -42,7 +42,7 @@ gated by the `test` workflow, which the gate dispatches on the pushed branch (th
 skill). Never answer a timing failure on this machine by running it again here.
 
 **Large and flat-file output goes on the external SSD**, `/Volumes/CyrusExtSSD/dayhike-lab/`
-(`DAYHIKE_LAB`), never the MacBook's own disk *(Cyrus, 2026-10-29)*: shader recordings, captures,
+(`ENGINE_LAB`; the old name `DAYHIKE_LAB` is still read for now), never the MacBook's own disk *(Cyrus, 2026-10-29)*: shader recordings, captures,
 renders, frame-time and rig logs, probe output. The rig scripts refuse to run without it; if it is
 not mounted, ask. Nothing of the repository lives there: no worktree, symlink or `node_modules`.
 

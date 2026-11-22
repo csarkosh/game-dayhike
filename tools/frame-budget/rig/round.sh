@@ -14,7 +14,7 @@
 # Making machines is `terraform apply` on `_infra/test-rig-aws-windows/`, and the owner's go-ahead
 # is the rule for it. With --keep-running the machines are left to their idle watchdog, which ends
 # each fifteen minutes after the last harness left it. The forwards' logs go on the lab disk
-# (`DAYHIKE_LAB`, `/Volumes/CyrusExtSSD/dayhike-lab` by default), never this Mac's own.
+# (`ENGINE_LAB`, `/Volumes/CyrusExtSSD/dayhike-lab` by default), never this Mac's own.
 set -euo pipefail
 
 here="$(cd "$(dirname "$0")/../../.." && pwd)"
@@ -43,8 +43,9 @@ jobs=$(node --input-type=module -e "
   console.log(expandJobs(JSON.parse(readFileSync(process.argv[1], 'utf8'))).length);
 " "$queue")
 [ -d "$root/.terraform" ] || { echo "the rig root is not initialised: run terraform init in $root" >&2; exit 2; }
-lab="${DAYHIKE_LAB:-/Volumes/CyrusExtSSD/dayhike-lab}"
-[ -d "$lab" ] || { echo "the lab disk is not mounted ($lab): mount it, or set DAYHIKE_LAB" >&2; exit 2; }
+[ -n "${ENGINE_LAB:-}" ] || [ -z "${DAYHIKE_LAB:-}" ] || echo "DAYHIKE_LAB is read for now; set ENGINE_LAB instead" >&2
+lab="${ENGINE_LAB:-${DAYHIKE_LAB:-/Volumes/CyrusExtSSD/dayhike-lab}}"
+[ -d "$lab" ] || { echo "the lab disk is not mounted ($lab): mount it, or set ENGINE_LAB" >&2; exit 2; }
 want=${rigs:-$(( jobs < max_rigs ? jobs : max_rigs ))}
 [ "$want" -ge 1 ] || want=1
 count=$want

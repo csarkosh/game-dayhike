@@ -119,7 +119,7 @@ not, and picks one of two plans (`tools/gate/plan.mjs`):
   push the work branch first (never `main`); the gate refuses, saying what to do, while the
   branch is unpushed, behind, or has game files uncommitted.
 
-Where `DAYHIKE_GATE` names a runner, the gate hands this checkout to it instead (no runner has
+Where `ENGINE_GATE` (the old name `DAYHIKE_GATE` is still read for now) names a runner, the gate hands this checkout to it instead (no runner has
 been built yet). `npm run gate -- <client test files>` runs only those files here, as the
 runners run them (limits scaled by 3, wall-clock tests left out): a check while working, not the
 gate. `npm run gate -- --local` is the old whole gate on this machine, half an hour or more and

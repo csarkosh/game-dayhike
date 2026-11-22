@@ -160,7 +160,7 @@ however it ends (`--keep-running` leaves them to their idle watchdog, which ends
 minutes after its last harness). The round then waits for its slowest machine's start and its
 slowest job, not for the sum of its jobs. Making machines is an apply: the owner's go-ahead is the
 rule for a round as for one machine. The forwards' logs go under `rig-sessions/<date>/` on the lab
-disk (`DAYHIKE_LAB`), never this Mac's own.
+disk (`ENGINE_LAB`), never this Mac's own.
 
 Every remote run first closes the rig Chrome's pages but its blank one (`closeStrayPages`): a
 forward that dropped mid-sample leaves that sample's page drawing, and the retry beside it read
