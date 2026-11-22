@@ -10,8 +10,8 @@ import { createFilmHead, fetchFilmHead, filmHeadWanted, onCellular, warmWhenLoad
 import { landingModel, type LandingInput } from "./game/landingModel.js";
 import { hostOs, isMobile, type NavigatorLike } from "@csarkosh/engine/game/gpuSignals";
 import { creditsEntries } from "./game/hikeCredits.js";
-import { renderTurnedAway, type TurnedAwayHandle } from "./game/turnedAway.js";
-import { turnedAwayModel, visitorDevice, type TurnedAwayView } from "./game/turnedAwayModel.js";
+import { renderTurnedAway, type TurnedAwayHandle } from "@csarkosh/engine/game/turnedAway";
+import { turnedAwayModel, visitorDevice, type TurnedAwayView } from "@csarkosh/engine/game/turnedAwayModel";
 import { HIKE_MODES, createModeKeeper, isGameMode, type GameMode } from "./game/gameMode.js";
 import { pageStorage, parseTierOverride, pageSessionStorage, takeNotice } from "@csarkosh/engine/game/tierChoice";
 import { VEIL_CUT_COVER_MS, VEIL_CUT_LIFT_MS } from "@csarkosh/engine/game/veil";

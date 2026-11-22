@@ -7,7 +7,7 @@ import {
   landingModel,
   landingPanelFocus,
 } from "../../src/game/landingModel.js";
-import { FIRST_OPEN_NOTE, FIRST_RUN_NOTE_WINDOWS } from "../../src/game/downloadCard.js";
+import { FIRST_OPEN_NOTE, FIRST_RUN_NOTE_WINDOWS } from "@csarkosh/engine/game/downloadCard";
 
 const MAC = {
   url: "https://storage.googleapis.com/fps-csarko-downloads/desktop/DayHike-1.2.0-arm64.dmg",

@@ -2,8 +2,8 @@ import { describe, expect, it } from "vitest";
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { TURNED_AWAY_REASONS } from "@csarkosh/engine/game/loadCheck";
-import { FIRST_OPEN_NOTE, FIRST_RUN_NOTE_WINDOWS } from "../../src/game/downloadCard.js";
-import { appWouldRun, turnedAwayModel, visitorDevice, type TurnedAwayInput } from "../../src/game/turnedAwayModel.js";
+import { FIRST_OPEN_NOTE, FIRST_RUN_NOTE_WINDOWS } from "@csarkosh/engine/game/downloadCard";
+import { appWouldRun, turnedAwayModel, visitorDevice, type TurnedAwayInput } from "@csarkosh/engine/game/turnedAwayModel";
 import * as words from "@csarkosh/engine/game/turnedAwayWords";
 import { sourceText } from "../helpers/source.js";
 
@@ -139,10 +139,10 @@ describe("the page for those turned away, as data", () => {
       expect(turnedAwayModel(input({ reason, desktop: true, userAgent: SHELL_WIN })).credits, reason).toBe("Credits");
     }
     // The page takes the works themselves from the credits' own list, each written by the Credits screen's own hand.
-    const page = readFileSync(fileURLToPath(new URL("../../src/game/turnedAway.ts", import.meta.url)), "utf8");
+    const page = readFileSync(fileURLToPath(new URL("../../../engine/src/game/turnedAway.ts", import.meta.url)), "utf8");
     expect(page).toContain("options: { still: string | null; credits: readonly CreditEntry[]; onDownload?(platform: Platform): void },");
     expect(page).toContain("  for (const e of options.credits) creditsList.append(creditItem(e));");
-    const screen = readFileSync(fileURLToPath(new URL("../../src/game/credits.ts", import.meta.url)), "utf8");
+    const screen = readFileSync(fileURLToPath(new URL("../../../engine/src/game/credits.ts", import.meta.url)), "utf8");
     expect(screen).toContain("  for (const e of entries) list.append(creditItem(e));");
     // Day Hike's own of the page hands them over (`hikePage.ts`).
     const main = readFileSync(fileURLToPath(new URL("../../src/hikePage.ts", import.meta.url)), "utf8");

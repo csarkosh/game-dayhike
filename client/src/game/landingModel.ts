@@ -1,6 +1,6 @@
 import { isNewer, PLATFORMS, type DesktopRelease, type Platform } from "@csarkosh/engine/net/desktopRelease";
 import { HIKE_MODES } from "./gameMode.js";
-import { downloadCard, type DownloadCard } from "./downloadCard.js";
+import { downloadCard, type DownloadCard } from "@csarkosh/engine/game/downloadCard";
 import { settingsModel, type SettingsInput, type SettingsView } from "@csarkosh/engine/game/settings";
 
 export const DOWNLOADS_UNAVAILABLE = "Downloads are not available right now.";

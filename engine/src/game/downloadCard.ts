@@ -2,7 +2,7 @@
  * The card that offers the desktop app's build for one platform, with the note for its first
  * run; used by a landing page's downloads and by the page for those turned away.
  */
-import { formatSize, type DesktopRelease, type Platform } from "@csarkosh/engine/net/desktopRelease";
+import { formatSize, type DesktopRelease, type Platform } from "../net/desktopRelease.js";
 
 // Ad-hoc signed until a Developer ID exists: macOS blocks the first open with
 // "Apple could not verify", and Open Anyway only appears in Settings after that
