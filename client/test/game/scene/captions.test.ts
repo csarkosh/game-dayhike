@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { createCaptionPanel } from "../../../src/game/scene/captions.js";
-import { asHtml, installStandInDom } from "../helpers/standInDom.js";
+import { asHtml, installStandInDom } from "@csarkosh/engine/testing/standInDom";
 
 afterEach(() => vi.unstubAllGlobals());
 

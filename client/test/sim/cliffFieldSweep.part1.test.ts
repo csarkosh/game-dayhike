@@ -1,6 +1,6 @@
 import { describe, it } from "vitest";
 import { PLACEMENT_PARTS, checkPlacementPart } from "./cliffFieldSweep.js";
-import { timeLimit } from "../helpers/timeLimit.js";
+import { timeLimit } from "@csarkosh/engine/testing/timeLimit";
 
 describe(`the placement over 200 worlds, part 1 of ${PLACEMENT_PARTS}`, () => {
   // A limit for a hang, not a bar on speed: a part's fifty worlds take 65 to 90 s on a CI runner.

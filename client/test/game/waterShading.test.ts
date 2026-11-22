@@ -8,7 +8,7 @@ import {
   capCycle, capCycleHash, capFires, foamCover, foamLookAge, foamShare, foamWhite, laceCover, laceLevel, oceanCapCells,
   oceanLace, swellPixelKeep, waterSkinHash, waterSkinNoise,
 } from "@csarkosh/engine/game/waterShading";
-import { timeLimit } from "../helpers/timeLimit.js";
+import { timeLimit } from "@csarkosh/engine/testing/timeLimit";
 
 describe("Fresnel for water", () => {
   it("is F0 = 0.02 straight down and 1 at grazing", () => {

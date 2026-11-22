@@ -9,7 +9,7 @@ import {
   POSITION_PRECISION,
   type Snapshot,
 } from "../../src/net/protocol.js";
-import { seedPart } from "../helpers/seedPart.js";
+import { seedPart } from "@csarkosh/engine/testing/seedPart";
 
 /**
  * Sends one player at `pos` through the snapshot codec and returns where the

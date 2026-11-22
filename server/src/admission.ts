@@ -10,35 +10,6 @@
  */
 
 /**
- * Origins the browser build is actually served from. Firebase provisions the
- * two default hostnames alongside the custom domain and all three serve the
- * same bundle, so a player who reaches the game by any of them must be able to
- * signal. `localhost:5173` is Vite: in development the page and the socket
- * share that origin because Vite proxies `/ws` through to this server, so what
- * arrives here is the dev server's origin rather than `localhost:8080`.
- * The desktop shell (`desktop/main.cjs`) loads the site itself, so its origin is the first entry.
- */
-export const DEFAULT_ALLOWED_ORIGINS: readonly string[] = [
-  "https://games.csarko.sh",
-  // game.csarko.sh now serves only the redirect page, so nothing new opens a
-  // socket from it. It stays listed for web tabs still holding the old bundle
-  // at the old origin and can go at a later server deploy.
-  "https://game.csarko.sh",
-  "https://fps-csarko.web.app",
-  "https://fps-csarko.firebaseapp.com",
-  "http://localhost:5173",
-  "https://localhost:5173",
-  // The admin page (`client/src/admin/`) is served from the shared admin host
-  // (csarko.sh's `admin/`) and reads this server's `/admin/*` routes
-  // cross-origin, so its origin has to be here for the routes' CORS check
-  // (`admin.ts` reads this same list); the bearer token it sends makes the
-  // browser preflight each request. The second is that shell's local preview,
-  // so the page can be worked on against production. Neither opens a socket.
-  "https://admin.csarko.sh",
-  "http://localhost:8788",
-];
-
-/**
  * A missing `Origin` is allowed; a present but unlisted one is not.
  *
  * That asymmetry is the point. Browsers set this header on every WebSocket

@@ -15,7 +15,7 @@ import {
   FACE_FORM_CELL, FACE_FORM_JITTER, FACE_FORM_BORDER, FACE_FORM_SALT,
   type ReliefSample,
 } from "@csarkosh/engine/sim/faceRelief";
-import { DERIV_SEED as SEED, TOL_RATIO } from "./helpers/derivatives.js";
+import { DERIV_SEED as SEED, TOL_RATIO } from "@csarkosh/engine/testing/derivatives";
 
 /** Central-difference arm. The relief's joints are a few tenths of a metre
  * wide, so the arm is far finer than the olympic harness's. */

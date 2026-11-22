@@ -4,7 +4,7 @@ import { babylonText } from "../../helpers/babylonFixture.js";
 import { FRAME_BLOCK, stageClocks, stageOwn, stageReads } from "@csarkosh/engine/game/lite/frameBlock";
 import { RAIN_FRAME_READS, RAIN_WGSL } from "@csarkosh/engine/game/lite/rain";
 import { emptyRainStageUniforms } from "@csarkosh/engine/game/rainField";
-import { inOrder, tight } from "./wgslText.js";
+import { inOrder, tight } from "@csarkosh/engine/testing/wgslText";
 
 /**
  * The streak plugin's own code at its points on Babylon.js (where it updates the position, and

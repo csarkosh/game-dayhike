@@ -12,8 +12,8 @@ import { waterLifeLayout } from "@csarkosh/engine/game/waterLifeField";
 import { createWaterLifeScene, type WaterLifeDraws, type WaterLifeFrame } from "@csarkosh/engine/game/waterLifeScene";
 import { WEATHER_PRESETS, type WeatherParams } from "@csarkosh/engine/game/weather";
 import { windRecordUnder } from "@csarkosh/engine/game/windParams";
-import { skyFixture } from "./helpers/skyFixture.js";
-import { timeLimit } from "../helpers/timeLimit.js";
+import { skyFixture } from "@csarkosh/engine/testing/skyFixture";
+import { timeLimit } from "@csarkosh/engine/testing/timeLimit";
 
 const SEED = 388817;
 

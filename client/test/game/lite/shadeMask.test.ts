@@ -9,9 +9,9 @@ import {
   SHADE_LOOK_FLOATS, SHADE_SMOKE_NOISE_WGSL, SHADE_SMOKE_VERTEX_WGSL, createMaskTargets, shadeMaskFragmentWgsl, shadeMaskPlugin, writeShadeLook,
   type MaskTargets,
 } from "@csarkosh/engine/game/lite/shadeMask";
-import { binder, picture, type FakePicture } from "./textureClaims.js";
+import { binder, picture, type FakePicture } from "@csarkosh/engine/testing/textureClaims";
 import { babylonText } from "../../helpers/babylonFixture.js";
-import { tight } from "./wgslText.js";
+import { tight } from "@csarkosh/engine/testing/wgslText";
 import { sourceText } from "../../helpers/source.js";
 
 const src = readFileSync(new URL("../../../../engine/src/game/lite/shadeMask.ts", import.meta.url), "utf8");

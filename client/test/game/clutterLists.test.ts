@@ -10,8 +10,8 @@ import { clutterBucketFade, createClutterLists, type ClutterBucket } from "@csar
 import { FADE_NONE_IN } from "@csarkosh/engine/game/distanceFade";
 import type { CullPose } from "@csarkosh/engine/game/grassCull";
 import { finish } from "@csarkosh/engine/game/syncJobs";
-import { runBySlices } from "../helpers/sliceRun.js";
-import { timeLimit } from "../helpers/timeLimit.js";
+import { runBySlices } from "@csarkosh/engine/testing/sliceRun";
+import { timeLimit } from "@csarkosh/engine/testing/timeLimit";
 
 const SEED = 1;
 // Near the origin, where grass grows reliably.

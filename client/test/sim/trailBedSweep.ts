@@ -7,7 +7,7 @@ import { TRAIL_PAINT_MAX_SEGMENTS, TRAIL_PAINT_BUCKET_MAX, buildTrailTable, trai
 import { featureStageD } from "@csarkosh/engine/sim/features";
 import type { EdgeKind } from "@csarkosh/engine/sim/trail";
 import { SEEDS } from "./trailGateSeeds.js";
-import { seedPart } from "../helpers/seedPart.js";
+import { seedPart } from "@csarkosh/engine/testing/seedPart";
 
 /**
  * THE BED SCAN — the regression gate on the UNION.

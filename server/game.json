@@ -1,0 +1,15 @@
+{
+  "app": "game-dayhike",
+  "telemetryDataset": "dayhike_telemetry",
+  "telemetryBucket": "dayhike-telemetry",
+  "allowedOrigins": [
+    "https://games.csarko.sh",
+    "https://game.csarko.sh",
+    "https://fps-csarko.web.app",
+    "https://fps-csarko.firebaseapp.com",
+    "http://localhost:5173",
+    "https://localhost:5173",
+    "https://admin.csarko.sh",
+    "http://localhost:8788"
+  ]
+}

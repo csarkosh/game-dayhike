@@ -9,9 +9,6 @@
  */
 const SVG = "http://www.w3.org/2000/svg";
 
-/** Where the line goes: the donate page's door for this game. */
-export const TOKENS_URL = "https://donate.csarko.sh/dayhike";
-
 /** Each letter in `PIXELS` is one pixel in one of these; a dot is transparent. */
 export const TOKENS_PALETTE: Readonly<Record<string, string>> = {
   O: "#6b1113", // heart outline
@@ -83,11 +80,11 @@ export function tokensIcon(): SVGSVGElement {
   return svg;
 }
 
-/** The line itself: the icon and the words, once, opening the donate page in a new tab. */
-export function tokensLink(): HTMLAnchorElement {
+/** The line itself: the icon and the words, once, opening the donate page (the game's address for it) in a new tab. */
+export function tokensLink(url: string): HTMLAnchorElement {
   const link = document.createElement("a");
   link.className = "tokens";
-  link.href = TOKENS_URL;
+  link.href = url;
   link.target = "_blank";
   link.rel = "noopener";
   link.append(tokensIcon(), "Buy me tokens");

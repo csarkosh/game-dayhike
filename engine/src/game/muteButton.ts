@@ -3,7 +3,7 @@
  * and the hike alike, so no sound ever plays without a way to stop it.
  * Pressed, nothing sounds: the hike's ambient master (`ambientAudio.ts`)
  * and the intro film's track (`introOverlay.ts`) both read it. The state is
- * the player's and lives in localStorage under `MUTE_KEY`, so a page opened
+ * the player's and lives in localStorage under `muteKey`, so a page opened
  * muted stays so.
  *
  * It sits at the top left corner on every page, the title screen included,
@@ -19,16 +19,19 @@
  * browser games do; for a keyboard the button carries the key beside the
  * speaker, as the HUD's Pause button and lamp hint carry theirs (`hud.ts`).
  */
+import { gameIdentity } from "../identity.js";
 import { aimedAtFormControl } from "./input.js";
 import { lineIcon } from "./icons.js";
 
-export const MUTE_KEY = "dayhike.muted";
+export function muteKey(): string {
+  return `${gameIdentity().storage}.muted`;
+}
 
 /** The stored mute: false where nothing is stored or the storage refuses. */
 export function readMuted(storage: Storage | null): boolean {
   if (storage === null) return false;
   try {
-    return storage.getItem(MUTE_KEY) === "1";
+    return storage.getItem(muteKey()) === "1";
   } catch {
     return false;
   }
@@ -38,8 +41,8 @@ export function readMuted(storage: Storage | null): boolean {
 export function writeMuted(storage: Storage | null, muted: boolean): boolean {
   if (storage === null) return false;
   try {
-    if (muted) storage.setItem(MUTE_KEY, "1");
-    else storage.removeItem(MUTE_KEY);
+    if (muted) storage.setItem(muteKey(), "1");
+    else storage.removeItem(muteKey());
     return true;
   } catch {
     return false;
@@ -100,7 +103,7 @@ const STYLE = `
   }
   /* Over a hike it sits as faint as the touch controls do, and comes up when wanted or when pressed;
      the Pause button sits under it (44px tall at 14px from the corner, in the touch layer and the HUD alike). */
-  .mute.hike { opacity: 0.35; }
+  .mute.session { opacity: 0.35; }
   .mute.on, .mute:hover, .mute:focus-visible { opacity: 1; }
   .mute.on { background: rgba(255, 255, 255, 0.18); }
   .mute:focus-visible { outline: 2px solid rgba(255, 255, 255, 0.7); outline-offset: 3px; }
@@ -154,7 +157,7 @@ export function createMuteButton(host: HTMLElement, options: { muted: boolean; s
     muted: () => muted,
     set,
     setOverGame(on) {
-      button.classList.toggle("hike", on);
+      button.classList.toggle("session", on);
     },
     dispose() {
       window.removeEventListener("keydown", onKeyDown);

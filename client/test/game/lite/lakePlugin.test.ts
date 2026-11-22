@@ -6,7 +6,7 @@ import { FRAME_BLOCK, FRAME_FIELDS, inFrameBlock } from "@csarkosh/engine/game/l
 import { WATER_PRIORITY, lakePlugin } from "@csarkosh/engine/game/lite/lakePlugin";
 import { lakeWaterRow } from "@csarkosh/engine/game/waterShading";
 import { createWaterSurface, emptyLakeMirrorUniforms, emptyLakeUniforms, emptyWaterFrameUniforms, lakeUniforms, setWaterCalm, setWaterLakeBody } from "@csarkosh/engine/game/waterSurface";
-import { laidOut, readUniform, standInTexture } from "./pluginFixture.js";
+import { laidOut, readUniform, standInTexture } from "@csarkosh/engine/testing/pluginFixture";
 
 const SHARED = { name: FRAME_BLOCK } as unknown as PluginUniformBlock;
 const TEXTURES = { bump: standInTexture("bump"), bed: standInTexture("bed"), skyline: standInTexture("skyline") };

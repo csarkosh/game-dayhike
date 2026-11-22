@@ -6,7 +6,7 @@ import {
   BOWL_U_MAX, BOWL_Z_HALF,
   APRON_Z_HALF, APRON_Z_FADE, APRON_CLIFF_U, APRON_CLIFF_FADE,
 } from "../../src/sim/bowl.js";
-import { checkDerivatives, TOL_RATIO } from "./helpers/derivatives.js";
+import { checkDerivatives, TOL_RATIO } from "@csarkosh/engine/testing/derivatives";
 import { fbm2d } from "@csarkosh/engine/sim/field";
 import { roadOffsetD } from "@csarkosh/engine/sim/road";
 import {

@@ -23,7 +23,7 @@ const FILES: Record<keyof typeof LAYER_MEAN_RGB, string> = {
 };
 
 async function meanRgb(file: string): Promise<[number, number, number]> {
-  const path = fileURLToPath(new URL(`../../assets/textures/${file}`, import.meta.url));
+  const path = fileURLToPath(new URL(`../../../engine/assets/textures/${file}`, import.meta.url));
   const { channels } = await sharp(path).stats();
   return [channels[0]!.mean / 255, channels[1]!.mean / 255, channels[2]!.mean / 255];
 }

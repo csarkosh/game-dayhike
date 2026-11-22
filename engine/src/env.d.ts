@@ -8,7 +8,7 @@
 // typed rather than reached through that interface's `any` index signature.
 /** The version of Babylon Lite the page is built with, as `client/package.json`
  * pins it: the fork's tag (`v1.39.3-dayhike.7`), read by the build
- * (`vite.config.ts`, `tools/vite/liteVersion.mjs`). Telemetry's `lite`. */
+ * (`vite.config.ts`, `engine/vite/preset.mjs`). Telemetry's `lite`. */
 declare const __LITE_VERSION__: string;
 
 /** lib-visits' client, when `index.html` loaded it: `page()` counts a route change as a view. */

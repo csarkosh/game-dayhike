@@ -16,7 +16,7 @@ import { waterPlantPlacements } from "@csarkosh/engine/game/waterPlantField";
 import { prepareScene, sceneTransfer, type PreparedScene } from "@csarkosh/engine/game/preparedScene";
 import { waterBumpData } from "@csarkosh/engine/game/waterBump";
 import { featureTableFor } from "@csarkosh/engine/game/featureTable";
-import { timeLimit } from "../helpers/timeLimit.js";
+import { timeLimit } from "@csarkosh/engine/testing/timeLimit";
 
 const before = activeTerrainVariantName();
 afterEach(() => setActiveTerrainVariant(before));

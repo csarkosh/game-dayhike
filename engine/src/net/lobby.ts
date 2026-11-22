@@ -1,3 +1,4 @@
+import { gameIdentity } from "../identity.js";
 import type { JoinedInfo, SignalingClient } from "./signaling.js";
 
 /**
@@ -12,14 +13,17 @@ import type { JoinedInfo, SignalingClient } from "./signaling.js";
  */
 
 export const MAX_NAME_LENGTH = 24;
-export const FALLBACK_NAME = "Hiker";
+/** What a player with no usable name is called: the game's own word for one. */
+export function fallbackName(): string {
+  return gameIdentity().player;
+}
 
 /** Names come from other peers and are untrusted: shape, length, and
  * emptiness are all enforced here, on both send and receive. */
 export function sanitiseName(raw: unknown): string {
-  if (typeof raw !== "string") return FALLBACK_NAME;
+  if (typeof raw !== "string") return fallbackName();
   const trimmed = raw.trim();
-  if (trimmed.length === 0) return FALLBACK_NAME;
+  if (trimmed.length === 0) return fallbackName();
   return trimmed.length > MAX_NAME_LENGTH ? trimmed.slice(0, MAX_NAME_LENGTH) : trimmed;
 }
 

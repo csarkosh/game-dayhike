@@ -26,6 +26,7 @@
  * (`Renderer.ownWatch`) is put on only once its rung stands (`watch`): a
  * rung that failed is never watched.
  */
+import { gameIdentity } from "../identity.js";
 import type { WatchEngine } from "./engineWatch.js";
 import type { QualityTier } from "./quality.js";
 import type { WorldRenderer } from "./rendererTypes.js";
@@ -218,7 +219,7 @@ export function buildFirstRenderer<R extends Renderer>(
       return { renderer, canvas: current, tier, fellBack: tier !== asked };
     } catch (error) {
       failure = error;
-      console.error(`quality: the ${tier} renderer could not be built at the hike's start.`, error);
+      console.error(`quality: the ${tier} renderer could not be built at the ${gameIdentity().session}'s start.`, error);
     }
   }
   throw failure;

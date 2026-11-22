@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
-import { timeLimit } from "../helpers/timeLimit.js";
+import { timeLimit } from "@csarkosh/engine/testing/timeLimit";
 
 type Sim = {
   terrain: typeof import("@csarkosh/engine/sim/terrain");

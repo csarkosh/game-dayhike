@@ -201,6 +201,55 @@ jobs:
       - run: npm ci
       - run: npx vitest run --root client --shard=${{ matrix.shard }}/${{ strategy.job-total }} '--tags-filter=!wall-clock'
 
+  # The engine's own suite (`engine/test`), whole on one runner and not sharded: it is a
+  # fraction of the client's. It reads the engine's shipped models, which are LFS objects, so it
+  # restores them as the client job does. Time limits scaled and `wall-clock` tests left out, as
+  # for the client.
+  engine:
+    needs: lfs
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      # As the client job's: every test time limit, and vitest's defaults, times three.
+      TEST_TIME_SCALE: 3
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          lfs: false
+          persist-credentials: false
+      - uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: .git/lfs/objects
+          key: ${{ needs.lfs.outputs.key }}
+          fail-on-cache-miss: true
+      # `git lfs checkout` writes the files from .git/lfs/objects and never goes
+      # to the network. A bad object, or any file still a pointer afterwards,
+      # means the cache entry is bad: fail here, naming the files and the way
+      # out, not in whichever test reads them. `git lfs ls-files -l` prints
+      # `<64-hex oid> <*|-> <path>`, `-` for a pointer, so the match is anchored
+      # on the oid and a path containing " - " cannot pass for one.
+      - name: check out lfs files from the cache
+        env:
+          KEY: ${{ needs.lfs.outputs.key }}
+        run: |
+          pointers() { git lfs ls-files -l | grep -E '^[0-9a-f]{64} - ' || true; }
+          bad() {
+            echo "::error::The cached LFS objects under $KEY are incomplete or corrupt, and a cache entry cannot be overwritten. Delete it with: gh cache delete $KEY --repo ${GITHUB_REPOSITORY}  (or change lfs-v1 to lfs-v2 in this workflow), then re-run ALL jobs (gh run rerun ${GITHUB_RUN_ID} --repo ${GITHUB_REPOSITORY}, not --failed; the lfs job must run again to refill the cache)."
+            exit 1
+          }
+          echo "lfs pointers before checkout: $(pointers | grep -c . || true)"
+          git lfs fsck --objects || bad
+          git lfs checkout
+          missing=$(pointers)
+          echo "lfs pointers after checkout: $(printf '%s' "$missing" | grep -c . || true)"
+          if [ -n "$missing" ]; then echo "$missing"; bad; fi
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+      - run: npm ci
+      - run: npx vitest run --root engine '--tags-filter=!wall-clock'
+
   # The real client, built as the deploy builds it (`npm run build`, under the
   # production base `tools/deploy/lib/buildClient.mjs` sets). The suites build
   # only fixtures; this is the one place the real build runs before a deploy.
@@ -253,7 +302,7 @@ jobs:
   # `gates` on a superseded commit is that cancellation, not a failure to chase.
   gates:
     if: always()
-    needs: [lfs, static, server-and-tools, client, build]
+    needs: [lfs, static, server-and-tools, client, engine, build]
     runs-on: ubuntu-latest
     timeout-minutes: 2
     steps:

@@ -5,9 +5,9 @@ import { SHADE_BLUR, SHADE_DARK, SHADE_MONSTER_DARK } from "@csarkosh/engine/gam
 import { GRADE_SHADE_BLOCK, GRADE_STARE_BLOCK, VEIL_GAMMA } from "@csarkosh/engine/game/shadeVeilParams";
 import { SHADE_BLOCK_WGSL, STARE_BLOCK_WGSL, gradeWgsl } from "@csarkosh/engine/game/lite/postWgsl";
 import { SHADE_VEIL_WGSL, holdTexture, veilShown, veilUniforms } from "@csarkosh/engine/game/lite/shadeVeil";
-import { binder, picture } from "./textureClaims.js";
+import { binder, picture } from "@csarkosh/engine/testing/textureClaims";
 import { babylonText } from "../../helpers/babylonFixture.js";
-import { tight } from "./wgslText.js";
+import { tight } from "@csarkosh/engine/testing/wgslText";
 
 /** The veil's fragment stage on Babylon.js (`shadeVeil.fragment.glsl`), its text recorded. */
 const GLSL = babylonText("stages/shadeVeil.fragment.glsl");

@@ -10,7 +10,7 @@ import { PLAYER_HALF, TICK_DT } from "@csarkosh/engine/sim/constants";
 import { ENEMY_HALF } from "../../src/sim/dayhikeConstants.js";
 import { spawnHollow } from "../../src/sim/hollow.js";
 import { Phase } from "../../src/sim/types.js";
-import { timeLimit } from "../helpers/timeLimit.js";
+import { timeLimit } from "@csarkosh/engine/testing/timeLimit";
 
 /** The walk down the stem from the crest, on 50 seeds, is `hollowWalkSweep.ts`. */
 describe("the Hollow walks the stem on real terrain", () => {

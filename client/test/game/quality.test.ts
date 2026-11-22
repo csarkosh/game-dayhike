@@ -22,7 +22,7 @@ import {
   type QualityTier,
 } from "@csarkosh/engine/game/quality";
 import { CLASS_TIERS, type GpuClass } from "@csarkosh/engine/game/gpuClass";
-import { AUTO_KEY, readAutoRecord } from "@csarkosh/engine/game/tierChoice";
+import { autoKey, readAutoRecord } from "@csarkosh/engine/game/tierChoice";
 
 describe("QUALITY", () => {
   it("matches the quality tier table", () => {
@@ -414,7 +414,7 @@ describe("the engine a verdict was measured with", () => {
     const text =
       '{"v":1,"gpu":"Apple GPU","cls":"apple-unknown","browser":26,"attempts":0,"verdict":{"tier":"high","source":"probe","pixels":2073600,"at":1789913600000,' +
       '"readings":[{"tier":"high","frames":120,"meanMs":16.7,"p95Ms":17.4,"pixels":2073600,"engine":"webgl2"}]}}';
-    const written = readAutoRecord({ getItem: (key: string) => (key === AUTO_KEY ? text : null) } as Storage);
+    const written = readAutoRecord({ getItem: (key: string) => (key === autoKey() ? text : null) } as Storage);
     expect(written?.verdict?.tier).toBe("high");
     // Under either lookup the record is another version's: the machine is measured again, on the hike's own renderer.
     expect(onWebGpu(written)).toEqual({ tier: "medium", probeFrom: "high" });

@@ -9,7 +9,7 @@ import { createRingSamples, updateRingSamples } from "@csarkosh/engine/game/clip
 import { collectClutter, createClutterCollector } from "@csarkosh/engine/game/clutterField";
 import { DUFF_REACH, collectDuffCells, createDuffCollector } from "@csarkosh/engine/game/duffField";
 import { finish as finishSlices } from "@csarkosh/engine/game/syncJobs";
-import { timeLimit } from "../helpers/timeLimit.js";
+import { timeLimit } from "@csarkosh/engine/testing/timeLimit";
 
 const SEED = 1;
 

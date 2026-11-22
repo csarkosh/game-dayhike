@@ -7,7 +7,7 @@ import { setActiveTerrainVariant, DEFAULT_TERRAIN_VARIANT } from "@csarkosh/engi
 import { raycastGround } from "@csarkosh/engine/sim/collision";
 import { GROUND_RAY_REFINEMENTS, GROUND_RAY_STEP } from "@csarkosh/engine/sim/constants";
 import type { GroundField } from "@csarkosh/engine/sim/ground";
-import { timeLimit } from "../helpers/timeLimit.js";
+import { timeLimit } from "@csarkosh/engine/testing/timeLimit";
 
 setActiveTerrainVariant(DEFAULT_TERRAIN_VARIANT);
 

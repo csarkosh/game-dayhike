@@ -7,9 +7,9 @@ import { hash3 } from "@csarkosh/engine/sim/field";
 import {
   DEFAULT_TERRAIN_VARIANT, elevationSampleAt, registerTerrainVariant, setActiveTerrainVariant, type WaterBodySource,
 } from "@csarkosh/engine/sim/terrain";
-import { stadiumLake } from "../helpers/lakeShapes.js";
+import { stadiumLake } from "@csarkosh/engine/testing/lakeShapes";
 import * as cliffField from "@csarkosh/engine/sim/cliffField";
-import { boxShell, seat } from "./helpers/cliffSolid.js";
+import { boxShell, seat } from "@csarkosh/engine/testing/cliffSolid";
 import { CLIFF_LAID } from "./helpers/cliffLaid.js";
 import {
   CLIFF_CELL, CLIFF_DENSITY, CLIFF_LONG_NEIGHBOURS, CLIFF_MODEL_DEPTH, CLIFF_MODEL_FRONT, CLIFF_MODEL_HEIGHT,
@@ -18,7 +18,7 @@ import {
   CLIFF_TUNABLES, CLIFF_WALL_A, CLIFF_WALL_B, CLIFF_YAW_JITTER, CLIFF_YAW_TAN,
   cliffCellPoint, cliffCellRuns, cliffFacing, cliffGate, cliffGround, cliffLeanTrig, leanPoint, type CliffPoint,
 } from "@csarkosh/engine/sim/cliffField";
-import { timeLimit } from "../helpers/timeLimit.js";
+import { timeLimit } from "@csarkosh/engine/testing/timeLimit";
 
 /** Seed 1's worst 400 m disc for steep rock (5,549 four-metre cells), from
  * the census in the design's §5. */

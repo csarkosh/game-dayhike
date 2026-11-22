@@ -4,7 +4,7 @@ import { babylonText } from "../../helpers/babylonFixture.js";
 import { FRAME_BLOCK, stageClocks, stageOwn, stageReads } from "@csarkosh/engine/game/lite/frameBlock";
 import { MOTES_FRAME_READS, MOTES_WGSL } from "@csarkosh/engine/game/lite/motes";
 import { MOTE_BOX, MOTE_SALT, emptyMoteUniforms } from "@csarkosh/engine/game/moteField";
-import { inOrder, tight } from "./wgslText.js";
+import { inOrder, tight } from "@csarkosh/engine/testing/wgslText";
 
 /** Babylon.js's particle stages, as it installs them (recorded). */
 const PARTICLE_FRAGMENT = tight(babylonText("shaders/particlesPixelShader.glsl"));

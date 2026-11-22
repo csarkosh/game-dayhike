@@ -3,7 +3,8 @@
  * modules ask for a model, a texture or a clip by its catalog `output` ("models/<id>.glb") and
  * never know what the build renamed it to, or which folder it came from: a game registers its
  * files' addresses and its catalog once, as its page starts (`registerAssets`), and everything
- * resolves through that. Day Hike's are in `dayhikeAssets.ts`.
+ * resolves through that. Day Hike's are in `dayhikeAssets.ts`; the engine's own are in
+ * `engineAssets.ts`, which a game merges with its own (`mergeAssets`).
  */
 
 /** A catalog as the engine reads it: each shipped file's id, its `output` and its size where the export wrote one. */
@@ -16,6 +17,32 @@ export type AssetAddresses = {
   audio: Readonly<Record<string, string>>;
   catalog: AssetCatalog;
 };
+
+/**
+ * Several parts of a game's shipped files as one: the address maps joined (on a null prototype, so no
+ * inherited name answers), and the catalog's sections joined section by section, each part's entries
+ * after the last's, in the order the parts are given. A name two parts both hold is an error, naming it:
+ * one file would otherwise silently stand in for the other.
+ */
+export function mergeAssets(...parts: AssetAddresses[]): AssetAddresses {
+  const join = (pick: (part: AssetAddresses) => Readonly<Record<string, string>>): Record<string, string> => {
+    const map: Record<string, string> = Object.create(null) as Record<string, string>;
+    for (const part of parts) {
+      for (const [name, url] of Object.entries(pick(part))) {
+        if (name in map) throw new Error(`"${name}" is in two of the shipped files being merged: a name is one file's`);
+        map[name] = url;
+      }
+    }
+    return map;
+  };
+  const catalog: Record<string, unknown[]> = {};
+  for (const part of parts) {
+    for (const [section, entries] of Object.entries(part.catalog as Record<string, unknown>)) {
+      if (Array.isArray(entries)) (catalog[section] ??= []).push(...entries);
+    }
+  }
+  return { models: join((p) => p.models), textures: join((p) => p.textures), audio: join((p) => p.audio), catalog: catalog as AssetCatalog };
+}
 
 let registered: AssetAddresses | null = null;
 let outputsByUrl: Map<string, string> | null = null;

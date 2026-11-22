@@ -10,7 +10,7 @@ import { spawnHollow } from "../../src/sim/hollow.js";
 import { stemNodes } from "@csarkosh/engine/sim/trailRoute";
 import { isOnCorridor, roadOffset } from "../../src/sim/containment.js";
 import { ROAD_CORRIDOR_HALF } from "@csarkosh/engine/sim/road";
-import { timeLimit } from "../helpers/timeLimit.js";
+import { timeLimit } from "@csarkosh/engine/testing/timeLimit";
 
 setActiveTerrainVariant(DEFAULT_TERRAIN_VARIANT);
 const seed = seedFromToken("hollow");

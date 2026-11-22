@@ -5,7 +5,7 @@ import { trailheadPlaces } from "../../src/sim/trailhead.js";
 import { DEFAULT_TERRAIN_VARIANT, activeTerrainVariant, elevationAt, setActiveTerrainVariant } from "@csarkosh/engine/sim/terrain";
 import { buildSearch } from "../../src/sim/search.js";
 import { SEEDS } from "./trailGateSeeds.js";
-import { seedPart } from "../helpers/seedPart.js";
+import { seedPart } from "@csarkosh/engine/testing/seedPart";
 
 setActiveTerrainVariant(DEFAULT_TERRAIN_VARIANT);
 

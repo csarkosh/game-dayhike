@@ -4,9 +4,9 @@ import type { Aabb } from "@csarkosh/engine/sim/level";
 import { elevationSampleAt } from "@csarkosh/engine/sim/terrain";
 import { CLIFF_CELL, CLIFF_RUN_REACH, cliffCellRuns, type CliffPoint } from "@csarkosh/engine/sim/cliffField";
 import { cliffBuryFace, cliffModuleBoxes } from "@csarkosh/engine/sim/passes/cliffs";
-import { drawnShell, seat } from "../helpers/cliffSolid.js";
+import { drawnShell, seat } from "@csarkosh/engine/testing/cliffSolid";
 import { CLIFF_LAID } from "../helpers/cliffLaid.js";
-import { seedPart } from "../../helpers/seedPart.js";
+import { seedPart } from "@csarkosh/engine/testing/seedPart";
 
 /** Containment is exact up to the rounding of one rotation: every lattice
  * point is a convex combination of the corners its box bounds. */

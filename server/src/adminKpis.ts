@@ -50,7 +50,7 @@ export type Health = {
 };
 
 export type Kpis = {
-  app: "game-dayhike";
+  app: string;
   /** When the numbers were read, ISO 8601. */
   at: string;
   kpis: Kpi[];
@@ -123,12 +123,12 @@ export function healthOf(current: Period, previous: Period): Health {
 }
 
 /**
- * The card, from the query's rows, the lobbies open now, the clock and the
+ * The card, for `app` (the game's id on the shared admin host), from the query's rows, the lobbies open now, the clock and the
  * zone the query read its weeks in. A week the rows do not name had nothing
  * in it and reads as zero, so a trend is always `KPI_WEEKS` long and in order
  * whatever the rows' order.
  */
-export function shapeKpis(rows: readonly Row[], lobbies: number, nowMs: number, zone: string = QUERY_ZONE): Kpis {
+export function shapeKpis(app: string, rows: readonly Row[], lobbies: number, nowMs: number, zone: string = QUERY_ZONE): Kpis {
   const weeks = new Map<string, Period>();
   let current = EMPTY;
   let previous = EMPTY;
@@ -139,7 +139,7 @@ export function shapeKpis(rows: readonly Row[], lobbies: number, nowMs: number, 
   }
   const trend = weekStarts(nowMs, KPI_WEEKS, zone).map((start) => weeks.get(start) ?? EMPTY);
   return {
-    app: "game-dayhike",
+    app,
     at: new Date(nowMs).toISOString(),
     kpis: [
       { key: "sessions", label: "Sessions, 7 days", value: current.sessions, prev: previous.sessions, unit: "", trend: trend.map((w) => w.sessions) },

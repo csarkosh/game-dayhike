@@ -33,6 +33,7 @@
  * is skipped before its screen is shown, the class's start tier kept, and
  * nothing written.
  */
+import { gameIdentity } from "../identity.js";
 import { elevationAt } from "../sim/terrain.js";
 import { CLASS_TIERS, classifyGpu, gpuIdentity, type GpuClass } from "./gpuClass.js";
 import type { GpuSignals } from "./gpuSignals.js";
@@ -320,7 +321,7 @@ export type ProbeSteps = { settle: boolean; whyNot: string };
  */
 export function liteProbeSteps(webgpu: boolean, settles: boolean = LITE_PROBE_STEPS_SETTLE): ProbeSteps {
   if (!webgpu) return { settle: false, whyNot: "this browser offers no WebGPU to measure with" };
-  return { settle: settles, whyNot: "a step on the hike's renderer is not taken to settle" };
+  return { settle: settles, whyNot: `a step on the ${gameIdentity().session}'s renderer is not taken to settle` };
 }
 
 /**
@@ -629,7 +630,7 @@ export const LOADING_LINE = "Loading…";
 export const START_FAILED_LINE = "This browser could not start the game.";
 
 /** What starting a hike needs of the page; `E` is the engine made for it. */
-export type HikeStartDeps<E> = {
+export type SessionStartDeps<E> = {
   signals: Promise<GpuSignals>;
   /** Whether this start is still the page's. */
   current(): boolean;
@@ -676,7 +677,7 @@ export type HikeStartDeps<E> = {
  * `beforeBuild`, between the engine and the build; with `paint`, it lets the
  * page paint before the engine and before the build.
  */
-export async function startSession<E>(deps: HikeStartDeps<E>): Promise<void> {
+export async function startSession<E>(deps: SessionStartDeps<E>): Promise<void> {
   let loading = deps.showLoading();
   let shown = true;
   const hide = (): void => {

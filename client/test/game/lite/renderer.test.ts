@@ -18,7 +18,7 @@ import { SILENT_WATER_LIFE } from "@csarkosh/engine/game/waterLifeInputs";
 import { WEATHER_PRESETS } from "@csarkosh/engine/game/weather";
 import { windRecordUnder } from "@csarkosh/engine/game/windParams";
 import { EMPTY_LEVEL, windTestState } from "../helpers/rendererWorld.js";
-import { skyFixture } from "../helpers/skyFixture.js";
+import { skyFixture } from "@csarkosh/engine/testing/skyFixture";
 
 const canvas = (): HTMLCanvasElement => ({ clientWidth: 800, clientHeight: 600 }) as unknown as HTMLCanvasElement;
 

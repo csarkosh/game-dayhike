@@ -4,11 +4,11 @@ import "@csarkosh/engine/sim/olympic";
 import { bowlFor } from "../../src/sim/mountain.js";
 import { featureStageD, marshWeightAt, lobePoints, MARSH_AMP, MARSH_MURK_MIN } from "@csarkosh/engine/sim/features";
 import { lakeShoreInto, newLakeShore, rayToShore } from "@csarkosh/engine/sim/lakeShape";
-import { checkDerivatives, TOL_RATIO, variantOrThrow } from "./helpers/derivatives.js";
+import { checkDerivatives, TOL_RATIO, variantOrThrow } from "@csarkosh/engine/testing/derivatives";
 import { firstPondWorld } from "./helpers/lakes.js";
 import { activeTerrainVariant, type LakeSource } from "@csarkosh/engine/sim/terrain";
 import { LOBBY_SEEDS } from "./trailGateSeeds.js";
-import { timeLimit } from "../helpers/timeLimit.js";
+import { timeLimit } from "@csarkosh/engine/testing/timeLimit";
 
 describe("the lake in the composed field", { timeout: timeLimit(120_000) }, () => {
   it("gives every pond a valley lake's shape at its own level, centre and murk", () => {

@@ -31,13 +31,14 @@ import { startAttemptClock, type AttemptClock } from "./game/attemptClock.js";
 import { parseLatest, type DesktopRelease } from "./net/desktopRelease.js";
 import { createSignalingClient, type SignalingClient } from "./net/signaling.js";
 import { signalingUrl } from "./net/signalingUrl.js";
-import { loadName, saveName } from "./game/playerName.js";
+import { loadName, saveName, type NameOf } from "./game/playerName.js";
+import { setGameIdentity } from "./identity.js";
 import { createLobby, joinLobby, lobbyErrorMessage, type Lobby } from "./net/lobby.js";
 import { browserDeps, createTelemetry, installErrorCapture, referrerOf, telemetryUrl, testerMark, visitorId, type EarlyCatch, type Telemetry } from "./net/telemetry.js";
 import { GEN_VERSION } from "./sim/forest.js";
 import { startGame, type GameHandle } from "./app.js";
 import type { EngineOnCanvas } from "./game/rendererSwap.js";
-import { LOSS_ENDED_LINE, createLossRecord } from "./game/lossBound.js";
+import { createLossRecord, lossEndedLine } from "./game/lossBound.js";
 import { browserEnv, browserMajor, hostOs, isMobile, offersWebGpu, readSignals, type GpuSignals, type NavigatorLike } from "./game/gpuSignals.js";
 import { renderTurnedAway, type TurnedAwayHandle } from "./game/turnedAway.js";
 import { turnedAwayModel, visitorDevice, type TurnedAwayView } from "./game/turnedAwayModel.js";
@@ -83,6 +84,7 @@ export function startShell<
   HostS extends HostSession<W, unknown>,
   ClientS extends ClientSession<W, P, S, unknown>,
 >(page: PageGame<W, S, P, R, A, H, HostS, ClientS>): void {
+  setGameIdentity(page.identity);
   const found = document.querySelector<HTMLDivElement>("#app");
 
   /** The game's own of the page (`PageSide`): made here, once everything of the shell's it reads while it is made stands. */
@@ -108,7 +110,8 @@ export function startShell<
   if (!found) throw new Error("#app not found");
   const app: HTMLDivElement = found;
   /** The player's name as the roster shows it, kept under the game's key between visits (`playerName.ts`). */
-  let selfName = loadName(page.name);
+  const selfNameOf: NameOf = { key: `${page.identity.storage}.playerName`, prefix: page.identity.player };
+  let selfName = loadName(selfNameOf);
   /** The veil the pages switch behind (veil.ts), and the milliseconds a new page gets to settle before it lifts. */
   const veil = createVeil(document.body);
   const VEIL_SETTLE_MS = 250;
@@ -272,7 +275,7 @@ export function startShell<
   function awayView(why: TurnedAway): TurnedAwayView {
     const nav = navigator as NavigatorLike;
     return turnedAwayModel({
-      title: page.title,
+      title: page.identity.title,
       reason: why.reason,
       short: why.short,
       desktop,
@@ -338,7 +341,7 @@ export function startShell<
       if (out.notice !== null) choiceNotice = out.notice;
     }
     telemetry.event("tier_fallback", { attempted: fallback.attempted, built: fallback.built ?? "none", source: fallback.source });
-    if (fallback.built === null) leaveNotice(pageSessionStorage(), "The last hike ended because the graphics could not be restarted.", Date.now());
+    if (fallback.built === null) leaveNotice(pageSessionStorage(), `The last ${page.identity.session} ended because the graphics could not be restarted.`, Date.now());
   }
 
   /** The governor lowered Auto's tier: remembered for this GPU, browser and
@@ -398,7 +401,7 @@ export function startShell<
     onRetry: retryAttempt,
     onInviteCopied: () => telemetry.event("invite_copied"),
     onRename: (raw) => {
-      selfName = saveName(page.name, raw);
+      selfName = saveName(selfNameOf, raw);
       lobby?.setName(selfName);
       // The repaint the roster's rename contract requires: it is what removes
       // the edit field, so it must happen on every onRename.
@@ -759,7 +762,7 @@ export function startShell<
    * running session asks for after a verdict that came late is refused.
    */
   function sessionCanvasNow(): EngineOnCanvas {
-    if (verdict !== null && !verdict.play) throw new Error(`this browser cannot draw a hike (${verdict.reason})`);
+    if (verdict !== null && !verdict.play) throw new Error(`this browser cannot draw a ${page.identity.session} (${verdict.reason})`);
     return { canvas: document.createElement("canvas") };
   }
 
@@ -788,7 +791,7 @@ export function startShell<
   const lostDevices = createLossRecord();
   const losses = {
     note: () => lostDevices.note(performance.now()),
-    ended: () => void leaveNotice(pageSessionStorage(), LOSS_ENDED_LINE, Date.now()),
+    ended: () => void leaveNotice(pageSessionStorage(), lossEndedLine(), Date.now()),
   };
 
   // `app` is passed in rather than closed over: the null check above does not

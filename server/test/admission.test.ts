@@ -2,11 +2,13 @@ import { describe, it, expect } from "vitest";
 import {
   clientIpOf,
   ConnectionLimiter,
-  DEFAULT_ALLOWED_ORIGINS,
   ipInRanges,
   isAllowedOrigin,
   parseIpRanges,
 } from "../src/admission.js";
+import { loadGameSettings } from "../src/gameSettings.js";
+
+const DEFAULT_ALLOWED_ORIGINS = loadGameSettings().allowedOrigins;
 
 describe("isAllowedOrigin", () => {
   it("admits an origin on the list", () => {

@@ -17,7 +17,7 @@ import {
 } from "@csarkosh/engine/game/oceanBreaker";
 import type { SwashCove } from "@csarkosh/engine/game/swashTable";
 import { LOBBY_SEEDS } from "../sim/trailGateSeeds.js";
-import { timeLimit } from "../helpers/timeLimit.js";
+import { timeLimit } from "@csarkosh/engine/testing/timeLimit";
 
 setActiveTerrainVariant("olympic");
 

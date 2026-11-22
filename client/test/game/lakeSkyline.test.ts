@@ -6,8 +6,8 @@ import {
   SKYLINE_READ_MAX, SKYLINE_SHADE, SKYLINE_STEP, SKYLINE_TEXELS, SNAG_MODEL_HEIGHT,
   cylinderHit, lakeRimRadii, rimAt, skylineElevations, skylineTexels, skylineTrees,
 } from "@csarkosh/engine/game/lakeSkyline";
-import { stadiumShape } from "../helpers/lakeShapes.js";
-import { timeLimit } from "../helpers/timeLimit.js";
+import { stadiumShape } from "@csarkosh/engine/testing/lakeShapes";
+import { timeLimit } from "@csarkosh/engine/testing/timeLimit";
 
 /** Room-12's world: its murky lake, level 32.26 at (−118.0, −243.1), its mean radius 34.9 m. */
 const SEED = -1458473702;

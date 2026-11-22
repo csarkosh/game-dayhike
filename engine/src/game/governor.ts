@@ -146,7 +146,7 @@ export function createGovernor(start: number): Governor {
 }
 
 /** The governor a hike uses, as the page feeds it (`app.ts`). */
-export type HikeGovernor = {
+export type SessionGovernor = {
   /** One frame of the hike; `steady` as `steadyFrame` reads it. */
   frame(intervalMs: number, now: number, steady: boolean): void;
   restart(now: number): void;
@@ -159,7 +159,7 @@ export type HikeGovernor = {
  * calls `onDrop` on the frame its drop is to be acted on (`Governor.frame`);
  * else null, and the page makes none, feeds none and acts on none.
  */
-export function governSession(start: number, onDrop: () => void, enabled: boolean = GOVERNOR_ENABLED): HikeGovernor | null {
+export function governSession(start: number, onDrop: () => void, enabled: boolean = GOVERNOR_ENABLED): SessionGovernor | null {
   if (!enabled) return null;
   const governor = createGovernor(start);
   return {

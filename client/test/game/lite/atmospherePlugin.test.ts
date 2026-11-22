@@ -3,7 +3,7 @@ import "../../../src/sim/passes/index.js";
 import { atmosphereUniforms, emptyAtmosphereUniforms, type AtmosphereRecord } from "@csarkosh/engine/game/atmosphereParams";
 import { noCloud } from "@csarkosh/engine/game/cloudParams";
 import { ATMOSPHERE_PRIORITY, atmospherePlugin } from "@csarkosh/engine/game/lite/atmospherePlugin";
-import { laidOut, readUniform, standInTexture } from "./pluginFixture.js";
+import { laidOut, readUniform, standInTexture } from "@csarkosh/engine/testing/pluginFixture";
 
 const RECORD: AtmosphereRecord = {
   baseDensity: 0.0004, heightDensity: 0.004, heightFalloff: 0.05, referenceLevel: -20, gradientScale: 1 / 4000,

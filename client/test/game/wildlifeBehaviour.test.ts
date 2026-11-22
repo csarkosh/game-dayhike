@@ -19,7 +19,7 @@ import {
   PHASE_CUE, RABBIT_RETURN_SPEED, GULL_SPEED, startCue, BUTTERFLY_ALT, BUTTERFLY_SPEED, BUTTERFLY_CUE_SPEED,
   createUnitState, groundReads, stepUnit, wildlifePresenceUnder, type PlayerPoint, type WildlifeEvent, type UnitState,
 } from "@csarkosh/engine/game/wildlifeBehaviour";
-import { timeLimit } from "../helpers/timeLimit.js";
+import { timeLimit } from "@csarkosh/engine/testing/timeLimit";
 
 setActiveTerrainVariant("olympic");
 const SEED = 388817;

@@ -12,8 +12,8 @@ import {
   STEM_AREA, STEMS_MAX, WATER_LIFE_SALT, arcOf, inShoreBand, marshMid, shoreWalk, waterLifeLayout, type WaterLifeLayout,
 } from "@csarkosh/engine/game/waterLifeField";
 import { HEAD_ROW0 } from "@csarkosh/engine/game/midgeMotion";
-import { timeLimit } from "../helpers/timeLimit.js";
-import { stadiumLake, type StadiumOptions } from "../helpers/lakeShapes.js";
+import { timeLimit } from "@csarkosh/engine/testing/timeLimit";
+import { stadiumLake, type StadiumOptions } from "@csarkosh/engine/testing/lakeShapes";
 
 /** Room-12's world: its murky lake, with a marsh. */
 const SEED = -1458473702;

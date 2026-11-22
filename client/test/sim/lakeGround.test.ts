@@ -4,9 +4,9 @@ import { lakeGroundD, LAKE_SILL } from "@csarkosh/engine/sim/features";
 import { valleyLakeShape, type LakeShape } from "@csarkosh/engine/sim/lakeShape";
 import { LOBBY_SEEDS } from "./trailGateSeeds.js";
 import type { TerrainSample } from "@csarkosh/engine/sim/terrain";
-import { stadiumShape } from "../helpers/lakeShapes.js";
-import { H, TOL_RATIO } from "./helpers/derivatives.js";
-import { timeLimit } from "../helpers/timeLimit.js";
+import { stadiumShape } from "@csarkosh/engine/testing/lakeShapes";
+import { H, TOL_RATIO } from "@csarkosh/engine/testing/derivatives";
+import { timeLimit } from "@csarkosh/engine/testing/timeLimit";
 
 // A stadium at level 50, murk 1, 15 m of half-width and 15 m of spine about
 // the origin, its steep side toward +x, an apron of 20 m all round (read back

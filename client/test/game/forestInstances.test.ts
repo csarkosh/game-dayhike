@@ -9,7 +9,7 @@ import {
 } from "@csarkosh/engine/game/forestInstances";
 import { NURSE_FERN, nursePlants } from "@csarkosh/engine/game/nurseLog";
 import { finish } from "@csarkosh/engine/game/syncJobs";
-import { runBySlices } from "../helpers/sliceRun.js";
+import { runBySlices } from "@csarkosh/engine/testing/sliceRun";
 import { elevationAt } from "@csarkosh/engine/sim/terrain";
 import { COHORT_GIANT, COHORT_LOG, COHORT_SAPLING, COHORT_SNAG, type TreeInstance } from "@csarkosh/engine/sim/vegetation";
 

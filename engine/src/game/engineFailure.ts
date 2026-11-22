@@ -5,6 +5,7 @@
  * come in as dependencies, as the governor's `actOnDrop` takes them, so
  * every sequence is tested with plain objects (`engineFailure.test.ts`).
  */
+import { gameIdentity } from "../identity.js";
 import { GOVERNOR_SWAP_READY_MAX_MS } from "./rendererSwap.js";
 
 /** How long the HUD shows the line after a swap that answered a failure. */
@@ -130,7 +131,7 @@ export function answerFailures(deps: FailureDeps): (engine: unknown, reason: "pi
     deps.abandon();
     if (!deps.alive()) return;
     if (deps.ends?.(reason) === true) {
-      deps.log("WebGPU: the device was lost once too often; ending the hike.");
+      deps.log(`WebGPU: the device was lost once too often; ending the ${gameIdentity().session}.`);
       deps.record(reason);
       deps.end?.();
       return;

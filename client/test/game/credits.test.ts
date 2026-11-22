@@ -3,7 +3,7 @@ import { existsSync, readFileSync, readdirSync } from "node:fs";
 import { createRequire } from "node:module";
 import { dirname, join } from "node:path";
 import { creditsModel, creditsRows, requiresAttribution, safeHref } from "@csarkosh/engine/game/credits";
-import catalog from "../../assets/catalog.json" with { type: "json" };
+import { catalog } from "../helpers/catalogs.js";
 
 const SAMPLE = `# Credits
 
@@ -141,7 +141,7 @@ describe("creditsModel", () => {
     for (const e of code) expect(rows.findIndex((r) => r.id === e.id), e.id).toBeGreaterThanOrEqual(0);
     for (const e of code) expect(rows.findIndex((r) => r.id === e.id), e.id).toBeLessThan(firstOptional);
     // What each names: the files under the page's `libs/ktx2/`, every one of them credited by one of the four.
-    const served = readdirSync(new URL("../../public/libs/ktx2/", import.meta.url)).sort();
+    const served = readdirSync(new URL("../../../engine/public/libs/ktx2/", import.meta.url)).sort();
     const named: Record<string, string[]> = {
       "render.ktx2_basis_transcoder": ["msc_basis_transcoder.js", "msc_basis_transcoder.wasm"],
       "render.ktx2_decoder": ["babylon.ktx2Decoder.js"],
@@ -157,7 +157,7 @@ describe("creditsModel", () => {
       expect(e.modified, e.id).toBe(e.id === "render.ktx2_decoder");
       if (e.modified) continue;
       for (const file of named[e.id]!) {
-        const ours = readFileSync(new URL(`../../public/libs/ktx2/${file}`, import.meta.url));
+        const ours = readFileSync(new URL(`../../../engine/public/libs/ktx2/${file}`, import.meta.url));
         expect(ours.equals(readFileSync(join(shipped, file))), file).toBe(true);
       }
     }

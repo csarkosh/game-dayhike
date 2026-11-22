@@ -392,6 +392,7 @@ import {
   type BankedFreeCamera, type DirectionalLight, type EngineContext, type HemisphericLight, type MaterialPlugin, type Mesh, type PbrMaterialProps,
   type PluginUniformBlock, type SceneContext, type SpotLight,
 } from "@babylonjs/lite";
+import { gameIdentity } from "../../identity.js";
 import { MAX_PLAYERS, PLAYER_EYE_OFFSET } from "../../sim/constants.js";
 import type { Forest } from "../../sim/forest.js";
 import { FOG_DISTANCE } from "../../sim/forestConstants.js";
@@ -1019,7 +1020,7 @@ export function createLiteRenderer<S extends RenderState<P>, P extends RenderPla
       held.count(getGpuDevice(engine) as unknown as HeldDevice);
     }
     onEngineGpuError(engine, (error) => {
-      if (gpuErrors++ < GPU_ERRORS_SAID) console.error(`the hike's renderer: ${error.message}`);
+      if (gpuErrors++ < GPU_ERRORS_SAID) console.error(`the ${gameIdentity().session}'s renderer: ${error.message}`);
       heard?.error(gpuFaults, error, "uncaptured");
     });
     // An error a scope hands back is its popper's to answer, and the hike's to hear of.
@@ -1028,7 +1029,7 @@ export function createLiteRenderer<S extends RenderState<P>, P extends RenderPla
       // Its own letting go destroys the device too: only a loss it did not ask for is said, and told to the hike,
       // which builds the renderer again on a new engine. Nothing is drawn with a lost device meanwhile.
       if (disposed) return;
-      console.error(`the hike's renderer lost its device (${info.reason === undefined ? "no reason given" : info.reason}): ${info.message}`);
+      console.error(`the ${gameIdentity().session}'s renderer lost its device (${info.reason === undefined ? "no reason given" : info.reason}): ${info.message}`);
       // Told as the renderer stood when it came, then marked lost.
       heard?.lost(gpuFaults, info);
       deviceLost = true;
@@ -1401,7 +1402,7 @@ export function createLiteRenderer<S extends RenderState<P>, P extends RenderPla
   const made: Promise<void> = make().catch((error: unknown) => {
     loading = 0;
     unmade = true;
-    if (!disposed) console.error("the hike's renderer could not be made; nothing of the world is drawn", error);
+    if (!disposed) console.error(`the ${gameIdentity().session}'s renderer could not be made; nothing of the world is drawn`, error);
   });
 
   /** The game's side of this renderer, and the methods of its own that the renderer wears beside its own (`renderGame.ts`). */

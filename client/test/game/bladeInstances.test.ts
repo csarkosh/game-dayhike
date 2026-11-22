@@ -6,8 +6,8 @@ import { instanceMatrixFor, trampleFrame, writeFoliage } from "@csarkosh/engine/
 import type { CullPose } from "@csarkosh/engine/game/grassCull";
 import type { InstanceList } from "@csarkosh/engine/game/instanceLists";
 import { finish } from "@csarkosh/engine/game/syncJobs";
-import { runBySlices } from "../helpers/sliceRun.js";
-import { timeLimit } from "../helpers/timeLimit.js";
+import { runBySlices } from "@csarkosh/engine/testing/sliceRun";
+import { timeLimit } from "@csarkosh/engine/testing/timeLimit";
 import { elevationSampleAt } from "@csarkosh/engine/sim/terrain";
 
 // The open-field census point: every tier and every character is present.

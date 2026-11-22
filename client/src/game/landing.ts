@@ -311,6 +311,7 @@ import { creditsEntries } from "./hikeCredits.js";
 import { landingPanelFocus, type LandingPanel, type LandingView } from "./landingModel.js";
 import { openerOf, renderSettings, type Opener } from "@csarkosh/engine/game/settings";
 import { tokensLink } from "@csarkosh/engine/game/tokens";
+import { HIKE_TOKENS_URL } from "../hikeIdentity.js";
 import type { TierChoice } from "@csarkosh/engine/game/tierChoice";
 
 export type { LandingPanel } from "./landingModel.js";
@@ -437,7 +438,7 @@ export function renderLanding(
   });
 
   // Last, so it paints over the panels it sits on and is the last tab stop.
-  root.append(home, downloads, settings, credits, tokensLink());
+  root.append(home, downloads, settings, credits, tokensLink(HIKE_TOKENS_URL));
   // How the Settings button was last pressed, taken once by the panel's
   // opening: the panel is reached otherwise too (the browser's Forward), and
   // with no press to go by it opens as for a pointer.

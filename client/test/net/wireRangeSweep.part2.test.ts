@@ -1,6 +1,6 @@
 import { describe, it } from "vitest";
 import { WIRE_PARTS, checkWirePart } from "./wireRangeSweep.js";
-import { timeLimit } from "../helpers/timeLimit.js";
+import { timeLimit } from "@csarkosh/engine/testing/timeLimit";
 
 describe(`the wire carries the whole forest, part 2 of ${WIRE_PARTS}`, () => {
   // A limit for a hang, not a bar on speed: a part's forty worlds take about a minute on a CI runner.

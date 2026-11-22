@@ -1,6 +1,6 @@
 import { describe, it, expect } from "vitest";
-import { MUTE_HOTKEY, MUTE_KEY, createMuteButton, isMuteKey, muteLabel, readMuted, writeMuted, type KeyPress } from "@csarkosh/engine/game/muteButton";
-import { StandInElement, asHtml, installStandInDom } from "./helpers/standInDom.js";
+import { MUTE_HOTKEY, muteKey, createMuteButton, isMuteKey, muteLabel, readMuted, writeMuted, type KeyPress } from "@csarkosh/engine/game/muteButton";
+import { StandInElement, asHtml, installStandInDom } from "@csarkosh/engine/testing/standInDom";
 
 function memoryStorage(): Storage {
   const map = new Map<string, string>();
@@ -19,10 +19,10 @@ describe("the page's mute", () => {
     const storage = memoryStorage();
     expect(readMuted(storage)).toBe(false);
     expect(writeMuted(storage, true)).toBe(true);
-    expect(storage.getItem(MUTE_KEY)).toBe("1");
+    expect(storage.getItem(muteKey())).toBe("1");
     expect(readMuted(storage)).toBe(true);
     expect(writeMuted(storage, false)).toBe(true);
-    expect(storage.getItem(MUTE_KEY)).toBeNull();
+    expect(storage.getItem(muteKey())).toBeNull();
     expect(readMuted(null)).toBe(false);
     expect(writeMuted(null, true)).toBe(false);
   });
@@ -55,9 +55,9 @@ describe("the page's mute", () => {
     expect(heard).toEqual([true, false]);
     expect(button.classList.contains("on")).toBe(false);
     mute.setOverGame(true);
-    expect(button.classList.contains("hike")).toBe(true);
+    expect(button.classList.contains("session")).toBe(true);
     mute.setOverGame(false);
-    expect(button.classList.contains("hike")).toBe(false);
+    expect(button.classList.contains("session")).toBe(false);
     mute.dispose();
     expect(host.querySelector("button")).toBeNull();
     expect(host.querySelector("style")).toBeNull();

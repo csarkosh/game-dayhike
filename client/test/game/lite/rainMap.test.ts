@@ -6,7 +6,7 @@ import { rainMapTexel } from "@csarkosh/engine/game/rainCover";
 import { RAIN_MAP } from "@csarkosh/engine/game/rainParams";
 import { TERRAIN_ATTRIBUTES } from "@csarkosh/engine/game/terrainVertices";
 import { babylonText } from "../../helpers/babylonFixture.js";
-import { tight } from "./wgslText.js";
+import { tight } from "@csarkosh/engine/testing/wgslText";
 import { sourceText } from "../../helpers/source.js";
 
 /** The height shader's two stages on Babylon.js, recorded. */

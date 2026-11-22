@@ -13,7 +13,7 @@ import {
   WATER_RING_CELLS, WATER_RING_COUNT, createWaterRingSamples, seaFaceZ, updateWaterRingSamples, waterHoleCellsFor, waterRingGeometry, wetBounds,
   type WaterRingSamples,
 } from "@csarkosh/engine/game/water";
-import { timeLimit } from "../helpers/timeLimit.js";
+import { timeLimit } from "@csarkosh/engine/testing/timeLimit";
 
 setActiveTerrainVariant("olympic");
 const SEED = seedFromToken("atmo");

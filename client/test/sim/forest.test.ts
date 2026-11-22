@@ -13,7 +13,7 @@ import {
 import { registerPass, registeredPasses, type Pass } from "@csarkosh/engine/sim/chunk";
 import { CLIFF_DENSITY } from "@csarkosh/engine/sim/cliffField";
 import { laidPasses } from "./helpers/cliffLaid.js";
-import { timeLimit } from "../helpers/timeLimit.js";
+import { timeLimit } from "@csarkosh/engine/testing/timeLimit";
 
 const PRE_BENCH_LEVEL_ID_1234 = "forest/5/olympic/1234/1586030448/-1513056523";
 

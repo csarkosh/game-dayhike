@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { FILM_HEAD_BYTES, createFilmHead, fetchFilmHead, filmHeadWanted, onCellular, warmWhenLoaded, type FilmHeadFetch } from "../../src/game/filmHead.js";
-import { installStandInDom, type StandInVideo } from "./helpers/standInDom.js";
+import { installStandInDom, type StandInVideo } from "@csarkosh/engine/testing/standInDom";
 
 afterEach(() => vi.unstubAllGlobals());
 function rig() {

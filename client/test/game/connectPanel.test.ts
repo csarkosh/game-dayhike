@@ -1,10 +1,12 @@
-import { describe, it, expect } from "vitest";
+import { afterEach, describe, it, expect } from "vitest";
+import { setGameIdentity } from "@csarkosh/engine/identity";
+import { HIKE_IDENTITY } from "../../src/hikeIdentity.js";
 import {
-  STALE_PAGE_MESSAGE,
   connectFailure,
   connectFailureMessage,
   runRetry,
   sessionEndOutcome,
+  stalePageMessage,
 } from "@csarkosh/engine/game/connectPanel";
 
 describe("connectFailureMessage", () => {
@@ -37,7 +39,7 @@ describe("sessionEndOutcome", () => {
       kind: "version_skew",
       message: "Level mismatch: the host is running a, this client has b. Reload the page to update.",
     });
-    expect(outcome).toEqual({ panel: { message: STALE_PAGE_MESSAGE, retry: "reload" } });
+    expect(outcome).toEqual({ panel: { message: stalePageMessage(), retry: "reload" } });
   });
 
   it("keeps a host that moved to another world on the status line", () => {
@@ -78,5 +80,23 @@ describe("runRetry", () => {
     const h = hooks();
     runRetry("reconnect", h);
     expect(h.calls).toEqual(["reconnect"]);
+  });
+});
+
+describe("stalePageMessage", () => {
+  afterEach(() => setGameIdentity(HIKE_IDENTITY));
+
+  it("names Day Hike under Day Hike's identity, word for word", () => {
+    expect(stalePageMessage()).toBe(
+      "You and the host are running different versions of Day Hike. " +
+        "Reload this page to get the latest version, then join again. " +
+        "If that does not work, the host needs to reload too.",
+    );
+  });
+
+  it("names another game under that game's identity, with no hike in it", () => {
+    setGameIdentity({ title: "Other", session: "round", player: "Guest", storage: "other", desktop: "Other" });
+    expect(stalePageMessage()).toContain("different versions of Other.");
+    expect(stalePageMessage()).not.toMatch(/hike/i);
   });
 });

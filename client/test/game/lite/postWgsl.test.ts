@@ -9,7 +9,7 @@ import {
 } from "@csarkosh/engine/game/lite/postWgsl";
 import { HALATION_KERNEL, HALATION_RATIO } from "@csarkosh/engine/game/postFrame";
 import { babylonText, babylonValues } from "../../helpers/babylonFixture.js";
-import { inOrder, tight } from "./wgslText.js";
+import { inOrder, tight } from "@csarkosh/engine/testing/wgslText";
 
 /** A pass's fragment stage on Babylon.js (`stages/<name>.fragment.glsl`), its text recorded. */
 const glsl = (name: string): string => babylonText(`stages/${name}.fragment.glsl`);

@@ -12,10 +12,11 @@
 import type { Live, QueryName, Range, Row, Source } from "./source.js";
 import { calendarDate } from "./timeline.js";
 import { buildTrailFor, type DrawableTrail } from "./trail.js";
-import { LOSS_ENDED_LINE } from "@csarkosh/engine/game/lossBound";
 import { GEN_VERSION } from "@csarkosh/engine/sim/forest";
 import { DEFAULT_TERRAIN_VARIANT } from "@csarkosh/engine/sim/terrain";
 
+/** The line a hike ended by lost devices leaves, in Day Hike's words (`lossEndedLine` makes it): the admin page runs no game, so no identity is set to make it from. */
+const LOSS_ENDED_LINE = "The hike ended: this device's graphics keep resetting. Restarting the browser may help.";
 const DAY = 86_400_000;
 /** The sample's "now": the page's, to the minute, so the rows read as recent whenever it is looked at. */
 const NOW = Math.floor(Date.now() / 60_000) * 60_000;

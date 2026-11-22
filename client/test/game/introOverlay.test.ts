@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { createIntroOverlay, type Caption, type CutReason } from "../../src/game/introOverlay.js";
-import { StandInElement, asHtml, installStandInDom, type StandInDocument } from "./helpers/standInDom.js";
+import { StandInElement, asHtml, installStandInDom, type StandInDocument } from "@csarkosh/engine/testing/standInDom";
 
 const captions: Caption[] = [{ from: 1, to: 3, text: "Four-one, dispatch.", radio: true }];
 

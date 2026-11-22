@@ -9,7 +9,7 @@ import {
   gradeRecordUnder, LIFT_DREAD, VIGNETTE_PULSE, VIGNETTE_PULSE_PERIOD, PURKINJE_MAX,
 } from "@csarkosh/engine/game/gradeParams";
 import { babylonText } from "../helpers/babylonFixture.js";
-import { skyFixture } from "./helpers/skyFixture.js";
+import { skyFixture } from "@csarkosh/engine/testing/skyFixture";
 
 /** The grade's fragment stage on Babylon.js (`grade.fragment.glsl`), its text recorded. */
 const gradeFragment = babylonText("stages/grade.fragment.glsl");

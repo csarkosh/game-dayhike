@@ -16,7 +16,7 @@ import { firstPondWorld } from "./helpers/lakes.js";
 import { rayToShore } from "@csarkosh/engine/sim/lakeShape";
 import type { BoxProvider } from "@csarkosh/engine/sim/boxSource";
 import type { Vec3 } from "../../src/sim/types.js";
-import { timeLimit } from "../helpers/timeLimit.js";
+import { timeLimit } from "@csarkosh/engine/testing/timeLimit";
 import { graph } from "./helpers/stemGraph.js";
 import { seedFromToken } from "@csarkosh/engine/game/seed";
 import { createForest } from "@csarkosh/engine/sim/forest";

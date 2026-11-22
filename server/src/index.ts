@@ -1,12 +1,17 @@
 import { randomUUID } from "node:crypto";
 import { createSignalingServer, parseRole, SIGNALING_PATH } from "./server.js";
-import { DEFAULT_ALLOWED_ORIGINS, parseIpRanges, type IpRange } from "./admission.js";
+import { parseIpRanges, type IpRange } from "./admission.js";
 import { TELEMETRY_PATH } from "./telemetry.js";
 import { FirestoreStore } from "./firestoreStore.js";
 import { SharedRegistry } from "./sharedRegistry.js";
 import { createAdminAuth, parseAllowlist } from "./adminAuth.js";
 import { createAdminData } from "./adminData.js";
 import { createPlacer } from "./place.js";
+import { loadGameSettings } from "./gameSettings.js";
+
+// Which game this is (`server/game.json`, or the file `GAME_SETTINGS` names):
+// read first, so a missing or malformed file stops the process before it listens.
+const SETTINGS = loadGameSettings();
 
 const PORT = Number(process.env.PORT ?? 8080);
 
@@ -40,11 +45,11 @@ const INSTANCE = `${process.env.K_REVISION ?? "local"}-${randomUUID().slice(0, 8
 const ADMIN_EMAILS = parseAllowlist(process.env.ADMIN_EMAILS);
 const PROJECT = process.env.GOOGLE_CLOUD_PROJECT || process.env.GCP_PROJECT || "";
 const ADMIN_AUTH_PROJECT = process.env.ADMIN_AUTH_PROJECT || PROJECT;
-const TELEMETRY_DATASET = process.env.TELEMETRY_DATASET || "dayhike_telemetry";
+const TELEMETRY_DATASET = process.env.TELEMETRY_DATASET || SETTINGS.telemetryDataset;
 const ADMIN = ADMIN_EMAILS.length > 0 && PROJECT !== "" && ADMIN_AUTH_PROJECT !== "";
 
 // Comma-separated, so a new domain is an environment change rather than a
-// deploy of new code. An unset or empty variable keeps the built-in list —
+// deploy of new code. An unset or empty variable keeps the game's own list (`allowedOrigins` of the settings file) —
 // setting it to something meaningless should not silently open the server up.
 const ALLOWED_ORIGINS =
   process.env.ALLOWED_ORIGINS?.split(",")
@@ -52,7 +57,7 @@ const ALLOWED_ORIGINS =
     .filter((origin) => origin !== "") ?? [];
 
 const allowedOrigins =
-  ALLOWED_ORIGINS.length > 0 ? ALLOWED_ORIGINS : DEFAULT_ALLOWED_ORIGINS;
+  ALLOWED_ORIGINS.length > 0 ? ALLOWED_ORIGINS : SETTINGS.allowedOrigins;
 
 // Addresses whose rows the telemetry route marks `tester` and `owner`: the
 // owner's own, so their play is no part of the numbers while its errors are
@@ -99,7 +104,7 @@ const server = createSignalingServer(PORT, {
     ? {
         admin: {
           auth: createAdminAuth({ projectId: ADMIN_AUTH_PROJECT, allowed: ADMIN_EMAILS }),
-          data: createAdminData({ projectId: PROJECT, dataset: TELEMETRY_DATASET, store }),
+          data: createAdminData({ projectId: PROJECT, dataset: TELEMETRY_DATASET, bucket: SETTINGS.telemetryBucket, app: SETTINGS.app, store }),
         },
       }
     : {}),

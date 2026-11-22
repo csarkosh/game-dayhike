@@ -29,7 +29,7 @@ import {
 } from "@csarkosh/engine/game/wetSurface";
 import { windRecordUnder } from "@csarkosh/engine/game/windParams";
 import { WEATHER_PRESETS } from "@csarkosh/engine/game/weather";
-import { readUniform, standInTexture } from "./pluginFixture.js";
+import { readUniform, standInTexture } from "@csarkosh/engine/testing/pluginFixture";
 
 /** The floats a field of `type` is, and the boundary it sits on, as WGSL lays a uniform struct out. */
 function sizeOf(type: string): { floats: number; align: number } {

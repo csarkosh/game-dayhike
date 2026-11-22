@@ -24,14 +24,14 @@ export default tseslint.config(
   // candidate project root — it then fails to parse every file in the repo, so
   // one stray worktree breaks `npm run lint` for the main checkout too. Flat
   // config does not read .gitignore, so the path has to be named here as well.
-  // client/public/libs/** is vendored third-party decoder/transcoder JS+wasm glue
+  // client/public/libs/** (the visit counter) and engine/public/libs/** are vendored third-party decoder/transcoder JS+wasm glue
   // (tools/vendor-ktx2.mjs) — not code this repo authors, so it is not linted.
   // tools/electron-spike/** is a throwaway Electron probe: Electron's sandboxed
   // preload must be CommonJS, which the repo's no-require-imports rule forbids.
   // desktop/** is the standalone desktop shell package: Electron's main is
   // CommonJS, same as above, and the shell has its own node --test suite.
   // client/dist-admin/** is the admin page's build (client/vite.admin.config.ts), as dist/ is the game's.
-  { ignores: ["**/dist/**", "client/dist-admin/**", "**/node_modules/**", "site/**", ".claude/worktrees/**", "client/public/libs/**", "tools/electron-spike/**", "desktop/**"] },
+  { ignores: ["**/dist/**", "client/dist-admin/**", "**/node_modules/**", "site/**", ".claude/worktrees/**", "client/public/libs/**", "engine/public/libs/**", "tools/electron-spike/**", "desktop/**"] },
   ...tseslint.configs.recommended,
   {
     files: ["client/src/sim/**/*.ts"],

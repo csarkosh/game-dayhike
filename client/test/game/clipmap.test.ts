@@ -38,8 +38,8 @@ import { finish as finishSlices } from "@csarkosh/engine/game/syncJobs";
 import { classifySurface, GRASS_SLOPE, SCREE_SLOPE, snowLineAt, surfaceAlbedo } from "@csarkosh/engine/game/terrainSurface";
 import { groundCover } from "@csarkosh/engine/sim/clutter";
 import { forestDensity, treesInRect } from "@csarkosh/engine/sim/vegetation";
-import { runBySlices } from "../helpers/sliceRun.js";
-import { timeLimit } from "../helpers/timeLimit.js";
+import { runBySlices } from "@csarkosh/engine/testing/sliceRun";
+import { timeLimit } from "@csarkosh/engine/testing/timeLimit";
 
 const SEED = 0x717e;
 const SIDE = RING_CELLS + 1;

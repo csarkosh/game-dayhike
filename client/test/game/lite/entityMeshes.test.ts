@@ -10,7 +10,7 @@ import { DRAW_ORDER, DRAW_PLACES, SEE_THROUGH_ORDER } from "@csarkosh/engine/gam
 import {
   BODY_PLACES, CAPSULE_COLOUR, CAPSULE_ROUGHNESS, EYE_LEVEL_BYTES, HOLLOW_CAPACITY, RANGER_CAPACITY, eyeLevelPlugin, setEyeLevel,
 } from "../../../src/game/lite/entityMeshes.js";
-import { inOrder, tight } from "./wgslText.js";
+import { inOrder, tight } from "@csarkosh/engine/testing/wgslText";
 
 describe("the hikers' bodies and the Hollows' eyes on Babylon Lite", () => {
   it("has room for every hiker in one ranger, and for a haunt's shades", () => {

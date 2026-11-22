@@ -13,13 +13,13 @@ import type { RenderPlayer, RenderState } from "./lite/renderGame.js";
 import type { LoadVerdict } from "./loadCheck.js";
 import type { LoadProgress } from "./loadProgress.js";
 import type { MuteButton } from "./muteButton.js";
-import type { NameOf } from "./playerName.js";
 import type { QualityTier } from "./quality.js";
 import type { Route } from "./router.js";
 import type { PageHud, PageRenderer, PageWorld, SessionGame } from "./sessionGame.js";
 import type { AutoSummary } from "./settings.js";
 import type { TierChoice } from "./tierChoice.js";
 import type { Veil } from "./veil.js";
+import type { GameIdentity } from "../identity.js";
 import type { ClientSession } from "../net/client.js";
 import type { DesktopRelease, Platform } from "../net/desktopRelease.js";
 import type { HostSession } from "../net/host.js";
@@ -140,12 +140,10 @@ export type PageGame<
   game: SessionGame<W, S, P, R, A, H, HostS, ClientS>;
   /** The game's own of the page, made once. */
   side(host: PageHost): PageSide;
-  /** The game's name, as its pages title it: the title of the page for those turned away, and the name that page's sentences say. */
-  title: string;
+  /** Which game this is: its name, its words and the prefix of what it keeps in the browser (`identity.ts`). */
+  identity: GameIdentity;
   /** What the page for those turned away shows of the game's: the still it is laid over, or null, and the works credited at its foot (none, and no credits are offered). */
   away: { still(): string | null; credits(): readonly CreditEntry[] };
-  /** Where the player's name is kept between visits and what a name made for a new visitor starts with; the shell keeps the name (`playerName.ts`). */
-  name: NameOf;
   /** The version of the game's wire, which every telemetry row names: two pages play together only at the same one. */
   protocol: number;
   /** A line of status in `container`, for a start's waits and its failure. */

@@ -12,7 +12,7 @@ import {
   SWASH_AGE_MAX, SWASH_BACKWASH_MIN_M, SWASH_BORES_PER_COLUMN, SWASH_COLUMNS, SWASH_DRY_S, SWASH_REWET_M,
   SWASH_SPECKLE_S, SWASH_STEP_MAX_S, SWASH_STRIDE, SwashTable, type SwashCove,
 } from "@csarkosh/engine/game/swashTable";
-import { timeLimit } from "../helpers/timeLimit.js";
+import { timeLimit } from "@csarkosh/engine/testing/timeLimit";
 
 const SEED = seedFromToken("room-3");
 const FIELD = oceanFieldFor(SEED);

@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import { READY_MAX_MS, startReady } from "@csarkosh/engine/game/startReady";
 import { createLoadProgress } from "@csarkosh/engine/game/loadProgress";
 import { whenWorldIn } from "@csarkosh/engine/game/worldWait";
-import { timeLimit } from "../helpers/timeLimit.js";
+import { timeLimit } from "@csarkosh/engine/testing/timeLimit";
 
 /** A renderer whose world is in when `worldIn` resolves, as the hike's renderer answers `Renderer.whenReady`. */
 const readyWith = (worldIn: Promise<unknown>): { whenReady(maxMs: number): Promise<void> } => ({

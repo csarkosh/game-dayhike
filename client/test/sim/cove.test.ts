@@ -8,8 +8,8 @@ import {
 } from "@csarkosh/engine/sim/olympic";
 import { ROAD_CORRIDOR_HALF } from "@csarkosh/engine/sim/road";
 import { TRAIL_Z_ANCHOR } from "../../src/sim/bowl.js";
-import { checkDerivatives, TOL_RATIO, variantOrThrow } from "./helpers/derivatives.js";
-import { timeLimit } from "../helpers/timeLimit.js";
+import { checkDerivatives, TOL_RATIO, variantOrThrow } from "@csarkosh/engine/testing/derivatives";
+import { timeLimit } from "@csarkosh/engine/testing/timeLimit";
 
 describe("the cove's profile", () => {
   it("meets the sea at the waterline at 1:12", () => {

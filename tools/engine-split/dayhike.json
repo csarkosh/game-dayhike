@@ -110,11 +110,11 @@
     "game/hikeAudio.ts",
     "hike.ts",
     "hikeGame.ts",
+    "hikeIdentity.ts",
     "hikePage.ts",
     "hikePageGame.ts"
   ],
   "hold": {
-    "env.d.ts": "the client's own ambient types; the engine's are engine/src/env.d.ts",
-    "sim/kernel/fieldWasm.ts": "written by tools/rust/build.mjs at this path; moves with the kernel's build"
+    "env.d.ts": "the client's own ambient types; the engine's are engine/src/env.d.ts"
   }
 }

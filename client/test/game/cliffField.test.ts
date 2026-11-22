@@ -16,7 +16,7 @@ import { seatOnGroundCapped } from "@csarkosh/engine/game/groundTilt";
 import { classifySurface } from "@csarkosh/engine/game/terrainSurface";
 import { CLIFF_LAID } from "../sim/helpers/cliffLaid.js";
 import { babylonValues } from "../helpers/babylonFixture.js";
-import { timeLimit } from "../helpers/timeLimit.js";
+import { timeLimit } from "@csarkosh/engine/testing/timeLimit";
 
 /** Seed 1's worst 400 m disc for steep rock (5,549 four-metre cells), from
  * the census in the design's §5. */

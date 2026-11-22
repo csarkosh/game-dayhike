@@ -12,7 +12,7 @@ import { PLAYER_MAX_HEALTH } from "../../src/sim/dayhikeConstants.js";
 import { Button, Outcome, Phase, type InputCommand } from "../../src/sim/types.js";
 import { encodeEvent, MessageType, PROTOCOL_VERSION } from "../../src/net/protocol.js";
 import sandbox01 from "../../levels/sandbox01.json" with { type: "json" };
-import { timeLimit } from "../helpers/timeLimit.js";
+import { timeLimit } from "@csarkosh/engine/testing/timeLimit";
 
 const level = parseLevel(sandbox01);
 const TICK_MS = TICK_DT * 1000;

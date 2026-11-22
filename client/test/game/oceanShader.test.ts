@@ -54,7 +54,7 @@ import { SWASH_REACH_MAX_M } from "@csarkosh/engine/game/swashRunUp";
 import { WET_COVE_END } from "@csarkosh/engine/game/wetSurface";
 import { oceanComponentsFor } from "@csarkosh/engine/game/oceanFrame";
 import { babylonText } from "../helpers/babylonFixture.js";
-import { timeLimit } from "../helpers/timeLimit.js";
+import { timeLimit } from "@csarkosh/engine/testing/timeLimit";
 
 setActiveTerrainVariant("olympic");
 

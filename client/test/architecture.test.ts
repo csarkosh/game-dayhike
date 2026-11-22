@@ -3,13 +3,16 @@ import { readdirSync, readFileSync, existsSync } from "node:fs";
 import { join, relative } from "node:path";
 import { fileURLToPath } from "node:url";
 import ts from "typescript";
-import { limitOffenders, scanTestSource, wallClockOffenders, type ScannedFile } from "./helpers/testCalls.js";
+import { limitOffenders, scanTestSource, wallClockOffenders, type ScannedFile } from "@csarkosh/engine/testing/testCalls";
 
 // Resolve against this file, never process.cwd(). Vitest is launched from the
 // repo root with `--root client`, so cwd is the repo root: a relative "src/sim"
 // silently points at nothing and every check below passes vacuously forever.
 const SRC = fileURLToPath(new URL("../src", import.meta.url));
 const TESTS = fileURLToPath(new URL(".", import.meta.url));
+/** The engine's own tests and their shared helpers, beside its source: the rules about tests below hold over these as over the game's. */
+const ENGINE_TESTS = fileURLToPath(new URL("../../engine/test", import.meta.url));
+const ENGINE_TESTING = fileURLToPath(new URL("../../engine/testing", import.meta.url));
 /**
  * The engine's modules, in the package beside this one. A module keeps its path when it moves
  * there (`game/quality.ts` here is `game/quality.ts` there), so the rules below name a file by
@@ -17,6 +20,8 @@ const TESTS = fileURLToPath(new URL(".", import.meta.url));
  * path back, and a folder is walked in both.
  */
 const ENGINE = fileURLToPath(new URL("../../engine/src", import.meta.url));
+/** The engine's own shipped files and their catalog, beside its source: a part of the engine that its source may name. */
+const ENGINE_ASSETS = fileURLToPath(new URL("../../engine/assets", import.meta.url));
 const ENGINE_PACKAGE = "@csarkosh/engine/";
 
 function at(...parts: string[]): string {
@@ -51,6 +56,17 @@ function filesUnder(dir: string): string[] {
 function sourceFiles(dir: string): string[] {
   const mirrored = dir === SRC || dir.startsWith(`${SRC}/`) ? filesUnder(join(ENGINE, relative(SRC, dir))) : [];
   return [...filesUnder(dir), ...mirrored];
+}
+
+/** Every file of every test folder: the game's and the engine's (`test` and `testing`). */
+function testFiles(): string[] {
+  return [...sourceFiles(TESTS), ...filesUnder(ENGINE_TESTS), ...filesUnder(ENGINE_TESTING)];
+}
+
+/** A test file's path under the test folder it stands in. */
+function testPath(file: string): string {
+  const root = [ENGINE_TESTS, ENGINE_TESTING].find((r) => !relative(r, file).startsWith("..")) ?? TESTS;
+  return relative(root, file);
 }
 
 function walkFiles(dir: string, ext: string): string[] {
@@ -145,7 +161,7 @@ describe("layer boundaries", () => {
         if (spec.startsWith(ENGINE_PACKAGE)) bad.push(`${logical(file)} names the engine as a package: ${spec}`);
         if (!spec.startsWith(".")) continue;
         const target = join(file, "..", spec.replace(/[?#].*$/, ""));
-        if (!target.startsWith(`${ENGINE}/`)) bad.push(`${logical(file)} refers outside the engine: ${spec}`);
+        if (!target.startsWith(`${ENGINE}/`) && !target.startsWith(`${ENGINE_ASSETS}/`)) bad.push(`${logical(file)} refers outside the engine: ${spec}`);
       }
     }
     expect(bad).toEqual([]);
@@ -452,7 +468,7 @@ describe("layer boundaries", () => {
     const hike = importsOf(at("app.ts")).map((spec) => followed(at("app.ts"), spec)).filter((to): to is string => to !== null).map(logical);
     expect(hike).toContain("game/engineFailure.ts");
     expect(hike).toContain("game/gpuTimeReport.ts");
-    expect(importsOf(at("game/engineFailure.ts"))).toEqual(["./rendererSwap.js"]);
+    expect(importsOf(at("game/engineFailure.ts"))).toEqual(["../identity.js", "./rendererSwap.js"]);
   });
 
   it("decides once whether the browser can play, with no engine and no request of its own, and starts nothing of a hike where it cannot", () => {
@@ -1118,17 +1134,17 @@ describe("layer boundaries", () => {
     expect(app).toContain("    loss: () => options.losses.note(),");
     // The loss that is one too many is not answered by another renderer: the hike ends as any hike that cannot go on.
     expect(app).toContain('    ends: (reason) => reason === "lost" && faults.lastLoss?.end === true,');
-    expect(app).toContain('      options.losses.ended();\n      endSession(LOSS_ENDED_LINE, { why: "device_lost", losses: loss?.losses ?? 0, recent: loss?.recent ?? 0 });');
-    // The page's count is one record for every hike of the page, and the landing's line is the same constant.
+    expect(app).toContain('      options.losses.ended();\n      endSession(lossEndedLine(), { why: "device_lost", losses: loss?.losses ?? 0, recent: loss?.recent ?? 0 });');
+    // The page's count is one record for every hike of the page, and the landing's line is the same function's.
     const main = stripComments(readFileSync(at("shell.ts"), "utf8"));
     expect([...main.matchAll(/\bcreateLossRecord\(/g)].length).toBe(1);
     expect(main).toContain("    note: () => lostDevices.note(performance.now()),");
-    expect(main).toContain("    ended: () => void leaveNotice(pageSessionStorage(), LOSS_ENDED_LINE, Date.now()),");
+    expect(main).toContain("    ended: () => void leaveNotice(pageSessionStorage(), lossEndedLine(), Date.now()),");
     expect(main).toContain("      engineFailed,\n      losses,");
-    // The line's words stand in one constant, and the bound's numbers in one module.
+    // The line's words stand in one function, and the bound's numbers in one module.
     const naming = (pattern: RegExp): string[] =>
       sourceFiles(SRC).flatMap((file) => [...stripComments(readFileSync(file, "utf8")).matchAll(pattern)].map(() => logical(file)));
-    expect(naming(/\bLOSS_ENDED_LINE = /g)).toEqual(["game/lossBound.ts"]);
+    expect(naming(/\bfunction lossEndedLine\(/g)).toEqual(["game/lossBound.ts"]);
     expect(naming(/\bLOSS_BOUND_(?:COUNT|WINDOW_MS) = /g)).toEqual(["game/lossBound.ts", "game/lossBound.ts"]);
   });
 
@@ -1290,7 +1306,7 @@ describe("layer boundaries", () => {
     // patterns, which are no imports).
     const ofBabylon = (spec: string): boolean => /^@babylonjs\/[\w.@/-]+$/.test(spec) && spec !== "@babylonjs/lite";
     expect(["@babylonjs/core", "@babylonjs/core/Engines/engine.js", "@babylonjs/loaders/glTF/index.js", "@babylonjs/lite"].map(ofBabylon)).toEqual([true, true, true, false]);
-    const files = [...sourceFiles(SRC), ...sourceFiles(TESTS)];
+    const files = [...sourceFiles(SRC), ...testFiles()];
     const named: string[] = [];
     let lite = 0;
     for (const file of files) {
@@ -1300,7 +1316,7 @@ describe("layer boundaries", () => {
     }
     // Guards against the guard: the walk reads the whole of src/ and test/ and finds the library where it is named.
     expect(sourceFiles(SRC).length).toBeGreaterThan(400);
-    expect(sourceFiles(TESTS).length).toBeGreaterThan(400);
+    expect(testFiles().length).toBeGreaterThan(400);
     expect(lite).toBeGreaterThan(40);
     expect(named).toEqual([]);
     // Nor is such a package spelt in src/ outside an import: a path into it, a `require`, a URL.
@@ -1310,10 +1326,13 @@ describe("layer boundaries", () => {
     expect(spelt).toEqual([]);
     // The record's reader loads the file system and nothing else.
     expect(importsOf(join(TESTS, "helpers/babylonFixture.ts"))).toEqual(["node:fs"]);
-    // And the swap and the renderer's types load nothing at all.
+    // And the swap loads only the identity (for its line's word), and the renderer's types load nothing at all.
     const loaded = (file: string): string[] =>
       [...readFileSync(file, "utf8").matchAll(/^\s*(?:import|export)\s+(?!type\s)(?:[^"'();]*?\s+from\s+)?["']([^"']+)["']/gm)].map((m) => m[1] as string);
-    expect(loaded(at("game/rendererSwap.ts"))).toEqual([]);
+    expect(loaded(at("game/rendererSwap.ts"))).toEqual(["../identity.js"]);
+    // The identity it reads is a record and two functions, and loads nothing itself: so the swap still reaches no module but that one.
+    expect(loaded(at("identity.ts"))).toEqual([]);
+    expect(importsOf(at("identity.ts"))).toEqual([]);
     expect(loaded(at("game/rendererTypes.ts"))).toEqual([]);
   });
 
@@ -1346,7 +1365,7 @@ describe("layer boundaries", () => {
     // The page makes a canvas and nothing more, and the swap holds it as that.
     // A switch is handed its canvas at once, and one the page refuses is a throw; a start's chain takes the same canvas as a promise.
     const main = code("shell.ts");
-    expect(main).toContain('  function sessionCanvasNow(): EngineOnCanvas {\n    if (verdict !== null && !verdict.play) throw new Error(`this browser cannot draw a hike (${verdict.reason})`);\n    return { canvas: document.createElement("canvas") };\n  }');
+    expect(main).toContain('  function sessionCanvasNow(): EngineOnCanvas {\n    if (verdict !== null && !verdict.play) throw new Error(`this browser cannot draw a ${page.identity.session} (${verdict.reason})`);\n    return { canvas: document.createElement("canvas") };\n  }');
     expect(main).toContain("    return new Promise((resolve) => resolve(sessionCanvasNow()));");
     expect(main).toContain("        launch(onCanvas, route.token, decided, () => sessionCanvasNow(), opening, takeSampled);");
     expect(app).toContain("  engineFor(tier: QualityTier): EngineOnCanvas;");
@@ -1584,9 +1603,9 @@ describe("the game's WGSL is kept in files", () => {
 });
 
 function scannedTestFiles(): ScannedFile[] {
-  return sourceFiles(TESTS)
+  return testFiles()
     .filter((f) => f.endsWith(".test.ts"))
-    .map((f) => ({ file: relative(TESTS, f), scan: scanTestSource(f, readFileSync(f, "utf8")) }));
+    .map((f) => ({ file: testPath(f), scan: scanTestSource(f, readFileSync(f, "utf8")) }));
 }
 
 describe("test time limits", () => {

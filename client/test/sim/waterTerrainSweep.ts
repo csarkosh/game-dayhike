@@ -5,7 +5,7 @@ import { fileURLToPath } from "node:url";
 import { coveFor, coveProfileD, COVE_BACK_FADE } from "@csarkosh/engine/sim/olympic";
 import { bowlFor, olympicPreTrailSample } from "../../src/sim/mountain.js";
 import { ROAD_CORRIDOR_HALF } from "@csarkosh/engine/sim/road";
-import { variantOrThrow } from "./helpers/derivatives.js";
+import { variantOrThrow } from "@csarkosh/engine/testing/derivatives";
 import {
   featureStageD, lakeStageD, lobePoints, marshWeightAt, LAKE_SILL, LAKE_NOTCH_FADE, LAKE_TRAIL_CLEAR,
   MARSH_MURK_MIN, POND_SHORE, type Feature,
@@ -13,7 +13,7 @@ import {
 import { lakeOutline, lakeShelfWidth, lakeShoreInto, newLakeShore, type LakeShape } from "@csarkosh/engine/sim/lakeShape";
 import { CLUTTER_LILY, clutterInRect } from "@csarkosh/engine/sim/clutter";
 import { LOBBY_SEEDS } from "./trailGateSeeds.js";
-import { seedPart } from "../helpers/seedPart.js";
+import { seedPart } from "@csarkosh/engine/testing/seedPart";
 
 /**
  * The water terrain's 200-world scan. The bowl's build must not move: every

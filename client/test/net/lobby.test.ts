@@ -1,7 +1,10 @@
-import { describe, it, expect } from "vitest";
+import { afterEach, describe, it, expect } from "vitest";
+import { setGameIdentity } from "@csarkosh/engine/identity";
+import { HIKE_IDENTITY } from "../../src/hikeIdentity.js";
 import type { JoinedInfo, SignalingClient } from "@csarkosh/engine/net/signaling";
 import {
   createLobby,
+  fallbackName,
   joinLobby,
   lobbyErrorMessage,
   parseLobbyMessage,
@@ -263,5 +266,20 @@ describe("lobbyErrorMessage", () => {
     expect(lobbyErrorMessage("lobby_taken")).toMatch(/already/i);
     expect(lobbyErrorMessage("signaling_unreachable")).toMatch(/server/i);
     expect(lobbyErrorMessage("anything_else")).toMatch(/server/i);
+  });
+});
+
+describe("fallbackName", () => {
+  afterEach(() => setGameIdentity(HIKE_IDENTITY));
+
+  it("is Hiker under Day Hike's identity, and what sanitiseName falls back to", () => {
+    expect(fallbackName()).toBe("Hiker");
+    expect(sanitiseName("")).toBe("Hiker");
+  });
+
+  it("is another game's word under that game's identity, with no hike in it", () => {
+    setGameIdentity({ title: "Other", session: "round", player: "Guest", storage: "other", desktop: "Other" });
+    expect(fallbackName()).toBe("Guest");
+    expect(sanitiseName("   ")).toBe("Guest");
   });
 });

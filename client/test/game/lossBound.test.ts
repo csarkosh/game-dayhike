@@ -1,5 +1,7 @@
-import { describe, expect, it } from "vitest";
-import { LOSS_BOUND_COUNT, LOSS_BOUND_WINDOW_MS, LOSS_ENDED_LINE, createLossRecord } from "@csarkosh/engine/game/lossBound";
+import { afterEach, describe, expect, it } from "vitest";
+import { setGameIdentity } from "@csarkosh/engine/identity";
+import { HIKE_IDENTITY } from "../../src/hikeIdentity.js";
+import { LOSS_BOUND_COUNT, LOSS_BOUND_WINDOW_MS, createLossRecord, lossEndedLine } from "@csarkosh/engine/game/lossBound";
 
 const MINUTE = 60_000;
 
@@ -7,9 +9,9 @@ describe("the bound on rebuilds after a lost device", () => {
   it("is three losses within ten minutes, and its line is short enough for a player to read", () => {
     expect(LOSS_BOUND_COUNT).toBe(3);
     expect(LOSS_BOUND_WINDOW_MS).toBe(10 * MINUTE);
-    expect(LOSS_ENDED_LINE.length).toBeGreaterThan(10);
-    expect(LOSS_ENDED_LINE.length).toBeLessThan(90);
-    expect(LOSS_ENDED_LINE.endsWith(".")).toBe(true);
+    expect(lossEndedLine().length).toBeGreaterThan(10);
+    expect(lossEndedLine().length).toBeLessThan(90);
+    expect(lossEndedLine().endsWith(".")).toBe(true);
   });
 
   it("answers the first two losses and ends the hike at the third inside the window", () => {
@@ -64,5 +66,19 @@ describe("the bound on rebuilds after a lost device", () => {
     const two = createLossRecord(2, 1_000);
     expect(two.note(50).end).toBe(false);
     expect(two.note(50)).toEqual({ losses: 2, recent: 2, sinceMs: 0, end: true });
+  });
+});
+
+describe("the line a bound's end leaves", () => {
+  afterEach(() => setGameIdentity(HIKE_IDENTITY));
+
+  it("is Day Hike's words under Day Hike's identity", () => {
+    expect(lossEndedLine()).toBe("The hike ended: this device's graphics keep resetting. Restarting the browser may help.");
+  });
+
+  it("is another game's under that game's identity, with no hike in it", () => {
+    setGameIdentity({ title: "Other", session: "round", player: "Guest", storage: "other", desktop: "Other" });
+    expect(lossEndedLine()).toBe("The round ended: this device's graphics keep resetting. Restarting the browser may help.");
+    expect(lossEndedLine()).not.toMatch(/hike/i);
   });
 });

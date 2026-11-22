@@ -3,7 +3,7 @@ import "../../../src/sim/passes/index.js";
 import { WING_AMP_AT, WING_COLOURWAY_AT, WING_PHASE_AT, WING_WGSL, wingPlugin } from "@csarkosh/engine/game/lite/wingPlugin";
 import { FRAME_BLOCK, inFrameBlock } from "@csarkosh/engine/game/lite/frameBlock";
 import { babylonText } from "../../helpers/babylonFixture.js";
-import { inOrder, tight } from "./wgslText.js";
+import { inOrder, tight } from "@csarkosh/engine/testing/wgslText";
 import type { PluginUniformBlock } from "@babylonjs/lite";
 
 const SHARED = { name: FRAME_BLOCK } as unknown as PluginUniformBlock;

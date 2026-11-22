@@ -1,7 +1,7 @@
 import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 import { CROWD_EYES_BLEND, CROWD_EYES_WGSL } from "../../../src/game/lite/crowdEyeMeshes.js";
-import { tight } from "./wgslText.js";
+import { tight } from "@csarkosh/engine/testing/wgslText";
 
 const src = readFileSync(new URL("../../../src/game/lite/crowdEyeMeshes.ts", import.meta.url), "utf8");
 const VERTEX = tight(CROWD_EYES_WGSL.vertex);

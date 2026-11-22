@@ -5,8 +5,8 @@ import {
 import { hash3 } from "@csarkosh/engine/sim/field";
 import { featureDraw, POND_RADIUS_MAX, POND_RADIUS_MIN } from "@csarkosh/engine/sim/features";
 import { LOBBY_SEEDS } from "./trailGateSeeds.js";
-import { median, outlineMetrics } from "./helpers/outlineMetrics.js";
-import { timeLimit } from "../helpers/timeLimit.js";
+import { median, outlineMetrics } from "@csarkosh/engine/testing/outlineMetrics";
+import { timeLimit } from "@csarkosh/engine/testing/timeLimit";
 
 /** A hillside rising 0.1 toward +x: its contour runs along z, its uphill side is +x. */
 const plane = (x: number): number => 100 + 0.1 * x;

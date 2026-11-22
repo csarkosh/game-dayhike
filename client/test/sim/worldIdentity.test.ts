@@ -1,6 +1,6 @@
 import { createHash } from "node:crypto";
 import { describe, expect, it } from "vitest";
-import { timeLimit } from "../helpers/timeLimit.js";
+import { timeLimit } from "@csarkosh/engine/testing/timeLimit";
 import "../../src/sim/passes/index.js";
 import { generateChunk } from "@csarkosh/engine/sim/chunk";
 import { createForest } from "@csarkosh/engine/sim/forest";

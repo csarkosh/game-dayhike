@@ -6,7 +6,7 @@ import { HIKE_MODES } from "../../src/game/gameMode.js";
 import { settingsModel } from "@csarkosh/engine/game/settings";
 import type { TierChoice } from "@csarkosh/engine/game/tierChoice";
 import { whenWorldIn } from "@csarkosh/engine/game/worldWait";
-import { StandInSelect, asHtml, installStandInDom } from "./helpers/standInDom.js";
+import { StandInSelect, asHtml, installStandInDom } from "@csarkosh/engine/testing/standInDom";
 
 describe("pauseMenuModel", () => {
   it("offers Resume, Settings and Exit, in that order", () => {

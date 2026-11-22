@@ -13,7 +13,7 @@ import { HOLLOW_HUNT_SPEED, WAY_AIM_STEP_M, WAY_LEAD_M, spawnHollow } from "../.
 import { wayDirection, wayDistance, wayPoint, wayProject } from "../../src/sim/wayDown.js";
 import { wayOf } from "../../src/sim/wayDraw.js";
 import { graph } from "./helpers/stemGraph.js";
-import { timeLimit } from "../helpers/timeLimit.js";
+import { timeLimit } from "@csarkosh/engine/testing/timeLimit";
 
 setActiveTerrainVariant(DEFAULT_TERRAIN_VARIANT);
 const seed = seedFromToken("hollow");

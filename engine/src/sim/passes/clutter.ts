@@ -13,7 +13,7 @@ import { clutterInRect, CLUTTER_BOULDER, CLUTTER_TUNABLES } from "../clutter.js"
  * derived from ITS OWN mesh only, and the pass picks the pair by `b.variant`.
  *
  * Measured via NodeIO getBounds() against the shipped models
- * (client/assets/models/clutter.boulder_{a,b}.glb):
+ * (engine/assets/models/clutter.boulder_{a,b}.glb):
  *   clutter.boulder_a (variant 0): [x, y, z] = [1.268, 1.003, 1.829] m
  *   clutter.boulder_b (variant 1): [x, y, z] = [2.516, 1.890, 2.480] m
  * (3 dp, from the unrounded getBounds() min/max — boulder_b is the model

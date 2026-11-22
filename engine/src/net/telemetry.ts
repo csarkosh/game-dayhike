@@ -25,6 +25,7 @@
  * Pure over its dependencies — the clock, the timers, the sender — so the
  * whole behaviour is tested under Node without a page.
  */
+import { gameIdentity } from "../identity.js";
 
 /** How often a page flushes, and the heartbeat's period while a match runs. */
 export const FLUSH_MS = 30_000;
@@ -54,9 +55,15 @@ export const BATCH_VERSION = 1;
 /** The route on the telemetry service (`TELEMETRY_PATH`). */
 export const TELEMETRY_PATH = "/t";
 /** The localStorage keys: the switch, the tester mark, and the visitor id. */
-export const SWITCH_KEY = "dayhike.telemetry";
-export const TESTER_KEY = "dayhike.tester";
-export const VISITOR_KEY = "dayhike.visitor";
+export function switchKey(): string {
+  return `${gameIdentity().storage}.telemetry`;
+}
+export function testerKey(): string {
+  return `${gameIdentity().storage}.tester`;
+}
+export function visitorKey(): string {
+  return `${gameIdentity().storage}.visitor`;
+}
 /** The referrer is kept to its origin and path, and this many characters. */
 export const MAX_REFERRER_LENGTH = 200;
 
@@ -318,7 +325,7 @@ export function telemetryUrl(
   const wanted = new URLSearchParams(loc.search).get("telemetry");
   if (wanted === "off") {
     try {
-      storage?.setItem(SWITCH_KEY, "off");
+      storage?.setItem(switchKey(), "off");
     } catch {
       // Held for this page only, then.
     }
@@ -326,22 +333,22 @@ export function telemetryUrl(
   }
   if (wanted === "on") {
     try {
-      storage?.removeItem(SWITCH_KEY);
-      storage?.removeItem(TESTER_KEY);
+      storage?.removeItem(switchKey());
+      storage?.removeItem(testerKey());
     } catch {
       // The page is on either way.
     }
   } else {
     if (wanted === "tester") {
       try {
-        storage?.setItem(TESTER_KEY, "1");
+        storage?.setItem(testerKey(), "1");
       } catch {
         // Marked for nothing, then: the session reads as anyone's.
       }
     }
     let off = false;
     try {
-      off = storage?.getItem(SWITCH_KEY) === "off";
+      off = storage?.getItem(switchKey()) === "off";
     } catch {
       off = false;
     }
@@ -354,7 +361,7 @@ export function telemetryUrl(
 /** Whether this browser was ever marked a tester's (`?telemetry=tester`). */
 export function testerMark(storage: Storage | null): boolean {
   try {
-    return storage?.getItem(TESTER_KEY) === "1";
+    return storage?.getItem(testerKey()) === "1";
   } catch {
     return false;
   }
@@ -401,10 +408,10 @@ export function worldVersionOf(levelId: string): { world: string; seed: number |
 export function visitorId(storage: Storage | null, newId: () => string): string | null {
   if (storage === null) return null;
   try {
-    const held = storage.getItem(VISITOR_KEY);
+    const held = storage.getItem(visitorKey());
     if (held !== null && held !== "") return held;
     const made = newId();
-    storage.setItem(VISITOR_KEY, made);
+    storage.setItem(visitorKey(), made);
     return made;
   } catch {
     return null;

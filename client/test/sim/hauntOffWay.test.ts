@@ -12,7 +12,7 @@ import { stemAhead } from "@csarkosh/engine/sim/trailRoute";
 import { chaseLineDistance, chaseLinePoint } from "../../src/sim/chaseLine.js";
 import { wayDirection, wayProject, type WayDown } from "../../src/sim/wayDown.js";
 import { wayOf } from "../../src/sim/wayDraw.js";
-import { timeLimit } from "../helpers/timeLimit.js";
+import { timeLimit } from "@csarkosh/engine/testing/timeLimit";
 
 setActiveTerrainVariant(DEFAULT_TERRAIN_VARIANT);
 

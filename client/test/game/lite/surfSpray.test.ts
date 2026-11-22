@@ -5,7 +5,7 @@ import { SPLASH_WGSL } from "@csarkosh/engine/game/lite/rainSplash";
 import { SPRAY_FRAME_READS, SPRAY_WGSL } from "@csarkosh/engine/game/lite/surfSpray";
 import { SURF_SPRAY_BURSTS, emptySprayUniforms, sprayBurstName } from "@csarkosh/engine/game/sprayField";
 import { babylonText } from "../../helpers/babylonFixture.js";
-import { inOrder, tight } from "./wgslText.js";
+import { inOrder, tight } from "@csarkosh/engine/testing/wgslText";
 
 /** One of the spray's stages on Babylon.js (named `<name>.fx`, kept as `stages/<name>.glsl`), its text recorded. */
 const fx = (name: string): string => babylonText(`stages/${name.replace(/\.fx$/, ".glsl")}`);

@@ -9,7 +9,7 @@ import {
   depthUnderBend, faceMask, groundBend, loudnessAt, rockLayerAt, rockOfSlope, trailClearAt,
 } from "@csarkosh/engine/sim/rockSurface";
 import * as rock from "@csarkosh/engine/sim/rockSurface";
-import { timeLimit } from "../helpers/timeLimit.js";
+import { timeLimit } from "@csarkosh/engine/testing/timeLimit";
 
 /** The scarp by the road: the faces' reference world; its rocky hillside above the trail at (−168, −1740). */
 const SEED = 627994160;

@@ -18,6 +18,7 @@ import { startHikeWorldWorker } from "./game/hikeWorldWorker.js";
 import { createHud } from "./game/hud.js";
 import { runLiteSceneRoute } from "./game/lite/sceneRoute.js";
 import { HIKE_GAME } from "./hikeGame.js";
+import { HIKE_IDENTITY } from "./hikeIdentity.js";
 import { createHikePage } from "./hikePage.js";
 import { PROTOCOL_VERSION } from "./net/protocol.js";
 
@@ -26,12 +27,10 @@ export const HIKE_PAGE: PageGame<World, WorldState, PlayerState, Renderer, HikeA
   game: HIKE_GAME,
   /** Day Hike's own of the page: the intro's film, the title's loop, the landing page, the mode. */
   side: createHikePage,
-  /** The game's name, as the page for those turned away titles itself and says it. */
-  title: "Day Hike",
+  /** Which game this is: its name, its words and the prefix of what it keeps in the browser. */
+  identity: HIKE_IDENTITY,
   /** What that page shows of Day Hike's: the title's still under it, and the works that still and the game are owed credit for. */
   away: { still: titleStillUrl, credits: creditsEntries },
-  /** Where a hiker's name is kept between visits, and what one made for a new visitor starts with. */
-  name: { key: "dayhike.playerName", prefix: "Hiker" },
   /** The version of the hike's wire (`protocol.ts`), which every telemetry row names. */
   protocol: PROTOCOL_VERSION,
   /** A start's line of status: the hike's HUD with nothing else of it shown. */

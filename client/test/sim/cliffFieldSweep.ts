@@ -2,7 +2,7 @@ import { expect } from "vitest";
 import "../../src/sim/passes/index.js";
 import { CLIFF_CELL, CLIFF_RUN_REACH, cliffCellPoint, cliffCellRuns } from "@csarkosh/engine/sim/cliffField";
 import { CLIFF_LAID } from "./helpers/cliffLaid.js";
-import { seedPart } from "../helpers/seedPart.js";
+import { seedPart } from "@csarkosh/engine/testing/seedPart";
 
 /**
  * The placement's reach on real worlds, beside `cliffField.test.ts`'s tests

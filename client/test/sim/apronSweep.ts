@@ -5,7 +5,7 @@ import { elevationAt, setActiveTerrainVariant, DEFAULT_TERRAIN_VARIANT, activeTe
 import { MAX_WALKABLE_GRADIENT } from "@csarkosh/engine/sim/ground";
 import { seedFromToken } from "@csarkosh/engine/game/seed";
 import { BOWL_U_MIN, BOWL_U_MAX, BOWL_Z_HALF, TRAIL_Z_ANCHOR, TRAILHEAD_U, APRON_CLIFF_U } from "../../src/sim/bowl.js";
-import { seedPart } from "../helpers/seedPart.js";
+import { seedPart } from "@csarkosh/engine/testing/seedPart";
 
 setActiveTerrainVariant(DEFAULT_TERRAIN_VARIANT);
 /** The five seeds the apron's other tests probe, and the first five the scan sweeps. */

@@ -14,6 +14,7 @@
  * for what is the component's own: the label, the select and its list, and
  * the caption lines.
  */
+import { gameIdentity } from "../identity.js";
 import type { QualityTier } from "./quality.js";
 import type { TierChoice } from "./tierChoice.js";
 import type { ModeList } from "./modeList.js";
@@ -98,12 +99,12 @@ export function settingsModel(input: SettingsInput): SettingsView {
   if (input.auto !== null) {
     lines.push(
       input.auto.probePending
-        ? "Auto tests this computer when your next hike starts."
+        ? `Auto tests this computer when your next ${gameIdentity().session} starts.`
         : `Auto picks ${TIER_NAMES[input.auto.tier]} on this computer.`,
     );
   }
   if (input.notice !== undefined) lines.push(input.notice);
-  if (input.context === "pause" && input.running !== undefined) lines.push(`This hike is using ${TIER_NAMES[input.running]}.`);
+  if (input.context === "pause" && input.running !== undefined) lines.push(`This ${gameIdentity().session} is using ${TIER_NAMES[input.running]}.`);
   if (!input.stored) lines.push("This browser is not keeping settings, so this choice lasts until the page closes.");
   if (input.context === "pause" && input.error !== undefined) lines.push(input.error);
 

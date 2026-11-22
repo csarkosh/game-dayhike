@@ -7,7 +7,7 @@ import { cameraAxes, restAxes, restPlanes, viewPlanes } from "@csarkosh/engine/g
 import { LILY_AROUND_M, PLANT_SLACK_M, REED_AROUND_M, REED_TOP_M } from "@csarkosh/engine/game/lite/waterPlantMeshes";
 import { waterPlantPlacements } from "@csarkosh/engine/game/waterPlantField";
 import { PLANT_CELL_M, REED_CHARACTERS, plantBoxes, waterPlantLists } from "@csarkosh/engine/game/waterPlantShapes";
-import { timeLimit } from "../../helpers/timeLimit.js";
+import { timeLimit } from "@csarkosh/engine/testing/timeLimit";
 
 /** The view's planes from (x, y, z) at `yaw`, level, through a lens 1.4 rad tall and 1.5 wide. */
 function view(x: number, y: number, z: number, yaw: number) {

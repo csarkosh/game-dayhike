@@ -18,7 +18,7 @@ import { hasLineOfSight } from "../../src/sim/ai.js";
 import { aimDirection } from "@csarkosh/engine/sim/view";
 import { WATCH_SALT, climbOf, placeWatcher, reachOf, stepWatcher, topForkClimb } from "../../src/sim/watcher.js";
 import type { WatcherRecord } from "../../src/sim/watcher.js";
-import { seedPart } from "../helpers/seedPart.js";
+import { seedPart } from "@csarkosh/engine/testing/seedPart";
 
 setActiveTerrainVariant(DEFAULT_TERRAIN_VARIANT);
 

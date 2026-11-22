@@ -18,7 +18,7 @@ import {
   drawWay, drawWayNow, wayTarget,
 } from "../../src/sim/wayDraw.js";
 import { TURN_MOST_DEG, UNGENTLE_SHARE_MOST, wayRules } from "./helpers/wayRules.js";
-import { timeLimit } from "../helpers/timeLimit.js";
+import { timeLimit } from "@csarkosh/engine/testing/timeLimit";
 
 /** A file of the client, wherever the suite is run from (the gate runs it from the repository's root). */
 const clientFile = (path: string): string => fileURLToPath(new URL(`../../${path}`, import.meta.url));

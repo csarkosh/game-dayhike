@@ -3,7 +3,7 @@
  * architecture test's BABYLON_FREE_FILES list; `lite/forestMeshes.ts` dresses
  * every tree's bark material from these as the models land.
  *
- * Four bark sets ship as KTX2 (`client/assets/textures/bark.<set>.<size>…`,
+ * Four bark sets ship as KTX2 (`engine/assets/textures/bark.<set>.<size>…`,
  * `docs/rendering/2026-10-14-tree-bark-textures.md`): a colour map, a normal
  * map and an ARM map (occlusion, roughness, metalness in red, green and
  * blue), each at 2k and at 1k. A set is a scan of a plate of bark with a

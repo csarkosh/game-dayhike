@@ -7,8 +7,8 @@ import {
 } from "@csarkosh/engine/sim/cliffs";
 import { olympicBaseSample } from "@csarkosh/engine/sim/olympic";
 import type { TerrainSample } from "@csarkosh/engine/sim/terrain";
-import { variantOrThrow } from "./helpers/derivatives.js";
-import { centerlineX } from "./helpers/roadLine.js";
+import { variantOrThrow } from "@csarkosh/engine/testing/derivatives";
+import { centerlineX } from "@csarkosh/engine/testing/roadLine";
 
 describe("terrace step", () => {
   it("spans exactly one band: step(0) = 0, step(1) = 1", () => {

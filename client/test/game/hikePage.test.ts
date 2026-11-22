@@ -94,7 +94,7 @@ describe("the page's shell and Day Hike's own of the page", () => {
     expect(places).toEqual([...places].sort((a, b) => a - b));
     expect(shell.split("away = ").length - 1).toBe(1);
     // The page says the game's own name, and what the shell knows of the visitor's browser and computer.
-    expect(shell).toContain("    return turnedAwayModel({\n      title: page.title,\n      reason: why.reason,\n      short: why.short,\n      desktop,\n");
+    expect(shell).toContain("    return turnedAwayModel({\n      title: page.identity.title,\n      reason: why.reason,\n      short: why.short,\n      desktop,\n");
     // Day Hike's own lets go of what is Day Hike's: the landing page it held, a film playing or waiting.
     const let_go = bodyOf("turnedAway");
     const mine = ["landing = null;", "endIntro(activeIntro);", "endIntro(pendingIntro);"];
@@ -115,8 +115,8 @@ describe("the page's shell and Day Hike's own of the page", () => {
   });
 
   it("the name is the shell's, kept under the game's key; the mode is asked of Day Hike's own", () => {
-    expect(shell).toContain("  let selfName = loadName(page.name);");
-    expect(shell).toContain("      selfName = saveName(page.name, raw);\n      lobby?.setName(selfName);");
+    expect(shell).toContain("  let selfName = loadName(selfNameOf);");
+    expect(shell).toContain("      selfName = saveName(selfNameOf, raw);\n      lobby?.setName(selfName);");
     expect(shell).toContain("        selfName,\n        inviteUrl:");
     expect(shell).toContain("        name: selfName,\n        route: hostRoute(currentRoutePath()),");
     expect(shell).toContain("joinLobby({ signaling, peerId: selfId, lobbyId, name: selfName });");

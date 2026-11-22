@@ -7,9 +7,9 @@ import {
 import { BOB_ROLL, MAX_BOB_SCALE } from "@csarkosh/engine/game/viewBob";
 import { inCone } from "@csarkosh/engine/game/wildlifeDirector";
 import { CLUTTER_CULLED } from "@csarkosh/engine/game/clutterInstances";
-import { bladeReach, cardReach, CULLED_MODELS, seen, WIND_FRACTION } from "./helpers/cullReach.js";
+import { bladeReach, cardReach, CULLED_MODELS, seen, WIND_FRACTION } from "@csarkosh/engine/testing/cullReach";
 import { babylonValues } from "../helpers/babylonFixture.js";
-import { timeLimit } from "../helpers/timeLimit.js";
+import { timeLimit } from "@csarkosh/engine/testing/timeLimit";
 
 const POSE: CullPose = { x: 0, y: 1.6, z: 0, yaw: 0, pitch: 0, roll: 0, fov: 1.4, aspect: 1200 / 2029 };
 /** The most the view bob rolls the camera, sprinting at the largest `/bob`. */

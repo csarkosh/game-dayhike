@@ -9,7 +9,7 @@ import { SKY_DOME_SIZE } from "@csarkosh/engine/game/skyDomeParams";
 import { SKY_PROBE_FACES, SKY_PROBE_SIZE } from "@csarkosh/engine/game/skyProbeParams";
 import { skyStateFor } from "@csarkosh/engine/game/skyState";
 import { WEATHER_PRESETS } from "@csarkosh/engine/game/weather";
-import { skyFixture } from "../helpers/skyFixture.js";
+import { skyFixture } from "@csarkosh/engine/testing/skyFixture";
 
 const tight = (text: string): string => text.replace(/\s+/g, "");
 

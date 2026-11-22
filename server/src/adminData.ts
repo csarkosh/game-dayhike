@@ -19,6 +19,10 @@ export type AdminDataOptions = {
   projectId: string;
   /** The linked dataset the telemetry bucket is read through. */
   dataset: string;
+  /** The log bucket the saved queries name in their table (`GameSettings.telemetryBucket`). */
+  bucket: string;
+  /** The game's id on the shared admin host, for the index card (`GameSettings.app`). */
+  app: string;
   /** The store the rooms live in; null answers the live view with nothing. */
   store: Store | null;
   queriesDir?: string;
@@ -45,7 +49,7 @@ export function createAdminData(options: AdminDataOptions): AdminData {
   const bq = new BigQuery({ projectId: options.projectId });
   const now = options.now ?? (() => Date.now());
   const run = async (name: QueryName | LookupName | typeof NOW_QUERY, values: Record<string, number | string>): Promise<Row[]> => {
-    const prepared = forBigQuery(readQuery(name, options.queriesDir), options.projectId, options.dataset);
+    const prepared = forBigQuery(readQuery(name, options.queriesDir), options.projectId, options.dataset, options.bucket);
     const params: Record<string, number | string> = {};
     for (const p of prepared.params) params[p] = values[p] ?? "";
     const [rows] = await bq.query({ query: prepared.sql, params, useLegacySql: false });
@@ -87,7 +91,7 @@ export function createAdminData(options: AdminDataOptions): AdminData {
     // view reads (not its sessions: the card counts lobbies).
     async kpis(zone) {
       const [rows, view] = await Promise.all([run("kpis", { days: KPI_WEEKS * 7, tz: zone }), rooms()]);
-      return shapeKpis(rows, view.rooms.length, now(), zone);
+      return shapeKpis(options.app, rows, view.rooms.length, now(), zone);
     },
   };
 }

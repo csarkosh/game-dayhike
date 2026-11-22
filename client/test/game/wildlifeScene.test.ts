@@ -8,7 +8,7 @@ import {
   BIRD_ASSET, BIRD_PERCHED_ASSET, FOOT_LIFT, SLOT_STRIDE, SPECIES_ASSET, WILDLIFE_REBUILD_STEP, createWildlifeScene, creatureInView,
   type ViewPlane, type WildlifePorts,
 } from "@csarkosh/engine/game/wildlifeScene";
-import { timeLimit } from "../helpers/timeLimit.js";
+import { timeLimit } from "@csarkosh/engine/testing/timeLimit";
 
 setActiveTerrainVariant("olympic");
 

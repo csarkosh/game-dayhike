@@ -8,7 +8,7 @@ import { Button, DeathCause, Outcome, Phase, type InputCommand, type PlayerState
 import { OFF_TRAIL_M } from "../../src/sim/deathCause.js";
 import { wayDirection, wayPoint } from "../../src/sim/wayDown.js";
 import { wayOf } from "../../src/sim/wayDraw.js";
-import { timeLimit } from "../helpers/timeLimit.js";
+import { timeLimit } from "@csarkosh/engine/testing/timeLimit";
 
 setActiveTerrainVariant(DEFAULT_TERRAIN_VARIANT);
 const seed = seedFromToken("hollow");

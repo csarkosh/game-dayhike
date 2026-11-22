@@ -4,12 +4,13 @@ import "../../src/sim/passes/index.js";
 import { createHud } from "../../src/game/hud.js";
 import { renderLanding } from "../../src/game/landing.js";
 import { landingModel } from "../../src/game/landingModel.js";
-import { TOKENS_PALETTE, TOKENS_PIXELS, TOKENS_URL } from "@csarkosh/engine/game/tokens";
-import { StandInElement, asHtml, installStandInDom } from "./helpers/standInDom.js";
+import { TOKENS_PALETTE, TOKENS_PIXELS } from "@csarkosh/engine/game/tokens";
+import { HIKE_TOKENS_URL } from "../../src/hikeIdentity.js";
+import { StandInElement, asHtml, installStandInDom } from "@csarkosh/engine/testing/standInDom";
 
 /** Every link on the page to the donate page's door. */
 const doors = (root: StandInElement): StandInElement[] =>
-  root.descendants().filter((el) => el.tagName === "A" && (el as unknown as { href?: string }).href === TOKENS_URL);
+  root.descendants().filter((el) => el.tagName === "A" && (el as unknown as { href?: string }).href === HIKE_TOKENS_URL);
 
 describe("the title screen's Buy me tokens line", () => {
   afterEach(() => vi.unstubAllGlobals());

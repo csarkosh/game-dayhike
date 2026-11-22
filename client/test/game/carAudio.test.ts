@@ -1,6 +1,6 @@
 import { describe, it, expect } from "vitest";
 import { CAR_CUES, carCutoffHz, carLevel, createCarAudio, engineHz, revHz } from "../../src/game/carAudio.js";
-import { fakeCtx } from "./helpers/fakeAudio.js";
+import { fakeCtx } from "@csarkosh/engine/testing/fakeAudio";
 
 describe("the car's schedule", () => {
   it("is the door, the crank, the catch and two revs, in time order", () => {

@@ -6,9 +6,9 @@ import { PANORAMA_FORMAT, PANORAMA_GROUND_WGSL, panoramaGroundPlugin } from "@cs
 import { REFLECTED_RINGS } from "@csarkosh/engine/game/lite/terrainMeshes";
 import { TERRAIN_VERTEX_FLOATS, TERRAIN_VERTEX_LAYOUT } from "@csarkosh/engine/game/lite/terrainPlugins";
 import { MIRROR_CANOPY_SHADE } from "@csarkosh/engine/game/mirrorGround";
-import { laidOut, readUniform } from "./pluginFixture.js";
+import { laidOut, readUniform } from "@csarkosh/engine/testing/pluginFixture";
 import { babylonText } from "../../helpers/babylonFixture.js";
-import { inOrder, tight } from "./wgslText.js";
+import { inOrder, tight } from "@csarkosh/engine/testing/wgslText";
 import { sourceText } from "../../helpers/source.js";
 
 /** A stage of the game's GLSL on Babylon.js, whole, as recorded from its `.fx` file. */

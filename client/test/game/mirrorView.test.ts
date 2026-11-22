@@ -1,7 +1,7 @@
 import { describe, it, expect } from "vitest";
 import { cameraSpacePlane, obliqueProjection, reflectionMatrix } from "@csarkosh/engine/game/mirrorView";
 import { babylonValues } from "../helpers/babylonFixture.js";
-import { carried, determinant, inverse, product } from "../helpers/ruler.js";
+import { carried, determinant, inverse, product } from "@csarkosh/engine/testing/ruler";
 
 /** The murky lake's level (room-3) and a standing eye 1.7 m over it. */
 const LEVEL = 50.79;

@@ -18,8 +18,8 @@ import { bodiesInShot } from "../../src/game/shotBodies.js";
 import { createPlayerSlots } from "@csarkosh/engine/game/waterLifeInputs";
 import { createWildlifeInputs } from "@csarkosh/engine/game/wildlifeInputs";
 import { readHikeMatch } from "../../src/game/hikeWildlife.js";
-import { skyFixture } from "./helpers/skyFixture.js";
-import { timeLimit } from "../helpers/timeLimit.js";
+import { skyFixture } from "@csarkosh/engine/testing/skyFixture";
+import { timeLimit } from "@csarkosh/engine/testing/timeLimit";
 
 const LEVEL: Level = { id: "tier-determinism", brushes: [], playerSpawns: [], enemySpawns: [] };
 const CANVAS = { clientWidth: 1600, clientHeight: 900 } as unknown as HTMLCanvasElement;

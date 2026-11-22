@@ -4,7 +4,7 @@ import { babylonText } from "../../helpers/babylonFixture.js";
 import { DISPLAY_CURVE_WGSL, DISPLAY_ENCODE_WGSL, DISPLAY_SHOWN_WGSL, GRADE_BLOCK, LINEAR_COLOUR_WGSL, MATERIAL_GRADE_WGSL, onColourPath } from "@csarkosh/engine/game/lite/displayCurve";
 import { FRAME_BLOCK, inFrameBlock } from "@csarkosh/engine/game/lite/frameBlock";
 import { emptyMaterialGradeUniforms } from "@csarkosh/engine/game/materialGrade";
-import { inOrder, tight } from "./wgslText.js";
+import { inOrder, tight } from "@csarkosh/engine/testing/wgslText";
 
 /** Babylon.js's image processing include, as it installs it (recorded). */
 const BABYLON = tight(babylonText("shaders/imageProcessingFunctions.glsl"));

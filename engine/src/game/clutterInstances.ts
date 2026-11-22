@@ -38,7 +38,7 @@ import { TRAMPLE_BAND, trampleAt } from "./trailBenchParams.js";
 import { WET_CAP } from "./wetSurface.js";
 
 /**
- * Model per class per variant, by catalog id (`client/assets/catalog.json`,
+ * Model per class per variant, by catalog id (`engine/assets/catalog.json`,
  * whose output for an id is `models/<id>.glb`), indexed by the class ids of
  * `sim/clutter.ts` (grass 0, rock 1, boulder 2, driftwood 3, fungus 4,
  * bush 5, meadow 6, flower 7, litter 8, fern 9, shrub 10, drift log 11, wet

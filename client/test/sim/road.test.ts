@@ -5,8 +5,8 @@ import {
   roadOffsetD, gradeSplineD, corridorD,
 } from "@csarkosh/engine/sim/road";
 import { olympicBaseSample, roadGradeAt } from "@csarkosh/engine/sim/olympic";
-import { centerlineX, roadOffsetDAt } from "./helpers/roadLine.js";
-import { DERIV_SEED as SEED } from "./helpers/derivatives.js";
+import { centerlineX, roadOffsetDAt } from "@csarkosh/engine/testing/roadLine";
+import { DERIV_SEED as SEED } from "@csarkosh/engine/testing/derivatives";
 
 
 

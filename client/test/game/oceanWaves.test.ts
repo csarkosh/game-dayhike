@@ -16,7 +16,7 @@ import {
 import { SWELL_Q_SUM_MAX, type SwellState } from "@csarkosh/engine/game/oceanSwell";
 import { WEGGEL_GAMMA_MAX, breakerIndex } from "@csarkosh/engine/game/oceanPhysics";
 import { LOBBY_SEEDS } from "../sim/trailGateSeeds.js";
-import { timeLimit } from "../helpers/timeLimit.js";
+import { timeLimit } from "@csarkosh/engine/testing/timeLimit";
 
 const SEED = LOBBY_SEEDS[0] as number;
 /** The typical day: Hs 2.0 m, Tp 11 s, square on to the shore. */

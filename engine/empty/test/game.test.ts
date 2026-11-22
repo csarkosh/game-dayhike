@@ -60,7 +60,7 @@ describe("the empty game as the page's shell is handed it", () => {
     expect(EMPTY_PAGE.side).toBe(createEmptyPage);
     expect(EMPTY_PAGE.protocol).toBe(WALK.protocolVersion);
     // The name is the shell's to keep; the game says only where, and what a made one starts with.
-    expect(EMPTY_PAGE.name).toEqual({ key: "empty.playerName", prefix: "Walker" });
+    expect({ key: `${EMPTY_PAGE.identity.storage}.playerName`, prefix: EMPTY_PAGE.identity.player }).toEqual({ key: "empty.playerName", prefix: "Walker" });
     expect(code("page.ts")).not.toMatch(/sanitiseName|loadName|rename/);
     // The tier check measures the engine's renderer on the yard with nobody in it.
     const forest = createForest(20261121);
@@ -79,7 +79,7 @@ describe("the empty game as the page's shell is handed it", () => {
   });
 
   it("leaves a visitor turned away to the engine's page, under its own name, over no still and with no credits", () => {
-    expect(EMPTY_PAGE.title).toBe("The Empty Game");
+    expect(EMPTY_PAGE.identity.title).toBe("The Empty Game");
     expect(EMPTY_PAGE.away.still()).toBeNull();
     expect(EMPTY_PAGE.away.credits()).toEqual([]);
     const page = code("page.ts");
@@ -88,7 +88,7 @@ describe("the empty game as the page's shell is handed it", () => {
     expect(page).not.toContain("replaceChildren");
     expect(page).not.toMatch(/empty-away|cannot draw the world/);
     // The page it is shown reads as that game's, and nothing of another's.
-    const view = turnedAwayModel({ title: EMPTY_PAGE.title, reason: "no-webgpu", short: null, desktop: false, device: "mac", host: "other", userAgent: "", renderer: null, latest: null });
+    const view = turnedAwayModel({ title: EMPTY_PAGE.identity.title, reason: "no-webgpu", short: null, desktop: false, device: "mac", host: "other", userAgent: "", renderer: null, latest: null });
     expect([view.title, view.headline, view.browsers?.intro]).toEqual(["The Empty Game", "This browser cannot run The Empty Game.", "The Empty Game runs in:"]);
     expect(JSON.stringify(view)).not.toMatch(/Day Hike|hike/i);
   });
@@ -103,7 +103,7 @@ describe("the empty game as the page's shell is handed it", () => {
 });
 
 describe("the empty game's folder", () => {
-  it("reaches the engine by the package's name alone, and nothing of another game but the shipped files' folder", () => {
+  it("reaches the engine by the package's name alone, and nothing of another game", () => {
     const files = readdirSync(SRC).filter((name) => name.endsWith(".ts"));
     expect(files.length).toBeGreaterThan(8);
     const outside = new Set<string>();
@@ -122,12 +122,16 @@ describe("the empty game's folder", () => {
       }
     }
     expect(seen).toBeGreaterThan(40);
-    // The one reach outside: the engine's assets stand in Day Hike's folder until the engine is lifted.
-    expect([...outside]).toEqual(["assets.ts: ../../../client/assets/catalog.json"]);
-    const globs = [...text("assets.ts").matchAll(/"(\.\.\/[^"]+)"/g)].map((m) => m[1] as string);
-    expect(globs.length).toBeGreaterThan(8);
-    for (const path of globs) expect(path.startsWith("../../../client/assets/"), path).toBe(true);
-    // Nothing of Day Hike's own is asked for: no ranger, no car, no sign, no voice, no film.
+    // No reach outside: the engine's shipped files stand in the engine, which the package's name reaches.
+    expect([...outside]).toEqual([]);
+    expect(code("assets.ts")).toContain('import { ENGINE_ASSETS } from "@csarkosh/engine/game/engineAssets";');
+    expect(code("assets.ts")).not.toMatch(/["']\.\.\//);
+    // Nothing of Day Hike's own is asked for: no ranger, no car, no sign, no voice, no film. The engine's catalog is
+    // what is registered, so its ids are what is held to that.
+    const catalog = JSON.parse(readFileSync(fileURLToPath(new URL("../../assets/catalog.json", import.meta.url)), "utf8")) as Record<string, { id: string }[]>;
+    const ids = Object.values(catalog).flatMap((entries) => entries.map((entry) => entry.id));
+    expect(ids.length).toBeGreaterThan(80);
+    expect(ids.filter((id) => /ranger|hollow|intro|summit|trailhead|sign\.|voice|video|board/.test(id))).toEqual([]);
     expect(code("assets.ts")).not.toMatch(/ranger|hollow|intro|summit|trailhead|sign\.|voice|video|board/);
   });
 });
