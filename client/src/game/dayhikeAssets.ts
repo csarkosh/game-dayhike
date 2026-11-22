@@ -22,7 +22,7 @@
  * for it by that name without knowing what Vite renamed it to.
  *
  * These are Day Hike's shipped files, under `client/assets/`, and the engine's own, under
- * `engine/assets/` (`engineAssets.ts`): the engine's modules and the game's alike ask for one
+ * the package's `assets/` (`engineAssets.ts`): the engine's modules and the game's alike ask for one
  * through `assetUrls.ts`, which answers from what this file registers, the two merged. Importing
  * it registers them; the page's entry does.
  */

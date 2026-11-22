@@ -5,7 +5,7 @@ import { fileURLToPath } from "node:url";
 /**
  * The hike's own half of where the signs and the body are built, read from its source: the extras'
  * build and dispose are in `hike.ts`, where a variable of `app.ts` is written `h.<name>`. The sessions'
- * starts, in `app.ts`, are read by the engine's own suite (`engine/test/game/appExtras.test.ts`).
+ * starts, in `app.ts`, are read by the engine's own suite (`test/game/appExtras.test.ts` in the engine's repository).
  */
 const hikeSrc = readFileSync(fileURLToPath(new URL("../../src/hike.ts", import.meta.url)), "utf8");
 const slice = (from: string, to: string, text: string): string => text.slice(text.indexOf(from), text.indexOf(to, text.indexOf(from)));

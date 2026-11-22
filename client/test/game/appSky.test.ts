@@ -4,7 +4,7 @@ import { fileURLToPath } from "node:url";
 
 /**
  * The hike's own half of the sky's wiring, read from its source: the engine's half, in `app.ts`, is read
- * by the engine's own suite (`engine/test/game/appSky.test.ts`).
+ * by the engine's own suite (`test/game/appSky.test.ts` in the engine's repository).
  */
 // The escalation's sync is the hike's own (`hike.ts`, where a variable of `app.ts` is written `h.<name>`); the swap's restore stays in `app.ts`.
 const hikeSrc = readFileSync(fileURLToPath(new URL("../../src/hike.ts", import.meta.url)), "utf8");

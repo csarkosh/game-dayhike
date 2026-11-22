@@ -21,10 +21,6 @@
 # character: a checkout keeps their line endings.
 *.glsl text eol=lf
 *.wgsl text eol=lf
-
-# The simulation's field kernel as WebAssembly, in base64 (engine/tools/rust/build.mjs writes it from engine/rust/field):
-# generated, kept out of the host's language statistics, its diffs folded.
-engine/src/sim/kernel/fieldWasm.ts linguist-generated=true
 *.rs   text eol=lf
 *.toml text eol=lf
 *.lock text eol=lf

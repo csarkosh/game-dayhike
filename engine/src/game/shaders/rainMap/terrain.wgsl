@@ -1,1 +1,0 @@
-{let vHeight=input.worldPos.y;let vCanopy=input.vRainCanopy;let transmission=1.0-${rainMapCanopyBlock}*vCanopy;let lift=${rainMapCanopyLift}*step(0.01,vCanopy);color=vec3<f32>(vHeight,transmission,lift);alpha=1.0;}

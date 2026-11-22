@@ -107,7 +107,7 @@ build on (older rows keep the time the batch arrived).
 ## A GPU failure, read back
 
 A hike's renderer tells the page of every error its GPU device reports and of a device lost under
-it (`engine/src/game/gpuFaults.ts`). The rows, each with what was happening when it was made:
+it (the engine's `src/game/gpuFaults.ts`). The rows, each with what was happening when it was made:
 
 - `gpu_error`, at once, for each distinct error up to six a hike: `kind` (`validation`,
   `out-of-memory`, `internal`), `src` (`uncaptured`, or `scope` for one an error scope handed

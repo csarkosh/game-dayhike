@@ -77,7 +77,7 @@ populated as players join and leave.
 - `client/src/sim/director.ts` — target population from player count, and
   spawn placement that refuses points too close to a player. Capped attempts
   per tick so a player camping every spawn cannot hang the tick.
-- `engine/src/app.ts` — adds a `__probe` global exposing enemy counts and
+- `src/app.ts` of the engine (`node_modules/@csarkosh/engine/`) — adds a `__probe` global exposing enemy counts and
   per-state samples for debugging AI in the browser console.
 - `client/test/sim/ai.test.ts` — covers sightlines through real level brushes,
   target acquisition, every state transition, and director population scaling.
@@ -106,14 +106,15 @@ npm run gate -- --plan    # which plan this branch needs, and why
 npm run gate              # run it
 ```
 
-The gate (`engine/tools/gate.mjs`) reads what the branch changes against `origin/main`, committed or
-not, and picks one of two plans (`engine/tools/gate/plan.mjs`):
+The gate (the engine's `tools/gate.mjs`, run from the installed package: `node_modules/@csarkosh/engine/tools/gate.mjs`)
+reads what the branch changes against `origin/main`, committed or not, and picks one of two plans
+(the engine's `tools/gate/plan.mjs`):
 
-- **light**: only tooling, docs, branding or agent files changed (`tools/`, `engine/tools/` except
-  `engine/tools/rust/`, `docs/`, `branding/`, `.agents/`, `.claude/`, `README.md`, `AGENTS.md`, `ARCHITECTURE.md`).
-  Lint and the tools suites (`tools/` and `engine/tools/`), here, in seconds: neither has a time limit, so load cannot fail
+- **light**: only tooling, docs, branding or agent files changed (`tools/`, `docs/`, `branding/`, `.agents/`,
+  `.claude/`, `README.md`, `AGENTS.md`, `ARCHITECTURE.md`).
+  Lint and the tools suite (`tools/`), here, in seconds: neither has a time limit, so load cannot fail
   them, and nothing the client or server suites test was touched.
-- **cloud**: anything else (the game, the server, the build, the field kernel's tools,
+- **cloud**: anything else (the game, the server, the build,
   dependencies, CI, `CREDITS.md`). The gate dispatches the `test` workflow on GitHub's runners
   for this branch and follows it to its end; its exit is the run's. It runs what is pushed, so
   push the work branch first (never `main`); the gate refuses, saying what to do, while the
@@ -130,14 +131,14 @@ Read the report. A failing gate is reported to the user before pushing, not afte
 
 vitest hands a file to one worker whole, so no file should take much over a minute and a half:
 a sweep over hundreds of worlds is split into part files by seed
-(`engine/testing/seedPart.ts`; `client/test/sim/searchSweep.ts` and its parts are the
+(the engine's `testing/seedPart.ts`; `client/test/sim/searchSweep.ts` and its parts are the
 pattern), or a file of many slow tests into files by `describe`. A runner's report names the
 slowest file.
 
 The `test` workflow (`.github/workflows/test.yml`) runs the same commands on GitHub's runners,
 **only when started by hand** (`workflow_dispatch`; no push or pull request triggers it, Cyrus,
 2026-10-13): typecheck and lint in one job, the server and tools suites in another, the client
-suite split across shards, the engine's suite (`engine/test`) in a job of its own, and a final `gates` job that fails unless every other job passed.
+suite split across shards, and a final `gates` job that fails unless every other job passed.
 `gates` is the one result to read. What the workflow adds is a clean checkout: a runner takes
 this tree's files, untracked ones included, where the workflow runs only what was pushed.
 It is a pass-or-fail check; nothing it times means anything, because the runners
@@ -146,7 +147,7 @@ are shared machines. Two things differ from a local run for that reason:
 - **Time limits are scaled, in the client suite.** A test's time limit guards against a hang,
   not a bar on speed. Every explicit limit in the client suite — on a test, suite or hook, and
   on a wait (`vi.waitFor`, `expect.poll`) — is written `timeLimit(<ms>)`
-  (`engine/testing/timeLimit.ts`), which multiplies it by `TEST_TIME_SCALE`; unset,
+  (the engine's `testing/timeLimit.ts`, imported as `@csarkosh/engine/testing/timeLimit`), which multiplies it by `TEST_TIME_SCALE`; unset,
   locally, the factor is exactly 1, and it may be at most 10. The workflow sets 3 for the client
   job, and a runner does as the workflow does. The server and tools suites set no limits and are not scaled. The architecture test
   fails on a limit written as a bare number, naming the line to change.
@@ -191,7 +192,7 @@ Three layers stop this, and the third is the one that actually catches mistakes:
    `.7z`, `.rar`, `.tar`, `.tar.gz`, `.tgz`, `.dmg`), and Terraform's local state.
 2. **`.gitattributes`** — `.glb`, `.webp`, `.mp3`, `.mp4`, `.wasm`, `.png`, `.jpg` and `.ico` are tracked
    through **Git LFS**, so the object database stores a ~130-byte pointer instead of the
-   file. That covers every binary under `client/assets/` and `engine/assets/` (models, ground textures and stills, wildlife
+   file. That covers every binary under `client/assets/` (the engine's own are in its repository; models, ground textures and stills, wildlife
    calls, the intro's film), the vendored KTX2 decoder's wasm, and the favicons under `client/public/`.
 3. **The check below** — run it before every push. `.gitignore` does not protect against
    `git add -f` or against a file that was already tracked before a rule existed.

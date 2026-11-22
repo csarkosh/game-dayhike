@@ -3,9 +3,9 @@
 //
 // Models used to ship from client/public/ at fixed paths, so `deploy:verify`
 // could fetch `/assets/models/<id>.glb` by name. They now go through
-// Vite's `?url` pipeline (engine/src/game/assetUrls.ts) and land at
+// Vite's `?url` pipeline (the engine's src/game/assetUrls.ts) and land at
 // `/assets/<id>-<hash>.glb`, where the hash changes whenever the bytes do.
-// Ground textures (`engine/src/game/groundLayers.ts`) are
+// Ground textures (the engine's `src/game/groundLayers.ts`) are
 // imported with `?url` the same way and land at `/assets/<id>-<hash>.webp`.
 //
 // The URL is therefore discovered the way check #3 already discovers the
@@ -85,7 +85,7 @@ function findAssetUrls(source, ids, ext) {
 /**
  * The URL a built bundle references for one file of another kind: the intro
  * film (`intro`, `mp4`) and the title page's still (`intro.still`, `webp`),
- * which `engine/src/game/assetUrls.ts` imports with `?url`. Same matching
+ * which the engine's `src/game/assetUrls.ts` imports with `?url`. Same matching
  * rules as `findModelUrls`; null when the bundle does not reference it, which
  * for these is allowed until the file ships.
  */
@@ -126,7 +126,7 @@ export function findTextureUrls(source, ids) {
  * Every chunk file (`<name>-<hash>.js`) the entry chunk names, once each, in
  * the order first met: its static imports, its dynamic imports and Vite's
  * preload map alike. The model map lives in whichever chunk the build put
- * the asset urls in (`engine/src/game/assetUrls.ts`), which moved out of the
+ * the asset urls in (the engine's `src/game/assetUrls.ts`), which moved out of the
  * entry once the title page stopped building a scene; a check that reads the
  * entry alone would then miss every model. A chunk's own name may hold
  * hyphens (`pbr-renderable-<hash>.js`): the hash is the eight characters

@@ -1,10 +1,9 @@
 import { describe, expect, it } from "vitest";
-import { readFileSync, readdirSync } from "node:fs";
-import { createRequire } from "node:module";
-import { dirname, join } from "node:path";
+import { readFileSync } from "node:fs";
 import { creditsModel, creditsRows, requiresAttribution, safeHref } from "@csarkosh/engine/game/credits";
 import { engineFile } from "@csarkosh/engine/testing/engineFiles";
-import { catalog } from "../helpers/catalogs.js";
+import { creditsEntries } from "../../src/game/hikeCredits.js";
+import { catalog, dayCatalog, engineCatalog } from "../helpers/catalogs.js";
 
 const SAMPLE = `# Credits
 
@@ -25,7 +24,20 @@ Everything not listed below is original work by the author.
 - **URL:** https://example.invalid
 `;
 
-const REAL = readFileSync(new URL("../../../CREDITS.md", import.meta.url), "utf8");
+/** A credits file's text, its sections apart: what stands before the first `## <id>`, then each section whole. */
+const split = (text: string) => {
+  const [head = "", ...sections] = text.split(/^(?=## )/m);
+  return { head, sections };
+};
+const idOf = (section: string) => section.slice(3, section.indexOf("\n"));
+
+// The works are credited in two files, Day Hike's own and the engine's (`CREDITS.md` of the package), which
+// the Credits screen shows as one list in the order of the ids. REAL is that list as one file again: Day
+// Hike's opening and the two files' sections in id order, so a case about the whole list reads it whole.
+const DAY_FILE = readFileSync(new URL("../../../CREDITS.md", import.meta.url), "utf8");
+const ENGINE_FILE = readFileSync(engineFile("CREDITS.md"), "utf8");
+const REAL = split(DAY_FILE).head + [...split(DAY_FILE).sections, ...split(ENGINE_FILE).sections]
+  .sort((a, b) => (idOf(a) < idOf(b) ? -1 : idOf(a) > idOf(b) ? 1 : 0)).join("");
 
 /** The code of others the game carries, credited beside the catalog's assets: the id of each credit. */
 const CODE = [
@@ -126,45 +138,32 @@ describe("creditsModel", () => {
     const client = JSON.parse(readFileSync(new URL("../../package.json", import.meta.url), "utf8")) as { dependencies: Record<string, string> };
     expect(client.dependencies["@babylonjs/lite"]).toMatch(/^github:csarkosh\/babylon-lite#/);
   });
-  it("credits the KTX2 decoder the game ships and each work its notice names, each for files the game serves", () => {
-    const code = creditsModel(REAL).filter((e) => e.id.startsWith("render.ktx2_"));
-    expect(code.map((e) => [e.id, e.source, e.author, e.license, e.url])).toEqual([
-      ["render.ktx2_basis_transcoder", "Khronos KTX: Basis Universal transcoder", "The Khronos Group", "Apache-2.0", "https://www.khronos.org/ktx/"],
-      ["render.ktx2_decoder", "Babylon.js 9.18.0: KTX2 decoder", "The Babylon.js team", "Apache-2.0", "https://github.com/BabylonJS/Babylon.js"],
-      ["render.ktx2_uastc_transcoders", "Basis Universal Transcoders: UASTC to ASTC, BC7 and uncompressed", "The Khronos Group", "Apache-2.0", "https://github.com/KhronosGroup/Basis-Universal-Transcoders"],
-      ["render.ktx2_zstd", "zstddec (Don McCurdy): Zstandard decompression library", "Yann Collet, Facebook, Inc.", "BSD-3-Clause", "https://github.com/donmccurdy/zstddec"],
-    ]);
-    // Each is a row of its own on the screen, among the rows a licence asks for.
-    const rows = creditsRows(creditsModel(REAL));
-    const firstOptional = rows.findIndex((r) => !requiresAttribution(r.license));
-    for (const e of code) expect(rows.findIndex((r) => r.id === e.id), e.id).toBeGreaterThanOrEqual(0);
-    for (const e of code) expect(rows.findIndex((r) => r.id === e.id), e.id).toBeLessThan(firstOptional);
-    // What each names: the files under the page's `libs/ktx2/`, every one of them credited by one of the four.
-    const served = readdirSync(engineFile("public/libs/ktx2")).sort();
-    const named: Record<string, string[]> = {
-      "render.ktx2_basis_transcoder": ["msc_basis_transcoder.js", "msc_basis_transcoder.wasm"],
-      "render.ktx2_decoder": ["babylon.ktx2Decoder.js"],
-      "render.ktx2_uastc_transcoders": ["uastc_astc.wasm", "uastc_bc7.wasm", "uastc_r8_unorm.wasm", "uastc_rg8_unorm.wasm", "uastc_rgba8_srgb_v2.wasm", "uastc_rgba8_unorm_v2.wasm"],
-      "render.ktx2_zstd": ["zstddec.wasm"],
-    };
-    expect(Object.keys(named)).toEqual(code.map((e) => e.id));
-    expect(Object.values(named).flat().sort()).toEqual(served);
-    // A row that says its work is unchanged names files that are the package's own, byte for byte; the
-    // decoder is bundled from the package's modules (`engine/tools/vendor-ktx2.mjs`), so its row says nothing of the kind.
-    const shipped = join(dirname(createRequire(import.meta.url).resolve("@babylonjs/ktx2decoder/package.json")), "wasm");
-    for (const e of code) {
-      expect(e.modified, e.id).toBe(e.id === "render.ktx2_decoder");
-      if (e.modified) continue;
-      for (const file of named[e.id]!) {
-        const ours = readFileSync(engineFile(`public/libs/ktx2/${file}`));
-        expect(ours.equals(readFileSync(join(shipped, file))), file).toBe(true);
-      }
+  it("credits in each file only its own: the game's file the game's works, the engine's file the engine's", () => {
+    const ids = (c: { assets: { id: string }[]; textures: { id: string }[]; audio: { id: string }[] }) => new Set([...c.assets, ...c.textures, ...c.audio].map((a) => a.id));
+    const own = ids(dayCatalog);
+    const engines = ids(engineCatalog);
+    const day = creditsModel(DAY_FILE).map((e) => e.id);
+    const engine = creditsModel(ENGINE_FILE).map((e) => e.id);
+    expect(day.length).toBeGreaterThan(0);
+    expect(engine.length).toBeGreaterThan(0);
+    for (const id of day) {
+      expect(own.has(id), `${id} is in the game's file but not in the game's catalog`).toBe(true);
+      expect(engines.has(id) || engine.includes(id), `${id} is in the game's file and is the engine's`).toBe(false);
     }
-    // The package the files are vendored from says who made them, in its own notice.
-    const notice = readFileSync(join(dirname(createRequire(import.meta.url).resolve("@babylonjs/ktx2decoder/package.json")), "NOTICE.md"), "utf8");
-    for (const words of ["Copyright 2024 The Babylon.js team", "Copyright 2024 The Khronos Group", "github.com/KhronosGroup/Basis-Universal-Transcoders", "https://github.com/donmccurdy/zstddec by Don McCurdy", "Yann Collet, Facebook, Inc.", "BSD 3-Clause"]) {
-      expect(notice, words).toContain(words);
+    for (const id of engine) expect(own.has(id), `${id} is in the engine's file and is the game's`).toBe(false);
+    expect(new Set(creditsModel(REAL).map((e) => e.id)).size).toBe(new Set([...day, ...engine]).size);
+  });
+  it("keeps the sections of each file in the order of their ids", () => {
+    for (const [name, file] of [["the game's", DAY_FILE], ["the engine's", ENGINE_FILE]] as const) {
+      const ids = split(file).sections.map(idOf);
+      expect(ids.length, name).toBeGreaterThan(0);
+      for (let i = 1; i < ids.length; i++) expect(ids[i - 1]! <= ids[i]!, `${name} file: ${ids[i - 1]} before ${ids[i]}`).toBe(true);
     }
+  });
+  it("shows both files as one list, the order the one file had: creditsEntries() is the display pass over the two together", () => {
+    const rows = creditsEntries();
+    expect(rows.length).toBe(66);
+    expect(rows).toEqual(creditsRows(creditsModel(REAL)));
   });
   // LICENSE_URLS is a hand-kept map, so a licence it has never seen resolves to "" and would ship an
   // unlinked deed. This fails the moment a new licence appears in CREDITS.md.

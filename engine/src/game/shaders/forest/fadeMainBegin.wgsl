@@ -1,1 +1,0 @@
-{let dfN=dfNoise(vec2<f32>(input.clipPos.x,material.fadeRows-input.clipPos.y));let dfIn=smoothstep(input.vFadeBands.x,input.vFadeBands.y,input.vFadeDist);let dfOut=1.0-smoothstep(input.vFadeBands.z,input.vFadeBands.w,input.vFadeDist);if(dfIn<1.0-dfN||dfOut<dfN){discard;}}

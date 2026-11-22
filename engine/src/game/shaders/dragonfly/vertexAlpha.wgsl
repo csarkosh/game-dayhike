@@ -1,1 +1,0 @@
-alpha*=input.uv.y;

@@ -1,1 +1,0 @@
-var wetShare=1.0;{let wetPorosity=min(material.wetCap,clamp((roughness-0.5)/0.4,0.0,1.0));let wetFactor=mix(1.0,0.2,wetPorosity);wetShare=mix(1.0,wetFactor,material.wetWeather);let wetGloss=mix(1.0,1.0-roughness,mix(1.0,wetFactor,0.5*material.wetWeather));roughness=1.0-wetGloss;}

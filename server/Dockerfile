@@ -7,12 +7,13 @@
 FROM node:22-alpine AS build
 WORKDIR /app
 # Every workspace's package.json must be present for `npm ci` to resolve the
-# lockfile, even though only the server's dependencies get used.
+# lockfile, even though only the server's dependencies get used: the build
+# installs the server and the root (TypeScript is the root's) and leaves the
+# client's out, which would download the engine's release to build a server.
 COPY package.json package-lock.json tsconfig.base.json ./
 COPY client/package.json client/package.json
-COPY engine/package.json engine/package.json
 COPY server/package.json server/package.json
-RUN npm ci
+RUN npm ci --workspace server --include-workspace-root
 COPY server server
 RUN npm run build -w server
 
@@ -27,7 +28,6 @@ ARG BUILD_SHA=unknown
 ENV BUILD_SHA=$BUILD_SHA
 COPY package.json package-lock.json ./
 COPY client/package.json client/package.json
-COPY engine/package.json engine/package.json
 COPY server/package.json server/package.json
 RUN npm ci --omit=dev --workspace server --include-workspace-root
 COPY --from=build /app/server/dist ./server/dist

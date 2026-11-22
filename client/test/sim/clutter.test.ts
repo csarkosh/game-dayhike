@@ -695,7 +695,7 @@ describe("domain census — 90 km, both signs of z", () => {
 
   it("keeps driftwood on the shore band only", () => {
     // The gate is evaluated at the cell centre, not the jittered instance
-    // position (engine/src/sim/clutter.ts's clutterInCell): assert the
+    // position (the engine's src/sim/clutter.ts's clutterInCell): assert the
     // exact bound the gate itself promises, at the cell centre, rather
     // than at the instance's own (jittered, up to 2.1 m off-centre) spot.
     // Exhaustive over the 90 km × 4 km shore band (no early exit expected):
