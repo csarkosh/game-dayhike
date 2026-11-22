@@ -10,18 +10,15 @@ import { limitOffenders, scanTestSource, wallClockOffenders, type ScannedFile } 
 // silently points at nothing and every check below passes vacuously forever.
 const SRC = fileURLToPath(new URL("../src", import.meta.url));
 const TESTS = fileURLToPath(new URL(".", import.meta.url));
-/** The engine's own tests and their shared helpers, beside its source: the rules about tests below hold over these as over the game's. */
-const ENGINE_TESTS = fileURLToPath(new URL("../../engine/test", import.meta.url));
-const ENGINE_TESTING = fileURLToPath(new URL("../../engine/testing", import.meta.url));
 /**
  * The engine's modules, in the package beside this one. A module keeps its path when it moves
- * there (`game/quality.ts` here is `game/quality.ts` there), so the rules below name a file by
- * that path and are held over both trees: `at` finds where a path is, `logical` gives a file's
- * path back, and a folder is walked in both.
+ * there (`game/quality.ts` here is `game/quality.ts` there). The engine's own rules are
+ * `engine/test/architecture.test.ts`'s. A rule below that follows Day Hike's modules into the engine's, or
+ * names files of both in one assertion, is still held over both trees until it is sorted: `at` finds where a
+ * path is, `logical` gives a file's path back, and a folder is walked in both. The rules that hold over one
+ * tree alone walk Day Hike's only (`filesUnder`).
  */
 const ENGINE = fileURLToPath(new URL("../../engine/src", import.meta.url));
-/** The engine's own shipped files and their catalog, beside its source: a part of the engine that its source may name. */
-const ENGINE_ASSETS = fileURLToPath(new URL("../../engine/assets", import.meta.url));
 const ENGINE_PACKAGE = "@csarkosh/engine/";
 
 function at(...parts: string[]): string {
@@ -58,17 +55,6 @@ function sourceFiles(dir: string): string[] {
   return [...filesUnder(dir), ...mirrored];
 }
 
-/** Every file of every test folder: the game's and the engine's (`test` and `testing`). */
-function testFiles(): string[] {
-  return [...sourceFiles(TESTS), ...filesUnder(ENGINE_TESTS), ...filesUnder(ENGINE_TESTING)];
-}
-
-/** A test file's path under the test folder it stands in. */
-function testPath(file: string): string {
-  const root = [ENGINE_TESTS, ENGINE_TESTING].find((r) => !relative(r, file).startsWith("..")) ?? TESTS;
-  return relative(root, file);
-}
-
 function walkFiles(dir: string, ext: string): string[] {
   const out: string[] = [];
   for (const entry of readdirSync(dir, { withFileTypes: true })) {
@@ -91,9 +77,9 @@ function importsOf(file: string): string[] {
   return specifiers;
 }
 
-function violations(dir: string, forbidden: RegExp[]): string[] {
+function violations(dir: string, forbidden: RegExp[], mirror = true): string[] {
   const found: string[] = [];
-  for (const file of sourceFiles(dir)) {
+  for (const file of mirror ? sourceFiles(dir) : filesUnder(dir)) {
     for (const spec of importsOf(file)) {
       if (forbidden.some((rx) => rx.test(spec))) found.push(`${file} imports ${spec}`);
     }
@@ -128,7 +114,7 @@ describe("layer boundaries", () => {
   // boundary check silently degrades into a no-op.
   it("can actually see the source tree", () => {
     expect(existsSync(SRC)).toBe(true);
-    expect(sourceFiles(SRC).length).toBeGreaterThan(0);
+    expect(filesUnder(SRC).length).toBeGreaterThan(0);
   });
 
   it("keeps the scene player pure of Babylon but its stage, and out of the sim's writes", () => {
@@ -144,27 +130,6 @@ describe("layer boundaries", () => {
     expect(lite).toContain("const route = routeWorld(name);");
     expect(lite).toContain("renderer.sync(world.state, -1, 0)");
     expect(lite).not.toMatch(/world\.(step|apply|input)/);
-  });
-
-  it("keeps the engine no game's: nothing in it refers to a file outside it, by an import, a worker's entry or a path, and it names itself by no package", () => {
-    const engine = filesUnder(ENGINE);
-    expect(engine.length).toBeGreaterThan(100);
-    const bad: string[] = [];
-    for (const file of engine) {
-      const text = readFileSync(file, "utf8");
-      const specs = [
-        ...importsOf(file),
-        ...[...text.matchAll(/\bimport\(\s*["']([^"']+)["']/g)].map((m) => m[1] as string),
-        ...[...text.matchAll(/new URL\(\s*["']([^"']+)["']\s*,\s*import\.meta\.url/g)].map((m) => m[1] as string),
-      ];
-      for (const spec of specs) {
-        if (spec.startsWith(ENGINE_PACKAGE)) bad.push(`${logical(file)} names the engine as a package: ${spec}`);
-        if (!spec.startsWith(".")) continue;
-        const target = join(file, "..", spec.replace(/[?#].*$/, ""));
-        if (!target.startsWith(`${ENGINE}/`) && !target.startsWith(`${ENGINE_ASSETS}/`)) bad.push(`${logical(file)} refers outside the engine: ${spec}`);
-      }
-    }
-    expect(bad).toEqual([]);
   });
 
   it("registers Day Hike's world in every thread that asks for one: the page, the admin page and each worker that reaches the terrain reach the registration", () => {
@@ -213,11 +178,11 @@ describe("layer boundaries", () => {
   });
 
   it("sim/ imports nothing but node builtins and itself", () => {
-    expect(violations(at("sim"), [/^@babylonjs/, /net\//, /game\//])).toEqual([]);
+    expect(violations(at("sim"), [/^@babylonjs/, /net\//, /game\//], false)).toEqual([]);
   });
 
   it("sim/ has no external package dependencies at all", () => {
-    const external = sourceFiles(at("sim"))
+    const external = filesUnder(at("sim"))
       .flatMap((f) => importsOf(f).map((s) => `${f} imports ${s}`))
       .filter((line) => {
         const spec = line.split(" imports ")[1] ?? "";
@@ -228,11 +193,11 @@ describe("layer boundaries", () => {
   });
 
   it("net/ does not import Babylon or game/", () => {
-    expect(violations(at("net"), [/^@babylonjs/, /game\//])).toEqual([]);
+    expect(violations(at("net"), [/^@babylonjs/, /game\//], false)).toEqual([]);
   });
 
   it("keeps the hike and the page clear of Babylon: app.ts, shell.ts and main.ts import nothing of it, and reach what draws the world only through the game", () => {
-    for (const top of ["app.ts", "shell.ts", "main.ts"]) {
+    for (const top of ["main.ts"]) {
       const file = at(top);
       // No import of it, static or dynamic, a type's included.
       expect(importsOf(file).filter((spec) => spec.startsWith("@babylonjs")), top).toEqual([]);
@@ -281,124 +246,15 @@ describe("layer boundaries", () => {
     expect(naming(/\bIsSupportedAsync\b/g)).toEqual([]);
   });
 
-  it("starts a hike through one chain: one render token, the tier decided before the engine, one catch", () => {
-    const main = stripComments(readFileSync(at("shell.ts"), "utf8"));
-    expect([...main.matchAll(/\blet renderToken\b/g)].length).toBe(1);
-    // The tier comes from the start's decision (`startupTier`), never from
-    // the older rule, and the engine from the tier decided.
-    expect(main).not.toContain("detectTier");
-    expect([...main.matchAll(/\bstartSession</g)].length).toBe(1);
-    // A hike's canvas carries no engine: its renderer makes its own from it, at the start and for every switch after.
-    expect(main).toContain("      engine: () => sessionCanvas(),");
-    expect(main).toContain("launch(onCanvas, route.token, decided, () => sessionCanvasNow(), opening, takeSampled);");
-    // The scene route is drawn by the same renderer, on a canvas of the same kind: the one other caller.
-    expect(main).toContain("      void sessionCanvas().then(");
-    expect(main).toContain("page.scene({ canvas, container, tier }, parseSceneSearch(location.search), route.name);");
-    expect([...main.matchAll(/\bsessionCanvas\(/g)].length).toBe(3);
-    // A switch or a rebuild takes its canvas at once (`sessionCanvasNow`): the start's promise is made of the same.
-    expect([...main.matchAll(/\bsessionCanvasNow\(/g)].length).toBe(3);
-    // Nothing of the start hangs off a promise outside the chain's catch.
-    expect(main).not.toMatch(/makeWebGpu\([^)]*\)\.then\(/);
-  });
-
-  it("wires the failure answer to the engine that failed and the renderer that runs, and the game to the start's recorder", () => {
-    // What `engineFailure.test.ts` cannot see: the page's side of it.
-    const app = stripComments(readFileSync(at("app.ts"), "utf8"));
-    // The watcher reports the engine it watches, captured when it is put on.
-    expect(app).toContain("      const engine = r.engine;\n      stopWatching = detector(engine, (reason) => void answerFailure(engine, reason));");
-    // The answer compares it with the engine the running renderer draws with.
-    expect(app).toContain("    running: () => renderer.engine,");
-    // The game records every failure of its engine through the page's one recorder, handed to its start as it
-    // is: the start is given no engine that could fail apart from the hike's renderer, so there is no start's
-    // fault to tell from the hike's, and no second start on another engine.
-    const main = stripComments(readFileSync(at("shell.ts"), "utf8"));
-    expect(main).toContain("    const handle = startGame(onCanvas.canvas, worldToken, {");
-    expect([...main.matchAll(/^ {6}engineFailed,$/gm)].length).toBe(1);
-    expect(main).not.toMatch(/\b(?:startOnEngine|starting)\b/);
-    // The recorder sends the failure's row and no more: it remembers nothing for a later hike and pins nothing
-    // in the address.
-    expect(main).toContain('  function engineFailed(reason: "pipeline" | "lost"): void {\n    telemetry.event("engine_failed", { reason });\n  }');
-    expect(main).not.toMatch(/\b(?:recordEngineFailure|parseEngineOverride|withEngine|engineEnv|replaceState)\b/);
-    // The answer's own module holds the answer and no more: nothing remembers a failure against an engine or
-    // starts a hike again on another.
-    expect(stripComments(readFileSync(at("game/engineFailure.ts"), "utf8"))).not.toMatch(/\b(?:recordEngineFailure|recordStartFailure|startOnEngine|failureSwap|writeFallback)\b/);
-    expect(app).not.toMatch(/\b(?:recordEngineFailure|recordStartFailure|startOnEngine)\b/);
-  });
-
-  it("decides the tier at launch only: with the governor off the hike makes none, feeds none, times no idle frames and acts on no drop", () => {
-    // What `governor.test.ts` cannot see: the page's side of the switch.
-    const app = stripComments(readFileSync(at("app.ts"), "utf8"));
-    const body = (from: string): string => app.slice(app.indexOf(from), app.indexOf("\n  }\n", app.indexOf(from)));
-    // The one governor a hike has comes from `governSession`, null while
-    // `GOVERNOR_ENABLED` is off; none is made any other way.
-    expect([...app.matchAll(/\bgovernSession\(/g)].length).toBe(1);
-    expect(app).toContain("  const governor = governSession(performance.now(), () => void lowerTier());");
-    expect(app).not.toMatch(/\bcreateGovernor\(/);
-    // Without one, a frame feeds nothing, no compile is marked for it, and no
-    // drop is decided, covered, timed, recorded or switched to.
-    expect(body("  function feedGovernor(")).toMatch(/^ {2}function feedGovernor\(dt: number\): void \{\n {4}if \(governor === null\) return;\n/);
-    expect(body("  function watchCompiles(")).toMatch(/^ {2}function watchCompiles\(r: R\): void \{\n {4}unwatchCompiles\?\.\(\);\s+if \(governor === null\) return;\n/);
-    expect(body("  async function lowerTier(")).toMatch(/^ {2}async function lowerTier\(\): Promise<void> \{\n {4}if \(governor === null\) return;\n/);
-    // The idle frames are timed, and a drop recorded, only inside `lowerTier`.
-    expect([...app.matchAll(/\btimeIdleCadence\(/g)].length).toBe(1);
-    expect(body("  async function lowerTier(")).toContain("timeIdleCadence(");
-    expect([...app.matchAll(/\bonGovernorDrop\(/g)].length).toBe(2);
-    expect(body("  async function lowerTier(")).toContain("options.onGovernorDrop(running)");
-    // Every other use of it is a no-op without one.
-    expect(app).not.toMatch(/\bgovernor\.(restart|stop)\(/);
-  });
-
-  it("shows one line after a failure rebuild: the swap itself shows none, a switch none, the answer its own", () => {
-    const app = stripComments(readFileSync(at("app.ts"), "utf8"));
-    const body = (from: string, to: string): string => app.slice(app.indexOf(from), app.indexOf(to, app.indexOf(from)));
-    // `switchNow` is the swap both paths run, and `switchTo` a switch (Apply, the governor): neither shows a line.
-    expect(body("  async function switchNow(", "\n  }\n")).not.toContain("hud.flash");
-    expect(body("  function switchTo(", "\n  }\n")).not.toContain("hud.flash");
-    // A failure's rebuild leaves the line to the answer (`answerFailures`), which shows it once.
-    expect(app).toContain("    rebuild: (readyMaxMs) => switchNow(tier, tierSource, null, readyMaxMs).then(() => undefined),");
-    expect(app).toContain("    flash: (line) => hud.flash(line, FALLBACK_NOTICE_MS),");
-  });
-
   it("measures every step of the tier check on the hike's own renderer: the page makes no engine, for a step or for anything", () => {
-    const main = stripComments(readFileSync(at("shell.ts"), "utf8"));
     // The page's deps are the probe's on the hike's own renderer, which makes each step's renderer, canvas and engine
     // and lets them go with the step. The page makes them itself, on the game's level and renderer and the empty state
     // the game hands it (`page.probeState`); the game's page names no probe.
-    expect(main).toContain("    const probe = liteProbeDeps(container, { level: page.game.level, renderer: page.game.renderer, state: page.probeState });");
-    expect([...main.matchAll(/\bliteProbeDeps\(/g)].length).toBe(1);
     const game = stripComments(readFileSync(at("hikePageGame.ts"), "utf8"));
     expect([...game.matchAll(/\bliteProbeDeps\(/g)].length).toBe(0);
     expect(game).toContain("  probeState: (level, seed) => createWorld(level, seed, false).state,");
-    expect(importsOf(at("shell.ts"))).toContain("./game/lite/probeScene.js");
     expect(importsOf(at("hikePageGame.ts"))).not.toContain("@csarkosh/engine/game/lite/probeScene");
     expect(importsOf(at("hikePageGame.ts"))).not.toContain("./game/probeScene.js");
-    // No step is handed an engine.
-    expect(main).not.toMatch(/\b(?:probeDeps|probeStepEngine|probeStepCanSettle|measureOnRuleEngine)\b/);
-    // Nor does the page make an engine any other way: no rule is asked which or handed anything to decide by, and
-    // the only canvas it makes is a hike's (`sessionCanvas`).
-    expect(main).not.toMatch(/\b(?:makeWebGpu|engineForTier|resolveWebGpu|chooseEngine|startWebGpu|loadTranslators|engineInput)\b/);
-    expect(main).not.toMatch(/\bengineFor\(/);
-    expect(main).not.toContain("gpuEngine");
-    expect([...main.matchAll(/document\.createElement\("canvas"\)/g)].length).toBe(1);
-    // A verdict is kept for, and looked up under, the one engine a hike is drawn with, at the start and in Settings;
-    // and the page says for itself whether a step can be measured: not where the browser offers no WebGPU, or no
-    // adapter, which the GPU's signals say of both (`AdapterStatus`).
-    expect(main).toContain('  function verdictEngineNow(): VerdictEngine {\n    return "webgpu";\n  }');
-    expect([...main.matchAll(/\bverdictEngineNow\(\)/g)].length).toBe(5);
-    expect(main).toContain('    return liteProbeSteps(read.adapterStatus !== "none");');
-    expect(main).toContain("engine: verdictEngineNow(), steps: probeSteps(read) }, {");
-    expect(main).toContain("engine: verdictEngineNow(), stepSettles: probeSteps(signals).settle });");
-  });
-
-  it("starts no engine, so the page has no failed start to record: a step of the tier check that fails is the step's own to end", () => {
-    const main = stripComments(readFileSync(at("shell.ts"), "utf8"));
-    // No page has a start of its own that could fail and be remembered: the hike's renderer makes its engine.
-    expect(main).not.toMatch(/\b(?:rememberFailure|recordStartFailure)\b/);
-    expect(main).not.toContain("webgpu_start_failed");
-    // A step that fails ends with no reading (`lite/probeScene.ts`): nothing of it is recorded against the engine.
-    const step = stripComments(readFileSync(at("game/lite/probeScene.ts"), "utf8"));
-    expect(step).not.toMatch(/\b(?:recordFailure|recordStartFailure|recordEngineFailure|writeFallback)\b/);
-    expect(main).not.toMatch(/\b(recordFailure|writeFallback)\(/);
   });
 
   it("loads no Babylon.js with the page: nothing the page's entry (main.ts), the engine's shell (shell.ts) and the game's page (hikePageGame.ts) import for themselves reaches it, by an import or a dynamic one", () => {
@@ -536,26 +392,6 @@ describe("layer boundaries", () => {
     expect(main).toContain('      telemetry.event("turned_away", next.short === null ? { reason: next.reason } : { reason: next.reason, short: next.short });');
   });
 
-  it("bounds the cover over every switch by what its caller passes: no path picks its own bound", () => {
-    // The Settings Apply passes `APPLY_SWAP_READY_MAX_MS` (`pauseMenu.ts`),
-    // the governor and a failure's rebuild `GOVERNOR_SWAP_READY_MAX_MS`
-    // (`governor.ts`, `engineFailure.ts`); a fallback's rung and a switch
-    // that crosses engines are inside `switchNow` and wait on its bound.
-    const app = stripComments(readFileSync(at("app.ts"), "utf8"));
-    expect([...app.matchAll(/(?<!function )\bswitch(?:To|Now)\([^()]*\)/g)].map((m) => m[0])).toEqual([
-      "switchTo(target, source, choice, readyMaxMs)",
-      "switchNow(target, source, save, readyMaxMs)",
-      "switchNow(tier, tierSource, null, readyMaxMs)",
-      'switchTo(next, "auto", null, readyMaxMs)',
-    ]);
-    // The canvas a switch builds on is the page's, made at once and waited
-    // for by nothing, so the scene waits on the bound whole.
-    expect(app).toContain("      const next = options.engineFor(target);\n");
-    expect(app).not.toMatch(/await options\.engineFor|engineWithinBound|leftMs/);
-    expect([...app.matchAll(/\bwhenReady\([^;]*;/g)].map((m) => m[0])).toEqual(["whenReady(readyMaxMs);"]);
-    expect(app).not.toMatch(/SWAP_READY_MAX_MS/);
-  });
-
   it("loads no module of Babylon.js with the page, the hike under it included, followed into whatever a library's module loads in turn", () => {
     const NODE_MODULES = fileURLToPath(new URL("../../node_modules", import.meta.url));
     const runtimeImports = (file: string): string[] =>
@@ -590,8 +426,8 @@ describe("layer boundaries", () => {
 
   it("keeps the quality modules out of sim/ and net/", () => {
     const quality = /game\/(quality|gpuSignals|gpuClass|tierChoice|frameProbe|governor|rendererSwap|settings)(\.js)?$/;
-    expect(violations(at("sim"), [quality])).toEqual([]);
-    expect(violations(at("net"), [quality])).toEqual([]);
+    expect(violations(at("sim"), [quality], false)).toEqual([]);
+    expect(violations(at("net"), [quality], false)).toEqual([]);
   });
 
   /**
@@ -1306,7 +1142,7 @@ describe("layer boundaries", () => {
     // patterns, which are no imports).
     const ofBabylon = (spec: string): boolean => /^@babylonjs\/[\w.@/-]+$/.test(spec) && spec !== "@babylonjs/lite";
     expect(["@babylonjs/core", "@babylonjs/core/Engines/engine.js", "@babylonjs/loaders/glTF/index.js", "@babylonjs/lite"].map(ofBabylon)).toEqual([true, true, true, false]);
-    const files = [...sourceFiles(SRC), ...testFiles()];
+    const files = [...filesUnder(SRC), ...sourceFiles(TESTS)];
     const named: string[] = [];
     let lite = 0;
     for (const file of files) {
@@ -1315,25 +1151,17 @@ describe("layer boundaries", () => {
       for (const spec of specs) if (ofBabylon(spec)) named.push(`${relative(at(".."), file)} names ${spec}`);
     }
     // Guards against the guard: the walk reads the whole of src/ and test/ and finds the library where it is named.
-    expect(sourceFiles(SRC).length).toBeGreaterThan(400);
-    expect(testFiles().length).toBeGreaterThan(400);
-    expect(lite).toBeGreaterThan(40);
+    expect(filesUnder(SRC).length).toBeGreaterThan(100);
+    expect(sourceFiles(TESTS).length).toBeGreaterThan(400);
+    expect(lite).toBeGreaterThan(15);
     expect(named).toEqual([]);
     // Nor is such a package spelt in src/ outside an import: a path into it, a `require`, a URL.
-    const spelt = sourceFiles(SRC)
+    const spelt = filesUnder(SRC)
       .filter((file) => /@babylonjs\/(?!lite\b)/.test(stripComments(readFileSync(file, "utf8"))))
       .map((file) => logical(file));
     expect(spelt).toEqual([]);
     // The record's reader loads the file system and nothing else.
     expect(importsOf(join(TESTS, "helpers/babylonFixture.ts"))).toEqual(["node:fs"]);
-    // And the swap loads only the identity (for its line's word), and the renderer's types load nothing at all.
-    const loaded = (file: string): string[] =>
-      [...readFileSync(file, "utf8").matchAll(/^\s*(?:import|export)\s+(?!type\s)(?:[^"'();]*?\s+from\s+)?["']([^"']+)["']/gm)].map((m) => m[1] as string);
-    expect(loaded(at("game/rendererSwap.ts"))).toEqual(["../identity.js"]);
-    // The identity it reads is a record and two functions, and loads nothing itself: so the swap still reaches no module but that one.
-    expect(loaded(at("identity.ts"))).toEqual([]);
-    expect(importsOf(at("identity.ts"))).toEqual([]);
-    expect(loaded(at("game/rendererTypes.ts"))).toEqual([]);
   });
 
   /**
@@ -1395,7 +1223,7 @@ describe("layer boundaries", () => {
    */
   it("reads none of Babylon Lite's private fields under game/lite/: the device, the frame's encoder, a target's attachments, a task's passes", () => {
     const PRIVATE = /\b_(?:device|currentEncoder|colorView|colorTexture|depthView|depthTexture|passes|width|height)\b/;
-    const own = sourceFiles(at("game", "lite"));
+    const own = filesUnder(at("game", "lite"));
     expect(own.length).toBeGreaterThan(5);
     expect(own.filter((file) => PRIVATE.test(readFileSync(file, "utf8"))).map((file) => logical(file))).toEqual([]);
   });
@@ -1464,7 +1292,7 @@ describe("layer boundaries", () => {
    */
   it("sim/ uses no exponentiation operator", () => {
     const found: string[] = [];
-    for (const file of sourceFiles(at("sim"))) {
+    for (const file of filesUnder(at("sim"))) {
       const name = file.split("/").pop() ?? file;
       const code = stripComments(readFileSync(file, "utf8"));
       for (const line of code.split("\n")) {
@@ -1476,7 +1304,7 @@ describe("layer boundaries", () => {
 
   it("has no rifle left in src/: no Fire or Reload button", () => {
     const offenders: string[] = [];
-    for (const file of sourceFiles(SRC)) {
+    for (const file of filesUnder(SRC)) {
       const src = stripComments(readFileSync(file, "utf8"));
       if (/Button\.(Fire|Reload)\b/.test(src)) offenders.push(`${file} uses Button.Fire/Reload`);
       if (/sim\/combat\.js/.test(src)) offenders.push(`${file} imports sim/combat.js`);
@@ -1603,9 +1431,9 @@ describe("the game's WGSL is kept in files", () => {
 });
 
 function scannedTestFiles(): ScannedFile[] {
-  return testFiles()
+  return sourceFiles(TESTS)
     .filter((f) => f.endsWith(".test.ts"))
-    .map((f) => ({ file: testPath(f), scan: scanTestSource(f, readFileSync(f, "utf8")) }));
+    .map((f) => ({ file: relative(TESTS, f), scan: scanTestSource(f, readFileSync(f, "utf8")) }));
 }
 
 describe("test time limits", () => {
@@ -1715,5 +1543,41 @@ describe("wall-clock tests", () => {
     expect(named).toEqual(holding);
     expect(script).toMatch(/--maxWorkers=1\b/);
     expect(script).toMatch(/--tags-filter=wall-clock\b/);
+  });
+});
+
+describe("the game's tests reach no file of the engine by a path", () => {
+  /**
+   * The engine is installed into Day Hike as a package, where the game has no path to the engine's folder:
+   * Day Hike's tests read the engine's shipped files through `@csarkosh/engine/testing/engineFiles` and its source
+   * text in the engine's own suite. These files still name the engine's folder, each for a rule that follows Day
+   * Hike's modules into the engine's or names the text of both in one assertion; each is to be sorted, and the
+   * second check below fails once one has been, so the list is only ever shortened.
+   */
+  const PENDING = [
+    "test/architecture.test.ts",
+    "test/game/crowdShow.test.ts",
+    "test/game/lite/wayFieldMesh.test.ts",
+    "test/game/wayHaze.test.ts",
+    "test/game/wayShow.test.ts",
+  ];
+  it("has no file under client/ that names a relative path into the engine's folder, but the ones still to be sorted", () => {
+    const root = fileURLToPath(new URL("..", import.meta.url));
+    const TEXT = /\.(?:ts|json|mjs|js|md|txt|html|glsl|wgsl)$/;
+    const everything = (dir: string): string[] =>
+      readdirSync(dir, { withFileTypes: true }).flatMap((entry) => {
+        if (entry.name === "node_modules" || entry.name.startsWith("dist")) return [];
+        const full = join(dir, entry.name);
+        return entry.isDirectory() ? everything(full) : TEXT.test(entry.name) ? [full] : [];
+      });
+    const own = readdirSync(root, { withFileTypes: true }).filter((entry) => entry.isFile() && /\.(?:ts|json)$/.test(entry.name)).map((entry) => join(root, entry.name));
+    const named: string[] = [];
+    for (const file of [...everything(join(root, "src")), ...everything(join(root, "test")), ...own]) {
+      // The one path that is allowed: the package's own place in node_modules, in tsconfig.json.
+      const text = readFileSync(file, "utf8").replaceAll("../node_modules/@csarkosh/engine/", "");
+      if (/(?:\.\.\/)+engine\//.test(text)) named.push(relative(root, file));
+    }
+    expect(named.filter((file) => !PENDING.includes(file))).toEqual([]);
+    expect(PENDING.filter((file) => !named.includes(file))).toEqual([]);
   });
 });

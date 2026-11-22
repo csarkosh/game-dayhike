@@ -157,6 +157,5 @@ describe("the renderer and the app", () => {
     expect(commands).toContain('name: "crowd",');
     // The hike applies its own commands (`applyOwnView`, `hike.ts`), which the page asks before its own.
     expect(hike).toContain('} else if (name === "crowd") {');
-    expect(app).toContain("if (side.applyOwnView(name, args)) return;");
   });
 });

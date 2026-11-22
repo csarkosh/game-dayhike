@@ -7,7 +7,6 @@ import { HIKE_MODES } from "../../src/game/gameMode.js";
 import type { ModeList } from "@csarkosh/engine/game/modeList";
 import { setGameIdentity } from "@csarkosh/engine/identity";
 import { HIKE_IDENTITY } from "../../src/hikeIdentity.js";
-import { sourceText } from "../helpers/source.js";
 import { renderLanding } from "../../src/game/landing.js";
 import { landingModel } from "../../src/game/landingModel.js";
 import type { TierChoice } from "@csarkosh/engine/game/tierChoice";
@@ -561,11 +560,6 @@ describe("the mode group", () => {
 
   it("is Day Hike's own in the hike's list", () => {
     expect(HIKE_MODES.restarts).toBe("Picking another mode restarts the hike at its trailhead.");
-  });
-
-  it("keeps settings.ts and pauseMenu.ts free of the game's modes", () => {
-    expect(sourceText("game/settings.ts")).not.toContain("gameMode.js");
-    expect(sourceText("game/pauseMenu.ts")).not.toContain("gameMode.js");
   });
 });
 

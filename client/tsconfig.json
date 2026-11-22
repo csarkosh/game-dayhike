@@ -10,5 +10,5 @@
       "/auth.js": ["./src/admin/auth-shell.d.ts"]
     }
   },
-  "include": ["src", "test", "vite.config.ts", "vite.admin.config.ts", "../engine/src/env.d.ts"]
+  "include": ["src", "test", "vite.config.ts", "vite.admin.config.ts", "../node_modules/@csarkosh/engine/src/env.d.ts"]
 }

@@ -2,7 +2,6 @@ import { describe, expect, it } from "vitest";
 import { noParts, type NoPartsApi } from "@csarkosh/engine/game/lite/noParts";
 import type { RenderGame, RenderHost, RenderLamp, RenderPlayer, RenderState } from "@csarkosh/engine/game/lite/renderGame";
 import { STARE_LENS_REST } from "@csarkosh/engine/game/stareLens";
-import { sourceText } from "../../helpers/source.js";
 
 /**
  * A renderer's side for a game with no parts of its own (`noParts.ts`): the renderer draws the world
@@ -81,13 +80,5 @@ describe("a renderer's side with no parts", () => {
     const walker: Walker = { ...player(1, 2, 3), stamina: 1 };
     const round: Round = { tick: 0, players: new Map([[1, walker]]), round: 4 };
     expect(forAGame(host).side.wildlife.players(round)).toEqual([{ x: 2, z: 3 }]);
-  });
-
-  it("is the engine's own and names no game", () => {
-    const text = sourceText("game/lite/noParts.ts");
-    const specs = [...text.matchAll(/^import [^\n]*?from "([^"]+)";$/gm)].map((m) => m[1] as string);
-    expect(specs.length).toBeGreaterThan(2);
-    for (const spec of specs) expect(spec.startsWith("."), spec).toBe(true);
-    expect(text).toContain("export const noParts: RenderGame<RenderState<RenderPlayer>, RenderPlayer, NoPartsApi> = () => {");
   });
 });

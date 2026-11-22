@@ -32,7 +32,9 @@ describe("the version of Babylon Lite the page is built with", () => {
     expect(preset).toContain("__LITE_VERSION__: JSON.stringify(liteVersion(readFileSync(new URL('package.json', ENGINE), 'utf8'))),");
     // Declared by the engine, whose shell reads it, and included in the client's own typecheck.
     expect(readFileSync(new URL('../engine/src/env.d.ts', CLIENT), 'utf8')).toContain('declare const __LITE_VERSION__: string;');
-    expect(readFileSync(new URL('tsconfig.json', CLIENT), 'utf8')).toMatch(/"include": \[[^\]]*"\.\.\/engine\/src\/env\.d\.ts"[^\]]*\]/);
+    // By the package's own place among the installed modules, which is the engine's folder here and an installed copy elsewhere.
+    expect(readFileSync(new URL('tsconfig.json', CLIENT), 'utf8')).toMatch(/"include": \[[^\]]*"\.\.\/node_modules\/@csarkosh\/engine\/src\/env\.d\.ts"[^\]]*\]/);
+    expect(readFileSync(new URL('../node_modules/@csarkosh/engine/src/env.d.ts', CLIENT), 'utf8')).toContain('declare const __LITE_VERSION__: string;');
     // The page names it once, in what every telemetry row carries.
     const shell = readFileSync(new URL('../engine/src/shell.ts', CLIENT), 'utf8');
     expect(shell.match(/__LITE_VERSION__/g)).toHaveLength(1);

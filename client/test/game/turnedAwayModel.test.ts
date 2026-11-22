@@ -1,6 +1,4 @@
 import { describe, expect, it } from "vitest";
-import { readFileSync } from "node:fs";
-import { fileURLToPath } from "node:url";
 import { TURNED_AWAY_REASONS } from "@csarkosh/engine/game/loadCheck";
 import { FIRST_OPEN_NOTE, FIRST_RUN_NOTE_WINDOWS } from "@csarkosh/engine/game/downloadCard";
 import { appWouldRun, turnedAwayModel, visitorDevice, type TurnedAwayInput } from "@csarkosh/engine/game/turnedAwayModel";
@@ -138,15 +136,8 @@ describe("the page for those turned away, as data", () => {
       expect(turnedAwayModel(input({ reason })).credits, reason).toBe("Credits");
       expect(turnedAwayModel(input({ reason, desktop: true, userAgent: SHELL_WIN })).credits, reason).toBe("Credits");
     }
-    // The page takes the works themselves from the credits' own list, each written by the Credits screen's own hand.
-    const page = readFileSync(fileURLToPath(new URL("../../../engine/src/game/turnedAway.ts", import.meta.url)), "utf8");
-    expect(page).toContain("options: { still: string | null; credits: readonly CreditEntry[]; onDownload?(platform: Platform): void },");
-    expect(page).toContain("  for (const e of options.credits) creditsList.append(creditItem(e));");
-    const screen = readFileSync(fileURLToPath(new URL("../../../engine/src/game/credits.ts", import.meta.url)), "utf8");
-    expect(screen).toContain("  for (const e of entries) list.append(creditItem(e));");
     // Day Hike's definition hands them over (`hikePageGame.ts`), and the shell asks for them as it draws the page.
     expect(sourceText("hikePageGame.ts")).toContain("  away: { still: titleStillUrl, credits: creditsEntries },");
-    expect(sourceText("shell.ts")).toContain("      credits: page.away.credits(),");
   });
 
   it("ends with the one technical line, with what the graphics card is short of where the check named it", () => {
@@ -166,16 +157,6 @@ describe("the words a visitor turned away reads", () => {
       ? [[name, value] as [string, string]]
       : Object.entries(value as Record<string, string | readonly string[]>).flatMap(([key, v]) => (typeof v === "string" ? [v] : [...v]).map((text) => [`${name}.${key}`, text] as [string, string])),
   );
-
-  it("stand in one module, a constant a sentence: the page and its model write none of their own", () => {
-    expect(sentences.length).toBeGreaterThan(20);
-    for (const file of ["turnedAway.ts", "turnedAwayModel.ts"]) {
-      const code = sourceText(`game/${file}`).replace(/\/\*[\s\S]*?\*\/|\/\/.*$/gm, "");
-      // A string of the code with a space in it would be words: the DOM's class names and the checks' patterns have none but these.
-      const worded = [...code.matchAll(/"((?:[^"\\\n]|\\.)*)"/g)].map((m) => m[1] as string).filter((text) => /[A-Za-z] [A-Za-z]/.test(text));
-      expect(worded, file).toEqual(file === "turnedAway.ts" ? ["caption note"] : []);
-    }
-  });
 
   it("name nothing the game is built with but WebGPU, and that once a page, in the line at the foot", () => {
     for (const [name, text] of sentences) {
@@ -216,18 +197,6 @@ describe("the game the words name", () => {
       JSON.stringify(turnedAwayModel(input({ title, reason, desktop: true, userAgent: SHELL_WIN }))),
     ]);
 
-  it("is none in the engine's own words: a sentence says where the name goes, and nothing else of a game's", () => {
-    const text = sourceText("game/turnedAwayWords.ts").replace(/\/\*[\s\S]*?\*\//g, "");
-    expect(text).not.toMatch(/Day Hike|\bhike/i);
-    expect(words.GAME).toBe("{game}");
-    expect(text.split(words.GAME).length - 1).toBe(20);
-    // The sentences a browser's advice and its list are made of name no game, so the model hands them on as they stand.
-    for (const table of [words.TURNED_AWAY_ADVICE, words.TURNED_AWAY_ADVICE_PHONE, words.TURNED_AWAY_BROWSERS]) {
-      expect(JSON.stringify(table)).not.toContain(words.GAME);
-    }
-    expect(words.TURNED_AWAY_CREDITS).not.toContain(words.GAME);
-  });
-
   it("is Day Hike on Day Hike's page, word for word as it has read", () => {
     const view = turnedAwayModel(input());
     expect([view.title, view.headline, view.browsers?.intro, view.app?.intro, view.detail]).toEqual([
@@ -245,7 +214,6 @@ describe("the game the words name", () => {
     for (const page of pages("Day Hike")) expect(page).not.toContain("{game}");
     // The name Day Hike's definition hands the shell, which the shell hands the page's model.
     expect(sourceText("hikeIdentity.ts")).toContain('{ title: "Day Hike", session:');
-    expect(sourceText("shell.ts")).toContain("    return turnedAwayModel({\n      title: page.identity.title,\n");
   });
 
   it("is another game's on that game's page, with nothing of Day Hike left in it", () => {

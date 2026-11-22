@@ -1,9 +1,9 @@
 import { describe, expect, it } from "vitest";
-import { fileURLToPath } from "node:url";
 import sharp from "sharp";
 
 import "../../src/sim/passes/index.js";
 import { LAYER_MEAN_RGB, layerMeanInverse } from "@csarkosh/engine/game/terrainUniforms";
+import { engineFile } from "@csarkosh/engine/testing/engineFiles";
 
 /**
  * The terrain's fragment stage divides each ground layer's texel by that layer's own
@@ -23,7 +23,7 @@ const FILES: Record<keyof typeof LAYER_MEAN_RGB, string> = {
 };
 
 async function meanRgb(file: string): Promise<[number, number, number]> {
-  const path = fileURLToPath(new URL(`../../../engine/assets/textures/${file}`, import.meta.url));
+  const path = engineFile(`assets/textures/${file}`);
   const { channels } = await sharp(path).stats();
   return [channels[0]!.mean / 255, channels[1]!.mean / 255, channels[2]!.mean / 255];
 }

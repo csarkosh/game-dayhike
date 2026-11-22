@@ -1,6 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { readFileSync } from "node:fs";
-import { fileURLToPath } from "node:url";
+import { sourceText } from "../helpers/source.js";
 
 /**
  * `app.ts` builds the peer-to-peer networking and a WebGPU renderer, so nothing
@@ -9,7 +8,7 @@ import { fileURLToPath } from "node:url";
  * failure it guards is the silent one: a voice built and never fed hums
  * nothing, and the game looks the same.
  */
-const src = readFileSync(fileURLToPath(new URL("../../../engine/src/app.ts", import.meta.url)), "utf8");
+const src = sourceText("app.ts");
 
 describe("the lake's sound in app.ts", () => {
   it("voices the lake after renderer.sync and the drips, in the one frame the host and a follower run", () => {

@@ -17,6 +17,7 @@ import {
 } from "@csarkosh/engine/game/wildlifeField";
 import { shoreHeight } from "../../src/sim/shoreStrip.js";
 import { timeLimit } from "@csarkosh/engine/testing/timeLimit";
+import { engineFile } from "@csarkosh/engine/testing/engineFiles";
 
 setActiveTerrainVariant("olympic");
 const SEEDS = [1, 388817, -1117907922];
@@ -39,7 +40,7 @@ describe("the canopy table the roost altitude is derived from", () => {
     // little under the nominal height (fir 14.54, pine 17.10); a rebuilt model that changed height
     // by more than that would leave the roost altitude reading a stale canopy.
     const topOf = (id: string): number => {
-      const bytes = readFileSync(new URL(`../../../engine/assets/models/${id}.glb`, import.meta.url));
+      const bytes = readFileSync(engineFile(`assets/models/${id}.glb`));
       const json = JSON.parse(bytes.subarray(20, 20 + bytes.readUInt32LE(12)).toString("utf8")) as {
         nodes: { name?: string; mesh?: number; children?: number[] }[];
         meshes: { primitives: { attributes: { POSITION: number } }[] }[];

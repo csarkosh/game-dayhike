@@ -59,8 +59,7 @@ describe("the renderer, for a return", () => {
 });
 
 describe("the hike's page, for a return", () => {
-  // The return and the outcome are the hike's own (`hike.ts`, where a variable of `app.ts` is written `h.<name>`); `app.ts` is read for what must stay out of it too.
-  const app = readFileSync(new URL("../../../engine/src/app.ts", import.meta.url), "utf8");
+  // The return and the outcome are the hike's own (`hike.ts`, where a variable of `app.ts` is written `h.<name>`); `app.ts`, read for what must stay out of it too, is the engine's suite's (`engine/test/game/deathReturn.test.ts`).
   const hike = readFileSync(new URL("../../src/hike.ts", import.meta.url), "utf8");
 
   it("clears every timer of the death before it lifts the dark, and replays the threshold with the cause's line", () => {
@@ -80,12 +79,10 @@ describe("the hike's page, for a return", () => {
     for (const piece of ["clearTimeout(barsTimer)", "sceneUntil = -1", "downLook = null"]) expect(body, piece).toContain(piece);
     // One timer for every scene's bars: a later scene's start takes the earlier one's off.
     expect(hike).not.toContain("setTimeout(() => { h.hud.setBars(false); downLook = null; }, SUMMIT_SCENE_S * 1000);");
-    expect(app).not.toContain("setTimeout(() => { hud.setBars(false); downLook = null; }, SUMMIT_SCENE_S * 1000);");
   });
 
   it("gives the voice the cause on the frame of the return, and reports the death's real cause", () => {
     expect(hike).toContain("returned: returnedNow,");
     expect(hike).not.toContain('cause: "hollow",');
-    expect(app).not.toContain('cause: "hollow",');
   });
 });

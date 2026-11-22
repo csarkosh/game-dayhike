@@ -1,6 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { readFileSync } from "node:fs";
-import { fileURLToPath } from "node:url";
+import { sourceText } from "../helpers/source.js";
 
 /**
  * `app.ts` builds the peer-to-peer networking and a WebGPU renderer, so nothing
@@ -9,7 +8,7 @@ import { fileURLToPath } from "node:url";
  * it guards is the silent one: a shell built and never fed sounds nothing,
  * and the game looks the same.
  */
-const src = readFileSync(fileURLToPath(new URL("../../../engine/src/app.ts", import.meta.url)), "utf8");
+const src = sourceText("app.ts");
 
 describe("the surf's sound in app.ts", () => {
   it("voices the surf after the lake's life, in the one frame the host and a follower run", () => {

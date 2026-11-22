@@ -4,6 +4,7 @@ import { existsSync, readFileSync } from "node:fs";
 
 import { catalog } from "../helpers/catalogs.js";
 import { glbOutline } from "@csarkosh/engine/game/glbParts";
+import { engineFile } from "@csarkosh/engine/testing/engineFiles";
 import { babylonValues } from "../helpers/babylonFixture.js";
 
 type Entry = { id: string; kind: string; output: string; animations?: Record<string, string> };
@@ -15,7 +16,7 @@ const LOD_KINDS = new Set(["prop", "environment"]);
 /** A shipped model's bytes, as a page fetches them. */
 function model(output: string): { bytes: Buffer; file: ArrayBuffer } {
   const own = new URL(`../../assets/${output}`, import.meta.url);
-  const bytes = readFileSync(existsSync(own) ? own : new URL(`../../../engine/assets/${output}`, import.meta.url));
+  const bytes = readFileSync(existsSync(own) ? own : engineFile(`assets/${output}`));
   return { bytes, file: bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength) as ArrayBuffer };
 }
 

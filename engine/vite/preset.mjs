@@ -134,6 +134,12 @@ export function enginePreset() {
       __LITE_VERSION__: JSON.stringify(liteVersion(readFileSync(new URL('package.json', ENGINE), 'utf8'))),
     },
     build: { assetsInlineLimit },
+    // The engine ships as source. Installed as a package it would be pre-bundled by the dev server as
+    // any dependency is, which cannot follow its workers, its shader text or its globs: left out of
+    // that, it is served and transformed as the game's own modules are.
+    optimizeDeps: { exclude: ['@csarkosh/engine'] },
+    // And vitest, which leaves an installed package's modules untransformed, transforms the engine's.
+    test: { server: { deps: { inline: [/@csarkosh\/engine/] } } },
     plugins: [enginePublic()],
   };
 }

@@ -7,7 +7,6 @@ import { CROWD_CARD_WIDE } from "../../../src/game/crowdCards.js";
 import { tight } from "@csarkosh/engine/testing/wgslText";
 
 const src = readFileSync(new URL("../../../src/game/lite/crowdCardMeshes.ts", import.meta.url), "utf8");
-const mask = readFileSync(new URL("../../../../engine/src/game/lite/shadeMask.ts", import.meta.url), "utf8");
 const VERTEX = tight(CROWD_CARD_WGSL.vertex);
 const FRAGMENT = tight(CROWD_CARD_WGSL.fragment);
 
@@ -79,12 +78,5 @@ describe("the crowd's cards on Babylon Lite", () => {
     expect(src).toContain("if (now) {\n        updateMeshPositions(engine, mesh, vertices.positions);\n        updateMeshColors(engine, mesh, vertices.cards);\n        updateMeshUvs(engine, mesh, vertices.stirs);");
     expect(src).toContain("const time = crowdCardTime(seconds);\n        frameValues.crowdTime[0] = time;\n        maskValues.crowdTime[0] = time;");
     expect(src).toContain("frameValues.crowdTint[0] = tint[0];");
-  });
-
-  it("is drawn in the shade mask with the mask's material in place of its own, and brings the mask up while a card is, with or without a figure", () => {
-    expect(mask).toContain("addMeshToTask(task, mesh, { material: cardMaterial });");
-    expect(mask).toContain("figures = anyNow && count > 0 && looks.size > 0;\n      any = figures || cardsUp;\n      task.enabled = any;");
-    expect(mask).toContain("cardsUp = up && cardsMesh !== null;\n      any = figures || cardsUp;\n      task.enabled = any;");
-    expect(mask).toContain("if (cardsMesh !== null) removeMeshFromTask(task, cardsMesh);");
   });
 });
