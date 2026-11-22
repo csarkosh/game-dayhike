@@ -83,7 +83,7 @@ export function createFilmHead(deps: { video(): HTMLVideoElement; fetchHead?(src
     // and the intro mutes it where the page has no gesture or is muted. Muted while it loaded
     // and given its sound at Play, a phone's film starts its picture at once and then stands a
     // quarter second, a fifth of a second in, while the sound's output starts (2026-11-12, a
-    // Pixel 9: `engine/tools/frame-budget/film-start.mjs`); never muted, it starts that much later and
+    // Pixel 9: the engine's `tools/frame-budget/film-start.mjs`); never muted, it starts that much later and
     // does not stand.
     video.muted = false;
     kept = video;

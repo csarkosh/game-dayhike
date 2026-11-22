@@ -13,7 +13,7 @@ const SRC = fileURLToPath(new URL("../src", import.meta.url));
 const TESTS = fileURLToPath(new URL(".", import.meta.url));
 /**
  * The engine is a package Day Hike imports (`@csarkosh/engine/<path>`), and these rules read Day Hike's own source
- * alone: a rule over the engine's modules is `engine/test/architecture.test.ts`'s. A rule that follows Day Hike's modules
+ * alone: a rule over the engine's modules is the engine's repository's own (`test/architecture.test.ts` there). A rule that follows Day Hike's modules
  * into the engine's is held in two halves. This one follows Day Hike's modules only and records each import of the
  * package by its path (`engineModule`) without following it; it asserts that the engine's modules it names are among the
  * lists the engine's half walks (`@csarkosh/engine/testing/pageEntries`).

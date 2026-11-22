@@ -59,7 +59,7 @@ describe("the renderer, for a return", () => {
 });
 
 describe("the hike's page, for a return", () => {
-  // The return and the outcome are the hike's own (`hike.ts`, where a variable of `app.ts` is written `h.<name>`); `app.ts`, read for what must stay out of it too, is the engine's suite's (`engine/test/game/deathReturn.test.ts`).
+  // The return and the outcome are the hike's own (`hike.ts`, where a variable of `app.ts` is written `h.<name>`); `app.ts`, read for what must stay out of it too, is the engine's suite's (`test/game/deathReturn.test.ts` in the engine's repository).
   const hike = readFileSync(new URL("../../src/hike.ts", import.meta.url), "utf8");
 
   it("clears every timer of the death before it lifts the dark, and replays the threshold with the cause's line", () => {

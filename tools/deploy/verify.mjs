@@ -143,7 +143,7 @@ async function verify() {
   // would actually matter.
   //
   // The map is read out of the entry chunk and every chunk it names: the
-  // build puts the asset urls (`engine/src/game/assetUrls.ts`) in whichever
+  // build puts the asset urls (the engine's `src/game/assetUrls.ts`) in whichever
   // chunk first needs them, which stopped being the entry once the title page
   // built no scene.
   const modelIds = ['ranger.nathan', 'hollow.antlered', 'clutter.fungus_b'];

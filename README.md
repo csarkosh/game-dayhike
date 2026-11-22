@@ -82,4 +82,4 @@ A desktop launcher for macOS and Windows that loads the site lives in [`desktop/
 ## License
 
 [GPL-3.0](./LICENSE). Use it, study it, change it and share it, and share your changes under the
-same terms. Third-party models and sounds are credited in [`CREDITS.md`](CREDITS.md).
+same terms. Day Hike is built on [the engine](https://github.com/csarkosh/engine), which has a repository of its own. Third-party models and sounds are credited in [`CREDITS.md`](CREDITS.md), and the engine's own works in the engine's repository.

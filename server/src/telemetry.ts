@@ -5,7 +5,7 @@
  * The page sends a batch every half minute and on its way out, each a JSON
  * object: an envelope naming the page (its session, the build it runs, the
  * world it is in) and a list of events, each a name, a time and a few fields
- * (`engine/src/net/telemetry.ts`). The route does four things and no more:
+ * (the engine's `src/net/telemetry.ts`). The route does four things and no more:
  * refuses what is not a well-formed batch from an allowed origin (or one of
  * its preview channels) within the size and rate limits; marks every row of
  * a batch from the owner's address or a preview channel `tester`, so it

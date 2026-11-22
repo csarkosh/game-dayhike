@@ -5,7 +5,7 @@ import { sourceText } from "../helpers/source.js";
  * A session's frame is one function, the host's and a follower's alike: the two differ only in
  * where the state drawn comes from and in what the netgraph is told. The order inside it is the
  * hike's as it has always run, and is pinned here for the hike's own half (`hike.ts`); the page's half
- * (`app.ts`) is read by the engine's suite (`engine/test/game/appFrame.test.ts`).
+ * (`app.ts`) is read by the engine's suite (`test/game/appFrame.test.ts` in the engine's repository).
  */
 
 /** The hike's own half (`createHike`): what `app.ts` calls as `side.<name>`. A variable of `app.ts` it reads is written `h.<name>` there. */

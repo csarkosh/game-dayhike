@@ -1,1 +1,0 @@
-${sink}out.vFoliage=foliage;

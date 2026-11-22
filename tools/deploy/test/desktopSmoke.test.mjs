@@ -175,9 +175,10 @@ describe('what the smoke reads of the page', () => {
 
 describe('the smoke and the site agree', () => {
   const read = (file) => readFileSync(new URL(file, DESKTOP), 'utf8');
-  // A module of the page is the game's or the engine's: it keeps its path under either's src/.
+  // A module of the page is the game's or the engine's: it keeps its path under either's src/, the
+  // engine's being the installed package's.
   const client = (file) => {
-    const homes = ['client', 'engine'].map((home) => new URL(`../../../${home}/src/game/${file}`, import.meta.url));
+    const homes = ['client', 'node_modules/@csarkosh/engine'].map((home) => new URL(`../../../${home}/src/game/${file}`, import.meta.url));
     return readFileSync(homes.find((home) => existsSync(home)) ?? homes[0], 'utf8');
   };
 

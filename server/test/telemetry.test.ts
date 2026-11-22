@@ -172,7 +172,7 @@ describe("rowsOf", () => {
 
 /**
  * The rows a hike sends of a GPU error and of a lost device
- * (`engine/src/game/gpuFaults.ts`), as a page sends them: its own context of
+ * (the engine's `src/game/gpuFaults.ts`), as a page sends them: its own context of
  * four fields beside each event's.
  */
 describe("the rows of a GPU error and of a lost device", () => {
