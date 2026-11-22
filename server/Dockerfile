@@ -31,6 +31,8 @@ COPY engine/package.json engine/package.json
 COPY server/package.json server/package.json
 RUN npm ci --omit=dev --workspace server --include-workspace-root
 COPY --from=build /app/server/dist ./server/dist
+# Which game this server serves (`server/src/gameSettings.ts` reads it from beside dist/).
+COPY server/game.json ./server/game.json
 # The saved telemetry queries the admin routes run (`server/src/adminQueries.ts`).
 COPY tools/telemetry/queries ./tools/telemetry/queries
 USER node

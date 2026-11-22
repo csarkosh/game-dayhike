@@ -122,7 +122,7 @@ What the game assumes of every model file:
 
 ## Hosting
 
-The site is on Firebase Hosting at `games.csarko.sh/dayhike`; the signaling server is a Cloud Run service whose rooms live in Firestore, shared by its instances, so it scales from zero to a few and back (`docs/signaling/`). The telemetry service is the same image in its other role on a second Cloud Run service that scales from zero, writing rows to a Cloud Logging bucket of their own with Log Analytics on. Terraform in `_infra/` owns all of it, plus DNS. `tools/deploy/` builds and ships them and verifies production independently.
+The site is on Firebase Hosting at `games.csarko.sh/dayhike`; the signaling server is a Cloud Run service whose rooms live in Firestore, shared by its instances, so it scales from zero to a few and back (`docs/signaling/`). The telemetry service is the same image in its other role on a second Cloud Run service that scales from zero, writing rows to a Cloud Logging bucket of their own with Log Analytics on. The server reads which game it serves from `server/game.json`. Terraform in `_infra/` owns all of it, plus DNS. `tools/deploy/` builds and ships them and verifies production independently.
 
 ## Testing
 

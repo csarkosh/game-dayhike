@@ -41,8 +41,10 @@ export const QUERY_ZONE = "America/New_York";
 /** The zone as a SQL literal in a saved query, every occurrence of which becomes the `tz` parameter. */
 const ZONE_LITERAL = `'${QUERY_ZONE}'`;
 
-/** The table a saved query names, as Log Analytics spells it. */
-const CONSOLE_TABLE = /`([a-z0-9-]+)\.global\.dayhike-telemetry\._AllLogs`/g;
+/** The table a saved query names, as Log Analytics spells it, in the game's log bucket. */
+function consoleTable(bucket: string): RegExp {
+  return new RegExp(`\`([a-z0-9-]+)\\.global\\.${bucket.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}\\._AllLogs\``, "g");
+}
 /**
  * The range line: the days a query reads when pasted, which become the
  * parameter here. Most read seven; `kpis.sql` reads the twelve weeks its
@@ -79,14 +81,14 @@ export function zoneOf(raw: string | null): string | null {
 
 /**
  * A saved query made runnable from BigQuery: the dataset's view for the
- * console's, and the range, the zone or the lookup's id as a query
+ * console's (the game's log `bucket` named in the table), and the range, the zone or the lookup's id as a query
  * parameter. A placeholder may stand in a file more than once (the span and
  * the rows of a lookup, the zone in every date a query reads); the parameter
  * is named once.
  */
-export function forBigQuery(sql: string, projectId: string, dataset: string): { sql: string; params: string[] } {
+export function forBigQuery(sql: string, projectId: string, dataset: string, bucket: string): { sql: string; params: string[] } {
   const params: string[] = [];
-  let out = sql.replace(CONSOLE_TABLE, () => `\`${projectId}.${dataset}._AllLogs\``);
+  let out = sql.replace(consoleTable(bucket), () => `\`${projectId}.${dataset}._AllLogs\``);
   const ranged = out.replace(RANGE_LINE, "INTERVAL @days DAY), 'America/New_York')");
   if (ranged !== out) {
     out = ranged;

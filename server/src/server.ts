@@ -6,6 +6,7 @@ import { MemoryRegistry } from "./memoryRegistry.js";
 import type { Registry, RoomInfo } from "./registry.js";
 import { row, stdoutSink, type LogSink } from "./log.js";
 import type { Placer } from "./place.js";
+import { loadGameSettings } from "./gameSettings.js";
 import { PostLimiter, telemetryRoute, type PostLimiterOptions } from "./telemetry.js";
 import { adminRoute, type AdminData } from "./admin.js";
 import type { AdminAuth } from "./adminAuth.js";
@@ -14,7 +15,6 @@ import { TokenBucket } from "./tokenBucket.js";
 import {
   clientIpOf,
   ConnectionLimiter,
-  DEFAULT_ALLOWED_ORIGINS,
   isAllowedOrigin,
   type ConnectionLimiterOptions,
   type IpRange,
@@ -161,9 +161,10 @@ export type SignalingServerOptions = {
    */
   sweepIntervalMs?: number;
   /**
-   * Origins whose pages may open a socket. Defaults to the hostnames the
-   * browser build is served from; the deployment overrides it from the
-   * environment so a new domain does not need a code change.
+   * Origins whose pages may open a socket. Defaults to the game's own list
+   * (`allowedOrigins` of `server/game.json`, `gameSettings.ts`); the
+   * deployment overrides it from the environment so a new domain does not
+   * need a code change.
    */
   allowedOrigins?: readonly string[];
   /** Per-address connection ceilings. See `ConnectionLimiter`. */
@@ -257,7 +258,7 @@ export function createSignalingServer(
     (role === "telemetry" ? undefined : options.registry?.(registryOptions)) ??
     new MemoryRegistry(MAX_PEERS, now, registryOptions.hostGraceMs, { onEnded: registryOptions.onEnded });
   const wss = new WebSocketServer({ noServer: true, maxPayload: MAX_PAYLOAD_BYTES });
-  const allowedOrigins = options.allowedOrigins ?? DEFAULT_ALLOWED_ORIGINS;
+  const allowedOrigins = options.allowedOrigins ?? loadGameSettings().allowedOrigins;
   const limiter = new ConnectionLimiter({ now: options.now, ...options.limits });
   const postLimiter = new PostLimiter({ now: options.now, ...options.postLimits });
   const telemetry =

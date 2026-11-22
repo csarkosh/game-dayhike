@@ -71,7 +71,7 @@ describe("shapeKpis", () => {
       window("current", 7, 4, 4, 3, 1),
       window("previous", 9, 6, 8, 8, 0),
     ];
-    const out = shapeKpis(rows, 2, NOW);
+    const out = shapeKpis("game-dayhike", rows, 2, NOW);
     expect(out.app).toBe("game-dayhike");
     expect(out.at).toBe("2026-10-12T12:00:00.000Z");
     const [sessions, matches, clean, lobbies] = out.kpis;
@@ -87,18 +87,18 @@ describe("shapeKpis", () => {
     // evening's sessions in the week of Monday the 12th, its current week.
     const now = Date.UTC(2026, 9, 19, 4, 30);
     const rows: Row[] = [week("2026-10-12", 4, 1, 4, 4, 0), week("2026-10-05", 2, 1, 2, 2, 0)];
-    expect(shapeKpis(rows, 0, now, "America/Los_Angeles").kpis[0]?.trend.slice(-2)).toEqual([2, 4]);
+    expect(shapeKpis("game-dayhike", rows, 0, now, "America/Los_Angeles").kpis[0]?.trend.slice(-2)).toEqual([2, 4]);
     // In New York the 19th's week has begun and has nothing in it yet.
-    expect(shapeKpis(rows, 0, now).kpis[0]?.trend.slice(-3)).toEqual([2, 4, 0]);
+    expect(shapeKpis("game-dayhike", rows, 0, now).kpis[0]?.trend.slice(-3)).toEqual([2, 4, 0]);
   });
 
   it("reads counts BigQuery hands back as strings, and answers an empty range with zeros and no clean share", () => {
-    const out = shapeKpis([window("current", "3" as unknown as number, "2" as unknown as number, "0" as unknown as number, "0" as unknown as number, "0" as unknown as number)], 0, NOW);
+    const out = shapeKpis("game-dayhike", [window("current", "3" as unknown as number, "2" as unknown as number, "0" as unknown as number, "0" as unknown as number, "0" as unknown as number)], 0, NOW);
     expect(out.kpis[0]?.value).toBe(3);
     expect(out.kpis[1]?.value).toBe(2);
     expect(out.kpis[2]?.value).toBeNull();
     expect(out.kpis[2]?.prev).toBeNull();
-    const empty = shapeKpis([], 0, NOW);
+    const empty = shapeKpis("game-dayhike", [], 0, NOW);
     expect(empty.kpis.map((k) => k.value)).toEqual([0, 0, null, 0]);
     expect(empty.kpis[0]?.trend).toEqual(new Array(KPI_WEEKS).fill(0));
     expect(empty.health.status).toBe("good");

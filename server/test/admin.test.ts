@@ -74,7 +74,7 @@ describe("createAdminAuth", () => {
 describe("the saved queries for BigQuery", () => {
   it("rename the table, parameterise the range and the zone, and turn each lookup's placeholder into its parameter", () => {
     for (const name of QUERY_NAMES) {
-      const out = forBigQuery(readQuery(name, QUERIES), "fps-csarko", "dayhike_telemetry");
+      const out = forBigQuery(readQuery(name, QUERIES), "fps-csarko", "dayhike_telemetry", "dayhike-telemetry");
       // The places read csarko.sh's analytics by their full name, which the rewrite leaves alone.
       if (OTHER_SOURCE_QUERIES.includes(name)) expect(out.sql).toContain("`csarko-sh.csarko_visits._AllLogs`");
       else expect(out.sql).toContain("`fps-csarko.dayhike_telemetry._AllLogs`");
@@ -87,7 +87,7 @@ describe("the saved queries for BigQuery", () => {
     const placeholders = { session: ["'SID'", "@sid", "sid"], visitor: ["'VID'", "@vid", "vid"], match: ["'GAME'", "@game", "game"] } as const;
     for (const name of LOOKUP_NAMES) {
       const [literal, param, key] = placeholders[name];
-      const out = forBigQuery(readQuery(name, QUERIES), "fps-csarko", "dayhike_telemetry");
+      const out = forBigQuery(readQuery(name, QUERIES), "fps-csarko", "dayhike_telemetry", "dayhike-telemetry");
       expect(out.sql).toContain(`= ${param}`);
       expect(out.sql).not.toContain(literal);
       expect(out.sql).not.toContain("global.dayhike-telemetry");
@@ -116,8 +116,8 @@ describe("the saved queries for BigQuery", () => {
   });
 
   it("take the range line's days whatever the file reads when pasted", () => {
-    const seven = forBigQuery("INTERVAL 7 DAY), 'America/New_York') -- range", "p", "d");
-    const twelveWeeks = forBigQuery("INTERVAL 84 DAY), 'America/New_York') -- range", "p", "d");
+    const seven = forBigQuery("INTERVAL 7 DAY), 'America/New_York') -- range", "p", "d", "dayhike-telemetry");
+    const twelveWeeks = forBigQuery("INTERVAL 84 DAY), 'America/New_York') -- range", "p", "d", "dayhike-telemetry");
     expect(seven.sql).toBe("INTERVAL @days DAY), @tz)");
     expect(twelveWeeks.sql).toBe("INTERVAL @days DAY), @tz)");
     expect(twelveWeeks.params).toEqual(["days", "tz"]);
@@ -128,11 +128,11 @@ describe("the saved queries for BigQuery", () => {
 
 describe("the zone a query reads its days in", () => {
   it("becomes the tz parameter wherever the file names New York, named once", () => {
-    const out = forBigQuery("SELECT DATE(timestamp, 'America/New_York') AS day, CURRENT_DATE('America/New_York') AS today", "p", "d");
+    const out = forBigQuery("SELECT DATE(timestamp, 'America/New_York') AS day, CURRENT_DATE('America/New_York') AS today", "p", "d", "dayhike-telemetry");
     expect(out.sql).toBe("SELECT DATE(timestamp, @tz) AS day, CURRENT_DATE(@tz) AS today");
     expect(out.params).toEqual(["tz"]);
     // A file that reads no calendar asks for no zone.
-    expect(forBigQuery("SELECT 1 WHERE x = 'SID' -- session", "p", "d").params).toEqual(["sid"]);
+    expect(forBigQuery("SELECT 1 WHERE x = 'SID' -- session", "p", "d", "dayhike-telemetry").params).toEqual(["sid"]);
   });
 
   it("is New York's when the request names none, the name when it is a zone, and refused otherwise", () => {
@@ -157,7 +157,7 @@ describe("the admin routes", () => {
   let base: string;
   const live: LiveView = { at: 1, instances: [{ id: "i1", seenAt: 1 }], rooms: [{ id: "r1", hostId: "h", createdAt: 0, hostDroppedAt: null, peers: 2 }], playing: [{ sid: "s1", vid: "v1", build: "b", tier: "high", p: 0.4, fps: 60, heard_at: "2026-11-21T10:00:00Z" }] };
   const asked: string[] = [];
-  const kpis = shapeKpis([{ kind: "window", period: "current", week_start: null, sessions: 3, matches: 2, ended: 2, clean: 2, erred: 0 }], 1, Date.UTC(2026, 9, 12));
+  const kpis = shapeKpis("game-dayhike", [{ kind: "window", period: "current", week_start: null, sessions: 3, matches: 2, ended: 2, clean: 2, erred: 0 }], 1, Date.UTC(2026, 9, 12));
   const data: AdminData = {
     live: () => Promise.resolve(live),
     query: (name, days, zone) => {
