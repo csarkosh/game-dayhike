@@ -1,13 +1,14 @@
 import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
-import { LITE_PACKAGE, liteVersion } from '../liteVersion.mjs';
+import { LITE_PACKAGE, liteVersion } from '../../../engine/vite/liteVersion.mjs';
 
 const CLIENT = new URL('../../../client/', import.meta.url);
+const ENGINE = new URL('../../../engine/', import.meta.url);
 const pin = (value) => JSON.stringify({ dependencies: { [LITE_PACKAGE]: value } });
 
 describe("the version of Babylon Lite the page is built with", () => {
-  it("is the tag the client's package pins, which names the patches the hike is drawn with", () => {
-    const version = liteVersion(readFileSync(new URL('package.json', CLIENT), 'utf8'));
+  it("is the tag the engine's package pins, which names the patches the hike is drawn with", () => {
+    const version = liteVersion(readFileSync(new URL('package.json', ENGINE), 'utf8'));
     expect(version).toMatch(/^v\d+\.\d+\.\d+-dayhike\.\d+$/);
     // The installed package says only the release the tag stands on: the same for every tag made on it.
     const installed = JSON.parse(readFileSync(new URL('../node_modules/@babylonjs/lite/package.json', CLIENT), 'utf8')).version;
@@ -21,14 +22,14 @@ describe("the version of Babylon Lite the page is built with", () => {
   });
 
   it('refuses a package that does not pin it, or pins it with no tag', () => {
-    expect(() => liteVersion(JSON.stringify({ dependencies: {} }))).toThrow(/not among the client's dependencies/);
-    expect(() => liteVersion(JSON.stringify({}))).toThrow(/not among the client's dependencies/);
+    expect(() => liteVersion(JSON.stringify({ dependencies: {} }))).toThrow(/not among the engine's dependencies/);
+    expect(() => liteVersion(JSON.stringify({}))).toThrow(/not among the engine's dependencies/);
     expect(() => liteVersion(pin('github:csarkosh/babylon-lite#'))).toThrow(/pinned with no tag/);
   });
 
-  it("is defined for the page by the client's build, and typed where the page reads it", () => {
-    const config = readFileSync(new URL('vite.config.ts', CLIENT), 'utf8');
-    expect(config).toContain('__LITE_VERSION__: JSON.stringify(liteVersion(readFileSync(new URL("package.json", import.meta.url), "utf8"))),');
+  it("is defined for the page by the engine's preset, and typed where the page reads it", () => {
+    const preset = readFileSync(new URL('vite/preset.mjs', ENGINE), 'utf8');
+    expect(preset).toContain("__LITE_VERSION__: JSON.stringify(liteVersion(readFileSync(new URL('package.json', ENGINE), 'utf8'))),");
     // Declared by the engine, whose shell reads it, and included in the client's own typecheck.
     expect(readFileSync(new URL('../engine/src/env.d.ts', CLIENT), 'utf8')).toContain('declare const __LITE_VERSION__: string;');
     expect(readFileSync(new URL('tsconfig.json', CLIENT), 'utf8')).toMatch(/"include": \[[^\]]*"\.\.\/engine\/src\/env\.d\.ts"[^\]]*\]/);

@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 // One-shot vendoring of the Babylon KTX2 decoder + transcoder wasm files into
-// client/public/libs/ktx2/, committed so deploys never depend on a CDN.
+// engine/public/libs/ktx2/, committed so deploys never depend on a CDN.
 // Re-run only when @babylonjs/ktx2decoder is upgraded.
 //
 // Package-layout note (@babylonjs/ktx2decoder@9.18.0): the published npm
@@ -23,7 +23,7 @@ import * as esbuild from "esbuild";
 
 const require = createRequire(import.meta.url);
 const PKG = dirname(require.resolve("@babylonjs/ktx2decoder/package.json"));
-const OUT = "client/public/libs/ktx2";
+const OUT = "engine/public/libs/ktx2";
 mkdirSync(OUT, { recursive: true });
 
 // 1. Copy every non-map .js/.wasm file shipped under wasm/ — the Emscripten

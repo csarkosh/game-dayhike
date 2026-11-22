@@ -1,6 +1,6 @@
 import { readFileSync } from "node:fs";
 import { defineConfig } from "vitest/config";
-import { liteVersion } from "../tools/vite/liteVersion.mjs";
+import { liteVersion } from "./vite/liteVersion.mjs";
 import { timeLimit } from "./testing/timeLimit.js";
 
 // The engine's own tests, run with `--root engine` (`npm run test:engine`). The empty game
