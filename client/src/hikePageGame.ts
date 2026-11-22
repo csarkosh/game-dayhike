@@ -16,7 +16,7 @@ import { titleStillUrl } from "./game/dayhikeAssets.js";
 import { creditsEntries } from "./game/hikeCredits.js";
 import { startHikeWorldWorker } from "./game/hikeWorldWorker.js";
 import { createHud } from "./game/hud.js";
-import { liteProbeDeps, type ProbeGame } from "./game/lite/probeScene.js";
+import { liteProbeDeps, type ProbeGame } from "@csarkosh/engine/game/lite/probeScene";
 import { runLiteSceneRoute } from "./game/lite/sceneRoute.js";
 import { HIKE_GAME } from "./hikeGame.js";
 import { createHikePage } from "./hikePage.js";

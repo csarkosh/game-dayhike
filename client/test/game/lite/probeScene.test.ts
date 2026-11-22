@@ -1,8 +1,10 @@
+import { existsSync } from "node:fs";
+import { fileURLToPath } from "node:url";
 import { describe, expect, it, vi } from "vitest";
 import "../../../src/game/dayhikeAssets.js";
 import "../../../src/sim/passes/index.js";
 import { PROBE_FRAMES, PROBE_HOUR, PROBE_QUIET_MS, PROBE_WARMUP_FRAMES, probePose } from "@csarkosh/engine/game/frameProbe";
-import { LET_GO_MAX_MS, buildLiteProbeScene, liteProbeDeps, liteProbeReady, runLiteProbeStep, type ProbeGame } from "../../../src/game/lite/probeScene.js";
+import { LET_GO_MAX_MS, buildLiteProbeScene, liteProbeDeps, liteProbeReady, runLiteProbeStep, type ProbeGame } from "@csarkosh/engine/game/lite/probeScene";
 import sandbox01 from "../../../levels/sandbox01.json" with { type: "json" };
 import { createWorld } from "../../../src/sim/world.js";
 import type { WorldState } from "../../../src/sim/types.js";
@@ -336,10 +338,13 @@ describe("the page's probe on the hike's own renderer", () => {
     vi.unstubAllGlobals();
   }, timeLimit(60_000));
 
-  it("imports nothing of the game's: every import of its source is the engine's", () => {
+  it("imports nothing of a game's: it stands in the engine, and every import of its source is of a neighbour there", () => {
     const specs = [...sourceText("game/lite/probeScene.ts").matchAll(/^\s*(?:import|export)\s[^;]*?\bfrom\s+["']([^"']+)["']|^\s*import\s+["']([^"']+)["']/gm)].map((m) => (m[1] ?? m[2]) as string);
     expect(specs.length).toBeGreaterThan(0);
-    expect(specs.filter((spec) => spec.startsWith("."))).toEqual([]);
-    expect(specs.filter((spec) => !spec.startsWith("@csarkosh/engine/"))).toEqual([]);
+    expect(existsSync(fileURLToPath(new URL("../../../../engine/src/game/lite/probeScene.ts", import.meta.url)))).toBe(true);
+    expect(existsSync(fileURLToPath(new URL("../../../src/game/lite/probeScene.ts", import.meta.url)))).toBe(false);
+    // Relative, and so inside the engine's package, where no module may import a game's (`architecture.test.ts`).
+    expect(specs.filter((spec) => !spec.startsWith("."))).toEqual([]);
+    expect(specs.filter((spec) => /client|@csarkosh/.test(spec))).toEqual([]);
   });
 });

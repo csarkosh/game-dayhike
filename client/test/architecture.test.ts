@@ -351,7 +351,7 @@ describe("layer boundaries", () => {
     expect([...main.matchAll(/\bpage\.probe\(/g)].length).toBe(1);
     const game = stripComments(readFileSync(at("hikePageGame.ts"), "utf8"));
     expect([...game.matchAll(/\bliteProbeDeps\(/g)].length).toBe(1);
-    expect(importsOf(at("hikePageGame.ts"))).toContain("./game/lite/probeScene.js");
+    expect(importsOf(at("hikePageGame.ts"))).toContain("@csarkosh/engine/game/lite/probeScene");
     expect(importsOf(at("hikePageGame.ts"))).not.toContain("./game/probeScene.js");
     // No step is handed an engine.
     expect(main).not.toMatch(/\b(?:probeDeps|probeStepEngine|probeStepCanSettle|measureOnRuleEngine)\b/);
