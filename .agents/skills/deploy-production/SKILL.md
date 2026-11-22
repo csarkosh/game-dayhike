@@ -9,7 +9,7 @@ The game is live at **https://games.csarko.sh/dayhike**. Two independent things 
 
 | Piece | Where | What ships it |
 | --- | --- | --- |
-| Client (`client/dist`) | Firebase Hosting, free CDN | `npm run deploy:client` |
+| Client (`client/dist`) | Firebase Hosting, free CDN: a site shared with other games, of which this repository owns `/dayhike` and the site's root | `npm run deploy:client` (the engine's `tools/site`; never `firebase deploy`) |
 | Signaling server (`server/`: the engine's server, `@csarkosh/engine-server`, from the release `server/package.json` names) | Cloud Run `fps-signaling`, `us-west1`, scales from zero; rooms in Firestore | `npm run deploy:server` |
 | Telemetry service (the same image, `ROLE=telemetry`), with the admin routes | Cloud Run `fps-telemetry`, `us-west1`, scales from zero | `npm run deploy:server` (both services, one image) |
 | The admin page (`client/admin/`, `client/src/admin/`) | The shared admin host, `https://admin.csarko.sh/game-dayhike/`, published by the csarko.sh repository's `admin/deploy.sh` from the bundle this repo uploads to `gs://fps-csarko-downloads/admin/latest/` | `npm run deploy:admin` (builds `client/dist-admin/` with `vite.admin.config.ts`, uploads it, then runs `~/Projects/csarko.sh/admin/deploy.sh` when it is there, or names it) |
@@ -31,7 +31,7 @@ thing standing between a mistake and production.**
 The site is `games.csarko.sh` with the game under `/dayhike`; `game.csarko.sh` is a
 second custom domain on the same Firebase site and serves only the redirect page that
 `tools/deploy/client.mjs` writes to the site root. The root itself, `games.csarko.sh/`,
-is a 301 to the list of games at `https://csarko.sh/games` (`firebase.json` `redirects`,
+is a 301 to the list of games at `https://csarko.sh/games` (the `redirects` of `tools/deploy/site.rules.json`,
 2026-10-08); every other path outside `/dayhike` gets the redirect page, which sends
 `game.csarko.sh` links on to the game and anything else to that list. Both domains are Terraform-managed
 (`module.gcp_hosting` has `this` and `legacy`; `module.aws_dns` and `module.aws_dns_legacy`).
@@ -69,6 +69,23 @@ pushing, the revision points at a SHA no longer in history; redeploy or say so.
 **2. `deploy` covers both halves, and they are independent.** Shipping only one is a
 legitimate choice when only one changed — a server-only fix does not need the client
 rebuilt. What is *not* legitimate is assuming which changed. Check the diff.
+
+**2b. `deploy:client` publishes with the engine's site tool, not with Firebase's CLI.** The
+site is shared (Cape Sorrow is served from it at `/capesorrow`, deployed from its own
+repository), and `firebase deploy` replaces the whole site, so **nobody runs it on this
+site**. `deploy:client` builds the client, lays out `site/dayhike/` (the build, no source
+maps) and `site/root/` (the redirect page and the favicon), stores the source maps in the
+bucket, and runs `node_modules/@csarkosh/engine/tools/site/deploy.mjs` with `--project`,
+`--site`, `--path /dayhike`, `--dir site/dayhike`, `--root-dir site/root`, `--rules
+tools/deploy/site.rules.json` and `--message "dayhike <build tag>"`. The tool clones the live
+version on the server, drops what this deploy owns (the files and rules of `/dayhike` and of
+the root), adds the new ones, and checks the result before it releases: if any other game's
+file would change, it deletes the new version and releases nothing. **Two games deploying at
+once:** if the other game's deploy released while this one ran, the tool says "the site changed
+while this deploy ran; run it again", and the later deploy is simply run again (it then builds
+on what the other released). Nothing is half-released either way. The rules (the redirects, the
+rewrites, the headers, the root's `/` and `**` among them) are `tools/deploy/site.rules.json`,
+and a rule taken out of that file is taken off the site at the next deploy.
 
 **3. Verify is not optional.** A client change can break production without any test
 failing: nothing in the suite draws a frame or loads a real bundle. `deploy:verify` catches
@@ -184,17 +201,17 @@ bound on how far back you can roll. If you need to go further, rebuild from the 
 Follow up by getting `main` back to a good state — a rolled-back service that nobody fixes
 is one deploy away from undoing the rollback.
 
-The client has no CLI rollback — there is no `firebase hosting:rollback`, whatever it
-sounds like there should be. Two real options:
+The client is rolled back by deploying the older commit again: check it out (a worktree
+of that commit, or `git checkout <good-sha> -- .`) and run `npm run deploy:client`. Only
+`/dayhike` and the site's root change; the other game is untouched. Slower than the console,
+and it leaves the working tree and the deployed bytes agreeing with each other.
 
-- **The console.** Hosting → Release history → the three-dot menu on a prior release →
-  Rollback. Fastest, and the one to reach for when the site is broken right now.
-- **Rebuild the old commit.** `git checkout <good-sha> -- .` (or check out the commit),
-  then `npm run deploy:client`. Slower, but it leaves the working tree and the deployed
-  bytes agreeing with each other.
-
-`firebase hosting:disable` also exists and takes the site down to a placeholder. That is
-for "this must not be public right now", not for rollback.
+**The Firebase console's Rollback rolls back EVERY game on the site**, not only this one: the
+site's whole release goes back to an earlier version, and Cape Sorrow with it. It is for an
+emergency only (the site is broken right now), and after it the other game must be redeployed
+from its own repository, and this one too if what you rolled back to is not what you want.
+There is no CLI rollback (no `firebase hosting:rollback`), and `firebase hosting:disable`
+takes the whole site, every game, down to a placeholder: never, for this.
 
 ## After deploying
 

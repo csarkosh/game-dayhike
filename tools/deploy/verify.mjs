@@ -25,7 +25,7 @@ const telemetryUrl = tfOutput('telemetry_url');
 const siteOrigin = new URL(siteUrl).origin;
 const legacyHost = tfOutput('legacy_domain_name');
 
-/** The admin page's address on the shared admin host, where the old one under the site redirects (firebase.json). */
+/** The admin page's address on the shared admin host, where the old one under the site redirects (tools/deploy/site.rules.json). */
 const ADMIN_HOST_PAGE = 'https://admin.csarko.sh/game-dayhike/';
 const ADMIN_HOST_ORIGIN = new URL(ADMIN_HOST_PAGE).origin;
 
@@ -63,7 +63,7 @@ async function verify() {
   const deep = await reach(`${siteUrl}/game/3f2504e0-4f89-41d3-9a0c-0305e82c3301`);
   check(deep.status === 200, 'a /game/<uuid> link resolves', `got ${deep.status}`);
 
-  // 2b. The new root 301s to the list of games on csarko.sh (firebase.json).
+  // 2b. The new root 301s to the list of games on csarko.sh (tools/deploy/site.rules.json).
   const root = await reach(`${siteOrigin}/`, { redirect: 'manual' });
   check(
     root.status === 301 && root.headers.get('location') === GAMES_INDEX,
@@ -102,8 +102,8 @@ async function verify() {
       `cache-control: ${asset.headers.get('cache-control')}`,
     );
 
-    // This catches the likeliest deploy mistake there is: `npm run build &&
-    // firebase deploy` by hand instead of `npm run deploy:client`. Then
+    // This catches the likeliest deploy mistake there is: `npm run build` and a
+    // site deploy by hand instead of `npm run deploy:client`. Then
     // VITE_SIGNALING_URL is unset, `signalingUrl()` falls back to same-origin
     // wss://games.csarko.sh/ws, Firebase answers that upgrade with index.html,
     // and the site is completely unplayable — while every other check here
@@ -396,7 +396,7 @@ async function verify() {
   check(queryProblems.length === 0, 'every saved telemetry query runs on BigQuery', queryProblems.join('; '));
 
   // 6c. The admin page moved to the shared admin host: its old address under
-  // the site 301s there (firebase.json), with and without the trailing slash,
+  // the site 301s there (tools/deploy/site.rules.json), with and without the trailing slash,
   // and the admin routes refuse a request with no token, the token being the
   // whole of the guard, for the index card's route as for the page's. The
   // host itself is the csarko.sh repository's to publish and verify

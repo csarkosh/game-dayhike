@@ -9,7 +9,8 @@
 import { readdirSync } from 'node:fs';
 import { requireCommand, requireProjectMatchesTerraform, runLoud, tfOutput } from './lib/preconditions.mjs';
 import { buildClient } from './lib/buildClient.mjs';
-import { assembleSite } from './lib/site.mjs';
+import { assembleSite, SITE_ROOT_DIR, siteDirFor } from './lib/site.mjs';
+import { siteDeployArgs } from './lib/siteDeploy.mjs';
 
 requireCommand('npx', 'Install Node 22 or later.');
 requireProjectMatchesTerraform();
@@ -20,8 +21,9 @@ console.log(`→ site      ${site}`);
 
 const env = buildClient();
 
-// The public directory Firebase publishes is laid out by `lib/site.mjs`, fresh
-// on every deploy. The source maps stay out of it and go to the downloads bucket
+// The two folders the site tool publishes are laid out by `lib/site.mjs`, fresh
+// on every deploy: the build under the site path, and the redirect page and
+// favicon at the root. The source maps stay out of it and go to the downloads bucket
 // under the build's sha, where `tools/telemetry/symbolicate.mjs` reads a
 // telemetry stack against them. The bucket is public, as the repository is. They
 // go up gzipped on the wire and are stored as they are: 20 MB of JSON is 4 MB
@@ -42,16 +44,13 @@ if (maps.length > 0) {
   ]);
   console.log(`→ ${maps.length} source maps stored under sourcemaps/${env.VITE_BUILD_SHA}/`);
 }
-console.log(`→ site dir  site${sitePath} (+ redirect page and favicon at /)`);
+console.log(`→ site dirs ${siteDirFor(sitePath)} and ${SITE_ROOT_DIR} (the redirect page and favicon, served at /)`);
 
-runLoud('npx', [
-  'firebase-tools',
-  'deploy',
-  '--only',
-  'hosting',
-  '--project',
-  project,
-  '--non-interactive',
-]);
+// The site is shared with other games, so it is published with the engine's site
+// tool, which replaces only this game's path and the root, never `firebase deploy`.
+runLoud(
+  'node',
+  siteDeployArgs({ project, site, sitePath, message: `dayhike ${env.VITE_BUILD_SHA}` }),
+);
 
 console.log(`\n✓ client published`);
