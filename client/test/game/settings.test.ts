@@ -5,6 +5,8 @@ import { autoPick } from "@csarkosh/engine/game/frameProbe";
 import type { GpuSignals } from "@csarkosh/engine/game/gpuSignals";
 import { HIKE_MODES } from "../../src/game/gameMode.js";
 import type { ModeList } from "@csarkosh/engine/game/modeList";
+import { setGameIdentity } from "@csarkosh/engine/identity";
+import { HIKE_IDENTITY } from "../../src/hikeIdentity.js";
 import { sourceText } from "../helpers/source.js";
 import { renderLanding } from "../../src/game/landing.js";
 import { landingModel } from "../../src/game/landingModel.js";
@@ -564,5 +566,25 @@ describe("the mode group", () => {
   it("keeps settings.ts and pauseMenu.ts free of the game's modes", () => {
     expect(sourceText("game/settings.ts")).not.toContain("gameMode.js");
     expect(sourceText("game/pauseMenu.ts")).not.toContain("gameMode.js");
+  });
+});
+
+describe("the session word in the settings lines", () => {
+  afterEach(() => setGameIdentity(HIKE_IDENTITY));
+
+  it("is Day Hike's under Day Hike's identity, word for word", () => {
+    const pending = settingsModel({ modes: HIKE_MODES, context: "title", choice: "high", auto: { tier: "medium", probePending: true }, override: null, stored: true });
+    expect(pending.lines).toEqual(["Auto tests this computer when your next hike starts."]);
+    const paused = settingsModel({ modes: HIKE_MODES, context: "pause", choice: "auto", auto: null, running: "high", override: null, stored: true });
+    expect(paused.lines).toEqual(["This hike is using High."]);
+  });
+
+  it("is another game's under that game's identity, with no hike in the lines", () => {
+    setGameIdentity({ title: "Other", session: "round", player: "Guest", storage: "other" });
+    const pending = settingsModel({ modes: HIKE_MODES, context: "title", choice: "high", auto: { tier: "medium", probePending: true }, override: null, stored: true });
+    const paused = settingsModel({ modes: HIKE_MODES, context: "pause", choice: "auto", auto: null, running: "high", override: null, stored: true });
+    expect(pending.lines).toEqual(["Auto tests this computer when your next round starts."]);
+    expect(paused.lines).toEqual(["This round is using High."]);
+    expect(JSON.stringify([pending.lines, paused.lines])).not.toMatch(/hike/i);
   });
 });

@@ -38,7 +38,7 @@ import { browserDeps, createTelemetry, installErrorCapture, referrerOf, telemetr
 import { GEN_VERSION } from "./sim/forest.js";
 import { startGame, type GameHandle } from "./app.js";
 import type { EngineOnCanvas } from "./game/rendererSwap.js";
-import { LOSS_ENDED_LINE, createLossRecord } from "./game/lossBound.js";
+import { createLossRecord, lossEndedLine } from "./game/lossBound.js";
 import { browserEnv, browserMajor, hostOs, isMobile, offersWebGpu, readSignals, type GpuSignals, type NavigatorLike } from "./game/gpuSignals.js";
 import { renderTurnedAway, type TurnedAwayHandle } from "./game/turnedAway.js";
 import { turnedAwayModel, visitorDevice, type TurnedAwayView } from "./game/turnedAwayModel.js";
@@ -341,7 +341,7 @@ export function startShell<
       if (out.notice !== null) choiceNotice = out.notice;
     }
     telemetry.event("tier_fallback", { attempted: fallback.attempted, built: fallback.built ?? "none", source: fallback.source });
-    if (fallback.built === null) leaveNotice(pageSessionStorage(), "The last hike ended because the graphics could not be restarted.", Date.now());
+    if (fallback.built === null) leaveNotice(pageSessionStorage(), `The last ${page.identity.session} ended because the graphics could not be restarted.`, Date.now());
   }
 
   /** The governor lowered Auto's tier: remembered for this GPU, browser and
@@ -791,7 +791,7 @@ export function startShell<
   const lostDevices = createLossRecord();
   const losses = {
     note: () => lostDevices.note(performance.now()),
-    ended: () => void leaveNotice(pageSessionStorage(), LOSS_ENDED_LINE, Date.now()),
+    ended: () => void leaveNotice(pageSessionStorage(), lossEndedLine(), Date.now()),
   };
 
   // `app` is passed in rather than closed over: the null check above does not

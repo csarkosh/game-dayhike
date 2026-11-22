@@ -40,3 +40,10 @@ describe("the keys the page keeps in the browser", () => {
     }
   });
 });
+
+describe("the shell's line for a last session ended by a graphics restart", () => {
+  it("is made from the game's session word, and reads as Day Hike's always has", () => {
+    expect(sourceText("shell.ts")).toContain("`The last ${page.identity.session} ended because the graphics could not be restarted.`");
+    expect(`The last ${HIKE_IDENTITY.session} ended because the graphics could not be restarted.`).toBe("The last hike ended because the graphics could not be restarted.");
+  });
+});

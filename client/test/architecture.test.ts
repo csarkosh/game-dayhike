@@ -1118,17 +1118,17 @@ describe("layer boundaries", () => {
     expect(app).toContain("    loss: () => options.losses.note(),");
     // The loss that is one too many is not answered by another renderer: the hike ends as any hike that cannot go on.
     expect(app).toContain('    ends: (reason) => reason === "lost" && faults.lastLoss?.end === true,');
-    expect(app).toContain('      options.losses.ended();\n      endSession(LOSS_ENDED_LINE, { why: "device_lost", losses: loss?.losses ?? 0, recent: loss?.recent ?? 0 });');
-    // The page's count is one record for every hike of the page, and the landing's line is the same constant.
+    expect(app).toContain('      options.losses.ended();\n      endSession(lossEndedLine(), { why: "device_lost", losses: loss?.losses ?? 0, recent: loss?.recent ?? 0 });');
+    // The page's count is one record for every hike of the page, and the landing's line is the same function's.
     const main = stripComments(readFileSync(at("shell.ts"), "utf8"));
     expect([...main.matchAll(/\bcreateLossRecord\(/g)].length).toBe(1);
     expect(main).toContain("    note: () => lostDevices.note(performance.now()),");
-    expect(main).toContain("    ended: () => void leaveNotice(pageSessionStorage(), LOSS_ENDED_LINE, Date.now()),");
+    expect(main).toContain("    ended: () => void leaveNotice(pageSessionStorage(), lossEndedLine(), Date.now()),");
     expect(main).toContain("      engineFailed,\n      losses,");
-    // The line's words stand in one constant, and the bound's numbers in one module.
+    // The line's words stand in one function, and the bound's numbers in one module.
     const naming = (pattern: RegExp): string[] =>
       sourceFiles(SRC).flatMap((file) => [...stripComments(readFileSync(file, "utf8")).matchAll(pattern)].map(() => logical(file)));
-    expect(naming(/\bLOSS_ENDED_LINE = /g)).toEqual(["game/lossBound.ts"]);
+    expect(naming(/\bfunction lossEndedLine\(/g)).toEqual(["game/lossBound.ts"]);
     expect(naming(/\bLOSS_BOUND_(?:COUNT|WINDOW_MS) = /g)).toEqual(["game/lossBound.ts", "game/lossBound.ts"]);
   });
 

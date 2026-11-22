@@ -42,7 +42,7 @@ import { resolveTier, type TierChoice, type TierSource } from "./game/tierChoice
 import { buildFirstRenderer, buildOrUndo, swapRenderer, switchOutcome, whenStandingSkyHeld, type EngineOnCanvas, type SwapBindings } from "./game/rendererSwap.js";
 import { FALLBACK_NOTICE_MS, answerFailures, coverWith, createSerial } from "./game/engineFailure.js";
 import { createGpuFaults } from "./game/gpuFaults.js";
-import { LOSS_ENDED_LINE, type LossNote } from "./game/lossBound.js";
+import { lossEndedLine, type LossNote } from "./game/lossBound.js";
 import { GOVERNOR_IDLE_MAX_MS, actOnDrop, governSession, governorDecision, steadyFrame } from "./game/governor.js";
 import { OVER_PLAY_Z, showProbeScreen, timeIdleCadence } from "./game/probeScreen.js";
 import { createCoveredDraw } from "./game/coveredDraw.js";
@@ -1716,7 +1716,7 @@ function buildGame<
     end: () => {
       const loss = faults.lastLoss;
       options.losses.ended();
-      endSession(LOSS_ENDED_LINE, { why: "device_lost", losses: loss?.losses ?? 0, recent: loss?.recent ?? 0 });
+      endSession(lossEndedLine(), { why: "device_lost", losses: loss?.losses ?? 0, recent: loss?.recent ?? 0 });
     },
     cover: () => {
       const lift = coverPlay();

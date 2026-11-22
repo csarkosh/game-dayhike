@@ -1,3 +1,4 @@
+import { gameIdentity } from "../identity.js";
 import type { SessionEnd } from "../net/client.js";
 
 const STYLE = `
@@ -47,10 +48,13 @@ export type RetryMode = "reconnect" | "reload";
 export type ConnectFailure = { message: string; retry: RetryMode };
 
 /** Shown when the host turns this page away for running a different build. */
-export const STALE_PAGE_MESSAGE =
-  "You and the host are running different versions of Day Hike. " +
-  "Reload this page to get the latest version, then join again. " +
-  "If that does not work, the host needs to reload too.";
+export function stalePageMessage(): string {
+  return (
+    `You and the host are running different versions of ${gameIdentity().title}. ` +
+    "Reload this page to get the latest version, then join again. " +
+    "If that does not work, the host needs to reload too."
+  );
+}
 
 /** A handshake that failed or threw: worth another try from the same page. */
 export function connectFailure(err: unknown): ConnectFailure {
@@ -66,7 +70,7 @@ export type SessionEndOutcome = { panel: ConnectFailure } | { status: string };
 export function sessionEndOutcome(end: SessionEnd): SessionEndOutcome {
   switch (end.kind) {
     case "version_skew":
-      return { panel: { message: STALE_PAGE_MESSAGE, retry: "reload" } };
+      return { panel: { message: stalePageMessage(), retry: "reload" } };
     case "world_changed":
       // The host has moved to another game; the lobby's route update takes
       // this page there, or the landing page is the fallback.

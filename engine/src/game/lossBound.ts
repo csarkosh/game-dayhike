@@ -7,12 +7,13 @@
  * that would cover the screen and build again without end, so the page
  * counts its losses: the loss that makes `LOSS_BOUND_COUNT` within
  * `LOSS_BOUND_WINDOW_MS` is not answered by another renderer, and the hike
- * ends with `LOSS_ENDED_LINE`, on its screen and then on the landing page.
+ * ends with `lossEndedLine`, on its screen and then on the landing page.
  * Losses further apart than the window are each answered, however many.
  *
  * The record is the page's, not a hike's: the machine is the same in the
  * next hike. No engine and no clock of its own: the time is handed in.
  */
+import { gameIdentity } from "../identity.js";
 
 /** The loss that makes this many within the window ends the hike. */
 export const LOSS_BOUND_COUNT = 3;
@@ -20,7 +21,9 @@ export const LOSS_BOUND_COUNT = 3;
 export const LOSS_BOUND_WINDOW_MS = 600_000;
 
 /** What a player reads when a hike is ended by the bound: on the hike's screen, then on the landing page. */
-export const LOSS_ENDED_LINE = "The hike ended: this device's graphics keep resetting. Restarting the browser may help.";
+export function lossEndedLine(): string {
+  return `The ${gameIdentity().session} ended: this device's graphics keep resetting. Restarting the browser may help.`;
+}
 
 /** What the record says of a loss as it notes it. */
 export type LossNote = {

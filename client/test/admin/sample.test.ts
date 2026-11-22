@@ -1,7 +1,7 @@
 import { describe, it, expect, vi } from "vitest";
 import { sampleSource } from "../../src/admin/sample.js";
 import { trailOf } from "../../src/admin/timeline.js";
-import { LOSS_ENDED_LINE } from "@csarkosh/engine/game/lossBound";
+import { lossEndedLine } from "@csarkosh/engine/game/lossBound";
 import type { DrawableTrail } from "../../src/admin/trail.js";
 
 // A trail of three nodes up a straight stem: enough for the sample to walk sessions on.
@@ -70,7 +70,7 @@ describe("the sample's trail carries each thing the GPU can do under a hike", ()
     expect(losses[2]?.text).toContain("loss 3 of this page, 3 within the bound, 1 min 47 s after the last");
     const end = trail.steps.find((s) => s.n === "session_end");
     expect(end?.tone).toBe("error");
-    expect(end?.text).toBe(`${LOSS_ENDED_LINE}, ended by lost devices: 3 this page, 3 within the bound, 52% up`);
+    expect(end?.text).toBe(`${lossEndedLine()}, ended by lost devices: 3 this page, 3 within the bound, 52% up`);
     expect(trail.steps.filter((s) => s.n === "engine_rebuilt")).toHaveLength(2);
     expect(trail.steps.some((s) => s.n === "outcome")).toBe(false);
     // The rows after the end are the landing's.
@@ -82,7 +82,7 @@ describe("the sample's trail carries each thing the GPU can do under a hike", ()
     const rows = await sampleSource(() => Promise.resolve(null)).query("errors", 7);
     expect(rows.filter((r) => r.n === "gpu_error").map((r) => r.level)).toEqual(["error", "warning"]);
     expect(rows.find((r) => r.n === "device_lost")).toMatchObject({ level: "error", a_session: "s41b2" });
-    expect(rows.find((r) => r.n === "session_end")).toMatchObject({ level: "error", msg: LOSS_ENDED_LINE, a_session: "s41b2" });
+    expect(rows.find((r) => r.n === "session_end")).toMatchObject({ level: "error", msg: lossEndedLine(), a_session: "s41b2" });
     // Errors before warnings, as the query orders them.
     const levels = rows.map((r) => r.level);
     expect(levels.lastIndexOf("error")).toBeLessThan(levels.indexOf("warning"));
