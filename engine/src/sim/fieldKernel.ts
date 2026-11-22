@@ -1,5 +1,5 @@
 /**
- * The field kernel: `field.ts` and the montane pipeline of `montane.ts` compiled from Rust (client/rust/field)
+ * The field kernel: `field.ts` and the montane pipeline of `montane.ts` compiled from Rust (engine/rust/field)
  * to WebAssembly, returning the same doubles to the bit (fieldKernel.test.ts holds every function here to its
  * TypeScript original, which stays the reference). About twice the TypeScript's speed on a montane sample.
  *
@@ -15,8 +15,8 @@
  * square roots, which WebAssembly defines to the bit on every engine, and nothing else.
  */
 import { FIELD_WASM_BASE64 } from "./kernel/fieldWasm.js";
-import type { NoiseSample } from "@csarkosh/engine/sim/field";
-import type { TerrainSample } from "@csarkosh/engine/sim/terrain";
+import type { NoiseSample } from "./field.js";
+import type { TerrainSample } from "./terrain.js";
 
 /** A montane config's numbers in the order the kernel reads them: the pipeline's tunables, then its flags, by
  * the names of the variant's tunables record. */

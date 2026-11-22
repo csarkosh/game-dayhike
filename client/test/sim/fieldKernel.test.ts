@@ -17,7 +17,7 @@ import {
   kernelMontaneGrid,
   kernelMontaneInto,
   kernelValueNoise2,
-} from "../../src/sim/fieldKernel.js";
+} from "@csarkosh/engine/sim/fieldKernel";
 
 // The kernel is held to the TypeScript bit for bit: `Object.is` on every double, so a -0 for a 0 or a different
 // NaN would fail as a different number does.
