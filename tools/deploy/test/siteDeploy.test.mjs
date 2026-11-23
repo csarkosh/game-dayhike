@@ -41,12 +41,23 @@ describe("siteDeployArgs", () => {
 });
 
 describe("site.rules.json", () => {
-  it("parses, and holds the three redirects, two rewrites and two headers the site had", () => {
+  it("parses, and holds the three redirects, two rewrites and two headers the site had, and the hints' headers", () => {
     const rules = JSON.parse(readFileSync(RULES_FILE, "utf8"));
     expect(Object.keys(rules).sort()).toEqual(["headers", "redirects", "rewrites"]);
     expect(rules.redirects).toHaveLength(3);
     expect(rules.rewrites).toHaveLength(2);
-    expect(rules.headers).toHaveLength(2);
+    expect(rules.headers).toHaveLength(3);
+  });
+
+  // The page's beacon goes to csarko.sh's collector, another origin, so Chrome sends it the network
+  // hints only when the page both asks for them and delegates each one to csarko.sh.
+  it("asks for the connection hints on the game's pages and delegates every one to csarko.sh", () => {
+    const rules = JSON.parse(readFileSync(RULES_FILE, "utf8"));
+    const page = rules.headers.find((r) => r.source === "/dayhike/**");
+    const value = (key) => page.headers.find((h) => h.key === key)?.value;
+    const asked = value("Accept-CH").split(",").map((s) => s.trim());
+    expect(asked).toEqual(["ECT", "RTT", "Downlink", "Save-Data"]);
+    for (const hint of asked) expect(value("Permissions-Policy")).toContain(`ch-${hint.toLowerCase()}=(self "https://csarko.sh")`);
   });
 
   it("is accepted by the engine's reader for the owner of /dayhike and the root, and not without the root", () => {
@@ -73,13 +84,16 @@ describe("site.rules.json", () => {
     ],
   };
 
-  it("merged into the present live config gives the same seven rules back (redirects: the path's two, then the root's)", () => {
+  it("merged into the present live config gives the same seven rules back (redirects: the path's two, then the root's), and the hints' headers after them", () => {
     const merged = mergeConfig(LIVE, loadRules(RULES_FILE, OWNER), OWNER);
-    expect(merged.headers).toEqual(LIVE.headers);
+    expect(merged.headers.slice(0, 2)).toEqual(LIVE.headers);
+    expect(merged.headers[2].glob).toBe("/dayhike/**");
+    expect(Object.keys(merged.headers[2].headers).sort()).toEqual(["Accept-CH", "Permissions-Policy"]);
+    expect(merged.headers).toHaveLength(3);
     expect(merged.rewrites).toEqual(LIVE.rewrites);
-    // The paths' rules come before the root's: `/` moves from first to last, the only difference from live.
+    // The paths' rules come before the root's: `/` moves from first to last, the redirects' only difference from live.
     expect(merged.redirects).toEqual([LIVE.redirects[1], LIVE.redirects[2], LIVE.redirects[0]]);
-    expect(merged.headers.length + merged.rewrites.length + merged.redirects.length).toBe(7);
+    expect(merged.headers.length + merged.rewrites.length + merged.redirects.length).toBe(8);
     // Deploying the same rules twice gives the same config.
     expect(mergeConfig(merged, loadRules(RULES_FILE, OWNER), OWNER)).toEqual(merged);
   });
@@ -100,7 +114,8 @@ describe("site.rules.json", () => {
     // Kept rules first, then Day Hike's own in the file's order: the other game's, Day Hike's, the catch-all.
     expect(merged.rewrites).toEqual([cape.rewrites[0], LIVE.rewrites[0], LIVE.rewrites[1]]);
     expect(merged.rewrites.at(-1)).toEqual({ glob: "**", path: "/index.html" });
-    // A path's header comes after the root's `**`, so it overrides it.
-    expect(merged.headers).toEqual([LIVE.headers[0], cape.headers[0], LIVE.headers[1]]);
+    // A path's header comes after the root's `**`, so it overrides it; Day Hike's two in the file's order.
+    expect(merged.headers.slice(0, 3)).toEqual([LIVE.headers[0], cape.headers[0], LIVE.headers[1]]);
+    expect(merged.headers.map((r) => r.glob)).toEqual(["**", "/capesorrow/assets/**", "/dayhike/assets/**", "/dayhike/**"]);
   });
 });

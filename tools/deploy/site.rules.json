@@ -16,6 +16,13 @@
     {
       "source": "/dayhike/assets/**",
       "headers": [{ "key": "Cache-Control", "value": "public, max-age=31536000, immutable" }]
+    },
+    {
+      "source": "/dayhike/**",
+      "headers": [
+        { "key": "Accept-CH", "value": "ECT, RTT, Downlink, Save-Data" },
+        { "key": "Permissions-Policy", "value": "ch-ect=(self \"https://csarko.sh\"), ch-rtt=(self \"https://csarko.sh\"), ch-downlink=(self \"https://csarko.sh\"), ch-save-data=(self \"https://csarko.sh\")" }
+      ]
     }
   ]
 }

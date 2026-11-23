@@ -75,6 +75,14 @@ async function verify() {
   // a canonical on the page, a robots.txt at the root naming the game's sitemap, and that sitemap.
   check(html.includes('<meta name="description"'), 'index.html carries a description', 'no description meta');
   check(html.includes(`<link rel="canonical" href="${siteUrl}/"`), `index.html is canonical at ${siteUrl}/`, 'no or another canonical');
+  // The connection hints for csarko.sh's collector, which the page's beacon reaches cross-origin
+  // (tools/deploy/site.rules.json): asked for, and delegated to that origin.
+  check(
+    (index.headers.get('accept-ch') ?? '').includes('ECT') &&
+      (index.headers.get('permissions-policy') ?? '').includes('ch-ect=(self "https://csarko.sh")'),
+    'index.html asks for the connection hints and delegates them to csarko.sh',
+    `accept-ch: ${index.headers.get('accept-ch')}, permissions-policy: ${index.headers.get('permissions-policy')}`,
+  );
   const robots = await reach(`${siteOrigin}/robots.txt`);
   const robotsText = await robots.text();
   check(
