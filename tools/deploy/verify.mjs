@@ -71,6 +71,25 @@ async function verify() {
     `status ${root.status}, location ${root.headers.get('location')}`,
   );
 
+  // 2b'. What search engines read (tools/deploy/lib/site.mjs, client/index.html): a description and
+  // a canonical on the page, a robots.txt at the root naming the game's sitemap, and that sitemap.
+  check(html.includes('<meta name="description"'), 'index.html carries a description', 'no description meta');
+  check(html.includes(`<link rel="canonical" href="${siteUrl}/"`), `index.html is canonical at ${siteUrl}/`, 'no or another canonical');
+  const robots = await reach(`${siteOrigin}/robots.txt`);
+  const robotsText = await robots.text();
+  check(
+    robots.status === 200 && robotsText.includes(`Sitemap: ${siteUrl}/sitemap.xml`),
+    `${siteOrigin}/robots.txt names ${siteUrl}/sitemap.xml`,
+    `status ${robots.status}, body ${robotsText.slice(0, 80)}`,
+  );
+  const sitemap = await reach(`${siteUrl}/sitemap.xml`);
+  const sitemapText = await sitemap.text();
+  check(
+    sitemap.status === 200 && sitemapText.includes('<urlset') && sitemapText.includes(`<loc>${siteUrl}/</loc>`),
+    `${siteUrl}/sitemap.xml lists the game`,
+    `status ${sitemap.status}, body ${sitemapText.slice(0, 80)}`,
+  );
+
   // 2c. An old-host link and a stray path on the new host both serve the
   // redirect page, which carries the game's base URL and the list of games.
   for (const target of [`https://${legacyHost}/game/3f2504e0-4f89-41d3-9a0c-0305e82c3301?cmd=x`, `${siteOrigin}/not-a-page`]) {
