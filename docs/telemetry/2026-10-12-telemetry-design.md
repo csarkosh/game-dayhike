@@ -91,6 +91,7 @@ Every row carries the envelope the page sent:
 | `wd` | True when `navigator.webdriver` is: a robot drives the page. |
 | `tester` | True when `?telemetry=tester` was ever given to this browser (§5), so the queries can leave a tester's sessions out. |
 | `gpu`, `adapter`, `cores`, `mem`, `mobile` | The GPU's signals, once read. |
+| `heapLimit` | The most megabytes the browser lets the page's JS heap grow to (`performance.memory`), where the browser says *(from engine v0.2.11, 2026-11-24)*. |
 
 the context the page copies onto each event as it is queued (`telemetry.context`), so a
 row names a match or a lobby only while one was running:
@@ -125,7 +126,7 @@ The events, in the order a session makes them:
 | `start_fail` | the laps so far, `msg` | it did not |
 | `turned_away` | `reason`: `no-webgpu`, `no-adapter`, `software`, `short`; `short`, what the adapter is short of, for that reason | the load check's verdict is that this browser and GPU cannot play (`game/loadCheck.ts`): once a page, sent once the GPU's signals are in, so the row carries `gpu` and `adapter`; the visitor sees the page for those turned away and no hike is started. A warning |
 | `ready` | `ms` | the world ready to be looked at, from the launch |
-| `match_start` | `role`, `party`, `lobby` | the host session, or a follower's once connected |
+| `match_start` | `role`, `party`, `lobby`, and what the page holds (`heap`, `heapTotal`, `gpuBuf`, `gpuTex`: below) | the host session, or a follower's once connected |
 | `act` | `act`: wet, dusk, mist; `p`; `tick` | the climb's ratchet passed the mark (`sim/acts.ts`) |
 | `phase` | `phase`: scene, chase; `p`; `tick` | the host's phase flipped |
 | `pos` | `tick`, `x`, `z`, `yaw`, `p`, `hp`, `lamp`, `sprint`, `off`, `lens`, `near`, `stare` | every 120 ticks while the player moved (§9) |
@@ -133,7 +134,7 @@ The events, in the order a session makes them:
 | `hollow_seen`, `poster`, `pause`, `resume`, `tier_change`, `intro`, `cmd` | what happened and what was chosen (§9) | once each, as it happens |
 | `death` | `tick`, `p`, `phase`, `cause`, `near`, `x`, `z` | this player died: the Hollow's reach is the one cause |
 | `outcome` | `result`, `self`, `alive`, `players`, `tick`, `p` | the match ended |
-| `hb` | `fps`, `worst`, `stalls`, `rtt`, `pe`, `p`, `dropped`, `failed` | every flush while a match runs |
+| `hb` | `fps`, `worst`, `stalls`, `rtt`, `pe`, `p`, `dropped`, `failed`, and what the page holds *(from engine v0.2.11, 2026-11-24)*: `heap` and `heapTotal`, the megabytes of JS heap the page uses and has reserved (rounded by the browser, which may hold a reading for minutes; the page's own thread, not its workers), and `gpuBuf` and `gpuTex`, the megabytes its WebGPU device was asked to hold in buffers and in textures (what the page asked for: a browser's GPU process holds about twice that). Each is left out where it is not known. `memory.sql` reads them. | every flush while a match runs |
 | `session_end`, `host_session_end` | `msg` or `kind`; `why`, `losses`, `recent` where the hike's lost devices ended it | the session ended short of an outcome |
 | `connect_fail`, `reconnect` | `msg` | a follower's handshake failed, or its channel dropped |
 | `tier_fallback`, `governor_drop`, `engine_failed`, `webgpu_start_failed` | the reason | the graphics ladders |
