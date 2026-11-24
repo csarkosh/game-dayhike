@@ -10,7 +10,7 @@
   },
   "dependencies": {
     "@babylonjs/lite": "github:csarkosh/babylon-lite#v1.39.3-dayhike.9",
-    "@csarkosh/engine": "https://github.com/csarkosh/engine/releases/download/v0.2.4/csarkosh-engine-0.2.4.tgz",
+    "@csarkosh/engine": "https://github.com/csarkosh/engine/releases/download/v0.2.11/csarkosh-engine-0.2.11.tgz",
     "d3-geo": "3.1.1",
     "topojson-client": "3.1.0",
     "world-atlas": "2.0.2"
