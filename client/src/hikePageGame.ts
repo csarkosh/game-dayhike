@@ -14,7 +14,7 @@ import type { PlayerState, WorldState } from "./sim/types.js";
 import { createWorld, type World } from "./sim/world.js";
 import { titleStillUrl } from "./game/dayhikeAssets.js";
 import { creditsEntries } from "./game/hikeCredits.js";
-import { startHikeWorldWorker } from "./game/hikeWorldWorker.js";
+import { HIKE_WORLD_WORKER_SCRIPT, startHikeWorldWorker } from "./game/hikeWorldWorker.js";
 import { createHud } from "./game/hud.js";
 import { runLiteSceneRoute } from "./game/lite/sceneRoute.js";
 import { HIKE_GAME } from "./hikeGame.js";
@@ -37,6 +37,7 @@ export const HIKE_PAGE: PageGame<World, WorldState, PlayerState, Renderer, HikeA
   statusLine: (container: HTMLElement) => createHud(container),
   /** The worker that makes a hike's world (`world.worker.ts`). */
   worldWorker: startHikeWorldWorker,
+  workerScripts: [HIKE_WORLD_WORKER_SCRIPT],
   /** The staged intro and title, a frame at a time for their recording. */
   scene: runLiteSceneRoute,
   /** What the tier check draws as it measures the hike's own renderer: an empty world nothing steps. */
