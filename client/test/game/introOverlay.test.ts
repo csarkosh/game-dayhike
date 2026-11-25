@@ -320,9 +320,12 @@ describe("the intro overlay", () => {
     // Four frames of the film's time, one frame presented: three were never shown.
     present(15 / 24, 13);
     expect(watched.overlay.frames()?.missed).toBe(3);
-    // The watch ends with the film.
+    // The watch ends with the film, and what it last read is still told: the `intro` row reads it once the film has stopped.
+    const last = watched.overlay.frames();
     watched.overlay.stop();
     expect(cancelled).toBe(1);
+    expect(last?.missed).toBe(3);
+    expect(watched.overlay.frames()).toEqual(last);
     watched.overlay.dispose();
   });
 

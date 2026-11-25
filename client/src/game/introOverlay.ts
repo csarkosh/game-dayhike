@@ -240,9 +240,12 @@ export function createIntroOverlay(
   }
 
   let stopped = false;
+  let ended: FilmFrames | null = null;
   function stop(): void {
     if (stopped) return;
     stopped = true;
+    // The film's last reading is kept: the element is emptied below, and its time with it.
+    ended = frames.read();
     frames.stop();
     video.pause();
     video.removeAttribute("src");
@@ -266,7 +269,7 @@ export function createIntroOverlay(
       const playing = !stopped && !video.paused && !video.ended && !video.error && !whole;
       return { playing, ahead };
     },
-    frames: () => frames.read(),
+    frames: () => (stopped ? ended : frames.read()),
     ready: () => playback.ready(),
     render(now = deps.now()) {
       if (stopped) return;
