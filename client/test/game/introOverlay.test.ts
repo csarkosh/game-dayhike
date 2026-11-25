@@ -32,11 +32,12 @@ class StandInVideo extends StandInElement {
   }
 }
 
-function rig(over: { captions?: Caption[]; muted?: boolean; sound?: () => boolean; warmed?: string } = {}) {
+function rig(over: { captions?: Caption[]; muted?: boolean; sound?: () => boolean; warmed?: string; prepare?: (video: StandInVideo) => void } = {}) {
   const doc = installStandInDom();
   const container = doc.createElement("div");
   doc.body.append(container);
   const video = new StandInVideo(doc);
+  over.prepare?.(video);
   // A film handed over already loading (`filmHead.ts`): it has its file before the overlay is made.
   if (over.warmed !== undefined) video.setAttribute("src", over.warmed);
   let srcSets = 0;
@@ -283,6 +284,46 @@ describe("the intro overlay", () => {
     stopped.overlay.stop();
     expect(stopped.overlay.film().playing).toBe(false);
     stopped.overlay.dispose();
+  });
+
+  it("counts the film's frames the screen never got, for the hike's load under it to be paced by", () => {
+    // A browser that tells nothing of a film's frames: null, and the load under it keeps to its floor.
+    const untold = rig();
+    expect(untold.overlay.frames()).toBeNull();
+    untold.overlay.dispose();
+    // One that calls back for each frame it presents: the frames the film's time moved past unshown are counted.
+    let call: ((now: number, frame: { mediaTime: number; presentedFrames: number }) => void) | null = null;
+    let cancelled = 0;
+    const watched = rig({
+      prepare: (video) =>
+        void Object.assign(video, {
+          requestVideoFrameCallback: (next: typeof call) => {
+            call = next;
+            return 1;
+          },
+          cancelVideoFrameCallback: () => {
+            cancelled++;
+          },
+        }),
+    });
+    const present = (time: number, presented: number): void => {
+      watched.video.currentTime = time;
+      const next = call;
+      call = null;
+      next?.(0, { mediaTime: time, presentedFrames: presented });
+    };
+    // Nothing is known of a film no frame of which has been called back for.
+    expect(watched.overlay.frames()).toBeNull();
+    watched.video.ranges = [[0, 12]];
+    for (let n = 0; n < 12; n++) present(n / 24, n + 1);
+    expect(watched.overlay.frames()).toEqual({ playing: true, missed: 0, clock: 11 / 24, fed: true });
+    // Four frames of the film's time, one frame presented: three were never shown.
+    present(15 / 24, 13);
+    expect(watched.overlay.frames()?.missed).toBe(3);
+    // The watch ends with the film.
+    watched.overlay.stop();
+    expect(cancelled).toBe(1);
+    watched.overlay.dispose();
   });
 
 });

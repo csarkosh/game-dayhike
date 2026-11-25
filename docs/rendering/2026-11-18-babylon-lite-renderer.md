@@ -109,6 +109,32 @@ With the caches warm, as built: no step of the clock, no skip, no frame dropped,
 
 What is left on a cold load: the film still waits two or three times a load with 12 to 17 s buffered, so not for data. One traced run puts the waits beside tasks of 0.3 to 0.7 s that the browser's GPU process spends on the page's raster work, not on pipelines; that reading rests on one trace. The page's own stops over 0.25 s are the renderer's creation (0.3 to 0.4 s), the first builds' slices, the parse of the models and the trailhead board's drawing. One cold run in each set, the first after the rig was started, held a stop of 2.8 to 5 s in which the page ran nothing; it is not explained.
 
+### The start, made ahead and paced by the film
+
+Two things held a start back after the work above, and neither was the machine. Counted on the build before this one, Play clicked on the landing page (headless Chrome on a MacBook Air, medium, the site served from the same machine, so no link to wait for):
+
+- **Nothing loaded for the first seconds.** A hike's build waits for its world, which the world's worker makes off the page's thread, and the worker was started at Play: 1.5 to 2 s there (5 to 7 s on the rented rig's recordings of 2026-11-18) with the film playing and no file asked for, no pipeline made. No download starts before the build does.
+- **Then the load ran at a fixed pace.** Under the film the hike was drawn four times a second, each draw asking for four pipelines at most, and the world is in only once a drawn frame has asked for nothing: about 80 pipelines took 3.1 to 3.8 s to ask for, in a stretch where no frame of the page ran over 50 ms.
+
+As built:
+
+- **The next hike's world is made while the landing page stands** (`engine/src/game/worldAhead.ts`). Once the page has loaded and the load check has said the visitor can play, the page makes the token the next Play will use and starts that world's worker; where the tier a start would be given needs no check (`tierAhead`), the hike's first scene at that tier is asked of the worker too. Play starts its hike at that token and takes the world as made. Nothing is fetched for it but the worker's own script, and nothing is made for a follower (the host's Play names their hike) or for a visitor turned away. A hike at any other address (an invitation, a link, an address edited) ends what was made ahead and starts its own worker, as before.
+- **The load under the film runs at the pace the film affords** (`engine/src/game/loadPace.ts`, `filmFrames.ts`). The film's own frames are counted as the screen got them: a frame of its time that was never presented is a frame missed, and a picture standing now (the film's time a quarter second past the last frame shown) is counted as it stands. The pace is a level from the floor (the old fixed pace: a draw every 250 ms, four asks a draw) to the top (a draw every frame, one ask a draw, 60 asks a second). It climbs an eighth each quarter second the film kept every frame and its time, so two seconds from floor to top; it halves when the film misses a frame or its time stands, rests a second, and is then held under three quarters of the level the trouble came at, for 10 s the first time and twice as long each time after, a minute at most. A stop of the page's thread holds the level where it is. What is not the machine's doing moves nothing: a film waiting for its file with no data ahead, a film paused with its tab, trouble at the floor itself. A film nothing can be read of (a browser that counts no frames, a film no frame of which has been shown) leaves the load at the floor, so no machine is paced faster than before unless its film is seen to be whole.
+
+Play to `hold to skip`, the same machine, the two builds turn about (seconds; each cold run on an empty profile, each warm run the same browser's second start):
+
+| | before | as built |
+|---|---|---|
+| landing page stood 4 s, cold | 5.4, 6.4 | 2.6, 2.4 |
+| landing page stood 4 s, warm | 6.0, 5.8 | 2.3, 2.5 |
+| landing page stood 1 s, cold | | 3.5 |
+| Play clicked at once, cold | 7.2 | 4.5 |
+| link held to 15 Mbit/s, landing page stood 4 s, cold | 57.7 | 56.8 |
+
+In every run of both builds the film dropped no frame and never waited, and the pace reached the top and stayed. So these runs show the gain and not the back-off: no run here made the film miss a frame, and the law's cuts are held by its tests alone. On a slow link the files are the whole wait, and neither change moves them: a hike's 87 MB is still asked for only after Play.
+
+Not measured: the rented rig, a phone, any machine whose film does miss frames under the climb. This machine is not a timed one (other work runs on it), so the table is for the order of the stages and the size of the change, not for a budget.
+
 ### The long session
 
 This build, medium, 22.8 minutes of walking in eight legs, beside other pages. No growth in the second half.
