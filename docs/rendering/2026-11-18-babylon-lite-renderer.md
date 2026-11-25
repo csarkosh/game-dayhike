@@ -135,6 +135,10 @@ In every run of both builds the film dropped no frame and never waited, and the 
 
 Not measured: the rented rig, a phone, any machine whose film does miss frames under the climb. This machine is not a timed one (other work runs on it), so the table is for the order of the stages and the size of the change, not for a budget.
 
+**Measured on players' machines.** A start is timed by its own rows (`docs/telemetry/2026-10-12-telemetry-design.md`): `ready` carries the wait from Play, when the ground's files were in, when the terrain stood, when the first model was asked for and the last was in, and what came over the network against what the cache answered; `pace` says how the load was paced under the film and how many of the film's frames were missed; `intro` says what the film lost in all. `tools/telemetry/queries/start.sql` reads them a build at a time. Over the thirty days before this change, nine sessions of players pressed Play: the six that reached ready waited a median of 15 s (the longest 43 s), and three left first, after a median of 11 s.
+
+**Found on the first preview, not yet changed.** Over a real link with an empty cache the bar stood at "building the world 2 of 11" for 3.4 s. The world was made, but the terrain waits for the renderer, and the renderer waited 1.7 s for the ground's images and then 1.6 s while the scene's code was fetched a file after another (a dozen small files, each naming the next). The models, 62 MB and most of that start's 25 s, were not asked for until the renderer stood, 3.4 s after Play.
+
 ### The long session
 
 This build, medium, 22.8 minutes of walking in eight legs, beside other pages. No growth in the second half.

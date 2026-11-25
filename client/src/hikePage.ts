@@ -371,7 +371,9 @@ export function createHikePage(h: PageHost): PageSide {
         );
         run.launched = (reason) => {
           // Watched to its end, cut early, or failed: which, for the timeline.
-          h.telemetry.event("intro", { reason });
+          // And what the film lost: its frames the screen never showed, and how far it had played.
+          const film = run.overlay.frames();
+          h.telemetry.event("intro", { reason, ...(film === null ? {} : { missed: film.missed, filmS: Math.round(film.clock) }) });
           if (reason === "error") release();
           else void handle.engage().then(release);
         };
