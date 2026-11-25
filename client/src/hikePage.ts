@@ -272,9 +272,11 @@ export function createHikePage(h: PageHost): PageSide {
   function showLanding(container: HTMLDivElement, route: Route, shell: LandingShell): { dispose(): void } {
     endIntro(pendingIntro);
     // The still goes in first so the UI paints above it; the loop behind it
-    // fetches nothing until the page has loaded. Nothing of the game is built
-    // before Play, and of it only the intro film's head is fetched, so the
-    // film starts at the tap.
+    // fetches nothing until the page has loaded. Of the game, only the intro
+    // film's head is fetched before Play, so the film starts at the tap; and
+    // the page's shell makes the next hike's world meanwhile, off the page's
+    // thread and with nothing fetched for it but the worker's own script
+    // (the engine's `worldAhead.ts`), so Play starts a hike whose world stands.
     titleLoop = createTitleLoop(container, titleStillUrl(), titleVideoUrl(), titleLoopEnv());
     warmFilmHead();
     landingNotice = takeNotice(pageSessionStorage(), Date.now());
@@ -356,7 +358,11 @@ export function createHikePage(h: PageHost): PageSide {
         // pointer on the gesture it was made with and lifts the cover once it has
         // it, so no pause menu shows between; a video that failed lets the hike
         // start as one with no intro does. Ready lets the intro be skipped.
-        const release = handle.cover();
+        // The cover is handed the film's frames: the hike under it is drawn, and
+        // its pipelines asked for, as fast as the film keeps its own
+        // (`loadPace.ts`), so the world is ready, and the skip offered, as soon
+        // as this machine can make it without the film's picture standing.
+        const release = handle.cover(() => run.overlay.frames());
         // A start that fails while the world is made is the start's failure
         // (`failed` ends the intro); nothing is left for ready to say.
         handle.ready.then(
@@ -365,7 +371,9 @@ export function createHikePage(h: PageHost): PageSide {
         );
         run.launched = (reason) => {
           // Watched to its end, cut early, or failed: which, for the timeline.
-          h.telemetry.event("intro", { reason });
+          // And what the film lost: its frames the screen never showed, and how far it had played.
+          const film = run.overlay.frames();
+          h.telemetry.event("intro", { reason, ...(film === null ? {} : { missed: film.missed, filmS: Math.round(film.clock) }) });
           if (reason === "error") release();
           else void handle.engage().then(release);
         };

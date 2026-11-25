@@ -24,6 +24,7 @@ import {
   readStallMiss,
   runProbe,
   startupTier,
+  tierAhead,
   qualityLine,
   launchLine,
   LOADING_LINE,
@@ -429,6 +430,33 @@ describe("startupTier", () => {
     expect(chosen.lines).toEqual([]);
     const overridden = fakes(() => reading("high", 16.7));
     expect(await startupTier(SAFARI, page("?tier=medium", "low"), overridden.deps)).toEqual({ tier: "medium", source: "override", cls: "apple-unknown" });
+  });
+
+  it("tells ahead of a start the tier it will be given where no probe decides it, and nothing where one would", async () => {
+    // A named class, a choice, the address's tier over a choice and over a probe asked for: no probe, and the
+    // tier told ahead is the one the start then comes to.
+    for (const [signals, opts] of [
+      [M4, page()],
+      [SAFARI, page("", "low")],
+      [SAFARI, page("?probe=high", "high")],
+      [SAFARI, page("?tier=medium", "low")],
+      [SAFARI, page("?tier=low&probe=high")],
+    ] as const) {
+      const t = fakes(() => reading("high", 16.7));
+      const ahead = tierAhead(signals, opts, t.deps);
+      expect(ahead, opts.search).toBe((await startupTier(signals, opts, t.deps)).tier);
+      expect(t.steps, opts.search).toEqual([]);
+    }
+    // A probe is due (a probed class with no verdict, or `?probe=`): nothing is told, nothing run or written.
+    const probed = fakes((tier) => reading(tier, tier === "high" ? 23.96 : 16.7));
+    expect(tierAhead(SAFARI, page(), probed.deps)).toBeNull();
+    expect(tierAhead(M4, page("?probe=high"), probed.deps)).toBeNull();
+    expect(probed.steps).toEqual([]);
+    expect(probed.screens()).toBe(0);
+    expect(probed.storage.length).toBe(0);
+    // Once a probe has left its verdict, the next start needs none, and its tier is told ahead.
+    expect((await startupTier(SAFARI, page(), probed.deps)).tier).toBe("medium");
+    expect(tierAhead(SAFARI, page(), probed.deps)).toBe("medium");
   });
 
   it("never probes where the display or the browser draws below 60 Hz, and writes nothing", async () => {

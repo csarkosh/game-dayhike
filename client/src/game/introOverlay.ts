@@ -11,6 +11,7 @@
 import { createIntroPlayback, type IntroPlayback } from "./introPlayback.js";
 import { createLoadProgress, type LoadProgress } from "@csarkosh/engine/game/loadProgress";
 import type { FilmState } from "@csarkosh/engine/game/downloadTurns";
+import { watchFilmFrames, type FilmFrames } from "@csarkosh/engine/game/filmFrames";
 
 import type { Caption } from "./scene/timeline.js";
 export type { Caption } from "./scene/timeline.js";
@@ -37,6 +38,13 @@ export type IntroOverlay = {
    * failed, stopped or wholly buffered), and its seconds buffered ahead.
    */
   film(): FilmState;
+  /**
+   * The film's frames as the screen got them (`filmFrames.ts`): the frames
+   * it missed so far, its time, and whether it plays. What the hike under it
+   * paces its load by (`loadPace.ts`); null where the browser tells nothing
+   * of a film's frames.
+   */
+  frames(): FilmFrames | null;
   /** The world is ready: `hold to skip` may show, and the held last frame may be stepped out of. */
   ready(): void;
   /** Draws the models' state; `now` in ms on the page's clock, as an animation frame gives it. */
@@ -140,6 +148,8 @@ export function createIntroOverlay(
     video.muted = (input.muted === true && !gestured) || input.sound?.() === false;
   };
   drawSound();
+  // The film's frames, counted from here: what the hike's load under it is paced by.
+  const frames = watchFilmFrames(video);
   const caption = document.createElement("div");
   caption.className = "intro-caption";
   const bar = document.createElement("div");
@@ -230,9 +240,13 @@ export function createIntroOverlay(
   }
 
   let stopped = false;
+  let ended: FilmFrames | null = null;
   function stop(): void {
     if (stopped) return;
     stopped = true;
+    // The film's last reading is kept: the element is emptied below, and its time with it.
+    ended = frames.read();
+    frames.stop();
     video.pause();
     video.removeAttribute("src");
     video.load();
@@ -255,6 +269,7 @@ export function createIntroOverlay(
       const playing = !stopped && !video.paused && !video.ended && !video.error && !whole;
       return { playing, ahead };
     },
+    frames: () => (stopped ? ended : frames.read()),
     ready: () => playback.ready(),
     render(now = deps.now()) {
       if (stopped) return;
