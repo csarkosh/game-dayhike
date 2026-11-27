@@ -53,24 +53,25 @@ function describeMachine(rows: Row[]): string {
   const cores = present(biggest.cores);
   const mem = present(biggest.mem);
   const oses = [...new Set(rows.flatMap((r) => String(r.oses ?? "").split(",")).map((o) => osName(o.trim())).filter((o) => o !== ""))];
-  const memory = mem === null || mem <= 0 ? `${UNKNOWN} memory` : mem >= 8 ? "8 GB or more" : `${mem} GB`;
-  const core = cores === null || cores <= 0 ? `${UNKNOWN} cores` : `${cores} cores`;
+  const memory = mem === null || mem <= 0 ? `memory ${UNKNOWN}` : mem >= 8 ? "8 GB or more" : `${mem} GB`;
+  const core = cores === null || cores <= 0 ? `cores ${UNKNOWN}` : `${cores} cores`;
   return `${core}, ${memory}${oses.length === 0 ? "" : `; ${oses.join(", ")}`}`;
 }
 
 export function machineLines(rows: Row[]): MachineLine[] {
-  const by = new Map<string, { name: string; rows: Row[]; players: Partial<Record<TierName, number>>; held: Partial<Record<TierName, Held>> }>();
+  const by = new Map<string, { name: string; rows: Row[]; players: number; held: Partial<Record<TierName, Held>> }>();
   for (const row of rows) {
     const tier = row.tier;
     if (!isTier(tier)) continue;
     const phone = row.mobile === true || row.mobile === "true";
     const base = gpuName(String(row.gpu ?? ""));
     const name = `${base === "" ? "Not shared by the browser" : base}${phone ? " (phone)" : ""}`;
-    const line = by.get(name) ?? { name, rows: [], players: {}, held: {} };
+    const line = by.get(name) ?? { name, rows: [], players: 0, held: {} };
     by.set(name, line);
     line.rows.push(row);
-    // Players across the merged rows of a tier are not known to be distinct: the most of them stands.
-    line.players[tier] = Math.max(line.players[tier] ?? 0, count(row.players));
+    // `chip_players` counts a chip's players across every tier. Rows merged under one name are not known to
+    // share players: the most of them stands (a row with no `chip_players` falls back to its tier's players).
+    line.players = Math.max(line.players, present(row.chip_players) ?? count(row.players));
     const held = heldOf(row, tier);
     const prior = line.held[tier];
     line.held[tier] = prior === undefined ? held : merge(prior, held);
@@ -78,7 +79,7 @@ export function machineLines(rows: Row[]): MachineLine[] {
   return [...by.values()]
     .map((l) => ({
       name: l.name,
-      players: Math.max(0, ...Object.values(l.players)),
+      players: l.players,
       cells: { high: l.held.high?.cell ?? null, medium: l.held.medium?.cell ?? null, low: l.held.low?.cell ?? null },
       title: describeMachine(l.rows),
     }))
@@ -93,6 +94,7 @@ export function cellText(cell: Cell): string {
 
 function cellNode(cell: Cell): Node {
   if (cell === null) return el("span", { class: "faint" }, cellText(cell));
+  if (cell.fps === null) return el("span", { class: "faint", title: cell.title }, cellText(cell));
   return el("span", { class: `status ${cell.verdict ?? ""}`.trim(), title: cell.title }, cellText(cell));
 }
 

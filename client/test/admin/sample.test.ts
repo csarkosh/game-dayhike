@@ -112,6 +112,11 @@ describe("the sample visitor's profile", () => {
     const levels = new Set(problemsOf(rows).map((p) => p.level));
     expect(levels).toEqual(new Set(["error", "warning"]));
     expect(machinesOf(rows).some((m) => m.gpu === "not shared by the browser")).toBe(true);
+    // The start-up fallback is written before its load, as the engine does; no tier "high" run is counted for the session it moved.
+    const sid = rows.find((r) => r.n === "tier_fallback")?.sid;
+    const own = rows.filter((r) => r.sid === sid).sort((a, b) => String(a.timestamp).localeCompare(String(b.timestamp))).map((r) => r.n);
+    expect(own.indexOf("tier_fallback")).toBeLessThan(own.indexOf("load"));
+    expect(howItRan(rows.filter((r) => r.sid === sid)).runs.map((r) => r.tier)).toEqual(["medium"]);
   });
 });
 
@@ -122,5 +127,7 @@ describe("the sample's machines", () => {
     expect(new Set(rows.map((r) => r.tier))).toEqual(new Set(["high", "medium", "low"]));
     expect(rows.some((r) => r.gpu === "")).toBe(true);
     expect(rows.some((r) => r.mobile === true)).toBe(true);
+    // A chip's players over every tier is at least its largest tier's.
+    expect(rows.every((r) => Number(r.chip_players) >= Number(r.players))).toBe(true);
   });
 });

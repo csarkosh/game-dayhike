@@ -449,9 +449,12 @@ way everywhere.
   share reads "not shared by the browser" (Safari shares no graphics, memory or cores), never a
   blank or a zero.
 - **How it ran.** A sentence ("Ran smoothly on Medium; was choppy on High.") over one row a tier:
-  whether the tier was chosen or put there by auto, the sessions on it, its frame rate, the worst
-  frame, the load, the memory peak against its limit. Each heartbeat counts under the tier in
-  force when it was sent: the load's tier, replaced by a fallback's built tier and then by each
+  whether the tier was chosen or put there by auto ("auto in 7 of 10" where the sessions were a
+  mix), the sessions on it, its frame rate, the worst frame, the load, the page and graphics
+  memory peaks (the page's limit is in the machine block). The sentence above it speaks of frame
+  rate alone. Each heartbeat counts under the tier in force when it was sent: the load's tier, and
+  where the engine's start-up fallback came before the load for that same tier, the tier it built
+  instead (the load row names the tier it attempted); then a later fallback's built tier and each
   tier change, in order. A session that changed tier counts under each tier it ran on.
 - **Problems.** The errors and warnings of the player's sessions, grouped by level, kind and the
   message's first hundred characters, with how many times and the first session each came in.
@@ -469,7 +472,9 @@ how many the auto choice put there; the line's title says the cores, memory and 
 often seen. The chip's name is trimmed of a `(0x...)` device id and of anything from Direct3D,
 OpenGL or Vulkan on, so one chip's driver strings meet. The twelve chips with the most players are
 shown, the rest in a fold. The query applies the same "real play" filter as the others and reads
-the tier in force by the rule above, so the card and a player's profile agree. It is what to read
+the tier in force by the rule above, so the card and a player's profile agree, and a start-up
+fallback counts under the tier that was built, never the one that failed. A line's players are
+the chip's players over every tier. It is what to read
 when choosing a tier's target: a chip whose High cell is poor and whose Medium cell is smooth says
 where the line belongs.
 

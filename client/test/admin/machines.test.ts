@@ -14,6 +14,14 @@ describe("machineLines", () => {
     expect(lines[0]!.cells.medium?.title).toBe("12 sessions: 9 smooth, 2 choppy, 1 poor; median load 6.1 s; 1 put here by auto");
   });
 
+  it("counts a line's players over every tier from chip_players, not the largest tier", () => {
+    const lines = machineLines([row({ tier: "high", players: 5, chip_players: "7" }), row({ tier: "medium", players: 4, chip_players: 7 })]);
+    expect(lines[0]!.players).toBe(7);
+    // Rows merged under one name: the most of their chip counts stands.
+    const merged = machineLines([row({ gpu: "ANGLE (NVIDIA, NVIDIA GeForce RTX 3060", chip_players: 3 }), row({ gpu: "ANGLE (NVIDIA, NVIDIA GeForce RTX 3060 Ti", chip_players: 2 })]);
+    expect(merged.map((l) => l.players).sort()).toEqual([2, 3]);
+  });
+
   it("words a cell", () => {
     expect(cellText(null)).toBe("not played");
     expect(cellText({ tier: "high", sessions: 2, fps: null, verdict: null, title: "" })).toBe("no frames measured");
@@ -42,6 +50,6 @@ describe("machineLines", () => {
     const lines = machineLines([row({ gpu: "A", players: 1, mem: 4 }), row({ gpu: "B", players: 9, cores: 0, mem: 0, oses: "" })]);
     expect(lines.map((l) => l.name)).toEqual(["B", "A"]);
     expect(lines[1]!.title).toBe("8 cores, 4 GB; macOS");
-    expect(lines[0]!.title).toBe("not shared by the browser cores, not shared by the browser memory");
+    expect(lines[0]!.title).toBe("cores not shared by the browser, memory not shared by the browser");
   });
 });

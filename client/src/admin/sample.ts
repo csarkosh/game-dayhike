@@ -50,8 +50,10 @@ function funnel(): Row[] {
 
 /** The machines query's rows: each chip against each tier it ran on, one masked GPU and one phone among them. */
 function machines(): Row[] {
+  // A chip's players over every tier it ran on: a player on two tiers counts once.
+  const chipPlayers: Record<string, number> = { "Apple M2|false": 14, "NVIDIA GeForce RTX 3060|false": 9, "Intel(R) UHD Graphics 620|false": 7, "|false": 4, "Apple GPU|true": 5 };
   const row = (gpu: string, mobile: boolean, tier: string, players: number, sessions: number, fps: number | null, [good, slow, bad]: [number, number, number], loadMs: number, auto: number, cores: number, mem: number, oses: string): Row => ({
-    gpu, mobile, tier, players, sessions, fps, good, slow, bad, no_frames: sessions - good - slow - bad, load_ms: loadMs, auto_sessions: auto, cores, mem, oses,
+    gpu, mobile, tier, chip_players: chipPlayers[`${gpu}|${mobile}`] ?? players, players, sessions, fps, good, slow, bad, no_frames: sessions - good - slow - bad, load_ms: loadMs, auto_sessions: auto, cores, mem, oses,
   });
   return [
     row("Apple M2", false, "high", 14, 31, 59.6, [30, 1, 0], 6_100, 28, 8, 8, "darwin-arm64"),
@@ -477,7 +479,7 @@ function session(sid: string, offsetMs = 0): Row[] {
     row(421_000, "lamp", { on: true, p: 0.31, tick: 7720, ...inMatch }),
     row(601_000, "error", { where: "game", kind: "console", msg: "WebGPU: the renderer could not be built on it; building it on WebGL2.", stack: "Error: pipeline\n    at https://games.csarko.sh/dayhike/assets/index-CJQw8Dxw.js:2:5", ...inMatch }),
     row(601_100, "engine_failed", { reason: "pipeline", ...inMatch }),
-    row(601_300, "tier_change", { from: "high", to: "medium", source: "fallback", fellBack: true, ...inMatch }),
+    row(601_300, "tier_change", { from: "high", to: "medium", source: "auto", fellBack: true, ...inMatch }),
     row(640_000, "act", { act: "mist", p: 0.4, tick: 11_600, ...inMatch }),
     ...rest,
   ];
@@ -515,7 +517,8 @@ function visitor(): Row[] {
       beat(640_000, 27, 160, 1300),
       extra(602_000, "warn", { kind: "console", msg: "WebGPU: the texture budget was exceeded.", stack: "Warning: budget\n    at https://games.csarko.sh/dayhike/assets/index-CJQw8Dxw.js:3:9" }),
     );
-    if (sid === "s41b2") out.push(extra(46_950, "tier_fallback", { attempted: "high", built: "medium" }));
+    // The engine writes a start-up fallback before the load row, which names the tier it attempted.
+    if (sid === "s41b2") out.push(extra(46_800, "tier_fallback", { attempted: "high", built: "medium" }));
     if (sid === "s1000") {
       // A browser that shares no graphics, memory or cores (Safari): the machine reads "not shared by the browser".
       for (const r of out.filter((o) => o.sid === sid)) {

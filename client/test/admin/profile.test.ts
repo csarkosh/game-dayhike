@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { howItRan, machinesOf, problemsOf, sessionTiers, sizeWords, summaryLine } from "../../src/admin/profile.js";
+import { howItRan, machinesOf, problemsOf, problemsSummary, sessionRuns, sessionTiers, sizeWords, sourceWords, summaryLine } from "../../src/admin/profile.js";
 import type { Row } from "../../src/admin/source.js";
 
 const T0 = Date.UTC(2026, 10, 20, 12, 0, 0);
@@ -43,7 +43,7 @@ describe("howItRan", () => {
     expect(ended.notes).toEqual(["High could not be built and the hike ended"]);
     expect(ended.runs).toEqual([]);
     const used = howItRan([row("tier_fallback", { attempted: "high", built: "medium" }, 0), row("hb", { fps: 60 }, 1)]);
-    expect(used.notes).toEqual(["High could not be built; Medium was used instead"]);
+    expect(used.notes).toEqual(["High could not be built once; Medium was used instead"]);
     expect(used.runs.map((r) => r.tier)).toEqual(["medium"]);
   });
 
@@ -83,9 +83,78 @@ describe("howItRan", () => {
   });
 
   it("counts a load that a fallback moved under the tier it ended on", () => {
-    const rows = [row("load", { tier: "high", source: "auto", decideMs: 1000 }, 0), row("tier_fallback", { attempted: "high", built: "medium" }, 1), row("ready", { ms: 2000 }, 2), row("hb", { fps: 60 }, 3)];
+    // As the engine writes them: the start-up fallback first, then the load, which names the tier it attempted.
+    const rows = [row("tier_fallback", { attempted: "high", built: "medium" }, 0), row("load", { tier: "high", source: "auto", decideMs: 1000 }, 1), row("ready", { ms: 2000 }, 2), row("hb", { fps: 60 }, 3)];
     const { runs } = howItRan(rows);
     expect(runs.map((r) => [r.tier, r.loadMs])).toEqual([["medium", 3000]]);
+  });
+
+  it("puts a start-up fallback's frames under the tier built, in the engine's real order", () => {
+    const rows = [
+      row("tier_fallback", { attempted: "high", built: "medium", t: 1000 }, 0),
+      row("load", { tier: "high", source: "auto", decideMs: 100, engineMs: 200, buildMs: 300, t: 1400 }, 0),
+      row("ready", { ms: 900, t: 2500 }, 1),
+      row("hb", { fps: 58, t: 5000 }, 2),
+      row("hb", { fps: 62, t: 10_000 }, 3),
+    ];
+    const ran = howItRan(rows);
+    expect(ran.runs.map((r) => [r.tier, r.sessions, r.fps, r.loadMs, r.noFrames])).toEqual([["medium", 1, 60, 1500, 0]]);
+    expect(ran.notes).toEqual(["High could not be built once; Medium was used instead"]);
+    expect(sessionRuns(rows).get("s1")?.tier).toBe("Medium");
+    // No frames: the medium session is the one with no frames, and high has no run.
+    const bare = howItRan(rows.slice(0, 3)).runs;
+    expect(bare.map((r) => [r.tier, r.noFrames])).toEqual([["medium", 1]]);
+  });
+
+  it("ends the hike where the start-up fallback built nothing", () => {
+    const rows = [row("tier_fallback", { attempted: "high", built: "none", t: 1000 }, 0), row("load", { tier: "high", source: "auto", t: 1400 }, 0), row("hb", { fps: 58 }, 1)];
+    const ran = howItRan(rows);
+    expect(ran.runs).toEqual([]);
+    expect(ran.notes).toEqual(["High could not be built and the hike ended"]);
+  });
+
+  it("still moves a later in-hike fallback's frames to the tier it built", () => {
+    const rows = [row("load", { tier: "high", source: "auto" }, 0), row("hb", { fps: 60 }, 1), row("tier_fallback", { attempted: "high", built: "low", t: 5000 }, 2), row("hb", { fps: 20 }, 3)];
+    expect(howItRan(rows).runs.map((r) => [r.tier, r.fps])).toEqual([["high", 60], ["low", 20]]);
+    expect(sessionRuns(rows).get("s1")?.tier).toBe("High then Low");
+  });
+
+  it("does not match a fallback of another tier to a load", () => {
+    const rows = [row("tier_fallback", { attempted: "medium", built: "low", t: 1000 }, 0), row("load", { tier: "high", source: "auto", t: 1400 }, 0), row("hb", { fps: 60 }, 1)];
+    expect(howItRan(rows).runs.map((r) => r.tier)).toEqual(["high"]);
+  });
+
+  it("groups the same fallback note across sessions with a count", () => {
+    const fell = (sid: string): Row[] => [row("tier_fallback", { attempted: "high", built: "medium" }, 0, sid), row("load", { tier: "high", source: "auto" }, 0, sid), row("hb", { fps: 40 }, 1, sid)];
+    expect(howItRan(["a", "b", "c"].flatMap(fell)).notes).toEqual(["High could not be built in 3 sessions; Medium was used instead"]);
+  });
+
+  it("speaks of frame rate alone in the summary", () => {
+    // Fast frames but a slow load: the run's verdict is slow, the sentence still says smooth.
+    const slowLoad = [row("load", { tier: "high", source: "auto", decideMs: 40_000 }, 0), row("ready", { ms: 1000 }, 1), row("hb", { fps: 60 }, 2)];
+    expect(howItRan(slowLoad).runs[0]?.verdict).toBe("bad");
+    expect(summaryLine(howItRan(slowLoad))).toBe("Ran smoothly on High.");
+    const none = [row("load", { tier: "low", source: "auto" }, 0)];
+    expect(summaryLine(howItRan(none))).toBe("No frames measured on Low.");
+    const mixed = [...slowLoad, row("load", { tier: "low", source: "auto" }, 0, "b")];
+    expect(summaryLine(howItRan(mixed))).toBe("Ran smoothly on High; no frames measured on Low.");
+  });
+
+  it("reads a load's own source as chosen with no heartbeat, and words a mix", () => {
+    const [run] = howItRan([row("load", { tier: "high", source: "choice" }, 0)]).runs;
+    expect(run?.chosen).toBe(true);
+    expect(sourceWords(run!)).toBe("chosen");
+    const sessions = [...Array(10).keys()].flatMap((i) => [row("load", { tier: "high", source: i < 3 ? "choice" : "auto" }, 0, `s${i}`), row("hb", { fps: 60 }, 1, `s${i}`)]);
+    const [mix] = howItRan(sessions).runs;
+    expect(mix?.chosen).toBe(false);
+    expect(sourceWords(mix!)).toBe("auto in 7 of 10");
+    expect(sourceWords(howItRan([row("load", { tier: "high", source: "auto" }, 0)]).runs[0]!)).toBe("auto");
+  });
+
+  it("counts the problems and the sessions they came from", () => {
+    const rows = [row("error", { kind: "console", msg: "x" }, 0), row("warn", { kind: "console", msg: "y" }, 1), row("warn", { kind: "console", msg: "y" }, 2, "s2"), row("hb", { fps: 60 }, 3)];
+    expect(problemsSummary(rows)).toBe("1 error and 2 warnings in 2 sessions");
+    expect(problemsSummary([row("error", { kind: "console", msg: "x" }, 0)])).toBe("1 error and 0 warnings in 1 session");
   });
 
   it("says which tiers ran smoothly and which were choppy", () => {
@@ -132,6 +201,13 @@ describe("machinesOf", () => {
   it("tells a phone from a desktop", () => {
     expect(machinesOf([row("page", { ...env, mobile: true }, 0)])[0]?.device).toBe("Phone");
     expect(machinesOf([row("page", { ...env, mobile: false }, 0)])[0]?.device).toBe("Desktop");
+  });
+
+  it("takes a session's machine from the first row that has its graphics", () => {
+    const rows = [row("page", { os: "darwin-arm64", cores: 8 }, 0), row("page", { ...env, adapter: "ok" }, 1)];
+    const [m] = machinesOf(rows);
+    expect(m?.gpu).toBe("Apple M3 Max");
+    expect(m?.adapter).toBe("WebGPU available");
   });
 
   it("keeps one machine per distinct gpu, latest first, counting sessions", () => {
@@ -191,5 +267,15 @@ describe("the system line names the browser", () => {
   it("keeps the number without an agent, and leaves the browser out with neither", () => {
     expect(system({ browser: 155 })).toBe("macOS, browser 155");
     expect(system({})).toBe("macOS");
+  });
+
+  it("names the phone browsers", () => {
+    const IPHONE = "Mozilla/5.0 (iPhone; CPU iPhone OS 18_1 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/18.1 Mobile/15E148 Safari/604.1";
+    expect(system({ os: "ios", browser: 18, ua: IPHONE.slice(0, 120) })).toBe("iOS, Safari 18");
+    expect(system({ os: "ios", browser: 18, ua: IPHONE.slice(0, 112) })).toBe("iOS, Safari 18");
+    expect(system({ os: "ios", browser: 0, ua: "Mozilla/5.0 (iPhone; CPU iPhone OS 18_1 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) CriOS/131.0.6778.73 Mobile/15E148 Safari/604.1" })).toBe("iOS, Chrome 131");
+    expect(system({ os: "ios", browser: 0, ua: "Mozilla/5.0 (iPhone; CPU iPhone OS 18_1 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) FxiOS/132.0 Mobile/15E148 Safari/605.1.15" })).toBe("iOS, Firefox 132");
+    expect(system({ os: "ios", browser: 0, ua: "Mozilla/5.0 (iPhone; CPU iPhone OS 18_1 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) EdgiOS/131.0.2903.92 Version/18.0 Mobile/15E148 Safari/604.1" })).toBe("iOS, Edge 131");
+    expect(system({ os: "android-arm64", browser: 131, ua: "Mozilla/5.0 (Linux; Android 14; SM-S918B) AppleWebKit/537.36 (KHTML, like Gecko) SamsungBrowser/25.0 Chrome/121.0.0.0 Mobile Safari/537.36" })).toBe("Android, Samsung Internet 25");
   });
 });

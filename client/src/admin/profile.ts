@@ -53,12 +53,23 @@ const plural = (n: number, word: string): string => `${n} ${word}${n === 1 ? "" 
 
 export type Machine = { gpu: string; adapter: string; cores: string; memory: string; device: string; system: string; window: string; sessions: number; lastAt: number };
 
-/** The browser as people name it, from the user agent, with the major version the envelope's `browser` carries (or the agent's own). */
+/** The browser as people name it, from the user agent (cut at 120 characters, so `Safari/` may be missing), with the major version the envelope's `browser` carries (or the agent's own). */
 function browserName(ua: string, browser: unknown): string {
-  const family = /Edg\//.test(ua) ? "Edge" : /Firefox\//.test(ua) ? "Firefox" : /Chrome\//.test(ua) ? "Chrome" : /Version\//.test(ua) && /Safari\//.test(ua) ? "Safari" : "";
+  const token = (re: RegExp): string => re.exec(ua)?.[1] ?? "";
+  const edge = token(/(?:Edg|EdgiOS)\/(\d+)/);
+  const samsung = token(/SamsungBrowser\/(\d+)/);
+  const firefox = token(/(?:Firefox|FxiOS)\/(\d+)/);
+  const chrome = token(/(?:Chrome|CriOS)\/(\d+)/);
+  const safari = /AppleWebKit/.test(ua) && !/Chrome\/|CriOS\/|FxiOS\/|EdgiOS\//.test(ua) ? token(/Version\/(\d+)/) : "";
   const given = present(browser);
-  const fromUa = /(?:Edg|Firefox|Chrome|Version)\/(\d+)/.exec(ua)?.[1];
-  const major = given !== null && given > 0 ? String(given) : (fromUa ?? "");
+  const [family, own, own_given] =
+    /Edg\/|EdgiOS\//.test(ua) ? ["Edge", edge, true]
+    : samsung !== "" ? ["Samsung Internet", samsung, false]
+    : /Firefox\/|FxiOS\//.test(ua) ? ["Firefox", firefox, true]
+    : /Chrome\/|CriOS\//.test(ua) ? ["Chrome", chrome, true]
+    : safari !== "" ? ["Safari", safari, true]
+    : ["", "", true];
+  const major = own_given && given !== null && given > 0 ? String(given) : own || (given !== null && given > 0 ? String(given) : "");
   if (family === "") return major === "" ? "" : `browser ${major}`;
   return `${family}${major === "" ? "" : ` ${major}`}`;
 }
@@ -72,8 +83,8 @@ export function machinesOf(rows: Row[]): Machine[] {
     const first = list[0];
     const last = list[list.length - 1];
     if (first === undefined || last === undefined) continue;
-    // The envelope is flattened onto every row; the first row that carries the machine speaks for the session.
-    const p = list.find((l) => l.p.gpu !== undefined || l.p.os !== undefined || l.p.cores !== undefined)?.p ?? first.p;
+    // The envelope is flattened onto every row; the machine facts are the first row's that has the graphics (set after the signals read), else the first with a system.
+    const p = (list.find((l) => l.p.gpu !== undefined || l.p.adapter !== undefined) ?? list.find((l) => l.p.os !== undefined || l.p.cores !== undefined))?.p ?? first.p;
     const key = [p.gpu, p.cores, p.mem, p.os, p.browser, p.mobile].map(text).join("|");
     const cores = present(p.cores);
     const mem = present(p.mem);
@@ -107,7 +118,10 @@ export function machinesOf(rows: Row[]): Machine[] {
 
 export type TierRun = {
   tier: TierName;
+  /** Most of its sessions on this tier were the player's own choice. */
   chosen: boolean;
+  /** How many of its sessions on this tier were the player's own choice. */
+  chosenSessions: number;
   sessions: number;
   fps: number | null;
   verdict: Verdict | null;
@@ -119,7 +133,33 @@ export type TierRun = {
 };
 export type HowItRan = { runs: TierRun[]; notes: string[]; neverStarted: number; sessions: number };
 
-type Acc = { sids: Set<string>; chosen: boolean; fps: Map<string, number[]>; worst: number[]; load: number[]; heap: number[]; gpu: number[]; noFrames: number };
+/** "(chosen)", "(auto)", or "(auto in 7 of 10)" where the sessions on a tier were a mix. */
+export function sourceWords(run: Pick<TierRun, "chosen" | "chosenSessions" | "sessions">): string {
+  if (run.chosen) return "chosen";
+  return run.chosenSessions === 0 ? "auto" : `auto in ${run.sessions - run.chosenSessions} of ${run.sessions}`;
+}
+
+type Acc = { sids: Set<string>; chosenSids: Set<string>; fps: Map<string, number[]>; worst: number[]; load: number[]; heap: number[]; gpu: number[]; noFrames: number };
+
+/** A fallback seen since the session's last `load`: the tier that could not be built and what was built (null: nothing, the hike ended). */
+type Fallback = { attempted: string; built: TierName | null };
+
+/**
+ * The tier in force at a `load` row: the load names the tier it ATTEMPTED, and
+ * the engine writes a start-up `tier_fallback` before it, so a fallback since
+ * the last load with that attempted tier says what was built instead (null
+ * where nothing was). The same rule is in `machines.sql`.
+ */
+function loadTierInForce(named: string, fallbacks: Fallback[]): TierName | null {
+  const hit = [...fallbacks].reverse().find((f) => f.attempted === named);
+  if (hit !== undefined) return hit.built;
+  return isTier(named) ? named : null;
+}
+
+const fallbackOf = (p: Payload): Fallback => {
+  const built = text(p.built);
+  return { attempted: text(p.attempted), built: isTier(built) ? built : null };
+};
 
 /** How each tier ran for the player: the tier in force follows the load, a fallback and each tier change. */
 export function howItRan(rows: Row[]): HowItRan {
@@ -128,12 +168,13 @@ export function howItRan(rows: Row[]): HowItRan {
   const accOf = (tier: TierName): Acc => {
     let a = acc.get(tier);
     if (a === undefined) {
-      a = { sids: new Set(), chosen: false, fps: new Map(), worst: [], load: [], heap: [], gpu: [], noFrames: 0 };
+      a = { sids: new Set(), chosenSids: new Set(), fps: new Map(), worst: [], load: [], heap: [], gpu: [], noFrames: 0 };
       acc.set(tier, a);
     }
     return a;
   };
-  const notes: string[] = [];
+  // Each fallback note with the sessions it happened in.
+  const fellBack = new Map<string, Set<string>>();
   let neverStarted = 0;
   let lostIn = 0;
   for (const [sid, list] of sessions) {
@@ -141,15 +182,23 @@ export function howItRan(rows: Row[]): HowItRan {
     let source = "";
     let started = false;
     let loadTier: TierName | null = null;
+    let loadSource = "";
     let loadMs: number | null = null;
     let loadBeats = 0;
+    let fallbacks: Fallback[] = [];
+    const here = (a: Acc, src: string): void => {
+      a.sids.add(sid);
+      if (src !== "" && src !== "auto") a.chosenSids.add(sid);
+    };
     for (const { n, p } of list) {
       if (n === "load") {
         started = true;
-        const t = text(p.tier);
-        tier = isTier(t) ? t : null;
+        tier = loadTierInForce(text(p.tier), fallbacks);
+        fallbacks = [];
         source = text(p.source);
         loadTier = tier;
+        loadSource = source;
+        loadBeats = 0;
         const parts = [p.decideMs, p.engineMs, p.buildMs].map(present);
         loadMs = parts.every((x) => x === null) ? null : parts.reduce<number>((s, x) => s + (x ?? 0), 0);
       } else if (n === "ready" && tier !== null && loadMs !== null) {
@@ -158,17 +207,20 @@ export function howItRan(rows: Row[]): HowItRan {
         if (ms !== null) {
           const a = accOf(tier);
           a.load.push(loadMs + ms);
-          a.sids.add(sid);
+          here(a, source);
         }
         loadMs = null;
       } else if (n === "tier_fallback") {
         started = true;
-        const attempted = text(p.attempted);
-        const built = text(p.built);
-        const was = isTier(attempted) ? TIER_WORDS[attempted] : "The tier";
-        notes.push(built === "none" || !isTier(built) ? `${was} could not be built and the hike ended` : `${was} could not be built; ${TIER_WORDS[built]} was used instead`);
-        tier = isTier(built) ? built : null;
-        // The tier the load named was never built, so it has no run to be empty.
+        const f = fallbackOf(p);
+        fallbacks.push(f);
+        const was = isTier(f.attempted) ? TIER_WORDS[f.attempted] : "The tier";
+        const note = f.built === null ? `${was} could not be built|the hike ended` : `${was} could not be built|${TIER_WORDS[f.built]} was used instead`;
+        const seen = fellBack.get(note) ?? new Set<string>();
+        seen.add(sid);
+        fellBack.set(note, seen);
+        tier = f.built;
+        // A fallback after the load: the tier the load named was never built, so it has no run to be empty.
         loadTier = null;
       } else if (n === "tier_change") {
         const to = text(p.to);
@@ -176,12 +228,11 @@ export function howItRan(rows: Row[]): HowItRan {
         source = text(p.source);
       } else if (n === "hb") {
         started = true;
-        const here = tier ?? (isTier(text(p.tier)) ? (text(p.tier) as TierName) : null);
-        if (here === null) continue;
-        const a = accOf(here);
-        a.sids.add(sid);
-        if (source !== "" && source !== "auto") a.chosen = true;
-        if (here === loadTier) loadBeats += 1;
+        const on = tier ?? (isTier(text(p.tier)) ? (text(p.tier) as TierName) : null);
+        if (on === null) continue;
+        const a = accOf(on);
+        here(a, source);
+        if (on === loadTier) loadBeats += 1;
         const fps = present(p.fps);
         if (fps !== null) a.fps.set(sid, [...(a.fps.get(sid) ?? []), fps]);
         const worst = present(p.worst);
@@ -195,11 +246,17 @@ export function howItRan(rows: Row[]): HowItRan {
     }
     if (loadTier !== null) {
       const a = accOf(loadTier);
-      a.sids.add(sid);
+      here(a, loadSource);
       if (loadBeats === 0) a.noFrames += 1;
     }
     if (!started) neverStarted += 1;
     if (list.some((l) => l.n === "device_lost")) lostIn += 1;
+  }
+  const notes: string[] = [];
+  for (const [note, sids] of fellBack) {
+    const [head, tail] = note.split("|") as [string, string];
+    const many = sids.size > 1;
+    notes.push(tail === "the hike ended" ? (many ? `${head} in ${sids.size} sessions and ${tail}` : `${head} and ${tail}`) : `${head} ${many ? `in ${sids.size} sessions` : "once"}; ${tail}`);
   }
   if (lostIn > 0) notes.push(`The graphics device was lost in ${plural(lostIn, "session")}`);
   const runs: TierRun[] = [];
@@ -211,7 +268,8 @@ export function howItRan(rows: Row[]): HowItRan {
     const marks = [fpsVerdict(fps), loadVerdict(loadMs)].filter((v): v is Verdict => v !== null);
     runs.push({
       tier,
-      chosen: a.chosen,
+      chosen: a.chosenSids.size * 2 > a.sids.size,
+      chosenSessions: a.chosenSids.size,
       sessions: a.sids.size,
       fps,
       verdict: marks.length === 0 ? null : marks.reduce((x, y) => (RANK[y] > RANK[x] ? y : x)),
@@ -227,14 +285,15 @@ export function howItRan(rows: Row[]): HowItRan {
 
 const CLAUSES: [Verdict, string][] = [["good", "ran smoothly on"], ["slow", "was choppy on"], ["bad", "struggled on"]];
 
-/** One sentence for how the player's hikes ran: "Ran smoothly on Medium; was choppy on High." */
+/** One sentence for how the player's hikes ran, by frame rate alone: "Ran smoothly on Medium; was choppy on High." */
 export function summaryLine(ran: HowItRan): string {
   if (ran.runs.length === 0) return ran.neverStarted > 0 ? `Never started a hike in ${plural(ran.neverStarted, "session")}` : "No hikes yet";
   const parts = CLAUSES.flatMap(([verdict, words]) => {
-    const tiers = ran.runs.filter((r) => r.verdict === verdict).map((r) => TIER_WORDS[r.tier]);
+    const tiers = ran.runs.filter((r) => fpsVerdict(r.fps) === verdict).map((r) => TIER_WORDS[r.tier]);
     return tiers.length === 0 ? [] : [`${words} ${tiers.join(" and ")}`];
   });
-  if (parts.length === 0) return "No frame rate was shared";
+  const bare = ran.runs.filter((r) => fpsVerdict(r.fps) === null).map((r) => TIER_WORDS[r.tier]);
+  if (bare.length > 0) parts.push(`no frames measured on ${bare.join(" and ")}`);
   const line = parts.join("; ");
   return `${line.charAt(0).toUpperCase()}${line.slice(1)}.`;
 }
@@ -282,6 +341,22 @@ export function problemsOf(rows: Row[]): Problem[] {
     .map((g) => ({ level: g.level, words: g.words, msg: g.msg, count: g.count, firstSid: g.firstSid, stack: g.stack }));
 }
 
+/** "2 errors and 5 warnings in 12 sessions": the rows `problemsOf` groups, counted, and the sessions they came from. */
+export function problemsSummary(rows: Row[]): string {
+  let errors = 0;
+  let warnings = 0;
+  const sids = new Set<string>();
+  for (const [sid, list] of bySession(rows)) {
+    for (const { n } of list) {
+      if (n === "warn") warnings += 1;
+      else if (n === "error" || n === "gpu_error" || n === "device_lost") errors += 1;
+      else continue;
+      sids.add(sid);
+    }
+  }
+  return `${plural(errors, "error")} and ${plural(warnings, "warning")} in ${plural(sids.size, "session")}`;
+}
+
 /** Each session's tier at its end and median frame rate, for the sessions list. */
 export function sessionTiers(rows: Row[]): Map<string, { tier: string; fps: number | null }> {
   const out = new Map<string, { tier: string; fps: number | null }>();
@@ -308,11 +383,23 @@ export function sessionRuns(rows: Row[]): Map<string, { tier: string; fps: numbe
   for (const [sid, list] of bySession(rows)) {
     let first: TierName | null = null;
     let now: TierName | null = null;
+    let fallbacks: Fallback[] = [];
     const fps: number[] = [];
     for (const { n, p } of list) {
       if (n === "load" || n === "tier_change" || n === "tier_fallback") {
-        const t = text(n === "load" ? p.tier : n === "tier_change" ? p.to : p.built);
-        if (!isTier(t)) continue;
+        let t: TierName | null;
+        if (n === "load") {
+          t = loadTierInForce(text(p.tier), fallbacks);
+          fallbacks = [];
+        } else if (n === "tier_fallback") {
+          const f = fallbackOf(p);
+          fallbacks.push(f);
+          t = f.built;
+        } else {
+          const to = text(p.to);
+          t = isTier(to) ? to : null;
+        }
+        if (t === null) continue;
         first ??= t;
         now = t;
       } else if (n === "hb") {

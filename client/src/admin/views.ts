@@ -19,7 +19,7 @@ import type { Live, Row } from "./source.js";
 import { fpsVerdict, gpuName, loadVerdict, osName, playerVerdict, present, FPS, LOAD_MS, WORDS, type Verdict } from "./verdicts.js";
 
 export { FPS, LOAD_MS, fpsVerdict, gpuName, loadVerdict, osName, playerVerdict, type Verdict };
-import { FPS_WORDS, TIER_WORDS, howItRan, machinesOf, problemsOf, sizeWords, summaryLine, type Machine, type Problem, type TierRun } from "./profile.js";
+import { FPS_WORDS, TIER_WORDS, howItRan, machinesOf, problemsOf, problemsSummary, sizeWords, sourceWords, summaryLine, type Machine, type Problem, type TierRun } from "./profile.js";
 import { clock, dayOf, delta, duration, envelopeLine, fullWhen, sessionsOf, trailOf, when as wallWhen, zoneName, type Segment, type Step } from "./timeline.js";
 
 const num = (v: unknown): number => (typeof v === "number" ? v : Number(v ?? 0) || 0);
@@ -623,7 +623,7 @@ function machinesBlock(machines: Machine[]): HTMLElement {
         el(
           "dl",
           {},
-          ...pair("Graphics", m.gpu),
+          ...pair("Graphics", m.adapter === UNSHARED ? m.gpu : `${m.gpu} · ${m.adapter}`),
           ...pair("Processor", m.cores, "Browsers report the number of cores, not the processor's name"),
           ...pair("Memory", m.memory),
           ...pair("Device", `${m.device} · ${m.system} · ${m.window}`),
@@ -633,7 +633,9 @@ function machinesBlock(machines: Machine[]): HTMLElement {
   );
 }
 
-const SECONDS = (ms: number | null): string => (ms === null ? "not shared by the browser" : `${(ms / 1000).toFixed(1)} s`);
+const UNSHARED = "not shared by the browser";
+const plural = (n: number, word: string): string => `${n} ${word}${n === 1 ? "" : "s"}`;
+const SECONDS = (ms: number): string => `${(ms / 1000).toFixed(1)} s`;
 
 /** How each tier ran: the summary line, a table a tier, and the notes under it. */
 function ranBlock(list: Row[]): HTMLElement {
@@ -643,7 +645,7 @@ function ranBlock(list: Row[]): HTMLElement {
   const runs = ran.runs as unknown as Record<string, unknown>[];
   const run = (row: Record<string, unknown>): TierRun => row as unknown as TierRun;
   const cols: Column[] = [
-    { key: "tier", label: "Tier", render: (_v, row) => `${TIER_WORDS[run(row).tier]} (${run(row).chosen ? "chosen" : "auto"})` },
+    { key: "tier", label: "Tier", render: (_v, row) => `${TIER_WORDS[run(row).tier]} (${sourceWords(run(row))})` },
     { key: "sessions", label: "Sessions", num: true },
     {
       key: "fps",
@@ -654,21 +656,25 @@ function ranBlock(list: Row[]): HTMLElement {
         return r.fps === null || verdict === null ? el("span", { class: "faint" }, "no frames measured") : mark(verdict, `${FPS_WORDS[verdict]}, ${Math.round(r.fps)} fps`);
       },
     },
-    { key: "worstMs", label: "Worst frame", num: true, render: (_v, row) => (run(row).worstMs === null ? "not shared by the browser" : `${Math.round(run(row).worstMs as number)} ms`) },
-    { key: "loadMs", label: "Load", num: true, render: (_v, row) => (run(row).loadMs === null ? el("span", { class: "faint" }, SECONDS(null)) : mark(loadVerdict(run(row).loadMs), SECONDS(run(row).loadMs))) },
+    { key: "worstMs", label: "Worst frame", num: true, render: (_v, row) => (run(row).worstMs === null ? el("span", { class: "faint" }, "–") : `${Math.round(run(row).worstMs as number)} ms`) },
+    { key: "loadMs", label: "Load", num: true, render: (_v, row) => (run(row).loadMs === null ? el("span", { class: "faint" }, "did not finish loading") : mark(loadVerdict(run(row).loadMs), SECONDS(run(row).loadMs as number))) },
     {
       key: "heapPeakMb",
       label: "Memory used",
-      render: (_v, row) => `${sizeWords(run(row).heapPeakMb)} page, ${sizeWords(run(row).gpuPeakMb)} graphics`,
+      render: (_v, row) => {
+        const { heapPeakMb: page, gpuPeakMb: gfx } = run(row);
+        return `${page === null ? `page memory ${UNSHARED}` : `${sizeWords(page)} page`}, ${gfx === null ? `graphics memory ${UNSHARED}` : `${sizeWords(gfx)} graphics`}`;
+      },
     },
   ];
   wrap.append(table(cols, runs));
+  if (ran.neverStarted > 0) wrap.append(el("p", { class: "faint" }, `${plural(ran.neverStarted, "session")} never started a hike`));
   for (const note of ran.notes) wrap.append(el("p", { class: "faint" }, note));
   return wrap;
 }
 
 /** The problems, ten shown and the rest folded, each with its stack under it. */
-function problemsBlock(problems: Problem[]): HTMLElement {
+function problemsBlock(problems: Problem[], summary: string): HTMLElement {
   if (problems.length === 0) return el("div", { class: "empty" }, "No errors or warnings.");
   const cols: Column[] = [
     { key: "level", label: "Kind", render: (_v, row) => el("span", { class: `status ${(row as unknown as Problem).level === "error" ? "error" : "warn"}` }, (row as unknown as Problem).words) },
@@ -687,7 +693,7 @@ function problemsBlock(problems: Problem[]): HTMLElement {
     { key: "firstSid", label: "First seen in", render: (v) => sidLink(str(v)) },
   ];
   const rows = (xs: Problem[]): HTMLElement => table(cols, xs as unknown as Record<string, unknown>[]);
-  const wrap = el("div", {}, rows(problems.slice(0, 10)));
+  const wrap = el("div", {}, el("p", { class: "faint" }, summary), rows(problems.slice(0, 10)));
   if (problems.length > 10) wrap.append(folded(`${problems.length - 10} more problems`, rows(problems.slice(10))));
   return wrap;
 }
@@ -741,7 +747,7 @@ export function sessionsDrawer(kind: "visitor" | "match", id: string, rows: Prom
         el("h3", {}, "How it ran"),
         ranBlock(list),
         el("h3", {}, "Problems"),
-        problemsBlock(problemsOf(list)),
+        problemsBlock(problemsOf(list), problemsSummary(list)),
         el("h3", {}, "Sessions"),
         sessions,
       );

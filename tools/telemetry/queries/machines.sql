@@ -3,11 +3,15 @@
 -- sessions were on that tier, the median frame rate with how many sessions
 -- were good (50 or more), slow (30 to 50) or bad (under 30) by the median of
 -- their own heartbeats (`hb`) on it, the sessions with no heartbeat on it,
--- the median load, how many the auto choice put there, the cores and memory
+-- the median load, how many the auto choice put there, the chip's players
+-- over every tier (`chip_players`), the cores and memory
 -- most often seen, and the systems. A player is a `vid` (a session whose
 -- storage refused the id stands alone under its `sid`).
--- The tier in force is the one a row was sent under: the `load` row's tier,
--- then a `tier_fallback`'s built tier (not when it built `none`), then each
+-- The tier in force is the one a row was sent under: the `load` row's tier
+-- (the tier it attempted: where a `tier_fallback` for that tier came since
+-- the last load, as at start-up, the tier that fallback built, and none when
+-- it built `none`), then a later `tier_fallback`'s built tier (not when it
+-- built `none`), then each
 -- `tier_change`'s `to`, read in order (`timestamp`, then `t`); the source in
 -- force is the `load` row's and each `tier_change`'s. A session counts under
 -- every tier it had a load, a `ready` or a heartbeat on, and its load time
@@ -55,6 +59,8 @@ events AS (
     JSON_VALUE(json_payload.tier) AS tier,
     JSON_VALUE(json_payload.source) AS source,
     NULLIF(JSON_VALUE(json_payload.built), 'none') AS built,
+    IFNULL(JSON_VALUE(json_payload.built), 'none') AS built_raw,
+    JSON_VALUE(json_payload.attempted) AS attempted,
     JSON_VALUE(json_payload, '$.to') AS to_tier,
     IFNULL(SAFE_CAST(JSON_VALUE(json_payload.decideMs) AS INT64), 0) + IFNULL(SAFE_CAST(JSON_VALUE(json_payload.engineMs) AS INT64), 0) + IFNULL(SAFE_CAST(JSON_VALUE(json_payload.buildMs) AS INT64), 0) AS load_part,
     SAFE_CAST(JSON_VALUE(json_payload.ms) AS INT64) AS ready_ms,
@@ -66,16 +72,37 @@ events AS (
     AND JSON_VALUE(json_payload.sid) IS NOT NULL
     AND timestamp >= TIMESTAMP(DATE_SUB(DATE_ADD(CURRENT_DATE('America/New_York'), INTERVAL 1 DAY), INTERVAL 7 DAY), 'America/New_York') -- range
 ),
+-- The number of `load` rows before each row, which bounds a start-up
+-- fallback to the load it came before (the engine writes `tier_fallback`
+-- BEFORE the `load` row, and the load names the tier it attempted), and the
+-- tier a fallback attempted or a load named, to pair them.
+counted AS (
+  SELECT
+    *,
+    COUNTIF(n = 'load') OVER (PARTITION BY sid ORDER BY timestamp, t ROWS BETWEEN UNBOUNDED PRECEDING AND 1 PRECEDING) AS loads_before,
+    CASE n WHEN 'tier_fallback' THEN attempted WHEN 'load' THEN tier END AS pair_tier
+  FROM events
+),
+-- For a `load` row: what the latest `tier_fallback` since the last load that
+-- attempted the load's tier built ('none' when nothing was; null with no
+-- such fallback, so the load's own tier stands).
+paired AS (
+  SELECT
+    *,
+    LAST_VALUE(IF(n = 'tier_fallback', built_raw, NULL) IGNORE NULLS)
+      OVER (PARTITION BY sid, loads_before, pair_tier ORDER BY timestamp, t ROWS UNBOUNDED PRECEDING) AS fell_built
+  FROM counted
+),
 -- Each row with the tier and the source in force when it was sent.
 stamped AS (
   SELECT
-    *,
-    LAST_VALUE(CASE n WHEN 'load' THEN tier WHEN 'tier_fallback' THEN built WHEN 'tier_change' THEN to_tier END IGNORE NULLS)
-      OVER (PARTITION BY sid ORDER BY timestamp, t ROWS UNBOUNDED PRECEDING) AS tier_now,
+    * EXCEPT (fell_built),
+    NULLIF(LAST_VALUE(CASE n WHEN 'load' THEN IFNULL(fell_built, tier) WHEN 'tier_fallback' THEN built WHEN 'tier_change' THEN to_tier END IGNORE NULLS)
+      OVER (PARTITION BY sid ORDER BY timestamp, t ROWS UNBOUNDED PRECEDING), 'none') AS tier_now,
     LAST_VALUE(CASE n WHEN 'load' THEN source WHEN 'tier_change' THEN source END IGNORE NULLS)
       OVER (PARTITION BY sid ORDER BY timestamp, t ROWS UNBOUNDED PRECEDING) AS source_now,
     MAX(IF(n = 'load', load_part, NULL)) OVER (PARTITION BY sid) AS session_load_part
-  FROM events
+  FROM paired
 ),
 -- One line a session on a tier: what it did there.
 per_tier AS (
@@ -95,11 +122,18 @@ per_tier AS (
   WHERE tier_now IS NOT NULL
     AND n IN ('load', 'ready', 'hb')
   GROUP BY sid, tier_now
+),
+-- The players of a chip across every tier (a player on two tiers counts once).
+chips AS (
+  SELECT gpu, mobile, COUNT(DISTINCT player) AS chip_players
+  FROM per_tier
+  GROUP BY gpu, mobile
 )
 SELECT
   gpu,
   mobile,
   tier,
+  ANY_VALUE(chip_players) AS chip_players,
   COUNT(DISTINCT player) AS players,
   COUNT(*) AS sessions,
   APPROX_QUANTILES(median_fps, 2)[OFFSET(1)] AS fps,
@@ -113,6 +147,7 @@ SELECT
   IFNULL(APPROX_TOP_COUNT(IF(mem > 0, mem, NULL), 2)[OFFSET(0)].value, APPROX_TOP_COUNT(IF(mem > 0, mem, NULL), 2)[SAFE_OFFSET(1)].value) AS mem,
   STRING_AGG(DISTINCT os ORDER BY os) AS oses
 FROM per_tier
+JOIN chips USING (gpu, mobile)
 GROUP BY gpu, mobile, tier
 ORDER BY players DESC, sessions DESC, gpu, tier
 LIMIT 100;
