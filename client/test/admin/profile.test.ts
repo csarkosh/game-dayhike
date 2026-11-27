@@ -111,7 +111,7 @@ describe("howItRan", () => {
 });
 
 describe("machinesOf", () => {
-  const env = { gpu: "ANGLE (Apple, ANGLE Metal Renderer: Apple M3 Max, Unspecified Version)", cores: 8, mem: 8, os: "darwin-arm64", browser: "Chrome 140", adapter: "ok", vw: 1512, vh: 982 };
+  const env = { gpu: "ANGLE (Apple, ANGLE Metal Renderer: Apple M3 Max, Unspecified Version)", cores: 8, mem: 8, os: "darwin-arm64", browser: 140, ua: "Mozilla/5.0 (Macintosh) Chrome/140.0.0.0 Safari/537.36", adapter: "ok", vw: 1512, vh: 982 };
 
   it("says what the browser would not share", () => {
     const [m] = machinesOf([row("page", { gpu: "", mem: 0, cores: 0 }, 0)]);
@@ -169,5 +169,27 @@ describe("sessionTiers", () => {
   it("gives each session its last tier and median frame rate", () => {
     const rows = [row("load", { tier: "high", source: "auto" }, 0), row("hb", { fps: 30 }, 1), row("tier_change", { to: "low", source: "auto" }, 2), row("hb", { fps: 50 }, 3), row("hb", { fps: 60 }, 4)];
     expect(sessionTiers(rows).get("s1")).toEqual({ tier: "low", fps: 50 });
+  });
+});
+
+describe("the system line names the browser", () => {
+  const base = { os: "darwin-arm64", gpu: "Apple M2" };
+  const system = (p: Record<string, unknown>): string | undefined => machinesOf([row("page", { ...base, ...p }, 0)])[0]?.system;
+  const MAC = "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko)";
+
+  it("reads Chrome, Edge, Firefox and Safari from the user agent", () => {
+    expect(system({ browser: 155, ua: `${MAC} Chrome/155.0.0.0 Safari/537.36` })).toBe("macOS, Chrome 155");
+    expect(system({ browser: "154", ua: `${MAC} Chrome/154.0.0.0 Safari/537.36 Edg/154.0.0.0` })).toBe("macOS, Edge 154");
+    expect(system({ browser: 140, ua: "Mozilla/5.0 (Macintosh; Intel Mac OS X 10.15; rv:140.0) Gecko/20100101 Firefox/140.0" })).toBe("macOS, Firefox 140");
+    expect(system({ browser: 18, ua: `${MAC} Version/18.1 Safari/605.1.15` })).toBe("macOS, Safari 18");
+  });
+
+  it("takes the major from the agent when the envelope has none", () => {
+    expect(system({ browser: 0, ua: `${MAC} Chrome/155.0.0.0 Safari/537.36` })).toBe("macOS, Chrome 155");
+  });
+
+  it("keeps the number without an agent, and leaves the browser out with neither", () => {
+    expect(system({ browser: 155 })).toBe("macOS, browser 155");
+    expect(system({})).toBe("macOS");
   });
 });

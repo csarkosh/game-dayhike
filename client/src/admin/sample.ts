@@ -329,6 +329,10 @@ const ENDED_SID = "s41b2";
 /** What a hike says was happening beside a row about the GPU (`game/gpuFaults.ts`). */
 const HIKE_NOW = { ready: true, busy: "", film: false, hidden: false, shownMs: 345_000, scene: false, ending: false, dark: 0, rain: 0.2, wet: 0.5, night: 0.4, hour: 18.6, lakes: 0, sea: false };
 
+/** User agents as the envelope carries them, cut to 120 characters. */
+const MAC_CHROME = "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/155.0.0.0 Safari/537.36".slice(0, 120);
+const MAC_SAFARI = "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/18.1 Safari/605.1.15".slice(0, 120);
+
 /**
  * One session's trail: a session that landed, made a lobby, was joined,
  * loaded, played, hit a shader failure mid-climb, then a GPU error that
@@ -341,7 +345,7 @@ const HIKE_NOW = { ready: true, busy: "", film: false, hidden: false, shownMs: 3
 function session(sid: string, offsetMs = 0): Row[] {
   const t0 = NOW - 40 * 60_000 - offsetMs;
   const at = (ms: number): string => iso(t0 + ms);
-  const envelope = { sid, vid: VID, build: "9557492d", os: "darwin-arm64", browser: "155", gpu: "Apple M2", tz: "America/New_York", lang: "en-US", vw: 1440, vh: 900, path: "/dayhike/", ref: "" };
+  const envelope = { sid, vid: VID, build: "9557492d", os: "darwin-arm64", browser: "155", ua: MAC_CHROME, gpu: "Apple M2", tz: "America/New_York", lang: "en-US", vw: 1440, vh: 900, path: "/dayhike/", ref: "" };
   const row = (ms: number, n: string, fields: Record<string, unknown> = {}): Row => {
     const payload = { n, t: ms, ...envelope, ...fields };
     return {
@@ -516,7 +520,7 @@ function visitor(): Row[] {
       // A browser that shares no graphics, memory or cores (Safari): the machine reads "not shared by the browser".
       for (const r of out.filter((o) => o.sid === sid)) {
         const p = JSON.parse(str(r.row_json)) as Record<string, unknown>;
-        r.row_json = JSON.stringify({ ...p, gpu: "", mem: 0, cores: 0 });
+        r.row_json = JSON.stringify({ ...p, gpu: "", mem: 0, cores: 0, browser: "18", ua: MAC_SAFARI });
       }
     }
   }

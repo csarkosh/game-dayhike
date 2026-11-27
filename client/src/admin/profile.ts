@@ -53,6 +53,16 @@ const plural = (n: number, word: string): string => `${n} ${word}${n === 1 ? "" 
 
 export type Machine = { gpu: string; adapter: string; cores: string; memory: string; device: string; system: string; window: string; sessions: number; lastAt: number };
 
+/** The browser as people name it, from the user agent, with the major version the envelope's `browser` carries (or the agent's own). */
+function browserName(ua: string, browser: unknown): string {
+  const family = /Edg\//.test(ua) ? "Edge" : /Firefox\//.test(ua) ? "Firefox" : /Chrome\//.test(ua) ? "Chrome" : /Version\//.test(ua) && /Safari\//.test(ua) ? "Safari" : "";
+  const given = present(browser);
+  const fromUa = /(?:Edg|Firefox|Chrome|Version)\/(\d+)/.exec(ua)?.[1];
+  const major = given !== null && given > 0 ? String(given) : (fromUa ?? "");
+  if (family === "") return major === "" ? "" : `browser ${major}`;
+  return `${family}${major === "" ? "" : ` ${major}`}`;
+}
+
 const ADAPTER_WORDS: Record<string, string> = { ok: "WebGPU available", none: "no WebGPU", rejected: "WebGPU refused", "timed-out": "WebGPU did not answer" };
 
 /** The machines among the rows, by what the envelope says of them, the latest first. */
@@ -72,7 +82,7 @@ export function machinesOf(rows: Row[]): Machine[] {
     const vh = present(p.vh);
     const gpu = gpuName(text(p.gpu));
     const os = osName(text(p.os));
-    const browser = text(p.browser);
+    const browser = browserName(text(p.ua), p.browser);
     const memory = mem === null || mem <= 0 ? UNKNOWN : mem >= 8 ? "8 GB or more" : `${mem} GB`;
     const m: Machine = {
       gpu: gpu === "" ? UNKNOWN : gpu,
