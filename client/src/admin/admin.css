@@ -303,3 +303,7 @@ table.trail tr.signal td .status { font-style: normal; }
   table.trail th, table.trail td { padding: 4px 4px; }
   .tile .value { font-size: 22px; }
 }
+
+/* The Machines and tiers card: a chip's name with its cores, memory and systems as the title; a tier's cell is a status mark and its words. */
+.machines td { white-space: nowrap; }
+.machines td:first-child { white-space: normal; min-width: 12rem; }

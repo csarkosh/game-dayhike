@@ -114,3 +114,13 @@ describe("the sample visitor's profile", () => {
     expect(machinesOf(rows).some((m) => m.gpu === "not shared by the browser")).toBe(true);
   });
 });
+
+describe("the sample's machines", () => {
+  it("covers all three tiers, one masked GPU and one phone", async () => {
+    const rows = await sampleSource().query("machines", 7);
+    expect(rows.length).toBeGreaterThanOrEqual(4);
+    expect(new Set(rows.map((r) => r.tier))).toEqual(new Set(["high", "medium", "low"]));
+    expect(rows.some((r) => r.gpu === "")).toBe(true);
+    expect(rows.some((r) => r.mobile === true)).toBe(true);
+  });
+});

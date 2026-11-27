@@ -43,7 +43,7 @@ export function present(v: unknown): number | null {
 }
 /** A GPU's name as people say it: the renderer string's ANGLE wrapping and driver text dropped. */
 export function gpuName(raw: string): string {
-  const angle = /^ANGLE \([^,]*,\s*([^,]+?)(?:\s*\(0x[0-9a-f]+\))?\s*(?:Direct3D|OpenGL|Vulkan|,|\)$)/i.exec(raw);
+  const angle = /^ANGLE \([^,]*,\s*([^,]+?)(?:\s*\(0x[0-9a-f]+\))?\s*(?:Direct3D|OpenGL|Vulkan|,|\)$|$)/i.exec(raw);
   // A driver's own words in brackets at the end (`(radeonsi navi22 LLVM 17.0.6)`) go too.
   // and so do ANGLE's renderer label (`ANGLE Metal Renderer: Apple M3 Max`) and a GL bus suffix (`/PCIe/SSE2`).
   return (angle?.[1] ?? raw)

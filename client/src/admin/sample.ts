@@ -48,6 +48,22 @@ function funnel(): Row[] {
   ];
 }
 
+/** The machines query's rows: each chip against each tier it ran on, one masked GPU and one phone among them. */
+function machines(): Row[] {
+  const row = (gpu: string, mobile: boolean, tier: string, players: number, sessions: number, fps: number | null, [good, slow, bad]: [number, number, number], loadMs: number, auto: number, cores: number, mem: number, oses: string): Row => ({
+    gpu, mobile, tier, players, sessions, fps, good, slow, bad, no_frames: sessions - good - slow - bad, load_ms: loadMs, auto_sessions: auto, cores, mem, oses,
+  });
+  return [
+    row("Apple M2", false, "high", 14, 31, 59.6, [30, 1, 0], 6_100, 28, 8, 8, "darwin-arm64"),
+    row("NVIDIA GeForce RTX 3060", false, "high", 9, 17, 58.2, [16, 1, 0], 7_400, 15, 12, 8, "win32-x64"),
+    row("Intel(R) UHD Graphics 620", false, "medium", 6, 11, 41.0, [3, 6, 2], 16_800, 8, 4, 8, "win32-x64"),
+    row("Intel(R) UHD Graphics 620", false, "low", 3, 5, 28.4, [0, 2, 3], 24_000, 5, 4, 8, "win32-x64"),
+    row("", false, "medium", 4, 6, 47.5, [2, 4, 0], 12_000, 6, 0, 0, "darwin-arm64"),
+    row("Apple GPU", true, "low", 5, 9, 33.0, [1, 6, 2], 21_500, 9, 6, 4, "ios"),
+    row("Apple GPU", true, "medium", 1, 2, null, [0, 0, 0], 18_000, 2, 6, 4, "ios"),
+  ];
+}
+
 /** The kpis query's rows: the whole range, the two windows, and the weeks. */
 function kpis(): Row[] {
   const r = rng(5);
@@ -537,7 +553,7 @@ export type TrailFor = (world: string, seed: number) => Promise<DrawableTrail | 
 export function sampleSource(trailFor: TrailFor = (world, seed) => Promise.resolve(buildTrailFor(world, seed))): Source {
   let pathRows: Promise<Row[]> | null = null;
   const tables: Record<QueryName, () => Row[] | Promise<Row[]>> = {
-    funnel, places, errors, players, kpis,
+    funnel, places, errors, players, machines, kpis,
     paths: () => (pathRows ??= trailFor(WORLD, SEED).then(paths)),
   };
   const dated: Partial<Record<QueryName, string>> = { players: "last_seen", places: "last_seen", errors: "last_seen", funnel: "last_seen" };

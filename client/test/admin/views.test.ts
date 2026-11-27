@@ -43,6 +43,9 @@ describe("a player's load and frame rate", () => {
     expect(gpuName("ANGLE (Apple, ANGLE Metal Renderer: Apple M3 Max, Unspecified Version)")).toBe("Apple M3 Max");
     expect(gpuName("ANGLE (ARM, Mali-G52 MC2, OpenGL ES 3.2)")).toBe("Mali-G52 MC2");
     expect(gpuName("ANGLE (NVIDIA Corporation, NVIDIA GeForce RTX 4060 Laptop GPU/PCIe/SSE2, OpenGL 4.5.0)")).toBe("NVIDIA GeForce RTX 4060 Laptop GPU");
+    // The machines query trims a device id and the driver text, leaving the ANGLE string unterminated.
+    expect(gpuName("ANGLE (NVIDIA, NVIDIA GeForce RTX 3060")).toBe("NVIDIA GeForce RTX 3060");
+    expect(gpuName("ANGLE (Intel, Intel(R) UHD Graphics 620")).toBe("Intel(R) UHD Graphics 620");
     expect(gpuName("Apple M2")).toBe("Apple M2");
     expect(gpuName("")).toBe("");
   });
