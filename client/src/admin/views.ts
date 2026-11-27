@@ -12,7 +12,7 @@
  * queries bucket by; a label names the zone by its short name (`PDT`).
  */
 
-import { ago, compact, el, folded, funnel, table, tile, type Column } from "./charts.js";
+import { ago, compact, el, folded, table, tile, type Column } from "./charts.js";
 import { worldMap, type MapPlace } from "./worldMap.js";
 import { accordion, easeHeight, fadeIn, look, parseDuration, play, rootToken, settled, tokens } from "./motion.js";
 import type { Live, Row } from "./source.js";
@@ -41,7 +41,7 @@ const when = (v: unknown): Node | string => {
 };
 
 export function card(title: string, sub: string, cls = "", ...body: Node[]): HTMLElement {
-  return el("section", { class: `card ${cls}`.trim() }, el("h2", {}, title), el("p", { class: "sub" }, sub), ...body);
+  return el("section", { class: `card ${cls}`.trim() }, el("h2", {}, title), ...(sub === "" ? [] : [el("p", { class: "sub" }, sub)]), ...body);
 }
 
 /** What a waiting card stands in for: stat `tiles` (`tile` px tall), a `chart` this many px tall, `rows` of a table (`row` px apart), `folds` folded tables. */
@@ -113,29 +113,26 @@ export function funnelLine(all: Row, builds: number): string {
 }
 
 /**
- * The funnel is the query's `all` row, every build together, drawn as a
- * funnel; the per-build rows only count the builds in the line under the
- * title. The stages nest per session (a session counts at a stage only where
- * it counted at the one before), so the shares read as shares. The sessions
- * the load check turned away are a count beside the stages, not one of them:
- * they landed and could go no further.
+ * The funnel as one line: the `all` row's stages, each with its share of the one before (rounded
+ * as the funnel chart rounded them, a stage after an empty one 0%), then, where the query has the
+ * count, how many the load check turned away.
  */
-function funnelPart(rows: Row[]): HTMLElement {
-  const all = rows.find((r) => r.build === "all");
-  const builds = rows.filter((r) => r.build !== "all");
-  const stages = all === undefined ? [] : [
-    { name: "Landed", value: num(all.landed) },
-    { name: "Pressed Play", value: num(all.pressed_play) },
-    { name: "Started a match", value: num(all.started) },
-    { name: "Reached an end", value: num(all.finished) },
+export function funnelSentence(all: Row): string {
+  const landed = num(all.landed);
+  if (landed === 0) return "No sessions in this range.";
+  const stages = [
+    { words: "pressed Play", value: num(all.pressed_play) },
+    { words: "started a hike", value: num(all.started) },
+    { words: "reached an end", value: num(all.finished) },
   ];
-  return el(
-    "div",
-    { class: "part" },
-    el("h3", {}, "From landing to the end"),
-    el("p", { class: "sub" }, all === undefined ? "Sessions by what they reached" : funnelLine(all, builds.length)),
-    all === undefined || num(all.landed) === 0 ? el("div", { class: "empty" }, "No sessions in this range.") : funnel(stages),
-  );
+  let before = landed;
+  const steps = stages.map((s) => {
+    const kept = before > 0 ? Math.round((s.value / before) * 100) : 0;
+    before = s.value;
+    return `${s.value} ${s.words} (${kept}%)`;
+  });
+  const away = all.turned_away === undefined || all.turned_away === null ? "" : ` · ${num(all.turned_away)} turned away`;
+  return `${landed} landed → ${steps.join(" → ")}${away}`;
 }
 
 export function errorsView(rows: Row[]): HTMLElement {
@@ -232,20 +229,32 @@ export function placeName(row: Record<string, unknown>): string {
   return country === "" ? local : `${local} · ${country}`;
 }
 
+/** Where the visits came from in one line: the placed cities and countries, the top four by name. */
+export function placesSentence(rows: Row[]): string {
+  if (rows.length === 0) return "No visits in this range.";
+  const placed = rows.filter((r) => placeName(r) !== "");
+  if (placed.length === 0) return "No visit had a place recorded.";
+  const countries = new Set(placed.map((r) => str(r.country)).filter(Boolean)).size;
+  const top = placed.slice(0, 4).map((r) => `${cityName(r)} ${num(r.visits)}`);
+  const more = placed.length > 4 ? `, and ${placed.length - 4} more` : "";
+  return `From ${placed.length} place${placed.length === 1 ? "" : "s"} in ${countries} countr${countries === 1 ? "y" : "ies"}: ${top.join(", ")}${more}`;
+}
+
+/** A city by its own name for the one-line summary, the full place name where the row has no city. */
+function cityName(row: Row): string {
+  return str(row.city) || placeName(row);
+}
+
 /**
  * Where Day Hike's visitors are (`places.sql`, from csarko.sh's analytics): a flat map of the world
- * with a mark a city (`worldMap.ts`), and beside it the most visited cities with their counts, the ones that
+ * with a mark a city (`worldMap.ts`), and under it the most visited cities with their counts, the ones that
  * reached a game first in each pair. Visits the collector could not place (any from before it had
  * the city database) are a line under the list; a city with no coordinates is in the list and not
- * on the map. DB-IP's licence asks for its name and a link wherever its places are shown, so the
- * part ends with both.
+ * on the map. The Overview folds it, closed.
  */
-function placesPart(rows: Row[]): HTMLElement {
+function placesFold(rows: Row[]): HTMLElement {
   const placed = rows.filter((r) => placeName(r) !== "");
   const unplaced = rows.filter((r) => placeName(r) === "");
-  const visits = rows.reduce((n, r) => n + num(r.visits), 0);
-  const played = rows.reduce((n, r) => n + num(r.played), 0);
-  const countries = new Set(placed.map((r) => str(r.country)).filter(Boolean)).size;
   const onMap: MapPlace[] = placed
     .filter((r) => present(r.lat) !== null && present(r.lon) !== null)
     .map((r) => ({ name: placeName(r), lat: num(r.lat), lon: num(r.lon), visits: num(r.visits), played: num(r.played) }));
@@ -266,27 +275,26 @@ function placesPart(rows: Row[]): HTMLElement {
     ...(placed.length > top.length ? [el("p", { class: "faint more" }, `and ${placed.length - top.length} more on the map`)] : []),
     ...(away > 0 ? [el("p", { class: "faint more" }, `${away} visit${away === 1 ? "" : "s"} with no place recorded`)] : []),
   );
-  const sub =
-    visits === 0
-      ? "Day Hike's visits by city, from csarko.sh's analytics"
-      : `${visits} visit${visits === 1 ? "" : "s"} from ${placed.length} place${placed.length === 1 ? "" : "s"} in ${countries} countr${countries === 1 ? "y" : "ies"}; ${played} reached a game`;
-  return el(
-    "div",
-    { class: "part" },
-    el("h3", {}, "Where players are"),
-    el("p", { class: "sub" }, sub),
-    rows.length === 0 ? el("div", { class: "empty" }, "No visits in this range.") : el("div", { class: "places-map" }, worldMap(onMap), list),
-    el("p", { class: "attribution" }, "Places by city, never by address: ", el("a", { href: "https://db-ip.com", rel: "noopener" }, "IP Geolocation by DB-IP")),
-  );
+  return folded("Show the map", el("div", { class: "places-map" }, worldMap(onMap), list));
 }
 
 /**
- * The Overview card (Cyrus, 2026-11-21: one card for the completion funnel and where players
- * are): how far sessions got, from landing to the end of a hike (`funnel.sql`), and where the
- * visitors came from (`places.sql`), one part under the other.
+ * The Overview card, as small as it can be (Cyrus, 2026-11-26): two lines, how far sessions got
+ * (`funnel.sql`'s `all` row) and where the visitors came from (`places.sql`), the map and the
+ * full city list in a closed fold, and DB-IP's name and link, which its licence asks for
+ * wherever its places are shown, always visible.
  */
 export function overviewView(funnelRows: Row[], placeRows: Row[]): HTMLElement {
-  return card("Overview", "How far sessions got, from landing to the end of a hike, and where the visitors came from", "overview", funnelPart(funnelRows), placesPart(placeRows));
+  const all = funnelRows.find((r) => r.build === "all");
+  return card(
+    "Overview",
+    "",
+    "overview",
+    el("p", { class: "line" }, all === undefined ? "No sessions in this range." : funnelSentence(all)),
+    el("p", { class: "line" }, placesSentence(placeRows)),
+    ...(placeRows.length === 0 ? [] : [placesFold(placeRows)]),
+    el("p", { class: "attribution" }, "Places by city, never by address: ", el("a", { href: "https://db-ip.com", rel: "noopener" }, "IP Geolocation by DB-IP")),
+  );
 }
 
 /** A verdict bar with its key under it: one segment a kind, as long as its count, in its tone. */

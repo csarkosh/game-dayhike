@@ -150,7 +150,7 @@ function dashboard(source: Source, account: User | null | undefined, trailFor = 
   // only its card. The title and copy here are the waiting card's; the
   // rendered card brings its own, with what the rows say.
   const CARDS: { names: QueryName[]; title: string; sub: string; cls: string; shape: Shape; render(rows: Row[][]): HTMLElement }[] = [
-    { names: ["funnel", "places"], title: "Overview", sub: "How far sessions got, from landing to the end of a hike, and where the visitors came from", cls: "overview", shape: { chart: 160, rows: 6, row: 30 }, render: ([funnelRows = [], placeRows = []]) => overviewView(funnelRows, placeRows) },
+    { names: ["funnel", "places"], title: "Overview", sub: "", cls: "overview", shape: { rows: 2, row: 26 }, render: ([funnelRows = [], placeRows = []]) => overviewView(funnelRows, placeRows) },
     { names: ["kpis", "players"], title: "Players", sub: "Each person in this range, how far they got and how the game ran for them, and where they went", cls: "", shape: { tiles: 3, chart: 60, rows: 12, row: 34 }, render: ([kpis = [], players = []]) => playersView(kpis, players, wentSlot()) },
     { names: ["machines"], title: "Machines and tiers", sub: "How each kind of graphics chip ran on each tier, over this range", cls: "", shape: { rows: 6, row: 30 }, render: ([rows = []]) => machinesView(rows) },
     { names: ["errors"], title: "What went wrong", sub: "Problems in this range, grouped by their first hundred characters", cls: "", shape: { rows: 5 }, render: ([rows = []]) => errorsView(rows) },
