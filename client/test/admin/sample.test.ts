@@ -1,5 +1,6 @@
 import { describe, it, expect, vi } from "vitest";
 import { sampleSource } from "../../src/admin/sample.js";
+import { howItRan, machinesOf, problemsOf } from "../../src/admin/profile.js";
 import { trailOf } from "../../src/admin/timeline.js";
 import { lossEndedLine } from "@csarkosh/engine/game/lossBound";
 import type { DrawableTrail } from "../../src/admin/trail.js";
@@ -99,5 +100,17 @@ describe("the sample's trail carries each thing the GPU can do under a hike", ()
     expect(builds.reduce((n, r) => n + Number(r.turned_away), 0)).toBe(6);
     const turned = (await source.query("errors", 7)).filter((r) => r.n === "turned_away");
     expect(turned.map((r) => [r.level, r.kind, r.sessions])).toEqual([["warning", "no-webgpu", 4], ["warning", "software", 2]]);
+  });
+});
+
+describe("the sample visitor's profile", () => {
+  it("shows every section of the drawer", async () => {
+    const rows = await sampleSource().visitor("v7a10-1000");
+    const ran = howItRan(rows);
+    expect(ran.runs.length).toBeGreaterThanOrEqual(2);
+    expect(ran.notes.length).toBeGreaterThanOrEqual(1);
+    const levels = new Set(problemsOf(rows).map((p) => p.level));
+    expect(levels).toEqual(new Set(["error", "warning"]));
+    expect(machinesOf(rows).some((m) => m.gpu === "not shared by the browser")).toBe(true);
   });
 });

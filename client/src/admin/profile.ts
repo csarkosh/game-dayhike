@@ -291,3 +291,27 @@ export function sessionTiers(rows: Row[]): Map<string, { tier: string; fps: numb
   }
   return out;
 }
+
+/** Each session's tier in words ("High", "High then Medium" when it changed, "" with none) and median frame rate. */
+export function sessionRuns(rows: Row[]): Map<string, { tier: string; fps: number | null }> {
+  const out = new Map<string, { tier: string; fps: number | null }>();
+  for (const [sid, list] of bySession(rows)) {
+    let first: TierName | null = null;
+    let now: TierName | null = null;
+    const fps: number[] = [];
+    for (const { n, p } of list) {
+      if (n === "load" || n === "tier_change" || n === "tier_fallback") {
+        const t = text(n === "load" ? p.tier : n === "tier_change" ? p.to : p.built);
+        if (!isTier(t)) continue;
+        first ??= t;
+        now = t;
+      } else if (n === "hb") {
+        const f = present(p.fps);
+        if (f !== null) fps.push(f);
+      }
+    }
+    const tier = first === null || now === null ? "" : first === now ? TIER_WORDS[now] : `${TIER_WORDS[first]} then ${TIER_WORDS[now]}`;
+    out.set(sid, { tier, fps: median(fps) });
+  }
+  return out;
+}

@@ -19,6 +19,7 @@ import type { Live, Row } from "./source.js";
 import { fpsVerdict, gpuName, loadVerdict, osName, playerVerdict, present, FPS, LOAD_MS, WORDS, type Verdict } from "./verdicts.js";
 
 export { FPS, LOAD_MS, fpsVerdict, gpuName, loadVerdict, osName, playerVerdict, type Verdict };
+import { FPS_WORDS, TIER_WORDS, howItRan, machinesOf, problemsOf, sizeWords, summaryLine, type Machine, type Problem, type TierRun } from "./profile.js";
 import { clock, dayOf, delta, duration, envelopeLine, fullWhen, sessionsOf, trailOf, when as wallWhen, zoneName, type Segment, type Step } from "./timeline.js";
 
 const num = (v: unknown): number => (typeof v === "number" ? v : Number(v ?? 0) || 0);
@@ -599,6 +600,90 @@ export function sessionDrawer(sid: string, rows: Promise<Row[]>): HTMLElement {
   return backdrop;
 }
 
+/** The machine lines, label and value pairs, one block a machine, the latest first. */
+function machinesBlock(machines: Machine[]): HTMLElement {
+  if (machines.length === 0) return el("div", { class: "empty" }, "No machine was heard from.");
+  const pair = (label: string, value: string, title = ""): Node[] => [el("dt", {}, label), el("dd", title === "" ? {} : { title }, value)];
+  return el(
+    "div",
+    { class: "machines" },
+    ...machines.map((m, i) =>
+      el(
+        "div",
+        { class: "machine" },
+        i > 0 || machines.length > 1 ? el("p", { class: "faint" }, `${m.sessions} session${m.sessions === 1 ? "" : "s"} on this machine`) : el("span", {}),
+        el(
+          "dl",
+          {},
+          ...pair("Graphics", m.gpu),
+          ...pair("Processor", m.cores, "Browsers report the number of cores, not the processor's name"),
+          ...pair("Memory", m.memory),
+          ...pair("Device", `${m.device} · ${m.system} · ${m.window}`),
+        ),
+      ),
+    ),
+  );
+}
+
+const SECONDS = (ms: number | null): string => (ms === null ? "not shared by the browser" : `${(ms / 1000).toFixed(1)} s`);
+
+/** How each tier ran: the summary line, a table a tier, and the notes under it. */
+function ranBlock(list: Row[]): HTMLElement {
+  const ran = howItRan(list);
+  const wrap = el("div", { class: "ran" }, el("p", {}, summaryLine(ran)));
+  if (ran.runs.length === 0) return wrap;
+  const runs = ran.runs as unknown as Record<string, unknown>[];
+  const run = (row: Record<string, unknown>): TierRun => row as unknown as TierRun;
+  const cols: Column[] = [
+    { key: "tier", label: "Tier", render: (_v, row) => `${TIER_WORDS[run(row).tier]} (${run(row).chosen ? "chosen" : "auto"})` },
+    { key: "sessions", label: "Sessions", num: true },
+    {
+      key: "fps",
+      label: "Frame rate",
+      render: (_v, row) => {
+        const r = run(row);
+        const verdict = fpsVerdict(r.fps);
+        return r.fps === null || verdict === null ? el("span", { class: "faint" }, "no frames measured") : mark(verdict, `${FPS_WORDS[verdict]}, ${Math.round(r.fps)} fps`);
+      },
+    },
+    { key: "worstMs", label: "Worst frame", num: true, render: (_v, row) => (run(row).worstMs === null ? "not shared by the browser" : `${Math.round(run(row).worstMs as number)} ms`) },
+    { key: "loadMs", label: "Load", num: true, render: (_v, row) => (run(row).loadMs === null ? el("span", { class: "faint" }, SECONDS(null)) : mark(loadVerdict(run(row).loadMs), SECONDS(run(row).loadMs))) },
+    {
+      key: "heapPeakMb",
+      label: "Memory used",
+      render: (_v, row) => `${sizeWords(run(row).heapPeakMb)} page, ${sizeWords(run(row).gpuPeakMb)} graphics`,
+    },
+  ];
+  wrap.append(table(cols, runs));
+  for (const note of ran.notes) wrap.append(el("p", { class: "faint" }, note));
+  return wrap;
+}
+
+/** The problems, ten shown and the rest folded, each with its stack under it. */
+function problemsBlock(problems: Problem[]): HTMLElement {
+  if (problems.length === 0) return el("div", { class: "empty" }, "No errors or warnings.");
+  const cols: Column[] = [
+    { key: "level", label: "Kind", render: (_v, row) => el("span", { class: `status ${(row as unknown as Problem).level === "error" ? "lost" : "slow"}` }, (row as unknown as Problem).words) },
+    {
+      key: "msg",
+      label: "Message",
+      render: (_v, row) => {
+        const p = row as unknown as Problem;
+        if (p.stack === "") return p.msg;
+        const fold = el("details", {}, el("summary", {}, p.msg), el("pre", { class: "stack" }, p.stack));
+        accordion(fold);
+        return fold;
+      },
+    },
+    { key: "count", label: "Times", num: true },
+    { key: "firstSid", label: "First seen in", render: (v) => sidLink(str(v)) },
+  ];
+  const rows = (xs: Problem[]): HTMLElement => table(cols, xs as unknown as Record<string, unknown>[]);
+  const wrap = el("div", {}, rows(problems.slice(0, 10)));
+  if (problems.length > 10) wrap.append(folded(`${problems.length - 10} more problems`, rows(problems.slice(10))));
+  return wrap;
+}
+
 /**
  * A visitor's or a match's sessions, as a drawer: one line a session in the
  * order they began, each a link that opens its trail over this drawer. The
@@ -622,18 +707,36 @@ export function sessionsDrawer(kind: "visitor" | "match", id: string, rows: Prom
         { key: "startedAt", label: `Began (${zoneName()})`, when: true, render: (v) => el("span", { title: fullWhen(num(v)) }, wallWhen(num(v))) },
         { key: "sid", label: "Session", render: (v) => sidLink(str(v)) },
         { key: "role", label: "Role" },
+        { key: "tier", label: "Tier" },
+        { key: "fps", label: "Frame rate", render: (v) => (v === null ? el("span", { class: "faint" }, "–") : mark(fpsVerdict(num(v)), `${FPS_WORDS[fpsVerdict(num(v)) ?? "good"]}, ${Math.round(num(v))} fps`)) },
         { key: "build", label: "Build", render: (v) => el("span", { class: "mono" }, str(v)) },
         { key: "rows", label: "Rows", num: true },
         { key: "endedAt", label: "Lasted", num: true, render: (v, row) => duration(num(v) - num(row.startedAt)) },
         { key: "end", label: "End", render: (v, row) => el("span", { class: `status ${str(row.tone)}`.trim() }, str(v)) },
-        { key: "errors", label: "Errors", num: true },
+        { key: "errors", label: "Problems", num: true, render: (_v, row) => String(num(row.errors) + num(row.warnings)) },
         ...(kind === "visitor" ? [{ key: "game", label: "Match", render: (v: unknown) => (str(v) === "" ? "" : gameLink(str(v))) } satisfies Column] : [{ key: "vid", label: "Visitor", render: (v: unknown) => (str(v) === "" ? "" : vidLink(str(v))) } satisfies Column]),
       ];
       const sub =
         kind === "visitor"
           ? `${lines.length} session${lines.length === 1 ? "" : "s"} on ${days} day${days === 1 ? "" : "s"} (${zoneName()}), ${wallWhen(first.startedAt)} to ${wallWhen(last.endedAt)}; open one for its trail`
           : `${lines.length} session${lines.length === 1 ? "" : "s"} in the match, ${wallWhen(first.startedAt)} to ${wallWhen(last.endedAt)}; open one for its trail`;
-      fillDrawer(body, el("p", { class: "sub" }, sub), table(cols, lines as unknown as Record<string, unknown>[]));
+      const sessions = table(cols, lines as unknown as Record<string, unknown>[]);
+      if (kind === "match") {
+        fillDrawer(body, el("p", { class: "sub" }, sub), sessions);
+        return;
+      }
+      fillDrawer(
+        body,
+        el("p", { class: "sub" }, sub),
+        el("h3", {}, "Their machine"),
+        machinesBlock(machinesOf(list)),
+        el("h3", {}, "How it ran"),
+        ranBlock(list),
+        el("h3", {}, "Problems"),
+        problemsBlock(problemsOf(list)),
+        el("h3", {}, "Sessions"),
+        sessions,
+      );
     },
     (error: unknown) => {
       fillDrawer(body, el("div", { class: "empty" }, `Could not read the ${kind}: ${error instanceof Error ? error.message : String(error)}`));

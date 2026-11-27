@@ -463,9 +463,48 @@ function session(sid: string, offsetMs = 0): Row[] {
   ];
 }
 
-/** A visitor's sessions: the trail three times over, on three days, as the sample visitor's. */
+/**
+ * A visitor's sessions: the trail three times over, on three days, as the sample visitor's,
+ * with what the drawer's profile reads on top: heartbeats on two tiers, a fallback, console
+ * warnings, and a last session from a browser that shares no graphics or memory.
+ */
 function visitor(): Row[] {
-  return [...session("s3f8a", 2 * DAY), ...session("s41b2", DAY + 3_600_000), ...session("s1000", 0)].filter((r) => r.svc === "telemetry");
+  const sessions = [["s3f8a", 2 * DAY], ["s41b2", DAY + 3_600_000], ["s1000", 0]] as const;
+  const out: Row[] = [];
+  for (const [sid, offset] of sessions) {
+    const rows = session(sid, offset).filter((r) => r.svc === "telemetry");
+    const t0 = NOW - 40 * 60_000 - offset;
+    const template = rows[0]!;
+    const payload = JSON.parse(str(template.row_json)) as Record<string, unknown>;
+    const extra = (ms: number, n: string, fields: Record<string, unknown>): Row => ({
+      ...template,
+      timestamp: iso(t0 + ms),
+      t: ms,
+      n,
+      kind: (fields.kind as string | undefined) ?? null,
+      msg: (fields.msg as string | undefined) ?? null,
+      stack: (fields.stack as string | undefined) ?? null,
+      row_json: JSON.stringify({ ...payload, n, t: ms, ...fields }),
+    });
+    const beat = (ms: number, fps: number, worst: number, heap: number): Row => extra(ms, "hb", { fps, worst, heap, gpuBuf: 180, gpuTex: 460, stalls: 0 });
+    out.push(
+      ...rows,
+      beat(90_000, 58, 410, 640),
+      beat(120_000, 60, 52, 700),
+      beat(610_000, 24, 180, 1250),
+      beat(640_000, 27, 160, 1300),
+      extra(602_000, "warn", { kind: "console", msg: "WebGPU: the texture budget was exceeded.", stack: "Warning: budget\n    at https://games.csarko.sh/dayhike/assets/index-CJQw8Dxw.js:3:9" }),
+    );
+    if (sid === "s41b2") out.push(extra(46_950, "tier_fallback", { attempted: "high", built: "medium" }));
+    if (sid === "s1000") {
+      // A browser that shares no graphics, memory or cores (Safari): the machine reads "not shared by the browser".
+      for (const r of out.filter((o) => o.sid === sid)) {
+        const p = JSON.parse(str(r.row_json)) as Record<string, unknown>;
+        r.row_json = JSON.stringify({ ...p, gpu: "", mem: 0, cores: 0 });
+      }
+    }
+  }
+  return out;
 }
 
 /** A match's sessions: the host's trail and a follower's, side by side. */

@@ -270,6 +270,14 @@ details.table[open]:not([data-closing]) > summary::before, .drawer details[open]
 .drawer pre.stack { font-family: var(--mono); font-size: 11px; white-space: pre-wrap; word-break: break-all; color: var(--ink-2); margin: 6px 0 0; }
 .drawer details summary { cursor: pointer; }
 .drawer .sub { margin-bottom: 6px; }
+.drawer h3 { font-size: 13px; font-weight: 600; margin: 18px 0 6px; }
+.drawer .machine { margin: 0 0 10px; }
+.drawer .machine p { margin: 0 0 2px; font-size: 12px; }
+.drawer .machine dl { display: grid; grid-template-columns: max-content 1fr; gap: 2px 14px; margin: 0; }
+.drawer .machine dt { color: var(--faint); }
+.drawer .machine dd { margin: 0; overflow-wrap: anywhere; }
+.drawer .ran > p { margin: 0 0 8px; }
+.drawer .ran p.faint { font-size: 12px; margin: 6px 0 0; }
 .drawer .trace-toggle { display: inline-block; color: var(--faint); font-size: 12px; margin: 4px 0 8px; cursor: pointer; }
 .drawer .trace-toggle input { accent-color: var(--series); margin: 0 4px 0 0; vertical-align: -1px; }
 a[data-sid], a[data-vid], a[data-game] { text-decoration: underline dotted; }
