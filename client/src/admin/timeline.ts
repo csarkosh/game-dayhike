@@ -14,6 +14,8 @@
  * `source.ts`). The labels name it by its short name (`PDT`, `zoneName`).
  */
 
+import { payloadOf, type Payload } from "./payload.js";
+import { sessionRuns } from "./profile.js";
 import type { Row } from "./source.js";
 
 /** A zone name's shape, the one the admin routes accept (the engine's server `src/adminQueries.ts` `zoneOf`). */
@@ -126,21 +128,7 @@ const ENVELOPE = new Set([
   "world", "seed", "game", "lobby", "n", "ref", "path", "lang", "tz", "vw", "vh", "ua", "wd", "tester", "timestamp", "room", "stack",
 ]);
 
-export type Payload = Record<string, unknown>;
-
-/** A row's payload: the whole row the query carries as `row_json`, or the row's own columns where there is none (the sample). */
-export function payloadOf(row: Row): Payload {
-  const json = row.row_json;
-  if (typeof json === "string" && json !== "") {
-    try {
-      const parsed: unknown = JSON.parse(json);
-      if (parsed !== null && typeof parsed === "object") return parsed as Payload;
-    } catch {
-      // Not JSON: the columns will do.
-    }
-  }
-  return row as Payload;
-}
+export { payloadOf, type Payload };
 
 /** Why the load check turned a visitor away (`game/loadCheck.ts`, `TurnedAwayReason`), in words. */
 const TURNED_AWAY: Readonly<Record<string, string>> = {
@@ -495,6 +483,11 @@ export type SessionLine = {
   end: string;
   tone: "" | "won" | "lost" | "warn";
   errors: number;
+  /** The tier in words, "High then Medium" when it changed; "" with none. */
+  tier: string;
+  /** The median frame rate of its heartbeats; null with none. */
+  fps: number | null;
+  warnings: number;
 };
 
 /** The sessions among the rows of a visitor or a match, each summarised, in the order they began. */
@@ -508,7 +501,7 @@ export function sessionsOf(rows: Row[]): SessionLine[] {
     const at = Date.parse(str(row.timestamp));
     let line = by.get(sid);
     if (line === undefined) {
-      line = { sid, vid: "", build: "", startedAt: Infinity, endedAt: -Infinity, rows: 0, role: "", game: "", lobby: "", end: "", tone: "", errors: 0 };
+      line = { sid, vid: "", build: "", startedAt: Infinity, endedAt: -Infinity, rows: 0, role: "", game: "", lobby: "", end: "", tone: "", errors: 0, tier: "", fps: null, warnings: 0 };
       by.set(sid, line);
     }
     line.rows += 1;
@@ -523,6 +516,7 @@ export function sessionsOf(rows: Row[]): SessionLine[] {
     const n = str(row.n);
     if (n === "match_start") line.role = str(p.role) || line.role;
     if (n === "error" || n === "start_fail" || n === "connect_fail" || n === "device_lost" || (n === "gpu_window" && p.picture === "broke")) line.errors += 1;
+    if (n === "warn") line.warnings += 1;
     if (n === "outcome") {
       line.end = str(p.result);
       line.tone = p.result === "won" ? "won" : "lost";
@@ -531,7 +525,10 @@ export function sessionsOf(rows: Row[]): SessionLine[] {
     }
   }
   const lines = [...by.values()];
+  const runs = sessionRuns(rows);
   for (const line of lines) {
+    const run = runs.get(line.sid);
+    if (run !== undefined) Object.assign(line, run);
     if (line.end === "") {
       line.end = "no goodbye";
       line.tone = "warn";

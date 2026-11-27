@@ -16,7 +16,7 @@ export type Range = 1 | 7 | 30 | 90;
 
 export type Row = Record<string, string | number | boolean | null>;
 
-export type QueryName = "funnel" | "places" | "errors" | "players" | "paths" | "kpis";
+export type QueryName = "funnel" | "places" | "errors" | "players" | "machines" | "paths" | "kpis";
 
 /** What the signaling registry holds right now (the engine's server `src/sharedRegistry.ts`). */
 export type Live = {

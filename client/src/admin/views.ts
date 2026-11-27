@@ -12,10 +12,14 @@
  * queries bucket by; a label names the zone by its short name (`PDT`).
  */
 
-import { ago, compact, el, folded, funnel, table, tile, type Column } from "./charts.js";
+import { ago, compact, el, folded, table, tile, type Column } from "./charts.js";
 import { worldMap, type MapPlace } from "./worldMap.js";
 import { accordion, easeHeight, fadeIn, look, parseDuration, play, rootToken, settled, tokens } from "./motion.js";
 import type { Live, Row } from "./source.js";
+import { fpsVerdict, gpuName, loadVerdict, osName, playerVerdict, present, FPS, LOAD_MS, WORDS, type Verdict } from "./verdicts.js";
+
+export { FPS, LOAD_MS, fpsVerdict, gpuName, loadVerdict, osName, playerVerdict, type Verdict };
+import { FPS_WORDS, TIER_WORDS, howItRan, machinesOf, problemsOf, problemsSummary, sizeWords, sourceWords, summaryLine, type Machine, type Problem, type TierRun } from "./profile.js";
 import { clock, dayOf, delta, duration, envelopeLine, fullWhen, sessionsOf, trailOf, when as wallWhen, zoneName, type Segment, type Step } from "./timeline.js";
 
 const num = (v: unknown): number => (typeof v === "number" ? v : Number(v ?? 0) || 0);
@@ -37,7 +41,7 @@ const when = (v: unknown): Node | string => {
 };
 
 export function card(title: string, sub: string, cls = "", ...body: Node[]): HTMLElement {
-  return el("section", { class: `card ${cls}`.trim() }, el("h2", {}, title), el("p", { class: "sub" }, sub), ...body);
+  return el("section", { class: `card ${cls}`.trim() }, el("h2", {}, title), ...(sub === "" ? [] : [el("p", { class: "sub" }, sub)]), ...body);
 }
 
 /** What a waiting card stands in for: stat `tiles` (`tile` px tall), a `chart` this many px tall, `rows` of a table (`row` px apart), `folds` folded tables. */
@@ -109,29 +113,26 @@ export function funnelLine(all: Row, builds: number): string {
 }
 
 /**
- * The funnel is the query's `all` row, every build together, drawn as a
- * funnel; the per-build rows only count the builds in the line under the
- * title. The stages nest per session (a session counts at a stage only where
- * it counted at the one before), so the shares read as shares. The sessions
- * the load check turned away are a count beside the stages, not one of them:
- * they landed and could go no further.
+ * The funnel as one line: the `all` row's stages, each with its share of the one before (rounded
+ * as the funnel chart rounded them, a stage after an empty one 0%), then, where the query has the
+ * count, how many the load check turned away.
  */
-function funnelPart(rows: Row[]): HTMLElement {
-  const all = rows.find((r) => r.build === "all");
-  const builds = rows.filter((r) => r.build !== "all");
-  const stages = all === undefined ? [] : [
-    { name: "Landed", value: num(all.landed) },
-    { name: "Pressed Play", value: num(all.pressed_play) },
-    { name: "Started a match", value: num(all.started) },
-    { name: "Reached an end", value: num(all.finished) },
+export function funnelSentence(all: Row): string {
+  const landed = num(all.landed);
+  if (landed === 0) return "No sessions in this range.";
+  const stages = [
+    { words: "pressed Play", value: num(all.pressed_play) },
+    { words: "started a hike", value: num(all.started) },
+    { words: "reached an end", value: num(all.finished) },
   ];
-  return el(
-    "div",
-    { class: "part" },
-    el("h3", {}, "From landing to the end"),
-    el("p", { class: "sub" }, all === undefined ? "Sessions by what they reached" : funnelLine(all, builds.length)),
-    all === undefined || num(all.landed) === 0 ? el("div", { class: "empty" }, "No sessions in this range.") : funnel(stages),
-  );
+  let before = landed;
+  const steps = stages.map((s) => {
+    const kept = before > 0 ? Math.round((s.value / before) * 100) : 0;
+    before = s.value;
+    return `${s.value} ${s.words} (${kept}%)`;
+  });
+  const away = all.turned_away === undefined || all.turned_away === null ? "" : ` · ${num(all.turned_away)} turned away`;
+  return `${landed} landed → ${steps.join(" → ")}${away}`;
 }
 
 export function errorsView(rows: Row[]): HTMLElement {
@@ -173,11 +174,6 @@ export function errorsView(rows: Row[]): HTMLElement {
   return card("What went wrong", sub, "", table(cols, rows, "Nothing went wrong in this range."));
 }
 
-/** An operating system as people say it, from the page's `os` (`darwin-arm64`, `win32-x64`, `android-arm64`). */
-export function osName(raw: string): string {
-  const os = raw.split(/[-\s]/)[0]?.toLowerCase() ?? "";
-  return ({ darwin: "macOS", win32: "Windows", linux: "Linux", android: "Android", ios: "iOS", cros: "ChromeOS" } as Record<string, string>)[os] ?? (raw === "" ? "" : "Other");
-}
 
 /** The machine column: the GPU as people say it, else the operating system; the details in its title. */
 const machineColumn: Column = {
@@ -210,49 +206,6 @@ export function reachOf(row: Record<string, unknown>): Reach {
   return num(row.finished) > 0 ? "finished" : num(row.played) > 0 ? "played" : "looked";
 }
 
-/**
- * How a player's game went, by the two things a player feels: how long it took
- * to load (from Play to the world's first whole frame, `health.sql`) and how
- * smoothly it ran (the median frame rate in a match). Each is good, slow or bad against the marks below;
- * a player's verdict is the worse of the two, and a player with neither (gone
- * before the world was in) has none.
- */
-export const LOAD_MS = { good: 15_000, slow: 30_000 } as const;
-export const FPS = { good: 50, slow: 30 } as const;
-export type Verdict = "good" | "slow" | "bad";
-const RANK: Record<Verdict, number> = { good: 0, slow: 1, bad: 2 };
-const WORDS: Record<Verdict, string> = { good: "Good", slow: "Slow", bad: "Bad" };
-
-export function loadVerdict(ms: number | null): Verdict | null {
-  if (ms === null) return null;
-  return ms <= LOAD_MS.good ? "good" : ms <= LOAD_MS.slow ? "slow" : "bad";
-}
-export function fpsVerdict(fps: number | null): Verdict | null {
-  if (fps === null) return null;
-  return fps >= FPS.good ? "good" : fps >= FPS.slow ? "slow" : "bad";
-}
-export function playerVerdict(row: Record<string, unknown>): Verdict | null {
-  const marks = [loadVerdict(present(row.load_ms)), fpsVerdict(present(row.fps))].filter((v): v is Verdict => v !== null);
-  return marks.length === 0 ? null : marks.reduce((a, b) => (RANK[b] > RANK[a] ? b : a));
-}
-/** A number from a row, or null where the row has none (a session that never reached that point). */
-function present(v: unknown): number | null {
-  if (v === null || v === undefined || v === "") return null;
-  const n = Number(v);
-  return Number.isFinite(n) ? n : null;
-}
-/** A GPU's name as people say it: the renderer string's ANGLE wrapping and driver text dropped. */
-export function gpuName(raw: string): string {
-  const angle = /^ANGLE \([^,]*,\s*([^,]+?)(?:\s*\(0x[0-9a-f]+\))?\s*(?:Direct3D|OpenGL|Vulkan|,|\)$)/i.exec(raw);
-  // A driver's own words in brackets at the end (`(radeonsi navi22 LLVM 17.0.6)`) go too.
-  // and so do ANGLE's renderer label (`ANGLE Metal Renderer: Apple M3 Max`) and a GL bus suffix (`/PCIe/SSE2`).
-  return (angle?.[1] ?? raw)
-    .replace(/\s*\([^)]*\)$/, "")
-    .replace(/^ANGLE [A-Za-z0-9]+ Renderer:\s*/, "")
-    .replace(/\/PCIe\/SSE2$/, "")
-    .replace(/\s+/g, " ")
-    .trim();
-}
 
 const mark = (verdict: Verdict | null, text: string): Node =>
   verdict === null ? el("span", { class: "faint" }, "–") : el("span", { class: `status ${verdict}` }, text);
@@ -276,20 +229,32 @@ export function placeName(row: Record<string, unknown>): string {
   return country === "" ? local : `${local} · ${country}`;
 }
 
+/** Where the visits came from in one line: the placed cities and countries, the top four by name. */
+export function placesSentence(rows: Row[]): string {
+  if (rows.length === 0) return "No visits in this range.";
+  const placed = rows.filter((r) => placeName(r) !== "");
+  if (placed.length === 0) return "No visit had a place recorded.";
+  const countries = new Set(placed.map((r) => str(r.country)).filter(Boolean)).size;
+  const top = placed.slice(0, 4).map((r) => `${cityName(r)} ${num(r.visits)}`);
+  const more = placed.length > 4 ? `, and ${placed.length - 4} more` : "";
+  return `From ${placed.length} place${placed.length === 1 ? "" : "s"} in ${countries} countr${countries === 1 ? "y" : "ies"}: ${top.join(", ")}${more}`;
+}
+
+/** A city by its own name for the one-line summary, the full place name where the row has no city. */
+function cityName(row: Row): string {
+  return str(row.city) || placeName(row);
+}
+
 /**
  * Where Day Hike's visitors are (`places.sql`, from csarko.sh's analytics): a flat map of the world
- * with a mark a city (`worldMap.ts`), and beside it the most visited cities with their counts, the ones that
+ * with a mark a city (`worldMap.ts`), and under it the most visited cities with their counts, the ones that
  * reached a game first in each pair. Visits the collector could not place (any from before it had
  * the city database) are a line under the list; a city with no coordinates is in the list and not
- * on the map. DB-IP's licence asks for its name and a link wherever its places are shown, so the
- * part ends with both.
+ * on the map. The Overview folds it, closed.
  */
-function placesPart(rows: Row[]): HTMLElement {
+function placesFold(rows: Row[]): HTMLElement {
   const placed = rows.filter((r) => placeName(r) !== "");
   const unplaced = rows.filter((r) => placeName(r) === "");
-  const visits = rows.reduce((n, r) => n + num(r.visits), 0);
-  const played = rows.reduce((n, r) => n + num(r.played), 0);
-  const countries = new Set(placed.map((r) => str(r.country)).filter(Boolean)).size;
   const onMap: MapPlace[] = placed
     .filter((r) => present(r.lat) !== null && present(r.lon) !== null)
     .map((r) => ({ name: placeName(r), lat: num(r.lat), lon: num(r.lon), visits: num(r.visits), played: num(r.played) }));
@@ -310,27 +275,26 @@ function placesPart(rows: Row[]): HTMLElement {
     ...(placed.length > top.length ? [el("p", { class: "faint more" }, `and ${placed.length - top.length} more on the map`)] : []),
     ...(away > 0 ? [el("p", { class: "faint more" }, `${away} visit${away === 1 ? "" : "s"} with no place recorded`)] : []),
   );
-  const sub =
-    visits === 0
-      ? "Day Hike's visits by city, from csarko.sh's analytics"
-      : `${visits} visit${visits === 1 ? "" : "s"} from ${placed.length} place${placed.length === 1 ? "" : "s"} in ${countries} countr${countries === 1 ? "y" : "ies"}; ${played} reached a game`;
-  return el(
-    "div",
-    { class: "part" },
-    el("h3", {}, "Where players are"),
-    el("p", { class: "sub" }, sub),
-    rows.length === 0 ? el("div", { class: "empty" }, "No visits in this range.") : el("div", { class: "places-map" }, worldMap(onMap), list),
-    el("p", { class: "attribution" }, "Places by city, never by address: ", el("a", { href: "https://db-ip.com", rel: "noopener" }, "IP Geolocation by DB-IP")),
-  );
+  return folded("Show the map", el("div", { class: "places-map" }, worldMap(onMap), list));
 }
 
 /**
- * The Overview card (Cyrus, 2026-11-21: one card for the completion funnel and where players
- * are): how far sessions got, from landing to the end of a hike (`funnel.sql`), and where the
- * visitors came from (`places.sql`), one part under the other.
+ * The Overview card, as small as it can be (Cyrus, 2026-11-26): two lines, how far sessions got
+ * (`funnel.sql`'s `all` row) and where the visitors came from (`places.sql`), the map and the
+ * full city list in a closed fold, and DB-IP's name and link, which its licence asks for
+ * wherever its places are shown, always visible.
  */
 export function overviewView(funnelRows: Row[], placeRows: Row[]): HTMLElement {
-  return card("Overview", "How far sessions got, from landing to the end of a hike, and where the visitors came from", "overview", funnelPart(funnelRows), placesPart(placeRows));
+  const all = funnelRows.find((r) => r.build === "all");
+  return card(
+    "Overview",
+    "",
+    "overview",
+    el("p", { class: "line" }, all === undefined ? "No sessions in this range." : funnelSentence(all)),
+    el("p", { class: "line" }, placesSentence(placeRows)),
+    ...(placeRows.length === 0 ? [] : [placesFold(placeRows)]),
+    el("p", { class: "attribution" }, "Places by city, never by address: ", el("a", { href: "https://db-ip.com", rel: "noopener" }, "IP Geolocation by DB-IP")),
+  );
 }
 
 /** A verdict bar with its key under it: one segment a kind, as long as its count, in its tone. */
@@ -644,6 +608,96 @@ export function sessionDrawer(sid: string, rows: Promise<Row[]>): HTMLElement {
   return backdrop;
 }
 
+/** The machine lines, label and value pairs, one block a machine, the latest first. */
+function machinesBlock(machines: Machine[]): HTMLElement {
+  if (machines.length === 0) return el("div", { class: "empty" }, "No machine was heard from.");
+  const pair = (label: string, value: string, title = ""): Node[] => [el("dt", {}, label), el("dd", title === "" ? {} : { title }, value)];
+  return el(
+    "div",
+    { class: "machines" },
+    ...machines.map((m, i) =>
+      el(
+        "div",
+        { class: "machine" },
+        i > 0 || machines.length > 1 ? el("p", { class: "faint" }, `${m.sessions} session${m.sessions === 1 ? "" : "s"} on this machine`) : el("span", {}),
+        el(
+          "dl",
+          {},
+          ...pair("Graphics", m.adapter === UNSHARED ? m.gpu : `${m.gpu} · ${m.adapter}`),
+          ...pair("Processor", m.cores, "Browsers report the number of cores, not the processor's name"),
+          ...pair("Memory", m.memory),
+          ...pair("Device", `${m.device} · ${m.system} · ${m.window}`),
+        ),
+      ),
+    ),
+  );
+}
+
+const UNSHARED = "not shared by the browser";
+const plural = (n: number, word: string): string => `${n} ${word}${n === 1 ? "" : "s"}`;
+const SECONDS = (ms: number): string => `${(ms / 1000).toFixed(1)} s`;
+
+/** How each tier ran: the summary line, a table a tier, and the notes under it. */
+function ranBlock(list: Row[]): HTMLElement {
+  const ran = howItRan(list);
+  const wrap = el("div", { class: "ran" }, el("p", {}, summaryLine(ran)));
+  if (ran.runs.length === 0) return wrap;
+  const runs = ran.runs as unknown as Record<string, unknown>[];
+  const run = (row: Record<string, unknown>): TierRun => row as unknown as TierRun;
+  const cols: Column[] = [
+    { key: "tier", label: "Tier", render: (_v, row) => `${TIER_WORDS[run(row).tier]} (${sourceWords(run(row))})` },
+    { key: "sessions", label: "Sessions", num: true },
+    {
+      key: "fps",
+      label: "Frame rate",
+      render: (_v, row) => {
+        const r = run(row);
+        const verdict = fpsVerdict(r.fps);
+        return r.fps === null || verdict === null ? el("span", { class: "faint" }, "no frames measured") : mark(verdict, `${FPS_WORDS[verdict]}, ${Math.round(r.fps)} fps`);
+      },
+    },
+    { key: "worstMs", label: "Worst frame", num: true, render: (_v, row) => (run(row).worstMs === null ? el("span", { class: "faint" }, "–") : `${Math.round(run(row).worstMs as number)} ms`) },
+    { key: "loadMs", label: "Load", num: true, render: (_v, row) => (run(row).loadMs === null ? el("span", { class: "faint" }, "did not finish loading") : mark(loadVerdict(run(row).loadMs), SECONDS(run(row).loadMs as number))) },
+    {
+      key: "heapPeakMb",
+      label: "Memory used",
+      render: (_v, row) => {
+        const { heapPeakMb: page, gpuPeakMb: gfx } = run(row);
+        return `${page === null ? `page memory ${UNSHARED}` : `${sizeWords(page)} page`}, ${gfx === null ? `graphics memory ${UNSHARED}` : `${sizeWords(gfx)} graphics`}`;
+      },
+    },
+  ];
+  wrap.append(table(cols, runs));
+  if (ran.neverStarted > 0) wrap.append(el("p", { class: "faint" }, `${plural(ran.neverStarted, "session")} never started a hike`));
+  for (const note of ran.notes) wrap.append(el("p", { class: "faint" }, note));
+  return wrap;
+}
+
+/** The problems, ten shown and the rest folded, each with its stack under it. */
+function problemsBlock(problems: Problem[], summary: string): HTMLElement {
+  if (problems.length === 0) return el("div", { class: "empty" }, "No errors or warnings.");
+  const cols: Column[] = [
+    { key: "level", label: "Kind", render: (_v, row) => el("span", { class: `status ${(row as unknown as Problem).level === "error" ? "error" : "warn"}` }, (row as unknown as Problem).words) },
+    {
+      key: "msg",
+      label: "Message",
+      render: (_v, row) => {
+        const p = row as unknown as Problem;
+        if (p.stack === "") return p.msg;
+        const fold = el("details", {}, el("summary", {}, p.msg), el("pre", { class: "stack" }, p.stack));
+        accordion(fold);
+        return fold;
+      },
+    },
+    { key: "count", label: "Times", num: true },
+    { key: "firstSid", label: "First seen in", render: (v) => sidLink(str(v)) },
+  ];
+  const rows = (xs: Problem[]): HTMLElement => table(cols, xs as unknown as Record<string, unknown>[]);
+  const wrap = el("div", {}, el("p", { class: "faint" }, summary), rows(problems.slice(0, 10)));
+  if (problems.length > 10) wrap.append(folded(`${problems.length - 10} more problems`, rows(problems.slice(10))));
+  return wrap;
+}
+
 /**
  * A visitor's or a match's sessions, as a drawer: one line a session in the
  * order they began, each a link that opens its trail over this drawer. The
@@ -667,18 +721,36 @@ export function sessionsDrawer(kind: "visitor" | "match", id: string, rows: Prom
         { key: "startedAt", label: `Began (${zoneName()})`, when: true, render: (v) => el("span", { title: fullWhen(num(v)) }, wallWhen(num(v))) },
         { key: "sid", label: "Session", render: (v) => sidLink(str(v)) },
         { key: "role", label: "Role" },
+        { key: "tier", label: "Tier", render: (v) => (str(v) === "" ? el("span", { class: "faint" }, "–") : str(v)) },
+        { key: "fps", label: "Frame rate", render: (v) => (v === null ? el("span", { class: "faint" }, "–") : mark(fpsVerdict(num(v)), `${FPS_WORDS[fpsVerdict(num(v)) ?? "good"]}, ${Math.round(num(v))} fps`)) },
         { key: "build", label: "Build", render: (v) => el("span", { class: "mono" }, str(v)) },
         { key: "rows", label: "Rows", num: true },
         { key: "endedAt", label: "Lasted", num: true, render: (v, row) => duration(num(v) - num(row.startedAt)) },
         { key: "end", label: "End", render: (v, row) => el("span", { class: `status ${str(row.tone)}`.trim() }, str(v)) },
-        { key: "errors", label: "Errors", num: true },
+        { key: "errors", label: "Problems", num: true, render: (_v, row) => String(num(row.errors) + num(row.warnings)) },
         ...(kind === "visitor" ? [{ key: "game", label: "Match", render: (v: unknown) => (str(v) === "" ? "" : gameLink(str(v))) } satisfies Column] : [{ key: "vid", label: "Visitor", render: (v: unknown) => (str(v) === "" ? "" : vidLink(str(v))) } satisfies Column]),
       ];
       const sub =
         kind === "visitor"
           ? `${lines.length} session${lines.length === 1 ? "" : "s"} on ${days} day${days === 1 ? "" : "s"} (${zoneName()}), ${wallWhen(first.startedAt)} to ${wallWhen(last.endedAt)}; open one for its trail`
           : `${lines.length} session${lines.length === 1 ? "" : "s"} in the match, ${wallWhen(first.startedAt)} to ${wallWhen(last.endedAt)}; open one for its trail`;
-      fillDrawer(body, el("p", { class: "sub" }, sub), table(cols, lines as unknown as Record<string, unknown>[]));
+      const sessions = table(cols, lines as unknown as Record<string, unknown>[]);
+      if (kind === "match") {
+        fillDrawer(body, el("p", { class: "sub" }, sub), sessions);
+        return;
+      }
+      fillDrawer(
+        body,
+        el("p", { class: "sub" }, sub),
+        el("h3", {}, "Their machine"),
+        machinesBlock(machinesOf(list)),
+        el("h3", {}, "How it ran"),
+        ranBlock(list),
+        el("h3", {}, "Problems"),
+        problemsBlock(problemsOf(list), problemsSummary(list)),
+        el("h3", {}, "Sessions"),
+        sessions,
+      );
     },
     (error: unknown) => {
       fillDrawer(body, el("div", { class: "empty" }, `Could not read the ${kind}: ${error instanceof Error ? error.message : String(error)}`));

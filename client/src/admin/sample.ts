@@ -48,6 +48,24 @@ function funnel(): Row[] {
   ];
 }
 
+/** The machines query's rows: each chip against each tier it ran on, one masked GPU and one phone among them. */
+function machines(): Row[] {
+  // A chip's players over every tier it ran on: a player on two tiers counts once.
+  const chipPlayers: Record<string, number> = { "Apple M2|false": 14, "NVIDIA GeForce RTX 3060|false": 9, "Intel(R) UHD Graphics 620|false": 7, "|false": 4, "Apple GPU|true": 5 };
+  const row = (gpu: string, mobile: boolean, tier: string, players: number, sessions: number, fps: number | null, [good, slow, bad]: [number, number, number], loadMs: number, auto: number, cores: number, mem: number, oses: string): Row => ({
+    gpu, mobile, tier, chip_players: chipPlayers[`${gpu}|${mobile}`] ?? players, players, sessions, fps, good, slow, bad, no_frames: sessions - good - slow - bad, load_ms: loadMs, auto_sessions: auto, cores, mem, oses,
+  });
+  return [
+    row("Apple M2", false, "high", 14, 31, 59.6, [30, 1, 0], 6_100, 28, 8, 8, "darwin-arm64"),
+    row("NVIDIA GeForce RTX 3060", false, "high", 9, 17, 58.2, [16, 1, 0], 7_400, 15, 12, 8, "win32-x64"),
+    row("Intel(R) UHD Graphics 620", false, "medium", 6, 11, 41.0, [3, 6, 2], 16_800, 8, 4, 8, "win32-x64"),
+    row("Intel(R) UHD Graphics 620", false, "low", 3, 5, 28.4, [0, 2, 3], 24_000, 5, 4, 8, "win32-x64"),
+    row("", false, "medium", 4, 6, 47.5, [2, 4, 0], 12_000, 6, 0, 0, "darwin-arm64"),
+    row("Apple GPU", true, "low", 5, 9, 33.0, [1, 6, 2], 21_500, 9, 6, 4, "ios"),
+    row("Apple GPU", true, "medium", 1, 2, null, [0, 0, 0], 18_000, 2, 6, 4, "ios"),
+  ];
+}
+
 /** The kpis query's rows: the whole range, the two windows, and the weeks. */
 function kpis(): Row[] {
   const r = rng(5);
@@ -313,6 +331,10 @@ const ENDED_SID = "s41b2";
 /** What a hike says was happening beside a row about the GPU (`game/gpuFaults.ts`). */
 const HIKE_NOW = { ready: true, busy: "", film: false, hidden: false, shownMs: 345_000, scene: false, ending: false, dark: 0, rain: 0.2, wet: 0.5, night: 0.4, hour: 18.6, lakes: 0, sea: false };
 
+/** User agents as the envelope carries them, cut to 120 characters. */
+const MAC_CHROME = "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/155.0.0.0 Safari/537.36".slice(0, 120);
+const MAC_SAFARI = "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/18.1 Safari/605.1.15".slice(0, 120);
+
 /**
  * One session's trail: a session that landed, made a lobby, was joined,
  * loaded, played, hit a shader failure mid-climb, then a GPU error that
@@ -325,7 +347,7 @@ const HIKE_NOW = { ready: true, busy: "", film: false, hidden: false, shownMs: 3
 function session(sid: string, offsetMs = 0): Row[] {
   const t0 = NOW - 40 * 60_000 - offsetMs;
   const at = (ms: number): string => iso(t0 + ms);
-  const envelope = { sid, vid: VID, build: "9557492d", os: "darwin-arm64", browser: "155", gpu: "Apple M2", tz: "America/New_York", lang: "en-US", vw: 1440, vh: 900, path: "/dayhike/", ref: "" };
+  const envelope = { sid, vid: VID, build: "9557492d", os: "darwin-arm64", browser: "155", ua: MAC_CHROME, gpu: "Apple M2", tz: "America/New_York", lang: "en-US", vw: 1440, vh: 900, path: "/dayhike/", ref: "" };
   const row = (ms: number, n: string, fields: Record<string, unknown> = {}): Row => {
     const payload = { n, t: ms, ...envelope, ...fields };
     return {
@@ -457,15 +479,55 @@ function session(sid: string, offsetMs = 0): Row[] {
     row(421_000, "lamp", { on: true, p: 0.31, tick: 7720, ...inMatch }),
     row(601_000, "error", { where: "game", kind: "console", msg: "WebGPU: the renderer could not be built on it; building it on WebGL2.", stack: "Error: pipeline\n    at https://games.csarko.sh/dayhike/assets/index-CJQw8Dxw.js:2:5", ...inMatch }),
     row(601_100, "engine_failed", { reason: "pipeline", ...inMatch }),
-    row(601_300, "tier_change", { from: "high", to: "medium", source: "fallback", fellBack: true, ...inMatch }),
+    row(601_300, "tier_change", { from: "high", to: "medium", source: "auto", fellBack: true, ...inMatch }),
     row(640_000, "act", { act: "mist", p: 0.4, tick: 11_600, ...inMatch }),
     ...rest,
   ];
 }
 
-/** A visitor's sessions: the trail three times over, on three days, as the sample visitor's. */
+/**
+ * A visitor's sessions: the trail three times over, on three days, as the sample visitor's,
+ * with what the drawer's profile reads on top: heartbeats on two tiers, a fallback, console
+ * warnings, and a last session from a browser that shares no graphics or memory.
+ */
 function visitor(): Row[] {
-  return [...session("s3f8a", 2 * DAY), ...session("s41b2", DAY + 3_600_000), ...session("s1000", 0)].filter((r) => r.svc === "telemetry");
+  const sessions = [["s3f8a", 2 * DAY], ["s41b2", DAY + 3_600_000], ["s1000", 0]] as const;
+  const out: Row[] = [];
+  for (const [sid, offset] of sessions) {
+    const rows = session(sid, offset).filter((r) => r.svc === "telemetry");
+    const t0 = NOW - 40 * 60_000 - offset;
+    const template = rows[0]!;
+    const payload = JSON.parse(str(template.row_json)) as Record<string, unknown>;
+    const extra = (ms: number, n: string, fields: Record<string, unknown>): Row => ({
+      ...template,
+      timestamp: iso(t0 + ms),
+      t: ms,
+      n,
+      kind: (fields.kind as string | undefined) ?? null,
+      msg: (fields.msg as string | undefined) ?? null,
+      stack: (fields.stack as string | undefined) ?? null,
+      row_json: JSON.stringify({ ...payload, n, t: ms, ...fields }),
+    });
+    const beat = (ms: number, fps: number, worst: number, heap: number): Row => extra(ms, "hb", { fps, worst, heap, gpuBuf: 180, gpuTex: 460, stalls: 0 });
+    out.push(
+      ...rows,
+      beat(90_000, 58, 410, 640),
+      beat(120_000, 60, 52, 700),
+      beat(610_000, 24, 180, 1250),
+      beat(640_000, 27, 160, 1300),
+      extra(602_000, "warn", { kind: "console", msg: "WebGPU: the texture budget was exceeded.", stack: "Warning: budget\n    at https://games.csarko.sh/dayhike/assets/index-CJQw8Dxw.js:3:9" }),
+    );
+    // The engine writes a start-up fallback before the load row, which names the tier it attempted.
+    if (sid === "s41b2") out.push(extra(46_800, "tier_fallback", { attempted: "high", built: "medium" }));
+    if (sid === "s1000") {
+      // A browser that shares no graphics, memory or cores (Safari): the machine reads "not shared by the browser".
+      for (const r of out.filter((o) => o.sid === sid)) {
+        const p = JSON.parse(str(r.row_json)) as Record<string, unknown>;
+        r.row_json = JSON.stringify({ ...p, gpu: "", mem: 0, cores: 0, browser: "18", ua: MAC_SAFARI });
+      }
+    }
+  }
+  return out;
 }
 
 /** A match's sessions: the host's trail and a follower's, side by side. */
@@ -498,7 +560,7 @@ export type TrailFor = (world: string, seed: number) => Promise<DrawableTrail | 
 export function sampleSource(trailFor: TrailFor = (world, seed) => Promise.resolve(buildTrailFor(world, seed))): Source {
   let pathRows: Promise<Row[]> | null = null;
   const tables: Record<QueryName, () => Row[] | Promise<Row[]>> = {
-    funnel, places, errors, players, kpis,
+    funnel, places, errors, players, machines, kpis,
     paths: () => (pathRows ??= trailFor(WORLD, SEED).then(paths)),
   };
   const dated: Partial<Record<QueryName, string>> = { players: "last_seen", places: "last_seen", errors: "last_seen", funnel: "last_seen" };

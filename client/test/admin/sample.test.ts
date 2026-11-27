@@ -1,5 +1,6 @@
 import { describe, it, expect, vi } from "vitest";
 import { sampleSource } from "../../src/admin/sample.js";
+import { howItRan, machinesOf, problemsOf } from "../../src/admin/profile.js";
 import { trailOf } from "../../src/admin/timeline.js";
 import { lossEndedLine } from "@csarkosh/engine/game/lossBound";
 import type { DrawableTrail } from "../../src/admin/trail.js";
@@ -99,5 +100,34 @@ describe("the sample's trail carries each thing the GPU can do under a hike", ()
     expect(builds.reduce((n, r) => n + Number(r.turned_away), 0)).toBe(6);
     const turned = (await source.query("errors", 7)).filter((r) => r.n === "turned_away");
     expect(turned.map((r) => [r.level, r.kind, r.sessions])).toEqual([["warning", "no-webgpu", 4], ["warning", "software", 2]]);
+  });
+});
+
+describe("the sample visitor's profile", () => {
+  it("shows every section of the drawer", async () => {
+    const rows = await sampleSource().visitor("v7a10-1000");
+    const ran = howItRan(rows);
+    expect(ran.runs.length).toBeGreaterThanOrEqual(2);
+    expect(ran.notes.length).toBeGreaterThanOrEqual(1);
+    const levels = new Set(problemsOf(rows).map((p) => p.level));
+    expect(levels).toEqual(new Set(["error", "warning"]));
+    expect(machinesOf(rows).some((m) => m.gpu === "not shared by the browser")).toBe(true);
+    // The start-up fallback is written before its load, as the engine does; no tier "high" run is counted for the session it moved.
+    const sid = rows.find((r) => r.n === "tier_fallback")?.sid;
+    const own = rows.filter((r) => r.sid === sid).sort((a, b) => String(a.timestamp).localeCompare(String(b.timestamp))).map((r) => r.n);
+    expect(own.indexOf("tier_fallback")).toBeLessThan(own.indexOf("load"));
+    expect(howItRan(rows.filter((r) => r.sid === sid)).runs.map((r) => r.tier)).toEqual(["medium"]);
+  });
+});
+
+describe("the sample's machines", () => {
+  it("covers all three tiers, one masked GPU and one phone", async () => {
+    const rows = await sampleSource().query("machines", 7);
+    expect(rows.length).toBeGreaterThanOrEqual(4);
+    expect(new Set(rows.map((r) => r.tier))).toEqual(new Set(["high", "medium", "low"]));
+    expect(rows.some((r) => r.gpu === "")).toBe(true);
+    expect(rows.some((r) => r.mobile === true)).toBe(true);
+    // A chip's players over every tier is at least its largest tier's.
+    expect(rows.every((r) => Number(r.chip_players) >= Number(r.players))).toBe(true);
   });
 });

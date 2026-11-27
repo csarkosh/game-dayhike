@@ -433,3 +433,56 @@ visitors came from ("Where players are"), each a part with its own heading and l
 last ninety whatever the range (`players.sql`'s `visitor_days`, as `kpis.sql` has it), so it
 means "has been here before" on Today too; the range's own days stay in the chip's title. "What
 went wrong" is back at the bottom: Overview, Players, What went wrong.
+
+## 11. Players' systems, and how each tier ran (amended 2026-11-26)
+
+Cyrus, 2026-11-26: to see players' systems and how well each ran the game, so the high, medium
+and low graphics tiers can be set to target what makes the game work on every device; and the
+Overview should take minimal space. Three changes, and a few words the page now uses the same
+way everywhere.
+
+**The visitor's drawer is a profile** (`profile.ts`, `payload.ts`, `verdicts.ts`, `views.ts`,
+`timeline.ts`). Opening a player shows four parts under their name:
+
+- **Their machine.** The graphics chip and its adapter, cores and memory, the device and system,
+  the browser, and the window, from the envelope every row carries. A fact the browser did not
+  share reads "not shared by the browser" (Safari shares no graphics, memory or cores), never a
+  blank or a zero.
+- **How it ran.** A sentence ("Ran smoothly on Medium; was choppy on High.") over one row a tier:
+  whether the tier was chosen or put there by auto ("auto in 7 of 10" where the sessions were a
+  mix), the sessions on it, its frame rate, the worst frame, the load, the page and graphics
+  memory peaks (the page's limit is in the machine block). The sentence above it speaks of frame
+  rate alone. Each heartbeat counts under the tier in force when it was sent: the load's tier, and
+  where the engine's start-up fallback came before the load for that same tier, the tier it built
+  instead (the load row names the tier it attempted); then a later fallback's built tier and each
+  tier change, in order. A session that changed tier counts under each tier it ran on.
+- **Problems.** The errors and warnings of the player's sessions, grouped by level, kind and the
+  message's first hundred characters, with how many times and the first session each came in.
+- **Sessions.** One line a session, now with a Tier column and a Frame rate column; Problems
+  counts the session's errors and warnings together.
+
+**Machines and tiers** is a new card between Players and What went wrong (`machines.ts`; the
+query is `tools/telemetry/queries/machines.sql`, which the engine server serves from 0.2.27, its
+`machines` added to `QUERY_NAMES`). One line a graphics chip, a phone marked "(phone)" since a
+phone and a desktop with the same chip are different machines, with its players and three columns,
+High, Medium and Low. A cell is the tier's frame-rate word and the median frame rate ("choppy, 38
+fps"), "no frames measured" where the sessions sent no heartbeat on it, "not played" where nobody
+used the tier. Its title says how many sessions were smooth, choppy and poor, the median load and
+how many the auto choice put there; the line's title says the cores, memory and systems most
+often seen. The chip's name is trimmed of a `(0x...)` device id and of anything from Direct3D,
+OpenGL or Vulkan on, so one chip's driver strings meet. The twelve chips with the most players are
+shown, the rest in a fold. The query applies the same "real play" filter as the others and reads
+the tier in force by the rule above, so the card and a player's profile agree, and a start-up
+fallback counts under the tier that was built, never the one that failed. A line's players are
+the chip's players over every tier. It is what to read
+when choosing a tier's target: a chip whose High cell is poor and whose Medium cell is smooth says
+where the line belongs.
+
+**The Overview is two lines** (`views.ts` `overviewView`): the funnel as a sentence of figures and
+the share each is of the stage before, and the top cities as a sentence. The map and the full city
+list are behind a fold, "Show the map", closed. DB-IP's name and link stay visible under it, as its
+licence asks wherever its places show, whether or not the fold is open.
+
+**Frame-rate words.** A frame rate is smooth at 50 fps or more, choppy from 30 to 50 and poor
+under 30 (`FPS_WORDS`, the words for `FPS`'s good, slow and bad), in the profile, the machines
+card and the sessions list alike. The bars and marks keep their good, slow and bad tones.

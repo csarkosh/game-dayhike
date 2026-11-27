@@ -303,6 +303,19 @@ describe("sessionsOf", () => {
     expect(lines[2]).toMatchObject({ end: "no goodbye", tone: "warn", errors: 1 });
   });
 
+  it("gives each session its tier in words, its median frame rate and its warnings", () => {
+    const lines = sessionsOf([
+      row(0, "load", { tier: "high", source: "auto" }, "s1"),
+      row(1_000, "hb", { fps: 58 }, "s1"),
+      row(2_000, "tier_change", { to: "medium", source: "auto" }, "s1"),
+      row(3_000, "hb", { fps: 60 }, "s1"),
+      row(4_000, "warn", { kind: "console", msg: "slow" }, "s1"),
+      row(0, "page", { kind: "landing" }, "s2"),
+    ]);
+    expect(lines[0]).toMatchObject({ tier: "High then Medium", fps: 59, warnings: 1, errors: 0 });
+    expect(lines[1]).toMatchObject({ tier: "", fps: null, warnings: 0 });
+  });
+
   it("counts a lost device and a window whose picture broke among a session's errors, and no other GPU row", () => {
     const lines = sessionsOf([
       row(0, "page", { kind: "game" }, "s1"),

@@ -1,5 +1,6 @@
 import { describe, it, expect } from "vitest";
-import { fpsVerdict, funnelLine, gpuName, loadVerdict, osName, placeName, playerVerdict, reachOf } from "../../src/admin/views.js";
+import type { Row } from "../../src/admin/source.js";
+import { fpsVerdict, funnelLine, funnelSentence, gpuName, loadVerdict, osName, placeName, placesSentence, playerVerdict, reachOf } from "../../src/admin/views.js";
 
 
 describe("funnelLine", () => {
@@ -16,6 +17,36 @@ describe("funnelLine", () => {
 
   it("says nothing of the turned away where the query has no such column", () => {
     expect(funnelLine({ build: "all", sessions: 191, landed: 181 }, 2)).toBe("191 sessions on 2 builds, each stage's share of the one before");
+  });
+});
+
+describe("funnelSentence", () => {
+  const all = { build: "all", landed: 120, pressed_play: 80, started: 52, finished: 20, turned_away: 6 };
+  it("walks the stages with each share of the one before", () => {
+    expect(funnelSentence(all)).toBe("120 landed → 80 pressed Play (67%) → 52 started a hike (65%) → 20 reached an end (38%) · 6 turned away");
+  });
+  it("ends after the last stage where the query has no turned_away", () => {
+    expect(funnelSentence({ build: "all", landed: 120, pressed_play: 80, started: 52, finished: 20 })).toBe("120 landed → 80 pressed Play (67%) → 52 started a hike (65%) → 20 reached an end (38%)");
+  });
+  it("says so when nobody landed, and parses string counts", () => {
+    expect(funnelSentence({ build: "all", landed: 0 })).toBe("No sessions in this range.");
+    expect(funnelSentence({ build: "all", landed: "120", pressed_play: "80", started: "52", finished: "20" })).toContain("80 pressed Play (67%)");
+  });
+});
+
+describe("placesSentence", () => {
+  const city = (name: string, visits: number | string, country: string): Row => ({ city: name, country, visits });
+  it("names the top four of the placed cities and how many more", () => {
+    const cities = ["US", "GB", "CA", "DE", "FR", "JP"];
+    const rows = [city("New York", 30, "US"), city("London", 12, "GB"), city("Toronto", 8, "CA"), city("Berlin", 5, "DE")];
+    for (let i = 0; i < 10; i += 1) rows.push(city(`Town ${i}`, 1, cities[i % 6]!));
+    expect(placesSentence(rows)).toBe("From 14 places in 6 countries: New York 30, London 12, Toronto 8, Berlin 5, and 10 more");
+  });
+  it("says one country, and no 'more' when all are named", () => {
+    expect(placesSentence([city("Austin", "4", "US")])).toBe("From 1 place in 1 country: Austin 4");
+  });
+  it("says so with no rows", () => {
+    expect(placesSentence([])).toBe("No visits in this range.");
   });
 });
 
@@ -43,6 +74,9 @@ describe("a player's load and frame rate", () => {
     expect(gpuName("ANGLE (Apple, ANGLE Metal Renderer: Apple M3 Max, Unspecified Version)")).toBe("Apple M3 Max");
     expect(gpuName("ANGLE (ARM, Mali-G52 MC2, OpenGL ES 3.2)")).toBe("Mali-G52 MC2");
     expect(gpuName("ANGLE (NVIDIA Corporation, NVIDIA GeForce RTX 4060 Laptop GPU/PCIe/SSE2, OpenGL 4.5.0)")).toBe("NVIDIA GeForce RTX 4060 Laptop GPU");
+    // The machines query trims a device id and the driver text, leaving the ANGLE string unterminated.
+    expect(gpuName("ANGLE (NVIDIA, NVIDIA GeForce RTX 3060")).toBe("NVIDIA GeForce RTX 3060");
+    expect(gpuName("ANGLE (Intel, Intel(R) UHD Graphics 620")).toBe("Intel(R) UHD Graphics 620");
     expect(gpuName("Apple M2")).toBe("Apple M2");
     expect(gpuName("")).toBe("");
   });
