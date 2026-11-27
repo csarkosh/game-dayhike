@@ -109,7 +109,7 @@ export type TierRun = {
 };
 export type HowItRan = { runs: TierRun[]; notes: string[]; neverStarted: number; sessions: number };
 
-type Acc = { chosen: boolean; fps: Map<string, number[]>; worst: number[]; load: number[]; heap: number[]; gpu: number[]; noFrames: number };
+type Acc = { sids: Set<string>; chosen: boolean; fps: Map<string, number[]>; worst: number[]; load: number[]; heap: number[]; gpu: number[]; noFrames: number };
 
 /** How each tier ran for the player: the tier in force follows the load, a fallback and each tier change. */
 export function howItRan(rows: Row[]): HowItRan {
@@ -118,7 +118,7 @@ export function howItRan(rows: Row[]): HowItRan {
   const accOf = (tier: TierName): Acc => {
     let a = acc.get(tier);
     if (a === undefined) {
-      a = { chosen: false, fps: new Map(), worst: [], load: [], heap: [], gpu: [], noFrames: 0 };
+      a = { sids: new Set(), chosen: false, fps: new Map(), worst: [], load: [], heap: [], gpu: [], noFrames: 0 };
       acc.set(tier, a);
     }
     return a;
@@ -142,9 +142,14 @@ export function howItRan(rows: Row[]): HowItRan {
         loadTier = tier;
         const parts = [p.decideMs, p.engineMs, p.buildMs].map(present);
         loadMs = parts.every((x) => x === null) ? null : parts.reduce<number>((s, x) => s + (x ?? 0), 0);
-      } else if (n === "ready" && loadTier !== null && loadMs !== null) {
+      } else if (n === "ready" && tier !== null && loadMs !== null) {
+        // Counted under the tier in force when the world is in, which a fallback may have changed.
         const ms = present(p.ms);
-        if (ms !== null) accOf(loadTier).load.push(loadMs + ms);
+        if (ms !== null) {
+          const a = accOf(tier);
+          a.load.push(loadMs + ms);
+          a.sids.add(sid);
+        }
         loadMs = null;
       } else if (n === "tier_fallback") {
         started = true;
@@ -164,6 +169,7 @@ export function howItRan(rows: Row[]): HowItRan {
         const here = tier ?? (isTier(text(p.tier)) ? (text(p.tier) as TierName) : null);
         if (here === null) continue;
         const a = accOf(here);
+        a.sids.add(sid);
         if (source !== "" && source !== "auto") a.chosen = true;
         if (here === loadTier) loadBeats += 1;
         const fps = present(p.fps);
@@ -177,7 +183,11 @@ export function howItRan(rows: Row[]): HowItRan {
         if (buf !== null || tex !== null) a.gpu.push((buf ?? 0) + (tex ?? 0));
       }
     }
-    if (loadTier !== null && loadBeats === 0) accOf(loadTier).noFrames += 1;
+    if (loadTier !== null) {
+      const a = accOf(loadTier);
+      a.sids.add(sid);
+      if (loadBeats === 0) a.noFrames += 1;
+    }
     if (!started) neverStarted += 1;
     if (list.some((l) => l.n === "device_lost")) lostIn += 1;
   }
@@ -192,7 +202,7 @@ export function howItRan(rows: Row[]): HowItRan {
     runs.push({
       tier,
       chosen: a.chosen,
-      sessions: Math.max(a.fps.size, a.load.length),
+      sessions: a.sids.size,
       fps,
       verdict: marks.length === 0 ? null : marks.reduce((x, y) => (RANK[y] > RANK[x] ? y : x)),
       worstMs: maxOf(a.worst),
@@ -243,7 +253,8 @@ export function problemsOf(rows: Row[]): Problem[] {
       } else if (n === "gpu_error" || n === "device_lost") {
         level = "error";
         words = n === "gpu_error" ? "GPU error" : "Lost device";
-        msg = text(p.msg).trim() || text(p.reason) || text(p.kind);
+        // As `describe()` words them, so the groups match what the timeline shows.
+        msg = n === "device_lost" ? [text(p.reason) || "no reason given", text(p.msg).trim()].filter((x) => x !== "").join(": ") : [text(p.kind), text(p.msg).trim()].filter((x) => x !== "").join(", ");
       } else continue;
       const key = `${level}|${words}|${msg.slice(0, 100)}`;
       const g = groups.get(key);

@@ -64,6 +64,30 @@ describe("howItRan", () => {
     expect(run?.verdict).toBe("good");
   });
 
+  it("counts every session on a tier, and the median of their medians", () => {
+    const rows = [
+      row("load", { tier: "high", source: "auto" }, 0, "a"),
+      row("hb", { fps: 40 }, 1, "a"),
+      row("hb", { fps: 40 }, 2, "a"),
+      row("load", { tier: "high", source: "auto", decideMs: 1000 }, 0, "b"),
+      row("ready", { ms: 1000 }, 1, "b"),
+      row("load", { tier: "high", source: "auto" }, 0, "c"),
+      row("hb", { fps: 60 }, 1, "c"),
+    ];
+    const [run] = howItRan(rows).runs;
+    expect(run?.sessions).toBe(3);
+    expect(run?.fps).toBe(50);
+    const loadOnly = howItRan([rows[0] as Row, rows[1] as Row, rows[3] as Row, rows[4] as Row]).runs[0];
+    expect(loadOnly?.sessions).toBe(2);
+    expect(loadOnly?.noFrames).toBe(1);
+  });
+
+  it("counts a load that a fallback moved under the tier it ended on", () => {
+    const rows = [row("load", { tier: "high", source: "auto", decideMs: 1000 }, 0), row("tier_fallback", { attempted: "high", built: "medium" }, 1), row("ready", { ms: 2000 }, 2), row("hb", { fps: 60 }, 3)];
+    const { runs } = howItRan(rows);
+    expect(runs.map((r) => [r.tier, r.loadMs])).toEqual([["medium", 3000]]);
+  });
+
   it("says which tiers ran smoothly and which were choppy", () => {
     const rows = [row("load", { tier: "high", source: "auto" }, 0), row("hb", { fps: 30 }, 1), row("tier_change", { to: "medium", source: "auto" }, 2), row("hb", { fps: 60 }, 3)];
     expect(summaryLine(howItRan(rows))).toBe("Ran smoothly on Medium; was choppy on High.");
@@ -128,6 +152,12 @@ describe("problemsOf", () => {
     expect(p?.words).toBe("Crash");
     expect(p?.firstSid).toBe("early");
     expect(p?.stack).toBe("at a");
+  });
+
+  it("groups a lost device by the reason and message the timeline shows", () => {
+    const rows = [row("device_lost", { reason: "destroyed", msg: "one" }, 0), row("device_lost", { reason: "destroyed", msg: "one" }, 1), row("device_lost", { reason: "destroyed", msg: "two" }, 2)];
+    expect(problemsOf(rows).map((p) => [p.msg, p.count])).toEqual([["destroyed: one", 2], ["destroyed: two", 1]]);
+    expect(problemsOf([row("gpu_error", { kind: "validation", msg: "bad " }, 0)])[0]?.msg).toBe("validation, bad");
   });
 
   it("includes GPU errors and lost devices", () => {
