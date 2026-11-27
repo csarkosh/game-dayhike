@@ -4,7 +4,7 @@
  */
 
 import type { Row } from "./source.js";
-import { payloadOf, type Payload } from "./timeline.js";
+import { payloadOf, type Payload } from "./payload.js";
 import { fpsVerdict, gpuName, loadVerdict, osName, present, RANK, type Verdict } from "./verdicts.js";
 
 export type TierName = "high" | "medium" | "low";

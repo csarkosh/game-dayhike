@@ -663,7 +663,7 @@ function ranBlock(list: Row[]): HTMLElement {
 function problemsBlock(problems: Problem[]): HTMLElement {
   if (problems.length === 0) return el("div", { class: "empty" }, "No errors or warnings.");
   const cols: Column[] = [
-    { key: "level", label: "Kind", render: (_v, row) => el("span", { class: `status ${(row as unknown as Problem).level === "error" ? "lost" : "slow"}` }, (row as unknown as Problem).words) },
+    { key: "level", label: "Kind", render: (_v, row) => el("span", { class: `status ${(row as unknown as Problem).level === "error" ? "error" : "warn"}` }, (row as unknown as Problem).words) },
     {
       key: "msg",
       label: "Message",
@@ -707,7 +707,7 @@ export function sessionsDrawer(kind: "visitor" | "match", id: string, rows: Prom
         { key: "startedAt", label: `Began (${zoneName()})`, when: true, render: (v) => el("span", { title: fullWhen(num(v)) }, wallWhen(num(v))) },
         { key: "sid", label: "Session", render: (v) => sidLink(str(v)) },
         { key: "role", label: "Role" },
-        { key: "tier", label: "Tier" },
+        { key: "tier", label: "Tier", render: (v) => (str(v) === "" ? el("span", { class: "faint" }, "–") : str(v)) },
         { key: "fps", label: "Frame rate", render: (v) => (v === null ? el("span", { class: "faint" }, "–") : mark(fpsVerdict(num(v)), `${FPS_WORDS[fpsVerdict(num(v)) ?? "good"]}, ${Math.round(num(v))} fps`)) },
         { key: "build", label: "Build", render: (v) => el("span", { class: "mono" }, str(v)) },
         { key: "rows", label: "Rows", num: true },

@@ -14,6 +14,7 @@
  * `source.ts`). The labels name it by its short name (`PDT`, `zoneName`).
  */
 
+import { payloadOf, type Payload } from "./payload.js";
 import { sessionRuns } from "./profile.js";
 import type { Row } from "./source.js";
 
@@ -127,21 +128,7 @@ const ENVELOPE = new Set([
   "world", "seed", "game", "lobby", "n", "ref", "path", "lang", "tz", "vw", "vh", "ua", "wd", "tester", "timestamp", "room", "stack",
 ]);
 
-export type Payload = Record<string, unknown>;
-
-/** A row's payload: the whole row the query carries as `row_json`, or the row's own columns where there is none (the sample). */
-export function payloadOf(row: Row): Payload {
-  const json = row.row_json;
-  if (typeof json === "string" && json !== "") {
-    try {
-      const parsed: unknown = JSON.parse(json);
-      if (parsed !== null && typeof parsed === "object") return parsed as Payload;
-    } catch {
-      // Not JSON: the columns will do.
-    }
-  }
-  return row as Payload;
-}
+export { payloadOf, type Payload };
 
 /** Why the load check turned a visitor away (`game/loadCheck.ts`, `TurnedAwayReason`), in words. */
 const TURNED_AWAY: Readonly<Record<string, string>> = {
