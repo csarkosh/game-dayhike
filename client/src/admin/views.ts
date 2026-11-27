@@ -16,6 +16,9 @@ import { ago, compact, el, folded, funnel, table, tile, type Column } from "./ch
 import { worldMap, type MapPlace } from "./worldMap.js";
 import { accordion, easeHeight, fadeIn, look, parseDuration, play, rootToken, settled, tokens } from "./motion.js";
 import type { Live, Row } from "./source.js";
+import { fpsVerdict, gpuName, loadVerdict, osName, playerVerdict, present, FPS, LOAD_MS, WORDS, type Verdict } from "./verdicts.js";
+
+export { FPS, LOAD_MS, fpsVerdict, gpuName, loadVerdict, osName, playerVerdict, type Verdict };
 import { clock, dayOf, delta, duration, envelopeLine, fullWhen, sessionsOf, trailOf, when as wallWhen, zoneName, type Segment, type Step } from "./timeline.js";
 
 const num = (v: unknown): number => (typeof v === "number" ? v : Number(v ?? 0) || 0);
@@ -173,11 +176,6 @@ export function errorsView(rows: Row[]): HTMLElement {
   return card("What went wrong", sub, "", table(cols, rows, "Nothing went wrong in this range."));
 }
 
-/** An operating system as people say it, from the page's `os` (`darwin-arm64`, `win32-x64`, `android-arm64`). */
-export function osName(raw: string): string {
-  const os = raw.split(/[-\s]/)[0]?.toLowerCase() ?? "";
-  return ({ darwin: "macOS", win32: "Windows", linux: "Linux", android: "Android", ios: "iOS", cros: "ChromeOS" } as Record<string, string>)[os] ?? (raw === "" ? "" : "Other");
-}
 
 /** The machine column: the GPU as people say it, else the operating system; the details in its title. */
 const machineColumn: Column = {
@@ -210,49 +208,6 @@ export function reachOf(row: Record<string, unknown>): Reach {
   return num(row.finished) > 0 ? "finished" : num(row.played) > 0 ? "played" : "looked";
 }
 
-/**
- * How a player's game went, by the two things a player feels: how long it took
- * to load (from Play to the world's first whole frame, `health.sql`) and how
- * smoothly it ran (the median frame rate in a match). Each is good, slow or bad against the marks below;
- * a player's verdict is the worse of the two, and a player with neither (gone
- * before the world was in) has none.
- */
-export const LOAD_MS = { good: 15_000, slow: 30_000 } as const;
-export const FPS = { good: 50, slow: 30 } as const;
-export type Verdict = "good" | "slow" | "bad";
-const RANK: Record<Verdict, number> = { good: 0, slow: 1, bad: 2 };
-const WORDS: Record<Verdict, string> = { good: "Good", slow: "Slow", bad: "Bad" };
-
-export function loadVerdict(ms: number | null): Verdict | null {
-  if (ms === null) return null;
-  return ms <= LOAD_MS.good ? "good" : ms <= LOAD_MS.slow ? "slow" : "bad";
-}
-export function fpsVerdict(fps: number | null): Verdict | null {
-  if (fps === null) return null;
-  return fps >= FPS.good ? "good" : fps >= FPS.slow ? "slow" : "bad";
-}
-export function playerVerdict(row: Record<string, unknown>): Verdict | null {
-  const marks = [loadVerdict(present(row.load_ms)), fpsVerdict(present(row.fps))].filter((v): v is Verdict => v !== null);
-  return marks.length === 0 ? null : marks.reduce((a, b) => (RANK[b] > RANK[a] ? b : a));
-}
-/** A number from a row, or null where the row has none (a session that never reached that point). */
-function present(v: unknown): number | null {
-  if (v === null || v === undefined || v === "") return null;
-  const n = Number(v);
-  return Number.isFinite(n) ? n : null;
-}
-/** A GPU's name as people say it: the renderer string's ANGLE wrapping and driver text dropped. */
-export function gpuName(raw: string): string {
-  const angle = /^ANGLE \([^,]*,\s*([^,]+?)(?:\s*\(0x[0-9a-f]+\))?\s*(?:Direct3D|OpenGL|Vulkan|,|\)$)/i.exec(raw);
-  // A driver's own words in brackets at the end (`(radeonsi navi22 LLVM 17.0.6)`) go too.
-  // and so do ANGLE's renderer label (`ANGLE Metal Renderer: Apple M3 Max`) and a GL bus suffix (`/PCIe/SSE2`).
-  return (angle?.[1] ?? raw)
-    .replace(/\s*\([^)]*\)$/, "")
-    .replace(/^ANGLE [A-Za-z0-9]+ Renderer:\s*/, "")
-    .replace(/\/PCIe\/SSE2$/, "")
-    .replace(/\s+/g, " ")
-    .trim();
-}
 
 const mark = (verdict: Verdict | null, text: string): Node =>
   verdict === null ? el("span", { class: "faint" }, "–") : el("span", { class: `status ${verdict}` }, text);
