@@ -1,5 +1,5 @@
--- Machines: one row per graphics chip, phone or not, and quality tier over the
--- range (the admin page's Machines and tiers card): how many players and
+-- Machines: one row per graphics chip, phone or not, and quality tier over
+-- the days asked (the admin page's Machines and tiers card): how many players and
 -- sessions were on that tier, the median frame rate with how many sessions
 -- were good (50 or more), slow (30 to 50) or bad (under 30) by the median of
 -- their own heartbeats (`hb`) on it, the sessions with no heartbeat on it,
@@ -114,5 +114,5 @@ SELECT
   STRING_AGG(DISTINCT os ORDER BY os) AS oses
 FROM per_tier
 GROUP BY gpu, mobile, tier
-ORDER BY players DESC
+ORDER BY players DESC, sessions DESC, gpu, tier
 LIMIT 100;
